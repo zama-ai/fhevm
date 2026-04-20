@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT status as \"status: BlockStatus\" FROM blocks WHERE chain_id = $1 AND block_hash = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status: BlockStatus",
+        "type_info": {
+          "Custom": {
+            "name": "block_status",
+            "kind": {
+              "Enum": [
+                "CANONICAL",
+                "FINALIZED",
+                "UNCLE"
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "552995e0af0f85bc527dce06390f1934204ee12a9885404f60a1a6eaef197f04"
+}

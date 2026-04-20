@@ -1,0 +1,57 @@
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+
+rule_files:
+  - alert.rules
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets:
+          - "localhost:9090"
+
+  - job_name: "erpc"
+    static_configs:
+      - targets:
+          - "erpc:4001"
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Listener deployments — one scrape job per chain.
+  #
+  # The `labels:` block attaches `chain_id` and `network` as external labels
+  # to EVERY metric scraped from that target, including broker metrics that
+  # do not carry `chain_id` intrinsically. This makes the same Grafana
+  # dashboard (monitoring/grafana/dashboards/listener.json) work for every
+  # chain without code changes, and lets the fleet dashboard
+  # (listener-fleet.json) slice metrics by chain.
+  #
+  # Uncomment and duplicate the block per chain you deploy.
+  # ─────────────────────────────────────────────────────────────────────
+
+  - job_name: "listener-ethereum"
+    static_configs:
+      - targets: ["host.docker.internal:9091"]
+        labels:
+          chain_id: "1"
+          network: "ethereum-mainnet"
+
+  - job_name: "polygon-mainnet"
+    static_configs:
+      - targets: ["host.docker.internal:9092"]
+        labels:
+          chain_id: "127"
+          network: "polygon-mainnet"
+
+  - job_name: "avalanche-mainnet"
+    static_configs:
+      - targets: ["host.docker.internal:9093"]
+        labels:
+          chain_id: "43114"
+          network: "avalanche-mainnet"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          # - alertmanager:9093
