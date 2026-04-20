@@ -29,8 +29,8 @@ jobs:
           filters: |
             rust:
               - .github/workflows/listener-tests.yml
-              - Cargo.toml
-              - Cargo.lock
+              - listener/Cargo.toml
+              - listener/Cargo.lock
               - listener/crates/**
 
   tests:

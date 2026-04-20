@@ -29,8 +29,8 @@ jobs:
           filters: |
             rust:
               - .github/workflows/listener-cargo-fmt-clippy.yml
-              - Cargo.toml
-              - Cargo.lock
+              - listener/Cargo.toml
+              - listener/Cargo.lock
               - listener/crates/**
 
   fmt-clippy:
