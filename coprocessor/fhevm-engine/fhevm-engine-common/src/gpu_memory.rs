@@ -79,14 +79,11 @@ pub fn release_memory_on_gpu(amount: u64, idx: usize) {
 }
 
 fn get_fhe_sum_size_on_gpu(
-    fhe_operation: i16,
+    _fhe_operation: i16,
     input_operands: &[SupportedFheCiphertexts],
 ) -> Result<u64, FhevmError> {
     if input_operands.is_empty() {
-        return Err(FhevmError::UnsupportedFheTypes {
-            fhe_operation: format!("{:?}", fhe_operation),
-            input_types: vec![],
-        });
+        return Ok(0);
     }
     let n = input_operands.len() as u64;
     // No dedicated get_sum_size_on_gpu API exists in tfhe-rs; using N * ciphertext_size
@@ -98,7 +95,7 @@ fn get_fhe_sum_size_on_gpu(
         SupportedFheCiphertexts::FheUint64(v) => Ok(v.get_size_on_gpu() * n),
         SupportedFheCiphertexts::FheUint128(v) => Ok(v.get_size_on_gpu() * n),
         _ => Err(FhevmError::UnsupportedFheTypes {
-            fhe_operation: format!("{:?}", fhe_operation),
+            fhe_operation: format!("{:?}", _fhe_operation),
             input_types: input_operands.iter().map(|i| i.type_name()).collect(),
         }),
     }
