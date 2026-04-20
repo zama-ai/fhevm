@@ -25,7 +25,7 @@ import {
   RpcError,
   SchemaGuardError,
 } from "../errors";
-import { describeBundle } from "../resolve/target";
+import { describeBundle, REPO_KEYS } from "../resolve/target";
 import {
   ADDRESS_DIR,
   COMPOSE_OUT_DIR,
@@ -72,7 +72,7 @@ import type {
   VersionBundle,
   VersionTarget,
 } from "../types";
-import { STEP_NAMES } from "../types";
+import { OVERRIDE_GROUPS, STEP_NAMES } from "../types";
 import {
   exists,
   hostReachableMaterialUrl,
@@ -255,7 +255,26 @@ const overrideWarnings = (overrides: LocalOverride[], target?: string) => {
 };
 
 /** Prints the resolved version bundle in compact or detailed form. */
-const printBundle = (bundle: VersionBundle, options?: { detailed?: boolean }) => {
+const fullBuildActive = (overrides: LocalOverride[]) =>
+  OVERRIDE_GROUPS.every((group) => overrides.some((item) => item.group === group));
+
+/** Rewrites displayed repo-owned versions to match the effective runtime source under `--build`. */
+export const displayedBundle = (
+  bundle: VersionBundle,
+  overrides: LocalOverride[],
+) =>
+  !fullBuildActive(overrides)
+    ? bundle
+    : {
+        ...bundle,
+        env: Object.fromEntries(
+          Object.entries(bundle.env).map(([key, value]) => [key, REPO_KEYS.has(key) ? "LOCAL BUILD" : value]),
+        ),
+      };
+
+/** Prints the resolved version bundle in compact or detailed form. */
+const printBundle = (state: Pick<State, "versions" | "overrides">, options?: { detailed?: boolean }) => {
+  const bundle = displayedBundle(state.versions, state.overrides);
   console.log(`[resolve] ${bundle.lockName}`);
   if (options?.detailed) {
     console.log(describeBundle(bundle));
@@ -461,7 +480,7 @@ export const runStep = async (state: State, step: StepName) => {
       await preflight(state, true, state.requiresGitHub ?? true);
       break;
     case "resolve":
-      printBundle(state.versions, { detailed: true });
+      printBundle(state, { detailed: true });
       break;
     case "generate":
       await generateRuntime(state, stackSpecForState(state));
@@ -903,7 +922,7 @@ export const upDryRun = async (options: Omit<UpOptions, "dryRun">) => {
     state.scenarioSourcePath ??= state.scenario?.sourcePath;
     ensureResumeOptions(state, options);
     await preflight(state, false, state.requiresGitHub);
-    printBundle(state.versions, { detailed: true });
+    printBundle(state, { detailed: true });
     printPlan(state, options.fromStep ?? startStep(state, options));
     console.log("[dry-run] resume preview uses persisted state only; no runtime state or containers were changed");
     return;
@@ -915,7 +934,7 @@ export const upDryRun = async (options: Omit<UpOptions, "dryRun">) => {
   await assertSchemaCompatibility(bundle, options.overrides, scenario, options.allowSchemaMismatch);
   const state = previewStateFromBundle(options, bundle, scenario);
   await preflight(state, false, state.requiresGitHub);
-  printBundle(state.versions, { detailed: true });
+  printBundle(state, { detailed: true });
   printPlan(state, options.fromStep);
   console.log("[dry-run] preflight passed; no runtime state or containers were changed");
 };
