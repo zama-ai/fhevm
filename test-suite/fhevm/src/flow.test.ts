@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  displayedBundle,
   multiChainCoprocessorUpgradeTargets,
   preflightPorts,
   resumeRepairStep,
@@ -9,7 +10,7 @@ import {
 } from "./flow/up-flow";
 import { assertContractTaskStackRunning } from "./flow/contracts";
 import { envPath, hostChainAddressesPath, kmsCoreConfigPath } from "./layout";
-import type { State } from "./types";
+import { OVERRIDE_GROUPS, type State } from "./types";
 
 const completeState = (): State => ({
   target: "latest-main",
@@ -308,5 +309,15 @@ describe("runtime helpers", () => {
 
   test("resume hint is suppressed for equals-form fresh-stack flags", () => {
     expect(shouldShowResumeHint(["up", "--target=sha", "--sha=badbad"])).toBe(false);
+  });
+
+  test("displayedBundle prints local build for repo-owned versions under full build", () => {
+    const state = completeState();
+    state.overrides = OVERRIDE_GROUPS.map((group) => ({ group }));
+    const bundle = displayedBundle(state.versions, state.overrides);
+    expect(bundle.env.GATEWAY_VERSION).toBe("LOCAL BUILD");
+    expect(bundle.env.RELAYER_VERSION).toBe("LOCAL BUILD");
+    expect(bundle.env.TEST_SUITE_VERSION).toBe("LOCAL BUILD");
+    expect(bundle.env.CORE_VERSION).toBe("v0.13.10-rc.3");
   });
 });
