@@ -77,7 +77,7 @@ services:
       - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
       - --url=redis://listener-redis:6379
       #- --url=amqp://user:pass@listener-rabbitmq:5672
-      - --chain-id=12345
+      - --chain-id=${CHAIN_ID}
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully
