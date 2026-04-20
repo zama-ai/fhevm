@@ -208,7 +208,6 @@ Compat-tests define:
 
 - explicit `from` and `to` version maps
 - optional `harness` settings such as an explicit `relayer-sdk` version
-- optional baseline/final `profiles`
 - ordered rollout `steps` with either `units` or ordered `substeps`
 - an explicit `units` map that assigns every version key to exactly one rollout unit
 - optional execution defaults such as scenario

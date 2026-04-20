@@ -39,10 +39,6 @@ const compatTest = (): CompatTestDefinition => ({
   harness: {
     relayerSdkVersion: "0.5.0-alpha.1",
   },
-  profiles: {
-    baseline: "rollout-baseline",
-    final: "standard",
-  },
   steps: [
     { name: "relayer", units: ["RELAYER"] },
     { name: "contracts", units: ["GATEWAY_CONTRACTS", "HOST_CONTRACTS"] },
@@ -180,16 +176,16 @@ describe("rollout", () => {
   test("prints matrix metadata with selected test profiles", () => {
     expect(rolloutMatrix(compatTest())).toEqual({
       include: [
-        { step: "baseline", stepIndex: 0, name: "00-baseline", overrides: "", testProfile: "rollout-baseline" },
-        { step: "relayer", stepIndex: 1, name: "01-relayer", overrides: "", testProfile: "rollout-baseline" },
-        { step: "contracts", stepIndex: 2, name: "02-contracts", overrides: "", testProfile: "rollout-baseline" },
-        { step: "kms", stepIndex: 3, name: "03-kms", overrides: "", testProfile: "rollout-baseline" },
-        { step: "coprocessor-db-migration", stepIndex: 4, name: "04-coprocessor-db-migration", overrides: "", testProfile: "rollout-baseline" },
-        { step: "coprocessor-host-listener", stepIndex: 5, name: "05-coprocessor-host-listener", overrides: "", testProfile: "rollout-baseline" },
-        { step: "coprocessor-gw-listener", stepIndex: 6, name: "06-coprocessor-gw-listener", overrides: "", testProfile: "rollout-baseline" },
-        { step: "coprocessor-tx-sender", stepIndex: 7, name: "07-coprocessor-tx-sender", overrides: "", testProfile: "rollout-baseline" },
-        { step: "coprocessor-tfhe-worker", stepIndex: 8, name: "08-coprocessor-tfhe-worker", overrides: "", testProfile: "rollout-baseline" },
-        { step: "coprocessor-zkproof-worker", stepIndex: 9, name: "09-coprocessor-zkproof-worker", overrides: "", testProfile: "rollout-baseline" },
+        { step: "baseline", stepIndex: 0, name: "00-baseline", overrides: "", testProfile: "standard" },
+        { step: "relayer", stepIndex: 1, name: "01-relayer", overrides: "", testProfile: "standard" },
+        { step: "contracts", stepIndex: 2, name: "02-contracts", overrides: "", testProfile: "standard" },
+        { step: "kms", stepIndex: 3, name: "03-kms", overrides: "", testProfile: "standard" },
+        { step: "coprocessor-db-migration", stepIndex: 4, name: "04-coprocessor-db-migration", overrides: "", testProfile: "standard" },
+        { step: "coprocessor-host-listener", stepIndex: 5, name: "05-coprocessor-host-listener", overrides: "", testProfile: "standard" },
+        { step: "coprocessor-gw-listener", stepIndex: 6, name: "06-coprocessor-gw-listener", overrides: "", testProfile: "standard" },
+        { step: "coprocessor-tx-sender", stepIndex: 7, name: "07-coprocessor-tx-sender", overrides: "", testProfile: "standard" },
+        { step: "coprocessor-tfhe-worker", stepIndex: 8, name: "08-coprocessor-tfhe-worker", overrides: "", testProfile: "standard" },
+        { step: "coprocessor-zkproof-worker", stepIndex: 9, name: "09-coprocessor-zkproof-worker", overrides: "", testProfile: "standard" },
         { step: "coprocessor-sns-worker", stepIndex: 10, name: "10-coprocessor-sns-worker", overrides: "", testProfile: "standard" },
       ],
     });

@@ -57,7 +57,6 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   light: "Run the lightweight smoke suite.",
   standard: "Run the default CI suite for the active topology.",
   heavy: "Run the long operators suite.",
-  "rollout-baseline": "Run the minimal rollout baseline suite on intermediate states.",
   "paused-host-contracts": "Run pause-mode checks with host contracts paused.",
   "paused-gateway-contracts": "Run pause-mode checks with gateway contracts paused.",
   "input-proof": "Run basic user input proof coverage.",

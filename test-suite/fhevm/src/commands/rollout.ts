@@ -33,7 +33,6 @@ type CompatHarnessDefinition = {
   relayerSdkVersion?: string;
 };
 type CompatProfilesDefinition = {
-  baseline?: string;
   final?: string;
 };
 
@@ -52,7 +51,6 @@ export type CompatTestDefinition = {
 };
 
 const REQUIRED_VERSION_KEYS = Object.keys(PACKAGE_TO_REPOSITORY).sort();
-const DEFAULT_BASELINE_TEST_PROFILE = "rollout-baseline";
 const DEFAULT_FINAL_TEST_PROFILE = "standard";
 const lockStem = (index: number, label: string) => `${String(index).padStart(2, "0")}-${label}`;
 const slug = (value: string) => value.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replaceAll(/^-+|-+$/g, "");
@@ -60,7 +58,6 @@ const rolloutSources = (test: CompatTestDefinition, step: string) => [`compat-te
 const compatContractsFromSources = (test: CompatTestDefinition) =>
   ["GATEWAY_VERSION", "HOST_VERSION"].map((key) => `compat-from:${key}=${test.from[key]}`);
 const parseCompatVersion = (version: string) => /^v?\d+\.\d+\.\d+(?:[-+].*)?$/.test(version);
-const baselineTestProfile = (test: CompatTestDefinition) => test.profiles?.baseline ?? DEFAULT_BASELINE_TEST_PROFILE;
 const finalTestProfile = (test: CompatTestDefinition) => test.profiles?.final ?? DEFAULT_FINAL_TEST_PROFILE;
 const compatClientEnv = (test: CompatTestDefinition): Record<string, string> =>
   Object.fromEntries(
@@ -267,14 +264,14 @@ const rolloutEntries = (test: CompatTestDefinition) => {
       stepIndex: 0,
       name: lockStem(0, "baseline").replace(/\.lock\.json$/, ""),
       overrides: stepOverrides(test, 0),
-      testProfile: baselineTestProfile(test),
+      testProfile: finalTestProfile(test),
     },
     ...expanded.map((step, index) => ({
       step: step.label,
       stepIndex: index + 1,
       name: lockStem(index + 1, step.label).replace(/\.lock\.json$/, ""),
       overrides: stepOverrides(test, index + 1),
-      testProfile: index === expanded.length - 1 ? finalTestProfile(test) : baselineTestProfile(test),
+      testProfile: finalTestProfile(test),
     })),
   ] satisfies RolloutMatrix["include"];
 };
