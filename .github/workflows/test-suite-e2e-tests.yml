@@ -351,9 +351,9 @@ jobs:
         working-directory: test-suite/fhevm
         run: |
           trap 'docker start coprocessor-host-listener coprocessor-host-listener-poller>/dev/null 2>&1 || true' EXIT
-          docker stop coprocessor-host-listener coprocessor-host-listener-poller      
+          docker stop coprocessor-host-listener coprocessor-host-listener-poller
           ./fhevm-cli test "$TEST_PROFILE"
-	  trap - EXIT
+          trap - EXIT
 
       - name: Host listener poller test
         if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' }}
