@@ -9,7 +9,6 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       "event NewContextSet(address[],uint256)",
       "function defineNewContext(address[],uint256)",
       "function destroyKmsContext(uint256)",
-      "function getThreshold() returns (uint256)",
       "function reinitializeV2()",
       "event NewContextSet(uint256,address[],uint256)",
       "event KMSContextDestroyed(uint256)",

@@ -184,6 +184,15 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
     }
 
     /**
+     * @notice              Returns the public decryption threshold for the current KMS context.
+     * @dev                 Retained for backward compatibility with the pre-ProtocolConfig ABI.
+     * @return threshold    The public decryption threshold.
+     */
+    function getThreshold() public view virtual returns (uint256) {
+        return PROTOCOL_CONFIG.getPublicDecryptionThreshold();
+    }
+
+    /**
      * @notice              Returns whether the account address is a valid KMS signer.
      * @param account       Account address.
      * @return isSigner     Whether the account is a valid KMS signer.
