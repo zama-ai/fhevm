@@ -661,27 +661,20 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @param values    Array of ciphertext handles. All must be the same FheType.
      * @return result   Result handle of the same FheType as the inputs.
      */
-    function fheSum(bytes32[] calldata values) public virtual returns (bytes32 result) {
-        if (values.length < 1) revert FHECollectionSizeInvalid(values.length, 1);
-
+    function fheSum(bytes32[] calldata values, FheType resultType) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
             (1 << uint8(FheType.Uint16)) +
             (1 << uint8(FheType.Uint32)) +
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
-        FheType resultType = _verifyAndReturnType(values[0], supportedTypes);
+        if ((1 << uint8(resultType)) & supportedTypes == 0) revert UnsupportedType();
 
-        uint256 maxSize;
-        if (resultType == FheType.Uint64 || resultType == FheType.Uint128) {
-            maxSize = 60;
-        } else {
-            maxSize = 100;
-        }
+        uint256 maxSize = (resultType == FheType.Uint64 || resultType == FheType.Uint128) ? 60 : 100;
         if (values.length > maxSize) revert FHECollectionSizeInvalid(values.length, maxSize);
 
         for (uint256 i = 0; i < values.length; i++) {
             if (!acl.isAllowed(values[i], msg.sender)) revert ACLNotAllowed(values[i], msg.sender);
-            if (i > 0 && _typeOf(values[i]) != resultType) revert IncompatibleTypes();
+            if (_typeOf(values[i]) != resultType) revert IncompatibleTypes();
         }
 
         result = keccak256(
@@ -689,6 +682,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
                 COMPUTATION_DOMAIN_SEPARATOR,
                 Operators.fheSum,
                 values,
+                resultType,
                 acl,
                 block.chainid,
                 blockhash(block.number - 1),
