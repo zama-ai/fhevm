@@ -30,12 +30,9 @@ COPY test-suite/e2e/package.json ./test-suite/e2e/
 RUN npm ci && \
     npm prune && \
     if [ -n "$RELAYER_SDK_VERSION" ]; then \
-      archive="$(npm pack "@zama-fhe/relayer-sdk@${RELAYER_SDK_VERSION}" --silent)"; \
-      mkdir -p test-suite/e2e/node_modules/@zama-fhe/relayer-sdk; \
-      tar -xzf "$archive" --strip-components=1 -C test-suite/e2e/node_modules/@zama-fhe/relayer-sdk; \
-      rm -f "$archive"; \
+      npm install --prefix test-suite/e2e --no-save "@zama-fhe/relayer-sdk@${RELAYER_SDK_VERSION}"; \
     fi && \
-    node -e "const path=require.resolve('@zama-fhe/relayer-sdk/package.json',{paths:['/app/test-suite/e2e']});const version=require(path).version;const expected=process.env.RELAYER_SDK_VERSION;if(expected&&version!==expected){throw new Error('resolved @zama-fhe/relayer-sdk '+version+' instead of '+expected+' from '+path);}"
+    RELAYER_SDK_VERSION="$RELAYER_SDK_VERSION" node -e "const normalize=(v)=>typeof v==='string'?v.replace(/^v/,''):v;const sdkPath=require.resolve('@zama-fhe/relayer-sdk/package.json',{paths:['/app/test-suite/e2e']});const sdk=require(sdkPath);const expected=normalize(process.env.RELAYER_SDK_VERSION);if(expected&&normalize(sdk.version)!==expected){throw new Error('resolved @zama-fhe/relayer-sdk '+sdk.version+' instead of '+expected+' from '+sdkPath);}const tkmsPath=require.resolve('node-tkms/package.json',{paths:['/app/test-suite/e2e']});const tkms=require(tkmsPath);const expectedTkms=normalize(sdk.dependencies?.['node-tkms']);if(expectedTkms&&normalize(tkms.version)!==expectedTkms){throw new Error('resolved node-tkms '+tkms.version+' instead of '+expectedTkms+' from '+tkmsPath);}"
 
 # Copy sources after deps are cached
 COPY library-solidity ./library-solidity
