@@ -30,7 +30,6 @@ type ExpandedCompatStep = {
   units: string[];
 };
 type CompatHarnessDefinition = {
-  testSuiteImageTag?: string;
   relayerSdkVersion?: string;
 };
 type CompatProfilesDefinition = {
@@ -60,31 +59,13 @@ const slug = (value: string) => value.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-
 const rolloutSources = (test: CompatTestDefinition, step: string) => [`compat-test=${test.name}`, `rollout-step=${step}`];
 const compatContractsFromSources = (test: CompatTestDefinition) =>
   ["GATEWAY_VERSION", "HOST_VERSION"].map((key) => `compat-from:${key}=${test.from[key]}`);
-const LOCAL_OVERRIDE_BY_UNIT: Record<string, string[]> = {
-  RELAYER: ["relayer"],
-  GATEWAY_CONTRACTS: ["gateway-contracts"],
-  HOST_CONTRACTS: ["host-contracts"],
-  KMS_CONNECTOR: ["kms-connector"],
-  COPROCESSOR: ["coprocessor"],
-  COPROCESSOR_DB_MIGRATION: ["coprocessor"],
-  COPROCESSOR_HOST_LISTENER: ["coprocessor"],
-  COPROCESSOR_GW_LISTENER: ["coprocessor"],
-  COPROCESSOR_TX_SENDER: ["coprocessor"],
-  COPROCESSOR_TFHE_WORKER: ["coprocessor"],
-  COPROCESSOR_ZKPROOF_WORKER: ["coprocessor"],
-  COPROCESSOR_SNS_WORKER: ["coprocessor"],
-  TEST_SUITE: ["test-suite"],
-};
 const parseCompatVersion = (version: string) => /^v?\d+\.\d+\.\d+(?:[-+].*)?$/.test(version);
-const unitNeedsLocalOverride = (test: CompatTestDefinition, unit: string) =>
-  (LOCAL_OVERRIDE_BY_UNIT[unit] ?? []).length > 0 &&
-  test.units[unit].some((key) => !parseCompatVersion(test.to[key] ?? ""));
 const baselineTestProfile = (test: CompatTestDefinition) => test.profiles?.baseline ?? DEFAULT_BASELINE_TEST_PROFILE;
 const finalTestProfile = (test: CompatTestDefinition) => test.profiles?.final ?? DEFAULT_FINAL_TEST_PROFILE;
-const harnessEnv = (test: CompatTestDefinition): Record<string, string> =>
+const compatClientEnv = (test: CompatTestDefinition): Record<string, string> =>
   Object.fromEntries(
     [
-      test.harness?.testSuiteImageTag ? ["TEST_SUITE_VERSION", test.harness.testSuiteImageTag] : undefined,
+      ["TEST_SUITE_VERSION", deriveCompatTestSuiteVersion(test)],
       test.harness?.relayerSdkVersion ? ["RELAYER_SDK_VERSION", test.harness.relayerSdkVersion] : undefined,
     ].filter((entry): entry is [string, string] => !!entry),
   );
@@ -116,6 +97,16 @@ const deriveRelayerSdkVersion = (test: CompatTestDefinition) => {
     );
   }
   return exactRelayerSdkVersionFromTag(candidate);
+};
+
+const deriveCompatTestSuiteVersion = (test: CompatTestDefinition) => {
+  const candidate = test.from.TEST_SUITE_VERSION ?? test.from.GATEWAY_VERSION ?? test.from.HOST_VERSION;
+  if (!candidate || !parseCompatVersion(candidate)) {
+    throw new PreflightError(
+      "compat-test could not derive TEST_SUITE_VERSION from the `from` bundle; set from.TEST_SUITE_VERSION explicitly",
+    );
+  }
+  return candidate;
 };
 
 const validateStepName = (kind: string, value: unknown) => {
@@ -173,40 +164,20 @@ const expandCompatSteps = (steps: CompatStepDefinition[]) => {
   return expanded;
 };
 
-const stepOverrides = (test: CompatTestDefinition, stepIndex: number) => {
-  const overrides = new Set<string>();
-  for (const step of expandCompatSteps(test.steps).slice(0, stepIndex)) {
-    for (const unit of step.units) {
-      if (!unitNeedsLocalOverride(test, unit)) {
-        continue;
-      }
-      for (const group of LOCAL_OVERRIDE_BY_UNIT[unit] ?? []) {
-        overrides.add(group);
-      }
-    }
-  }
-  return [...overrides].join(",");
-};
+const stepOverrides = (_test: CompatTestDefinition, _stepIndex: number) => "";
 
 /** Validates that a compat-test env map contains every required version key. */
 const validateEnvMap = (
   label: string,
   value: Record<string, string>,
-  harness: CompatHarnessDefinition | undefined,
+  clientEnv: Record<string, string>,
 ) => {
-  if (harness?.testSuiteImageTag && value.TEST_SUITE_VERSION && value.TEST_SUITE_VERSION !== harness.testSuiteImageTag) {
-    throw new PreflightError(
-      `compat-test ${label} TEST_SUITE_VERSION (${value.TEST_SUITE_VERSION}) must match harness.testSuiteImageTag (${harness.testSuiteImageTag})`,
-    );
-  }
-  const withHarness = harness?.testSuiteImageTag
-    ? { ...value, TEST_SUITE_VERSION: harness.testSuiteImageTag }
-    : value;
-  const missing = REQUIRED_VERSION_KEYS.filter((key) => typeof withHarness[key] !== "string" || !withHarness[key]?.length);
+  const withClientEnv = { ...value, ...clientEnv };
+  const missing = REQUIRED_VERSION_KEYS.filter((key) => typeof withClientEnv[key] !== "string" || !withClientEnv[key]?.length);
   if (missing.length) {
     throw new PreflightError(`compat-test ${label} is missing required version keys: ${missing.join(", ")}`);
   }
-  return Object.fromEntries(REQUIRED_VERSION_KEYS.map((key) => [key, withHarness[key]]));
+  return Object.fromEntries(REQUIRED_VERSION_KEYS.map((key) => [key, withClientEnv[key]]));
 };
 
 /** Validates unit definitions declared by one compat-test and returns the covered keys. */
@@ -259,20 +230,16 @@ export const readCompatTest = async (file: string) => {
   if (!test?.name) {
     throw new PreflightError("compat-test must include a non-empty name");
   }
-  if (test.harness?.testSuiteImageTag && (typeof test.harness.testSuiteImageTag !== "string" || !test.harness.testSuiteImageTag.length)) {
-    throw new PreflightError("compat-test harness.testSuiteImageTag must be a non-empty string");
-  }
   if (test.harness?.relayerSdkVersion && (typeof test.harness.relayerSdkVersion !== "string" || !test.harness.relayerSdkVersion.length)) {
     throw new PreflightError("compat-test harness.relayerSdkVersion must be a non-empty string");
   }
-  const harness = test.harness
-    ? { ...test.harness, relayerSdkVersion: deriveRelayerSdkVersion(test) }
-    : undefined;
+  const harness = { ...test.harness, relayerSdkVersion: deriveRelayerSdkVersion(test) };
+  const clientEnv = compatClientEnv({ ...test, harness });
   const validated = {
     ...test,
     harness,
-    from: validateEnvMap("from", test.from, harness),
-    to: validateEnvMap("to", test.to, harness),
+    from: validateEnvMap("from", test.from, clientEnv),
+    to: validateEnvMap("to", test.to, clientEnv),
   } satisfies CompatTestDefinition;
   const fromCovered = validateCompatUnits(validated.units, validated.from);
   const toCovered = validateCompatUnits(validated.units, validated.to);
@@ -288,7 +255,7 @@ export const readCompatTest = async (file: string) => {
 const bundleFromEnv = (test: CompatTestDefinition, kind: "from" | "to"): VersionBundle => ({
   target: "latest-supported",
   lockName: `${slug(test.name)}-${kind}.json`,
-  env: { ...test[kind], ...harnessEnv(test) },
+  env: { ...test[kind], ...compatClientEnv(test) },
   sources: [`compat-test=${test.name}`, kind],
 });
 

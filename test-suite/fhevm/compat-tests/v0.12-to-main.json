@@ -37,9 +37,6 @@
     "COPROCESSOR_ZKPROOF_WORKER_VERSION": "186c343",
     "COPROCESSOR_SNS_WORKER_VERSION": "186c343"
   },
-  "harness": {
-    "testSuiteImageTag": "186c343"
-  },
   "profiles": {
     "baseline": "rollout-baseline",
     "final": "standard"
