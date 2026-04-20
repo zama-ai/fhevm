@@ -383,11 +383,14 @@ jobs:
           COMPAT_OVERRIDES_INPUT: ${{ inputs.compat-overrides }}
         run: |
           overrides="${COMPAT_OVERRIDES_INPUT}"
-          case ",${overrides}," in
-            *,test-suite,*) ;;
-            "") overrides="test-suite" ;;
-            *) overrides="${overrides},test-suite" ;;
-          esac
+          if [ -z "$overrides" ]; then
+            overrides="test-suite"
+          else
+            case ",${overrides}," in
+              *,test-suite,*) ;;
+              *) overrides="${overrides},test-suite" ;;
+            esac
+          fi
           echo "COMPAT_OVERRIDES=${overrides}" >> "$GITHUB_ENV"
 
       - name: Resolve latest-main lock once
