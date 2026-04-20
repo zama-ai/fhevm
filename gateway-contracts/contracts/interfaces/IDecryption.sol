@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import "../shared/Structs.sol";
+import { CtHandleContractPair, HandleEntry, SnsCiphertextMaterial } from "../shared/Structs.sol";
 
 /**
  * @title Interface for the Decryption contract.
@@ -22,6 +22,9 @@ interface IDecryption {
     /**
      * @notice A struct that specifies the validity period of a request, starting at "startTimestamp"
      * and remaining valid for "durationDays".
+     * @custom:deprecated Used by the legacy user decryption paths. Removed when the relayer-sdk
+     * deprecation window for old-format signatures closes. Use `RequestValiditySeconds` with the
+     * unified EIP-712 `userDecryptionRequest(HandleEntry[], ...)` instead.
      */
     struct RequestValidity {
         /**
@@ -34,7 +37,30 @@ interface IDecryption {
     }
 
     /**
+     * @notice A struct that specifies the validity period of a unified EIP-712 user decryption
+     * request, starting at `startTimestamp` and remaining valid for `durationSeconds`.
+     * @dev Named `RequestValiditySeconds` (not `RequestValidity`) because Solidity does not allow
+     * two types with the same name to coexist in scope, and the legacy `RequestValidity` (with
+     * `durationDays`) must remain throughout the relayer-sdk deprecation window. The EIP-712
+     * signed struct still uses flat `startTimestamp` + `durationSeconds` fields, so digests
+     * match the unified EIP-712 specification byte-for-byte.
+     */
+    struct RequestValiditySeconds {
+        /**
+         * @notice The start timestamp of the user decryption request. This is a regular Unix timestamp
+         * in seconds representing the time elapsed since midnight, January 1, 1970 Universal Coordinated Time (UTC).
+         */
+        uint256 startTimestamp;
+        /// @notice The duration in seconds for the user decryption to be processed.
+        uint256 durationSeconds;
+    }
+
+    /**
      * @notice A struct that contains the delegator and the delegate addresses for a delegated user decryption.
+     * @custom:deprecated Used only by the legacy `delegatedUserDecryptionRequest` path. Removed when the
+     * relayer-sdk deprecation window for old-format signatures closes. The unified EIP-712 format
+     * subsumes delegation into the per-handle `ownerAddress` field of `HandleEntry`, so no replacement
+     * struct is needed.
      */
     struct DelegationAccounts {
         /// @notice The address of the account that delegates access to its handles.
@@ -86,18 +112,53 @@ interface IDecryption {
     );
 
     /**
-     * @notice Emitted when a user decryption request is made.
+     * @notice Emitted when a user decryption request is made via the legacy paths
+     * (`userDecryptionRequest(CtHandleContractPair[], ...)` and `delegatedUserDecryptionRequest`).
      * @param decryptionId The decryption request ID.
      * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
      * @param userAddress The user's address.
      * @param publicKey The user's public key for used reencryption.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     * @custom:deprecated Emitted only by the legacy user decryption paths. Removed when the
+     * relayer-sdk deprecation window for old-format signatures closes. New callers should subscribe
+     * to the overloaded unified EIP-712 `UserDecryptionRequest` event emitted by
+     * `userDecryptionRequest(HandleEntry[], ...)`.
      */
     event UserDecryptionRequest(
         uint256 indexed decryptionId,
         SnsCiphertextMaterial[] snsCtMaterials,
         address userAddress,
         bytes publicKey,
+        bytes extraData
+    );
+
+    /**
+     * @notice Emitted when a unified EIP-712 user decryption request is made via
+     * `userDecryptionRequest(HandleEntry[], ...)`. Carries the full ABI payload (handles plus the
+     * EIP-712 signed fields and the raw signature) verbatim so the KMS Connector can reconstruct
+     * the signed digest and perform signature / ACL / invalidation checks off-chain.
+     * @param decryptionId The decryption request ID.
+     * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
+     * @param handles The handle entries (handle, contractAddress, ownerAddress).
+     * @param userAddress The identity asserting authorization (EOA or smart wallet).
+     * @param publicKey The user's public key used for reencryption.
+     * @param allowedContracts The optional contract allowlist (empty = permissive mode).
+     * @param requestValidity The validity window (startTimestamp + durationSeconds).
+     * @param signature The raw EIP-712 signature produced by the SDK; opaque to the gateway.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     * @dev Solidity event overloading: this event shares the name `UserDecryptionRequest` with the
+     * legacy 5-arg event. The distinct parameter list produces a distinct `topic0`, so legacy and
+     * new subscribers filter on their own topics without interference.
+     */
+    event UserDecryptionRequest(
+        uint256 indexed decryptionId,
+        SnsCiphertextMaterial[] snsCtMaterials,
+        HandleEntry[] handles,
+        address userAddress,
+        bytes publicKey,
+        address[] allowedContracts,
+        RequestValiditySeconds requestValidity,
+        bytes signature,
         bytes extraData
     );
 
@@ -177,6 +238,7 @@ interface IDecryption {
 
     /**
      * @notice Error indicating that the durationDays of a user decryption request is 0.
+     * @custom:deprecated Used only by the legacy user decryption paths.
      */
     error InvalidNullDurationDays();
 
@@ -185,8 +247,28 @@ interface IDecryption {
      * the maximum allowed.
      * @param maxValue The maximum durationDays allowed.
      * @param actualValue The actual durationDays requested.
+     * @custom:deprecated Used only by the legacy user decryption paths.
      */
     error MaxDurationDaysExceeded(uint256 maxValue, uint256 actualValue);
+
+    /**
+     * @notice Error indicating that the durationSeconds of a unified EIP-712 user decryption request is 0.
+     */
+    error InvalidNullDurationSeconds();
+
+    /**
+     * @notice Error indicating that the durationSeconds of a unified EIP-712 user decryption request
+     * exceeds the maximum allowed.
+     * @param maxValue The maximum durationSeconds allowed.
+     * @param actualValue The actual durationSeconds requested.
+     */
+    error MaxDurationSecondsExceeded(uint256 maxValue, uint256 actualValue);
+
+    /**
+     * @notice Error indicating that the input list of handle entries is empty in a unified EIP-712 format
+     * user decryption request.
+     */
+    error EmptyHandles();
 
     /**
      * @notice Error indicating that the start timestamp of a user decryption request has been set in the future.
@@ -199,8 +281,18 @@ interface IDecryption {
      * @notice Error indicating that the user decryption request has expired.
      * @param currentTimestamp The block timestamp at which the user decryption request was made.
      * @param requestValidity The validity period of the user decryption request.
+     * @custom:deprecated Raised only by the legacy user decryption paths. Removed when the
+     * relayer-sdk deprecation window for old-format signatures closes. Use
+     * `UserDecryptionRequestExpiredSeconds` for the unified EIP-712 path.
      */
     error UserDecryptionRequestExpired(uint256 currentTimestamp, RequestValidity requestValidity);
+
+    /**
+     * @notice Error indicating that a unified EIP-712 user decryption request has expired.
+     * @param currentTimestamp The block timestamp at which the user decryption request was made.
+     * @param requestValidity The validity period of the user decryption request (seconds-based).
+     */
+    error UserDecryptionRequestExpiredSeconds(uint256 currentTimestamp, RequestValiditySeconds requestValidity);
 
     /**
      * @notice Error indicating that the user address is included in the contract addresses list.
@@ -276,7 +368,7 @@ interface IDecryption {
     ) external;
 
     /**
-     * @notice Requests a user decryption.
+     * @notice Requests a user decryption (legacy path).
      * @param ctHandleContractPairs The ciphertexts to decrypt for associated contracts.
      * @param requestValidity The validity period of the user decryption request.
      * @param contractsInfo The contracts' information (chain ID, addresses).
@@ -284,6 +376,10 @@ interface IDecryption {
      * @param publicKey The user's public key to reencrypt the decryption shares.
      * @param signature The EIP712 signature to verify.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     * @custom:deprecated Kept to accept old-format signed payloads from older relayer-sdk versions.
+     * Removed when the relayer-sdk deprecation window for old-format signatures closes. Use
+     * `userDecryptionRequest(HandleEntry[], address, bytes, address[], RequestValiditySeconds, bytes, bytes)`
+     * for unified EIP-712 traffic.
      */
     function userDecryptionRequest(
         CtHandleContractPair[] calldata ctHandleContractPairs,
@@ -296,7 +392,7 @@ interface IDecryption {
     ) external;
 
     /**
-     * @notice Requests a delegated user decryption.
+     * @notice Requests a delegated user decryption (legacy path).
      * @param ctHandleContractPairs The ciphertexts to decrypt for associated contracts.
      * @param requestValidity The validity period of the user decryption request.
      * @param delegationAccounts The user's address and the delegated account address for the user decryption.
@@ -304,6 +400,11 @@ interface IDecryption {
      * @param publicKey The user's public key to reencrypt the decryption shares.
      * @param signature The EIP712 signature to verify.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     * @custom:deprecated Kept to accept old-format delegated signed payloads from older relayer-sdk
+     * versions. Removed when the relayer-sdk deprecation window for old-format signatures closes.
+     * The unified EIP-712 format subsumes delegation into the per-handle `ownerAddress` field of `HandleEntry`; use
+     * `userDecryptionRequest(HandleEntry[], ...)` with `ownerAddress != userAddress` for delegated
+     * access.
      */
     function delegatedUserDecryptionRequest(
         CtHandleContractPair[] calldata ctHandleContractPairs,
@@ -311,6 +412,42 @@ interface IDecryption {
         DelegationAccounts calldata delegationAccounts,
         ContractsInfo calldata contractsInfo,
         bytes calldata publicKey,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external;
+
+    /**
+     * @notice Requests a user decryption (unified EIP-712 path).
+     * @dev Accepts both direct (owner == user) and delegated (owner != user) access in one call,
+     * via the per-handle `ownerAddress` field. The gateway performs no signature verification on
+     * this path: it runs format validation, fetches ciphertext materials, emits the new
+     * `UserDecryptionRequest` event, and leaves authorization (signature, ACL, invalidation) to
+     * the KMS Connector.
+     *
+     * Format validation:
+     * - `handles` must be non-empty.
+     * - `allowedContracts.length` must not exceed `MAX_USER_DECRYPT_CONTRACT_ADDRESSES`. An
+     *   **empty** `allowedContracts` is valid — it signals permissive mode (no contract
+     *   restriction, ownership check still applies).
+     * - `requestValidity.durationSeconds` must be non-zero and bounded.
+     * - `requestValidity.startTimestamp` must not be in the future.
+     * - All handles must carry the same host chain ID, and that chain must be registered.
+     * - All fetched ciphertext materials must share the same `keyId`.
+     *
+     * @param handles The handle entries (handle, contractAddress, ownerAddress).
+     * @param userAddress The identity asserting authorization (EOA or smart wallet).
+     * @param publicKey The user's public key used for reencryption.
+     * @param allowedContracts Optional contract allowlist. Empty = permissive mode.
+     * @param requestValidity The validity window (startTimestamp + durationSeconds).
+     * @param signature The raw EIP-712 signature. Accepted opaque; forwarded verbatim in the event.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is the version.
+     */
+    function userDecryptionRequest(
+        HandleEntry[] calldata handles,
+        address userAddress,
+        bytes calldata publicKey,
+        address[] calldata allowedContracts,
+        RequestValiditySeconds calldata requestValidity,
         bytes calldata signature,
         bytes calldata extraData
     ) external;
@@ -340,12 +477,22 @@ interface IDecryption {
     ) external view returns (bool);
 
     /**
-     * @notice Indicates if handles are ready to be decrypted by a user.
+     * @notice Indicates if handles are ready to be decrypted by a user (legacy path input shape).
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     function isUserDecryptionReady(
         CtHandleContractPair[] calldata ctHandleContractPairs,
+        bytes calldata extraData
+    ) external view returns (bool);
+
+    /**
+     * @notice Indicates if handles are ready to be decrypted by a user (unified EIP-712 input shape).
+     * @param handles The handle entries as submitted to the unified `userDecryptionRequest`.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     */
+    function isUserDecryptionReady(
+        HandleEntry[] calldata handles,
         bytes calldata extraData
     ) external view returns (bool);
 
@@ -366,6 +513,10 @@ interface IDecryption {
      * @notice Indicates if the handles are ready to be decrypted by the delegate address in delegation accounts.
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     * @custom:deprecated Used only by the legacy delegated user decryption path. Removed when the
+     * relayer-sdk deprecation window for old-format signatures closes. Use
+     * `isUserDecryptionReady(HandleEntry[], bytes)` for unified EIP-712 status polling, which handles both
+     * direct and delegated access uniformly.
      */
     function isDelegatedUserDecryptionReady(
         CtHandleContractPair[] calldata ctHandleContractPairs,

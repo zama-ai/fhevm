@@ -16,7 +16,7 @@ import { FHETypeBitSizes } from "./libraries/FHETypeBitSizes.sol";
 import { HandleOps } from "./libraries/HandleOps.sol";
 import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
 import { ProtocolPaymentUtils } from "./shared/ProtocolPaymentUtils.sol";
-import { SnsCiphertextMaterial, CtHandleContractPair } from "./shared/Structs.sol";
+import { SnsCiphertextMaterial, CtHandleContractPair, HandleEntry } from "./shared/Structs.sol";
 import { PUBLIC_DECRYPT_COUNTER_BASE, USER_DECRYPT_COUNTER_BASE } from "./shared/KMSRequestCounters.sol";
 
 /**
@@ -51,6 +51,9 @@ contract Decryption is
      * @notice The typed data structure for the EIP712 signature to validate in user decryption requests.
      * @dev The name of this struct is not relevant for the signature validation, only the one defined
      * EIP712_USER_DECRYPT_REQUEST_TYPE is, but we keep it the same for clarity.
+     * @custom:deprecated Used only by the legacy `userDecryptionRequest(CtHandleContractPair[], ...)`
+     * path. Removed when the relayer-sdk deprecation window for old-format signatures closes. The
+     * unified EIP-712 path does not verify signatures on-chain, so it does not use this struct.
      */
     struct UserDecryptRequestVerification {
         /// @notice The user's public key to be used for reencryption.
@@ -69,6 +72,9 @@ contract Decryption is
      * @notice The typed data structure for the EIP712 signature to validate in delegated user decryption requests.
      * @dev The name of this struct is not relevant for the signature validation, only the one defined as
      * EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE is.
+     * @custom:deprecated Used only by the legacy `delegatedUserDecryptionRequest` path. Removed when the
+     * relayer-sdk deprecation window for old-format signatures closes. The unified EIP-712 format subsumes delegation into
+     * the per-handle `ownerAddress` of `HandleEntry`.
      */
     struct DelegatedUserDecryptRequestVerification {
         /// @notice The user's public key to be used for reencryption.
@@ -123,8 +129,16 @@ contract Decryption is
 
     /**
      * @notice The maximum number of duration days that can be requested for a user decryption.
+     * @custom:deprecated Used only by the legacy user decryption paths. Use
+     * `MAX_USER_DECRYPT_DURATION_SECONDS` for the unified EIP-712 path.
      */
     uint16 internal constant MAX_USER_DECRYPT_DURATION_DAYS = 365;
+
+    /**
+     * @notice The maximum duration in seconds that can be requested for a unified EIP-712 user decryption.
+     * @dev Equivalent to `MAX_USER_DECRYPT_DURATION_DAYS` expressed in seconds.
+     */
+    uint256 internal constant MAX_USER_DECRYPT_DURATION_SECONDS = uint256(MAX_USER_DECRYPT_DURATION_DAYS) * 1 days;
 
     /**
      * @notice The maximum number of contracts that can request for user decryption at once.
@@ -156,6 +170,9 @@ contract Decryption is
 
     /**
      * @notice The definition of the UserDecryptRequestVerification structure typed data.
+     * @custom:deprecated Used only by the legacy user decryption path. Removed when the
+     * relayer-sdk deprecation window for old-format signatures closes. The unified EIP-712 path
+     * does not verify signatures on-chain, so no equivalent type hash is declared for it.
      */
     string private constant EIP712_USER_DECRYPT_REQUEST_TYPE =
         "UserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,uint256 startTimestamp,"
@@ -164,11 +181,14 @@ contract Decryption is
     /**
      * @notice The hash of the UserDecryptRequestVerification structure typed data definition
      * used for signature validation in user decryption requests.
+     * @custom:deprecated See `EIP712_USER_DECRYPT_REQUEST_TYPE`.
      */
     bytes32 private constant EIP712_USER_DECRYPT_REQUEST_TYPE_HASH = keccak256(bytes(EIP712_USER_DECRYPT_REQUEST_TYPE));
 
     /**
      * @notice The definition of the DelegatedUserDecryptRequestVerification structure typed data.
+     * @custom:deprecated Used only by the legacy delegated user decryption path. Removed when the
+     * relayer-sdk deprecation window for old-format signatures closes.
      */
     string private constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE =
         "DelegatedUserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,address delegatorAddress,"
@@ -177,6 +197,7 @@ contract Decryption is
     /**
      * @notice The hash of the DelegatedUserDecryptRequestVerification structure typed data definition
      * used for signature validation in delegated user decryption requests.
+     * @custom:deprecated See `EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE`.
      */
     bytes32 private constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE_HASH =
         keccak256(bytes(EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE));
@@ -413,6 +434,8 @@ contract Decryption is
 
     /**
      * @notice See {IDecryption-userDecryptionRequest}.
+     * @custom:deprecated Legacy path retained for the relayer-sdk deprecation window. See the
+     * interface NatSpec for details.
      */
     function userDecryptionRequest(
         CtHandleContractPair[] calldata ctHandleContractPairs,
@@ -496,6 +519,8 @@ contract Decryption is
 
     /**
      * @notice See {IDecryption-delegatedUserDecryptionRequest}.
+     * @custom:deprecated Legacy path retained for the relayer-sdk deprecation window. See the
+     * interface NatSpec for details.
      */
     function delegatedUserDecryptionRequest(
         CtHandleContractPair[] calldata ctHandleContractPairs,
@@ -585,6 +610,107 @@ contract Decryption is
             snsCtMaterials,
             delegationAccounts.delegateAddress,
             publicKey,
+            extraData
+        );
+    }
+
+    /**
+     * @notice See {IDecryption-userDecryptionRequest} (unified EIP-712 path).
+     * @dev The gateway performs no signature verification on this path. It validates the request
+     * format, fetches the ciphertext materials, emits the unified EIP-712 `UserDecryptionRequest` event
+     * carrying the full payload (including the raw signature), and leaves authorization to the
+     * KMS Connector.
+     */
+    function userDecryptionRequest(
+        HandleEntry[] calldata handles,
+        address userAddress,
+        bytes calldata publicKey,
+        address[] calldata allowedContracts,
+        RequestValiditySeconds calldata requestValidity,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external virtual whenNotPaused {
+        // Up-front format validation; further work is delegated to an internal executor so the
+        // external function's stack frame stays small enough to compile without `viaIR`.
+        if (handles.length == 0) {
+            revert EmptyHandles();
+        }
+        if (allowedContracts.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
+            revert ContractAddressesMaxLengthExceeded(MAX_USER_DECRYPT_CONTRACT_ADDRESSES, allowedContracts.length);
+        }
+        _checkUserDecryptionRequestValiditySeconds(requestValidity);
+
+        // Collect the fee from the caller before handing off to the internal executor.
+        _collectUserDecryptionFee(msg.sender);
+
+        _executeUnifiedUserDecryptionRequest(
+            handles,
+            userAddress,
+            publicKey,
+            allowedContracts,
+            requestValidity,
+            signature,
+            extraData
+        );
+    }
+
+    /**
+     * @notice Executes the post-validation body of the unified EIP-712 `userDecryptionRequest`:
+     * extracts and conformance-checks the handles, fetches the SNS ciphertexts, updates storage,
+     * and emits the unified `UserDecryptionRequest` event.
+     * @dev Extracted into an internal function to keep the external caller's stack frame small
+     * enough to compile without `viaIR`. The event's 9 fields combined with the external's
+     * calldata arguments exceed 16 slots inline; moving the work into an internal function gives
+     * the compiler more room to lay out locals.
+     *
+     * Note: the legacy check that each handle's `contractAddress` belongs to a per-request
+     * allowlist is deliberately NOT performed here — that check moves to the KMS Connector and
+     * is handled via `isAllowed` / `isHandleDelegatedForUserDecryption` on the ACL. Empty
+     * `allowedContracts` is valid (permissive mode) and is not rejected.
+     */
+    function _executeUnifiedUserDecryptionRequest(
+        HandleEntry[] calldata handles,
+        address userAddress,
+        bytes calldata publicKey,
+        address[] calldata allowedContracts,
+        RequestValiditySeconds calldata requestValidity,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) internal virtual {
+        // Extract handles and check per-handle conformance (same-chain, registered host chain,
+        // FHE type, total bit size).
+        bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceHandleEntry(handles);
+
+        // Fetch the SNS ciphertexts. This implicitly verifies that every handle is registered —
+        // the call reverts on missing ciphertext, same as the legacy path. (CiphertextCommits
+        // integration is intentionally retained for the unified EIP-712 path; any rework is
+        // tracked separately under the CiphertextCommits guild.)
+        SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
+
+        // Same-keyId invariant on fetched materials.
+        _checkCtMaterialKeyIds(snsCtMaterials);
+
+        DecryptionStorage storage $ = _getDecryptionStorage();
+
+        // Globally unique decryptionId; reuses the shared `userDecryptionCounter` so IDs are
+        // stable across legacy and unified paths (`userDecryptionResponse` is oblivious to which
+        // path a request came from).
+        $.userDecryptionCounter++;
+        uint256 userDecryptionId = $.userDecryptionCounter;
+
+        // publicKey + ctHandles are used in response signature validation — same storage layout
+        // as the legacy paths.
+        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
+
+        emit UserDecryptionRequest(
+            userDecryptionId,
+            snsCtMaterials,
+            handles,
+            userAddress,
+            publicKey,
+            allowedContracts,
+            requestValidity,
+            signature,
             extraData
         );
     }
@@ -697,6 +823,27 @@ contract Decryption is
         // Check that ciphertext material has been added for each cthandle.
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
             if (!CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandleContractPairs[i].ctHandle)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * @dev See {IDecryption-isUserDecryptionReady} (unified EIP-712 input shape).
+     */
+    function isUserDecryptionReady(
+        HandleEntry[] calldata handles,
+        bytes calldata /* extraData */
+    ) public view virtual returns (bool) {
+        // Return false if the list of handles is empty.
+        if (handles.length == 0) {
+            return false;
+        }
+
+        // Check that ciphertext material has been added for each handle.
+        for (uint256 i = 0; i < handles.length; i++) {
+            if (!CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(handles[i].handle)) {
                 return false;
             }
         }
@@ -848,6 +995,10 @@ contract Decryption is
      * @param userAddress The address of the user.
      * @param signature The signature to be validated
      * @param contractsChainId The chain ID of the contracts.
+     * @custom:deprecated Used only by the legacy `userDecryptionRequest(CtHandleContractPair[], ...)`
+     * path. Removed when the relayer-sdk deprecation window for old-format signatures closes.
+     * The unified EIP-712 path does not verify signatures on-chain — verification moves to the
+     * KMS Connector per the unified EIP-712 specification.
      */
     function _validateUserDecryptRequestEIP712Signature(
         UserDecryptRequestVerification memory userDecryptRequestVerification,
@@ -869,6 +1020,8 @@ contract Decryption is
      * @param delegateAddress The address of the account that has delegation granted.
      * @param signature The signature to be validated.
      * @param contractsChainId The chain ID of the contracts.
+     * @custom:deprecated Used only by the legacy `delegatedUserDecryptionRequest` path. Removed
+     * when the relayer-sdk deprecation window for old-format signatures closes.
      */
     function _validateDelegatedUserDecryptRequestEIP712Signature(
         DelegatedUserDecryptRequestVerification memory delegatedUserDecryptRequestVerification,
@@ -1055,6 +1208,8 @@ contract Decryption is
      * @param ctHandleContractPairs The list of ciphertext handles and contract addresses
      * @param contractsInfo The contracts' information (chain ID, addresses).
      * @return ctHandles The list of ciphertext handles
+     * @custom:deprecated Used only by the legacy user decryption paths. Use
+     * `_extractCtHandlesCheckConformanceHandleEntry` for the unified EIP-712 path.
      */
     function _extractCtHandlesCheckConformanceUser(
         CtHandleContractPair[] calldata ctHandleContractPairs,
@@ -1100,8 +1255,59 @@ contract Decryption is
     }
 
     /**
+     * @notice Extracts the handles from the unified EIP-712 `HandleEntry[]` input and checks
+     * per-handle conformance, including that the shared host-chain is registered in the
+     * GatewayConfig. Unlike the legacy helper, this does NOT check that `handles[i].contractAddress`
+     * is in any per-request contract allowlist — that check moves to the KMS Connector in the
+     * unified path.
+     * @dev Checks performed here:
+     * - Every handle must carry the same host-chain ID (the chain ID is derived from the first
+     *   handle and all subsequent handles must match).
+     * - That shared host-chain must be a registered host chain.
+     * - Every handle's FHE type must be valid.
+     * - The sum of per-handle bit sizes must not exceed `MAX_DECRYPTION_REQUEST_BITS`.
+     * @param handles The input `HandleEntry[]`. The caller guarantees non-emptiness.
+     * @return ctHandles The list of ciphertext handles.
+     */
+    function _extractCtHandlesCheckConformanceHandleEntry(
+        HandleEntry[] calldata handles
+    ) internal view virtual returns (bytes32[] memory ctHandles) {
+        ctHandles = new bytes32[](handles.length);
+
+        // Derive the host-chain ID from the first handle; all subsequent handles must match
+        // and the chain must be registered.
+        uint256 chainId = HandleOps.extractChainId(handles[0].handle);
+        if (!GATEWAY_CONFIG.isHostChainRegistered(chainId)) {
+            revert HostChainNotRegistered(chainId);
+        }
+
+        uint256 totalBitSize = 0;
+        for (uint256 i = 0; i < handles.length; i++) {
+            bytes32 ctHandle = handles[i].handle;
+
+            // Same-chain invariant across the batch.
+            uint256 handleChainId = HandleOps.extractChainId(ctHandle);
+            if (handleChainId != chainId) {
+                revert CtHandleChainIdDiffersFromContractChainId(ctHandle, handleChainId, chainId);
+            }
+
+            // FHE type must be valid; `getBitSize` reverts otherwise.
+            FheType fheType = HandleOps.extractFheType(ctHandle);
+            totalBitSize += FHETypeBitSizes.getBitSize(fheType);
+
+            ctHandles[i] = ctHandle;
+        }
+
+        if (totalBitSize > MAX_DECRYPTION_REQUEST_BITS) {
+            revert MaxDecryptionRequestBitSizeExceeded(MAX_DECRYPTION_REQUEST_BITS, totalBitSize);
+        }
+    }
+
+    /**
      * @notice Checks if a user decryption request's start timestamp and duration days are valid.
      * @param requestValidity The RequestValidity structure
+     * @custom:deprecated Used only by the legacy user decryption paths. Use
+     * `_checkUserDecryptionRequestValiditySeconds` for the unified EIP-712 path.
      */
     function _checkUserDecryptionRequestValidity(RequestValidity memory requestValidity) internal view virtual {
         // Check the durationDays is not null.
@@ -1124,6 +1330,32 @@ contract Decryption is
         // from startTimestamp for a number of days equal to durationDays.
         if (requestValidity.startTimestamp + requestValidity.durationDays * 1 days < block.timestamp) {
             revert UserDecryptionRequestExpired(block.timestamp, requestValidity);
+        }
+    }
+
+    /**
+     * @notice Checks that a unified EIP-712 user decryption request's start timestamp and
+     * `durationSeconds` are valid.
+     * @param requestValidity The RequestValiditySeconds structure.
+     */
+    function _checkUserDecryptionRequestValiditySeconds(
+        RequestValiditySeconds memory requestValidity
+    ) internal view virtual {
+        // Duration must be non-zero.
+        if (requestValidity.durationSeconds == 0) {
+            revert InvalidNullDurationSeconds();
+        }
+        // Duration must not exceed the seconds-based cap (equivalent to the legacy day cap).
+        if (requestValidity.durationSeconds > MAX_USER_DECRYPT_DURATION_SECONDS) {
+            revert MaxDurationSecondsExceeded(MAX_USER_DECRYPT_DURATION_SECONDS, requestValidity.durationSeconds);
+        }
+        // Start timestamp must not be in the future — prevents bypassing the cap by pre-dating.
+        if (requestValidity.startTimestamp > block.timestamp) {
+            revert StartTimestampInFuture(block.timestamp, requestValidity.startTimestamp);
+        }
+        // Validity window must not have expired.
+        if (requestValidity.startTimestamp + requestValidity.durationSeconds < block.timestamp) {
+            revert UserDecryptionRequestExpiredSeconds(block.timestamp, requestValidity);
         }
     }
 
