@@ -92,7 +92,7 @@ interface IFHEVMExecutor {
      * @param values    Array of ciphertext handles; all must be the same FheType.
      * @return result   Result handle of the same FheType as the inputs.
      */
-    function fheSum(bytes32[] calldata values) external returns (bytes32 result);
+    function fheSum(bytes32[] calldata values, FheType resultType) external returns (bytes32 result);
 
     /**
      * @notice                      Returns the address of the InputVerifier contract used by the coprocessor.
@@ -320,9 +320,9 @@ library Impl {
         result = IFHEVMExecutor($.CoprocessorAddress).fheRandBounded(upperBound, randType);
     }
 
-    function sum(bytes32[] memory values) internal returns (bytes32 result) {
+    function sum(bytes32[] memory values, FheType resultType) internal returns (bytes32 result) {
         CoprocessorConfig storage $ = getCoprocessorConfig();
-        result = IFHEVMExecutor($.CoprocessorAddress).fheSum(values);
+        result = IFHEVMExecutor($.CoprocessorAddress).fheSum(values, resultType);
     }
 
     /**
