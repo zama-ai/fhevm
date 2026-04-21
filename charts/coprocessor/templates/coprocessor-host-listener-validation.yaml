@@ -1,0 +1,10 @@
+{{/*
+Validation-only template for host listener migrations.
+This file intentionally renders no Kubernetes resources; it exists to fail fast
+when deprecated top-level listener keys are still used, or when multiple chains
+claim the same unsuffixed legacy resource name.
+*/}}
+{{- include "coprocessor.failIfDeprecatedTopLevelListenerKeysPresent" . }}
+{{- include "coprocessor.failIfMultipleLegacyNameClaims" (dict "root" . "componentKey" "hostListener") }}
+{{- include "coprocessor.failIfMultipleLegacyNameClaims" (dict "root" . "componentKey" "hostListenerPoller") }}
+{{- include "coprocessor.failIfMultipleLegacyNameClaims" (dict "root" . "componentKey" "hostListenerCatchupOnly") }}
