@@ -408,8 +408,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
             abi.encodePacked(
                 COMPUTATION_DOMAIN_SEPARATOR,
                 FHEVMExecutor.Operators.fheSum,
+                values.length,
                 values,
-                resultType,
                 acl,
                 block.chainid,
                 blockhash(block.number - 1),
@@ -1286,7 +1286,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         vm.prank(sender);
 
         vm.expectEmit(true, true, true, true);
-        emit FHEEvents.FheSum(sender, values, expectedResult);
+        emit FHEEvents.FheSum(sender, values, FheType(fheType), expectedResult);
         bytes32 result = fhevmExecutor.fheSum(values, FheType(fheType));
         assertEq(result, expectedResult);
     }
@@ -2045,7 +2045,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         vm.prank(sender);
 
         vm.expectEmit(true, true, true, true);
-        emit FHEEvents.FheSum(sender, values, expectedResult);
+        emit FHEEvents.FheSum(sender, values, FheType(fheType), expectedResult);
         bytes32 result = fhevmExecutor.fheSum(values, FheType(fheType));
         assertEq(result, expectedResult);
     }
@@ -2057,7 +2057,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
 
         vm.prank(sender);
         vm.expectEmit(true, true, true, true);
-        emit FHEEvents.FheSum(sender, empty, expectedResult);
+        emit FHEEvents.FheSum(sender, empty, FheType.Uint8, expectedResult);
         bytes32 result = fhevmExecutor.fheSum(empty, FheType.Uint8);
         assertEq(result, expectedResult);
     }

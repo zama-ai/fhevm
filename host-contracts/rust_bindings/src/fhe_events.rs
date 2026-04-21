@@ -31,7 +31,7 @@ interface FHEEvents {
     event FheShl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
     event FheShr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
     event FheSub(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-    event FheSum(address indexed caller, bytes32[] values, bytes32 result);
+    event FheSum(address indexed caller, bytes32[] values, FheType resultType, bytes32 result);
     event TrivialEncrypt(address indexed caller, uint256 pt, FheType toType, bytes32 result);
     event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddress, bytes inputProof, FheType inputType, bytes32 result);
 }
@@ -981,6 +981,12 @@ interface FHEEvents {
         "type": "bytes32[]",
         "indexed": false,
         "internalType": "bytes32[]"
+      },
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum FheType"
       },
       {
         "name": "result",
@@ -4804,9 +4810,9 @@ event FheSub(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `FheSum(address,bytes32[],bytes32)` and selector `0xd24d1fc700ce6a96b04d0ef048cb74e4c9647351da21b84501d848e16c161deb`.
+    /**Event with signature `FheSum(address,bytes32[],uint8,bytes32)` and selector `0xedf93db5d6c30a171bb85b9a49debcf3dba7731a6c3e53965eca92c7ae85808d`.
 ```solidity
-event FheSum(address indexed caller, bytes32[] values, bytes32 result);
+event FheSum(address indexed caller, bytes32[] values, FheType resultType, bytes32 result);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -4822,6 +4828,8 @@ event FheSum(address indexed caller, bytes32[] values, bytes32 result);
         pub values: alloy::sol_types::private::Vec<
             alloy::sol_types::private::FixedBytes<32>,
         >,
+        #[allow(missing_docs)]
+        pub resultType: <FheType as alloy::sol_types::SolType>::RustType,
         #[allow(missing_docs)]
         pub result: alloy::sol_types::private::FixedBytes<32>,
     }
@@ -4839,6 +4847,7 @@ event FheSum(address indexed caller, bytes32[] values, bytes32 result);
                 alloy::sol_types::sol_data::Array<
                     alloy::sol_types::sol_data::FixedBytes<32>,
                 >,
+                FheType,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
             type DataToken<'a> = <Self::DataTuple<
@@ -4848,11 +4857,11 @@ event FheSum(address indexed caller, bytes32[] values, bytes32 result);
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            const SIGNATURE: &'static str = "FheSum(address,bytes32[],bytes32)";
+            const SIGNATURE: &'static str = "FheSum(address,bytes32[],uint8,bytes32)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                210u8, 77u8, 31u8, 199u8, 0u8, 206u8, 106u8, 150u8, 176u8, 77u8, 14u8,
-                240u8, 72u8, 203u8, 116u8, 228u8, 201u8, 100u8, 115u8, 81u8, 218u8, 33u8,
-                184u8, 69u8, 1u8, 216u8, 72u8, 225u8, 108u8, 22u8, 29u8, 235u8,
+                237u8, 249u8, 61u8, 181u8, 214u8, 195u8, 10u8, 23u8, 27u8, 184u8, 91u8,
+                154u8, 73u8, 222u8, 188u8, 243u8, 219u8, 167u8, 115u8, 26u8, 108u8, 62u8,
+                83u8, 150u8, 94u8, 202u8, 146u8, 199u8, 174u8, 133u8, 128u8, 141u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -4864,7 +4873,8 @@ event FheSum(address indexed caller, bytes32[] values, bytes32 result);
                 Self {
                     caller: topics.1,
                     values: data.0,
-                    result: data.1,
+                    resultType: data.1,
+                    result: data.2,
                 }
             }
             #[inline]
@@ -4888,6 +4898,7 @@ event FheSum(address indexed caller, bytes32[] values, bytes32 result);
                     <alloy::sol_types::sol_data::Array<
                         alloy::sol_types::sol_data::FixedBytes<32>,
                     > as alloy_sol_types::SolType>::tokenize(&self.values),
+                    <FheType as alloy_sol_types::SolType>::tokenize(&self.resultType),
                     <alloy::sol_types::sol_data::FixedBytes<
                         32,
                     > as alloy_sol_types::SolType>::tokenize(&self.result),
@@ -5378,11 +5389,6 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                 245u8, 224u8, 231u8, 69u8, 246u8, 252u8, 131u8, 108u8, 218u8, 139u8,
             ],
             [
-                210u8, 77u8, 31u8, 199u8, 0u8, 206u8, 106u8, 150u8, 176u8, 77u8, 14u8,
-                240u8, 72u8, 203u8, 116u8, 228u8, 201u8, 100u8, 115u8, 81u8, 218u8, 33u8,
-                184u8, 69u8, 1u8, 216u8, 72u8, 225u8, 108u8, 22u8, 29u8, 235u8,
-            ],
-            [
                 219u8, 144u8, 80u8, 214u8, 82u8, 64u8, 67u8, 22u8, 33u8, 214u8, 29u8,
                 111u8, 148u8, 185u8, 112u8, 230u8, 63u8, 83u8, 166u8, 122u8, 87u8, 102u8,
                 97u8, 78u8, 230u8, 229u8, 197u8, 187u8, 212u8, 28u8, 142u8, 46u8,
@@ -5417,6 +5423,11 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                 109u8, 120u8, 243u8, 72u8, 125u8, 101u8, 132u8, 134u8, 40u8, 114u8,
                 194u8, 159u8, 253u8, 63u8, 144u8, 115u8, 110u8, 233u8, 155u8, 115u8,
                 147u8,
+            ],
+            [
+                237u8, 249u8, 61u8, 181u8, 214u8, 195u8, 10u8, 23u8, 27u8, 184u8, 91u8,
+                154u8, 73u8, 222u8, 188u8, 243u8, 219u8, 167u8, 115u8, 26u8, 108u8, 62u8,
+                83u8, 150u8, 94u8, 202u8, 146u8, 199u8, 174u8, 133u8, 128u8, 141u8,
             ],
             [
                 253u8, 124u8, 146u8, 8u8, 249u8, 86u8, 191u8, 12u8, 106u8, 183u8, 106u8,
