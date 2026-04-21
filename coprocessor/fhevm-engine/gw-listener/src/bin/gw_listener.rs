@@ -120,7 +120,14 @@ struct Conf {
     /// running the revert SQL. Gives other services time to see the signal and
     /// re-exec before the DB state changes.
     #[arg(long, default_value = "60s", value_parser = parse_duration)]
-    drift_revert_grace_period: Duration,
+    drift_auto_revert_grace_period: Duration,
+
+    /// Enable automatic drift recovery. When false (default), the drift
+    /// detector still runs and logs drift, but no revert signal is created
+    /// and no automatic recovery kicks in. Opt-in while the feature rolls out.
+    /// Also readable from `DRIFT_AUTO_REVERT_ENABLED` env var.
+    #[arg(long, env = "DRIFT_AUTO_REVERT_ENABLED", default_value_t = false)]
+    drift_auto_revert_enabled: bool,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -198,7 +205,8 @@ async fn main() -> anyhow::Result<()> {
         gateway_config_address: conf.gateway_config_address,
         drift_no_consensus_timeout: conf.drift_no_consensus_timeout,
         drift_post_consensus_grace: conf.drift_post_consensus_grace,
-        drift_revert_grace_period: conf.drift_revert_grace_period,
+        drift_auto_revert_grace_period: conf.drift_auto_revert_grace_period,
+        drift_auto_revert_enabled: conf.drift_auto_revert_enabled,
     };
 
     let gw_listener = std::sync::Arc::new(GatewayListener::new(
@@ -231,7 +239,7 @@ async fn main() -> anyhow::Result<()> {
         config.database_url.as_str(),
         cancel_token.clone(),
         Some(RevertRunnerConfig {
-            grace_period: config.drift_revert_grace_period,
+            grace_period: config.drift_auto_revert_grace_period,
         }),
     )
     .await?;

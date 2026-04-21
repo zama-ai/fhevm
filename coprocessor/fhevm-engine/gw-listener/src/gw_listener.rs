@@ -176,6 +176,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             expected_senders,
             self.conf.drift_no_consensus_timeout,
             self.conf.drift_post_consensus_grace,
+            self.conf.drift_auto_revert_enabled,
         );
         if replay_from_block.is_none() {
             if let Err(e) = self

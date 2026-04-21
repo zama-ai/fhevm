@@ -60,11 +60,13 @@ pub struct ConfigSettings {
     /// How long to wait after detecting a pending drift-revert signal before
     /// running the revert SQL. Gives other services time to see the signal and
     /// drop their in-flight work.
-    pub drift_revert_grace_period: Duration,
+    pub drift_auto_revert_grace_period: Duration,
+    /// If true, the drift detector creates drift-revert signals when it sees
+    /// a consensus mismatch. If false, drift is still detected and logged,
+    /// but no signal is created.
+    pub drift_auto_revert_enabled: bool,
 }
 
-/// Default is used by unit tests only. Production defaults come from
-/// the CLI arg definitions in `bin/gw_listener.rs` (e.g. `--drift-no-consensus-timeout 5m`).
 impl Default for ConfigSettings {
     fn default() -> Self {
         Self {
@@ -85,7 +87,8 @@ impl Default for ConfigSettings {
             gateway_config_address: None,
             drift_no_consensus_timeout: Duration::from_secs(5),
             drift_post_consensus_grace: Duration::from_secs(2),
-            drift_revert_grace_period: Duration::from_secs(60),
+            drift_auto_revert_grace_period: Duration::from_secs(60),
+            drift_auto_revert_enabled: false,
         }
     }
 }

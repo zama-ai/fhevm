@@ -91,6 +91,7 @@ pub(crate) struct DriftDetector {
     local_node_id: String,
     drift_no_consensus_timeout: Duration,
     drift_post_consensus_grace: Duration,
+    auto_revert_enabled: bool,
     deferred_drift_detected: u64,
     deferred_consensus_timeout: u64,
     deferred_missing_submission: u64,
@@ -102,6 +103,7 @@ impl DriftDetector {
         expected_senders: Vec<Address>,
         drift_no_consensus_timeout: Duration,
         drift_post_consensus_grace: Duration,
+        auto_revert_enabled: bool,
     ) -> Self {
         Self {
             current_expected_senders: expected_senders,
@@ -109,6 +111,7 @@ impl DriftDetector {
             local_node_id: std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".to_owned()),
             drift_no_consensus_timeout,
             drift_post_consensus_grace,
+            auto_revert_enabled,
             deferred_drift_detected: 0,
             deferred_consensus_timeout: 0,
             deferred_missing_submission: 0,
@@ -339,13 +342,14 @@ impl DriftDetector {
             );
             self.deferred_drift_detected += 1;
 
-            // Auto drift recovery: signal that a revert is needed.
-            fhevm_engine_common::drift_revert::on_drift_detected(
-                db_pool,
-                handle.as_slice(),
-                chain_id_from_handle(handle),
-            )
-            .await;
+            if self.auto_revert_enabled {
+                fhevm_engine_common::drift_revert::on_drift_detected(
+                    db_pool,
+                    handle.as_slice(),
+                    chain_id_from_handle(handle),
+                )
+                .await;
+            }
         }
 
         let Some(state) = self.open_handles.get_mut(&handle) else {
@@ -698,10 +702,12 @@ mod tests {
         let digest_b = FixedBytes::from([0x66; 32]);
         let digest_128 = FixedBytes::from([0x77; 32]);
         let base = Instant::now();
+        let auto_revert_enabled = false;
         let mut detector = DriftDetector::new(
             vec![sender_a, sender_b, sender_c],
             Duration::from_secs(50),
             Duration::from_secs(10),
+            auto_revert_enabled,
         );
 
         detector.set_replaying(true);
@@ -829,7 +835,23 @@ mod tests {
     }
 
     fn detector() -> DriftDetector {
-        DriftDetector::new(senders(), Duration::from_secs(5), Duration::from_secs(2))
+        let auto_revert_enabled = false;
+        DriftDetector::new(
+            senders(),
+            Duration::from_secs(5),
+            Duration::from_secs(2),
+            auto_revert_enabled,
+        )
+    }
+
+    fn detector_with_auto_revert() -> DriftDetector {
+        let auto_revert_enabled = true;
+        DriftDetector::new(
+            senders(),
+            Duration::from_secs(5),
+            Duration::from_secs(2),
+            auto_revert_enabled,
+        )
     }
 
     fn make_consensus_state(
@@ -1648,7 +1670,7 @@ mod tests {
         .await
         .unwrap();
 
-        let mut detector = detector();
+        let mut detector = detector_with_auto_revert();
         detector
             .handle_consensus(
                 make_consensus_event(
@@ -1683,7 +1705,7 @@ mod tests {
             .await
             .unwrap();
 
-        let mut detector = detector();
+        let mut detector = detector_with_auto_revert();
         detector
             .handle_consensus(
                 make_consensus_event(
