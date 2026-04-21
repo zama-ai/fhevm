@@ -37,7 +37,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     string private constant CONTRACT_NAME = "GatewayConfig";
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 5;
-    uint256 private constant PATCH_VERSION = 0;
+    uint256 private constant PATCH_VERSION = 1;
 
     /**
      * @dev Constant used for making sure the version number using in the `reinitializer` modifier is
@@ -45,7 +45,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 6;
+    uint64 private constant REINITIALIZER_VERSION = 7;
 
     /**
      * @notice The address of the all gateway contracts
@@ -226,39 +226,16 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice Re-initializes the contract from V4.
-     * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
+     * @notice Re-initializes the contract from V5.
+     * @dev No storage migration is required for the post-v0.12.1 behavior change, but the
+     * upgrade flow keeps the KMS context ID argument so existing upgrade tasks keep working.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV5(uint256 initialKmsContextId) public virtual reinitializer(REINITIALIZER_VERSION) {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-
+    function reinitializeV6(uint256 initialKmsContextId) public virtual reinitializer(REINITIALIZER_VERSION) {
         if (initialKmsContextId == 0) {
             revert InvalidNullKmsContextId();
         }
-
-        // Migrate existing global KMS nodes to the initial KMS context ID
-        uint256 nKmsNodes = $.kmsTxSenderAddresses.length;
-        for (uint256 i = 0; i < nKmsNodes; i++) {
-            address txSenderAddr = $.kmsTxSenderAddresses[i];
-            address signerAddr = $.kmsSignerAddresses[i];
-
-            $.isKmsTxSenderForContext[initialKmsContextId][txSenderAddr] = true;
-            $.isKmsSignerForContext[initialKmsContextId][signerAddr] = true;
-            $.kmsNodesForContext[initialKmsContextId][txSenderAddr] = $.kmsNodes[txSenderAddr];
-            $.kmsTxSenderAddressesForContext[initialKmsContextId].push(txSenderAddr);
-            $.kmsSignerAddressesForContext[initialKmsContextId].push(signerAddr);
-        }
-
-        // Migrate all thresholds
-        _setMpcThreshold(initialKmsContextId, $.mpcThreshold);
-        _setPublicDecryptionThreshold(initialKmsContextId, $.publicDecryptionThreshold);
-        _setUserDecryptionThreshold(initialKmsContextId, $.userDecryptionThreshold);
-        _setKmsGenThreshold(initialKmsContextId, $.kmsGenThreshold);
-
-        // Set the current context ID
-        $.currentKmsContextId = initialKmsContextId;
     }
 
     /**
