@@ -58,10 +58,10 @@ interface IDecryption {
     /**
      * @notice The signed payload carried by the unified `UserDecryptionRequest` event.
      * @dev Signature validation is performed off-chain by the KMS Connector, which
-     * reconstructs the EIP-712 digest from the signed fields and verifies the signature
-     * against it. The gateway therefore forwards the signed fields plus the signature
-     * verbatim in this struct. `snsCtMaterials` and `handles` are not covered by the
-     * signature and stay outside as separate event parameters.
+     * reconstructs the EIP-712 digest from the signed message and verifies the signature
+     * against it. The gateway forwards the EIP-712 signed message plus the signature
+     * verbatim in this struct. `snsCtMaterials` and `handles` are not part of the signed
+     * message and are excluded.
      */
     struct UserDecryptionRequestPayload {
         /// @notice The identity asserting authorization.
@@ -158,10 +158,13 @@ interface IDecryption {
     /**
      * @notice Emitted for a unified EIP-712 user decryption request.
      * @param decryptionId The decryption request ID.
-     * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
-     * @param handles The handle entries (handle, contractAddress, ownerAddress).
-     * @param payload The signed EIP-712 fields and the raw signature; see
-     * `UserDecryptionRequestPayload` for the signed/unsigned split.
+     * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt. Not part
+     * of the signed message.
+     * @param handles The handle entries (handle, contractAddress, ownerAddress). Not part
+     * of the signed message.
+     * @param payload The EIP-712 signed message and the raw signature, grouped so the KMS
+     * Connector has everything it needs to reconstruct the digest and verify the signature
+     * off-chain. See `UserDecryptionRequestPayload`.
      * @dev Shares its name with the legacy event via Solidity event overloading — the
      * distinct parameter list produces a distinct `topic0`.
      */
