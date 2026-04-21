@@ -115,7 +115,7 @@ jobs:
     with:
       build: false
       compat-test: ${{ needs.prepare_rollout.outputs.compat_test }}
-      compat-overrides: ${{ matrix.overrides }}${{ matrix.overrides != '' && needs.prepare_rollout.outputs.compat_overrides != '' && ',' || '' }}${{ needs.prepare_rollout.outputs.compat_overrides }}
+      compat-overrides: ${{ needs.prepare_rollout.outputs.compat_overrides }}
       rollout-step: ${{ matrix.stepIndex }}
       scenario: ${{ needs.prepare_rollout.outputs.scenario }}
       test-profile: standard

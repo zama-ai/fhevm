@@ -9,7 +9,6 @@ type RolloutMatrixEntry = {
   step: string;
   stepIndex: number;
   name: string;
-  overrides: string;
 };
 type RolloutMatrix = {
   include: RolloutMatrixEntry[];
@@ -111,8 +110,6 @@ const expandCompatSteps = (steps: CompatStepDefinition[]) => {
   }
   return expanded;
 };
-
-const stepOverrides = (_test: CompatTestDefinition, _stepIndex: number) => "";
 
 /** Validates that a compat-test env map contains every required version key. */
 const validateEnvMap = (
@@ -217,13 +214,11 @@ const rolloutEntries = (test: CompatTestDefinition) => {
       step: "baseline",
       stepIndex: 0,
       name: lockStem(0, "baseline").replace(/\.lock\.json$/, ""),
-      overrides: stepOverrides(test, 0),
     },
     ...expanded.map((step, index) => ({
       step: step.label,
       stepIndex: index + 1,
       name: lockStem(index + 1, step.label).replace(/\.lock\.json$/, ""),
-      overrides: stepOverrides(test, index + 1),
     })),
   ] satisfies RolloutMatrix["include"];
 };
