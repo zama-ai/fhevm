@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 
-import {ACL} from "./ACL.sol";
+import {ACL as ACLContract} from "./ACL.sol";
 import {HCULimit} from "./HCULimit.sol";
 import {aclAdd, hcuLimitAdd, inputVerifierAdd} from "../addresses/FHEVMHostAddresses.sol";
 
@@ -129,7 +129,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     uint256 private constant PATCH_VERSION = 0;
 
     /// @notice ACL.
-    ACL private constant ACL_INSTANCE = ACL(aclAdd);
+    ACLContract private constant ACL = ACLContract(aclAdd);
 
     /// @notice HCU_LIMIT.
     HCULimit private constant HCU_LIMIT = HCULimit(hcuLimitAdd);
@@ -657,7 +657,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result   Result value of the target type.
      */
     function cast(bytes32 ct, FheType toType) public virtual returns (bytes32 result) {
-        if (!ACL_INSTANCE.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
+        if (!ACL.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
         uint256 supportedTypesInput = (1 << uint8(FheType.Bool)) +
             (1 << uint8(FheType.Uint8)) +
             (1 << uint8(FheType.Uint16)) +
@@ -682,7 +682,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
                 Operators.cast,
                 ct,
                 toType,
-                ACL_INSTANCE,
+                ACL,
                 block.chainid,
                 blockhash(block.number - 1),
                 block.timestamp
@@ -690,7 +690,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         );
         result = _appendMetadataToPrehandle(result, toType);
         HCU_LIMIT.checkHCUForCast(toType, ct, result, msg.sender);
-        ACL_INSTANCE.allowTransient(result, msg.sender);
+        ACL.allowTransient(result, msg.sender);
         emit Cast(msg.sender, ct, toType, result);
     }
 
@@ -717,7 +717,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
                 Operators.trivialEncrypt,
                 pt,
                 toType,
-                ACL_INSTANCE,
+                ACL,
                 block.chainid,
                 blockhash(block.number - 1),
                 block.timestamp
@@ -725,7 +725,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         );
         result = _appendMetadataToPrehandle(result, toType);
         HCU_LIMIT.checkHCUForTrivialEncrypt(toType, result, msg.sender);
-        ACL_INSTANCE.allowTransient(result, msg.sender);
+        ACL.allowTransient(result, msg.sender);
         emit TrivialEncrypt(msg.sender, pt, toType, result);
     }
 
@@ -750,7 +750,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         FheType typeCt = _typeOf(inputHandle);
         if (inputType != typeCt) revert InvalidType();
         result = INPUT_VERIFIER.verifyInput(contextUserInputs, inputHandle, inputProof);
-        ACL_INSTANCE.allowTransient(result, msg.sender);
+        ACL.allowTransient(result, msg.sender);
         emit VerifyInput(msg.sender, inputHandle, userAddress, inputProof, inputType, result);
     }
 
@@ -758,7 +758,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @notice Getter function for the ACL contract address.
      */
     function getACLAddress() public view virtual returns (address) {
-        return address(ACL_INSTANCE);
+        return address(ACL);
     }
 
     /**
@@ -850,13 +850,13 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     function _unaryOp(Operators op, bytes32 ct) internal virtual returns (bytes32 result) {
-        if (!ACL_INSTANCE.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
+        if (!ACL.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
         result = keccak256(
             abi.encodePacked(
                 COMPUTATION_DOMAIN_SEPARATOR,
                 op,
                 ct,
-                ACL_INSTANCE,
+                ACL,
                 block.chainid,
                 blockhash(block.number - 1),
                 block.timestamp
@@ -864,7 +864,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         );
         FheType typeCt = _typeOf(ct);
         result = _appendMetadataToPrehandle(result, typeCt);
-        ACL_INSTANCE.allowTransient(result, msg.sender);
+        ACL.allowTransient(result, msg.sender);
     }
 
     function _binaryOp(
@@ -877,9 +877,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         /// @dev at the moment at most only right operand of binary ops can be scalar, so we enforce `scalar` to be bool
         _checkBoolean(scalar);
 
-        if (!ACL_INSTANCE.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
+        if (!ACL.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
         if (scalar == 0x00) {
-            if (!ACL_INSTANCE.isAllowed(rhs, msg.sender)) revert ACLNotAllowed(rhs, msg.sender);
+            if (!ACL.isAllowed(rhs, msg.sender)) revert ACLNotAllowed(rhs, msg.sender);
 
             FheType rhsType = _typeOf(rhs);
             FheType lhsType = _typeOf(lhs);
@@ -892,14 +892,14 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
                 lhs,
                 rhs,
                 scalar,
-                ACL_INSTANCE,
+                ACL,
                 block.chainid,
                 blockhash(block.number - 1),
                 block.timestamp
             )
         );
         result = _appendMetadataToPrehandle(result, resultType);
-        ACL_INSTANCE.allowTransient(result, msg.sender);
+        ACL.allowTransient(result, msg.sender);
     }
 
     function _ternaryOp(
@@ -908,9 +908,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         bytes32 middle,
         bytes32 rhs
     ) internal virtual returns (bytes32 result) {
-        if (!ACL_INSTANCE.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
-        if (!ACL_INSTANCE.isAllowed(middle, msg.sender)) revert ACLNotAllowed(middle, msg.sender);
-        if (!ACL_INSTANCE.isAllowed(rhs, msg.sender)) revert ACLNotAllowed(rhs, msg.sender);
+        if (!ACL.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
+        if (!ACL.isAllowed(middle, msg.sender)) revert ACLNotAllowed(middle, msg.sender);
+        if (!ACL.isAllowed(rhs, msg.sender)) revert ACLNotAllowed(rhs, msg.sender);
 
         FheType lhsType = _typeOf(lhs);
         FheType middleType = _typeOf(middle);
@@ -927,14 +927,14 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
                 lhs,
                 middle,
                 rhs,
-                ACL_INSTANCE,
+                ACL,
                 block.chainid,
                 blockhash(block.number - 1),
                 block.timestamp
             )
         );
         result = _appendMetadataToPrehandle(result, middleType);
-        ACL_INSTANCE.allowTransient(result, msg.sender);
+        ACL.allowTransient(result, msg.sender);
     }
 
     function _generateSeed() internal virtual returns (bytes16 seed) {
@@ -944,7 +944,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
                 abi.encodePacked(
                     SEED_DOMAIN_SEPARATOR,
                     $.counterRand,
-                    ACL_INSTANCE,
+                    ACL,
                     block.chainid,
                     blockhash(block.number - 1),
                     block.timestamp
@@ -968,7 +968,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         result = keccak256(abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, Operators.fheRand, randType, seed));
         result = _appendMetadataToPrehandle(result, randType);
         HCU_LIMIT.checkHCUForFheRand(randType, result, msg.sender);
-        ACL_INSTANCE.allowTransient(result, msg.sender);
+        ACL.allowTransient(result, msg.sender);
     }
 
     function _generateRandBounded(
@@ -991,7 +991,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         );
         result = _appendMetadataToPrehandle(result, randType);
         HCU_LIMIT.checkHCUForFheRandBounded(randType, result, msg.sender);
-        ACL_INSTANCE.allowTransient(result, msg.sender);
+        ACL.allowTransient(result, msg.sender);
     }
 
     /**
