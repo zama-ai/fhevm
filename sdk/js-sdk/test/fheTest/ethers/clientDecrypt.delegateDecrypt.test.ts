@@ -3,6 +3,7 @@ import type { FheType } from '../../../src/core/types/fheType.js';
 import type { Handle } from '../../../src/core/types/encryptedTypes-p.js';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmDecryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
+import { delegateForUserDecryption, getUserDecryptionDelegationExpirationDate } from '@fhevm/sdk/actions/host';
 import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
 import { fheTypeIdFromName } from '../../../src/core/handle/FheType.js';
 import { ethers } from 'ethers';
@@ -40,74 +41,6 @@ const decryptTestCases: readonly FheType[] = [
 // Alice (config.alice) — owns the handles, delegates to Bob
 // Bob (config.bob) — signs the delegated permit and decrypts
 
-const ACL_DELEGATE_ABI = [
-  {
-    inputs: [
-      { internalType: 'address', name: 'delegate', type: 'address' },
-      { internalType: 'address', name: 'contractAddress', type: 'address' },
-      { internalType: 'uint64', name: 'expirationDate', type: 'uint64' },
-    ],
-    name: 'delegateForUserDecryption',
-    outputs: [],
-    stateMutability: 'nonpayable',
-    type: 'function',
-  },
-  {
-    inputs: [
-      { internalType: 'address', name: 'delegator', type: 'address' },
-      { internalType: 'address', name: 'delegate', type: 'address' },
-      { internalType: 'address', name: 'contractAddress', type: 'address' },
-    ],
-    name: 'getUserDecryptionDelegationExpirationDate',
-    outputs: [{ internalType: 'uint64', name: '', type: 'uint64' }],
-    stateMutability: 'view',
-    type: 'function',
-  },
-] as const;
-
-/**
- * Alice calls `ACL.delegateForUserDecryption` on-chain, granting `delegate`
- * permission to decrypt her handles on `contractAddress` until `expirationDate`.
- */
-async function delegateForUserDecryption(parameters: {
-  readonly aclAddress: string;
-  readonly delegatorSigner: ethers.Signer; // Alice
-  readonly delegateAddress: string; // Bob
-  readonly contractAddress: string;
-  readonly durationSeconds: number;
-}): Promise<ethers.TransactionReceipt> {
-  const aclContract = new ethers.Contract(parameters.aclAddress, ACL_DELEGATE_ABI, parameters.delegatorSigner);
-
-  const expirationDate = Math.floor(Date.now() / 1000) + parameters.durationSeconds;
-
-  const tx = await aclContract.getFunction('delegateForUserDecryption')(
-    parameters.delegateAddress,
-    parameters.contractAddress,
-    expirationDate,
-  );
-  return tx.wait();
-}
-
-/**
- * Reads the expiration date of a delegation from the ACL contract.
- * Returns `0n` if no delegation exists.
- */
-async function getUserDecryptionDelegationExpirationDate(parameters: {
-  readonly aclAddress: string;
-  readonly provider: ethers.Provider;
-  readonly delegatorAddress: string;
-  readonly delegateAddress: string;
-  readonly contractAddress: string;
-}): Promise<bigint> {
-  const aclContract = new ethers.Contract(parameters.aclAddress, ACL_DELEGATE_ABI, parameters.provider);
-
-  return aclContract.getFunction('getUserDecryptionDelegationExpirationDate')(
-    parameters.delegatorAddress,
-    parameters.delegateAddress,
-    parameters.contractAddress,
-  );
-}
-
 describe(
   'Decrypt client — delegated decrypt',
   () => {
@@ -124,13 +57,19 @@ describe(
       console.log(`  Alice: ${config.alice.wallet.address}`);
       console.log(`  Bob:   ${config.bob.wallet.address}`);
 
+      const aclAddress = config.fhevmChain.fhevm.contracts.acl.address as ChecksummedAddress;
+
       // Check if delegation already exists
-      const existingExpiration = await getUserDecryptionDelegationExpirationDate({
-        aclAddress: config.fhevmChain.fhevm.contracts.acl.address,
+      const readClient = createFhevmDecryptClient({
+        chain: config.fhevmChain,
         provider: config.provider,
-        delegatorAddress: config.alice.wallet.address,
-        delegateAddress: config.bob.wallet.address,
-        contractAddress: config.fheTestAddress,
+      });
+
+      const existingExpiration = await getUserDecryptionDelegationExpirationDate(readClient, {
+        aclAddress,
+        delegatorAddress: config.alice.wallet.address as ChecksummedAddress,
+        delegateAddress: config.bob.wallet.address as ChecksummedAddress,
+        contractAddress: config.fheTestAddress as ChecksummedAddress,
       });
 
       // Use block.timestamp instead of Date.now() — the expiration is based on
@@ -141,18 +80,26 @@ describe(
         console.log(`  Delegation already active (expires ${existingExpiration}), skipping tx`);
       } else {
         console.log(`  Delegation not yet active, calling delegateForUserDecryption()...`);
+
         // Alice delegates decryption to Bob
-        const receipt = await delegateForUserDecryption({
+        const callArgs = delegateForUserDecryption({
           aclAddress: config.fhevmChain.fhevm.contracts.acl.address,
-          delegatorSigner: config.alice.signer,
           delegateAddress: config.bob.wallet.address,
           contractAddress: config.fheTestAddress,
-          durationSeconds: 86400 * 360, // a bit less than a year
+          expirationDate: BigInt(Math.floor(Date.now() / 1000) + 86400 * 360),
         });
-        if (receipt.status !== 1) {
-          throw new Error(`Delegation tx failed: ${receipt.hash}`);
+
+        const aclContract = new ethers.Contract(
+          callArgs.address,
+          callArgs.abi as ethers.InterfaceAbi,
+          config.alice.signer,
+        );
+        const tx: ethers.TransactionResponse = await aclContract.getFunction(callArgs.functionName)(...callArgs.args);
+        const receipt = await tx.wait();
+        if (receipt!.status !== 1) {
+          throw new Error(`Delegation tx failed: ${receipt!.hash}`);
         }
-        console.log(`  Delegation tx: ${receipt.hash}`);
+        console.log(`  Delegation tx: ${receipt!.hash}`);
       }
     });
 

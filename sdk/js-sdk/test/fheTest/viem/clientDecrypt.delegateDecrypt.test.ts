@@ -1,9 +1,10 @@
 import type { ChecksummedAddress } from '../../../src/core/types/primitives.js';
 import type { FheType } from '../../../src/core/types/fheType.js';
-import type { Account, Hex, PublicClient, Transport, Chain } from 'viem';
+import type { Hex } from 'viem';
 import type { Handle } from '../../../src/core/types/encryptedTypes-p.js';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmDecryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
+import { delegateForUserDecryption, getUserDecryptionDelegationExpirationDate } from '@fhevm/sdk/actions/host';
 import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
 import { isV2, getBaseEnv } from '../setupCommon.js';
 import { FHETestABI } from '../abi-v2.js';
@@ -43,80 +44,6 @@ const decryptTestCases: readonly FheType[] = [
 // Alice (config.alice) — owns the handles, delegates to Bob
 // Bob (config.bob) — signs the delegated permit and decrypts
 
-const ACL_DELEGATE_ABI = [
-  {
-    inputs: [
-      { internalType: 'address', name: 'delegate', type: 'address' },
-      { internalType: 'address', name: 'contractAddress', type: 'address' },
-      { internalType: 'uint64', name: 'expirationDate', type: 'uint64' },
-    ],
-    name: 'delegateForUserDecryption',
-    outputs: [],
-    stateMutability: 'nonpayable',
-    type: 'function',
-  },
-  {
-    inputs: [
-      { internalType: 'address', name: 'delegator', type: 'address' },
-      { internalType: 'address', name: 'delegate', type: 'address' },
-      { internalType: 'address', name: 'contractAddress', type: 'address' },
-    ],
-    name: 'getUserDecryptionDelegationExpirationDate',
-    outputs: [{ internalType: 'uint64', name: '', type: 'uint64' }],
-    stateMutability: 'view',
-    type: 'function',
-  },
-] as const;
-
-/**
- * Alice calls `ACL.delegateForUserDecryption` on-chain, granting `delegate`
- * permission to decrypt her handles on `contractAddress` until `expirationDate`.
- */
-async function delegateForUserDecryption(parameters: {
-  readonly aclAddress: Hex;
-  readonly delegatorAccount: Account; // Alice
-  readonly delegateAddress: Hex; // Bob
-  readonly contractAddress: Hex;
-  readonly durationSeconds: number;
-  readonly publicClient: PublicClient<Transport, Chain>;
-}) {
-  const walletClient = createWalletClient({
-    account: parameters.delegatorAccount,
-    chain: parameters.publicClient.chain,
-    transport: http(getBaseEnv().rpcUrl),
-  });
-
-  const expirationDate = BigInt(Math.floor(Date.now() / 1000) + parameters.durationSeconds);
-
-  const hash = await walletClient.writeContract({
-    address: parameters.aclAddress,
-    abi: ACL_DELEGATE_ABI,
-    functionName: 'delegateForUserDecryption',
-    args: [parameters.delegateAddress, parameters.contractAddress, expirationDate],
-  });
-
-  return parameters.publicClient.waitForTransactionReceipt({ hash });
-}
-
-/**
- * Reads the expiration date of a delegation from the ACL contract.
- * Returns `0n` if no delegation exists.
- */
-async function getUserDecryptionDelegationExpirationDate(parameters: {
-  readonly aclAddress: Hex;
-  readonly publicClient: PublicClient<Transport, Chain>;
-  readonly delegatorAddress: Hex;
-  readonly delegateAddress: Hex;
-  readonly contractAddress: Hex;
-}): Promise<bigint> {
-  return parameters.publicClient.readContract({
-    address: parameters.aclAddress,
-    abi: ACL_DELEGATE_ABI,
-    functionName: 'getUserDecryptionDelegationExpirationDate',
-    args: [parameters.delegatorAddress, parameters.delegateAddress, parameters.contractAddress],
-  });
-}
-
 describe.runIf(isV2(getViemTestConfig().chainName))(
   'Decrypt client — delegated decrypt',
   () => {
@@ -133,14 +60,19 @@ describe.runIf(isV2(getViemTestConfig().chainName))(
       console.log(`  Alice: ${config.alice.account.address}`);
       console.log(`  Bob:   ${config.bob.account.address}`);
 
+      const aclAddress = config.fhevmChain.fhevm.contracts.acl.address as ChecksummedAddress;
+
       // Check if delegation already exists
-      const aclAddress = config.fhevmChain.fhevm.contracts.acl.address as Hex;
-      const existingExpiration = await getUserDecryptionDelegationExpirationDate({
-        aclAddress,
+      const readClient = createFhevmDecryptClient({
+        chain: config.fhevmChain,
         publicClient: config.publicClient,
-        delegatorAddress: config.alice.account.address,
-        delegateAddress: config.bob.account.address,
-        contractAddress: config.fheTestAddress as Hex,
+      });
+
+      const existingExpiration = await getUserDecryptionDelegationExpirationDate(readClient, {
+        aclAddress,
+        delegatorAddress: config.alice.account.address as ChecksummedAddress,
+        delegateAddress: config.bob.account.address as ChecksummedAddress,
+        contractAddress: config.fheTestAddress as ChecksummedAddress,
       });
 
       // Use block.timestamp instead of Date.now() — the expiration is based on
@@ -151,15 +83,23 @@ describe.runIf(isV2(getViemTestConfig().chainName))(
         console.log(`  Delegation already active (expires ${existingExpiration}), skipping tx`);
       } else {
         console.log(`  Delegation not yet active, calling delegateForUserDecryption()...`);
+
         // Alice delegates decryption to Bob
-        const receipt = await delegateForUserDecryption({
-          aclAddress,
-          delegatorAccount: config.alice.account,
+        const callArgs = delegateForUserDecryption({
+          aclAddress: config.fhevmChain.fhevm.contracts.acl.address,
           delegateAddress: config.bob.account.address,
-          contractAddress: config.fheTestAddress as Hex,
-          durationSeconds: 86400 * 360, // a bit less than a year
-          publicClient: config.publicClient,
+          contractAddress: config.fheTestAddress,
+          expirationDate: BigInt(Math.floor(Date.now() / 1000) + 86400 * 360),
         });
+
+        const walletClient = createWalletClient({
+          account: config.alice.account,
+          chain: config.publicClient.chain,
+          transport: http(getBaseEnv().rpcUrl),
+        });
+
+        const hash = await walletClient.writeContract(callArgs as Parameters<typeof walletClient.writeContract>[0]);
+        const receipt = await config.publicClient.waitForTransactionReceipt({ hash });
         if (receipt.status !== 'success') {
           throw new Error(`Delegation tx failed: ${receipt.transactionHash}`);
         }
