@@ -73,6 +73,11 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     /// @notice Returned if the upper bound is above the max value of the underlying type.
     error UpperBoundAboveMaxTypeValue();
 
+    /// @notice Returned if the collection size is invalid for the requested operation.
+    /// @param size     The actual collection size.
+    /// @param limit    The violated bound: the maximum allowed (if too large) or the minimum required (if too small).
+    error FHECollectionSizeInvalid(uint256 size, uint256 limit);
+
     /**
      * @param userAddress       Address of the user.
      * @param contractAddress   Contract address.
@@ -117,7 +122,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         trivialEncrypt,
         fheIfThenElse,
         fheRand,
-        fheRandBounded
+        fheRandBounded,
+        fheSum
     }
 
     /// @notice Name of the contract.
@@ -127,7 +133,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 3;
+    uint256 private constant MINOR_VERSION = 4;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -143,7 +149,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 4;
+    uint64 private constant REINITIALIZER_VERSION = 5;
 
     /// Domain separator for hashing when building an output handle for a FHE computation
     bytes8 private constant COMPUTATION_DOMAIN_SEPARATOR = "FHE_comp";
@@ -165,12 +171,12 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {}
 
     /**
-     * @notice Re-initializes the contract from V2.
+     * @notice Re-initializes the contract from V3.
      * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice              Computes FHEAdd operation.
@@ -655,6 +661,27 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
+     * @notice          Computes FHESum operation over an array of ciphertexts of the same type.
+     * @param values    Array of ciphertext handles. All must be the same FheType.
+     * @return result   Result handle of the same FheType as the inputs.
+     */
+    function fheSum(bytes32[] calldata values, FheType resultType) public virtual returns (bytes32 result) {
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
+            (1 << uint8(FheType.Uint16)) +
+            (1 << uint8(FheType.Uint32)) +
+            (1 << uint8(FheType.Uint64)) +
+            (1 << uint8(FheType.Uint128));
+        if ((1 << uint8(resultType)) & supportedTypes == 0) revert UnsupportedType();
+
+        uint256 maxSize = (resultType == FheType.Uint64 || resultType == FheType.Uint128) ? 60 : 100;
+        if (values.length > maxSize) revert FHECollectionSizeInvalid(values.length, maxSize);
+
+        result = _naryOp(Operators.fheSum, values, resultType);
+        hcuLimit.checkHCUForFheSum(resultType, values, result, msg.sender);
+        emit FheSum(msg.sender, values, resultType, result);
+    }
+
+    /**
      * @notice          Performs the casting to a target type.
      * @param ct        Value to cast.
      * @param toType    Target type.
@@ -939,6 +966,31 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         );
         result = _appendMetadataToPrehandle(result, middleType);
         ACL.allowTransient(result, msg.sender);
+    }
+
+    function _naryOp(
+        Operators op,
+        bytes32[] calldata values,
+        FheType resultType
+    ) internal virtual returns (bytes32 result) {
+        for (uint256 i = 0; i < values.length; i++) {
+            if (!acl.isAllowed(values[i], msg.sender)) revert ACLNotAllowed(values[i], msg.sender);
+            if (_typeOf(values[i]) != resultType) revert IncompatibleTypes();
+        }
+        result = keccak256(
+            abi.encodePacked(
+                COMPUTATION_DOMAIN_SEPARATOR,
+                op,
+                values.length,
+                values,
+                acl,
+                block.chainid,
+                blockhash(block.number - 1),
+                block.timestamp
+            )
+        );
+        result = _appendMetadataToPrehandle(result, resultType);
+        acl.allowTransient(result, msg.sender);
     }
 
     function _generateSeed() internal virtual returns (bytes16 seed) {
