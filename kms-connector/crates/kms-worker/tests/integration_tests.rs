@@ -159,6 +159,9 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
         ProtocolEventKind::UserDecryption(r) => {
             (r.decryptionId, "UserDecrypt", "GetUserDecryptionResult")
         }
+        ProtocolEventKind::UserDecryptionV2(r) => {
+            (r.decryptionId, "UserDecrypt", "GetUserDecryptionResult")
+        }
         ProtocolEventKind::PrepKeygen(r) => {
             (r.prepKeygenId, "KeyGenPreproc", "GetKeyGenPreprocResult")
         }
@@ -196,10 +199,11 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
                 payload: Some(PublicDecryptionResponsePayload::default()),
                 ..Default::default()
             }),
-            ProtocolEventKind::UserDecryption(_) => then.pb(UserDecryptionResponse {
-                payload: Some(UserDecryptionResponsePayload::default()),
-                ..Default::default()
-            }),
+            ProtocolEventKind::UserDecryption(_) | ProtocolEventKind::UserDecryptionV2(_) => then
+                .pb(UserDecryptionResponse {
+                    payload: Some(UserDecryptionResponsePayload::default()),
+                    ..Default::default()
+                }),
             ProtocolEventKind::PrepKeygen(_) => then.pb(KeyGenPreprocResult {
                 preprocessing_id: request_id,
                 ..Default::default()
@@ -226,7 +230,9 @@ async fn wait_for_response_in_db(
     info!("Waiting for response to be stored in DB...");
     let query = match req {
         ProtocolEventKind::PublicDecryption(_) => "SELECT * FROM public_decryption_responses",
-        ProtocolEventKind::UserDecryption(_) => "SELECT * FROM user_decryption_responses",
+        ProtocolEventKind::UserDecryption(_) | ProtocolEventKind::UserDecryptionV2(_) => {
+            "SELECT * FROM user_decryption_responses"
+        }
         ProtocolEventKind::PrepKeygen(_) => "SELECT * FROM prep_keygen_responses",
         ProtocolEventKind::Keygen(_) => "SELECT * FROM keygen_responses",
         ProtocolEventKind::Crsgen(_) => "SELECT * FROM crsgen_responses",
@@ -243,7 +249,7 @@ async fn wait_for_response_in_db(
                 ProtocolEventKind::PublicDecryption(_) => {
                     break kms_response::from_public_decryption_row(&result[0])?;
                 }
-                ProtocolEventKind::UserDecryption(_) => {
+                ProtocolEventKind::UserDecryption(_) | ProtocolEventKind::UserDecryptionV2(_) => {
                     break kms_response::from_user_decryption_row(&result[0])?;
                 }
                 ProtocolEventKind::PrepKeygen(_) => {
@@ -274,6 +280,13 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
             },
         },
         ProtocolEventKind::UserDecryption(r) => KmsGrpcResponse::UserDecryption {
+            decryption_id: r.decryptionId,
+            grpc_response: UserDecryptionResponse {
+                payload: Some(UserDecryptionResponsePayload::default()),
+                ..Default::default()
+            },
+        },
+        ProtocolEventKind::UserDecryptionV2(r) => KmsGrpcResponse::UserDecryption {
             decryption_id: r.decryptionId,
             grpc_response: UserDecryptionResponse {
                 payload: Some(UserDecryptionResponsePayload::default()),
