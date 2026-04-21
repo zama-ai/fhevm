@@ -156,7 +156,7 @@ contract ACL is
     uint256 private constant PATCH_VERSION = 0;
 
     /// @notice FHEVMExecutor address.
-    address private constant fhevmExecutorAddress = fhevmExecutorAdd;
+    address private constant FHEVM_EXECUTOR_ADDRESS = fhevmExecutorAdd;
 
     /// @notice PauserSet contract.
     IPauserSet private constant PAUSER_SET = IPauserSet(pauserSetAdd);
@@ -174,7 +174,7 @@ contract ACL is
     uint64 private constant REINITIALIZER_VERSION = 5;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.ACL")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant ACLStorageLocation = 0xa688f31953c2015baaf8c0a488ee1ee22eb0e05273cc1fd31ea4cbee42febc00;
+    bytes32 private constant ACL_STORAGE_LOCATION = 0xa688f31953c2015baaf8c0a488ee1ee22eb0e05273cc1fd31ea4cbee42febc00;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -251,7 +251,7 @@ contract ACL is
      * @param account Address of the account.
      */
     function allowTransient(bytes32 handle, address account) public virtual whenNotPaused {
-        if (msg.sender != fhevmExecutorAddress) {
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) {
             if (isAccountDenied(msg.sender)) {
                 revert SenderDenied(msg.sender);
             }
@@ -427,10 +427,10 @@ contract ACL is
 
     /**
      * @notice Getter function for the FHEVMExecutor contract address.
-     * @return fhevmExecutorAddress Address of the FHEVMExecutor.
+     * @return FHEVM_EXECUTOR_ADDRESS Address of the FHEVMExecutor.
      */
     function getFHEVMExecutorAddress() public view virtual returns (address) {
-        return fhevmExecutorAddress;
+        return FHEVM_EXECUTOR_ADDRESS;
     }
 
     /**
@@ -605,7 +605,7 @@ contract ACL is
      */
     function _getACLStorage() internal pure returns (ACLStorage storage $) {
         assembly {
-            $.slot := ACLStorageLocation
+            $.slot := ACL_STORAGE_LOCATION
         }
     }
 }
