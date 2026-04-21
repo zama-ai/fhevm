@@ -481,7 +481,7 @@ task('task:upgradeHCULimit')
   )
   .addOptionalParam(
     'hcuCapPerBlock',
-    'Global HCU cap per block passed to reinitializeV2 (default: uint48 max)',
+    'Global HCU cap per block passed to reinitializeV3 (default: uint48 max)',
     '281474976710655', // type(uint48).max
     types.string,
   )
@@ -523,7 +523,7 @@ task('task:prepareUpgradeHCULimit')
   )
   .addOptionalParam(
     'hcuCapPerBlock',
-    'Global HCU cap per block passed to reinitializeV2 (default: uint48 max)',
+    'Global HCU cap per block passed to reinitializeV3 (default: uint48 max)',
     '281474976710655',
     types.string,
   )

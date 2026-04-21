@@ -210,4 +210,97 @@ contract FHEVMManualTestSuite {
     function test_ebool_xor_scalarR(bool a, bool b) public {
         resEbool = FHE.xor(FHE.asEbool(a), b);
     }
+
+    function test_sum_euint8(externalEuint8 a, externalEuint8 b, externalEuint8 c, bytes calldata inputProof) public {
+        euint8[] memory values = new euint8[](3);
+        values[0] = FHE.fromExternal(a, inputProof);
+        values[1] = FHE.fromExternal(b, inputProof);
+        values[2] = FHE.fromExternal(c, inputProof);
+        euint8 result = FHE.sum(values);
+        FHE.allowThis(result);
+        resEuint8 = result;
+    }
+
+    function test_sum_euint16(
+        externalEuint16 a,
+        externalEuint16 b,
+        externalEuint16 c,
+        bytes calldata inputProof
+    ) public {
+        euint16[] memory values = new euint16[](3);
+        values[0] = FHE.fromExternal(a, inputProof);
+        values[1] = FHE.fromExternal(b, inputProof);
+        values[2] = FHE.fromExternal(c, inputProof);
+        euint16 result = FHE.sum(values);
+        FHE.allowThis(result);
+        resEuint16 = result;
+    }
+
+    function test_sum_euint32(
+        externalEuint32 a,
+        externalEuint32 b,
+        externalEuint32 c,
+        bytes calldata inputProof
+    ) public {
+        euint32[] memory values = new euint32[](3);
+        values[0] = FHE.fromExternal(a, inputProof);
+        values[1] = FHE.fromExternal(b, inputProof);
+        values[2] = FHE.fromExternal(c, inputProof);
+        euint32 result = FHE.sum(values);
+        FHE.allowThis(result);
+        resEuint32 = result;
+    }
+
+    function test_sum_euint64(externalEuint64 a, externalEuint64 b, bytes calldata inputProof) public {
+        euint64[] memory values = new euint64[](2);
+        values[0] = FHE.fromExternal(a, inputProof);
+        values[1] = FHE.fromExternal(b, inputProof);
+        euint64 result = FHE.sum(values);
+        FHE.allowThis(result);
+        resEuint64 = result;
+    }
+
+    function test_sum_euint128(externalEuint128 a, externalEuint128 b, bytes calldata inputProof) public {
+        euint128[] memory values = new euint128[](2);
+        values[0] = FHE.fromExternal(a, inputProof);
+        values[1] = FHE.fromExternal(b, inputProof);
+        euint128 result = FHE.sum(values);
+        FHE.allowThis(result);
+        resEuint128 = result;
+    }
+
+    function test_sum_euint8_duplicate(externalEuint8 a, bytes calldata inputProof) public {
+        euint8 v = FHE.fromExternal(a, inputProof);
+        euint8[] memory values = new euint8[](2);
+        values[0] = v;
+        values[1] = v;
+        euint8 result = FHE.sum(values);
+        FHE.allowThis(result);
+        resEuint8 = result;
+    }
+
+    function test_sum_euint8_uninitialized() public {
+        euint8 uninit_;
+        euint8[] memory values = new euint8[](2);
+        values[0] = FHE.asEuint8(5);
+        values[1] = uninit_;
+        euint8 result = FHE.sum(values);
+        FHE.allowThis(result);
+        resEuint8 = result;
+    }
+
+    function test_sum_euint8_empty() public {
+        euint8[] memory values = new euint8[](0);
+        euint8 result = FHE.sum(values);
+        FHE.allowThis(result);
+        resEuint8 = result;
+    }
+
+    function test_sum_euint8_single(externalEuint8 a, bytes calldata inputProof) public {
+        euint8[] memory values = new euint8[](1);
+        values[0] = FHE.fromExternal(a, inputProof);
+        euint8 result = FHE.sum(values);
+        FHE.allowThis(result);
+        resEuint8 = result;
+    }
 }
