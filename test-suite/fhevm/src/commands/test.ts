@@ -543,15 +543,6 @@ const waitForDbRevertRecovery = async (
   }
 };
 
-const runtimeImageRef = async (container: string) => {
-  const result = await run(["docker", "inspect", "--format", "{{.Config.Image}}", container], { allowFailure: true });
-  const image = result.stdout.trim();
-  if (result.code !== 0 || !image) {
-    throw new PreflightError(`Could not resolve runtime image for ${container}`);
-  }
-  return image;
-};
-
 /** Runs the coprocessor DB state revert e2e flow against the active stack. */
 const runDbStateRevert = async (
   state: Awaited<ReturnType<typeof loadState>>,
@@ -575,7 +566,11 @@ const runDbStateRevert = async (
   const timeoutSeconds = parsePositiveInteger(process.env.REVERT_POLL_TIMEOUT_SECONDS ?? "300", "REVERT_POLL_TIMEOUT_SECONDS");
   const pollIntervalSeconds = parsePositiveInteger(process.env.REVERT_POLL_INTERVAL_SECONDS ?? "2", "REVERT_POLL_INTERVAL_SECONDS");
   const containers = coprocessorRuntimeContainers(topologyForState(state).count);
-  const revertImage = await runtimeImageRef("coprocessor-db-migration");
+  const migrationVersion = state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION;
+  if (!migrationVersion) {
+    throw new PreflightError("db-state-revert requires COPROCESSOR_DB_MIGRATION_VERSION in the active stack state");
+  }
+  const revertImage = `ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${migrationVersion}`;
   console.log("[test] coprocessor-db-state-revert");
 
   return runLogged("coprocessor-db-state-revert", started, async () => {
