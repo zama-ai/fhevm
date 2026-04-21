@@ -484,6 +484,17 @@ export const runStep = async (state: State, step: StepName) => {
         throw new PreflightError("Missing default host chain");
       }
       await waitForRpc(`http://localhost:${defaultChain.rpcPort}`);
+      // Fund the kms-connector tx-sender on the host chain. The wallet is derived from the gateway
+      // mnemonic so anvil pre-funds it there, but not on the host chain (different mnemonic).
+      const kmsConnectorEnv = await readEnvFile(envPath("kms-connector"));
+      const txSenderKey = kmsConnectorEnv.KMS_CONNECTOR_PRIVATE_KEY;
+      if (txSenderKey) {
+        const txSenderAddress = (await run(["cast", "wallet", "address", txSenderKey])).stdout.trim();
+        await run([
+          "cast", "rpc", "anvil_setBalance", txSenderAddress, "0x56BC75E2D63100000", // 100 ETH
+          "--rpc-url", `http://localhost:${defaultChain.rpcPort}`,
+        ]);
+      }
       await stepComposeUp("gateway-node", state);
       await waitForRpc(`http://localhost:${DEFAULT_GATEWAY_RPC_PORT}`);
       const plan = stackSpecForState(state);
@@ -522,7 +533,6 @@ export const runStep = async (state: State, step: StepName) => {
       await ensureGeneratedAddressFile(gatewayAddressesPath, "gateway-sc-deploy", [
         "GATEWAY_CONFIG_ADDRESS",
         "INPUT_VERIFICATION_ADDRESS",
-        "KMS_GENERATION_ADDRESS",
         "CIPHERTEXT_COMMITS_ADDRESS",
         "DECRYPTION_ADDRESS",
       ]);
