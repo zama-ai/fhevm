@@ -14,3 +14,8 @@ CREATE TABLE IF NOT EXISTS drift_revert_signal (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS drift_revert_signal_host_chain_status_idx
+    ON drift_revert_signal (host_chain_id, status);
+CREATE INDEX IF NOT EXISTS drift_revert_signal_status_idx
+    ON drift_revert_signal (status);

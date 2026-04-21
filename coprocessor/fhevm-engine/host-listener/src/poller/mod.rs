@@ -141,11 +141,11 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         database_pool: db.pool.clone(),
         database_tick: db.tick.clone(),
     };
-    let health_check_cancel_token = CancellationToken::new();
+    let cancel_token = CancellationToken::new();
     let health_check_server = HealthHttpServer::new(
         Arc::new(health_check),
         config.health_port,
-        health_check_cancel_token.clone(),
+        cancel_token.clone(),
     );
     tokio::spawn(async move {
         if let Err(err) = health_check_server.start().await {
@@ -155,7 +155,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
 
     fhevm_engine_common::drift_revert::init(
         config.database_url.as_str(),
-        health_check_cancel_token.clone(),
+        cancel_token.clone(),
         None,
     )
     .await?;

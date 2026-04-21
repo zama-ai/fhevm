@@ -7,8 +7,10 @@
 //!  * gw-listener runs the revert SQL,
 //!  * other services wait until it's done, then all proceed normally
 
+use std::sync::LazyLock;
 use std::time::Duration;
 
+use prometheus::{register_int_counter_vec, IntCounterVec};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Pool, Postgres, Row};
 use tokio_util::sync::CancellationToken;
@@ -19,6 +21,33 @@ const REVERT_SQL_TEMPLATE: &str =
 
 /// How often services poll `drift_revert_signal` for state changes.
 pub const POLL_INTERVAL: Duration = Duration::from_secs(2);
+
+static SIGNAL_CREATED_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "coprocessor_drift_revert_signal_created_counter",
+        "Number of drift-revert signals created (one per detected consensus drift that required a revert)",
+        &["host_chain_id"]
+    )
+    .unwrap()
+});
+
+static REVERT_SUCCESS_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "coprocessor_drift_revert_success_counter",
+        "Number of drift reverts that ran successfully (SQL completed and signal marked Done)",
+        &["host_chain_id"]
+    )
+    .unwrap()
+});
+
+static REVERT_FAILURE_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "coprocessor_drift_revert_failure_counter",
+        "Number of drift reverts that failed during SQL execution (signal marked Failed)",
+        &["host_chain_id"]
+    )
+    .unwrap()
+});
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SignalStatus {
@@ -62,7 +91,8 @@ pub struct DriftRevertSignal {
 
 /// Create a new drift revert signal.
 /// Returns `Some(id)` if created, `None` if there's already an in-flight
-/// revert for this host chain.
+/// revert for this host chain. Multiple chains can have concurrent in-flight
+/// signals; the runner processes them one at a time (oldest first).
 pub async fn create_revert_signal(
     pool: &Pool<Postgres>,
     host_chain_id: i64,
@@ -93,7 +123,7 @@ pub async fn create_revert_signal(
     }
 }
 
-/// Fetch the latest signal row, if any.
+/// Fetch the latest signal row (by id), if any.
 pub async fn latest_signal(pool: &Pool<Postgres>) -> anyhow::Result<Option<DriftRevertSignal>> {
     let row = sqlx::query(
         "SELECT id, host_chain_id, offending_host_block_number, status \
@@ -101,16 +131,36 @@ pub async fn latest_signal(pool: &Pool<Postgres>) -> anyhow::Result<Option<Drift
     )
     .fetch_optional(pool)
     .await?;
+    Ok(row.map(signal_from_row))
+}
 
-    Ok(row.map(|r| {
-        let status_str: String = r.get("status");
-        DriftRevertSignal {
-            id: r.get("id"),
-            host_chain_id: r.get("host_chain_id"),
-            offending_host_block_number: r.get("offending_host_block_number"),
-            status: SignalStatus::from_db_str(&status_str),
-        }
-    }))
+/// Fetch the oldest in-flight (Pending or Reverting) signal, if any. The
+/// runner processes signals in this order so no chain's drift is dropped
+/// when multiple chains report drift concurrently.
+pub async fn oldest_in_flight_signal(
+    pool: &Pool<Postgres>,
+) -> anyhow::Result<Option<DriftRevertSignal>> {
+    let row = sqlx::query(
+        "SELECT id, host_chain_id, offending_host_block_number, status \
+         FROM drift_revert_signal \
+         WHERE status = $1 OR status = $2 \
+         ORDER BY id ASC LIMIT 1",
+    )
+    .bind(SignalStatus::Pending.as_db_str())
+    .bind(SignalStatus::Reverting.as_db_str())
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(signal_from_row))
+}
+
+fn signal_from_row(r: sqlx::postgres::PgRow) -> DriftRevertSignal {
+    let status_str: String = r.get("status");
+    DriftRevertSignal {
+        id: r.get("id"),
+        host_chain_id: r.get("host_chain_id"),
+        offending_host_block_number: r.get("offending_host_block_number"),
+        status: SignalStatus::from_db_str(&status_str),
+    }
 }
 
 /// Update the status of a signal row.
@@ -171,6 +221,9 @@ pub async fn on_drift_detected(pool: &Pool<Postgres>, handle: &[u8], host_chain_
 
     match create_revert_signal(pool, host_chain_id, block).await {
         Ok(Some(id)) => {
+            SIGNAL_CREATED_COUNTER
+                .with_label_values(&[&host_chain_id.to_string()])
+                .inc();
             info!(
                 host_chain_id,
                 block, id, "Drift revert signal created successfully"
@@ -188,42 +241,66 @@ pub async fn on_drift_detected(pool: &Pool<Postgres>, handle: &[u8], host_chain_
     }
 }
 
-/// Poll `drift_revert_signal` until a signal is in flight (status Pending or
-/// Reverting). Used by `run_signal_watcher` in non-revert-runner services to
-/// detect that a drift revert is happening so they can re-exec.
+/// Poll `drift_revert_signal` until any signal is in flight (Pending or
+/// Reverting) on any host chain. Used by `run_signal_watcher` to detect that
+/// a drift revert is happening so the service can re-exec.
+/// Transient DB errors are logged and skipped — the watcher must stay alive.
 pub async fn wait_for_in_flight_signal(pool: &Pool<Postgres>) -> anyhow::Result<DriftRevertSignal> {
     loop {
-        if let Some(signal) = latest_signal(pool).await? {
-            if signal.status.is_in_flight() {
-                return Ok(signal);
+        match oldest_in_flight_signal(pool).await {
+            Ok(Some(signal)) => return Ok(signal),
+            Ok(None) => {}
+            Err(e) => {
+                error!(error = %e, "Drift-revert watcher poll failed, retrying");
             }
         }
         tokio::time::sleep(POLL_INTERVAL).await;
     }
 }
 
-/// Poll until the latest signal reaches a terminal status.
-/// Used by non-gw-listener services to wait for the revert to finish.
-/// On `Failed`, logs the reason and returns `Ok(())` — the service continues
-/// startup despite a failed revert (operator can investigate via logs).
-pub async fn wait_for_revert_done(pool: &Pool<Postgres>) -> anyhow::Result<()> {
+/// Poll until there are no in-flight (Pending or Reverting) signals across
+/// any host chain, or until `cancel_token` fires. Used by non-runner services
+/// to wait for all pending reverts to finish on startup.
+///
+/// Returns an error if at any point the latest signal transitions to `Failed`
+/// — the waiter must not let the service start on a DB where recovery failed.
+pub async fn wait_for_revert_done(
+    pool: &Pool<Postgres>,
+    cancel_token: &CancellationToken,
+) -> anyhow::Result<()> {
+    match oldest_in_flight_signal(pool).await? {
+        None => return Ok(()),
+        Some(signal) => info!(
+            signal_id = signal.id,
+            host_chain_id = signal.host_chain_id,
+            status = signal.status.as_db_str(),
+            "Waiting for drift revert to complete"
+        ),
+    }
     loop {
+        if cancel_token.is_cancelled() {
+            return Ok(());
+        }
+        // Abort if the revert failed while we were waiting.
         if let Some(signal) = latest_signal(pool).await? {
-            match &signal.status {
-                SignalStatus::Done => return Ok(()),
-                SignalStatus::Failed(reason) => {
-                    error!(
-                        signal_id = signal.id,
-                        host_chain_id = signal.host_chain_id,
-                        reason = %reason,
-                        "Drift revert failed; continuing service startup regardless"
-                    );
-                    return Ok(());
-                }
-                _ => {}
+            if let SignalStatus::Failed(reason) = &signal.status {
+                error!(
+                    signal_id = signal.id,
+                    host_chain_id = signal.host_chain_id,
+                    reason,
+                    "Drift revert transitioned to Failed while waiting"
+                );
+                anyhow::bail!("drift revert signal {} is Failed: {reason}", signal.id);
             }
         }
-        tokio::time::sleep(POLL_INTERVAL).await;
+        if oldest_in_flight_signal(pool).await?.is_none() {
+            info!("Drift revert complete, resuming normal operation");
+            return Ok(());
+        }
+        tokio::select! {
+            _ = cancel_token.cancelled() => return Ok(()),
+            _ = tokio::time::sleep(POLL_INTERVAL) => {}
+        }
     }
 }
 
@@ -355,85 +432,106 @@ pub async fn run_signal_watcher(
 ///
 /// - `runner_cfg`: `Some` for the revert runner (gw-listener), `None` for all
 ///   other services (they just wait for the runner to finish).
+/// - `cancel_token`: exits the wait early on shutdown.
+///
+/// Returns an error if the latest signal is `Failed` — the service must not
+/// serve traffic on a DB where drift recovery failed. Operator must either
+/// re-drive the signal (Failed → Pending) or acknowledge it (Failed → Done)
+/// before the service can start.
 pub async fn handle_pending_signal_on_startup(
     pool: &Pool<Postgres>,
     runner_cfg: Option<RevertRunnerConfig>,
+    cancel_token: &CancellationToken,
 ) -> anyhow::Result<()> {
-    let Some(signal) = latest_signal(pool).await? else {
-        return Ok(());
-    };
-
-    match &signal.status {
-        SignalStatus::Done => Ok(()),
-        SignalStatus::Pending | SignalStatus::Reverting => {
-            let is_revert_runner = runner_cfg.is_some();
-            info!(
-                signal_id = signal.id,
-                host_chain_id = signal.host_chain_id,
-                offending_host_block_number = signal.offending_host_block_number,
-                is_revert_runner,
-                status = signal.status.as_db_str(),
-                "Found pending drift revert signal on startup"
-            );
-
-            if let Some(cfg) = runner_cfg {
-                // Grace period: give other services time to re-exec too.
-                info!(grace_period = ?cfg.grace_period, "Waiting grace period before revert");
-                tokio::time::sleep(cfg.grace_period).await;
-
-                update_signal_status(pool, signal.id, &SignalStatus::Reverting).await?;
-
-                if let Err(e) = execute_revert(
-                    pool,
-                    signal.host_chain_id,
-                    signal.offending_host_block_number,
-                )
-                .await
-                {
-                    error!(error = %e, "Drift revert failed");
-                    update_signal_status(pool, signal.id, &SignalStatus::Failed(e.to_string()))
-                        .await?;
-                    return Err(e);
-                }
-
-                // Test-only hook: keep status=reverting for a few seconds so
-                // E2E tests can observe the DB state after the revert ran but
-                // before services resume. Production leaves the env var unset.
-                if let Ok(secs) = std::env::var("DRIFT_REVERT_TEST_HOLD_SECS") {
-                    if let Ok(secs) = secs.parse::<u64>() {
-                        if secs > 0 {
-                            info!(
-                                hold_secs = secs,
-                                "Holding reverting status for test observation"
-                            );
-                            tokio::time::sleep(Duration::from_secs(secs)).await;
-                        }
-                    }
-                }
-
-                update_signal_status(pool, signal.id, &SignalStatus::Done).await?;
-                info!("Drift revert complete, resuming normal operation");
-            } else {
-                wait_for_revert_done(pool).await?;
-                info!("Drift revert complete, resuming normal operation");
-            }
-
-            Ok(())
-        }
-        SignalStatus::Failed(reason) => {
-            // A previous auto-revert attempt failed. The DB may still contain
-            // drifted data — operator intervention is required (manual revert
-            // or other remediation). We proceed normally so the service stays
-            // up, but flag the condition prominently.
+    if let Some(signal) = latest_signal(pool).await? {
+        if let SignalStatus::Failed(reason) = &signal.status {
             error!(
                 signal_id = signal.id,
                 host_chain_id = signal.host_chain_id,
-                reason = reason,
-                "Latest drift revert signal has failed status — manual intervention required, proceeding anyway"
+                reason,
+                "Refusing to start: latest drift revert is Failed — operator must investigate \
+                 (mark Failed → Pending to retry, or Failed → Done to acknowledge)"
             );
-            Ok(())
+            anyhow::bail!("drift revert signal {} is Failed: {reason}", signal.id);
         }
     }
+
+    if let Some(cfg) = runner_cfg {
+        run_all_pending_as_runner(pool, &cfg).await
+    } else {
+        wait_for_revert_done(pool, cancel_token).await
+    }
+}
+
+/// Runner path: process all in-flight signals (oldest first) until none remain.
+/// Multiple chains may have concurrent drifts; each gets its own revert run.
+async fn run_all_pending_as_runner(
+    pool: &Pool<Postgres>,
+    cfg: &RevertRunnerConfig,
+) -> anyhow::Result<()> {
+    while let Some(signal) = oldest_in_flight_signal(pool).await? {
+        info!(
+            signal_id = signal.id,
+            host_chain_id = signal.host_chain_id,
+            offending_host_block_number = signal.offending_host_block_number,
+            status = signal.status.as_db_str(),
+            "Found pending drift revert signal on startup"
+        );
+
+        // Grace period: give other services time to re-exec too.
+        // Only wait it once per process startup — if we're on the 2nd signal,
+        // services have already had time to re-exec during the first revert.
+        if matches!(signal.status, SignalStatus::Pending) {
+            info!(grace_period = ?cfg.grace_period, "Waiting grace period before revert");
+            tokio::time::sleep(cfg.grace_period).await;
+            update_signal_status(pool, signal.id, &SignalStatus::Reverting).await?;
+        }
+
+        if let Err(e) = execute_revert(
+            pool,
+            signal.host_chain_id,
+            signal.offending_host_block_number,
+        )
+        .await
+        {
+            REVERT_FAILURE_COUNTER
+                .with_label_values(&[&signal.host_chain_id.to_string()])
+                .inc();
+            // Mark Failed and bail — we must not let the service start on a
+            // DB where drift recovery failed. Operator intervention required
+            // (mark Failed → Pending to retry, or Failed → Done to acknowledge).
+            error!(
+                error = %e,
+                signal_id = signal.id,
+                host_chain_id = signal.host_chain_id,
+                "Drift revert failed"
+            );
+            update_signal_status(pool, signal.id, &SignalStatus::Failed(e.to_string())).await?;
+            return Err(e);
+        }
+
+        // Test-only hook: keep status=reverting for a few seconds so E2E
+        // tests can observe the DB state after the revert ran but before
+        // services resume. Production leaves the env var unset.
+        if let Ok(secs) = std::env::var("DRIFT_REVERT_TEST_HOLD_SECS") {
+            if let Ok(secs) = secs.parse::<u64>() {
+                if secs > 0 {
+                    info!(
+                        hold_secs = secs,
+                        "Holding reverting status for test observation"
+                    );
+                    tokio::time::sleep(Duration::from_secs(secs)).await;
+                }
+            }
+        }
+
+        update_signal_status(pool, signal.id, &SignalStatus::Done).await?;
+        REVERT_SUCCESS_COUNTER
+            .with_label_values(&[&signal.host_chain_id.to_string()])
+            .inc();
+        info!(signal_id = signal.id, "Drift revert complete");
+    }
+    Ok(())
 }
 
 /// Initialize drift-revert handling for a service. Call once at startup,
@@ -467,7 +565,7 @@ pub async fn init_with_reexec<R: ReExec + 'static>(
         .connect(database_url)
         .await?;
 
-    handle_pending_signal_on_startup(&pool, runner_cfg).await?;
+    handle_pending_signal_on_startup(&pool, runner_cfg, &cancel_token).await?;
 
     tokio::spawn(async move {
         if let Err(e) = run_signal_watcher(&pool, cancel_token, &re_exec).await {
