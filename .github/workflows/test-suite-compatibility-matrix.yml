@@ -7,10 +7,6 @@ on:
         description: "Compat-test JSON path or stem from test-suite/fhevm/compat-tests"
         default: "v0.12-to-main"
         type: string
-      compat-overrides:
-        description: "Optional local override groups appended to each compat step for diagnostic runs (e.g. relayer,test-suite)"
-        default: ""
-        type: string
 
 permissions: {}
 
@@ -29,7 +25,6 @@ jobs:
       GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
     outputs:
       compat_test: ${{ steps.prepare.outputs.compat_test }}
-      compat_overrides: ${{ steps.prepare.outputs.compat_overrides }}
       matrix: ${{ steps.prepare.outputs.matrix }}
       scenario: ${{ steps.prepare.outputs.scenario }}
     steps:
@@ -56,12 +51,8 @@ jobs:
         working-directory: test-suite/fhevm
         env:
           COMPAT_TEST_INPUT: ${{ github.event.inputs.compat-test || 'v0.12-to-main' }}
-          COMPAT_OVERRIDES_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.compat-overrides || '' }}
         run: |
           set -euo pipefail
-          merge_csv() {
-            printf '%s\n' "$@" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | sed '/^$/d' | awk '!seen[$0]++' | paste -sd, -
-          }
           resolve_test() {
             local value="$1"
             local workspace_value="${GITHUB_WORKSPACE}/${value}"
@@ -87,10 +78,8 @@ jobs:
           }
           compat_test="$(resolve_test "$COMPAT_TEST_INPUT")"
           compat_test_rel="${compat_test#"$GITHUB_WORKSPACE"/}"
-          compat_overrides="$(merge_csv "$COMPAT_OVERRIDES_INPUT")"
           {
             echo "compat_test=$compat_test_rel"
-            echo "compat_overrides=$compat_overrides"
             echo "scenario=$(jq -r '.execution.scenario // \"two-of-two\"' "$compat_test")"
             echo "matrix<<EOF"
             ./fhevm-cli rollout --compat-test "$compat_test" --matrix
@@ -115,7 +104,6 @@ jobs:
     with:
       build: false
       compat-test: ${{ needs.prepare_rollout.outputs.compat_test }}
-      compat-overrides: ${{ needs.prepare_rollout.outputs.compat_overrides }}
       rollout-step: ${{ matrix.stepIndex }}
       scenario: ${{ needs.prepare_rollout.outputs.scenario }}
       test-profile: standard
