@@ -55,7 +55,10 @@ jobs:
         id: baseline
         env:
           GH_TOKEN: ${{ github.token }}
-        run: echo "tag=$(gh api repos/${{ github.repository }}/releases/latest --jq .tag_name)" >> "$GITHUB_OUTPUT"
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          tag="$(gh api "repos/${GH_REPOSITORY}/releases/latest" --jq .tag_name)"
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
 
       - name: Checkout previous release code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
