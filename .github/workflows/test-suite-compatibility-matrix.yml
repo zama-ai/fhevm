@@ -90,11 +90,13 @@ jobs:
           }
           compat_test="$(resolve_test "$COMPAT_TEST_INPUT")"
           compat_test_rel="${compat_test#"$GITHUB_WORKSPACE"/}"
+          scenario="$(jq -r '.execution.scenario // "two-of-two"' "$compat_test")"
+          matrix="$(./fhevm-cli rollout --compat-test "$compat_test" --matrix)"
           {
             echo "compat_test=$compat_test_rel"
-            echo "scenario=$(jq -r '.execution.scenario // "two-of-two"' "$compat_test")"
+            echo "scenario=$scenario"
             echo "matrix<<EOF"
-            ./fhevm-cli rollout --compat-test "$compat_test" --matrix
+            echo "$matrix"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
