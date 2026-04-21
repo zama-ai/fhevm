@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 
-import {ACL} from "./ACL.sol";
+import {ACL as ACLContract} from "./ACL.sol";
 import {HCULimit} from "./HCULimit.sol";
 import {aclAdd, hcuLimitAdd, inputVerifierAdd} from "../addresses/FHEVMHostAddresses.sol";
 
@@ -133,13 +133,13 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     uint256 private constant PATCH_VERSION = 0;
 
     /// @notice ACL.
-    ACL private constant acl = ACL(aclAdd);
+    ACLContract private constant ACL = ACLContract(aclAdd);
 
-    /// @notice hcuLimit.
-    HCULimit private constant hcuLimit = HCULimit(hcuLimitAdd);
+    /// @notice HCU_LIMIT.
+    HCULimit private constant HCU_LIMIT = HCULimit(hcuLimitAdd);
 
     /// @notice IInputVerifier.
-    IInputVerifier private constant inputVerifier = IInputVerifier(inputVerifierAdd);
+    IInputVerifier private constant INPUT_VERIFIER = IInputVerifier(inputVerifierAdd);
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
@@ -150,7 +150,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     bytes8 private constant SEED_DOMAIN_SEPARATOR = "FHE_seed";
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEVMExecutor")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant FHEVMExecutorStorageLocation =
+    bytes32 private constant FHEVM_EXECUTOR_STORAGE_LOCATION =
         0x4613e1771f6b755d243e536fb5a23c5b15e2826575fee921e8fe7a22a760c800;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -187,7 +187,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheAdd, lhs, rhs, scalarByte, lhsType);
-        hcuLimit.checkHCUForFheAdd(lhsType, scalarByte, lhs, rhs, result, msg.sender);
+        HCU_LIMIT.checkHCUForFheAdd(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheAdd(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -206,7 +206,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheSub, lhs, rhs, scalarByte, lhsType);
-        hcuLimit.checkHCUForFheSub(lhsType, scalarByte, lhs, rhs, result, msg.sender);
+        HCU_LIMIT.checkHCUForFheSub(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheSub(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -225,7 +225,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheMul, lhs, rhs, scalarByte, lhsType);
-        hcuLimit.checkHCUForFheMul(lhsType, scalarByte, lhs, rhs, result, msg.sender);
+        HCU_LIMIT.checkHCUForFheMul(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheMul(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -246,7 +246,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         if (_isScalarZeroForType(rhs, lhsType)) revert DivisionByZero();
         result = _binaryOp(Operators.fheDiv, lhs, rhs, scalarByte, lhsType);
-        hcuLimit.checkHCUForFheDiv(lhsType, scalarByte, lhs, rhs, result, msg.sender);
+        HCU_LIMIT.checkHCUForFheDiv(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheDiv(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -267,7 +267,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         if (_isScalarZeroForType(rhs, lhsType)) revert DivisionByZero();
         result = _binaryOp(Operators.fheRem, lhs, rhs, scalarByte, lhsType);
-        hcuLimit.checkHCUForFheRem(lhsType, scalarByte, lhs, rhs, result, msg.sender);
+        HCU_LIMIT.checkHCUForFheRem(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheRem(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -288,7 +288,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheBitAnd, lhs, rhs, scalarByte, lhsType);
-        hcuLimit.checkHCUForFheBitAnd(lhsType, scalarByte, lhs, rhs, result, msg.sender);
+        HCU_LIMIT.checkHCUForFheBitAnd(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheBitAnd(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -309,7 +309,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheBitOr, lhs, rhs, scalarByte, lhsType);
-        hcuLimit.checkHCUForFheBitOr(lhsType, scalarByte, lhs, rhs, result, msg.sender);
+        HCU_LIMIT.checkHCUForFheBitOr(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheBitOr(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -330,7 +330,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheBitXor, lhs, rhs, scalarByte, lhsType);
-        hcuLimit.checkHCUForFheBitXor(lhsType, scalarByte, lhs, rhs, result, msg.sender);
+        HCU_LIMIT.checkHCUForFheBitXor(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheBitXor(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -350,7 +350,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheShl, lhs, rhs, scalarByte, lhsType);
-        hcuLimit.checkHCUForFheShl(lhsType, scalarByte, lhs, rhs, result, msg.sender);
+        HCU_LIMIT.checkHCUForFheShl(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheShl(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -370,7 +370,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheShr, lhs, rhs, scalarByte, lhsType);
-        hcuLimit.checkHCUForFheShr(lhsType, scalarByte, lhs, rhs, result, msg.sender);
+        HCU_LIMIT.checkHCUForFheShr(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheShr(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -390,7 +390,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheRotl, lhs, rhs, scalarByte, lhsType);
-        hcuLimit.checkHCUForFheRotl(lhsType, scalarByte, lhs, rhs, result, msg.sender);
+        HCU_LIMIT.checkHCUForFheRotl(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheRotl(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -410,7 +410,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheRotr, lhs, rhs, scalarByte, lhsType);
-        hcuLimit.checkHCUForFheRotr(lhsType, scalarByte, lhs, rhs, result, msg.sender);
+        HCU_LIMIT.checkHCUForFheRotr(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheRotr(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -432,7 +432,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheEq, lhs, rhs, scalarByte, FheType.Bool);
-        hcuLimit.checkHCUForFheEq(lhsType, scalarByte, lhs, rhs, result, msg.sender);
+        HCU_LIMIT.checkHCUForFheEq(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheEq(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -454,7 +454,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheNe, lhs, rhs, scalarByte, FheType.Bool);
-        hcuLimit.checkHCUForFheNe(lhsType, scalarByte, lhs, rhs, result, msg.sender);
+        HCU_LIMIT.checkHCUForFheNe(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheNe(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -473,7 +473,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheGe, lhs, rhs, scalarByte, FheType.Bool);
-        hcuLimit.checkHCUForFheGe(lhsType, scalarByte, lhs, rhs, result, msg.sender);
+        HCU_LIMIT.checkHCUForFheGe(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheGe(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -492,7 +492,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheGt, lhs, rhs, scalarByte, FheType.Bool);
-        hcuLimit.checkHCUForFheGt(lhsType, scalarByte, lhs, rhs, result, msg.sender);
+        HCU_LIMIT.checkHCUForFheGt(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheGt(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -511,7 +511,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheLe, lhs, rhs, scalarByte, FheType.Bool);
-        hcuLimit.checkHCUForFheLe(lhsType, scalarByte, lhs, rhs, result, msg.sender);
+        HCU_LIMIT.checkHCUForFheLe(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheLe(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -530,7 +530,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheLt, lhs, rhs, scalarByte, FheType.Bool);
-        hcuLimit.checkHCUForFheLt(lhsType, scalarByte, lhs, rhs, result, msg.sender);
+        HCU_LIMIT.checkHCUForFheLt(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheLt(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -549,7 +549,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheMin, lhs, rhs, scalarByte, lhsType);
-        hcuLimit.checkHCUForFheMin(lhsType, scalarByte, lhs, rhs, result, msg.sender);
+        HCU_LIMIT.checkHCUForFheMin(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheMin(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -568,7 +568,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheMax, lhs, rhs, scalarByte, lhsType);
-        hcuLimit.checkHCUForFheMax(lhsType, scalarByte, lhs, rhs, result, msg.sender);
+        HCU_LIMIT.checkHCUForFheMax(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheMax(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -586,7 +586,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint256));
         FheType typeCt = _verifyAndReturnType(ct, supportedTypes);
         result = _unaryOp(Operators.fheNeg, ct);
-        hcuLimit.checkHCUForFheNeg(typeCt, ct, result, msg.sender);
+        HCU_LIMIT.checkHCUForFheNeg(typeCt, ct, result, msg.sender);
         emit FheNeg(msg.sender, ct, result);
     }
 
@@ -605,7 +605,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint256));
         FheType typeCt = _verifyAndReturnType(ct, supportedTypes);
         result = _unaryOp(Operators.fheNot, ct);
-        hcuLimit.checkHCUForFheNot(typeCt, ct, result, msg.sender);
+        HCU_LIMIT.checkHCUForFheNot(typeCt, ct, result, msg.sender);
         emit FheNot(msg.sender, ct, result);
     }
 
@@ -627,7 +627,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint256));
         FheType typeCt = _verifyAndReturnType(ifTrue, supportedTypes);
         result = _ternaryOp(Operators.fheIfThenElse, control, ifTrue, ifFalse);
-        hcuLimit.checkHCUForIfThenElse(typeCt, control, ifTrue, ifFalse, result, msg.sender);
+        HCU_LIMIT.checkHCUForIfThenElse(typeCt, control, ifTrue, ifFalse, result, msg.sender);
         emit FheIfThenElse(msg.sender, control, ifTrue, ifFalse, result);
     }
 
@@ -661,7 +661,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result   Result value of the target type.
      */
     function cast(bytes32 ct, FheType toType) public virtual returns (bytes32 result) {
-        if (!acl.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
+        if (!ACL.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
         uint256 supportedTypesInput = (1 << uint8(FheType.Bool)) +
             (1 << uint8(FheType.Uint8)) +
             (1 << uint8(FheType.Uint16)) +
@@ -686,15 +686,15 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
                 Operators.cast,
                 ct,
                 toType,
-                acl,
+                ACL,
                 block.chainid,
                 blockhash(block.number - 1),
                 block.timestamp
             )
         );
         result = _appendMetadataToPrehandle(result, toType);
-        hcuLimit.checkHCUForCast(toType, ct, result, msg.sender);
-        acl.allowTransient(result, msg.sender);
+        HCU_LIMIT.checkHCUForCast(toType, ct, result, msg.sender);
+        ACL.allowTransient(result, msg.sender);
         emit Cast(msg.sender, ct, toType, result);
     }
 
@@ -721,15 +721,15 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
                 Operators.trivialEncrypt,
                 pt,
                 toType,
-                acl,
+                ACL,
                 block.chainid,
                 blockhash(block.number - 1),
                 block.timestamp
             )
         );
         result = _appendMetadataToPrehandle(result, toType);
-        hcuLimit.checkHCUForTrivialEncrypt(toType, result, msg.sender);
-        acl.allowTransient(result, msg.sender);
+        HCU_LIMIT.checkHCUForTrivialEncrypt(toType, result, msg.sender);
+        ACL.allowTransient(result, msg.sender);
         emit TrivialEncrypt(msg.sender, pt, toType, result);
     }
 
@@ -753,8 +753,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         });
         FheType typeCt = _typeOf(inputHandle);
         if (inputType != typeCt) revert InvalidType();
-        result = inputVerifier.verifyInput(contextUserInputs, inputHandle, inputProof);
-        acl.allowTransient(result, msg.sender);
+        result = INPUT_VERIFIER.verifyInput(contextUserInputs, inputHandle, inputProof);
+        ACL.allowTransient(result, msg.sender);
         emit VerifyInput(msg.sender, inputHandle, userAddress, inputProof, inputType, result);
     }
 
@@ -762,21 +762,21 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @notice Getter function for the ACL contract address.
      */
     function getACLAddress() public view virtual returns (address) {
-        return address(acl);
+        return address(ACL);
     }
 
     /**
      * @notice Getter function for the HCULimit contract address.
      */
     function getHCULimitAddress() public view virtual returns (address) {
-        return address(hcuLimit);
+        return address(HCU_LIMIT);
     }
 
     /**
      * @notice Getter function for the InputVerifier contract address.
      */
     function getInputVerifierAddress() public view virtual returns (address) {
-        return address(inputVerifier);
+        return address(INPUT_VERIFIER);
     }
 
     /**
@@ -854,13 +854,13 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     function _unaryOp(Operators op, bytes32 ct) internal virtual returns (bytes32 result) {
-        if (!acl.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
+        if (!ACL.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
         result = keccak256(
             abi.encodePacked(
                 COMPUTATION_DOMAIN_SEPARATOR,
                 op,
                 ct,
-                acl,
+                ACL,
                 block.chainid,
                 blockhash(block.number - 1),
                 block.timestamp
@@ -868,7 +868,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         );
         FheType typeCt = _typeOf(ct);
         result = _appendMetadataToPrehandle(result, typeCt);
-        acl.allowTransient(result, msg.sender);
+        ACL.allowTransient(result, msg.sender);
     }
 
     function _binaryOp(
@@ -881,9 +881,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         /// @dev at the moment at most only right operand of binary ops can be scalar, so we enforce `scalar` to be bool
         _checkBoolean(scalar);
 
-        if (!acl.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
+        if (!ACL.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
         if (scalar == 0x00) {
-            if (!acl.isAllowed(rhs, msg.sender)) revert ACLNotAllowed(rhs, msg.sender);
+            if (!ACL.isAllowed(rhs, msg.sender)) revert ACLNotAllowed(rhs, msg.sender);
 
             FheType rhsType = _typeOf(rhs);
             FheType lhsType = _typeOf(lhs);
@@ -896,14 +896,14 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
                 lhs,
                 rhs,
                 scalar,
-                acl,
+                ACL,
                 block.chainid,
                 blockhash(block.number - 1),
                 block.timestamp
             )
         );
         result = _appendMetadataToPrehandle(result, resultType);
-        acl.allowTransient(result, msg.sender);
+        ACL.allowTransient(result, msg.sender);
     }
 
     function _ternaryOp(
@@ -912,9 +912,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         bytes32 middle,
         bytes32 rhs
     ) internal virtual returns (bytes32 result) {
-        if (!acl.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
-        if (!acl.isAllowed(middle, msg.sender)) revert ACLNotAllowed(middle, msg.sender);
-        if (!acl.isAllowed(rhs, msg.sender)) revert ACLNotAllowed(rhs, msg.sender);
+        if (!ACL.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
+        if (!ACL.isAllowed(middle, msg.sender)) revert ACLNotAllowed(middle, msg.sender);
+        if (!ACL.isAllowed(rhs, msg.sender)) revert ACLNotAllowed(rhs, msg.sender);
 
         FheType lhsType = _typeOf(lhs);
         FheType middleType = _typeOf(middle);
@@ -931,14 +931,14 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
                 lhs,
                 middle,
                 rhs,
-                acl,
+                ACL,
                 block.chainid,
                 blockhash(block.number - 1),
                 block.timestamp
             )
         );
         result = _appendMetadataToPrehandle(result, middleType);
-        acl.allowTransient(result, msg.sender);
+        ACL.allowTransient(result, msg.sender);
     }
 
     function _generateSeed() internal virtual returns (bytes16 seed) {
@@ -948,7 +948,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
                 abi.encodePacked(
                     SEED_DOMAIN_SEPARATOR,
                     $.counterRand,
-                    acl,
+                    ACL,
                     block.chainid,
                     blockhash(block.number - 1),
                     block.timestamp
@@ -971,8 +971,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         if ((1 << uint8(randType)) & supportedTypes == 0) revert UnsupportedType();
         result = keccak256(abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, Operators.fheRand, randType, seed));
         result = _appendMetadataToPrehandle(result, randType);
-        hcuLimit.checkHCUForFheRand(randType, result, msg.sender);
-        acl.allowTransient(result, msg.sender);
+        HCU_LIMIT.checkHCUForFheRand(randType, result, msg.sender);
+        ACL.allowTransient(result, msg.sender);
     }
 
     function _generateRandBounded(
@@ -994,8 +994,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, Operators.fheRandBounded, upperBound, randType, seed)
         );
         result = _appendMetadataToPrehandle(result, randType);
-        hcuLimit.checkHCUForFheRandBounded(randType, result, msg.sender);
-        acl.allowTransient(result, msg.sender);
+        HCU_LIMIT.checkHCUForFheRandBounded(randType, result, msg.sender);
+        ACL.allowTransient(result, msg.sender);
     }
 
     /**
@@ -1051,7 +1051,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      */
     function _getFHEVMExecutorStorage() internal pure returns (FHEVMExecutorStorage storage $) {
         assembly {
-            $.slot := FHEVMExecutorStorageLocation
+            $.slot := FHEVM_EXECUTOR_STORAGE_LOCATION
         }
     }
 
