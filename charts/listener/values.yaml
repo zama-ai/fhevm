@@ -177,36 +177,6 @@ fallbackSecret:
 
 
 # ---------------------------------------------------------------------------
-# Optional sub-chart dependencies.
-# Set enabled=false to use externally managed services instead.
-# ---------------------------------------------------------------------------
-postgresql:
-  enabled: true
-  auth:
-    database: listener
-    username: postgres
-    password: postgres
-  primary:
-    persistence:
-      size: 10Gi
-
-redis:
-  enabled: true
-  architecture: standalone
-  master:
-    persistence:
-      enabled: true
-      size: 1Gi
-  auth:
-    enabled: false
-
-rabbitmq:
-  enabled: false
-  auth:
-    username: user
-    password: pass
-
-# ---------------------------------------------------------------------------
 # eRPC proxy (optional inline Deployment — no official Helm chart exists).
 # ---------------------------------------------------------------------------
 erpc:
