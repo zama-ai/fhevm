@@ -15,12 +15,16 @@ use connector_utils::types::{
     u256_to_request_id,
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
-    self, DecryptionInstance, SnsCiphertextMaterial, delegatedUserDecryptionRequestCall, userDecryptionRequest_1Call,
+    self, DecryptionInstance, HandleEntry, SnsCiphertextMaterial,
+    UserDecryptionRequest_1 as UserDecryptionRequestV2, delegatedUserDecryptionRequestCall,
+    userDecryptionRequest_1Call as userDecryptionRequestCall,
 };
 use fhevm_host_bindings::acl::ACL::ACLInstance;
+use futures::future::try_join_all;
 use kms_grpc::kms::v1::{
     Eip712DomainMsg, PublicDecryptionRequest, RequestId, TypedCiphertext, UserDecryptionRequest,
 };
+use sqlx::types::chrono::Utc;
 use std::collections::HashMap;
 use tracing::info;
 
@@ -215,6 +219,158 @@ where
         }
 
         Ok(())
+    }
+
+    /// RFC016 unified user decryption check — verifies the full ACL authorization for a
+    /// `UserDecryptionRequestV2` payload.
+    ///
+    /// 1. (deferred — see TODO below) signature invalidation check
+    /// 2. validity window (`startTimestamp <= now <= startTimestamp + durationSeconds`)
+    /// 3. `userAddress ∉ allowedContracts` when `allowedContracts` is non-empty
+    /// 4. per-handle ownership (direct `isAllowed` if `ownerAddress == userAddress`, else
+    ///    `isHandleDelegatedForUserDecryption`)
+    /// 5. per-handle contract allowance (any `isAllowed(handle, c)` for `c ∈ allowedContracts`,
+    ///    no-op in permissive mode)
+    #[tracing::instrument(skip_all)]
+    pub async fn check_user_decryption_request_v2(
+        &self,
+        request: &UserDecryptionRequestV2,
+    ) -> Result<(), ProcessingError> {
+        info!(
+            "Starting RFC016 check for {} handles...",
+            request.handles.len()
+        );
+
+        let payload = &request.payload;
+
+        // TODO(RFC016 signature invalidation): fetch
+        // `ACL.decryptionSignatureInvalidatedBefore(userAddress)` once the `fhevm-host-bindings`
+        // `ACL` binding exposes it, and reject when `validity.startTimestamp < invalidationTs`.
+
+        // Validity window
+        let start = payload.requestValidity.startTimestamp;
+        let now = U256::from(Utc::now().timestamp() as u64);
+        let end = start.saturating_add(payload.requestValidity.durationSeconds);
+        if now < start {
+            return Err(ProcessingError::Recoverable(anyhow!(
+                "RFC016 user decryption request not yet valid: now {now} < startTimestamp {start}",
+            )));
+        }
+        if now > end {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "RFC016 user decryption request validity window expired: now {now} > end {end}"
+            )));
+        }
+
+        // `userAddress` must not appear in a non-empty `allowedContracts` list.
+        if payload.allowedContracts.contains(&payload.userAddress) {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "userAddress {} is listed in allowedContracts — request rejected",
+                payload.userAddress
+            )));
+        }
+
+        for entry in &request.handles {
+            let chain_id = extract_chain_id_from_handle(entry.handle.as_slice())
+                .map_err(ProcessingError::Irrecoverable)?;
+            let acl_contract = self.acl_contracts.get(&chain_id).ok_or_else(|| {
+                ProcessingError::Recoverable(anyhow!(
+                    "No ACL contract config found for chain id {chain_id}"
+                ))
+            })?;
+
+            tokio::try_join!(
+                self.inner_ownership_check_for_user_decryption_v2(
+                    acl_contract,
+                    entry,
+                    payload.userAddress,
+                ),
+                self.inner_allowed_contracts_check_for_user_decryption_v2(
+                    acl_contract,
+                    entry.handle,
+                    &payload.allowedContracts,
+                ),
+            )?;
+        }
+
+        info!(
+            "RFC016 ACL check passed for {} handles!",
+            request.handles.len()
+        );
+        Ok(())
+    }
+
+    /// RFC016 per-handle ownership check. Direct path (`ownerAddress == userAddress`) calls
+    /// `isAllowed(handle, userAddress)`; delegated path calls
+    /// `isHandleDelegatedForUserDecryption(ownerAddress, userAddress, contractAddress, handle)`.
+    async fn inner_ownership_check_for_user_decryption_v2(
+        &self,
+        acl_contract: &ACLInstance<HP>,
+        entry: &HandleEntry,
+        user_address: Address,
+    ) -> Result<(), ProcessingError> {
+        let handle_hex = hex::encode(entry.handle);
+        if entry.ownerAddress == user_address {
+            let user_allowed = acl_contract
+                .isAllowed(entry.handle, user_address)
+                .call()
+                .await
+                .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
+            if !user_allowed {
+                return Err(ProcessingError::Recoverable(anyhow!(
+                    "{user_address} is not allowed to decrypt {handle_hex}",
+                )));
+            }
+        } else {
+            let is_delegated = acl_contract
+                .isHandleDelegatedForUserDecryption(
+                    entry.ownerAddress,
+                    user_address,
+                    entry.contractAddress,
+                    entry.handle,
+                )
+                .call()
+                .await
+                .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
+            if !is_delegated {
+                return Err(ProcessingError::Recoverable(anyhow!(
+                    "{user_address} is not a delegate of {} for contract {} and handle {handle_hex}",
+                    entry.ownerAddress,
+                    entry.contractAddress,
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// RFC016 per-handle `allowedContracts` check — succeeds if at least one contract in the list
+    /// has `isAllowed(handle, contract)` returning true. Returns `Ok(())` without any RPC call in
+    /// permissive mode (empty list) so callers can invoke it unconditionally.
+    async fn inner_allowed_contracts_check_for_user_decryption_v2(
+        &self,
+        acl_contract: &ACLInstance<HP>,
+        handle: FixedBytes<32>,
+        allowed_contracts: &[Address],
+    ) -> Result<(), ProcessingError> {
+        if allowed_contracts.is_empty() {
+            return Ok(());
+        }
+
+        let calls = allowed_contracts
+            .iter()
+            .map(|c| async move { acl_contract.isAllowed(handle, *c).call().await });
+        let results = try_join_all(calls)
+            .await
+            .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
+
+        if results.into_iter().any(|allowed| allowed) {
+            Ok(())
+        } else {
+            Err(ProcessingError::Recoverable(anyhow!(
+                "No contract in allowedContracts is allowed to decrypt handle {}",
+                hex::encode(handle)
+            )))
+        }
     }
 
     async fn inner_acl_check_for_user_decryption(

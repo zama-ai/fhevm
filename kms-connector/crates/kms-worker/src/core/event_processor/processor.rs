@@ -66,7 +66,9 @@ impl<GP: Provider, HP: Provider, C: ContextManager> EventProcessor for DbEventPr
             // key management operation at all cost.
             (
                 Err(ProcessingError::Recoverable(e)),
-                ProtocolEventKind::PublicDecryption(_) | ProtocolEventKind::UserDecryption(_),
+                ProtocolEventKind::PublicDecryption(_)
+                | ProtocolEventKind::UserDecryption(_)
+                | ProtocolEventKind::UserDecryptionV2(_),
             ) if event.error_counter as u16 >= self.max_decryption_attempts => {
                 error!(
                     "{}. Maximum number of decryption attempts reached: {}",
@@ -159,6 +161,30 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
                         )),
                     )
                     .await
+            }
+            ProtocolEventKind::PrepKeygen(req) => {
+                self.kms_generation_processor
+                    .prepare_prep_keygen_request(req)
+                    .await
+            }
+            ProtocolEventKind::UserDecryptionV2(req) => {
+                // The RFC016 event carries the full payload, so unlike the legacy path we don't
+                // need to re-fetch the transaction calldata.
+                self.decryption_processor
+                    .check_user_decryption_request_v2(req)
+                    .await?;
+                let payload = &req.payload;
+                self.decryption_processor
+                    .prepare_decryption_request(
+                        req.decryptionId,
+                        &req.snsCtMaterials,
+                        &payload.extraData,
+                        Some(UserDecryptionExtraData::new(
+                            payload.userAddress,
+                            payload.publicKey.clone(),
+                        )),
+                    )
+                    .await?
             }
             ProtocolEventKind::PrepKeygen(req) => {
                 self.kms_generation_processor

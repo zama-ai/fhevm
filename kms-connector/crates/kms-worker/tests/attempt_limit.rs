@@ -124,7 +124,9 @@ async fn test_request_processing(#[case] event_type: EventType) -> anyhow::Resul
 
     match &request {
         // Wait for kms_worker to remove the request from DB, then stop it
-        ProtocolEventKind::PublicDecryption(_) | ProtocolEventKind::UserDecryption(_) => {
+        ProtocolEventKind::PublicDecryption(_)
+        | ProtocolEventKind::UserDecryption(_)
+        | ProtocolEventKind::UserDecryptionV2(_) => {
             while check_no_uncompleted_request_in_db(test_instance.db(), event_type)
                 .await
                 .is_err()
@@ -158,7 +160,9 @@ fn prepare_mocks(req: &ProtocolEventKind) -> MockSet {
     // Gets the endpoints for the given request type
     let (req_endpoint, resp_endpoint) = match req {
         ProtocolEventKind::PublicDecryption(_) => ("PublicDecrypt", "GetPublicDecryptionResult"),
-        ProtocolEventKind::UserDecryption(_) => ("UserDecrypt", "GetUserDecryptionResult"),
+        ProtocolEventKind::UserDecryption(_) | ProtocolEventKind::UserDecryptionV2(_) => {
+            ("UserDecrypt", "GetUserDecryptionResult")
+        }
         ProtocolEventKind::PrepKeygen(_) => ("KeyGenPreproc", "GetKeyGenPreprocResult"),
         ProtocolEventKind::Keygen(_) => ("KeyGen", "GetKeyGenResult"),
         ProtocolEventKind::Crsgen(_) => ("CrsGen", "GetCrsGenResult"),
