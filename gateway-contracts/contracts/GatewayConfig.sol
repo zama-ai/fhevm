@@ -36,8 +36,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     string private constant CONTRACT_NAME = "GatewayConfig";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 5;
-    uint256 private constant PATCH_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 6;
+    uint256 private constant PATCH_VERSION = 0;
 
     /**
      * @dev Constant used for making sure the version number using in the `reinitializer` modifier is
