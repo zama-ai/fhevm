@@ -487,6 +487,11 @@ impl Database {
             | E::TrivialEncrypt(C::TrivialEncrypt {pt, toType, result, ..})
             => insert_computation_bytes(tx, result, &[], &[as_bytes(pt), ty(toType)], &HAS_SCALAR).await,
 
+            E::FheSum(C::FheSum { values, result, .. }) => {
+                let deps: Vec<&Handle> = values.iter().collect();
+                insert_computation(tx, result, &deps, &NO_SCALAR).await
+            }
+
             | E::Initialized(_)
             | E::Upgraded(_)
             | E::VerifyInput(_)
@@ -1017,6 +1022,7 @@ fn event_to_op_int(op: &TfheContractEvents) -> FheOperation {
         E::FheIfThenElse(_) => O::FheIfThenElse as i32,
         E::FheRand(_) => O::FheRand as i32,
         E::FheRandBounded(_) => O::FheRandBounded as i32,
+        E::FheSum(_) => O::FheSum as i32,
         // Not tfhe ops
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => -1,
     }
@@ -1052,6 +1058,7 @@ pub fn event_name(op: &TfheContractEvents) -> &'static str {
         E::FheIfThenElse(_) => "FheIfThenElse",
         E::FheRand(_) => "FheRand",
         E::FheRandBounded(_) => "FheRandBounded",
+        E::FheSum(_) => "FheSum",
         E::Initialized(_) => "Initialized",
         E::Upgraded(_) => "Upgraded",
         E::VerifyInput(_) => "VerifyInput",
@@ -1088,7 +1095,8 @@ pub fn tfhe_result_handle(op: &TfheContractEvents) -> Option<Handle> {
         | E::FheNot(C::FheNot { result, .. })
         | E::FheRand(C::FheRand { result, .. })
         | E::FheRandBounded(C::FheRandBounded { result, .. })
-        | E::TrivialEncrypt(C::TrivialEncrypt { result, .. }) => Some(*result),
+        | E::TrivialEncrypt(C::TrivialEncrypt { result, .. })
+        | E::FheSum(C::FheSum { result, .. }) => Some(*result),
 
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => None,
     }
@@ -1259,6 +1267,8 @@ pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
         }
 
         E::FheRand(_) | E::FheRandBounded(_) | E::TrivialEncrypt(_) => vec![],
+
+        E::FheSum(C::FheSum { values, .. }) => values.clone(),
 
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
     }

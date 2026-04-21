@@ -78,6 +78,29 @@ pub fn release_memory_on_gpu(amount: u64, idx: usize) {
     let _ = gpu_mem_reservation[idx].fetch_sub(amount, std::sync::atomic::Ordering::SeqCst);
 }
 
+fn get_fhe_sum_size_on_gpu(
+    _fhe_operation: i16,
+    input_operands: &[SupportedFheCiphertexts],
+) -> Result<u64, FhevmError> {
+    if input_operands.is_empty() {
+        return Ok(0);
+    }
+    let n = input_operands.len() as u64;
+    // No dedicated get_sum_size_on_gpu API exists in tfhe-rs; using N * ciphertext_size
+    // as an approximation.
+    match &input_operands[0] {
+        SupportedFheCiphertexts::FheUint8(v) => Ok(v.get_size_on_gpu() * n),
+        SupportedFheCiphertexts::FheUint16(v) => Ok(v.get_size_on_gpu() * n),
+        SupportedFheCiphertexts::FheUint32(v) => Ok(v.get_size_on_gpu() * n),
+        SupportedFheCiphertexts::FheUint64(v) => Ok(v.get_size_on_gpu() * n),
+        SupportedFheCiphertexts::FheUint128(v) => Ok(v.get_size_on_gpu() * n),
+        _ => Err(FhevmError::UnsupportedFheTypes {
+            fhe_operation: format!("{:?}", _fhe_operation),
+            input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+        }),
+    }
+}
+
 pub fn get_op_size_on_gpu(
     fhe_operation_int: i16,
     input_operands: &[SupportedFheCiphertexts],
@@ -1795,6 +1818,9 @@ pub fn get_op_size_on_gpu(
                     input_types: input_operands.iter().map(|i| i.type_name()).collect(),
                 }),
             }
+        }
+        SupportedFheOperations::FheSum => {
+            get_fhe_sum_size_on_gpu(fhe_operation_int, input_operands)
         }
         _ => Err(FhevmError::UnknownFheOperation(fhe_operation_int.into())),
     }
