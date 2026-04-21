@@ -677,7 +677,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         if (values.length > maxSize) revert FHECollectionSizeInvalid(values.length, maxSize);
 
         result = _naryOp(Operators.fheSum, values, resultType);
-        hcuLimit.checkHCUForFheSum(resultType, values, result, msg.sender);
+        HCU_LIMIT.checkHCUForFheSum(resultType, values, result, msg.sender);
         emit FheSum(msg.sender, values, resultType, result);
     }
 
@@ -974,7 +974,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         FheType resultType
     ) internal virtual returns (bytes32 result) {
         for (uint256 i = 0; i < values.length; i++) {
-            if (!acl.isAllowed(values[i], msg.sender)) revert ACLNotAllowed(values[i], msg.sender);
+            if (!ACL.isAllowed(values[i], msg.sender)) revert ACLNotAllowed(values[i], msg.sender);
             if (_typeOf(values[i]) != resultType) revert IncompatibleTypes();
         }
         result = keccak256(
@@ -983,14 +983,14 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
                 op,
                 values.length,
                 values,
-                acl,
+                ACL,
                 block.chainid,
                 blockhash(block.number - 1),
                 block.timestamp
             )
         );
         result = _appendMetadataToPrehandle(result, resultType);
-        acl.allowTransient(result, msg.sender);
+        ACL.allowTransient(result, msg.sender);
     }
 
     function _generateSeed() internal virtual returns (bytes16 seed) {
