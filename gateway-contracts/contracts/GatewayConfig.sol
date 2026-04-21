@@ -227,16 +227,11 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice Re-initializes the contract from V5.
-     * @dev No storage migration is required for the post-v0.12.1 behavior change, but the
-     * upgrade flow keeps the KMS context ID argument so existing upgrade tasks keep working.
+     * @dev No storage migration is required for the post-v0.12.1 behavior change.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV6(uint256 initialKmsContextId) public virtual reinitializer(REINITIALIZER_VERSION) {
-        if (initialKmsContextId == 0) {
-            revert InvalidNullKmsContextId();
-        }
-    }
+    function reinitializeV6() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IGatewayConfig-isPauser}.
