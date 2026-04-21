@@ -24,7 +24,7 @@ import {
   TEST_PARALLEL,
   TEST_SUITE_CONTAINER,
 } from "../layout";
-import type { TestOptions } from "../types";
+import type { State, TestOptions } from "../types";
 
 const DRIFT_WARNING = '"message":"Drift detected: observed multiple digest variants for handle"';
 const DRIFT_HANDLE = /"handle":"0x([0-9a-f]+)"/i;
@@ -543,6 +543,11 @@ const waitForDbRevertRecovery = async (
   }
 };
 
+const localDbMigrationImageRef = (state: Pick<State, "overrides" | "builtImages">) =>
+  state.overrides.some((override) => override.group === "coprocessor")
+    ? state.builtImages?.find((image) => image.group === "coprocessor" && image.ref.includes("/coprocessor/db-migration:"))?.ref
+    : undefined;
+
 /** Runs the coprocessor DB state revert e2e flow against the active stack. */
 const runDbStateRevert = async (
   state: Awaited<ReturnType<typeof loadState>>,
@@ -567,10 +572,12 @@ const runDbStateRevert = async (
   const pollIntervalSeconds = parsePositiveInteger(process.env.REVERT_POLL_INTERVAL_SECONDS ?? "2", "REVERT_POLL_INTERVAL_SECONDS");
   const containers = coprocessorRuntimeContainers(topologyForState(state).count);
   const migrationVersion = state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION;
-  if (!migrationVersion) {
-    throw new PreflightError("db-state-revert requires COPROCESSOR_DB_MIGRATION_VERSION in the active stack state");
+  const revertImage =
+    localDbMigrationImageRef(state) ??
+    (migrationVersion ? `ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${migrationVersion}` : undefined);
+  if (!revertImage) {
+    throw new PreflightError("db-state-revert requires either a local coprocessor db-migration image or COPROCESSOR_DB_MIGRATION_VERSION");
   }
-  const revertImage = `ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${migrationVersion}`;
   console.log("[test] coprocessor-db-state-revert");
 
   return runLogged("coprocessor-db-state-revert", started, async () => {
