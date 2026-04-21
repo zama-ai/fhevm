@@ -1,0 +1,56 @@
+{{/*
+Per-listener ConfigMaps.
+Each listener gets its own ConfigMap built from a 3-layer deep merge:
+  1. configs/listener-default.yaml  (application defaults, symlinked from config/)
+  2. .Values.commonConfig           (operator-shared overrides)
+  3. per-listener .config           (chain-specific overrides)
+The listener name is always injected from .name so it cannot drift.
+*/}}
+{{- $defaultConfig := .Files.Get "configs/listener-default.yaml" | fromYaml }}
+{{- $common := .Values.commonConfig | default dict }}
+{{- if .Values.listeners }}
+{{- range $listener := .Values.listeners }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "listener.instanceName" (dict "root" $ "listener" $listener) }}
+  labels:
+    {{- include "listener.instanceLabels" (dict "root" $ "listener" $listener) | nindent 4 }}
+data:
+  config.yaml: |
+    {{- $perListener := $listener.config | default dict }}
+    {{- $nameOverride := dict "name" $listener.name }}
+    {{- $merged := mergeOverwrite (deepCopy $defaultConfig) $common $perListener $nameOverride }}
+    {{- toYaml $merged | nindent 4 }}
+{{- end }}
+{{- end }}
+
+{{/* ── eRPC ConfigMap ───────────────────────────────────────────────── */}}
+{{/*
+  Base config: configs/<baseConfig> (bundled in chart via symlink).
+  The operator picks the profile at install time (erpc-public.yaml, erpc-gateway.yaml, etc.).
+  Partial overrides: .Values.erpc.config (dict) is deep-merged on top.
+  Full replacement: --set-file erpc.configFile=path/to/full-config.yaml
+*/}}
+{{- if .Values.erpc.enabled }}
+{{- $erpcRaw := .Files.Get (printf "configs/%s" .Values.erpc.baseConfig) }}
+{{- if .Values.erpc.configFile }}
+  {{- $erpcRaw = .Values.erpc.configFile }}
+{{- end }}
+{{- if $erpcRaw }}
+{{- $base := $erpcRaw | fromYaml }}
+{{- $overrides := .Values.erpc.config | default dict }}
+{{- $merged := mergeOverwrite $base $overrides }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "listener.erpcName" . }}
+  labels:
+    {{- include "listener.erpcLabels" . | nindent 4 }}
+data:
+  erpc.yaml: |
+    {{- toYaml $merged | nindent 4 }}
+{{- end }}
+{{- end }}
