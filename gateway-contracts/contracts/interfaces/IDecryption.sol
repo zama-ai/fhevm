@@ -57,10 +57,11 @@ interface IDecryption {
 
     /**
      * @notice The signed payload carried by the unified `UserDecryptionRequest` event.
-     * @dev Packs every field the EIP-712 signature covers plus the signature itself. Signature
-     * validation has moved off-chain, so the gateway forwards the full signed payload verbatim.
-     * `snsCtMaterials` and `handles` are not part of the signed struct and stay as separate
-     * event parameters.
+     * @dev Signature validation is performed off-chain by the KMS Connector, which
+     * reconstructs the EIP-712 digest from the signed fields and verifies the signature
+     * against it. The gateway therefore forwards the signed fields plus the signature
+     * verbatim in this struct. `snsCtMaterials` and `handles` are not covered by the
+     * signature and stay outside as separate event parameters.
      */
     struct UserDecryptionRequestPayload {
         /// @notice The identity asserting authorization.
@@ -159,9 +160,10 @@ interface IDecryption {
      * @param decryptionId The decryption request ID.
      * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
      * @param handles The handle entries (handle, contractAddress, ownerAddress).
-     * @param payload The signed EIP-712 fields and the raw signature.
-     * @dev Shares the name `UserDecryptionRequest` with the legacy event via Solidity event
-     * overloading; the distinct parameter list produces a distinct `topic0`.
+     * @param payload The signed EIP-712 fields and the raw signature; see
+     * `UserDecryptionRequestPayload` for the signed/unsigned split.
+     * @dev Shares its name with the legacy event via Solidity event overloading — the
+     * distinct parameter list produces a distinct `topic0`.
      */
     event UserDecryptionRequest(
         uint256 indexed decryptionId,
