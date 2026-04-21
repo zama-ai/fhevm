@@ -203,14 +203,17 @@ jobs:
           sudo apt-get install -y gh
 
       - name: Typecheck CLI
+        if: ${{ inputs.compat-test == '' }}
         working-directory: test-suite/fhevm
         run: bun run check
 
       - name: Unit test CLI
+        if: ${{ inputs.compat-test == '' }}
         working-directory: test-suite/fhevm
         run: bun test src
 
       - name: Compat smoke
+        if: ${{ inputs.compat-test == '' }}
         working-directory: test-suite/fhevm
         run: bun run compat-smoke
 
@@ -354,9 +357,11 @@ jobs:
         if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' }}
         working-directory: test-suite/fhevm
         run: |
+          trap 'docker start coprocessor-host-listener >/dev/null 2>&1 || true' EXIT
           docker stop coprocessor-host-listener
           ./fhevm-cli test erc20
           docker start coprocessor-host-listener
+          trap - EXIT
 
       - name: Show logs
         working-directory: test-suite/fhevm

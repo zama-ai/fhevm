@@ -60,7 +60,7 @@ jobs:
         run: |
           set -euo pipefail
           merge_csv() {
-            printf '%s\n' "$@" | tr ',' '\n' | sed '/^$/d' | awk '!seen[$0]++' | paste -sd, -
+            printf '%s\n' "$@" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | sed '/^$/d' | awk '!seen[$0]++' | paste -sd, -
           }
           resolve_test() {
             local value="$1"
