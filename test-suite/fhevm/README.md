@@ -207,7 +207,7 @@ For release compatibility matrices, check in a compat-test definition under `com
 Compat-tests define:
 
 - explicit `from` and `to` version maps
-- explicit `harness.testSuiteVersion`
+- explicit `harness.testSuiteVersion` for the harness line that should materialize into `TEST_SUITE_VERSION`
 - explicit `harness.relayerSdkVersion`
 - ordered rollout `steps` with either `units` or ordered `substeps`
 - an explicit `units` map that assigns every version key to exactly one rollout unit

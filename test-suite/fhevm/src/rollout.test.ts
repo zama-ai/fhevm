@@ -37,7 +37,7 @@ const compatTest = (): CompatTestDefinition => ({
   from: envMap("from"),
   to: envMap("to"),
   harness: {
-    testSuiteVersion: "v0.12.0",
+    testSuiteVersion: "to-test_suite_version",
     relayerSdkVersion: "0.5.0-alpha.1",
   },
   steps: [
@@ -107,23 +107,23 @@ describe("rollout", () => {
     await expect(readCompatTest(file)).rejects.toThrow("assigned to multiple units");
   });
 
-  test("injects from-client env into from/to env maps", async () => {
+  test("injects harness client env into from/to env maps", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "fhevm-rollout-"));
     tempDirs.push(root);
     const file = path.join(root, "compat.json");
     const testDef = compatTest();
     await writeJson(file, testDef);
     const loaded = await readCompatTest(file);
-    expect(loaded.from.TEST_SUITE_VERSION).toBe("v0.12.0");
-    expect(loaded.to.TEST_SUITE_VERSION).toBe("v0.12.0");
+    expect(loaded.from.TEST_SUITE_VERSION).toBe("to-test_suite_version");
+    expect(loaded.to.TEST_SUITE_VERSION).toBe("to-test_suite_version");
     expect(loaded.harness?.relayerSdkVersion).toBe("0.5.0-alpha.1");
   });
 
-  test("reads the explicit from client line for the checked-in v0.12 rollout", async () => {
+  test("reads the explicit target harness line for the checked-in v0.12 rollout", async () => {
     const loaded = await readCompatTest(path.join(REPO_ROOT, "test-suite/fhevm/compat-tests/v0.12-to-main.json"));
-    expect(loaded.from.TEST_SUITE_VERSION).toBe("v0.12.0");
-    expect(loaded.to.TEST_SUITE_VERSION).toBe("v0.12.0");
-    expect(loaded.harness?.testSuiteVersion).toBe("v0.12.0");
+    expect(loaded.from.TEST_SUITE_VERSION).toBe("186c343");
+    expect(loaded.to.TEST_SUITE_VERSION).toBe("186c343");
+    expect(loaded.harness?.testSuiteVersion).toBe("186c343");
     expect(loaded.harness?.relayerSdkVersion).toBe("0.5.0-alpha.1");
   });
 
@@ -152,7 +152,7 @@ describe("rollout", () => {
       "09-coprocessor-zkproof-worker.lock.json",
       "10-coprocessor-sns-worker.lock.json",
     ]);
-    expect(locks[0].env.TEST_SUITE_VERSION).toBe("v0.12.0");
+    expect(locks[0].env.TEST_SUITE_VERSION).toBe("to-test_suite_version");
     expect(locks[0].env.RELAYER_SDK_VERSION).toBe("0.5.0-alpha.1");
     expect(locks[1].env.RELAYER_VERSION).toBe("to-relayer_version");
     expect(locks[2].env.GATEWAY_VERSION).toBe("to-gateway_version");

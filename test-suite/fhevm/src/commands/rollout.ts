@@ -49,7 +49,6 @@ const slug = (value: string) => value.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-
 const rolloutSources = (test: CompatTestDefinition, step: string) => [`compat-test=${test.name}`, `rollout-step=${step}`];
 const compatContractsFromSources = (test: CompatTestDefinition) =>
   ["GATEWAY_VERSION", "HOST_VERSION"].map((key) => `compat-from:${key}=${test.from[key]}`);
-const parseCompatVersion = (version: string) => /^v?\d+\.\d+\.\d+(?:[-+].*)?$/.test(version);
 const compatClientEnv = (test: CompatTestDefinition): Record<string, string> =>
   ({
     TEST_SUITE_VERSION: test.harness!.testSuiteVersion,
@@ -175,8 +174,8 @@ export const readCompatTest = async (file: string) => {
   if (!test?.name) {
     throw new PreflightError("compat-test must include a non-empty name");
   }
-  if (!test.harness?.testSuiteVersion || !parseCompatVersion(test.harness.testSuiteVersion)) {
-    throw new PreflightError("compat-test harness.testSuiteVersion must be set explicitly to a semver tag");
+  if (!test.harness?.testSuiteVersion || typeof test.harness.testSuiteVersion !== "string" || !test.harness.testSuiteVersion.length) {
+    throw new PreflightError("compat-test harness.testSuiteVersion must be set explicitly");
   }
   if (!test.harness.relayerSdkVersion || typeof test.harness.relayerSdkVersion !== "string" || !test.harness.relayerSdkVersion.length) {
     throw new PreflightError("compat-test harness.relayerSdkVersion must be set explicitly");
