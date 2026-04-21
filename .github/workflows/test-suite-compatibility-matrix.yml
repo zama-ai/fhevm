@@ -2,6 +2,8 @@ name: test-suite-compatibility-matrix
 
 on:
   pull_request:
+    # Include label events so applying or removing `rollout` reevaluates the
+    # job-level gate below without requiring a new commit.
     types:
       - opened
       - synchronize
@@ -24,7 +26,9 @@ concurrency:
 jobs:
   prepare_rollout:
     name: prepare-rollout
-    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'rollout') }}
+    # On PRs, only same-repo heads with the `rollout` label may enter this
+    # secreted compat path. Manual dispatch remains always available.
+    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'rollout')) }}
     permissions:
       contents: 'read' # Required to checkout repository code
       packages: 'read' # Required to resolve published GitHub Container Registry package tags
