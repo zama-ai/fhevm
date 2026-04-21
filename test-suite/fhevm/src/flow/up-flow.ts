@@ -611,9 +611,12 @@ export const runStep = async (state: State, step: StepName) => {
       }
       await postgresExec("", ["-c", "CREATE DATABASE listener;"]);
       await stepComposeUp("listener-core", state,
-        ["listener-redis", "listener-publisher-for-anvil"]
+        ["listener-redis"]
       );
       await waitForContainer("listener-redis", "running");
+      await stepComposeUp("listener-core", state,
+        ["listener-publisher-for-anvil"]
+      );
       await waitForContainer("listener-publisher-for-anvil", "running");
       break;
     case "coprocessor": {
