@@ -34,9 +34,10 @@ const versionKeys = [
 const envMap = (suffix: string) => Object.fromEntries(versionKeys.map((key) => [key, `${suffix}-${key.toLowerCase()}`]));
 const compatTest = (): CompatTestDefinition => ({
   name: "v0.12-to-main-upgrade",
-  from: { ...envMap("from"), TEST_SUITE_VERSION: "v0.12.0" },
+  from: envMap("from"),
   to: envMap("to"),
   harness: {
+    testSuiteVersion: "v0.12.0",
     relayerSdkVersion: "0.5.0-alpha.1",
   },
   steps: [
@@ -111,7 +112,6 @@ describe("rollout", () => {
     tempDirs.push(root);
     const file = path.join(root, "compat.json");
     const testDef = compatTest();
-    testDef.from.TEST_SUITE_VERSION = "v0.12.0";
     await writeJson(file, testDef);
     const loaded = await readCompatTest(file);
     expect(loaded.from.TEST_SUITE_VERSION).toBe("v0.12.0");
@@ -123,6 +123,7 @@ describe("rollout", () => {
     const loaded = await readCompatTest(path.join(REPO_ROOT, "test-suite/fhevm/compat-tests/v0.12-to-main.json"));
     expect(loaded.from.TEST_SUITE_VERSION).toBe("v0.12.0");
     expect(loaded.to.TEST_SUITE_VERSION).toBe("v0.12.0");
+    expect(loaded.harness?.testSuiteVersion).toBe("v0.12.0");
     expect(loaded.harness?.relayerSdkVersion).toBe("0.5.0-alpha.1");
   });
 

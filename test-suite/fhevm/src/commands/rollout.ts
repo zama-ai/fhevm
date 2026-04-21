@@ -27,6 +27,7 @@ type ExpandedCompatStep = {
   units: string[];
 };
 type CompatHarnessDefinition = {
+  testSuiteVersion: string;
   relayerSdkVersion: string;
 };
 
@@ -52,7 +53,7 @@ const compatContractsFromSources = (test: CompatTestDefinition) =>
 const parseCompatVersion = (version: string) => /^v?\d+\.\d+\.\d+(?:[-+].*)?$/.test(version);
 const compatClientEnv = (test: CompatTestDefinition): Record<string, string> =>
   ({
-    TEST_SUITE_VERSION: test.from.TEST_SUITE_VERSION,
+    TEST_SUITE_VERSION: test.harness!.testSuiteVersion,
     RELAYER_SDK_VERSION: test.harness!.relayerSdkVersion,
   });
 
@@ -177,11 +178,11 @@ export const readCompatTest = async (file: string) => {
   if (!test?.name) {
     throw new PreflightError("compat-test must include a non-empty name");
   }
-  if (!test.harness?.relayerSdkVersion || typeof test.harness.relayerSdkVersion !== "string" || !test.harness.relayerSdkVersion.length) {
-    throw new PreflightError("compat-test harness.relayerSdkVersion must be set explicitly");
+  if (!test.harness?.testSuiteVersion || !parseCompatVersion(test.harness.testSuiteVersion)) {
+    throw new PreflightError("compat-test harness.testSuiteVersion must be set explicitly to a semver tag");
   }
-  if (!parseCompatVersion(test.from.TEST_SUITE_VERSION ?? "")) {
-    throw new PreflightError("compat-test from.TEST_SUITE_VERSION must be set explicitly to a semver tag");
+  if (!test.harness.relayerSdkVersion || typeof test.harness.relayerSdkVersion !== "string" || !test.harness.relayerSdkVersion.length) {
+    throw new PreflightError("compat-test harness.relayerSdkVersion must be set explicitly");
   }
   const harness = { ...test.harness };
   const clientEnv = compatClientEnv({ ...test, harness });
