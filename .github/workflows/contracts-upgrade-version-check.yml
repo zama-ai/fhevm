@@ -5,11 +5,9 @@ permissions: {}
 on:
   pull_request:
 
-# Compare PR bytecode against the last deployed release, not main.
+# Compare PR bytecode against the latest stable release, not main.
 # This avoids unnecessary reinitializer bumps when multiple PRs modify
-# the same contract between deployments. Keep in sync with *-upgrade-tests.yml.
-env:
-  UPGRADE_FROM_TAG: v0.11.1
+# the same contract between releases. Keep in sync with *-upgrade-tests.yml.
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -65,10 +63,16 @@ jobs:
         with:
           persist-credentials: 'false'
 
-      - name: Checkout baseline (last deployed release)
+      - name: Resolve baseline release tag
+        id: baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "tag=$(gh api repos/${{ github.repository }}/releases/latest --jq .tag_name)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout baseline (latest stable release)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ env.UPGRADE_FROM_TAG }}
+          ref: ${{ steps.baseline.outputs.tag }}
           path: baseline
           persist-credentials: 'false'
 
