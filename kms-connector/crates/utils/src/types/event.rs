@@ -204,7 +204,7 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
 
     // `signature IS NULL` is the sole variant discriminator for `user_decryption_requests` rows.
     // See migration 20260421092426_unified_user_decryption.sql. `try_get(...).ok().flatten()`
-    // tolerates both missing column (older SELECTs) and NULL value → both map to the legacy
+    // tolerates both missing column (older SELECT queries) and NULL value → both map to the legacy
     // variant.
     let signature = row
         .try_get::<Option<Vec<u8>>, _>("signature")

@@ -38,8 +38,10 @@ alloy = { version = "=1.0.38", default-features = false, features = [
 ] }
 anyhow = { version = "=1.0.98", default-features = false }
 async-trait = { version = "=0.1.88", default-features = false }
-aws-config = { version = "=1.8.6", default-features = true }
-aws-sdk-kms = { version = "=1.86.0", default-features = true }
+aws-config = { version = "=1.8.6", default-features = false, features = [
+    "rt-tokio",
+] }
+aws-sdk-kms = { version = "=1.86.0", default-features = false }
 aws-sdk-s3 = { version = "=1.105.0", default-features = true }
 clap = { version = "=4.5.47", default-features = true, features = [
     "cargo",
