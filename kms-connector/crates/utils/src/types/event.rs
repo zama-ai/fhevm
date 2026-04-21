@@ -2,10 +2,15 @@ use crate::{
     monitoring::otlp::PropagationContext,
     types::db::{OperationStatus, ParamsTypeDb, SnsCiphertextMaterialDbItem},
 };
-use alloy::primitives::{FixedBytes, U256};
+use alloy::primitives::{Address, FixedBytes, U256};
 use anyhow::anyhow;
-use fhevm_gateway_bindings::decryption::Decryption::{
-    DecryptionEvents, PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
+use fhevm_gateway_bindings::decryption::{
+    Decryption::{
+        DecryptionEvents, HandleEntry, PublicDecryptionRequest, SnsCiphertextMaterial,
+        UserDecryptionRequest_0 as UserDecryptionRequest,
+        UserDecryptionRequest_1 as UserDecryptionRequestV2,
+    },
+    IDecryption::{RequestValiditySeconds, UserDecryptionRequestPayload},
 };
 use fhevm_host_bindings::kms_generation::KMSGeneration::{
     CrsgenRequest, KMSGenerationEvents, KeygenRequest, PrepKeygenRequest,
@@ -76,6 +81,10 @@ impl ProtocolEvent {
                 update_user_decryption_status(db, e.decryptionId, status, already_sent, err_count)
                     .await
             }
+            ProtocolEventKind::UserDecryptionV2(e) => {
+                update_user_decryption_status(db, e.decryptionId, status, already_sent, err_count)
+                    .await
+            }
             ProtocolEventKind::PrepKeygen(e) => {
                 update_prep_keygen_status(db, e.prepKeygenId, status, already_sent).await
             }
@@ -89,13 +98,61 @@ impl ProtocolEvent {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+// `Debug` and `PartialEq` are implemented by hand below because
+// `fhevm_gateway_bindings::decryption::Decryption::UserDecryptionRequest_1` (aliased as
+// `UserDecryptionRequestV2`) doesn't derive them: `alloy::sol!` skips the automatic derives on any
+// struct that references a type defined in a different `sol!` module, and this event's `payload`
+// field reaches into `IDecryption::UserDecryptionRequestPayload`. All of the event's fields
+// individually do implement `Debug` and `PartialEq`, so we forward to them field-by-field.
+#[derive(Clone)]
 pub enum ProtocolEventKind {
     PublicDecryption(PublicDecryptionRequest),
+    /// Legacy `UserDecryptionRequest` event (split direct / delegated at the calldata level).
     UserDecryption(UserDecryptionRequest),
+    /// RFC016 `UserDecryptionRequest` event — carries the full unified payload (handles, signed
+    /// fields, signature) directly in the event, so processing does not need to re-fetch calldata.
+    UserDecryptionV2(UserDecryptionRequestV2),
     PrepKeygen(PrepKeygenRequest),
     Keygen(KeygenRequest),
     Crsgen(CrsgenRequest),
+}
+
+impl std::fmt::Debug for ProtocolEventKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::PublicDecryption(e) => f.debug_tuple("PublicDecryption").field(e).finish(),
+            Self::UserDecryption(e) => f.debug_tuple("UserDecryption").field(e).finish(),
+            Self::UserDecryptionV2(e) => f
+                .debug_struct("UserDecryptionV2")
+                .field("decryptionId", &e.decryptionId)
+                .field("snsCtMaterials", &e.snsCtMaterials)
+                .field("handles", &e.handles)
+                .field("payload", &e.payload)
+                .finish(),
+            Self::PrepKeygen(e) => f.debug_tuple("PrepKeygen").field(e).finish(),
+            Self::Keygen(e) => f.debug_tuple("Keygen").field(e).finish(),
+            Self::Crsgen(e) => f.debug_tuple("Crsgen").field(e).finish(),
+        }
+    }
+}
+
+impl PartialEq for ProtocolEventKind {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::PublicDecryption(a), Self::PublicDecryption(b)) => a == b,
+            (Self::UserDecryption(a), Self::UserDecryption(b)) => a == b,
+            (Self::UserDecryptionV2(a), Self::UserDecryptionV2(b)) => {
+                a.decryptionId == b.decryptionId
+                    && a.snsCtMaterials == b.snsCtMaterials
+                    && a.handles == b.handles
+                    && a.payload == b.payload
+            }
+            (Self::PrepKeygen(a), Self::PrepKeygen(b)) => a == b,
+            (Self::Keygen(a), Self::Keygen(b)) => a == b,
+            (Self::Crsgen(a), Self::Crsgen(b)) => a == b,
+            _ => false,
+        }
+    }
 }
 
 pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
@@ -129,14 +186,79 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
         .iter()
         .map(SnsCiphertextMaterial::from)
         .collect();
+    let decryption_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?);
+    let user_address: Address = row.try_get::<[u8; 20], _>("user_address")?.into();
+    let public_key: Vec<u8> = row.try_get("public_key")?;
+    let extra_data: Vec<u8> = row.try_get("extra_data")?;
 
-    let kind = ProtocolEventKind::UserDecryption(UserDecryptionRequest {
-        decryptionId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?),
-        snsCtMaterials: sns_ct_materials,
-        userAddress: row.try_get::<[u8; 20], _>("user_address")?.into(),
-        publicKey: row.try_get::<Vec<u8>, _>("public_key")?.into(),
-        extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
-    });
+    // `signature IS NULL` is the sole variant discriminator for `user_decryption_requests` rows.
+    // See migration 20260421092426_unified_user_decryption.sql. `try_get(...).ok().flatten()`
+    // tolerates both missing column (older SELECTs) and NULL value → both map to the legacy
+    // variant.
+    let signature = row
+        .try_get::<Option<Vec<u8>>, _>("signature")
+        .ok()
+        .flatten();
+
+    let kind = match signature {
+        None => ProtocolEventKind::UserDecryption(UserDecryptionRequest {
+            decryptionId: decryption_id,
+            snsCtMaterials: sns_ct_materials,
+            userAddress: user_address,
+            publicKey: public_key.into(),
+            extraData: extra_data.into(),
+        }),
+        Some(signature) => {
+            let owner_addresses: Vec<Vec<u8>> = row.try_get("handle_owner_addresses")?;
+            let contract_addresses: Vec<Vec<u8>> = row.try_get("handle_contract_addresses")?;
+            let allowed_contracts: Vec<Vec<u8>> = row.try_get("allowed_contracts")?;
+            let start_timestamp: i64 = row.try_get("start_timestamp")?;
+            let duration_seconds: i64 = row.try_get("duration_seconds")?;
+
+            if owner_addresses.len() != sns_ct_materials.len()
+                || contract_addresses.len() != sns_ct_materials.len()
+            {
+                anyhow::bail!(
+                    "handle owner/contract array length mismatch for RFC016 user decryption row"
+                );
+            }
+
+            let handles = sns_ct_materials
+                .iter()
+                .zip(owner_addresses.iter())
+                .zip(contract_addresses.iter())
+                .map(|((m, owner), contract)| {
+                    Ok::<_, anyhow::Error>(HandleEntry {
+                        handle: m.ctHandle,
+                        contractAddress: Address::try_from(contract.as_slice())?,
+                        ownerAddress: Address::try_from(owner.as_slice())?,
+                    })
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
+
+            let allowed_contracts = allowed_contracts
+                .iter()
+                .map(|a| Address::try_from(a.as_slice()).map_err(anyhow::Error::from))
+                .collect::<anyhow::Result<Vec<_>>>()?;
+
+            ProtocolEventKind::UserDecryptionV2(UserDecryptionRequestV2 {
+                decryptionId: decryption_id,
+                snsCtMaterials: sns_ct_materials,
+                handles,
+                payload: UserDecryptionRequestPayload {
+                    userAddress: user_address,
+                    publicKey: public_key.into(),
+                    allowedContracts: allowed_contracts,
+                    requestValidity: RequestValiditySeconds {
+                        startTimestamp: U256::from(start_timestamp as u64),
+                        durationSeconds: U256::from(duration_seconds as u64),
+                    },
+                    extraData: extra_data.into(),
+                    signature: signature.into(),
+                },
+            })
+        }
+    };
 
     Ok(ProtocolEvent {
         kind,
@@ -324,6 +446,9 @@ impl Display for ProtocolEventKind {
             ProtocolEventKind::UserDecryption(e) => {
                 write!(f, "UserDecryptionRequest #{}", e.decryptionId)
             }
+            ProtocolEventKind::UserDecryptionV2(e) => {
+                write!(f, "UserDecryptionRequest #{}", e.decryptionId)
+            }
             ProtocolEventKind::PrepKeygen(e) => {
                 write!(f, "PrepKeygenRequest #{}", e.prepKeygenId)
             }
@@ -342,6 +467,12 @@ impl From<PublicDecryptionRequest> for ProtocolEventKind {
 impl From<UserDecryptionRequest> for ProtocolEventKind {
     fn from(value: UserDecryptionRequest) -> Self {
         Self::UserDecryption(value)
+    }
+}
+
+impl From<UserDecryptionRequestV2> for ProtocolEventKind {
+    fn from(value: UserDecryptionRequestV2) -> Self {
+        Self::UserDecryptionV2(value)
     }
 }
 
@@ -368,9 +499,12 @@ impl TryFrom<DecryptionEvents> for ProtocolEventKind {
 
     fn try_from(value: DecryptionEvents) -> Result<Self, Self::Error> {
         match value {
+            // `UserDecryptionRequest_0` is the legacy event; `UserDecryptionRequest_1` is the
+            // RFC016 overload.
             DecryptionEvents::PublicDecryptionRequest(e) => Ok(e.into()),
-            DecryptionEvents::UserDecryptionRequest(e) => Ok(e.into()),
-            _ => Err(anyhow!("Unexpected Decryption event: {value:?}")),
+            DecryptionEvents::UserDecryptionRequest_0(e) => Ok(e.into()),
+            DecryptionEvents::UserDecryptionRequest_1(e) => Ok(e.into()),
+            _ => Err(anyhow!("Unexpected Decryption event")),
         }
     }
 }

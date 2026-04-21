@@ -15,8 +15,7 @@ use connector_utils::types::{
     u256_to_request_id,
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
-    self, DecryptionInstance, SnsCiphertextMaterial, delegatedUserDecryptionRequestCall,
-    userDecryptionRequestCall,
+    self, DecryptionInstance, SnsCiphertextMaterial, delegatedUserDecryptionRequestCall, userDecryptionRequest_1Call,
 };
 use fhevm_host_bindings::acl::ACL::ACLInstance;
 use kms_grpc::kms::v1::{
@@ -131,7 +130,7 @@ where
                     Some(parsed_calldata.delegationAccounts.delegatorAddress),
                 ),
                 Err(e) => {
-                    let parsed_calldata = userDecryptionRequestCall::abi_decode(
+                    let parsed_calldata = userDecryptionRequest_1Call::abi_decode(
                         calldata.as_slice(),
                     )
                     .map_err(|e2| {
@@ -492,7 +491,7 @@ mod tests {
         )]);
 
         // Use non-delegated userDecryptionRequestCall (requires only 2 ACL checks)
-        let calldata = userDecryptionRequestCall {
+        let calldata = userDecryptionRequest_1Call {
             ctHandleContractPairs: vec![CtHandleContractPair {
                 ctHandle: sns_ct.ctHandle,
                 contractAddress: rand_address(),
