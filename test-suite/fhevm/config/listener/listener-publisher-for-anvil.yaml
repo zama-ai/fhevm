@@ -1,4 +1,5 @@
 name: listener
+http_port: 8080
 
 database:
   db_url: postgres://postgres:postgres@coprocessor-and-kms-db:5432/listener
@@ -20,7 +21,6 @@ blockchain:
   network: ethereum-mainnet
   strategy:
     automatic_startup: true
-    block_start: 1
     range_size: 100
     loop_delay_ms: 100
     max_parallel_requests: 50
