@@ -4,6 +4,7 @@
   "from": {
     "RELAYER_VERSION": "v0.11.0",
     "RELAYER_MIGRATE_VERSION": "v0.11.0",
+    "TEST_SUITE_VERSION": "v0.12.0",
     "GATEWAY_VERSION": "v0.12.0",
     "HOST_VERSION": "v0.12.0",
     "CORE_VERSION": "v0.13.10",
@@ -36,6 +37,9 @@
     "COPROCESSOR_TFHE_WORKER_VERSION": "186c343",
     "COPROCESSOR_ZKPROOF_WORKER_VERSION": "186c343",
     "COPROCESSOR_SNS_WORKER_VERSION": "186c343"
+  },
+  "harness": {
+    "relayerSdkVersion": "0.5.0-alpha.1"
   },
   "steps": [
     {

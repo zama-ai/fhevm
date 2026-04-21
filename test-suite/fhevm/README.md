@@ -207,7 +207,8 @@ For release compatibility matrices, check in a compat-test definition under `com
 Compat-tests define:
 
 - explicit `from` and `to` version maps
-- optional `harness` settings such as an explicit `relayer-sdk` version
+- explicit `from.TEST_SUITE_VERSION`
+- explicit `harness.relayerSdkVersion`
 - ordered rollout `steps` with either `units` or ordered `substeps`
 - an explicit `units` map that assigns every version key to exactly one rollout unit
 - optional execution defaults such as scenario

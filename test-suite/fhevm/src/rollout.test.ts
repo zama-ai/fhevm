@@ -119,7 +119,7 @@ describe("rollout", () => {
     expect(loaded.harness?.relayerSdkVersion).toBe("0.5.0-alpha.1");
   });
 
-  test("derives the from relayer-sdk version for the checked-in v0.12 rollout", async () => {
+  test("reads the explicit from client line for the checked-in v0.12 rollout", async () => {
     const loaded = await readCompatTest(path.join(REPO_ROOT, "test-suite/fhevm/compat-tests/v0.12-to-main.json"));
     expect(loaded.from.TEST_SUITE_VERSION).toBe("v0.12.0");
     expect(loaded.to.TEST_SUITE_VERSION).toBe("v0.12.0");
