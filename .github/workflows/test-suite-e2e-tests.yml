@@ -120,7 +120,7 @@ permissions: {}
 
 # Cancel stale PR runs on new pushes while keeping manual dispatches independent.
 concurrency:
-  group: ${{ github.workflow }}-${{ inputs.rollout-step != '' && format('compat-{0}-{1}', inputs.compat-test || 'default', inputs.rollout-step) || github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
+  group: ${{ github.workflow }}-${{ inputs.rollout-step != '' && format('compat-{0}-{1}-{2}', github.event_name == 'pull_request' && github.event.pull_request.number || github.ref, inputs.compat-test || 'default', inputs.rollout-step) || github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref != 'refs/heads/main' }}
 
 jobs:
