@@ -192,12 +192,7 @@ const config: HardhatUserConfig = {
         runs: 800,
       },
       evmVersion: "cancun",
-      // `viaIR` is enabled to support the unified EIP-712 `userDecryptionRequest` overload
-      // in `Decryption.sol`, whose 9-field `UserDecryptionRequest` event combined with the
-      // external's calldata args exceeds Solidity's 16-slot stack depth without the Yul
-      // pipeline. Enabled project-wide for simplicity and to avoid divergent optimization
-      // behaviour between files.
-      viaIR: true,
+      viaIR: false,
     },
   },
   warnings: {

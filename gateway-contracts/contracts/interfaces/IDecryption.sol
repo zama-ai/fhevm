@@ -56,6 +56,28 @@ interface IDecryption {
     }
 
     /**
+     * @notice The signed payload carried by the unified `UserDecryptionRequest` event.
+     * @dev Packs every field the EIP-712 signature covers plus the signature itself. Signature
+     * validation has moved off-chain, so the gateway forwards the full signed payload verbatim.
+     * `snsCtMaterials` and `handles` are not part of the signed struct and stay as separate
+     * event parameters.
+     */
+    struct UserDecryptionRequestPayload {
+        /// @notice The identity asserting authorization.
+        address userAddress;
+        /// @notice The user's public key used for reencryption.
+        bytes publicKey;
+        /// @notice Optional contract allowlist. Empty = permissive mode.
+        address[] allowedContracts;
+        /// @notice The validity window (startTimestamp + durationSeconds).
+        RequestValiditySeconds requestValidity;
+        /// @notice Generic bytes metadata for versioned payloads. First byte is the version.
+        bytes extraData;
+        /// @notice The raw EIP-712 signature; opaque to the gateway.
+        bytes signature;
+    }
+
+    /**
      * @notice A struct that contains the delegator and the delegate addresses for a delegated user decryption.
      * @custom:deprecated Used only by the legacy `delegatedUserDecryptionRequest` path. Removed when the
      * relayer-sdk deprecation window for old-format signatures closes. The unified EIP-712 format
@@ -133,33 +155,19 @@ interface IDecryption {
     );
 
     /**
-     * @notice Emitted when a unified EIP-712 user decryption request is made via
-     * `userDecryptionRequest(HandleEntry[], ...)`. Carries the full ABI payload (handles plus the
-     * EIP-712 signed fields and the raw signature) verbatim so the KMS Connector can reconstruct
-     * the signed digest and perform signature / ACL / invalidation checks off-chain.
+     * @notice Emitted for a unified EIP-712 user decryption request.
      * @param decryptionId The decryption request ID.
      * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
      * @param handles The handle entries (handle, contractAddress, ownerAddress).
-     * @param userAddress The identity asserting authorization (EOA or smart wallet).
-     * @param publicKey The user's public key used for reencryption.
-     * @param allowedContracts The optional contract allowlist (empty = permissive mode).
-     * @param requestValidity The validity window (startTimestamp + durationSeconds).
-     * @param signature The raw EIP-712 signature produced by the SDK; opaque to the gateway.
-     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
-     * @dev Solidity event overloading: this event shares the name `UserDecryptionRequest` with the
-     * legacy 5-arg event. The distinct parameter list produces a distinct `topic0`, so legacy and
-     * new subscribers filter on their own topics without interference.
+     * @param payload The signed EIP-712 fields and the raw signature.
+     * @dev Shares the name `UserDecryptionRequest` with the legacy event via Solidity event
+     * overloading; the distinct parameter list produces a distinct `topic0`.
      */
     event UserDecryptionRequest(
         uint256 indexed decryptionId,
         SnsCiphertextMaterial[] snsCtMaterials,
         HandleEntry[] handles,
-        address userAddress,
-        bytes publicKey,
-        address[] allowedContracts,
-        RequestValiditySeconds requestValidity,
-        bytes signature,
-        bytes extraData
+        UserDecryptionRequestPayload payload
     );
 
     /**
@@ -418,28 +426,18 @@ interface IDecryption {
 
     /**
      * @notice Requests a user decryption (unified EIP-712 path).
-     * @dev Accepts both direct (owner == user) and delegated (owner != user) access in one call,
-     * via the per-handle `ownerAddress` field. The gateway performs no signature verification on
-     * this path: it runs format validation, fetches ciphertext materials, emits the new
-     * `UserDecryptionRequest` event, and leaves authorization (signature, ACL, invalidation) to
-     * the KMS Connector.
-     *
-     * Format validation:
-     * - `handles` must be non-empty.
-     * - `allowedContracts.length` must not exceed `MAX_USER_DECRYPT_CONTRACT_ADDRESSES`. An
-     *   **empty** `allowedContracts` is valid — it signals permissive mode (no contract
-     *   restriction, ownership check still applies).
-     * - `requestValidity.durationSeconds` must be non-zero and bounded.
-     * - `requestValidity.startTimestamp` must not be in the future.
-     * - All handles must carry the same host chain ID, and that chain must be registered.
-     * - All fetched ciphertext materials must share the same `keyId`.
-     *
+     * @dev Supports direct and delegated access in one call via the per-handle `ownerAddress`.
+     * The gateway performs no signature verification; it validates format, fetches ciphertext
+     * materials, and emits `UserDecryptionRequest`. Authorization (signature, ACL, invalidation)
+     * moves to the KMS Connector. The event packs every signed EIP-712 field plus the signature
+     * into `UserDecryptionRequestPayload`; `snsCtMaterials` and `handles` are not signed and
+     * travel as separate event parameters. Empty `allowedContracts` selects permissive mode.
      * @param handles The handle entries (handle, contractAddress, ownerAddress).
-     * @param userAddress The identity asserting authorization (EOA or smart wallet).
+     * @param userAddress The identity asserting authorization.
      * @param publicKey The user's public key used for reencryption.
      * @param allowedContracts Optional contract allowlist. Empty = permissive mode.
      * @param requestValidity The validity window (startTimestamp + durationSeconds).
-     * @param signature The raw EIP-712 signature. Accepted opaque; forwarded verbatim in the event.
+     * @param signature The raw EIP-712 signature; opaque to the gateway.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is the version.
      */
     function userDecryptionRequest(

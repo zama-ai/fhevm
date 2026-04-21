@@ -2264,7 +2264,7 @@ describe("Decryption", function () {
     const UNIFIED_REQUEST_SIG =
       "userDecryptionRequest((bytes32,address,address)[],address,bytes,address[],(uint256,uint256),bytes,bytes)";
     const UNIFIED_EVENT_SIG =
-      "UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],(bytes32,address,address)[],address,bytes,address[],(uint256,uint256),bytes,bytes)";
+      "UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],(bytes32,address,address)[],(address,bytes,address[],(uint256,uint256),bytes,bytes))";
     const LEGACY_EVENT_SIG = "UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)";
     const UNIFIED_READY_SIG = "isUserDecryptionReady((bytes32,address,address)[],bytes)";
 
@@ -2320,12 +2320,7 @@ describe("Decryption", function () {
           decryptionId,
           toValues(snsCiphertextMaterials),
           toValues(directHandles),
-          user.address,
-          publicKey,
-          allowedContracts,
-          toValues(requestValidity),
-          opaqueSignature,
-          extraDataV0,
+          [user.address, publicKey, allowedContracts, toValues(requestValidity), extraDataV0, opaqueSignature],
         );
     });
 
@@ -2352,12 +2347,7 @@ describe("Decryption", function () {
           decryptionId,
           toValues(snsCiphertextMaterials),
           toValues(mixedHandles),
-          user.address,
-          publicKey,
-          allowedContracts,
-          toValues(requestValidity),
-          opaqueSignature,
-          extraDataV0,
+          [user.address, publicKey, allowedContracts, toValues(requestValidity), extraDataV0, opaqueSignature],
         );
     });
 
@@ -2374,12 +2364,7 @@ describe("Decryption", function () {
           decryptionId,
           toValues(snsCiphertextMaterials),
           toValues(directHandles),
-          user.address,
-          publicKey,
-          [],
-          toValues(requestValidity),
-          opaqueSignature,
-          extraDataV0,
+          [user.address, publicKey, [], toValues(requestValidity), extraDataV0, opaqueSignature],
         );
     });
 
@@ -2398,12 +2383,7 @@ describe("Decryption", function () {
           decryptionId,
           toValues(snsCiphertextMaterials),
           toValues(directHandles),
-          user.address,
-          publicKey,
-          allowedContracts,
-          toValues(requestValidity),
-          opaqueSignature,
-          extraDataV0,
+          [user.address, publicKey, allowedContracts, toValues(requestValidity), extraDataV0, opaqueSignature],
         );
     });
 
@@ -2424,12 +2404,7 @@ describe("Decryption", function () {
           decryptionId,
           toValues(snsCiphertextMaterials),
           toValues(directHandles),
-          user.address,
-          publicKey,
-          [contractAddress],
-          toValues(requestValidity),
-          bogusSignature,
-          extraDataV0,
+          [user.address, publicKey, [contractAddress], toValues(requestValidity), extraDataV0, bogusSignature],
         );
     });
 

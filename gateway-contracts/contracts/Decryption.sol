@@ -616,10 +616,6 @@ contract Decryption is
 
     /**
      * @notice See {IDecryption-userDecryptionRequest} (unified EIP-712 path).
-     * @dev The gateway performs no signature verification on this path. It validates the request
-     * format, fetches the ciphertext materials, emits the unified EIP-712 `UserDecryptionRequest` event
-     * carrying the full payload (including the raw signature), and leaves authorization to the
-     * KMS Connector.
      */
     function userDecryptionRequest(
         HandleEntry[] calldata handles,
@@ -630,89 +626,64 @@ contract Decryption is
         bytes calldata signature,
         bytes calldata extraData
     ) external virtual whenNotPaused {
-        // Up-front format validation; further work is delegated to an internal executor so the
-        // external function's stack frame stays small enough to compile without `viaIR`.
         if (handles.length == 0) {
             revert EmptyHandles();
         }
+        // Empty `allowedContracts` is valid (permissive mode); only the upper bound is enforced.
         if (allowedContracts.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
             revert ContractAddressesMaxLengthExceeded(MAX_USER_DECRYPT_CONTRACT_ADDRESSES, allowedContracts.length);
         }
         _checkUserDecryptionRequestValiditySeconds(requestValidity);
 
-        // Collect the fee from the caller before handing off to the internal executor.
+        // Pack the signed EIP-712 fields and the signature into a single memory struct. Doing so
+        // consolidates six calldata refs into one memory pointer and keeps the subsequent emit
+        // under Solidity's stack-depth limit without requiring `viaIR`.
+        UserDecryptionRequestPayload memory payload;
+        payload.userAddress = userAddress;
+        payload.publicKey = publicKey;
+        payload.allowedContracts = allowedContracts;
+        payload.requestValidity = requestValidity;
+        payload.extraData = extraData;
+        payload.signature = signature;
+
         _collectUserDecryptionFee(msg.sender);
 
-        _executeUnifiedUserDecryptionRequest(
-            handles,
-            userAddress,
-            publicKey,
-            allowedContracts,
-            requestValidity,
-            signature,
-            extraData
-        );
+        _executeUnifiedUserDecryptionRequest(handles, payload);
     }
 
     /**
-     * @notice Executes the post-validation body of the unified EIP-712 `userDecryptionRequest`:
+     * @notice Executes the post-validation body of the unified-path `userDecryptionRequest`:
      * extracts and conformance-checks the handles, fetches the SNS ciphertexts, updates storage,
      * and emits the unified `UserDecryptionRequest` event.
-     * @dev Extracted into an internal function to keep the external caller's stack frame small
-     * enough to compile without `viaIR`. The event's 9 fields combined with the external's
-     * calldata arguments exceed 16 slots inline; moving the work into an internal function gives
-     * the compiler more room to lay out locals.
-     *
-     * Note: the legacy check that each handle's `contractAddress` belongs to a per-request
-     * allowlist is deliberately NOT performed here — that check moves to the KMS Connector and
-     * is handled via `isAllowed` / `isHandleDelegatedForUserDecryption` on the ACL. Empty
-     * `allowedContracts` is valid (permissive mode) and is not rejected.
+     * @dev Runs in a dedicated internal frame so the external caller's calldata args drop out of
+     * scope before the emit, keeping stack depth under Solidity's limit without `viaIR`.
+     * The per-request contract-allowlist check from the legacy path is NOT performed here —
+     * authorization moves to the KMS Connector.
      */
     function _executeUnifiedUserDecryptionRequest(
         HandleEntry[] calldata handles,
-        address userAddress,
-        bytes calldata publicKey,
-        address[] calldata allowedContracts,
-        RequestValiditySeconds calldata requestValidity,
-        bytes calldata signature,
-        bytes calldata extraData
+        UserDecryptionRequestPayload memory payload
     ) internal virtual {
-        // Extract handles and check per-handle conformance (same-chain, registered host chain,
-        // FHE type, total bit size).
         bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceHandleEntry(handles);
 
-        // Fetch the SNS ciphertexts. This implicitly verifies that every handle is registered —
-        // the call reverts on missing ciphertext, same as the legacy path. (CiphertextCommits
-        // integration is intentionally retained for the unified EIP-712 path; any rework is
-        // tracked separately under the CiphertextCommits guild.)
+        // Reverts on any unknown handle.
         SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
 
-        // Same-keyId invariant on fetched materials.
+        // TODO: remove when batched decryption requests with different keys is supported by the
+        // KMS (see https://github.com/zama-ai/fhevm-internal/issues/376).
         _checkCtMaterialKeyIds(snsCtMaterials);
 
         DecryptionStorage storage $ = _getDecryptionStorage();
 
-        // Globally unique decryptionId; reuses the shared `userDecryptionCounter` so IDs are
-        // stable across legacy and unified paths (`userDecryptionResponse` is oblivious to which
-        // path a request came from).
+        // Reuses the shared `userDecryptionCounter` so IDs are stable across legacy and unified
+        // paths (`userDecryptionResponse` is oblivious to which path a request came from).
         $.userDecryptionCounter++;
         uint256 userDecryptionId = $.userDecryptionCounter;
 
-        // publicKey + ctHandles are used in response signature validation — same storage layout
-        // as the legacy paths.
-        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
+        // The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
+        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(payload.publicKey, ctHandles);
 
-        emit UserDecryptionRequest(
-            userDecryptionId,
-            snsCtMaterials,
-            handles,
-            userAddress,
-            publicKey,
-            allowedContracts,
-            requestValidity,
-            signature,
-            extraData
-        );
+        emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, handles, payload);
     }
 
     /**
@@ -1255,18 +1226,15 @@ contract Decryption is
     }
 
     /**
-     * @notice Extracts the handles from the unified EIP-712 `HandleEntry[]` input and checks
-     * per-handle conformance, including that the shared host-chain is registered in the
-     * GatewayConfig. Unlike the legacy helper, this does NOT check that `handles[i].contractAddress`
-     * is in any per-request contract allowlist — that check moves to the KMS Connector in the
-     * unified path.
-     * @dev Checks performed here:
-     * - Every handle must carry the same host-chain ID (the chain ID is derived from the first
-     *   handle and all subsequent handles must match).
-     * - That shared host-chain must be a registered host chain.
-     * - Every handle's FHE type must be valid.
-     * - The sum of per-handle bit sizes must not exceed `MAX_DECRYPTION_REQUEST_BITS`.
-     * @param handles The input `HandleEntry[]`. The caller guarantees non-emptiness.
+     * @notice Extracts the handles from a `HandleEntry[]` input and checks per-handle conformance.
+     * @dev Checks include:
+     * @dev - Same host-chain ID across the batch (derived from the first handle).
+     * @dev - That host-chain is registered in the GatewayConfig.
+     * @dev - FHE type validity for each handle.
+     * @dev - Total bit size bound.
+     * @dev The per-request contract-allowlist check is NOT performed here — it moves to the KMS
+     * Connector on the unified path.
+     * @param handles The input `HandleEntry[]` (non-empty; caller guarantees).
      * @return ctHandles The list of ciphertext handles.
      */
     function _extractCtHandlesCheckConformanceHandleEntry(
@@ -1274,8 +1242,6 @@ contract Decryption is
     ) internal view virtual returns (bytes32[] memory ctHandles) {
         ctHandles = new bytes32[](handles.length);
 
-        // Derive the host-chain ID from the first handle; all subsequent handles must match
-        // and the chain must be registered.
         uint256 chainId = HandleOps.extractChainId(handles[0].handle);
         if (!GATEWAY_CONFIG.isHostChainRegistered(chainId)) {
             revert HostChainNotRegistered(chainId);
@@ -1285,13 +1251,11 @@ contract Decryption is
         for (uint256 i = 0; i < handles.length; i++) {
             bytes32 ctHandle = handles[i].handle;
 
-            // Same-chain invariant across the batch.
             uint256 handleChainId = HandleOps.extractChainId(ctHandle);
             if (handleChainId != chainId) {
                 revert CtHandleChainIdDiffersFromContractChainId(ctHandle, handleChainId, chainId);
             }
 
-            // FHE type must be valid; `getBitSize` reverts otherwise.
             FheType fheType = HandleOps.extractFheType(ctHandle);
             totalBitSize += FHETypeBitSizes.getBitSize(fheType);
 
@@ -1334,26 +1298,21 @@ contract Decryption is
     }
 
     /**
-     * @notice Checks that a unified EIP-712 user decryption request's start timestamp and
-     * `durationSeconds` are valid.
-     * @param requestValidity The RequestValiditySeconds structure.
+     * @notice Checks a unified-path user decryption request's start timestamp and `durationSeconds`.
+     * @param requestValidity The `RequestValiditySeconds` struct.
      */
     function _checkUserDecryptionRequestValiditySeconds(
         RequestValiditySeconds memory requestValidity
     ) internal view virtual {
-        // Duration must be non-zero.
         if (requestValidity.durationSeconds == 0) {
             revert InvalidNullDurationSeconds();
         }
-        // Duration must not exceed the seconds-based cap (equivalent to the legacy day cap).
         if (requestValidity.durationSeconds > MAX_USER_DECRYPT_DURATION_SECONDS) {
             revert MaxDurationSecondsExceeded(MAX_USER_DECRYPT_DURATION_SECONDS, requestValidity.durationSeconds);
         }
-        // Start timestamp must not be in the future — prevents bypassing the cap by pre-dating.
         if (requestValidity.startTimestamp > block.timestamp) {
             revert StartTimestampInFuture(block.timestamp, requestValidity.startTimestamp);
         }
-        // Validity window must not have expired.
         if (requestValidity.startTimestamp + requestValidity.durationSeconds < block.timestamp) {
             revert UserDecryptionRequestExpiredSeconds(block.timestamp, requestValidity);
         }
