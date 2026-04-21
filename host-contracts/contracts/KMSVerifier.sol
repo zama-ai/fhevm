@@ -135,7 +135,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
     uint64 private constant REINITIALIZER_VERSION = 3;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.KMSVerifier")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant KMSVerifierStorageLocation =
+    bytes32 private constant KMS_VERIFIER_STORAGE_LOCATION =
         0x7e81a744be86773af8644dd7304fa1dc9350ccabf16cfcaa614ddb78b4ce8900;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -573,7 +573,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
      */
     function _getKMSVerifierStorage() internal pure returns (KMSVerifierStorage storage $) {
         assembly {
-            $.slot := KMSVerifierStorageLocation
+            $.slot := KMS_VERIFIER_STORAGE_LOCATION
         }
     }
 

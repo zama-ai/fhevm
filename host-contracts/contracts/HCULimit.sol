@@ -79,7 +79,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     uint256 private constant PATCH_VERSION = 0;
 
     /// @notice FHEVMExecutor address.
-    address private constant fhevmExecutorAddress = fhevmExecutorAdd;
+    address private constant FHEVM_EXECUTOR_ADDRESS = fhevmExecutorAdd;
 
     /// @custom:storage-location erc7201:fhevm.storage.HCULimit
     /// @dev All five uint48 fields pack into a single 256-bit slot (5 × 48 = 240 bits).
@@ -103,12 +103,12 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     uint64 private constant REINITIALIZER_VERSION = 3;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.HCULimit")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant HCULimitStorageLocation =
+    bytes32 private constant HCU_LIMIT_STORAGE_LOCATION =
         0xc13af6c514bff8997f30c90003baa82bd02aad978179d1ce58d85c4319ad6500;
 
     function _getHCULimitStorage() internal pure virtual returns (HCULimitStorage storage $) {
         assembly {
-            $.slot := HCULimitStorageLocation
+            $.slot := HCU_LIMIT_STORAGE_LOCATION
         }
     }
 
@@ -169,7 +169,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         bytes32 result,
         address caller
     ) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -223,7 +223,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         bytes32 result,
         address caller
     ) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -277,7 +277,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         bytes32 result,
         address caller
     ) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -330,7 +330,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         bytes32 result,
         address caller
     ) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (scalarByte != 0x01) revert OnlyScalarOperationsAreSupported();
         if (resultType == FheType.Uint8) {
@@ -366,7 +366,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         bytes32 result,
         address caller
     ) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (scalarByte != 0x01) revert OnlyScalarOperationsAreSupported();
         if (resultType == FheType.Uint8) {
@@ -403,7 +403,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         bytes32 result,
         address caller
     ) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Bool) {
@@ -465,7 +465,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         bytes32 result,
         address caller
     ) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Bool) {
@@ -527,7 +527,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         bytes32 result,
         address caller
     ) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Bool) {
@@ -589,7 +589,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         bytes32 result,
         address caller
     ) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -647,7 +647,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         bytes32 result,
         address caller
     ) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -705,7 +705,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         bytes32 result,
         address caller
     ) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -763,7 +763,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         bytes32 result,
         address caller
     ) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -821,7 +821,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         bytes32 result,
         address caller
     ) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Bool) {
@@ -887,7 +887,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         bytes32 result,
         address caller
     ) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Bool) {
@@ -953,7 +953,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         bytes32 result,
         address caller
     ) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -1007,7 +1007,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         bytes32 result,
         address caller
     ) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -1061,7 +1061,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         bytes32 result,
         address caller
     ) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -1115,7 +1115,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         bytes32 result,
         address caller
     ) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -1169,7 +1169,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         bytes32 result,
         address caller
     ) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -1223,7 +1223,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         bytes32 result,
         address caller
     ) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
@@ -1267,7 +1267,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param caller Original caller address from FHEVMExecutor.
      */
     function checkHCUForFheNeg(FheType resultType, bytes32 ct, bytes32 result, address caller) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (resultType == FheType.Uint8) {
             opHCU = 79000;
@@ -1294,7 +1294,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param caller Original caller address from FHEVMExecutor.
      */
     function checkHCUForFheNot(FheType resultType, bytes32 ct, bytes32 result, address caller) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (resultType == FheType.Bool) {
             opHCU = 2;
@@ -1323,7 +1323,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param caller Original caller address from FHEVMExecutor.
      */
     function checkHCUForCast(FheType resultType, bytes32 ct, bytes32 result, address caller) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (resultType == FheType.Bool) {
             opHCU = 32;
@@ -1352,7 +1352,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForTrivialEncrypt(FheType resultType, bytes32 result, address caller) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (resultType == FheType.Bool) {
             opHCU = 32;
@@ -1393,7 +1393,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         bytes32 result,
         address caller
     ) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (resultType == FheType.Bool) {
             opHCU = 55000;
@@ -1424,7 +1424,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheRand(FheType resultType, bytes32 result, address caller) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (resultType == FheType.Bool) {
             opHCU = 19000;
@@ -1454,7 +1454,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheRandBounded(FheType resultType, bytes32 result, address caller) external virtual {
-        if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (resultType == FheType.Uint8) {
             opHCU = 23000;
@@ -1724,10 +1724,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /**
      * @notice Getter function for the FHEVMExecutor contract address.
-     * @return fhevmExecutorAddress Address of the FHEVMExecutor.
+     * @return FHEVM_EXECUTOR_ADDRESS Address of the FHEVMExecutor.
      */
     function getFHEVMExecutorAddress() public view virtual returns (address) {
-        return fhevmExecutorAddress;
+        return FHEVM_EXECUTOR_ADDRESS;
     }
 
     /**
