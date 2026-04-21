@@ -1,6 +1,13 @@
 name: test-suite-compatibility-matrix
 
 on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
+      - unlabeled
   workflow_dispatch:
     inputs:
       compat-test:
@@ -17,6 +24,7 @@ concurrency:
 jobs:
   prepare_rollout:
     name: prepare-rollout
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'rollout') }}
     permissions:
       contents: 'read' # Required to checkout repository code
       packages: 'read' # Required to resolve published GitHub Container Registry package tags
