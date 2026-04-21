@@ -672,21 +672,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         uint256 maxSize = (resultType == FheType.Uint64 || resultType == FheType.Uint128) ? 60 : 100;
         if (values.length > maxSize) revert FHECollectionSizeInvalid(values.length, maxSize);
 
-        bytes32 preimage = keccak256(
-            abi.encodePacked(
-                COMPUTATION_DOMAIN_SEPARATOR,
-                Operators.fheSum,
-                values,
-                resultType,
-                acl,
-                block.chainid,
-                blockhash(block.number - 1),
-                block.timestamp
-            )
-        );
-        result = _naryOp(preimage, values, resultType);
+        result = _naryOp(Operators.fheSum, values, resultType);
         hcuLimit.checkHCUForFheSum(resultType, values, result, msg.sender);
-        emit FheSum(msg.sender, values, result);
+        emit FheSum(msg.sender, values, resultType, result);
     }
 
     /**
@@ -977,7 +965,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     function _naryOp(
-        bytes32 preimage,
+        Operators op,
         bytes32[] calldata values,
         FheType resultType
     ) internal virtual returns (bytes32 result) {
@@ -985,7 +973,19 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             if (!acl.isAllowed(values[i], msg.sender)) revert ACLNotAllowed(values[i], msg.sender);
             if (_typeOf(values[i]) != resultType) revert IncompatibleTypes();
         }
-        result = _appendMetadataToPrehandle(preimage, resultType);
+        result = keccak256(
+            abi.encodePacked(
+                COMPUTATION_DOMAIN_SEPARATOR,
+                op,
+                values.length,
+                values,
+                acl,
+                block.chainid,
+                blockhash(block.number - 1),
+                block.timestamp
+            )
+        );
+        result = _appendMetadataToPrehandle(result, resultType);
         acl.allowTransient(result, msg.sender);
     }
 
