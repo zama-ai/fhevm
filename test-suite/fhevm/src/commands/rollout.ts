@@ -12,7 +12,6 @@ type RolloutMatrixEntry = {
   stepIndex: number;
   name: string;
   overrides: string;
-  testProfile: string;
 };
 type RolloutMatrix = {
   include: RolloutMatrixEntry[];
@@ -32,9 +31,6 @@ type ExpandedCompatStep = {
 type CompatHarnessDefinition = {
   relayerSdkVersion?: string;
 };
-type CompatProfilesDefinition = {
-  final?: string;
-};
 
 export type CompatTestDefinition = {
   name: string;
@@ -42,7 +38,6 @@ export type CompatTestDefinition = {
   from: Record<string, string>;
   to: Record<string, string>;
   harness?: CompatHarnessDefinition;
-  profiles?: CompatProfilesDefinition;
   steps: CompatStepDefinition[];
   units: Record<string, string[]>;
   execution?: {
@@ -51,14 +46,12 @@ export type CompatTestDefinition = {
 };
 
 const REQUIRED_VERSION_KEYS = Object.keys(PACKAGE_TO_REPOSITORY).sort();
-const DEFAULT_FINAL_TEST_PROFILE = "standard";
 const lockStem = (index: number, label: string) => `${String(index).padStart(2, "0")}-${label}`;
 const slug = (value: string) => value.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replaceAll(/^-+|-+$/g, "");
 const rolloutSources = (test: CompatTestDefinition, step: string) => [`compat-test=${test.name}`, `rollout-step=${step}`];
 const compatContractsFromSources = (test: CompatTestDefinition) =>
   ["GATEWAY_VERSION", "HOST_VERSION"].map((key) => `compat-from:${key}=${test.from[key]}`);
 const parseCompatVersion = (version: string) => /^v?\d+\.\d+\.\d+(?:[-+].*)?$/.test(version);
-const finalTestProfile = (test: CompatTestDefinition) => test.profiles?.final ?? DEFAULT_FINAL_TEST_PROFILE;
 const compatClientEnv = (test: CompatTestDefinition): Record<string, string> =>
   Object.fromEntries(
     [
@@ -264,14 +257,12 @@ const rolloutEntries = (test: CompatTestDefinition) => {
       stepIndex: 0,
       name: lockStem(0, "baseline").replace(/\.lock\.json$/, ""),
       overrides: stepOverrides(test, 0),
-      testProfile: finalTestProfile(test),
     },
     ...expanded.map((step, index) => ({
       step: step.label,
       stepIndex: index + 1,
       name: lockStem(index + 1, step.label).replace(/\.lock\.json$/, ""),
       overrides: stepOverrides(test, index + 1),
-      testProfile: finalTestProfile(test),
     })),
   ] satisfies RolloutMatrix["include"];
 };

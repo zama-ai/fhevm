@@ -1,13 +1,6 @@
 name: test-suite-compatibility-matrix
 
 on:
-  pull_request:
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - labeled
-      - unlabeled
   workflow_dispatch:
     inputs:
       compat-test:
@@ -22,13 +15,12 @@ on:
 permissions: {}
 
 concurrency:
-  group: test-suite-compatibility-matrix-${{ github.ref }}-${{ github.event.inputs.compat-test || 'v0.12-to-main' }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
+  group: test-suite-compatibility-matrix-${{ github.ref }}-${{ inputs.compat-test || 'v0.12-to-main' }}-${{ github.run_id }}
   cancel-in-progress: true
 
 jobs:
   prepare_rollout:
     name: prepare-rollout
-    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'rollout')) }}
     permissions:
       contents: 'read' # Required to checkout repository code
       packages: 'read' # Required to resolve published GitHub Container Registry package tags
@@ -126,4 +118,4 @@ jobs:
       compat-overrides: ${{ matrix.overrides }}${{ matrix.overrides != '' && needs.prepare_rollout.outputs.compat_overrides != '' && ',' || '' }}${{ needs.prepare_rollout.outputs.compat_overrides }}
       rollout-step: ${{ matrix.stepIndex }}
       scenario: ${{ needs.prepare_rollout.outputs.scenario }}
-      test-profile: ${{ matrix.testProfile }}
+      test-profile: standard

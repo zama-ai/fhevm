@@ -176,17 +176,17 @@ describe("rollout", () => {
   test("prints matrix metadata with selected test profiles", () => {
     expect(rolloutMatrix(compatTest())).toEqual({
       include: [
-        { step: "baseline", stepIndex: 0, name: "00-baseline", overrides: "", testProfile: "standard" },
-        { step: "relayer", stepIndex: 1, name: "01-relayer", overrides: "", testProfile: "standard" },
-        { step: "contracts", stepIndex: 2, name: "02-contracts", overrides: "", testProfile: "standard" },
-        { step: "kms", stepIndex: 3, name: "03-kms", overrides: "", testProfile: "standard" },
-        { step: "coprocessor-db-migration", stepIndex: 4, name: "04-coprocessor-db-migration", overrides: "", testProfile: "standard" },
-        { step: "coprocessor-host-listener", stepIndex: 5, name: "05-coprocessor-host-listener", overrides: "", testProfile: "standard" },
-        { step: "coprocessor-gw-listener", stepIndex: 6, name: "06-coprocessor-gw-listener", overrides: "", testProfile: "standard" },
-        { step: "coprocessor-tx-sender", stepIndex: 7, name: "07-coprocessor-tx-sender", overrides: "", testProfile: "standard" },
-        { step: "coprocessor-tfhe-worker", stepIndex: 8, name: "08-coprocessor-tfhe-worker", overrides: "", testProfile: "standard" },
-        { step: "coprocessor-zkproof-worker", stepIndex: 9, name: "09-coprocessor-zkproof-worker", overrides: "", testProfile: "standard" },
-        { step: "coprocessor-sns-worker", stepIndex: 10, name: "10-coprocessor-sns-worker", overrides: "", testProfile: "standard" },
+        { step: "baseline", stepIndex: 0, name: "00-baseline", overrides: "" },
+        { step: "relayer", stepIndex: 1, name: "01-relayer", overrides: "" },
+        { step: "contracts", stepIndex: 2, name: "02-contracts", overrides: "" },
+        { step: "kms", stepIndex: 3, name: "03-kms", overrides: "" },
+        { step: "coprocessor-db-migration", stepIndex: 4, name: "04-coprocessor-db-migration", overrides: "" },
+        { step: "coprocessor-host-listener", stepIndex: 5, name: "05-coprocessor-host-listener", overrides: "" },
+        { step: "coprocessor-gw-listener", stepIndex: 6, name: "06-coprocessor-gw-listener", overrides: "" },
+        { step: "coprocessor-tx-sender", stepIndex: 7, name: "07-coprocessor-tx-sender", overrides: "" },
+        { step: "coprocessor-tfhe-worker", stepIndex: 8, name: "08-coprocessor-tfhe-worker", overrides: "" },
+        { step: "coprocessor-zkproof-worker", stepIndex: 9, name: "09-coprocessor-zkproof-worker", overrides: "" },
+        { step: "coprocessor-sns-worker", stepIndex: 10, name: "10-coprocessor-sns-worker", overrides: "" },
       ],
     });
   });
@@ -201,7 +201,7 @@ describe("rollout", () => {
       compatTest: file,
       out: outDir,
     });
-    const matrix = await readJson<{ include: Array<{ step: string; stepIndex: number; name: string; overrides: string; testProfile: string }> }>(
+    const matrix = await readJson<{ include: Array<{ step: string; stepIndex: number; name: string; overrides: string }> }>(
       path.join(outDir, "matrix.json"),
     );
     expect(matrix.include.at(-1)).toEqual({
@@ -209,7 +209,6 @@ describe("rollout", () => {
       stepIndex: 10,
       name: "10-coprocessor-sns-worker",
       overrides: "",
-      testProfile: "standard",
     });
     const mixed = await readJson<VersionBundle>(path.join(outDir, "05-coprocessor-host-listener.lock.json"));
     expect(mixed.env.RELAYER_VERSION).toBe("to-relayer_version");
