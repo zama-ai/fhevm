@@ -9,7 +9,9 @@ members = [
 ]
 
 [workspace.package]
+authors = ["Zama"]
 edition = "2024"
+license = "BSD-3-Clause-Clear"
 
 [workspace.dependencies]
 alloy        = { version = "=1.1.2", features = ["full", "trie", "rpc-types", "network", "consensus", "rlp"] }
