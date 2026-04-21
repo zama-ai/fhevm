@@ -17,7 +17,8 @@ use alloy::{
 use anyhow::anyhow;
 use fhevm_gateway_bindings::{
     decryption::Decryption::{
-        PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
+        PublicDecryptionRequest, SnsCiphertextMaterial,
+        UserDecryptionRequest_0 as UserDecryptionRequest,
     },
     kms_generation::KMSGeneration::{
         CrsgenRequest, KeyReshareSameSet, KeygenRequest, PRSSInit, PrepKeygenRequest,

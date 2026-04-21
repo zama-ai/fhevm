@@ -18,7 +18,7 @@ use connector_utils::{
 };
 use fhevm_gateway_bindings::{
     decryption::{
-        Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
+        Decryption::{PublicDecryptionRequest, UserDecryptionRequest_0 as UserDecryptionRequest},
         IDecryption::{ContractsInfo, RequestValidity},
     },
     kms_generation::KMSGeneration::{
@@ -91,9 +91,11 @@ pub async fn mock_event_on_gw(
                 publicKey: rand_pub_key.clone().into(),
                 ..Default::default()
             };
+            // `userDecryptionRequest_1` is the legacy overload in the generated bindings
+            // (`_0` is the RFC016 shape). Only the legacy signature is exercised here.
             let tx = test_instance
                 .decryption_contract()
-                .userDecryptionRequest(
+                .userDecryptionRequest_1(
                     vec![],
                     RequestValidity::default(),
                     ContractsInfo::default(),
@@ -224,6 +226,16 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
             for r in rows {
                 if e.publicKey.to_vec() == r.try_get::<Vec<u8>, _>("public_key")?
                     && e.userAddress == Address::from(r.try_get::<[u8; 20], _>("user_address")?)
+                {
+                    return Ok(());
+                }
+            }
+        }
+        ProtocolEventKind::UserDecryptionV2(e) => {
+            for r in rows {
+                if e.payload.publicKey.to_vec() == r.try_get::<Vec<u8>, _>("public_key")?
+                    && e.payload.userAddress
+                        == Address::from(r.try_get::<[u8; 20], _>("user_address")?)
                 {
                     return Ok(());
                 }

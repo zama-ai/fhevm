@@ -139,9 +139,12 @@ where
             ),
         };
 
+        // `UserDecryptionRequest` contributes both the legacy and the RFC016 topic0 hashes, which
+        // is why we flat-map over `signature_hashes()` instead of collecting a single hash per
+        // event type.
         let event_signatures = event_types
             .iter()
-            .map(|e| e.signature_hash())
+            .flat_map(|e| e.signature_hashes())
             .collect::<Vec<_>>();
         let base_filter = Filter::new()
             .address(contract_address)
@@ -216,9 +219,12 @@ where
             MonitoredContract::Decryption => {
                 let event = DecryptionEvents::decode_log(&log.inner)
                     .map_err(|e| anyhow!("Failed to decode Decryption event: {e}"))?;
+                // `UserDecryptionRequest_0` is the legacy event; `UserDecryptionRequest_1` is the
+                // RFC016 overload.
                 match event.data {
                     DecryptionEvents::PublicDecryptionRequest(e) => Ok(e.into()),
-                    DecryptionEvents::UserDecryptionRequest(e) => Ok(e.into()),
+                    DecryptionEvents::UserDecryptionRequest_0(e) => Ok(e.into()),
+                    DecryptionEvents::UserDecryptionRequest_1(e) => Ok(e.into()),
                     _ => Err(anyhow!("Unexpected Decryption event: {log:?}")),
                 }
             }
