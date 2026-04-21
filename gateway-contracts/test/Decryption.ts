@@ -1,5 +1,5 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
+import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 import { Wallet } from "ethers";
 import hre from "hardhat";
@@ -705,16 +705,16 @@ describe("Decryption", function () {
     const user = createRandomWallet();
     const contractAddress = createRandomAddress();
     const publicKey = createByteInput();
-    // `startTimestamp` and `requestValidity` are derived from the chain's own clock in
-    // `beforeEach` (see rationale there). Declared as `let` here so every `it` can reference
-    // the current values.
-    let startTimestamp: number;
+    const startTimestamp = getDateInSeconds();
     const durationDays = 120;
     const contractsInfo: IDecryption.ContractsInfoStruct = {
       addresses: [contractAddress],
       chainId: hostChainId,
     };
-    let requestValidity: IDecryption.RequestValidityStruct;
+    const requestValidity: IDecryption.RequestValidityStruct = {
+      startTimestamp,
+      durationDays,
+    };
 
     // Define the ctHandleContractPairs (the handles have been added and allowed by default)
     const ctHandleContractPairs: CtHandleContractPairStruct[] = ctHandles.map((ctHandle) => ({
@@ -734,14 +734,25 @@ describe("Decryption", function () {
     // Define utility values
     const tenDaysInSeconds = 10 * 24 * 60 * 60;
 
-    // Prepare shared state + response-side signatures. Request-side signing (user EIP-712) is
-    // intentionally done in `beforeEach`, not here, because the request signature is bound to
-    // `startTimestamp` which is derived from the chain's clock per-test.
+    // Prepare EIP712 messages for user decryption
     async function prepareUserDecryptEIP712Fixture() {
       const fixtureData = await loadFixture(prepareAddCiphertextFixture);
       const { decryption, kmsSigners } = fixtureData;
 
+      // Create EIP712 messages
       const decryptionAddress = await decryption.getAddress();
+      const eip712RequestMessage = createEIP712RequestUserDecrypt(
+        decryptionAddress,
+        publicKey,
+        contractsInfo.addresses as string[],
+        contractsInfo.chainId as number,
+        requestValidity.startTimestamp.toString(),
+        requestValidity.durationDays.toString(),
+        extraDataV0,
+      );
+
+      // Sign the message with the user
+      const [userSignature] = await getSignaturesUserDecryptRequest(eip712RequestMessage, [user]);
 
       const userDecryptedShares = createBytes32s(kmsSigners.length);
 
@@ -756,14 +767,17 @@ describe("Decryption", function () {
         ),
       );
 
-      // Sign the response messages with all KMS signers (no dependency on `startTimestamp`).
+      // Sign the message with all KMS signers
       const kmsSignatures = await getSignaturesUserDecryptResponse(eip712ResponseMessages, kmsSigners);
 
       return {
         ...fixtureData,
         userDecryptedShares,
+        eip712RequestMessage,
         eip712ResponseMessages,
+        userSignature,
         kmsSignatures,
+        requestValidity,
         decryptionAddress,
       };
     }
@@ -778,36 +792,19 @@ describe("Decryption", function () {
       mockedFeesSenderToBurnerAddress = fixtureData.mockedFeesSenderToBurnerAddress;
       pauser = fixtureData.pauser;
       snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
+      userSignature = fixtureData.userSignature;
       kmsSignatures = fixtureData.kmsSignatures;
       kmsTxSenders = fixtureData.kmsTxSenders;
       kmsSigners = fixtureData.kmsSigners;
       coprocessorTxSenders = fixtureData.coprocessorTxSenders;
       userDecryptedShares = fixtureData.userDecryptedShares;
+      eip712RequestMessage = fixtureData.eip712RequestMessage;
       eip712ResponseMessages = fixtureData.eip712ResponseMessages;
       decryptionAddress = fixtureData.decryptionAddress;
       userDecryptionPrice = fixtureData.userDecryptionPrice;
       tokenFundedTxSender = fixtureData.tokenFundedTxSender;
 
       protocolPaymentAddress = await protocolPayment.getAddress();
-
-      // Derive startTimestamp from the chain's own clock rather than host wall-clock. The
-      // contract compares startTimestamp to block.timestamp; mixing wall-clock (Date.now())
-      // with block.timestamp couples test correctness to host timing (compile speed, CI load),
-      // which is not a property under test. Signing the EIP-712 request here — after
-      // startTimestamp is fixed — keeps the signature consistent with the validity window the
-      // contract will see.
-      startTimestamp = await time.latest();
-      requestValidity = { startTimestamp, durationDays };
-      eip712RequestMessage = createEIP712RequestUserDecrypt(
-        decryptionAddress,
-        publicKey,
-        contractsInfo.addresses as string[],
-        contractsInfo.chainId as number,
-        startTimestamp.toString(),
-        durationDays.toString(),
-        extraDataV0,
-      );
-      [userSignature] = await getSignaturesUserDecryptRequest(eip712RequestMessage, [user]);
     });
 
     it("Should request a user decryption with multiple ctHandleContractPairs", async function () {
@@ -1499,10 +1496,7 @@ describe("Decryption", function () {
     const delegateAddress = delegateAccount.address;
     const contractAddress = createRandomAddress();
     const publicKey = createBytes32();
-    // `startTimestamp` and `requestValidity` are derived from the chain's own clock in
-    // `beforeEach` (see rationale in the User Decryption describe). Declared `let` so each
-    // `it` sees the current values.
-    let startTimestamp: number;
+    const startTimestamp = getDateInSeconds();
     const durationDays = 120;
     const delegationAccounts: IDecryption.DelegationAccountsStruct = {
       delegatorAddress,
@@ -1512,7 +1506,10 @@ describe("Decryption", function () {
       addresses: [contractAddress],
       chainId: hostChainId,
     };
-    let requestValidity: IDecryption.RequestValidityStruct;
+    const requestValidity: IDecryption.RequestValidityStruct = {
+      startTimestamp,
+      durationDays,
+    };
 
     // Define the ctHandleContractPairs (the handles have been added and allowed by default).
     const ctHandleContractPairs: CtHandleContractPairStruct[] = ctHandles.map((ctHandle) => ({
@@ -1532,14 +1529,28 @@ describe("Decryption", function () {
     // Define utility values.
     const tenDaysInSeconds = 10 * 24 * 60 * 60;
 
-    // Prepare shared state + response-side signatures. Request-side signing (delegate EIP-712)
-    // is intentionally done in `beforeEach`, not here, because the request signature is bound
-    // to `startTimestamp` which is derived from the chain's clock per-test.
+    // Prepare EIP712 messages for delegated user decryption.
     async function prepareDelegatedUserDecryptEIP712Fixture() {
       const fixtureData = await loadFixture(prepareAddCiphertextFixture);
       const { decryption, kmsSigners } = fixtureData;
 
+      // Create the EIP712 messages.
       const decryptionAddress = await decryption.getAddress();
+      const eip712RequestMessage = createEIP712RequestDelegatedUserDecrypt(
+        decryptionAddress,
+        publicKey,
+        contractsInfo.addresses as string[],
+        delegatorAddress,
+        contractsInfo.chainId as number,
+        startTimestamp.toString(),
+        durationDays.toString(),
+        extraDataV0,
+      );
+
+      // Sign the EIP712 message with the delegate account.
+      const [delegateSignature] = await getSignaturesDelegatedUserDecryptRequest(eip712RequestMessage, [
+        delegateAccount,
+      ]);
 
       const userDecryptedShares = createBytes32s(kmsSigners.length);
 
@@ -1554,14 +1565,16 @@ describe("Decryption", function () {
         ),
       );
 
-      // Sign the response messages with all KMS signers (no dependency on `startTimestamp`).
+      // Sign the EIP712 message with all KMS signers.
       const kmsSignatures = await getSignaturesUserDecryptResponse(eip712ResponseMessages, kmsSigners);
 
       return {
         ...fixtureData,
         userDecryptedShares,
+        eip712RequestMessage,
+        delegateSignature,
         kmsSignatures,
-        decryptionAddress,
+        requestValidity,
       };
     }
 
@@ -1575,32 +1588,15 @@ describe("Decryption", function () {
       mockedFeesSenderToBurnerAddress = fixtureData.mockedFeesSenderToBurnerAddress;
       pauser = fixtureData.pauser;
       snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
+      delegateSignature = fixtureData.delegateSignature;
       kmsSignatures = fixtureData.kmsSignatures;
       kmsTxSenders = fixtureData.kmsTxSenders;
       coprocessorTxSenders = fixtureData.coprocessorTxSenders;
+      eip712RequestMessage = fixtureData.eip712RequestMessage;
       userDecryptedShares = fixtureData.userDecryptedShares;
       userDecryptionPrice = fixtureData.userDecryptionPrice;
       tokenFundedTxSender = fixtureData.tokenFundedTxSender;
       protocolPaymentAddress = await protocolPayment.getAddress();
-
-      // See the User Decryption describe for rationale. Derive startTimestamp from the chain's
-      // own clock and sign the delegated EIP-712 request against it here so both are consistent
-      // with what the contract will observe as block.timestamp.
-      startTimestamp = await time.latest();
-      requestValidity = { startTimestamp, durationDays };
-      eip712RequestMessage = createEIP712RequestDelegatedUserDecrypt(
-        fixtureData.decryptionAddress,
-        publicKey,
-        contractsInfo.addresses as string[],
-        delegatorAddress,
-        contractsInfo.chainId as number,
-        startTimestamp.toString(),
-        durationDays.toString(),
-        extraDataV0,
-      );
-      [delegateSignature] = await getSignaturesDelegatedUserDecryptRequest(eip712RequestMessage, [
-        delegateAccount,
-      ]);
     });
 
     it("Should request a user decryption with multiple ctHandleContractPairs", async function () {
@@ -2281,13 +2277,12 @@ describe("Decryption", function () {
     const contractAddress = createRandomAddress();
     const secondContractAddress = createRandomAddress();
     const publicKey = createByteInput();
+    const startTimestamp = getDateInSeconds();
     const durationSeconds = 120 * 24 * 60 * 60; // 120 days
-
-    // `startTimestamp` and `requestValidity` are derived from the chain's own clock in
-    // `beforeEach` (see rationale in the User Decryption describe). Declared `let` so each
-    // `it` sees the current values.
-    let startTimestamp: number;
-    let requestValidity: IDecryption.RequestValiditySecondsStruct;
+    const requestValidity = {
+      startTimestamp,
+      durationSeconds,
+    };
 
     // Handles with `ownerAddress == userAddress` (direct access).
     const directHandles = ctHandles.map((ctHandle) => ({
@@ -2308,10 +2303,6 @@ describe("Decryption", function () {
       decryption = fixtureData.decryption;
       snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
       tokenFundedTxSender = fixtureData.tokenFundedTxSender;
-
-      // See the User Decryption describe for rationale.
-      startTimestamp = await time.latest();
-      requestValidity = { startTimestamp, durationSeconds };
     });
 
     it("Should request a unified user decryption with all direct handles", async function () {
