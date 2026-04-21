@@ -478,6 +478,9 @@ interface IDecryption {
      * @notice Indicates if handles are ready to be decrypted by a user (legacy path input shape).
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     * @custom:deprecated Used only by the legacy user decryption path. Removed when the
+     * relayer-sdk deprecation window for old-format signatures closes. Use
+     * `isUserDecryptionReady(HandleEntry[], bytes)` for unified EIP-712 status polling.
      */
     function isUserDecryptionReady(
         CtHandleContractPair[] calldata ctHandleContractPairs,

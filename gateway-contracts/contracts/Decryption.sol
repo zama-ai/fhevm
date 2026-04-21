@@ -781,6 +781,8 @@ contract Decryption is
 
     /**
      * @dev See {IDecryption-isUserDecryptionReady}.
+     * @custom:deprecated Legacy input shape retained for the relayer-sdk deprecation window. See
+     * the interface NatSpec for details.
      */
     function isUserDecryptionReady(
         CtHandleContractPair[] calldata ctHandleContractPairs,
