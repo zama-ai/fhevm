@@ -1,0 +1,9 @@
+apiVersion: v2
+name: listener
+description: >-
+  Helm chart for the Zama blockchain listener.
+  Deploys one listener instance per chain, with shared PostgreSQL, Redis/RabbitMQ
+  infrastructure, and an optional eRPC proxy.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
