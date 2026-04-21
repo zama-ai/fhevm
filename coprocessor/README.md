@@ -131,7 +131,7 @@ Options:
 
 ```bash
 $ gw_listener --help
-Usage: gw_listener [OPTIONS] --gw-url <GW_URL> --input-verification-address <INPUT_VERIFICATION_ADDRESS> --kms-generation-address <KMS_GENERATION_ADDRESS>
+Usage: gw_listener [OPTIONS] --gw-url <GW_URL> --input-verification-address <INPUT_VERIFICATION_ADDRESS>
 
 Options:
       --database-url <DATABASE_URL>
@@ -143,8 +143,6 @@ Options:
       --gw-url <GW_URL>
           
   -i, --input-verification-address <INPUT_VERIFICATION_ADDRESS>
-          
-      --kms-generation-address <KMS_GENERATION_ADDRESS>
           
       --error-sleep-initial-secs <ERROR_SLEEP_INITIAL_SECS>
           [default: 1]
@@ -168,8 +166,6 @@ Options:
           [default: 100]
       --service-name <SERVICE_NAME>
           gw-listener service name in OTLP traces [default: gw-listener]
-      --catchup-kms-generation-from-block <CATCHUP_KMS_GENERATION_FROM_BLOCK>
-          Can be negative from last processed block
   -h, --help
           Print help
   -V, --version
