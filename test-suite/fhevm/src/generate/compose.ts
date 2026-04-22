@@ -362,7 +362,9 @@ const applyCoprocessorSource = (
   if (instance.source.mode === "registry") {
     service.image = rewriteImageTag(service.image, instance.source.tag);
   }
-  delete service.build;
+  if (service.image) {
+    delete service.build;
+  }
 };
 
 /** Builds the generated coprocessor compose override across all scenario instances. */
@@ -373,6 +375,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
   const services: Record<string, Record<string, unknown>> = {};
   const compat = compatPolicyForState(plan);
   const inheritedBuildServices = coprocessorBuildServices(plan);
+  const includeConsumer = supportsHostListenerConsumer(plan);
   for (const instance of plan.coprocessor.instances) {
     const localServices =
       instance.source.mode === "local"
@@ -385,6 +388,9 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
     const instanceEnv = await readEnvFile(envFileValue);
     const prefix = instance.index === 0 ? "coprocessor-" : `coprocessor${instance.index}-`;
     for (const [name, service] of Object.entries(doc.services)) {
+      if (!includeConsumer && name === "coprocessor-host-listener-consumer") {
+        continue;
+      }
       const suffix = name.replace(/^coprocessor-/, "");
       const serviceName = `${prefix}${suffix}`;
       const locallyBuilt = localServices.has(name);
