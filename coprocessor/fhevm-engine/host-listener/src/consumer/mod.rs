@@ -81,8 +81,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
 
     let broker_url = config.url; // e.g."amqp://user:pass@localhost:5672";
     let broker = Broker::from_url(&broker_url).await?;
-    let consumer_id =
-        format!("{}.{}", "copro-eth-host-consumer", config.chain_id);
+    let consumer_id = format!("{}.{}", config.service_name, config.chain_id);
     let client =
         ListenerConsumer::new(&broker, chain_id.as_u64(), &consumer_id);
 

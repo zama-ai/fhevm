@@ -78,6 +78,7 @@ services:
       - --url=redis://listener-redis:6379
       #- --url=amqp://user:pass@listener-rabbitmq:5672
       - --chain-id=${CHAIN_ID}
+      # --service-name is injected by scenario if needed, see two-of-two.yaml for example
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully
