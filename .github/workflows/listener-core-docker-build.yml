@@ -35,7 +35,7 @@ on:
         type: boolean
         default: true
   push:
-    branches: ['main', 'release/*']
+    branches: ['main', 'release/*', 'listener-core-docker-build']
 
 permissions: {}
 
