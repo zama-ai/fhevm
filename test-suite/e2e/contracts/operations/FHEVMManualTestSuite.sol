@@ -340,4 +340,13 @@ contract FHEVMManualTestSuite is E2ECoprocessorConfig {
         resEuint8 = FHE.sum(values);
         FHE.makePubliclyDecryptable(resEuint8);
     }
+
+    function test_sum_euint8_max_array() external {
+        euint8[] memory values = new euint8[](100);
+        for (uint256 i = 0; i < 100; i++) {
+            values[i] = FHE.asEuint8(1);
+        }
+        resEuint8 = FHE.sum(values);
+        FHE.makePubliclyDecryptable(resEuint8);
+    }
 }

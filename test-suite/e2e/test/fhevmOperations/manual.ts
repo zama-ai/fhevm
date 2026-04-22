@@ -1232,4 +1232,12 @@ describe('FHEVM manual operations', function () {
     const res = await this.instance.publicDecrypt([handle]);
     assert.equal(res.clearValues[handle], BigInt(value));
   });
+
+  it('test operator "sum" euint8 - 100 elements at max array size', async function () {
+    const tx = await this.contract.test_sum_euint8_max_array();
+    await tx.wait();
+    const handle = await this.contract.resEuint8();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 100n);
+  });
 });
