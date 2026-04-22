@@ -69,10 +69,10 @@ describe('Upgrades', function () {
       call: { fn: 'initializeFromEmptyProxy' },
     });
     await executor.waitForDeployment();
-    expect(await executor.getVersion()).to.equal('FHEVMExecutor v0.3.0');
+    expect(await executor.getVersion()).to.equal('FHEVMExecutor v0.4.0');
     const executor2 = await upgrades.upgradeProxy(executor, executorFactoryUpgraded);
     await executor2.waitForDeployment();
-    expect(await executor2.getVersion()).to.equal('FHEVMExecutor v0.4.0');
+    expect(await executor2.getVersion()).to.equal('FHEVMExecutor v0.5.0');
   });
 
   it('deploy upgradeable HCULimit', async function () {
@@ -89,7 +89,7 @@ describe('Upgrades', function () {
       },
     });
     await payment.waitForDeployment();
-    expect(await payment.getVersion()).to.equal('HCULimit v0.2.0');
+    expect(await payment.getVersion()).to.equal('HCULimit v0.3.0');
     const payment2 = await upgrades.upgradeProxy(payment, paymentFactoryUpgraded);
     await payment2.waitForDeployment();
     expect(await payment2.getVersion()).to.equal('HCULimit v0.4.0');

@@ -766,4 +766,30 @@ describe('FHEVM manual operations', function () {
     const res = await decrypt64(await this.contract.resEuint64());
     expect(res).to.equal(0n);
   });
+
+  it('sum euint8 - uninitialized element treated as 0', async function () {
+    const tx = await this.contract.test_sum_euint8_uninitialized();
+    await tx.wait();
+    const res = await decrypt8(await this.contract.resEuint8());
+    expect(res).to.equal(5);
+  });
+
+  it('sum euint8 - empty array returns 0', async function () {
+    const tx = await this.contract.test_sum_euint8_empty();
+    await tx.wait();
+    const res = await decrypt8(await this.contract.resEuint8());
+    expect(res).to.equal(0);
+  });
+
+  it('sum euint8 - single element returns fresh handle with same value', async function () {
+    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    input.add8(42);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint8_single(encryptedAmount.handles[0], encryptedAmount.inputProof);
+    await tx.wait();
+    const resultHandle = await this.contract.resEuint8();
+    expect(resultHandle).to.not.equal(encryptedAmount.handles[0]);
+    const res = await decrypt8(resultHandle);
+    expect(res).to.equal(42);
+  });
 });

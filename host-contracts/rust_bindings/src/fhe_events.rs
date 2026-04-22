@@ -31,6 +31,7 @@ interface FHEEvents {
     event FheShl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
     event FheShr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
     event FheSub(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    event FheSum(address indexed caller, bytes32[] values, FheType resultType, bytes32 result);
     event TrivialEncrypt(address indexed caller, uint256 pt, FheType toType, bytes32 result);
     event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddress, bytes inputProof, FheType inputType, bytes32 result);
 }
@@ -955,6 +956,37 @@ interface FHEEvents {
         "type": "bytes1",
         "indexed": false,
         "internalType": "bytes1"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "FheSum",
+    "inputs": [
+      {
+        "name": "caller",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "values",
+        "type": "bytes32[]",
+        "indexed": false,
+        "internalType": "bytes32[]"
+      },
+      {
+        "name": "resultType",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum FheType"
       },
       {
         "name": "result",
@@ -4778,6 +4810,140 @@ event FheSub(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `FheSum(address,bytes32[],uint8,bytes32)` and selector `0xedf93db5d6c30a171bb85b9a49debcf3dba7731a6c3e53965eca92c7ae85808d`.
+```solidity
+event FheSum(address indexed caller, bytes32[] values, FheType resultType, bytes32 result);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct FheSum {
+        #[allow(missing_docs)]
+        pub caller: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub values: alloy::sol_types::private::Vec<
+            alloy::sol_types::private::FixedBytes<32>,
+        >,
+        #[allow(missing_docs)]
+        pub resultType: <FheType as alloy::sol_types::SolType>::RustType,
+        #[allow(missing_docs)]
+        pub result: alloy::sol_types::private::FixedBytes<32>,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for FheSum {
+            type DataTuple<'a> = (
+                alloy::sol_types::sol_data::Array<
+                    alloy::sol_types::sol_data::FixedBytes<32>,
+                >,
+                FheType,
+                alloy::sol_types::sol_data::FixedBytes<32>,
+            );
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Address,
+            );
+            const SIGNATURE: &'static str = "FheSum(address,bytes32[],uint8,bytes32)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                237u8, 249u8, 61u8, 181u8, 214u8, 195u8, 10u8, 23u8, 27u8, 184u8, 91u8,
+                154u8, 73u8, 222u8, 188u8, 243u8, 219u8, 167u8, 115u8, 26u8, 108u8, 62u8,
+                83u8, 150u8, 94u8, 202u8, 146u8, 199u8, 174u8, 133u8, 128u8, 141u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    caller: topics.1,
+                    values: data.0,
+                    resultType: data.1,
+                    result: data.2,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::FixedBytes<32>,
+                    > as alloy_sol_types::SolType>::tokenize(&self.values),
+                    <FheType as alloy_sol_types::SolType>::tokenize(&self.resultType),
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(&self.result),
+                )
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(), self.caller.clone())
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
+                    &self.caller,
+                );
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for FheSum {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&FheSum> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(this: &FheSum) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `TrivialEncrypt(address,uint256,uint8,bytes32)` and selector `0x063ccd1bba45151d91f6a418065047a3d048d058a922535747bb2b575a01d236`.
 ```solidity
 event TrivialEncrypt(address indexed caller, uint256 pt, FheType toType, bytes32 result);
@@ -5107,6 +5273,8 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
         #[allow(missing_docs)]
         FheSub(FheSub),
         #[allow(missing_docs)]
+        FheSum(FheSum),
+        #[allow(missing_docs)]
         TrivialEncrypt(TrivialEncrypt),
         #[allow(missing_docs)]
         VerifyInput(VerifyInput),
@@ -5257,6 +5425,11 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                 147u8,
             ],
             [
+                237u8, 249u8, 61u8, 181u8, 214u8, 195u8, 10u8, 23u8, 27u8, 184u8, 91u8,
+                154u8, 73u8, 222u8, 188u8, 243u8, 219u8, 167u8, 115u8, 26u8, 108u8, 62u8,
+                83u8, 150u8, 94u8, 202u8, 146u8, 199u8, 174u8, 133u8, 128u8, 141u8,
+            ],
+            [
                 253u8, 124u8, 146u8, 8u8, 249u8, 86u8, 191u8, 12u8, 106u8, 183u8, 106u8,
                 102u8, 127u8, 4u8, 54u8, 18u8, 69u8, 173u8, 62u8, 10u8, 45u8, 14u8,
                 255u8, 146u8, 235u8, 130u8, 122u8, 207u8, 204u8, 166u8, 142u8, 169u8,
@@ -5266,7 +5439,7 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for FHEEventsEvents {
         const NAME: &'static str = "FHEEventsEvents";
-        const COUNT: usize = 28usize;
+        const COUNT: usize = 29usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
@@ -5388,6 +5561,10 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                     <FheSub as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::FheSub)
                 }
+                Some(<FheSum as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
+                    <FheSum as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
+                        .map(Self::FheSum)
+                }
                 Some(<TrivialEncrypt as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
                     <TrivialEncrypt as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
@@ -5498,6 +5675,9 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                 Self::FheSub(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
+                Self::FheSum(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
                 Self::TrivialEncrypt(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
@@ -5584,6 +5764,9 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::FheSub(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::FheSum(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::TrivialEncrypt(inner) => {
@@ -5877,6 +6060,10 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new event filter for the [`FheSub`] event.
         pub fn FheSub_filter(&self) -> alloy_contract::Event<&P, FheSub, N> {
             self.event_filter::<FheSub>()
+        }
+        ///Creates a new event filter for the [`FheSum`] event.
+        pub fn FheSum_filter(&self) -> alloy_contract::Event<&P, FheSum, N> {
+            self.event_filter::<FheSum>()
         }
         ///Creates a new event filter for the [`TrivialEncrypt`] event.
         pub fn TrivialEncrypt_filter(
