@@ -100,7 +100,7 @@ jobs:
 
             const decideAction = (changes, manualInput) => {
               if (event === 'release') return 'build';
-              if (event === 'push') return isLatestCommit ? (changes ? 'build' : 'retag') : 'skip';
+              if (event === 'push') return isLatestCommit ? (changes ? 'build' : 'build') : 'skip';
               if (isWorkflowCall) return changes ? 'build' : 'skip';
               if (!isWorkflowCall && event === 'workflow_dispatch') return manualInput ? 'build' : 'skip';
               return 'skip';
