@@ -151,6 +151,7 @@ const abi = [
   'event FheIfThenElse(address indexed caller, bytes32 control, bytes32 ifTrue, bytes32 ifFalse, bytes32 result)',
   'event FheRand(address indexed caller, uint8 randType, bytes16 seed, bytes32 result)',
   'event FheRandBounded(address indexed caller, uint256 upperBound, uint8 randType, bytes16 seed, bytes32 result)',
+  'event FheSum(address indexed caller, bytes32[] values, uint8 resultType, bytes32 result)',
 ];
 
 async function processAllPastFHEVMExecutorEvents() {
@@ -343,11 +344,11 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
       if (event.args[3] === '0x01') {
-        clearText = BigInt(clearLHS) << BigInt(event.args[2]) % NumBits[resultType as keyof typeof NumBits];
+        clearText = BigInt(clearLHS) << (BigInt(event.args[2]) % NumBits[resultType as keyof typeof NumBits]);
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       } else {
         clearRHS = await getClearText(event.args[2]);
-        clearText = BigInt(clearLHS) << BigInt(clearRHS) % NumBits[resultType as keyof typeof NumBits];
+        clearText = BigInt(clearLHS) << (BigInt(clearRHS) % NumBits[resultType as keyof typeof NumBits]);
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       }
       insertSQL(handle, clearText);
@@ -358,11 +359,11 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
       if (event.args[3] === '0x01') {
-        clearText = BigInt(clearLHS) >> BigInt(event.args[2]) % NumBits[resultType as keyof typeof NumBits];
+        clearText = BigInt(clearLHS) >> (BigInt(event.args[2]) % NumBits[resultType as keyof typeof NumBits]);
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       } else {
         clearRHS = await getClearText(event.args[2]);
-        clearText = BigInt(clearLHS) >> BigInt(clearRHS) % NumBits[resultType as keyof typeof NumBits];
+        clearText = BigInt(clearLHS) >> (BigInt(clearRHS) % NumBits[resultType as keyof typeof NumBits]);
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       }
       insertSQL(handle, clearText);
@@ -601,6 +602,18 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       insertSQL(handle, clearText, true);
       counterRand++;
       break;
+
+    case 'FheSum': {
+      handle = ethers.toBeHex(event.args[3], 32);
+      resultType = parseInt(handle.slice(-4, -2), 16);
+      clearText = 0n;
+      for (const valueHandle of event.args[1] as string[]) {
+        clearText = clearText + BigInt(await getClearText(ethers.toBeHex(valueHandle, 32)));
+      }
+      clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
+      insertSQL(handle, clearText);
+      break;
+    }
   }
 }
 
@@ -1303,6 +1316,34 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+
+      case 'FheSum': {
+        handleResult = ethers.toBeHex(event.args[3], 32);
+        typeIndex = parseInt(handleResult.slice(-4, -2), 16);
+        type = FheTypes.find((t) => t.value === typeIndex)?.type;
+        if (!type) {
+          throw new Error(`Invalid FheType index: ${typeIndex}`);
+        }
+        const nBucketedPrices = (
+          ALL_OPERATORS_PRICES['fheSum'].nBucketed as Record<
+            string,
+            { le10: number; le30?: number; le60?: number; le100?: number }
+          >
+        )[type];
+        const n = (event.args[1] as string[]).length;
+        if (n <= 10) hcuConsumed = nBucketedPrices.le10;
+        else if (n <= 30) hcuConsumed = nBucketedPrices.le30 ?? nBucketedPrices.le10;
+        else if (n <= 60) hcuConsumed = nBucketedPrices.le60 ?? nBucketedPrices.le30 ?? nBucketedPrices.le10;
+        else
+          hcuConsumed = nBucketedPrices.le100 ?? nBucketedPrices.le60 ?? nBucketedPrices.le30 ?? nBucketedPrices.le10;
+        const inputValues = event.args[1] as string[];
+        const maxInputHCU =
+          inputValues.length > 0 ? Math.max(...inputValues.map((v) => readFromHCUMap(ethers.toBeHex(v, 32)))) : 0;
+        hcuMap[handleResult] = hcuConsumed + maxInputHCU;
+        handleSet.add(handleResult);
+        totalHCUConsumed += hcuConsumed;
+        break;
+      }
     }
   }
 

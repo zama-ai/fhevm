@@ -40,4 +40,5 @@ contract FHEEvents {
     event FheIfThenElse(address indexed caller, bytes32 control, bytes32 ifTrue, bytes32 ifFalse, bytes32 result);
     event FheRand(address indexed caller, FheType randType, bytes16 seed, bytes32 result);
     event FheRandBounded(address indexed caller, uint256 upperBound, FheType randType, bytes16 seed, bytes32 result);
+    event FheSum(address indexed caller, bytes32[] values, FheType resultType, bytes32 result);
 }
