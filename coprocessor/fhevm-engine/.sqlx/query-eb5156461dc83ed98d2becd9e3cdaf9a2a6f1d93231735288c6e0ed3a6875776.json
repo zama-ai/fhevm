@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO keys (key_id, key_id_gw, pks_key, sks_key, sns_pk, status, chain_id, block_hash)\n        VALUES ('', $1, $2, $3, $4, 'pending', $5, $6)\n        ON CONFLICT (chain_id, block_hash, key_id_gw) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Oid",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "eb5156461dc83ed98d2becd9e3cdaf9a2a6f1d93231735288c6e0ed3a6875776"
+}

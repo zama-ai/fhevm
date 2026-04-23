@@ -500,7 +500,7 @@ impl Database {
         block_number: i64,
         block_hash: &BlockHash,
     ) -> Result<(), SqlxError> {
-        sqlx::query!(
+        sqlx::query(
             r#"
             UPDATE host_chain_blocks_valid
             SET block_status = CASE
@@ -510,10 +510,82 @@ impl Database {
                 END
             WHERE block_number = $3 AND chain_id = $1
             "#,
-            self.chain_id.as_i64(),
-            block_hash.to_vec(),
-            block_number,
         )
+        .bind(self.chain_id.as_i64())
+        .bind(block_hash.to_vec())
+        .bind(block_number)
+        .execute(tx.deref_mut())
+        .await?;
+        sqlx::query(
+            r#"
+            UPDATE kms_key_activation_events e
+            SET download_status = 'pending',
+                last_error = NULL
+            FROM host_chain_blocks_valid b
+            WHERE e.chain_id = $1
+              AND e.download_status = 'orphaned'
+              AND b.chain_id = e.chain_id
+              AND b.block_hash = e.block_hash
+              AND b.block_number = $2
+              AND b.block_status = 'finalized'
+            "#,
+        )
+        .bind(self.chain_id.as_i64())
+        .bind(block_number)
+        .execute(tx.deref_mut())
+        .await?;
+        sqlx::query(
+            r#"
+            UPDATE kms_crs_activation_events e
+            SET download_status = 'pending',
+                last_error = NULL
+            FROM host_chain_blocks_valid b
+            WHERE e.chain_id = $1
+              AND e.download_status = 'orphaned'
+              AND b.chain_id = e.chain_id
+              AND b.block_hash = e.block_hash
+              AND b.block_number = $2
+              AND b.block_status = 'finalized'
+            "#,
+        )
+        .bind(self.chain_id.as_i64())
+        .bind(block_number)
+        .execute(tx.deref_mut())
+        .await?;
+        sqlx::query(
+            r#"
+            UPDATE kms_key_activation_events e
+            SET download_status = 'orphaned',
+                last_error = NULL
+            FROM host_chain_blocks_valid b
+            WHERE e.chain_id = $1
+              AND e.download_status IN ('pending', 'failed')
+              AND b.chain_id = e.chain_id
+              AND b.block_hash = e.block_hash
+              AND b.block_number = $2
+              AND b.block_status = 'orphaned'
+            "#,
+        )
+        .bind(self.chain_id.as_i64())
+        .bind(block_number)
+        .execute(tx.deref_mut())
+        .await?;
+        sqlx::query(
+            r#"
+            UPDATE kms_crs_activation_events e
+            SET download_status = 'orphaned',
+                last_error = NULL
+            FROM host_chain_blocks_valid b
+            WHERE e.chain_id = $1
+              AND e.download_status IN ('pending', 'failed')
+              AND b.chain_id = e.chain_id
+              AND b.block_hash = e.block_hash
+              AND b.block_number = $2
+              AND b.block_status = 'orphaned'
+            "#,
+        )
+        .bind(self.chain_id.as_i64())
+        .bind(block_number)
         .execute(tx.deref_mut())
         .await?;
         Ok(())

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE keys k SET status = 'orphaned'\n            FROM host_chain_blocks_valid b\n            WHERE k.chain_id = $1\n              AND k.status = 'pending'\n              AND b.chain_id = k.chain_id\n              AND b.block_hash = k.block_hash\n              AND b.block_number = $2\n              AND b.block_status = 'orphaned'\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1daffd328222fb44284359cf832cdac76326ff08bc1092f83974d3a2f2529675"
+}

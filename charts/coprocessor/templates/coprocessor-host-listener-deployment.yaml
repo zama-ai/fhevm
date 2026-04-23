@@ -55,6 +55,9 @@ spec:
             - --url=$(ETHEREUM_RPC_URL)
             - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
             - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+            {{- if .Values.commonConfig.kmsGenerationContractAddress }}
+            - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
+            {{- end }}
             - --health-port={{ .Values.hostListener.ports.healthcheck }}
             - --dependent-ops-max-per-chain={{ int .Values.commonConfig.dependentOpsMaxPerChain }}
             - --log-level={{ .Values.hostListener.args.logLevel }}
@@ -75,6 +78,10 @@ spec:
               value: {{ required "commonConfig.aclContractAddress is required" .Values.commonConfig.aclContractAddress | quote }}
             - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
               value: {{ required "commonConfig.fhevmExecutorContractAddress is required" .Values.commonConfig.fhevmExecutorContractAddress | quote }}
+            {{- if .Values.commonConfig.kmsGenerationContractAddress }}
+            - name: KMS_GENERATION_ADDRESS
+              value: {{ .Values.commonConfig.kmsGenerationContractAddress | quote }}
+            {{- end }}
           {{- if default .Values.commonConfig.tracing.enabled .Values.hostListener.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint | quote }}

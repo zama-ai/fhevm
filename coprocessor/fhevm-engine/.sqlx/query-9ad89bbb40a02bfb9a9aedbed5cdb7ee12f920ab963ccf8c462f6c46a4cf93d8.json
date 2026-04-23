@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE keys SET status = 'active'\n            WHERE chain_id = $1 AND block_hash = $2 AND status = 'pending'\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9ad89bbb40a02bfb9a9aedbed5cdb7ee12f920ab963ccf8c462f6c46a4cf93d8"
+}

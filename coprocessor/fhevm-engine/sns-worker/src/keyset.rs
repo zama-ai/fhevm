@@ -13,7 +13,7 @@ const SKS_KEY_WITH_NOISE_SQUASHING_SIZE: usize = 1_150 * 1_000_000; // ~1.1 GB
 
 async fn fetch_latest_key_id_gw(pool: &PgPool) -> Result<Option<(DbKeyId, i64)>, ExecutionError> {
     let record = sqlx::query(
-        "SELECT key_id_gw, sequence_number FROM keys ORDER BY sequence_number DESC LIMIT 1",
+        "SELECT key_id_gw, sequence_number FROM keys WHERE status = 'active' ORDER BY sequence_number DESC LIMIT 1",
     )
     .fetch_optional(pool)
     .await?;
@@ -100,7 +100,7 @@ pub async fn fetch_client_key(
     pool: &PgPool,
     key_id_gw: &DbKeyId,
 ) -> anyhow::Result<Option<tfhe::ClientKey>> {
-    let keys = sqlx::query("SELECT cks_key FROM keys WHERE key_id_gw = $1")
+    let keys = sqlx::query("SELECT cks_key FROM keys WHERE status = 'active' AND key_id_gw = $1")
         .bind(key_id_gw)
         .fetch_optional(pool)
         .await?;

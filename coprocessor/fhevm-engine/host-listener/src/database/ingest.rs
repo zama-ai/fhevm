@@ -15,6 +15,9 @@ use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
     acl_result_handles, tfhe_result_handle, Chain, ChainHash, Database, LogTfhe,
 };
+use crate::kms_generation::{
+    insert_prepared_kms_generation_events_tx, PreparedKmsEvents,
+};
 
 pub struct BlockLogs<T> {
     pub logs: Vec<T>,
@@ -145,6 +148,27 @@ pub async fn ingest_block_logs(
     block_logs: &BlockLogs<Log>,
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
+    options: IngestOptions,
+) -> Result<(), sqlx::Error> {
+    ingest_block_logs_with_prepared_kms(
+        chain_id,
+        db,
+        block_logs,
+        acl_contract_address,
+        tfhe_contract_address,
+        &PreparedKmsEvents::default(),
+        options,
+    )
+    .await
+}
+
+pub async fn ingest_block_logs_with_prepared_kms(
+    chain_id: ChainId,
+    db: &mut Database,
+    block_logs: &BlockLogs<Log>,
+    acl_contract_address: &Option<Address>,
+    tfhe_contract_address: &Option<Address>,
+    prepared_kms_events: &PreparedKmsEvents,
     options: IngestOptions,
 ) -> Result<(), sqlx::Error> {
     let mut tx = db.new_transaction().await?;
@@ -311,6 +335,14 @@ pub async fn ingest_block_logs(
             info!(block_number, catchup_insertion, "Catchup inserted events");
         }
     }
+    insert_prepared_kms_generation_events_tx(
+        &mut tx,
+        prepared_kms_events,
+        chain_id,
+        block_hash.as_ref(),
+        block_number,
+    )
+    .await?;
     db.mark_block_as_valid(&mut tx, &block_logs.summary, block_logs.finalized)
         .await?;
     if at_least_one_insertion {

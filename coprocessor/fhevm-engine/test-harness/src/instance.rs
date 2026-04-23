@@ -188,9 +188,11 @@ async fn create_database(
 }
 
 pub async fn get_sns_pk_size(pool: &sqlx::PgPool) -> Result<i64, sqlx::Error> {
-    let row = sqlx::query("SELECT sns_pk FROM keys ORDER BY sequence_number DESC LIMIT 1")
-        .fetch_optional(pool)
-        .await?;
+    let row = sqlx::query(
+        "SELECT sns_pk FROM keys WHERE status = 'active' ORDER BY sequence_number DESC LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await?;
 
     let Some(row) = row else {
         info!("No sns_pk found in keys");

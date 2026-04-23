@@ -20,7 +20,7 @@ pub struct CrsCache {
 
 impl CrsCache {
     pub async fn load(pool: &PgPool) -> Result<Self> {
-        let row = sqlx::query("SELECT crs_id, crs FROM crs ORDER BY sequence_number DESC LIMIT 1")
+        let row = sqlx::query("SELECT crs_id, crs FROM crs WHERE status = 'active' ORDER BY sequence_number DESC LIMIT 1")
             .fetch_optional(pool)
             .await?;
 

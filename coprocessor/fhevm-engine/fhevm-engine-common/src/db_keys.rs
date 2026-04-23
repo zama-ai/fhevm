@@ -49,7 +49,7 @@ impl DbKeyCache {
         T: sqlx::PgExecutor<'a>,
     {
         let row = sqlx::query(
-            "SELECT key_id, sequence_number, pks_key, sks_key, cks_key FROM keys ORDER BY sequence_number DESC LIMIT 1",
+            "SELECT key_id, sequence_number, pks_key, sks_key, cks_key FROM keys WHERE status = 'active' ORDER BY sequence_number DESC LIMIT 1",
         )
         .fetch_optional(executor)
         .await?
@@ -174,13 +174,13 @@ impl DbKeyCache {
     {
         let rows = if let Some(ref ids) = db_key_ids_to_query {
             sqlx::query(
-                "SELECT key_id, sequence_number, pks_key, sks_key, cks_key FROM keys WHERE key_id = ANY($1)",
+                "SELECT key_id, sequence_number, pks_key, sks_key, cks_key FROM keys WHERE status = 'active' AND key_id = ANY($1)",
             )
             .bind(ids)
             .fetch_all(conn)
             .await?
         } else {
-            sqlx::query("SELECT key_id, sequence_number, pks_key, sks_key, cks_key FROM keys")
+            sqlx::query("SELECT key_id, sequence_number, pks_key, sks_key, cks_key FROM keys WHERE status = 'active'")
                 .fetch_all(conn)
                 .await?
         };
@@ -263,7 +263,10 @@ pub async fn read_keys_from_large_object_by_key_id_gw(
     keys_column_name: &str,
     capacity: usize,
 ) -> anyhow::Result<Vec<u8>> {
-    let query = format!("SELECT {} FROM keys WHERE key_id_gw = $1", keys_column_name);
+    let query = format!(
+        "SELECT {} FROM keys WHERE status = 'active' AND key_id_gw = $1",
+        keys_column_name
+    );
 
     let row: PgRow = sqlx::query(&query).bind(key_id_gw).fetch_one(pool).await?;
 

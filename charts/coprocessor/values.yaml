@@ -26,6 +26,7 @@ commonConfig:
   hostChainHttpUrl: "http://ethereum-node:8545"
   aclContractAddress: null            # required — e.g. 0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c
   fhevmExecutorContractAddress: null  # required — e.g. 0x...
+  kmsGenerationContractAddress: null  # required — e.g. 0x...
 
   # Gateway chain configuration
   gatewayUrl: "ws://gateway-rpc-node:8548"
