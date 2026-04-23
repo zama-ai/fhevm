@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE kms_key_activation_events AS e\n        SET status = 'cancelled'\n        FROM host_chain_blocks_valid AS b\n        WHERE\n            e.status = 'pending'\n            AND e.chain_id = b.chain_id\n            AND e.block_hash = b.block_hash\n            AND b.block_status = 'orphaned'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "a6b33c7ec934b2fe7d4010dffcec56b1f4d1d15d1a82e00622e46b26adef5e91"
+}

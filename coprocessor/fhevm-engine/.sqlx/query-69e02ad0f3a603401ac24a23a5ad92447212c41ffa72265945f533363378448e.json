@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT e.chain_id, e.block_hash, e.crs_id\n        FROM kms_crs_activation_events AS e\n        INNER JOIN host_chain_blocks_valid AS b\n            ON e.chain_id = b.chain_id\n            AND e.block_hash = b.block_hash\n        WHERE\n            e.status = 'ready'\n            AND b.block_status = 'finalized'\n        FOR UPDATE OF e SKIP LOCKED\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "crs_id",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "69e02ad0f3a603401ac24a23a5ad92447212c41ffa72265945f533363378448e"
+}

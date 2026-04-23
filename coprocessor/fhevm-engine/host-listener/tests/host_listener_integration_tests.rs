@@ -49,8 +49,16 @@ sol!(
     "artifacts/ACLTest.sol/ACLTest.json"
 );
 
+sol!(
+    #[sol(rpc)]
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    KMSGenerationTest,
+    "artifacts/KMSGenerationTest.sol/KMSGenerationTest.json"
+);
+
 use crate::ACLTest::ACLTestInstance;
 use crate::FHEVMExecutorTest::FHEVMExecutorTestInstance;
+use crate::KMSGenerationTest::KMSGenerationTestInstance;
 
 const NB_EVENTS_PER_WALLET: i64 = 50;
 
@@ -173,6 +181,7 @@ struct Setup {
     wallets: Vec<EthereumWallet>,
     acl_contract: ACLTestInstance<SetupProvider>,
     tfhe_contract: FHEVMExecutorTestInstance<SetupProvider>,
+    kms_generation_contract: KMSGenerationTestInstance<SetupProvider>,
     db_pool: sqlx::Pool<sqlx::Postgres>,
     _test_instance: test_harness::instance::DBInstance, // maintain db alive
     health_check_url: String,
@@ -215,11 +224,14 @@ async fn setup_with_block_time(
 
     let tfhe_contract = FHEVMExecutorTest::deploy(provider.clone()).await?;
     let acl_contract = ACLTest::deploy(provider.clone()).await?;
+    let kms_generation_contract =
+        KMSGenerationTest::deploy(provider.clone()).await?;
     let args = Args {
         url,
         initial_block_time: 1,
         acl_contract_address: acl_contract.address().to_string(),
         tfhe_contract_address: tfhe_contract.address().to_string(),
+        kms_generation_address: kms_generation_contract.address().to_string(),
         database_url: test_instance.db_url.clone(),
         start_at_block: None,
         end_at_block: None,
@@ -252,6 +264,7 @@ async fn setup_with_block_time(
         wallets,
         acl_contract,
         tfhe_contract,
+        kms_generation_contract,
         db_pool,
         _test_instance: test_instance,
         health_check_url,
@@ -311,6 +324,7 @@ async fn ingest_blocks_for_receipts(
 
     let acl_address = Some(*setup.acl_contract.address());
     let tfhe_address = Some(*setup.tfhe_contract.address());
+    let kms_generation_address = Some(*setup.kms_generation_contract.address());
 
     let provider = ProviderBuilder::new()
         .wallet(setup.wallets[0].clone())
@@ -339,6 +353,7 @@ async fn ingest_blocks_for_receipts(
             &block_logs,
             &acl_address,
             &tfhe_address,
+            &kms_generation_address,
             options,
         )
         .await?;
@@ -980,6 +995,7 @@ async fn test_only_catchup_loop_requires_negative_start_at_block(
         url: "ws://127.0.0.1:8545".to_string(),
         acl_contract_address: "".to_string(),
         tfhe_contract_address: "".to_string(),
+        kms_generation_address: String::new(),
         database_url: fhevm_engine_common::utils::DatabaseURL::default(),
         start_at_block: Some(0),
         end_at_block: None,

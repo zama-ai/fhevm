@@ -39,6 +39,7 @@ services:
       - --database-url=${DATABASE_URL}
       - --acl-contract-address=${ACL_CONTRACT_ADDRESS}
       - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
+      - --kms-generation-address=${KMS_GENERATION_ADDRESS}
       - --url=${RPC_WS_URL}
       - --initial-block-time=1
       - --catchup-finalization-in-blocks=5
@@ -56,6 +57,7 @@ services:
       - --database-url=${DATABASE_URL}
       - --acl-contract-address=${ACL_CONTRACT_ADDRESS}
       - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
+      - --kms-generation-address=${KMS_GENERATION_ADDRESS}
       - --url=${RPC_HTTP_URL}
       - --finality-lag=2
     depends_on:

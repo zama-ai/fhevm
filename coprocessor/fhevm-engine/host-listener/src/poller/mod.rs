@@ -69,6 +69,7 @@ pub struct PollerConfig {
     pub url: String,
     pub acl_address: Address,
     pub tfhe_address: Address,
+    pub kms_generation_address: Address,
     pub database_url: DatabaseURL,
     pub finality_lag: u64,
     pub batch_size: u64,
@@ -91,6 +92,7 @@ pub struct PollerConfig {
 pub async fn run_poller(config: PollerConfig) -> Result<()> {
     let acl_address = config.acl_address;
     let tfhe_address = config.tfhe_address;
+    let kms_generation_address = config.kms_generation_address;
 
     let blockchain_tick = HeartBeat::new();
     let blockchain_timeout_tick = HeartBeat::new();
@@ -286,6 +288,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 &block_logs,
                 acl_address,
                 tfhe_address,
+                kms_generation_address,
                 config.retry_interval,
                 ingest_options,
             )
@@ -357,15 +360,25 @@ async fn ingest_with_retry(
     block_logs: &BlockLogs<Log>,
     acl_address: Address,
     tfhe_address: Address,
+    kms_generation_address: Address,
     retry_interval: Duration,
     options: IngestOptions,
 ) -> Result<u64, (sqlx::Error, u64)> {
     let mut errors = 0;
     let acl = Some(acl_address);
     let tfhe = Some(tfhe_address);
+    let kms_gen_address = Some(kms_generation_address);
     loop {
-        match ingest_block_logs(chain_id, db, block_logs, &acl, &tfhe, options)
-            .await
+        match ingest_block_logs(
+            chain_id,
+            db,
+            block_logs,
+            &acl,
+            &tfhe,
+            &kms_gen_address,
+            options,
+        )
+        .await
         {
             Ok(_) => return Ok(errors),
             Err(err) => {

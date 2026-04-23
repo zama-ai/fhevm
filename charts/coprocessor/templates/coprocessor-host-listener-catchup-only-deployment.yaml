@@ -88,6 +88,9 @@ spec:
               value: {{ required (printf "chains entry %q: aclContractAddress is required" $chain.name) $chain.aclContractAddress | quote }}
             - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
               value: {{ required (printf "chains entry %q: fhevmExecutorContractAddress is required" $chain.name) $chain.fhevmExecutorContractAddress | quote }}
+            - name: KMS_GENERATION_ADDRESS
+              value: {{ .Values.commonConfig.kmsGenerationContractAddress | quote }}
+            {{- end }}
           {{- if default $.Values.commonConfig.tracing.enabled $.Values.hostListenerCatchupOnlyShared.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ $.Values.commonConfig.tracing.endpoint | quote }}
