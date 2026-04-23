@@ -295,17 +295,6 @@ jobs:
           fi
           echo "LOCK_FILE=$lock_file" >> "$GITHUB_ENV"
 
-      - name: Resolve orchestrated manual baseline lock once
-        if: ${{ inputs.lock-artifact-name == '' && inputs.orchestrated && github.event_name == 'workflow_dispatch' }}
-        working-directory: test-suite/fhevm
-        run: |
-          lock_file="$(./fhevm-cli resolve --target latest-main | tail -n1)"
-          if [ ! -f "$lock_file" ]; then
-            echo "Could not locate resolved lock file: $lock_file" >&2
-            exit 1
-          fi
-          echo "LOCK_FILE=$lock_file" >> "$GITHUB_ENV"
-
       - name: Resolve stack plan and display effective component versions
         working-directory: test-suite/fhevm
         run: |
