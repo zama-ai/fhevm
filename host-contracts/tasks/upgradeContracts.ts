@@ -479,25 +479,8 @@ task('task:upgradeHCULimit')
     true,
     types.boolean,
   )
-  .addOptionalParam(
-    'hcuCapPerBlock',
-    'Global HCU cap per block passed to reinitializeV3 (default: uint48 max)',
-    '281474976710655', // type(uint48).max
-    types.string,
-  )
-  .addOptionalParam(
-    'maxHcuDepthPerTx',
-    'Max sequential HCU depth per transaction (default: 5000000)',
-    '5000000',
-    types.string,
-  )
-  .addOptionalParam('maxHcuPerTx', 'Max total HCU per transaction (default: 20000000)', '20000000', types.string)
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    await upgradeContract('HCULimit', 'HCU_LIMIT_CONTRACT_ADDRESS', taskArgs, hre, [
-      BigInt(taskArgs.hcuCapPerBlock),
-      BigInt(taskArgs.maxHcuDepthPerTx),
-      BigInt(taskArgs.maxHcuPerTx),
-    ]);
+    await upgradeContract('HCULimit', 'HCU_LIMIT_CONTRACT_ADDRESS', taskArgs, hre);
   });
 
 task('task:prepareUpgradeHCULimit')
@@ -521,23 +504,6 @@ task('task:prepareUpgradeHCULimit')
     true,
     types.boolean,
   )
-  .addOptionalParam(
-    'hcuCapPerBlock',
-    'Global HCU cap per block passed to reinitializeV3 (default: uint48 max)',
-    '281474976710655',
-    types.string,
-  )
-  .addOptionalParam(
-    'maxHcuDepthPerTx',
-    'Max sequential HCU depth per transaction (default: 5000000)',
-    '5000000',
-    types.string,
-  )
-  .addOptionalParam('maxHcuPerTx', 'Max total HCU per transaction (default: 20000000)', '20000000', types.string)
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    await prepareUpgradeContract('HCULimit', 'HCU_LIMIT_CONTRACT_ADDRESS', taskArgs, hre, [
-      BigInt(taskArgs.hcuCapPerBlock),
-      BigInt(taskArgs.maxHcuDepthPerTx),
-      BigInt(taskArgs.maxHcuPerTx),
-    ]);
+    await prepareUpgradeContract('HCULimit', 'HCU_LIMIT_CONTRACT_ADDRESS', taskArgs, hre);
   });

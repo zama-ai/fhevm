@@ -9,13 +9,7 @@ export interface UpgradeConstraint {
 
 export const CONTRACT_HINTS: Record<string, Record<string, UpgradeReportHint>> = {
   "host-contracts": {
-    HCULimit: {
-      defaults: {
-        hcuCapPerBlock: "281474976710655",
-        maxHcuDepthPerTx: "5000000",
-        maxHcuPerTx: "20000000",
-      },
-    },
+    HCULimit: {},
   },
   "gateway-contracts": {},
 };
