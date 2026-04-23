@@ -739,4 +739,111 @@ describe('FHEVM manual operations', function () {
     const res4 = await decryptBool(await this.contract.resEbool());
     expect(res4).to.equal(true);
   });
+
+  it('sum euint8 - three elements', async function () {
+    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    input.add8(10);
+    input.add8(20);
+    input.add8(30);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint8(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.handles[2],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const res = await decrypt8(await this.contract.resEuint8());
+    expect(res).to.equal(60);
+  });
+
+  it('sum euint16 - three elements', async function () {
+    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    input.add16(100);
+    input.add16(200);
+    input.add16(300);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint16(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.handles[2],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const res = await decrypt16(await this.contract.resEuint16());
+    expect(res).to.equal(600);
+  });
+
+  it('sum euint32 - three elements', async function () {
+    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    input.add32(100000);
+    input.add32(200000);
+    input.add32(300000);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint32(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.handles[2],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const res = await decrypt32(await this.contract.resEuint32());
+    expect(res).to.equal(600000);
+  });
+
+  it('sum euint64 - two elements', async function () {
+    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    input.add64(1000000n);
+    input.add64(2000000n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint64(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const res = await decrypt64(await this.contract.resEuint64());
+    expect(res).to.equal(3000000n);
+  });
+
+  it('sum euint128 - two elements', async function () {
+    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    input.add128(10000000000n);
+    input.add128(20000000000n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint128(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const res = await decrypt128(await this.contract.resEuint128());
+    expect(res).to.equal(30000000000n);
+  });
+
+  it('sum euint8 - uninitialized element treated as 0', async function () {
+    const tx = await this.contract.test_sum_euint8_uninitialized();
+    await tx.wait();
+    const res = await decrypt8(await this.contract.resEuint8());
+    expect(res).to.equal(5);
+  });
+
+  it('sum euint8 - empty array returns 0', async function () {
+    const tx = await this.contract.test_sum_euint8_empty();
+    await tx.wait();
+    const res = await decrypt8(await this.contract.resEuint8());
+    expect(res).to.equal(0);
+  });
+
+  it('sum euint8 - single element returns fresh handle with same value', async function () {
+    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    input.add8(42);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint8_single(encryptedAmount.handles[0], encryptedAmount.inputProof);
+    await tx.wait();
+    const resultHandle = await this.contract.resEuint8();
+    expect(resultHandle).to.not.equal(encryptedAmount.handles[0]);
+    const res = await decrypt8(resultHandle);
+    expect(res).to.equal(42);
+  });
 });

@@ -35,7 +35,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
 
         assertEq(address(fhevmExecutorProxy), fhevmExecutorAdd, "FHEVMExecutor proxy address mismatch");
         assertNotEq(fhevmExecutorImplementation, address(0), "Implementation not deployed");
-        assertEq(fhevmExecutorProxy.getVersion(), "FHEVMExecutor v0.3.0", "Version mismatch");
+        assertEq(fhevmExecutorProxy.getVersion(), "FHEVMExecutor v0.4.0", "Version mismatch");
         assertEq(
             _readImplementationSlot(fhevmExecutorAdd),
             fhevmExecutorImplementation,
@@ -110,7 +110,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
 
         assertEq(address(hcuLimitProxy), hcuLimitAdd, "HCULimit proxy address mismatch");
         assertNotEq(hcuLimitImplementation, address(0), "Implementation not deployed");
-        assertEq(hcuLimitProxy.getVersion(), "HCULimit v0.2.0", "Version mismatch");
+        assertEq(hcuLimitProxy.getVersion(), "HCULimit v0.3.0", "Version mismatch");
         assertEq(_readImplementationSlot(hcuLimitAdd), hcuLimitImplementation, "Implementation slot mismatch");
     }
 
