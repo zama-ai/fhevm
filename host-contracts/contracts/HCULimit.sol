@@ -140,21 +140,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /**
      * @notice Re-initializes the contract from V2.
-     * @param hcuCapPerBlock New global HCU cap per block.
-     * @param maxHCUDepthPerTx Maximum sequential HCU depth per transaction.
-     * @param maxHCUPerTx Maximum total HCU per transaction.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3(
-        uint48 hcuCapPerBlock,
-        uint48 maxHCUDepthPerTx,
-        uint48 maxHCUPerTx
-    ) public virtual reinitializer(REINITIALIZER_VERSION) {
-        _setHCUPerBlock(hcuCapPerBlock);
-        _setMaxHCUPerTx(maxHCUPerTx);
-        _setMaxHCUDepthPerTx(maxHCUDepthPerTx);
-    }
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice Check the homomorphic complexity units limit for FheAdd.
