@@ -31,7 +31,6 @@ commonConfig:
   gatewayUrl: "ws://gateway-rpc-node:8548"
   gatewayContractAddresses:
     inputVerification: null          # required
-    kmsGeneration: null              # required
     ciphertextCommits: null          # required
     gatewayConfig: null              # required
     multichainAcl: null              # required
@@ -497,19 +496,19 @@ gwListener:
 
   image:
     name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/gw-listener
-    tag: v0.11.0
+    tag: v0.12.0
 
   replicas: 1
 
   # Additional environment variables. DATABASE_URL, GATEWAY_URL,
-  # INPUT_VERIFICATION_ADDRESS, KMS_GENERATION_ADDRESS, CIPHERTEXT_COMMITS_ADDRESS,
-  # and GATEWAY_CONFIG_ADDRESS are injected automatically from commonConfig.
+  # INPUT_VERIFICATION_ADDRESS, CIPHERTEXT_COMMITS_ADDRESS, and
+  # GATEWAY_CONFIG_ADDRESS are injected automatically from commonConfig.
   # Use env to set component-specific variables or override any of the above.
   env: []
 
   # Command line arguments for the gateway listener.
   # The following are injected automatically by the template:
-  #   --database-url, --gw-url, --input-verification-address, --kms-generation-address,
+  #   --database-url, --gw-url, --input-verification-address,
   #   --ciphertext-commits-address, --gateway-config-address (from commonConfig)
   #   --health-check-port (from ports.healthcheck), --metrics-addr (from ports.metrics)
   # Use extraArgs to pass flags not covered by the fields below.
@@ -527,10 +526,6 @@ gwListener:
     logLastProcessedEveryNumberOfUpdates: 50
 
   # Additional args appended after all template-injected and structured args.
-  # Use for replay parameters, e.g.:
-  #   - --replay-from-block=12345
-  #   - --replay-skip-verify-proof
-  #   - --catchup-kms-generation-from-block=12345
   extraArgs: []
 
   # Service ports configuration
