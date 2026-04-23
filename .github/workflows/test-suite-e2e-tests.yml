@@ -151,6 +151,7 @@ jobs:
       RELAYER_MIGRATE_VERSION: ${{ inputs.relayer-migrate-version }}
       RELAYER_VERSION: ${{ inputs.relayer-version }}
       CORE_VERSION: ${{ inputs.kms-core-version }}
+      ORCHESTRATED: ${{ inputs.orchestrated && 'true' || 'false' }}
       SCENARIO: ${{ inputs.scenario || 'two-of-two' }}
       TEST_PROFILE: ${{ inputs.test-profile || 'standard' }}
     runs-on: large_ubuntu_32
@@ -301,7 +302,7 @@ jobs:
           args=(--scenario "$SCENARIO")
           if [ -n "${LOCK_FILE:-}" ]; then
             args+=(--lock-file "$LOCK_FILE")
-          elif [ "${{ inputs.orchestrated }}" = "true" ]; then
+          elif [ "$ORCHESTRATED" = "true" ]; then
             echo "Orchestrated e2e requires a frozen baseline lock artifact" >&2
             exit 1
           else
@@ -324,7 +325,7 @@ jobs:
           args=(--scenario "$SCENARIO")
           if [ -n "${LOCK_FILE:-}" ]; then
             args+=(--lock-file "$LOCK_FILE")
-          elif [ "${{ inputs.orchestrated }}" = "true" ]; then
+          elif [ "$ORCHESTRATED" = "true" ]; then
             echo "Orchestrated e2e requires a frozen baseline lock artifact" >&2
             exit 1
           else
