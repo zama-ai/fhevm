@@ -22,8 +22,8 @@ test-suite/gateway-stress/Dockerfile @zama-ai/fhevm-devs
 /host-contracts/ @zama-ai/fhevm-coprocessor
 /library-solidity/ @zama-ai/fhevm-coprocessor
 
-# Coprocessor Team ownership
-/listener/ @zama-ai/fhevm-coprocessor @nboisde @maxnovawind
+# Listener ownership
+/listener/ @zama-ai/listener-guild
 
 # Enforces changes in Sandboxed AI CI/CD
 .github/squid/sandbox-*.conf @zama-ai/security-team 
