@@ -1351,7 +1351,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         assertEq(usedHCU, 0);
     }
 
-    function test_reinitializeV3SetsBlockCapOnUpgradePathWithoutInitCall() public {
+    function test_reinitializeV3SucceedsOnUpgradePath() public {
         address proxyWithoutInitCall = UnsafeUpgrades.deployUUPSProxy(
             address(new EmptyUUPSProxy()),
             abi.encodeCall(EmptyUUPSProxy.initialize, ())
@@ -1362,10 +1362,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         UnsafeUpgrades.upgradeProxy(proxyWithoutInitCall, implementationWithoutInitCall, "");
 
         MockHCULimit upgraded = MockHCULimit(proxyWithoutInitCall);
-        assertEq(upgraded.getGlobalHCUCapPerBlock(), 0);
-
-        upgraded.reinitializeV3(type(uint48).max, 5_000_000, 20_000_000);
-        assertEq(upgraded.getGlobalHCUCapPerBlock(), type(uint48).max);
+        upgraded.reinitializeV3();
         vm.stopPrank();
     }
 
