@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n-- Acquire all computations from a transaction set\nSELECT\n  c.output_handle, \n  c.dependencies, \n  c.fhe_operation, \n  c.is_scalar,\n  c.is_allowed, \n  c.dependence_chain_id,\n  c.transaction_id,\n  c.schedule_order\nFROM computations c\nWHERE c.transaction_id IN (\n    SELECT DISTINCT\n      c_schedule_order.transaction_id\n    FROM (\n      SELECT transaction_id\n      FROM computations \n      WHERE is_completed = FALSE\n        AND is_error = FALSE\n        AND is_allowed = TRUE\n        AND ($1::bytea IS NULL OR dependence_chain_id = $1)\n      ORDER BY schedule_order ASC\n      LIMIT $2\n    ) as c_schedule_order\n  )\n        ",
+  "query": "\n-- Acquire all computations from a transaction set\nSELECT\n  c.output_handle, \n  c.dependencies, \n  c.fhe_operation, \n  c.is_scalar,\n  c.is_allowed, \n  c.dependence_chain_id,\n  c.transaction_id,\n  c.schedule_order,\n  c.block_hash\nFROM computations c\nWHERE (c.transaction_id, c.block_hash) IN (\n    SELECT DISTINCT\n      c_schedule_order.transaction_id, c_schedule_order.block_hash\n    FROM (\n      SELECT transaction_id, block_hash\n      FROM computations \n      WHERE is_completed = FALSE\n        AND is_error = FALSE\n        AND is_allowed = TRUE\n        AND ($1::bytea IS NULL OR dependence_chain_id = $1)\n      ORDER BY schedule_order ASC\n      LIMIT $2\n    ) as c_schedule_order\n  )\n        ",
   "describe": {
     "columns": [
       {
@@ -42,6 +42,11 @@
         "ordinal": 7,
         "name": "schedule_order",
         "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 8,
+        "name": "block_hash",
+        "type_info": "Bytea"
       }
     ],
     "parameters": {
@@ -58,8 +63,9 @@
       false,
       true,
       false,
+      false,
       false
     ]
   },
-  "hash": "571a684cbff1241ec33dda67bd02697aa95adc548f114c5bb009248c84f304b2"
+  "hash": "c16c82c56c7b1dfdd564095e7a11e35d4ade73c57a1f64fdfba0b3d7cccf2c16"
 }

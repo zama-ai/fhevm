@@ -178,7 +178,7 @@ impl<'a> Scheduler<'a> {
                     args.push((
                         std::mem::take(&mut tx.graph),
                         std::mem::take(&mut tx.inputs),
-                        tx.transaction_id.clone(),
+                        tx.transaction.clone(),
                         tx.component_id,
                     ));
                 }
@@ -232,7 +232,7 @@ impl<'a> Scheduler<'a> {
                         args.push((
                             std::mem::take(&mut tx.graph),
                             std::mem::take(&mut tx.inputs),
-                            tx.transaction_id.clone(),
+                            tx.transaction.clone(),
                             tx.component_id,
                         ));
                     }
@@ -273,7 +273,12 @@ fn re_randomise_operation_inputs(
     Ok(())
 }
 
-type ComponentSet = Vec<(DFGraph, HashMap<Handle, Option<DFGTxInput>>, Handle, usize)>;
+type ComponentSet = Vec<(
+    DFGraph,
+    HashMap<Handle, Option<DFGTxInput>>,
+    Transaction,
+    usize,
+)>;
 fn execute_partition(
     transactions: ComponentSet,
     task_id: NodeIndex,
@@ -287,7 +292,7 @@ fn execute_partition(
     // Traverse transactions within the partition. The transactions
     // are topologically sorted so the order is executable
     'tx: for (ref mut dfg, ref mut tx_inputs, tid, _cid) in transactions {
-        let txn_id_short = telemetry::short_hex_id(&tid);
+        let txn_id_short = telemetry::short_hex_id(&tid.transaction_id);
 
         // Update the transaction inputs based on allowed handles so
         // far. If any input is still missing, and we cannot fill it
@@ -296,7 +301,7 @@ fn execute_partition(
         for (h, i) in tx_inputs.iter_mut() {
             if i.is_none() {
                 let Some(Ok(ct)) = res.get(h) else {
-                    warn!(target: "scheduler", {transaction_id = ?hex::encode(tid) },
+                    warn!(target: "scheduler", {transaction = ?tid},
 		       "Missing input to compute transaction - skipping");
                     for nidx in dfg.graph.node_identifiers() {
                         let Some(node) = dfg.graph.node_weight_mut(nidx) else {
@@ -328,7 +333,7 @@ fn execute_partition(
         let started_at = std::time::Instant::now();
 
         let Ok(ts) = daggy::petgraph::algo::toposort(&dfg.graph, None) else {
-            error!(target: "scheduler", {transaction_id = ?tid },
+            error!(target: "scheduler", {transaction = ?tid },
 		       "Cyclical dependence error in transaction");
             for nidx in dfg.graph.node_identifiers() {
                 let Some(node) = dfg.graph.node_weight_mut(nidx) else {
@@ -378,7 +383,7 @@ fn execute_partition(
                         result.1.map(|v| TaskResult {
                             compressed_ct: v,
                             is_allowed: node.is_allowed,
-                            transaction_id: tid.clone(),
+                            transaction: tid.clone(),
                         }),
                     );
                 }
@@ -405,7 +410,7 @@ fn try_execute_node(
     node_index: usize,
     tx_inputs: &mut HashMap<Handle, Option<DFGTxInput>>,
     gpu_idx: usize,
-    transaction_id: &Handle,
+    transaction: &Transaction,
     cpk: &tfhe::CompactPublicKey,
 ) -> Result<(usize, OpResult)> {
     if !node.check_ready_inputs(tx_inputs) {
@@ -458,9 +463,8 @@ fn try_execute_node(
         RERAND_LATENCY_BATCH_HISTOGRAM.observe(elapsed.as_secs_f64());
     }
     let opcode = node.opcode;
-    let result = std::panic::catch_unwind(|| {
-        run_computation(opcode, cts, node_index, gpu_idx, transaction_id)
-    });
+    let result =
+        std::panic::catch_unwind(|| run_computation(opcode, cts, node_index, gpu_idx, transaction));
     match result {
         Err(e) => {
             let msg = e
@@ -484,9 +488,9 @@ fn run_computation(
     inputs: Vec<SupportedFheCiphertexts>,
     graph_node_index: usize,
     gpu_idx: usize,
-    transaction_id: &Handle,
+    transaction: &Transaction,
 ) -> (usize, OpResult) {
-    let txn_id_short = telemetry::short_hex_id(transaction_id);
+    let txn_id_short = telemetry::short_hex_id(&transaction.transaction_id);
     let op = FheOperation::try_from(operation);
     match op {
         Ok(FheOperation::FheGetCiphertext) => {

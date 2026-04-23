@@ -3,12 +3,12 @@ use crate::types::CoprocessorError;
 use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
-use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
+use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts};
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheOperations};
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
-use scheduler::dfg::types::{CompressedCiphertext, DFGTxInput, SchedulerError};
+use scheduler::dfg::types::{CompressedCiphertext, DFGTxInput, SchedulerError, Transaction};
 use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp};
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
 use sqlx::types::Uuid;
@@ -332,13 +332,14 @@ SELECT
   c.is_allowed, 
   c.dependence_chain_id,
   c.transaction_id,
-  c.schedule_order
+  c.schedule_order,
+  c.block_hash
 FROM computations c
-WHERE c.transaction_id IN (
+WHERE (c.transaction_id, c.block_hash) IN (
     SELECT DISTINCT
-      c_schedule_order.transaction_id
+      c_schedule_order.transaction_id, c_schedule_order.block_hash
     FROM (
-      SELECT transaction_id
+      SELECT transaction_id, block_hash
       FROM computations 
       WHERE is_completed = FALSE
         AND is_error = FALSE
@@ -377,22 +378,21 @@ WHERE c.transaction_id IN (
     let (transactions, earliest_schedule_order) = async {
         let mut earliest_schedule_order = the_work.first().unwrap().schedule_order;
         // Partition work directly by transaction
-        let work_by_transaction: HashMap<Handle, Vec<_>> = the_work
+        let work_by_transaction: HashMap<Transaction, Vec<_>> = the_work
             .into_iter()
-            .into_group_map_by(|k| k.transaction_id.clone());
+            .into_group_map_by(|k| Transaction { transaction_id: k.transaction_id.clone(), block_hash: k.block_hash.clone()});
         // Traverse transactions and build transaction nodes
         let mut transactions: Vec<ComponentNode> = vec![];
-        for (transaction_id, txwork) in work_by_transaction.iter() {
-            let transaction_id: &Vec<u8> = transaction_id;
+        for (transaction, txwork) in work_by_transaction.iter() {
             let mut ops = vec![];
             for w in txwork {
                 let fhe_op: SupportedFheOperations = match w.fhe_operation.try_into() {
                     Ok(op) => op,
                     Err(e) => {
-                        error!(target: "tfhe_worker", { output_handle = ?w.output_handle, transaction_id = ?hex::encode(transaction_id), error = %e, }, "invalid FHE operation ");
+                        error!(target: "tfhe_worker", { output_handle = ?w.output_handle, transaction = ?transaction, error = %e, }, "invalid FHE operation ");
                         set_computation_error(
                             &w.output_handle,
-                            transaction_id,
+                            transaction,
                             &e,
                             trx,
                             deps_chain_mngr,
@@ -432,7 +432,7 @@ WHERE c.transaction_id IN (
                     earliest_schedule_order = w.schedule_order;
                 }
             }
-            let (mut components, _) = build_component_nodes(ops, transaction_id)?;
+            let (mut components, _) = build_component_nodes(ops, transaction)?;
             transactions.append(&mut components);
         }
         Ok::<_, Box<dyn std::error::Error + Send + Sync>>((transactions, earliest_schedule_order))
@@ -543,7 +543,7 @@ async fn upload_transaction_graph_results<'a>(
                     result.handle.clone(),
                     (cct.ct_bytes, (current_ciphertext_version(), cct.ct_type)),
                 ));
-                handles_to_update.push((result.handle.clone(), result.transaction_id.clone()));
+                handles_to_update.push((result.handle.clone(), result.transaction.clone()));
                 WORK_ITEMS_PROCESSED_COUNTER.inc();
             }
             Err(mut err) => {
@@ -587,14 +587,8 @@ async fn upload_transaction_graph_results<'a>(
                         continue;
                     }
                 }
-                set_computation_error(
-                    &result.handle,
-                    &result.transaction_id,
-                    &*cerr,
-                    trx,
-                    deps_mngr,
-                )
-                .await?;
+                set_computation_error(&result.handle, &result.transaction, &*cerr, trx, deps_mngr)
+                    .await?;
             }
         }
     }
@@ -634,18 +628,27 @@ async fn upload_transaction_graph_results<'a>(
     if !handles_to_update.is_empty() {
         let s_update = tracing::info_span!("update_computation", count = handles_to_update.len());
         let comp_updated = async {
-            let (handles_vec, txn_ids_vec): (Vec<_>, Vec<_>) = handles_to_update.into_iter().unzip();
+            let (handles_vec, txn_vec): (Vec<_>, Vec<_>) = handles_to_update.into_iter().unzip();
+            let txn_ids_vec = txn_vec
+                .iter()
+                .map(|tx| tx.transaction_id.clone())
+                .collect::<Vec<_>>();
+            let txn_bhs_vec = txn_vec
+                .iter()
+                .map(|tx| tx.block_hash.clone())
+                .collect::<Vec<_>>();
             let comp_updated = query!(
                 "
             UPDATE computations
             SET is_completed = true, completed_at = CURRENT_TIMESTAMP
             WHERE is_completed = false
-            AND (output_handle, transaction_id) IN (
-                SELECT * FROM unnest($1::BYTEA[], $2::BYTEA[])
+            AND (output_handle, transaction_id, block_hash) IN (
+                SELECT * FROM unnest($1::BYTEA[], $2::BYTEA[], $3::BYTEA[])
             )
             ",
-                &handles_vec,
-                &txn_ids_vec
+            &handles_vec,
+            &txn_ids_vec,
+            &txn_bhs_vec,
             )
             .execute(trx.as_mut())
             .await.map_err(|err| {
@@ -664,7 +667,7 @@ async fn upload_transaction_graph_results<'a>(
 #[tracing::instrument(skip_all)]
 async fn set_computation_error<'a>(
     output_handle: &[u8],
-    transaction_id: &[u8],
+    transaction: &Transaction,
     cerr: &(dyn std::error::Error + Send + Sync),
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_mngr: &mut dependence_chain::LockMngr,
@@ -674,19 +677,26 @@ async fn set_computation_error<'a>(
     error!(target: "tfhe_worker", error = %err_string, output_handle = %format!("0x{}", hex::encode(output_handle)), "error while processing work item");
     telemetry::set_current_span_error(&err_string);
 
-    let _ = query!(
+    let result = query!(
         "
         UPDATE computations
         SET is_error = true, error_message = $1
         WHERE output_handle = $2
         AND transaction_id = $3
+        AND block_hash = $4
         ",
         err_string,
         output_handle,
-        transaction_id
+        transaction.transaction_id,
+        transaction.block_hash
     )
     .execute(trx.as_mut())
     .await?;
+
+    if result.rows_affected() == 0 {
+        warn!(target: "tfhe_worker", output_handle = hex::encode(output_handle), transaction = ?transaction,
+            "tried to set error on computation but no rows were updated");
+    }
 
     deps_mngr.set_processing_error(Some(err_string)).await?;
     Ok(())
