@@ -628,3 +628,35 @@ export function assertRecordUintBigIntProperty<K extends string>(
     );
   }
 }
+
+export function parseUintBigIntString(value: string): bigint | undefined {
+  let parsed: bigint;
+  try {
+    parsed = BigInt(value);
+  } catch {
+    return undefined;
+  }
+  if (parsed < 0n || parsed.toString() !== value) {
+    return undefined;
+  }
+  return parsed;
+}
+
+/** Returns `count` unique integers drawn uniformly from [0, n-1]. Mock/debug only. */
+export function randomUniqueUints(n: number, count: number): number[] {
+  if (count > n) {
+    throw new RangeError(`count ${count} cannot exceed n ${n}`);
+  }
+  const pool = Array.from({ length: n }, (_, i) => i);
+  for (let i = 0; i < count; i++) {
+    const j = i + Math.floor(Math.random() * (n - i));
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    const pi = pool[i]!;
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    const pj = pool[j]!;
+
+    pool[i] = pj;
+    pool[j] = pi;
+  }
+  return pool.slice(0, count);
+}

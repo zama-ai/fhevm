@@ -65,7 +65,11 @@ abstract contract FHETestScript is Script {
                 // Sepolia (Testnet)
                 coprocessorConfig = SepoliaConfig.getTestnetConfig();
             } else {
-                revert(string.concat("Unsupported CHAIN value for Sepolia: \"", fhevmChain, "\". Expected \"devnet\" or \"testnet\"."));
+                revert(
+                    string.concat(
+                        "Unsupported CHAIN value for Sepolia: \"", fhevmChain, "\". Expected \"devnet\" or \"testnet\"."
+                    )
+                );
             }
 
             if (expectedFheTestAddr == address(0)) {
@@ -88,7 +92,7 @@ abstract contract FHETestScript is Script {
         console.log("Expected FHETest at:", expectedFheTestAddr);
 
         console.log("Verifying coprocessor contracts...");
-        
+
         verifyProxy("ACL", coprocessorConfig.ACLAddress, false);
         verifyProxy("Coprocessor", coprocessorConfig.CoprocessorAddress, false);
         verifyProxy("KMSVerifier", coprocessorConfig.KMSVerifierAddress, true);
@@ -114,7 +118,8 @@ abstract contract FHETestScript is Script {
 
         if (eip712) {
             // Call eip712Domain()
-            (, string memory name, string memory version, uint256 chainId, address verifyingContract,,) = v.eip712Domain();
+            (, string memory name, string memory version, uint256 chainId, address verifyingContract,,) =
+                v.eip712Domain();
             console.log("    eip712Domain():");
             console.log("      name:             ", name);
             console.log("      version:          ", version);

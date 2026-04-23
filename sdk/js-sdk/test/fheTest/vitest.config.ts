@@ -7,6 +7,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@fhevm/sdk/ethers': join(__dirname, '../../src/ethers/index.ts'),
+      '@fhevm/sdk/viem/cleartext': join(__dirname, '../../src/viem/cleartext/index.ts'),
       '@fhevm/sdk/viem': join(__dirname, '../../src/viem/index.ts'),
       '@fhevm/sdk/chains': join(__dirname, '../../src/core/chains/index.ts'),
       '@fhevm/sdk/actions/base': join(__dirname, '../../src/core/actions/base/index.ts'),

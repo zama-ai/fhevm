@@ -1,4 +1,5 @@
 export const FHETestAddresses = {
+  localhost: '0x76EA187166191f64d48dcbfCcfaf8370E54a45C0',
   localhostFhevm: '0x61a8e950161daCCA06b0b623Efa2b7237BaBD4a0',
   devnet: '0xD26bB032e2F06A5382902559c4EbBB82C35C6dDF',
 };

@@ -2,6 +2,7 @@ import type { ErrorMetadataParams } from './errors/ErrorBase.js';
 import type {
   AddressValueLike,
   BoolValueLike,
+  Bytes32Hex,
   TypedValue,
   TypedValueFrom,
   TypedValueLike,
@@ -20,6 +21,7 @@ import { asAddress } from './address.js';
 import { toBoolean } from './boolean.js';
 import { InvalidTypeError } from './errors/InvalidTypeError.js';
 import { asUintForType, normalizeUintForType } from './uint.js';
+import { bigIntToBytesHex } from './bytes.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -322,5 +324,21 @@ export class TypedValueArrayBuilder {
 
   public build(): readonly TypedValue[] {
     return Object.freeze([...this.#arr]);
+  }
+}
+
+export function typedValueToBytes32Hex(typedValue: TypedValue): Bytes32Hex {
+  assertIsTypedValue(typedValue, {});
+  switch (typedValue.type) {
+    case 'uint8':
+    case 'uint16':
+    case 'uint32':
+    case 'uint64':
+    case 'uint128':
+    case 'uint256':
+    case 'address':
+      return bigIntToBytesHex(BigInt(typedValue.value), { byteLength: 32 });
+    case 'bool':
+      return bigIntToBytesHex(typedValue.value ? 1n : 0n, { byteLength: 32 });
   }
 }

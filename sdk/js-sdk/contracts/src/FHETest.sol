@@ -20,8 +20,8 @@ import {
     externalEaddress,
     externalEuint256
 } from "@fhevm/solidity/lib/FHE.sol";
-import { CoprocessorConfig, Impl } from "@fhevm/solidity/lib/Impl.sol";
-import { FheType } from "@fhevm/solidity/lib/FheType.sol";
+import {CoprocessorConfig, Impl} from "@fhevm/solidity/lib/Impl.sol";
+import {FheType} from "@fhevm/solidity/lib/FheType.sol";
 
 /// @title A simple FHE Test contract
 contract FHETest {
@@ -63,14 +63,16 @@ contract FHETest {
     }
 
     ////////////////////////////////////////////////////////////////////////////
-    // 
+    //
     // Get functions
-    // 
+    //
     ////////////////////////////////////////////////////////////////////////////
 
     /// @notice Stores a handle for a given account and FHE type.
     ///         Verifies that the handle's embedded type byte (byte 30) matches the expected FHE type.
-    function _setHandleOf(address account, FheType fheType, bytes32 handle, uint256 clearValue, bool makePublic) internal {
+    function _setHandleOf(address account, FheType fheType, bytes32 handle, uint256 clearValue, bool makePublic)
+        internal
+    {
         require(_typeOf(handle) == fheType, "FheType mismatch");
         _etypeMap[account][fheType] = handle;
         Impl.allow(handle, address(this));
@@ -179,9 +181,9 @@ contract FHETest {
     }
 
     ////////////////////////////////////////////////////////////////////////////
-    // 
+    //
     // makePubliclyDecryptable functions
-    // 
+    //
     ////////////////////////////////////////////////////////////////////////////
 
     /// @notice Performs FHE.makePubliclyDecryptable(...)
@@ -196,9 +198,9 @@ contract FHETest {
     }
 
     ////////////////////////////////////////////////////////////////////////////
-    // 
+    //
     // Init functions
-    // 
+    //
     ////////////////////////////////////////////////////////////////////////////
 
     function _zeroEbool() internal returns (ebool) {
@@ -272,15 +274,15 @@ contract FHETest {
     }
 
     ////////////////////////////////////////////////////////////////////////////
-    // 
+    //
     // Operator functions
-    // 
+    //
     ////////////////////////////////////////////////////////////////////////////
 
     /// @notice Computes FHE.xor(ebool)
     function xorEbool(externalEbool inputEbool, bytes calldata inputProof, bool clearValue, bool makePublic) public {
         ebool encryptedEbool = FHE.fromExternal(inputEbool, inputProof);
-        
+
         bytes32 leftHandle = getHandle(FheType.Bool);
         bool leftClearValue = getClearText(leftHandle) != 0;
         ebool left = ebool.wrap(leftHandle);
@@ -292,22 +294,28 @@ contract FHETest {
     }
 
     /// @notice Computes FHE.add(euint8)
-    function addEuint8(externalEuint8 inputEuint8, bytes calldata inputProof, uint8 clearValue, bool makePublic) public {
+    function addEuint8(externalEuint8 inputEuint8, bytes calldata inputProof, uint8 clearValue, bool makePublic)
+        public
+    {
         euint8 encryptedEuint8 = FHE.fromExternal(inputEuint8, inputProof);
 
         bytes32 leftHandle = getHandle(FheType.Uint8);
         uint8 leftClearValue = uint8(getClearText(leftHandle));
         euint8 left = euint8.wrap(leftHandle);
 
-        uint8 clear; 
-        unchecked { clear = leftClearValue + clearValue; }
+        uint8 clear;
+        unchecked {
+            clear = leftClearValue + clearValue;
+        }
         euint8 enc = FHE.add(left, encryptedEuint8);
 
         _setHandleOf(msg.sender, FheType.Uint8, euint8.unwrap(enc), uint256(clear), makePublic);
     }
 
     /// @notice Computes FHE.add(euint16)
-    function addEuint16(externalEuint16 inputEuint16, bytes calldata inputProof, uint16 clearValue, bool makePublic) public {
+    function addEuint16(externalEuint16 inputEuint16, bytes calldata inputProof, uint16 clearValue, bool makePublic)
+        public
+    {
         euint16 encryptedEuint16 = FHE.fromExternal(inputEuint16, inputProof);
 
         bytes32 leftHandle = getHandle(FheType.Uint16);
@@ -315,14 +323,18 @@ contract FHETest {
         euint16 left = euint16.wrap(leftHandle);
 
         uint16 clear;
-        unchecked { clear = leftClearValue + clearValue; }
+        unchecked {
+            clear = leftClearValue + clearValue;
+        }
         euint16 enc = FHE.add(left, encryptedEuint16);
 
         _setHandleOf(msg.sender, FheType.Uint16, euint16.unwrap(enc), uint256(clear), makePublic);
     }
 
     /// @notice Computes FHE.add(euint32)
-    function addEuint32(externalEuint32 inputEuint32, bytes calldata inputProof, uint32 clearValue, bool makePublic) public {
+    function addEuint32(externalEuint32 inputEuint32, bytes calldata inputProof, uint32 clearValue, bool makePublic)
+        public
+    {
         euint32 encryptedEuint32 = FHE.fromExternal(inputEuint32, inputProof);
 
         bytes32 leftHandle = getHandle(FheType.Uint32);
@@ -330,14 +342,18 @@ contract FHETest {
         euint32 left = euint32.wrap(leftHandle);
 
         uint32 clear;
-        unchecked { clear = leftClearValue + clearValue; }
+        unchecked {
+            clear = leftClearValue + clearValue;
+        }
         euint32 enc = FHE.add(left, encryptedEuint32);
 
         _setHandleOf(msg.sender, FheType.Uint32, euint32.unwrap(enc), uint256(clear), makePublic);
     }
 
     /// @notice Computes FHE.add(euint64)
-    function addEuint64(externalEuint64 inputEuint64, bytes calldata inputProof, uint64 clearValue, bool makePublic) public {
+    function addEuint64(externalEuint64 inputEuint64, bytes calldata inputProof, uint64 clearValue, bool makePublic)
+        public
+    {
         euint64 encryptedEuint64 = FHE.fromExternal(inputEuint64, inputProof);
 
         bytes32 leftHandle = getHandle(FheType.Uint64);
@@ -345,14 +361,18 @@ contract FHETest {
         euint64 left = euint64.wrap(leftHandle);
 
         uint64 clear;
-        unchecked { clear = leftClearValue + clearValue; }
+        unchecked {
+            clear = leftClearValue + clearValue;
+        }
         euint64 enc = FHE.add(left, encryptedEuint64);
 
         _setHandleOf(msg.sender, FheType.Uint64, euint64.unwrap(enc), uint256(clear), makePublic);
     }
 
     /// @notice Computes FHE.add(euint128)
-    function addEuint128(externalEuint128 inputEuint128, bytes calldata inputProof, uint128 clearValue, bool makePublic) public {
+    function addEuint128(externalEuint128 inputEuint128, bytes calldata inputProof, uint128 clearValue, bool makePublic)
+        public
+    {
         euint128 encryptedEuint128 = FHE.fromExternal(inputEuint128, inputProof);
 
         bytes32 leftHandle = getHandle(FheType.Uint128);
@@ -360,14 +380,18 @@ contract FHETest {
         euint128 left = euint128.wrap(leftHandle);
 
         uint128 clear;
-        unchecked { clear = leftClearValue + clearValue; }
+        unchecked {
+            clear = leftClearValue + clearValue;
+        }
         euint128 enc = FHE.add(left, encryptedEuint128);
 
         _setHandleOf(msg.sender, FheType.Uint128, euint128.unwrap(enc), uint256(clear), makePublic);
     }
 
     /// @notice Computes FHE.xor(euint256)
-    function xorEuint256(externalEuint256 inputEuint256, bytes calldata inputProof, uint256 clearValue, bool makePublic) public {
+    function xorEuint256(externalEuint256 inputEuint256, bytes calldata inputProof, uint256 clearValue, bool makePublic)
+        public
+    {
         euint256 encryptedEuint256 = FHE.fromExternal(inputEuint256, inputProof);
 
         bytes32 leftHandle = getHandle(FheType.Uint256);
@@ -381,7 +405,9 @@ contract FHETest {
     }
 
     /// @notice Computes FHE.select(FHE.eq(input, existing), existing, input)
-    function eqEaddress(externalEaddress inputEaddress, bytes calldata inputProof, address clearValue, bool makePublic) public {
+    function eqEaddress(externalEaddress inputEaddress, bytes calldata inputProof, address clearValue, bool makePublic)
+        public
+    {
         eaddress encryptedEaddress = FHE.fromExternal(inputEaddress, inputProof);
 
         bytes32 leftHandle = getHandle(FheType.Uint160);
@@ -395,71 +421,95 @@ contract FHETest {
     }
 
     ////////////////////////////////////////////////////////////////////////////
-    // 
+    //
     // Set functions
-    // 
+    //
     ////////////////////////////////////////////////////////////////////////////
 
     /// @notice sets the current ebool value
-    function setEbool(externalEbool inputEbool, bytes calldata inputProof, bool clearValue, bool makePublic) public returns (ebool) {
+    function setEbool(externalEbool inputEbool, bytes calldata inputProof, bool clearValue, bool makePublic)
+        public
+        returns (ebool)
+    {
         ebool encryptedEbool = FHE.fromExternal(inputEbool, inputProof);
         _setHandleOf(msg.sender, FheType.Bool, ebool.unwrap(encryptedEbool), clearValue ? 1 : 0, makePublic);
         return encryptedEbool;
     }
 
     /// @notice sets the current euint8 value
-    function setEuint8(externalEuint8 inputEuint8, bytes calldata inputProof, uint8 clearValue, bool makePublic) public returns (euint8) {
+    function setEuint8(externalEuint8 inputEuint8, bytes calldata inputProof, uint8 clearValue, bool makePublic)
+        public
+        returns (euint8)
+    {
         euint8 enc = FHE.fromExternal(inputEuint8, inputProof);
         _setHandleOf(msg.sender, FheType.Uint8, euint8.unwrap(enc), uint256(clearValue), makePublic);
         return enc;
     }
 
     /// @notice sets the current euint16 value
-    function setEuint16(externalEuint16 inputEuint16, bytes calldata inputProof, uint16 clearValue, bool makePublic) public returns (euint16) {
+    function setEuint16(externalEuint16 inputEuint16, bytes calldata inputProof, uint16 clearValue, bool makePublic)
+        public
+        returns (euint16)
+    {
         euint16 enc = FHE.fromExternal(inputEuint16, inputProof);
         _setHandleOf(msg.sender, FheType.Uint16, euint16.unwrap(enc), uint256(clearValue), makePublic);
         return enc;
     }
 
     /// @notice sets the current euint32 value
-    function setEuint32(externalEuint32 inputEuint32, bytes calldata inputProof, uint32 clearValue, bool makePublic) public returns (euint32) {
+    function setEuint32(externalEuint32 inputEuint32, bytes calldata inputProof, uint32 clearValue, bool makePublic)
+        public
+        returns (euint32)
+    {
         euint32 enc = FHE.fromExternal(inputEuint32, inputProof);
         _setHandleOf(msg.sender, FheType.Uint32, euint32.unwrap(enc), uint256(clearValue), makePublic);
         return enc;
     }
 
     /// @notice sets the current euint64 value
-    function setEuint64(externalEuint64 inputEuint64, bytes calldata inputProof, uint64 clearValue, bool makePublic) public returns (euint64) {
+    function setEuint64(externalEuint64 inputEuint64, bytes calldata inputProof, uint64 clearValue, bool makePublic)
+        public
+        returns (euint64)
+    {
         euint64 enc = FHE.fromExternal(inputEuint64, inputProof);
         _setHandleOf(msg.sender, FheType.Uint64, euint64.unwrap(enc), uint256(clearValue), makePublic);
         return enc;
     }
 
     /// @notice sets the current euint128 value
-    function setEuint128(externalEuint128 inputEuint128, bytes calldata inputProof, uint128 clearValue, bool makePublic) public returns (euint128) {
+    function setEuint128(externalEuint128 inputEuint128, bytes calldata inputProof, uint128 clearValue, bool makePublic)
+        public
+        returns (euint128)
+    {
         euint128 enc = FHE.fromExternal(inputEuint128, inputProof);
         _setHandleOf(msg.sender, FheType.Uint128, euint128.unwrap(enc), uint256(clearValue), makePublic);
         return enc;
     }
 
     /// @notice sets the current euint256 value
-    function setEuint256(externalEuint256 inputEuint256, bytes calldata inputProof, uint256 clearValue, bool makePublic) public returns (euint256) {
+    function setEuint256(externalEuint256 inputEuint256, bytes calldata inputProof, uint256 clearValue, bool makePublic)
+        public
+        returns (euint256)
+    {
         euint256 enc = FHE.fromExternal(inputEuint256, inputProof);
         _setHandleOf(msg.sender, FheType.Uint256, euint256.unwrap(enc), clearValue, makePublic);
         return enc;
     }
 
     /// @notice sets the current eaddress value
-    function setEaddress(externalEaddress inputEaddress, bytes calldata inputProof, address clearValue, bool makePublic) public returns (eaddress) {
+    function setEaddress(externalEaddress inputEaddress, bytes calldata inputProof, address clearValue, bool makePublic)
+        public
+        returns (eaddress)
+    {
         eaddress enc = FHE.fromExternal(inputEaddress, inputProof);
         _setHandleOf(msg.sender, FheType.Uint160, eaddress.unwrap(enc), uint256(uint160(clearValue)), makePublic);
         return enc;
     }
 
     ////////////////////////////////////////////////////////////////////////////
-    // 
+    //
     // Others
-    // 
+    //
     ////////////////////////////////////////////////////////////////////////////
 
     function _typeOf(bytes32 handle) internal pure virtual returns (FheType typeCt) {
@@ -470,5 +520,42 @@ contract FHETest {
     function createPublicHandle(bytes32 inputHandle, bytes calldata inputProof) public {
         Impl.verify(inputHandle, inputProof, _typeOf(inputHandle));
         Impl.makePubliclyDecryptable(inputHandle);
+    }
+
+    function initFheTest(bool force) public {
+        require(block.number > 0, "Cannot run initFheTest at block 0");
+
+        // Initialize encrypted values and make them publicly decryptable
+        if (!hasHandleOf(msg.sender, FheType.Bool) || force) {
+            setClearEbool(true, true);
+        }
+
+        if (!hasHandleOf(msg.sender, FheType.Uint8) || force) {
+            setClearEuint8(type(uint8).max, true);
+        }
+
+        if (!hasHandleOf(msg.sender, FheType.Uint16) || force) {
+            setClearEuint16(type(uint16).max, true);
+        }
+
+        if (!hasHandleOf(msg.sender, FheType.Uint32) || force) {
+            setClearEuint32(type(uint32).max, true);
+        }
+
+        if (!hasHandleOf(msg.sender, FheType.Uint64) || force) {
+            setClearEuint64(type(uint64).max, true);
+        }
+
+        if (!hasHandleOf(msg.sender, FheType.Uint128) || force) {
+            setClearEuint128(type(uint128).max, true);
+        }
+
+        if (!hasHandleOf(msg.sender, FheType.Uint256) || force) {
+            setClearEuint256(type(uint256).max, true);
+        }
+
+        if (!hasHandleOf(msg.sender, FheType.Uint160) || force) {
+            setClearEaddress(address(type(uint160).max), true);
+        }
     }
 }

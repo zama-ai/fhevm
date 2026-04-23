@@ -4,7 +4,7 @@ import type { WithDecrypt } from '../../core/types/coreFhevmRuntime.js';
 import type { FhevmOptions } from '../../core/types/coreFhevmClient.js';
 import type { FhevmDecryptClient } from '../../core/types/fhevmClient.js';
 import { createFhevmBaseClient } from './createFhevmBaseClient.js';
-import { decryptActions } from '../decorators/decrypt.js';
+import { decryptActions } from './decorators/decrypt.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 

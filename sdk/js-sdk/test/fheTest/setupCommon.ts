@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { FHETestAddresses as FHETestAddressesv1 } from './abi-v1.js';
 import { FHETestAddresses as FHETestAddressesv2 } from './abi-v2.js';
 import { localhostFhevm } from './chains/localhostFhevm.js';
+import { localhost } from './chains/localhost.js';
 import { devnet } from './chains/devnet.js';
 import { sepolia, mainnet } from '@fhevm/sdk/chains';
 
@@ -11,7 +12,7 @@ import { sepolia, mainnet } from '@fhevm/sdk/chains';
 // Types
 // ---------------------------------------------------------------------------
 
-export type FheTestChainName = 'sepolia' | 'mainnet' | 'localhostFhevm' | 'devnet';
+export type FheTestChainName = 'sepolia' | 'mainnet' | 'localhost' | 'localhostFhevm' | 'devnet';
 
 export type FheTestBaseEnv = {
   readonly chainName: FheTestChainName;
@@ -27,7 +28,7 @@ export type FheTestBaseEnv = {
 // ---------------------------------------------------------------------------
 
 export function isV2(chainName: FheTestChainName) {
-  return chainName === 'localhostFhevm' || chainName === 'devnet';
+  return chainName === 'localhostFhevm' || chainName === 'localhost' || chainName === 'devnet';
 }
 
 // ---------------------------------------------------------------------------
@@ -66,8 +67,16 @@ function parseEnvFile(filePath: string): Record<string, string> {
 
 function resolveChainName(): FheTestChainName {
   const chain = process.env.CHAIN ?? 'sepolia';
-  if (chain !== 'sepolia' && chain !== 'devnet' && chain !== 'mainnet' && chain !== 'localhostFhevm') {
-    throw new Error(`Invalid CHAIN env var: "${chain}". Expected "sepolia", "mainnet", "devnet" or "localhostFhevm".`);
+  if (
+    chain !== 'sepolia' &&
+    chain !== 'devnet' &&
+    chain !== 'mainnet' &&
+    chain !== 'localhostFhevm' &&
+    chain !== 'localhost'
+  ) {
+    throw new Error(
+      `Invalid CHAIN env var: "${chain}". Expected "sepolia", "mainnet", "devnet", "localhost" or "localhostFhevm".`,
+    );
   }
   return chain;
 }
@@ -77,7 +86,7 @@ function resolveChainName(): FheTestChainName {
 // ---------------------------------------------------------------------------
 
 function resolveFHETestAddress(chainName: FheTestChainName): string {
-  if (chainName === 'localhostFhevm' || chainName === 'devnet') {
+  if (chainName === 'localhostFhevm' || chainName === 'localhost' || chainName === 'devnet') {
     return FHETestAddressesv2[chainName];
   }
   const key = chainName === 'sepolia' ? 'testnet' : chainName;
@@ -108,6 +117,8 @@ export function getBaseEnv(): FheTestBaseEnv {
   let mnemonic;
   if (chainName === 'localhostFhevm') {
     mnemonic = LOCALHOST_FHEVM_MNEMONIC;
+  } else if (chainName === 'localhost') {
+    mnemonic = LOCALHOST_FHEVM_MNEMONIC;
   } else {
     mnemonic = sharedEnv.MNEMONIC ?? process.env.MNEMONIC;
     if (!mnemonic) {
@@ -130,6 +141,8 @@ export function getBaseEnv(): FheTestBaseEnv {
   let fhevmChain: FhevmChain;
   if (chainName === 'localhostFhevm') {
     fhevmChain = localhostFhevm;
+  } else if (chainName === 'localhost') {
+    fhevmChain = localhost;
   } else if (chainName === 'sepolia') {
     fhevmChain = sepolia;
   } else if (chainName === 'devnet') {

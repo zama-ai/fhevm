@@ -1,12 +1,15 @@
 [profile.default]
 libs = ["dependencies"]
+optimizer = true
+optimizer_runs = 100
 src = "src"
 out = "out"
 allow_paths = ["../../.."]
 fs_permissions = [
     { access = "read", path = "out" },
     { access = "read", path = "../../.." },
-    { access = "write", path = "../test/fheTest" }
+    { access = "write", path = "../test/fheTest" },
+    { access = "write", path = "src/host-contracts/addresses" }
 ]
 [rpc_endpoints]
 mainnet = "https://ethereum-rpc.publicnode.com"

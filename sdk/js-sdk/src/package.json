@@ -45,6 +45,11 @@
       "import": "./_esm/viem/index.js",
       "default": "./_cjs/viem/index.js"
     },
+    "./viem/cleartext": {
+      "types": "./_types/viem/cleartext/index.d.ts",
+      "import": "./_esm/viem/cleartext/index.js",
+      "default": "./_cjs/viem/cleartext/index.js"
+    },
     "./actions/base": {
       "types": "./_types/core/actions/base/index.d.ts",
       "import": "./_esm/core/actions/base/index.js",

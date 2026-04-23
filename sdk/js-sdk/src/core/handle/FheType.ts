@@ -418,8 +418,7 @@ function _assertMinimumEncryptionBitWidth(bw: number): void {
   );
 }
 
-export function bytesToClearValueType<etype extends FheType>(fheType: etype, bytes: Bytes): ClearValueType<etype> {
-  const bn = bytesToBigInt(bytes);
+export function bigintToClearValueType<etype extends FheType>(fheType: etype, bn: bigint): ClearValueType<etype> {
   // needed to type narrowing
   const ft: FheType = fheType;
 
@@ -453,6 +452,10 @@ export function bytesToClearValueType<etype extends FheType>(fheType: etype, byt
     default:
       return assertNever(ft, `Unknown fheTypeName: ${ft}`);
   }
+}
+
+export function bytesToClearValueType<etype extends FheType>(fheType: etype, bytes: Bytes): ClearValueType<etype> {
+  return bigintToClearValueType(fheType, bytesToBigInt(bytes));
 }
 
 /**

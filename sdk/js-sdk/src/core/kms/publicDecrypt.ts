@@ -74,19 +74,13 @@ export async function publicDecrypt(context: Context, parameters: Parameters): P
     orderedAbiEncodedClearValues,
     kmsPublicDecryptEIP712Signatures,
     extraData: relayerExtraData,
-  } = await context.runtime.relayer.fetchPublicDecrypt(
-    {
-      relayerUrl: context.chain.fhevm.relayerUrl,
-      chainId: context.chain.id,
+  } = await context.runtime.relayer.fetchPublicDecrypt(context, {
+    payload: {
+      orderedHandles,
+      extraData: requestedExtraData,
     },
-    {
-      payload: {
-        orderedHandles,
-        extraData: requestedExtraData,
-      },
-      options: relayerOptions,
-    },
-  );
+    options: relayerOptions,
+  });
 
   // 6. Reconcile KMS signer context using 'loose' mode
   const reconciledKmsSignersContext: KmsSignersContext = await reconcileKmsSignersContext(context, {
