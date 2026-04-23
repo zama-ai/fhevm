@@ -13,6 +13,10 @@ import {ACLOwnable} from "./shared/ACLOwnable.sol";
  *          signature verification functions.
  * @dev     The contract uses EIP712UpgradeableCrossChain for cryptographic operations and is deployed using an UUPS proxy.
  */
+/// @dev This contract was migrated from Ownable2StepUpgradeable to ACLOwnable.
+/// Deployed proxies retain residual `_owner` and `_pendingOwner` values in the
+/// Ownable2StepUpgradeable EIP-7201 storage namespace. These slots are unused
+/// by ACLOwnable and have no effect on contract behavior.
 /// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, ACLOwnable {
     /// @notice Returned if the KMS signer to add is already a signer.
@@ -135,7 +139,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
     uint64 private constant REINITIALIZER_VERSION = 3;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.KMSVerifier")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant KMSVerifierStorageLocation =
+    bytes32 private constant KMS_VERIFIER_STORAGE_LOCATION =
         0x7e81a744be86773af8644dd7304fa1dc9350ccabf16cfcaa614ddb78b4ce8900;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -573,7 +577,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
      */
     function _getKMSVerifierStorage() internal pure returns (KMSVerifierStorage storage $) {
         assembly {
-            $.slot := KMSVerifierStorageLocation
+            $.slot := KMS_VERIFIER_STORAGE_LOCATION
         }
     }
 

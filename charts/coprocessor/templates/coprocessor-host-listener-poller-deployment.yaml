@@ -1,29 +1,35 @@
-{{- if .Values.hostListenerPoller.enabled -}}
+{{- range $i, $chain := .Values.chains }}
+{{- if (($chain.hostListenerPoller).enabled) }}
+{{- $useLegacyName := $chain.hostListenerPoller.useLegacyName | default false -}}
+{{- $deploymentName := ternary (printf "%s-host-listener-poller" $.Release.Name) (printf "%s-host-listener-poller-%s" $.Release.Name $chain.name) $useLegacyName -}}
+{{- $appLabel := ternary "coprocessor-host-listener-poller" (printf "coprocessor-host-listener-poller-%s" $chain.name) $useLegacyName -}}
+{{- $serviceName := coalesce $chain.hostListenerPoller.serviceName $.Values.hostListenerPollerShared.args.serviceName (printf "host-listener-poller-%s" $chain.name) -}}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    app: coprocessor-host-listener-poller
-    app.kubernetes.io/name: {{ include "hostListenerPollerName" . }}
-  name: {{ include "hostListenerPollerName" . }}
+    app: {{ $appLabel }}
+    app.kubernetes.io/name: {{ $deploymentName }}
+  name: {{ $deploymentName }}
 spec:
-  replicas: {{ .Values.hostListenerPoller.replicas }}
+  replicas: {{ $.Values.hostListenerPollerShared.replicas }}
   selector:
     matchLabels:
-      app: coprocessor-host-listener-poller
-  {{- if .Values.hostListenerPoller.updateStrategy }}
+      app: {{ $appLabel }}
+  {{- if $.Values.hostListenerPollerShared.updateStrategy }}
   strategy:
-    {{- toYaml .Values.hostListenerPoller.updateStrategy | nindent 4 }}
+    {{- toYaml $.Values.hostListenerPollerShared.updateStrategy | nindent 4 }}
   {{- end }}
   template:
     metadata:
       labels:
-        app: coprocessor-host-listener-poller
-        app.kubernetes.io/name: {{ include "hostListenerPollerName" . }}
-        {{- with .Values.podLabels }}
+        app: {{ $appLabel }}
+        app.kubernetes.io/name: {{ $deploymentName }}
+        {{- with $.Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- with .Values.podAnnotations }}
+      {{- with $.Values.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -31,87 +37,93 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
-      {{- with .Values.hostListenerPoller.nodeSelector }}
+      {{- with $.Values.hostListenerPollerShared.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.hostListenerPoller.affinity }}
+      {{- with $.Values.hostListenerPollerShared.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.hostListenerPoller.tolerations }}
+      {{- with $.Values.hostListenerPollerShared.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if .Values.hostListenerPoller.serviceAccountName }}
-      serviceAccountName: {{ .Values.hostListenerPoller.serviceAccountName }}
+      {{- if $.Values.hostListenerPollerShared.serviceAccountName }}
+      serviceAccountName: {{ $.Values.hostListenerPollerShared.serviceAccountName }}
       {{- end }}
       containers:
         - name: coprocessor-host-listener-poller
-          image: {{ .Values.hostListenerPoller.image.name }}:{{ .Values.hostListenerPoller.image.tag }}
+          image: {{ $.Values.hostListenerPollerShared.image.name }}:{{ $.Values.hostListenerPollerShared.image.tag }}
           command: ["host_listener_poller"]
           args:
             - --database-url=$(DATABASE_URL)
             - --url=$(ETHEREUM_RPC_HTTP_URL)
             - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
             - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
-            - --health-port={{ .Values.hostListenerPoller.ports.healthcheck }}
-            - --metrics-addr=0.0.0.0:{{ .Values.hostListenerPoller.ports.metrics }}
-            - --dependent-ops-max-per-chain={{ int .Values.commonConfig.dependentOpsMaxPerChain }}
-            - --log-level={{ .Values.hostListenerPoller.args.logLevel }}
-            - --service-name={{ .Values.hostListenerPoller.args.serviceName }}
-            - --finality-lag={{ .Values.hostListenerPoller.args.finalityLag }}
-            - --batch-size={{ .Values.hostListenerPoller.args.batchSize }}
-            - --poll-interval-ms={{ .Values.hostListenerPoller.args.pollIntervalMs }}
-            - --retry-interval-ms={{ .Values.hostListenerPoller.args.retryIntervalMs }}
-            - --max-http-retries={{ .Values.hostListenerPoller.args.maxHttpRetries }}
-            - --rpc-compute-units-per-second={{ .Values.hostListenerPoller.args.rpcComputeUnitsPerSecond }}
+            - --health-port={{ $.Values.hostListenerPollerShared.ports.healthcheck }}
+            - --metrics-addr=0.0.0.0:{{ $.Values.hostListenerPollerShared.ports.metrics }}
+            - --dependent-ops-max-per-chain={{ int $.Values.commonConfig.dependentOpsMaxPerChain }}
+            - --log-level={{ $.Values.hostListenerPollerShared.args.logLevel }}
+            - --service-name={{ $serviceName }}
+            - --finality-lag={{ $.Values.hostListenerPollerShared.args.finalityLag }}
+            - --batch-size={{ $.Values.hostListenerPollerShared.args.batchSize }}
+            - --poll-interval-ms={{ $.Values.hostListenerPollerShared.args.pollIntervalMs }}
+            - --retry-interval-ms={{ $.Values.hostListenerPollerShared.args.retryIntervalMs }}
+            - --max-http-retries={{ $.Values.hostListenerPollerShared.args.maxHttpRetries }}
+            - --rpc-compute-units-per-second={{ $.Values.hostListenerPollerShared.args.rpcComputeUnitsPerSecond }}
             - --coprocessor-api-key=$(TENANT_API_KEY)
-            {{- with .Values.hostListenerPoller.extraArgs }}
+            {{- with $.Values.hostListenerPollerShared.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with $chain.hostListenerPoller.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
             - name: DATABASE_URL
-              value: {{ .Values.commonConfig.databaseUrl | quote }}
-            - name: ETHEREUM_RPC_HTTP_URL
-              value: {{ .Values.commonConfig.hostChainHttpUrl | quote }}
+              value: {{ $.Values.commonConfig.databaseUrl | quote }}
+            {{- include "coprocessor.renderChainEnvValue" (dict "name" "ETHEREUM_RPC_HTTP_URL" "value" $chain.httpUrl "valueFrom" $chain.httpUrlValueFrom "fieldName" "httpUrl" "chainName" $chain.name) | nindent 12 }}
             - name: ACL_CONTRACT_ADDRESS
-              value: {{ required "commonConfig.aclContractAddress is required" .Values.commonConfig.aclContractAddress | quote }}
+              value: {{ required (printf "chains entry %q: aclContractAddress is required" $chain.name) $chain.aclContractAddress | quote }}
             - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
-              value: {{ required "commonConfig.fhevmExecutorContractAddress is required" .Values.commonConfig.fhevmExecutorContractAddress | quote }}
-          {{- if default .Values.commonConfig.tracing.enabled .Values.hostListenerPoller.tracing.enabled }}
+              value: {{ required (printf "chains entry %q: fhevmExecutorContractAddress is required" $chain.name) $chain.fhevmExecutorContractAddress | quote }}
+          {{- if default $.Values.commonConfig.tracing.enabled $.Values.hostListenerPollerShared.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: {{ .Values.commonConfig.tracing.endpoint | quote }}
+              value: {{ $.Values.commonConfig.tracing.endpoint | quote }}
             - name: OTEL_SERVICE_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
           {{- end }}
-          {{- with .Values.commonConfig.env }}
+          {{- with $.Values.commonConfig.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.hostListenerPoller.env }}
+          {{- with $.Values.hostListenerPollerShared.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $chain.hostListenerPoller.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
           ports:
-            {{- range $portName, $portValue := .Values.hostListenerPoller.ports }}
+            {{- range $portName, $portValue := $.Values.hostListenerPollerShared.ports }}
             - name: {{ $portName }}
               containerPort: {{ $portValue }}
               protocol: TCP
             {{- end }}
           resources:
             requests:
-              cpu: {{ .Values.hostListenerPoller.resources.requests.cpu | default "100m" }}
-              memory: {{ .Values.hostListenerPoller.resources.requests.memory | default "256Mi" }}
+              cpu: {{ $.Values.hostListenerPollerShared.resources.requests.cpu | default "100m" }}
+              memory: {{ $.Values.hostListenerPollerShared.resources.requests.memory | default "256Mi" }}
             limits:
-              cpu: {{ .Values.hostListenerPoller.resources.limits.cpu | default "500m" }}
-              memory: {{ .Values.hostListenerPoller.resources.limits.memory | default "512Mi" }}
-          {{- if and .Values.hostListenerPoller.probes .Values.hostListenerPoller.probes.liveness.enabled }}
+              cpu: {{ $.Values.hostListenerPollerShared.resources.limits.cpu | default "500m" }}
+              memory: {{ $.Values.hostListenerPollerShared.resources.limits.memory | default "512Mi" }}
+          {{- if and $.Values.hostListenerPollerShared.probes $.Values.hostListenerPollerShared.probes.liveness.enabled }}
           livenessProbe:
-            {{- toYaml (omit .Values.hostListenerPoller.probes.liveness "enabled") | nindent 12 }}
+            {{- toYaml (omit $.Values.hostListenerPollerShared.probes.liveness "enabled") | nindent 12 }}
           {{- end }}
-          {{- if and .Values.hostListenerPoller.probes .Values.hostListenerPoller.probes.readiness.enabled }}
+          {{- if and $.Values.hostListenerPollerShared.probes $.Values.hostListenerPollerShared.probes.readiness.enabled }}
           readinessProbe:
-            {{- toYaml (omit .Values.hostListenerPoller.probes.readiness "enabled") | nindent 12 }}
+            {{- toYaml (omit $.Values.hostListenerPollerShared.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
-{{- end -}}
+{{- end }}
+{{- end }}

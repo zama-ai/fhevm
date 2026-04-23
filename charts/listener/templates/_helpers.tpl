@@ -61,11 +61,6 @@ Usage: {{ include "listener.instanceLabels" (dict "root" . "listener" $listener)
 app.kubernetes.io/name: {{ include "listener.name" .root }}
 app.kubernetes.io/instance: {{ .root.Release.Name }}
 app.kubernetes.io/component: listener
-listener.zama.ai/chain: {{ .listener.name }}
-{{- $chainId := dig "blockchain" "chain_id" "" (.listener.config | default dict) }}
-{{- if $chainId }}
-listener.zama.ai/chain-id: {{ $chainId | quote }}
-{{- end }}
 {{- end }}
 
 {{/*
@@ -76,7 +71,6 @@ Usage: {{ include "listener.instanceSelectorLabels" (dict "root" . "listener" $l
 app.kubernetes.io/name: {{ include "listener.name" .root }}
 app.kubernetes.io/instance: {{ .root.Release.Name }}
 app.kubernetes.io/component: listener
-listener.zama.ai/chain: {{ .listener.name }}
 {{- end }}
 
 {{/*
