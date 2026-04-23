@@ -114,6 +114,7 @@ jobs:
       contents: 'read' # Required to read the checked-in release baseline defaults
     env:
       BASE_COMMIT_HASH: ${{ github.event.pull_request.base.sha }}
+      BASE_REF: ${{ github.base_ref }}
       NEW_COMMIT_HASH: ${{ github.event.pull_request.head.sha }}
       IS_RELEASE_PR: ${{ startsWith(github.base_ref, 'release/') }}
       DOCKER_BUILD_RESULTS: ${{ toJSON(needs) }}
@@ -167,7 +168,6 @@ jobs:
             gateway-version
             host-version
             kms-core-version
-            test-suite-version
           )
           for key in "${outputs[@]}"; do
             echo "$key=" >> "$GITHUB_OUTPUT"
@@ -218,9 +218,6 @@ jobs:
           kms-connector-docker-build|tx_sender_build_result|connector-tx-sender-version
           gateway-contracts-docker-build|build_result|gateway-version
           host-contracts-docker-build|build_result|host-version
-          relayer-docker-build|relayer_migrate_build_result|relayer-migrate-version
-          relayer-docker-build|relayer_build_result|relayer-version
-          test-suite-docker-build|build_result|test-suite-version
           EOF
 
           if [ "${#failures[@]}" -gt 0 ]; then
@@ -238,6 +235,24 @@ jobs:
               ;;
             *)
               echo "Required repo-owned build outputs failed: relayer-docker-build.relayer_build_result=$relayer_result" >&2
+              exit 1
+              ;;
+          esac
+
+          test_suite_result="$(jq -r '.["test-suite-docker-build"].outputs["build_result"] // "missing"' "$needs_file")"
+          case "$test_suite_result" in
+            success)
+              echo "test-suite-version=$short_tag" >> "$GITHUB_OUTPUT"
+              ;;
+            skipped)
+              if [ "$BASE_REF" = "release/0.11.x" ]; then
+                echo "test-suite-version=" >> "$GITHUB_OUTPUT"
+              else
+                echo "test-suite-version=$base_short_tag" >> "$GITHUB_OUTPUT"
+              fi
+              ;;
+            *)
+              echo "Required repo-owned build outputs failed: test-suite-docker-build.build_result=$test_suite_result" >&2
               exit 1
               ;;
           esac

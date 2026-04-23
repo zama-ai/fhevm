@@ -13,7 +13,7 @@ import {
 import { GitHubApiError } from "../errors";
 import { gitopsFile, mainCommits, packageTags } from "./github";
 import { assertCommitOnRef, baselineDefaults, refCommits } from "./git";
-import { MODERN_RELAYER_MIGRATE_VERSION, MODERN_RELAYER_VERSION, NON_NETWORK_COMPANIONS } from "./presets";
+import { NON_NETWORK_COMPANIONS } from "./presets";
 import { LATEST_SUPPORTED_PROFILE } from "../layout";
 import type { VersionBundle, VersionTarget } from "../types";
 import { normalizeRepository, readJson } from "../utils/fs";
@@ -111,7 +111,17 @@ const MIN_SUPPORTED_RELEASE = { major: 0, minor: 11 };
 const DEFAULT_SHA_REF = "main";
 const RELEASE_REF_PREFIX = "release/";
 const RELEASE_REF = /^release\/(\d+)\.(\d+)\.x$/;
-const SHA_LIKE_RELAYER_REF = /^(?:sha-)?[0-9a-f]{7}$/i;
+const RELEASE_BACKPORT_BASELINES: Record<string, Partial<Pick<VersionBundle["env"], "RELAYER_VERSION" | "RELAYER_MIGRATE_VERSION" | "TEST_SUITE_VERSION">>> = {
+  "release/0.11.x": {
+    RELAYER_VERSION: "v0.9.0",
+    RELAYER_MIGRATE_VERSION: "v0.9.0",
+    TEST_SUITE_VERSION: "v0.11.0-2",
+  },
+  "release/0.12.x": {
+    RELAYER_VERSION: "v0.11.1",
+    RELAYER_MIGRATE_VERSION: "v0.11.0",
+  },
+};
 
 const parseReleaseRef = (ref: string) => {
   const match = ref.match(RELEASE_REF);
@@ -359,27 +369,19 @@ const repoPackageTags = async (targetTag?: string) =>
     ),
   ) as Record<string, Set<string>>;
 
-const usesLegacyReleaseRelayerBaseline = (defaults: Record<string, string>) => !SHA_LIKE_RELAYER_REF.test(defaults.RELAYER_VERSION ?? "");
+const releaseBackportBaseline = (ref: string) => RELEASE_BACKPORT_BASELINES[ref];
 
-export const applyReleaseBaselineDefaults = (bundle: VersionBundle, defaults: Record<string, string>) => {
-  const modernRelayer = usesLegacyReleaseRelayerBaseline(defaults);
+export const applyReleaseBaselineDefaults = (bundle: VersionBundle, defaults: Record<string, string>, ref: string) => {
+  const backport = releaseBackportBaseline(ref);
   const env = {
     ...bundle.env,
     ...(defaults.CORE_VERSION ? { CORE_VERSION: defaults.CORE_VERSION } : {}),
-    ...(modernRelayer
-      ? {
-          RELAYER_VERSION: MODERN_RELAYER_VERSION,
-          RELAYER_MIGRATE_VERSION: MODERN_RELAYER_MIGRATE_VERSION,
-        }
-      : {
-          ...(defaults.RELAYER_VERSION ? { RELAYER_VERSION: defaults.RELAYER_VERSION } : {}),
-          ...(defaults.RELAYER_MIGRATE_VERSION ? { RELAYER_MIGRATE_VERSION: defaults.RELAYER_MIGRATE_VERSION } : {}),
-        }),
+    ...(backport ?? {}),
   };
   return {
     ...bundle,
     env,
-    sources: [...bundle.sources, `baseline=${modernRelayer ? "release-modern-relayer" : "release-defaults"}`],
+    sources: [...bundle.sources, `baseline=${backport ? `${ref}-backport` : "release-defaults"}`],
   };
 };
 
@@ -387,7 +389,7 @@ const releaseBaselineBundle = async (bundle: VersionBundle, requested: string, r
   if (!ref.startsWith(RELEASE_REF_PREFIX)) {
     return bundle;
   }
-  return applyReleaseBaselineDefaults(bundle, await baselineDefaults(requested));
+  return applyReleaseBaselineDefaults(bundle, await baselineDefaults(requested), ref);
 };
 
 /** Resolves a user-facing version target into a concrete version bundle. */

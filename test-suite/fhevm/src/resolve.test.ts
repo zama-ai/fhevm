@@ -23,7 +23,6 @@ import {
   shaRuntimeCompatFloor,
   simpleAclFloor,
 } from "./resolve/target";
-import { MODERN_RELAYER_MIGRATE_VERSION, MODERN_RELAYER_VERSION } from "./resolve/presets";
 import {
   previewBundle,
   resolveBundle,
@@ -109,7 +108,7 @@ describe("resolve", () => {
     expect(assertSupportedShaRef("release/0.11.x")).toBe("release/0.11.x");
   });
 
-  test("bridges legacy release relayer defaults to the modern pinned relayer", () => {
+  test("pins release/0.11.x relayer and test-suite from the supported backport baseline", () => {
     const bundle = applyReleaseBaselineDefaults(
       presetBundle("sha", "9670a07", "sha-9670a07.json"),
       {
@@ -117,14 +116,16 @@ describe("resolve", () => {
         RELAYER_VERSION: "v0.9.0-rc.1",
         RELAYER_MIGRATE_VERSION: "v0.9.0-rc.1",
       },
+      "release/0.11.x",
     );
     expect(bundle.env.CORE_VERSION).toBe("v0.13.0-rc.2");
-    expect(bundle.env.RELAYER_VERSION).toBe(MODERN_RELAYER_VERSION);
-    expect(bundle.env.RELAYER_MIGRATE_VERSION).toBe(MODERN_RELAYER_MIGRATE_VERSION);
-    expect(bundle.sources.at(-1)).toBe("baseline=release-modern-relayer");
+    expect(bundle.env.RELAYER_VERSION).toBe("v0.9.0");
+    expect(bundle.env.RELAYER_MIGRATE_VERSION).toBe("v0.9.0");
+    expect(bundle.env.TEST_SUITE_VERSION).toBe("v0.11.0-2");
+    expect(bundle.sources.at(-1)).toBe("baseline=release/0.11.x-backport");
   });
 
-  test("preserves release defaults when the branch already pins relayer explicitly", () => {
+  test("pins release/0.12.x relayer from the supported backport baseline", () => {
     const bundle = applyReleaseBaselineDefaults(
       presetBundle("sha", "5e7db95", "sha-5e7db95.json"),
       {
@@ -132,10 +133,28 @@ describe("resolve", () => {
         RELAYER_VERSION: "sha-5e38c70",
         RELAYER_MIGRATE_VERSION: "v0.10.0-rc.1",
       },
+      "release/0.12.x",
     );
     expect(bundle.env.CORE_VERSION).toBe("v0.13.10-rc.0");
-    expect(bundle.env.RELAYER_VERSION).toBe("sha-5e38c70");
-    expect(bundle.env.RELAYER_MIGRATE_VERSION).toBe("v0.10.0-rc.1");
+    expect(bundle.env.RELAYER_VERSION).toBe("v0.11.1");
+    expect(bundle.env.RELAYER_MIGRATE_VERSION).toBe("v0.11.0");
+    expect(bundle.env.TEST_SUITE_VERSION).toBe("5e7db95");
+    expect(bundle.sources.at(-1)).toBe("baseline=release/0.12.x-backport");
+  });
+
+  test("treats newer release branches like main for relayer", () => {
+    const bundle = applyReleaseBaselineDefaults(
+      presetBundle("sha", "abcdef0", "sha-abcdef0.json"),
+      {
+        CORE_VERSION: "v0.13.10-rc.0",
+        RELAYER_VERSION: "ignored",
+        RELAYER_MIGRATE_VERSION: "ignored",
+      },
+      "release/0.13.x",
+    );
+    expect(bundle.env.CORE_VERSION).toBe("v0.13.10-rc.0");
+    expect(bundle.env.RELAYER_VERSION).toBe("abcdef0");
+    expect(bundle.env.RELAYER_MIGRATE_VERSION).toBe("abcdef0");
     expect(bundle.sources.at(-1)).toBe("baseline=release-defaults");
   });
 
