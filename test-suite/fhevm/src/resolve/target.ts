@@ -107,9 +107,43 @@ export const REPO_TAG = /^[0-9a-f]{7}$/;
 export const SHA_REF = /^(?:[0-9a-f]{7}|[0-9a-f]{40})$/i;
 export const SIMPLE_ACL_MIN_SHA = COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA;
 export const SHA_RUNTIME_COMPAT_MIN_SHA = "1272b10b308b064e7477ca3272712b90b50280d9";
+const MIN_SUPPORTED_RELEASE = { major: 0, minor: 11 };
 const DEFAULT_SHA_REF = "main";
 const RELEASE_REF_PREFIX = "release/";
+const RELEASE_REF = /^release\/(\d+)\.(\d+)\.x$/;
 const SHA_LIKE_RELAYER_REF = /^(?:sha-)?[0-9a-f]{7}$/i;
+
+const parseReleaseRef = (ref: string) => {
+  const match = ref.match(RELEASE_REF);
+  if (!match) {
+    return undefined;
+  }
+  return { major: Number(match[1]), minor: Number(match[2]) };
+};
+
+export const normalizeShaRef = (ref?: string) => ref?.trim() || DEFAULT_SHA_REF;
+
+export const assertSupportedShaRef = (ref: string) => {
+  if (!ref.startsWith(RELEASE_REF_PREFIX)) {
+    return ref;
+  }
+  const release = parseReleaseRef(ref);
+  if (!release) {
+    throw new GitHubApiError(`Unsupported release ref ${ref}; expected release/<major>.<minor>.x`);
+  }
+  if (
+    release.major < MIN_SUPPORTED_RELEASE.major ||
+    (release.major === MIN_SUPPORTED_RELEASE.major && release.minor < MIN_SUPPORTED_RELEASE.minor)
+  ) {
+    throw new GitHubApiError(
+      `Unsupported release ref ${ref}; sha resolution supports ${RELEASE_REF_PREFIX}${MIN_SUPPORTED_RELEASE.major}.${MIN_SUPPORTED_RELEASE.minor}.x and newer`,
+    );
+  }
+  return ref;
+};
+
+export const bundleShaRef = (bundle: VersionBundle) =>
+  assertSupportedShaRef(bundle.sources.find((source) => source.startsWith("ref="))?.slice(4) ?? DEFAULT_SHA_REF);
 
 /** Recursively collects image references from loosely structured YAML documents. */
 const walkImages = (node: unknown, out: Array<{ repository: string; tag: string }>) => {
@@ -386,7 +420,7 @@ export const resolveTarget = async (
     if (!SHA_REF.test(requested)) {
       throw new GitHubApiError(`Invalid sha ${requested}; expected 7 or 40 hex characters`);
     }
-    const ref = options.ref?.trim() || DEFAULT_SHA_REF;
+    const ref = assertSupportedShaRef(normalizeShaRef(options.ref));
     const tag = shortSha(requested);
     try {
       await assertCommitOnRef(ref, requested);

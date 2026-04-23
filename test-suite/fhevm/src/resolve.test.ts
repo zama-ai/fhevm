@@ -16,6 +16,7 @@ import {
   SHA_RUNTIME_COMPAT_MIN_SHA,
   applyReleaseBaselineDefaults,
   applyVersionEnvOverrides,
+  assertSupportedShaRef,
   assertSupportedShaBundle,
   missingRepoPackages,
   presetBundle,
@@ -103,6 +104,11 @@ describe("resolve", () => {
     ).not.toThrow();
   });
 
+  test("rejects unsupported old release refs for sha resolution", () => {
+    expect(() => assertSupportedShaRef("release/0.10.x")).toThrow("release/0.11.x and newer");
+    expect(assertSupportedShaRef("release/0.11.x")).toBe("release/0.11.x");
+  });
+
   test("bridges legacy release relayer defaults to the modern pinned relayer", () => {
     const bundle = applyReleaseBaselineDefaults(
       presetBundle("sha", "9670a07", "sha-9670a07.json"),
@@ -166,6 +172,34 @@ describe("resolve", () => {
           process.env,
         ),
       ).rejects.toThrow("invalid lockName");
+    });
+  });
+
+  test("rejects stale sha lock files during resolve", async () => {
+    await withTempStateDir(async (stateDir) => {
+      const lockFile = path.join(stateDir, "stale-sha-lock.json");
+      await writeFile(
+        lockFile,
+        JSON.stringify({
+          target: "sha",
+          lockName: "sha-0000000.json",
+          sources: ["preset=sha", "repo-owned=0000000", "requested-sha=0000000", "ref=main"],
+          env: presetBundle("sha", "0000000", "sha-0000000.json").env,
+        }),
+      );
+      await expect(
+        resolveBundle(
+          {
+            target: "sha",
+            requestedTarget: undefined,
+            sha: undefined,
+            ref: undefined,
+            lockFile,
+            reset: false,
+          },
+          process.env,
+        ),
+      ).rejects.toThrow("unsupported");
     });
   });
 
