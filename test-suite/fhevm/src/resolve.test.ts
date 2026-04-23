@@ -14,6 +14,7 @@ import {
 import {
   SIMPLE_ACL_MIN_SHA,
   SHA_RUNTIME_COMPAT_MIN_SHA,
+  applyReleaseBaselineDefaults,
   applyVersionEnvOverrides,
   assertSupportedShaBundle,
   missingRepoPackages,
@@ -21,6 +22,7 @@ import {
   shaRuntimeCompatFloor,
   simpleAclFloor,
 } from "./resolve/target";
+import { MODERN_RELAYER_MIGRATE_VERSION, MODERN_RELAYER_VERSION } from "./resolve/presets";
 import {
   previewBundle,
   resolveBundle,
@@ -86,6 +88,49 @@ describe("resolve", () => {
         commits,
       ),
     ).not.toThrow();
+  });
+
+  test("accepts sha bundles when selected branch history lacks main cutover anchors", () => {
+    const commits = [
+      "5e7db95000000000000000000000000000000000",
+      "4e7db95000000000000000000000000000000000",
+    ];
+    expect(() =>
+      assertSupportedShaBundle(
+        presetBundle("sha", "5e7db95", "sha-5e7db95.json"),
+        commits,
+      ),
+    ).not.toThrow();
+  });
+
+  test("bridges legacy release relayer defaults to the modern pinned relayer", () => {
+    const bundle = applyReleaseBaselineDefaults(
+      presetBundle("sha", "9670a07", "sha-9670a07.json"),
+      {
+        CORE_VERSION: "v0.13.0-rc.2",
+        RELAYER_VERSION: "v0.9.0-rc.1",
+        RELAYER_MIGRATE_VERSION: "v0.9.0-rc.1",
+      },
+    );
+    expect(bundle.env.CORE_VERSION).toBe("v0.13.0-rc.2");
+    expect(bundle.env.RELAYER_VERSION).toBe(MODERN_RELAYER_VERSION);
+    expect(bundle.env.RELAYER_MIGRATE_VERSION).toBe(MODERN_RELAYER_MIGRATE_VERSION);
+    expect(bundle.sources.at(-1)).toBe("baseline=release-modern-relayer");
+  });
+
+  test("preserves release defaults when the branch already pins relayer explicitly", () => {
+    const bundle = applyReleaseBaselineDefaults(
+      presetBundle("sha", "5e7db95", "sha-5e7db95.json"),
+      {
+        CORE_VERSION: "v0.13.10-rc.0",
+        RELAYER_VERSION: "sha-5e38c70",
+        RELAYER_MIGRATE_VERSION: "v0.10.0-rc.1",
+      },
+    );
+    expect(bundle.env.CORE_VERSION).toBe("v0.13.10-rc.0");
+    expect(bundle.env.RELAYER_VERSION).toBe("sha-5e38c70");
+    expect(bundle.env.RELAYER_MIGRATE_VERSION).toBe("v0.10.0-rc.1");
+    expect(bundle.sources.at(-1)).toBe("baseline=release-defaults");
   });
 
   test("only caches immutable sha targets", () => {

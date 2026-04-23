@@ -165,6 +165,7 @@ const upCommandDefinition = {
   args: {
     target: { type: "string", description: "Bundle source to boot." },
     sha: { type: "string", description: "Commit SHA to resolve when --target sha is used." },
+    ref: { type: "string", description: "Git ref used to validate and interpret --target sha." },
     override: { type: "string", description: "Build selected workspace groups locally. Use --override test-suite to run local e2e test changes.", alias: "o" },
     "from-step": { type: "string", description: `Start from a specific pipeline step when resuming or previewing. Valid: ${STEP_NAMES.join(", ")}.` },
     "lock-file": { type: "string", description: "Use an existing lock snapshot instead of resolving versions live." },
@@ -246,13 +247,14 @@ const root = defineCommand({
       args: {
         target: { type: "string", description: "Bundle source to resolve." },
         sha: { type: "string", description: "Commit SHA to resolve when --target sha is used." },
+        ref: { type: "string", description: "Git ref used to validate and interpret --target sha." },
         "lock-file": { type: "string", description: "Use an existing lock snapshot instead of resolving versions live." },
         reset: { type: "boolean", description: "Discard cached resolution and regenerate from scratch." },
       },
       async run({ args }) {
         const parsed = parseUpInput(args);
         if (parsed.resume || parsed.dryRun || parsed.fromStep || parsed.overrides.length || parsed.scenarioPath) {
-          throw new PreflightError("resolve only supports --target, --sha, --lock-file, and --reset");
+          throw new PreflightError("resolve only supports --target, --sha, --ref, --lock-file, and --reset");
         }
         const { lockPath } = await resolveBundle(parsed, process.env);
         console.log(lockPath);

@@ -36,6 +36,7 @@ const parseLocalOverride = (value: string): LocalOverride[] => {
 export const parseUpInput = (args: Record<string, unknown>) => {
   const target = asString(args.target);
   const sha = asString(args.sha);
+  const ref = asString(args.ref);
   const fromStepRaw = asString(args["from-step"] ?? args.fromStep);
   const lockFile = asString(args["lock-file"] ?? args.lockFile);
   const scenarioPath = asString(args.scenario);
@@ -60,6 +61,9 @@ export const parseUpInput = (args: Record<string, unknown>) => {
 
   if (validTarget === "sha" && !sha) {
     throw new PreflightError("--target sha requires --sha");
+  }
+  if (ref && validTarget !== "sha") {
+    throw new PreflightError("--ref requires --target sha");
   }
   if (validTarget !== "sha" && sha) {
     throw new PreflightError("--sha requires --target sha");
@@ -94,6 +98,7 @@ export const parseUpInput = (args: Record<string, unknown>) => {
     target: validTarget,
     requestedTarget: target as VersionTarget | undefined,
     sha,
+    ref,
     overrides,
     scenarioPath,
     fromStep,

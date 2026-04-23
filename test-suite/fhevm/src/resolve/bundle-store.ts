@@ -11,23 +11,22 @@ import { GitHubApiError } from "../errors";
 import {
   PACKAGE_TO_REPOSITORY,
   applyVersionEnvOverrides,
-  assertSupportedShaBundle,
   resolveTarget,
 } from "./target";
-import { mainCommits } from "./github";
 
 const VERSION_KEYS = Object.keys(PACKAGE_TO_REPOSITORY);
 const SAFE_LOCK_NAME = /^[A-Za-z0-9._-]+\.json$/;
 
 /** Computes the cache file path for a resolved bundle target. */
-const resolveCachePath = (target: string, sha?: string) => {
+const resolveCachePath = (target: string, sha?: string, ref?: string) => {
   const normalizedSha = sha?.toLowerCase();
   const suffix = normalizedSha
     ? normalizedSha.length === 40
       ? normalizedSha
       : normalizedSha.slice(0, 7)
     : undefined;
-  return path.join(LOCK_DIR, `.cache-${target}${suffix ? `-${suffix}` : ""}.json`);
+  const normalizedRef = ref?.replace(/[^A-Za-z0-9._-]+/g, "-");
+  return path.join(LOCK_DIR, `.cache-${target}${normalizedRef ? `-${normalizedRef}` : ""}${suffix ? `-${suffix}` : ""}.json`);
 };
 
 /** Validates that a lock bundle has the fields required by the CLI. */
@@ -67,15 +66,7 @@ const validateBundleCompat = async (bundle: VersionBundle) => {
 };
 
 const validateRuntimeCompat = async (bundle: VersionBundle) => {
-  await validateBundleCompat(bundle);
-  if (bundle.target === "sha") {
-    try {
-      assertSupportedShaBundle(bundle, await mainCommits(5000));
-    } catch (error) {
-      throw new GitHubApiError(error instanceof Error ? error.message : String(error));
-    }
-  }
-  return bundle;
+  return validateBundleCompat(bundle);
 };
 
 /** Writes a resolved bundle into the persistent lock directory. */
@@ -119,7 +110,7 @@ const bundleFromFile = async (target: VersionTarget | undefined, lockFile: strin
   });
 };
 
-type CachedResolveOptions = Pick<UpOptions, "target" | "requestedTarget" | "sha" | "lockFile" | "reset">;
+type CachedResolveOptions = Pick<UpOptions, "target" | "requestedTarget" | "sha" | "ref" | "lockFile" | "reset">;
 
 /** Emits periodic progress logs while a long resolve task runs. */
 const withProgressLogs = async <T>(task: Promise<T>, label: string) => {
@@ -143,7 +134,7 @@ const cachedResolve = async (options: CachedResolveOptions) => {
     return bundleFromFile(options.requestedTarget, options.lockFile);
   }
 
-  const cachePath = resolveCachePath(options.target, options.sha);
+  const cachePath = resolveCachePath(options.target, options.sha, options.ref);
   if (targetUsesCache(options.target) && !options.reset && await exists(cachePath)) {
     const cached = validateLockBundleShape(await readJson<VersionBundle>(cachePath));
     if (cached.target !== options.target) {
@@ -154,10 +145,12 @@ const cachedResolve = async (options: CachedResolveOptions) => {
   }
 
   console.log(`[resolve] resolving ${options.target} bundle`);
-  if (options.target === "latest-main" || options.target === "sha") {
+  if (options.target === "latest-main") {
     console.log("[resolve] fetching main commits and published image tags");
+  } else if (options.target === "sha") {
+    console.log(`[resolve] validating sha against ${options.ref ?? "main"} using local git history`);
   }
-  const bundle = await withProgressLogs(resolveTarget(options.target, { sha: options.sha }), `still fetching ${options.target} metadata`);
+  const bundle = await withProgressLogs(resolveTarget(options.target, { sha: options.sha, ref: options.ref }), `still fetching ${options.target} metadata`);
   try {
     if (targetUsesCache(options.target)) {
       await writeJson(cachePath, bundle);

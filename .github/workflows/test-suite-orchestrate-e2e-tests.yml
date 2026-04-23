@@ -21,10 +21,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: 'read' # Required to checkout repository code
-      packages: 'read' # Required to read GitHub package metadata during base-sha resolution
     env:
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
-      GH_TOKEN: ${{ github.token }}
+      BASE_REF: ${{ github.base_ref }}
     outputs:
       lock-artifact-name: ${{ steps.resolve-baseline.outputs.lock-artifact-name }}
     steps:
@@ -37,11 +36,6 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
 
-      - name: Install GitHub CLI
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gh
-
       - name: Install CLI deps
         working-directory: test-suite/fhevm
         run: bun install --frozen-lockfile
@@ -51,7 +45,7 @@ jobs:
         working-directory: test-suite/fhevm
         run: |
           set -euo pipefail
-          lock_path="$(./fhevm-cli resolve --target sha --sha "$BASE_SHA" --reset | tail -n 1)"
+          lock_path="$(./fhevm-cli resolve --target sha --sha "$BASE_SHA" --ref "$BASE_REF" --reset | tail -n 1)"
           artifact_name="fhevm-base-lock-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           echo "lock-path=$lock_path" >> "$GITHUB_OUTPUT"
           echo "lock-artifact-name=$artifact_name" >> "$GITHUB_OUTPUT"
@@ -173,8 +167,6 @@ jobs:
             gateway-version
             host-version
             kms-core-version
-            relayer-migrate-version
-            relayer-version
             test-suite-version
           )
           for key in "${outputs[@]}"; do
@@ -183,14 +175,16 @@ jobs:
 
           if [ "$IS_RELEASE_PR" = "true" ]; then
             if git cat-file -e "${BASE_COMMIT_HASH}:test-suite/fhevm/profiles/latest-supported.json" 2>/dev/null; then
-              core_version="$(git show "${BASE_COMMIT_HASH}:test-suite/fhevm/profiles/latest-supported.json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["env"]["CORE_VERSION"])')"
+              defaults_json="$(git show "${BASE_COMMIT_HASH}:test-suite/fhevm/profiles/latest-supported.json")"
+              core_version="$(printf '%s' "$defaults_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["env"]["CORE_VERSION"])')"
             elif git cat-file -e "${BASE_COMMIT_HASH}:test-suite/fhevm/fhevm-cli" 2>/dev/null; then
-              core_version="$(git show "${BASE_COMMIT_HASH}:test-suite/fhevm/fhevm-cli" | sed -n 's/^export CORE_VERSION=.*:-"\\([^"]*\\)".*/\\1/p' | head -n 1)"
+              defaults_shell="$(git show "${BASE_COMMIT_HASH}:test-suite/fhevm/fhevm-cli")"
+              core_version="$(printf '%s' "$defaults_shell" | sed -n 's/^export CORE_VERSION=.*:-"\\([^"]*\\)".*/\\1/p' | head -n 1)"
             else
               core_version=""
             fi
             if [ -z "$core_version" ]; then
-              echo "Could not extract CORE_VERSION from release base ${BASE_COMMIT_HASH}" >&2
+              echo "Could not extract release CORE_VERSION from ${BASE_COMMIT_HASH}" >&2
               exit 1
             fi
             echo "kms-core-version=$core_version" >> "$GITHUB_OUTPUT"
@@ -233,6 +227,34 @@ jobs:
             echo "Required repo-owned build outputs failed: ${failures[*]}" >&2
             exit 1
           fi
+
+          relayer_result="$(jq -r '.["relayer-docker-build"].outputs["relayer_build_result"] // "missing"' "$needs_file")"
+          case "$relayer_result" in
+            success)
+              echo "relayer-version=$short_tag" >> "$GITHUB_OUTPUT"
+              ;;
+            skipped)
+              echo "relayer-version=" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Required repo-owned build outputs failed: relayer-docker-build.relayer_build_result=$relayer_result" >&2
+              exit 1
+              ;;
+          esac
+
+          relayer_migrate_result="$(jq -r '.["relayer-docker-build"].outputs["relayer_migrate_build_result"] // "missing"' "$needs_file")"
+          case "$relayer_migrate_result" in
+            success)
+              echo "relayer-migrate-version=$short_tag" >> "$GITHUB_OUTPUT"
+              ;;
+            skipped)
+              echo "relayer-migrate-version=" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Required repo-owned build outputs failed: relayer-docker-build.relayer_migrate_build_result=$relayer_migrate_result" >&2
+              exit 1
+              ;;
+          esac
 
   run-e2e-tests:
     needs: [create-e2e-tests-input]

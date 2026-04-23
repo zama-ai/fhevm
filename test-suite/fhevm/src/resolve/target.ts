@@ -12,7 +12,8 @@ import {
 } from "../compat/compat";
 import { GitHubApiError } from "../errors";
 import { gitopsFile, mainCommits, packageTags } from "./github";
-import { NON_NETWORK_COMPANIONS } from "./presets";
+import { assertCommitOnRef, baselineDefaults, refCommits } from "./git";
+import { MODERN_RELAYER_MIGRATE_VERSION, MODERN_RELAYER_VERSION, NON_NETWORK_COMPANIONS } from "./presets";
 import { LATEST_SUPPORTED_PROFILE } from "../layout";
 import type { VersionBundle, VersionTarget } from "../types";
 import { normalizeRepository, readJson } from "../utils/fs";
@@ -106,6 +107,9 @@ export const REPO_TAG = /^[0-9a-f]{7}$/;
 export const SHA_REF = /^(?:[0-9a-f]{7}|[0-9a-f]{40})$/i;
 export const SIMPLE_ACL_MIN_SHA = COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA;
 export const SHA_RUNTIME_COMPAT_MIN_SHA = "1272b10b308b064e7477ca3272712b90b50280d9";
+const DEFAULT_SHA_REF = "main";
+const RELEASE_REF_PREFIX = "release/";
+const SHA_LIKE_RELAYER_REF = /^(?:sha-)?[0-9a-f]{7}$/i;
 
 /** Recursively collects image references from loosely structured YAML documents. */
 const walkImages = (node: unknown, out: Array<{ repository: string; tag: string }>) => {
@@ -189,8 +193,8 @@ export const assertSupportedShaBundle = (bundle: VersionBundle, commits: string[
   if (bundle.target !== "sha") {
     return;
   }
-  const floor = simpleAclFloor(commits);
-  const compatFloor = shaRuntimeCompatFloor(commits);
+  const floor = commits.indexOf(SIMPLE_ACL_MIN_SHA);
+  const compatFloor = commits.indexOf(SHA_RUNTIME_COMPAT_MIN_SHA);
   const refs = [
     ...new Set(
       Object.entries(bundle.env)
@@ -203,13 +207,13 @@ export const assertSupportedShaBundle = (bundle: VersionBundle, commits: string[
     const index = commits.findIndex((sha) => ref.length === 40 ? sha.toLowerCase() === ref : sha.startsWith(tag));
     if (index < 0) {
       throw new Error(
-        `sha target ${ref.length === 40 ? ref : tag} is unsupported; only main commits at or after ${SIMPLE_ACL_MIN_SHA.slice(0, 7)} are supported`,
+        `sha target ${ref.length === 40 ? ref : tag} is unsupported by the selected git history`,
       );
     }
-    if (index > floor) {
+    if (floor >= 0 && index > floor) {
       throw new Error(`sha target ${tag} predates the simple-ACL cutover and is unsupported`);
     }
-    if (index > compatFloor) {
+    if (compatFloor >= 0 && index > compatFloor) {
       throw new Error(
         `sha target ${tag} predates the modern gw-listener drift-address cutover (${SHA_RUNTIME_COMPAT_MIN_SHA.slice(0, 7)}) and is unsupported by the current CLI; use latest-supported or a newer sha`,
       );
@@ -321,10 +325,41 @@ const repoPackageTags = async (targetTag?: string) =>
     ),
   ) as Record<string, Set<string>>;
 
+const usesLegacyReleaseRelayerBaseline = (defaults: Record<string, string>) => !SHA_LIKE_RELAYER_REF.test(defaults.RELAYER_VERSION ?? "");
+
+export const applyReleaseBaselineDefaults = (bundle: VersionBundle, defaults: Record<string, string>) => {
+  const modernRelayer = usesLegacyReleaseRelayerBaseline(defaults);
+  const env = {
+    ...bundle.env,
+    ...(defaults.CORE_VERSION ? { CORE_VERSION: defaults.CORE_VERSION } : {}),
+    ...(modernRelayer
+      ? {
+          RELAYER_VERSION: MODERN_RELAYER_VERSION,
+          RELAYER_MIGRATE_VERSION: MODERN_RELAYER_MIGRATE_VERSION,
+        }
+      : {
+          ...(defaults.RELAYER_VERSION ? { RELAYER_VERSION: defaults.RELAYER_VERSION } : {}),
+          ...(defaults.RELAYER_MIGRATE_VERSION ? { RELAYER_MIGRATE_VERSION: defaults.RELAYER_MIGRATE_VERSION } : {}),
+        }),
+  };
+  return {
+    ...bundle,
+    env,
+    sources: [...bundle.sources, `baseline=${modernRelayer ? "release-modern-relayer" : "release-defaults"}`],
+  };
+};
+
+const releaseBaselineBundle = async (bundle: VersionBundle, requested: string, ref: string) => {
+  if (!ref.startsWith(RELEASE_REF_PREFIX)) {
+    return bundle;
+  }
+  return applyReleaseBaselineDefaults(bundle, await baselineDefaults(requested));
+};
+
 /** Resolves a user-facing version target into a concrete version bundle. */
 export const resolveTarget = async (
   target: VersionTarget,
-  options: { sha?: string } = {},
+  options: { sha?: string; ref?: string } = {},
 ): Promise<VersionBundle> => {
   if (target === "latest-supported") {
     try {
@@ -351,37 +386,21 @@ export const resolveTarget = async (
     if (!SHA_REF.test(requested)) {
       throw new GitHubApiError(`Invalid sha ${requested}; expected 7 or 40 hex characters`);
     }
+    const ref = options.ref?.trim() || DEFAULT_SHA_REF;
     const tag = shortSha(requested);
-    const [packageTagsMap, commits] = await Promise.all([repoPackageTags(tag), mainCommits(5000)]);
-    const missing = missingRepoPackages(packageTagsMap, tag);
-    if (missing.length) {
-      throw new GitHubApiError(`Could not find a complete sha image set for ${tag}; missing: ${missing.join(", ")}`);
-    }
-    let floor: number;
-    let compatFloor: number;
     try {
-      floor = simpleAclFloor(commits);
-      compatFloor = shaRuntimeCompatFloor(commits);
+      await assertCommitOnRef(ref, requested);
+      const commits = await refCommits(ref, 5000);
+      const bundle = await releaseBaselineBundle(
+        presetBundle(target, tag, `sha-${tag}.json`, [`requested-sha=${requested.toLowerCase()}`, `ref=${ref}`]),
+        requested,
+        ref,
+      );
+      assertSupportedShaBundle(bundle, commits);
+      return bundle;
     } catch (error) {
       throw new GitHubApiError(error instanceof Error ? error.message : String(error));
     }
-    const index = commits.findIndex((sha) =>
-      requested.length === 40 ? sha.toLowerCase() === requested.toLowerCase() : sha.startsWith(tag),
-    );
-    if (index < 0) {
-      throw new GitHubApiError(
-        `sha target ${requested.length === 40 ? requested.toLowerCase() : tag} is unsupported; only main commits at or after ${SIMPLE_ACL_MIN_SHA.slice(0, 7)} are supported`,
-      );
-    }
-    if (index > floor) {
-      throw new GitHubApiError(`sha target ${tag} predates the simple-ACL cutover and is unsupported`);
-    }
-    if (index > compatFloor) {
-      throw new GitHubApiError(
-        `sha target ${tag} predates the modern gw-listener drift-address cutover (${SHA_RUNTIME_COMPAT_MIN_SHA.slice(0, 7)}) and is unsupported by the current CLI; use latest-supported or a newer sha`,
-      );
-    }
-    return presetBundle(target, tag, `sha-${tag}.json`, [`requested-sha=${requested.toLowerCase()}`]);
   }
 
   const [packageTagsMap, commits] = await Promise.all([repoPackageTags(), mainCommits(5000)]);
