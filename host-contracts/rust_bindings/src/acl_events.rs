@@ -6,6 +6,7 @@ interface ACLEvents {
     event Allowed(address indexed caller, address indexed account, bytes32 handle);
     event AllowedForDecryption(address indexed caller, bytes32[] handlesList);
     event BlockedAccount(address indexed account);
+    event DecryptionSignaturesInvalidated(address indexed account, uint256 beforeTimestamp);
     event DelegatedForUserDecryption(address indexed delegator, address indexed delegate, address contractAddress, uint64 delegationCounter, uint64 oldExpirationDate, uint64 newExpirationDate);
     event RevokedDelegationForUserDecryption(address indexed delegator, address indexed delegate, address contractAddress, uint64 delegationCounter, uint64 oldExpirationDate);
     event UnblockedAccount(address indexed account);
@@ -68,6 +69,25 @@ interface ACLEvents {
         "type": "address",
         "indexed": true,
         "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "DecryptionSignaturesInvalidated",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "beforeTimestamp",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -551,6 +571,125 @@ event BlockedAccount(address indexed account);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `DecryptionSignaturesInvalidated(address,uint256)` and selector `0xf1b88c0a8124fa1aeb743677c229b610ff4d00ceb3df459794e540d7b9a52a3d`.
+```solidity
+event DecryptionSignaturesInvalidated(address indexed account, uint256 beforeTimestamp);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct DecryptionSignaturesInvalidated {
+        #[allow(missing_docs)]
+        pub account: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub beforeTimestamp: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for DecryptionSignaturesInvalidated {
+            type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Address,
+            );
+            const SIGNATURE: &'static str = "DecryptionSignaturesInvalidated(address,uint256)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                241u8, 184u8, 140u8, 10u8, 129u8, 36u8, 250u8, 26u8, 235u8, 116u8, 54u8,
+                119u8, 194u8, 41u8, 182u8, 16u8, 255u8, 77u8, 0u8, 206u8, 179u8, 223u8,
+                69u8, 151u8, 148u8, 229u8, 64u8, 215u8, 185u8, 165u8, 42u8, 61u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    account: topics.1,
+                    beforeTimestamp: data.0,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.beforeTimestamp),
+                )
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(), self.account.clone())
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
+                    &self.account,
+                );
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for DecryptionSignaturesInvalidated {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&DecryptionSignaturesInvalidated>
+        for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(
+                this: &DecryptionSignaturesInvalidated,
+            ) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `DelegatedForUserDecryption(address,address,address,uint64,uint64,uint64)` and selector `0x527b025d7ff06689c1ab9d32dfd7881c964cce72ce8ac5b2fe1d3be8cfda5bfc`.
 ```solidity
 event DelegatedForUserDecryption(address indexed delegator, address indexed delegate, address contractAddress, uint64 delegationCounter, uint64 oldExpirationDate, uint64 newExpirationDate);
@@ -966,6 +1105,8 @@ event UnblockedAccount(address indexed account);
         #[allow(missing_docs)]
         BlockedAccount(BlockedAccount),
         #[allow(missing_docs)]
+        DecryptionSignaturesInvalidated(DecryptionSignaturesInvalidated),
+        #[allow(missing_docs)]
         DelegatedForUserDecryption(DelegatedForUserDecryption),
         #[allow(missing_docs)]
         RevokedDelegationForUserDecryption(RevokedDelegationForUserDecryption),
@@ -1011,12 +1152,17 @@ event UnblockedAccount(address indexed account);
                 124u8, 127u8, 19u8, 55u8, 210u8, 92u8, 223u8, 212u8, 29u8, 203u8, 220u8,
                 248u8, 197u8, 123u8, 97u8, 99u8, 11u8, 229u8, 108u8, 199u8, 54u8, 106u8,
             ],
+            [
+                241u8, 184u8, 140u8, 10u8, 129u8, 36u8, 250u8, 26u8, 235u8, 116u8, 54u8,
+                119u8, 194u8, 41u8, 182u8, 16u8, 255u8, 77u8, 0u8, 206u8, 179u8, 223u8,
+                69u8, 151u8, 148u8, 229u8, 64u8, 215u8, 185u8, 165u8, 42u8, 61u8,
+            ],
         ];
     }
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for ACLEventsEvents {
         const NAME: &'static str = "ACLEventsEvents";
-        const COUNT: usize = 6usize;
+        const COUNT: usize = 7usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
@@ -1041,6 +1187,15 @@ event UnblockedAccount(address indexed account);
                             data,
                         )
                         .map(Self::BlockedAccount)
+                }
+                Some(
+                    <DecryptionSignaturesInvalidated as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <DecryptionSignaturesInvalidated as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::DecryptionSignaturesInvalidated)
                 }
                 Some(
                     <DelegatedForUserDecryption as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
@@ -1094,6 +1249,9 @@ event UnblockedAccount(address indexed account);
                 Self::BlockedAccount(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
+                Self::DecryptionSignaturesInvalidated(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
                 Self::DelegatedForUserDecryption(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
@@ -1114,6 +1272,9 @@ event UnblockedAccount(address indexed account);
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::BlockedAccount(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::DecryptionSignaturesInvalidated(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::DelegatedForUserDecryption(inner) => {
@@ -1318,6 +1479,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::Event<&P, BlockedAccount, N> {
             self.event_filter::<BlockedAccount>()
+        }
+        ///Creates a new event filter for the [`DecryptionSignaturesInvalidated`] event.
+        pub fn DecryptionSignaturesInvalidated_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, DecryptionSignaturesInvalidated, N> {
+            self.event_filter::<DecryptionSignaturesInvalidated>()
         }
         ///Creates a new event filter for the [`DelegatedForUserDecryption`] event.
         pub fn DelegatedForUserDecryption_filter(

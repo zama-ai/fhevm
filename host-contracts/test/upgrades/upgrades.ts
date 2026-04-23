@@ -171,6 +171,6 @@ describe('Upgrades', function () {
     const newaclFactoryUpgraded3 = await ethers.getContractFactory('ACLUpgradedExample2', newSigner);
     const acl3 = await upgrades.upgradeProxy(acl2, newaclFactoryUpgraded3); // new owner can upgrade ACL
     await acl3.waitForDeployment();
-    expect(await acl3.getVersion()).to.equal('ACL v0.5.0');
+    expect(await acl3.getVersion()).to.equal('ACL v0.6.0');
   });
 });

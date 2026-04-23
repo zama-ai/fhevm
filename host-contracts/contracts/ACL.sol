@@ -83,6 +83,12 @@ contract ACL is
     /// @notice Returned if the handlesList array is empty.
     error HandlesListIsEmpty();
 
+    /// @notice Returned if the invalidation timestamp is not greater than the current one.
+    error InvalidationTimestampTooLow();
+
+    /// @notice Returned if the invalidation timestamp is in the future.
+    error InvalidationTimestampInTheFuture();
+
     /**
      * @notice Returned if the the delegate contract is not already delegate for sender & delegator addresses.
      * @param delegator The address of the account that delegates access to its handles.
@@ -141,6 +147,7 @@ contract ACL is
             mapping(address delegate => mapping(address contractAddress => UserDecryptionDelegation delegation)))
                 userDecryptionDelegations;
         mapping(address account => bool isDenied) denyList;
+        mapping(address account => uint256 invalidatedBefore) decryptionSignatureInvalidatedBefore;
     }
 
     /// @notice Name of the contract.
@@ -240,6 +247,24 @@ contract ACL is
             $.allowedForDecryption[handle] = true;
         }
         emit AllowedForDecryption(msg.sender, handlesList);
+    }
+
+    /**
+     * @notice Invalidates decryption signatures before a given timestamp for the caller.
+     * @param timestamp Oldest timestamp that remains valid. Passing 0 resolves to the current block timestamp.
+     */
+    function invalidateDecryptionSignaturesBefore(uint256 timestamp) external virtual whenNotPaused {
+        uint256 resolvedTimestamp = timestamp == 0 ? block.timestamp : timestamp;
+        ACLStorage storage $ = _getACLStorage();
+        if (resolvedTimestamp <= $.decryptionSignatureInvalidatedBefore[msg.sender]) {
+            revert InvalidationTimestampTooLow();
+        }
+        if (resolvedTimestamp > block.timestamp) {
+            revert InvalidationTimestampInTheFuture();
+        }
+
+        $.decryptionSignatureInvalidatedBefore[msg.sender] = resolvedTimestamp;
+        emit DecryptionSignaturesInvalidated(msg.sender, resolvedTimestamp);
     }
 
     /**
@@ -407,6 +432,16 @@ contract ACL is
             contractAddress
         ];
         return userDecryptionDelegation.expirationDate;
+    }
+
+    /**
+     * @notice Returns the timestamp before which the account's decryption signatures are invalidated.
+     * @param account The account whose invalidation timestamp is queried.
+     * @return invalidatedBefore The oldest timestamp that remains valid.
+     */
+    function decryptionSignatureInvalidatedBefore(address account) public view virtual returns (uint256) {
+        ACLStorage storage $ = _getACLStorage();
+        return $.decryptionSignatureInvalidatedBefore[account];
     }
 
     /**

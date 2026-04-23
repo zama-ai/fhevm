@@ -120,6 +120,99 @@ contract ACLTest is HostContractsDeployerTestUtils {
     }
 
     /**
+     * @dev Tests that the decryption signature invalidation getter defaults to zero.
+     */
+    function test_DecryptionSignatureInvalidatedBeforeDefaultsToZero(address account) public view {
+        assertEq(acl.decryptionSignatureInvalidatedBefore(account), 0);
+    }
+
+    /**
+     * @dev Tests that explicit invalidation timestamps are stored and emitted without affecting other accounts.
+     */
+    function test_CanInvalidateDecryptionSignaturesBeforeWithExplicitTimestamp() public {
+        address account = _oneRandomAddress();
+        address otherAccount = _oneRandomAddress();
+        vm.assume(account != otherAccount);
+        vm.warp(100);
+
+        vm.expectEmit(address(acl));
+        emit ACLEvents.DecryptionSignaturesInvalidated(account, 42);
+
+        vm.prank(account);
+        acl.invalidateDecryptionSignaturesBefore(42);
+
+        assertEq(acl.decryptionSignatureInvalidatedBefore(account), 42);
+        assertEq(acl.decryptionSignatureInvalidatedBefore(otherAccount), 0);
+
+        vm.prank(otherAccount);
+        acl.invalidateDecryptionSignaturesBefore(43);
+
+        assertEq(acl.decryptionSignatureInvalidatedBefore(account), 42);
+        assertEq(acl.decryptionSignatureInvalidatedBefore(otherAccount), 43);
+    }
+
+    /**
+     * @dev Tests that passing zero resolves to the current block timestamp.
+     */
+    function test_CanInvalidateDecryptionSignaturesBeforeAtCurrentBlockTimestampWhenZero() public {
+        address account = _oneRandomAddress();
+        vm.warp(321);
+
+        vm.expectEmit(address(acl));
+        emit ACLEvents.DecryptionSignaturesInvalidated(account, block.timestamp);
+
+        vm.prank(account);
+        acl.invalidateDecryptionSignaturesBefore(0);
+
+        assertEq(acl.decryptionSignatureInvalidatedBefore(account), block.timestamp);
+    }
+
+    /**
+     * @dev Tests that invalidation timestamps must increase monotonically.
+     */
+    function test_CannotInvalidateDecryptionSignaturesBeforeWithEqualOrLowerTimestamp() public {
+        address account = _oneRandomAddress();
+        vm.warp(200);
+
+        vm.prank(account);
+        acl.invalidateDecryptionSignaturesBefore(150);
+
+        vm.prank(account);
+        vm.expectRevert(ACL.InvalidationTimestampTooLow.selector);
+        acl.invalidateDecryptionSignaturesBefore(150);
+
+        vm.prank(account);
+        vm.expectRevert(ACL.InvalidationTimestampTooLow.selector);
+        acl.invalidateDecryptionSignaturesBefore(149);
+    }
+
+    /**
+     * @dev Tests that resolving 0 to block.timestamp still respects monotonicity in the same block.
+     */
+    function test_CannotInvalidateDecryptionSignaturesBeforeWithZeroThenSameBlockTimestamp() public {
+        address account = _oneRandomAddress();
+        vm.warp(777);
+
+        vm.prank(account);
+        acl.invalidateDecryptionSignaturesBefore(0);
+
+        vm.prank(account);
+        vm.expectRevert(ACL.InvalidationTimestampTooLow.selector);
+        acl.invalidateDecryptionSignaturesBefore(block.timestamp);
+    }
+
+    /**
+     * @dev Tests that invalidation timestamps cannot be in the future.
+     */
+    function test_CannotInvalidateDecryptionSignaturesBeforeWithFutureTimestamp() public {
+        address account = _oneRandomAddress();
+
+        vm.prank(account);
+        vm.expectRevert(ACL.InvalidationTimestampInTheFuture.selector);
+        acl.invalidateDecryptionSignaturesBefore(block.timestamp + 1);
+    }
+
+    /**
      * @dev Tests that the contract allowedTransient returns false if the handle is not allowed for the account.
      */
     function test_AllowedTransientReturnsFalseIfNotAllowed(bytes32 handle, address account) public view {
@@ -789,6 +882,20 @@ contract ACLTest is HostContractsDeployerTestUtils {
     }
 
     /**
+     * @dev Tests that invalidation cannot be called if the contract is paused.
+     */
+    function test_CannotInvalidateDecryptionSignaturesBeforeIfPaused() public {
+        address account = _oneRandomAddress();
+
+        vm.prank(pauser);
+        acl.pause();
+
+        vm.prank(account);
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        acl.invalidateDecryptionSignaturesBefore(block.timestamp);
+    }
+
+    /**
      * @dev Tests that user decryption delegation cannot be called if the contract is paused.
      */
     function test_CannotDelegateForUserDecryptionIfPaused(
@@ -1069,5 +1176,23 @@ contract ACLTest is HostContractsDeployerTestUtils {
         vm.prank(randomAccount);
         vm.expectRevert(abi.encodeWithSelector(ACL.SenderDenied.selector, randomAccount));
         acl.allowForDecryption(handlesList);
+    }
+
+    /**
+     * @dev Tests that a denied account can still invalidate its own decryption signatures.
+     */
+    function test_DeniedAccountCanInvalidateDecryptionSignaturesBefore() public {
+        address randomAccount = _oneRandomAddress();
+
+        vm.prank(acl.owner());
+        acl.blockAccount(randomAccount);
+
+        vm.expectEmit(address(acl));
+        emit ACLEvents.DecryptionSignaturesInvalidated(randomAccount, block.timestamp);
+
+        vm.prank(randomAccount);
+        acl.invalidateDecryptionSignaturesBefore(block.timestamp);
+
+        assertEq(acl.decryptionSignatureInvalidatedBefore(randomAccount), block.timestamp);
     }
 }
