@@ -3,7 +3,9 @@
 {{- $useLegacyName := $chain.hostListenerPoller.useLegacyName | default false -}}
 {{- $deploymentName := ternary (printf "%s-host-listener-poller" $.Release.Name) (printf "%s-host-listener-poller-%s" $.Release.Name $chain.name) $useLegacyName -}}
 {{- $appLabel := ternary "coprocessor-host-listener-poller" (printf "coprocessor-host-listener-poller-%s" $chain.name) $useLegacyName -}}
-{{- $serviceName := coalesce $chain.hostListenerPoller.serviceName $.Values.hostListenerPollerShared.args.serviceName (printf "host-listener-poller-%s" $chain.name) -}}
+{{- $args := default (dict) $.Values.hostListenerPollerShared.args -}}
+{{- $disabled := default (list) $.Values.hostListenerPollerShared.disabledArgs -}}
+{{- $serviceName := coalesce $chain.hostListenerPoller.serviceName (get $args "serviceName") -}}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -57,22 +59,32 @@ spec:
           image: {{ $.Values.hostListenerPollerShared.image.name }}:{{ $.Values.hostListenerPollerShared.image.tag }}
           command: ["host_listener_poller"]
           args:
+            {{- if not (has "database-url" $disabled) }}
             - --database-url=$(DATABASE_URL)
+            {{- end }}
+            {{- if not (has "url" $disabled) }}
             - --url=$(ETHEREUM_RPC_HTTP_URL)
+            {{- end }}
+            {{- if not (has "acl-contract-address" $disabled) }}
             - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
+            {{- end }}
+            {{- if not (has "tfhe-contract-address" $disabled) }}
             - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+            {{- end }}
+            {{- if not (has "health-port" $disabled) }}
             - --health-port={{ $.Values.hostListenerPollerShared.ports.healthcheck }}
+            {{- end }}
+            {{- if not (has "metrics-addr" $disabled) }}
             - --metrics-addr=0.0.0.0:{{ $.Values.hostListenerPollerShared.ports.metrics }}
-            - --dependent-ops-max-per-chain={{ int $.Values.commonConfig.dependentOpsMaxPerChain }}
-            - --log-level={{ $.Values.hostListenerPollerShared.args.logLevel }}
+            {{- end }}
+            {{- if and $serviceName (not (has "service-name" $disabled)) }}
             - --service-name={{ $serviceName }}
-            - --finality-lag={{ $.Values.hostListenerPollerShared.args.finalityLag }}
-            - --batch-size={{ $.Values.hostListenerPollerShared.args.batchSize }}
-            - --poll-interval-ms={{ $.Values.hostListenerPollerShared.args.pollIntervalMs }}
-            - --retry-interval-ms={{ $.Values.hostListenerPollerShared.args.retryIntervalMs }}
-            - --max-http-retries={{ $.Values.hostListenerPollerShared.args.maxHttpRetries }}
-            - --rpc-compute-units-per-second={{ $.Values.hostListenerPollerShared.args.rpcComputeUnitsPerSecond }}
+            {{- end }}
+            {{- with $.Values.commonConfig.tenantApiKey }}
+            {{- if and (or .value .valueFrom) (not (has "coprocessor-api-key" $disabled)) }}
             - --coprocessor-api-key=$(TENANT_API_KEY)
+            {{- end }}
+            {{- end }}
             {{- with $.Values.hostListenerPollerShared.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -80,13 +92,47 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
+            {{- with $.Values.commonConfig.databaseUser }}
+            - name: DATABASE_USER
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with $.Values.commonConfig.databasePassword }}
+            - name: DATABASE_PASSWORD
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with $.Values.commonConfig.databaseEndpoint }}
+            - name: DATABASE_ENDPOINT
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
             - name: DATABASE_URL
               value: {{ $.Values.commonConfig.databaseUrl | quote }}
+            {{- with $.Values.commonConfig.tenantApiKey }}
+            - name: TENANT_API_KEY
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
             {{- include "coprocessor.renderChainEnvValue" (dict "name" "ETHEREUM_RPC_HTTP_URL" "value" $chain.httpUrl "valueFrom" $chain.httpUrlValueFrom "fieldName" "httpUrl" "chainName" $chain.name) | nindent 12 }}
-            - name: ACL_CONTRACT_ADDRESS
-              value: {{ required (printf "chains entry %q: aclContractAddress is required" $chain.name) $chain.aclContractAddress | quote }}
-            - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
-              value: {{ required (printf "chains entry %q: fhevmExecutorContractAddress is required" $chain.name) $chain.fhevmExecutorContractAddress | quote }}
+            {{- include "coprocessor.renderChainEnvValue" (dict "name" "ACL_CONTRACT_ADDRESS" "value" $chain.aclContractAddress "valueFrom" $chain.aclContractAddressValueFrom "fieldName" "aclContractAddress" "chainName" $chain.name) | nindent 12 }}
+            {{- include "coprocessor.renderChainEnvValue" (dict "name" "FHEVM_EXECUTOR_CONTRACT_ADDRESS" "value" $chain.fhevmExecutorContractAddress "valueFrom" $chain.fhevmExecutorContractAddressValueFrom "fieldName" "fhevmExecutorContractAddress" "chainName" $chain.name) | nindent 12 }}
           {{- if default $.Values.commonConfig.tracing.enabled $.Values.hostListenerPollerShared.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ $.Values.commonConfig.tracing.endpoint | quote }}

@@ -40,8 +40,40 @@ spec:
       containers:
       - name: db-migration
         image: {{ .Values.dbMigration.image.name }}:{{ .Values.dbMigration.image.tag }}
+        {{- with .Values.dbMigration.command }}
+        command:
+          {{- toYaml . | nindent 10 }}
+        {{- else }}
         command: ["/initialize_db.sh"]
+        {{- end }}
         env:
+          {{- with .Values.commonConfig.databaseUser }}
+          - name: DATABASE_USER
+            {{- if .value }}
+            value: {{ .value | quote }}
+            {{- else if .valueFrom }}
+            valueFrom:
+              {{- toYaml .valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
+          {{- with .Values.commonConfig.databasePassword }}
+          - name: DATABASE_PASSWORD
+            {{- if .value }}
+            value: {{ .value | quote }}
+            {{- else if .valueFrom }}
+            valueFrom:
+              {{- toYaml .valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
+          {{- with .Values.commonConfig.databaseEndpoint }}
+          - name: DATABASE_ENDPOINT
+            {{- if .value }}
+            value: {{ .value | quote }}
+            {{- else if .valueFrom }}
+            valueFrom:
+              {{- toYaml .valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
           - name: DATABASE_URL
             value: {{ .Values.commonConfig.databaseUrl | quote }}
         {{- with .Values.commonConfig.env }}

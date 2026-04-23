@@ -1,4 +1,5 @@
 {{- if .Values.zkProofWorker.enabled -}}
+{{- $disabled := default (list) .Values.zkProofWorker.disabledArgs -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -51,19 +52,46 @@ spec:
           image: {{ .Values.zkProofWorker.image.name }}:{{ .Values.zkProofWorker.image.tag }}
           command: ["zkproof_worker"]
           args:
+            {{- if not (has "database-url" $disabled) }}
             - --database-url=$(DATABASE_URL)
-            - --log-level={{ .Values.zkProofWorker.args.logLevel }}
-            - --service-name={{ .Values.zkProofWorker.args.serviceName }}
-            - --pg-listen-channel={{ .Values.zkProofWorker.args.pgListenChannel }}
-            - --pg-notify-channel={{ .Values.zkProofWorker.args.pgNotifyChannel }}
-            - --pg-polling-interval={{ .Values.zkProofWorker.args.pgPollingInterval }}
-            - --pg-pool-connections={{ .Values.zkProofWorker.args.pgPoolConnections }}
-            - --pg-timeout={{ .Values.zkProofWorker.args.pgTimeout }}
-            - --worker-thread-count={{ .Values.zkProofWorker.args.workerThreadCount }}
+            {{- end }}
+            {{- if not (has "metrics-addr" $disabled) }}
+            - --metrics-addr=0.0.0.0:{{ .Values.zkProofWorker.ports.metrics }}
+            {{- end }}
+            {{- if not (has "health-check-port" $disabled) }}
+            - --health-check-port={{ .Values.zkProofWorker.ports.healthcheck }}
+            {{- end }}
             {{- with .Values.zkProofWorker.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
+            {{- with .Values.commonConfig.databaseUser }}
+            - name: DATABASE_USER
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.databasePassword }}
+            - name: DATABASE_PASSWORD
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.databaseEndpoint }}
+            - name: DATABASE_ENDPOINT
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
             - name: DATABASE_URL
               value: {{ .Values.commonConfig.databaseUrl | quote }}
           {{- if default .Values.commonConfig.tracing.enabled .Values.zkProofWorker.tracing.enabled }}

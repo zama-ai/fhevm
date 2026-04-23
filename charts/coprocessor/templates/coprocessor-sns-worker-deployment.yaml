@@ -1,4 +1,8 @@
 {{- if .Values.snsWorker.enabled -}}
+{{- $args := default (dict) .Values.snsWorker.args -}}
+{{- $disabled := default (list) .Values.snsWorker.disabledArgs -}}
+{{- $pgListenChannels := get $args "pgListenChannels" -}}
+{{- $pgNotifyChannel := get $args "pgNotifyChannel" -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -51,42 +55,73 @@ spec:
           image: {{ .Values.snsWorker.image.name }}:{{ .Values.snsWorker.image.tag }}
           command: ["sns_worker"]
           args:
+            {{- if not (has "database-url" $disabled) }}
             - --database-url=$(DATABASE_URL)
+            {{- end }}
+            {{- if not (has "bucket-name-ct64" $disabled) }}
             - --bucket-name-ct64=$(S3_BUCKET_NAME)
+            {{- end }}
+            {{- if not (has "bucket-name-ct128" $disabled) }}
             - --bucket-name-ct128=$(S3_BUCKET_NAME)
-            - --log-level={{ .Values.snsWorker.args.logLevel }}
-            - --service-name={{ .Values.snsWorker.args.serviceName }}
+            {{- end }}
+            {{- if not (has "metrics-addr" $disabled) }}
+            - --metrics-addr=0.0.0.0:{{ .Values.snsWorker.ports.metrics }}
+            {{- end }}
+            {{- if not (has "health-check-port" $disabled) }}
+            - --health-check-port={{ .Values.snsWorker.ports.healthcheck }}
+            {{- end }}
+            {{- if and $pgListenChannels (not (has "pg-listen-channels" $disabled)) }}
             - --pg-listen-channels
-            {{- range .Values.snsWorker.args.pgListenChannels }}
+            {{- range $pgListenChannels }}
             - {{ . | quote }}
             {{- end }}
+            {{- end }}
+            {{- if and $pgNotifyChannel (not (has "pg-notify-channel" $disabled)) }}
             - --pg-notify-channel
-            - {{ .Values.snsWorker.args.pgNotifyChannel | quote }}
-            - --work-items-batch-size={{ .Values.snsWorker.args.workItemsBatchSize }}
-            - --pg-polling-interval={{ .Values.snsWorker.args.pgPollingInterval }}
-            - --pg-pool-connections={{ .Values.snsWorker.args.pgPoolConnections }}
-            - --pg-timeout={{ .Values.snsWorker.args.pgTimeout }}
-            - --s3-max-concurrent-uploads={{ .Values.snsWorker.args.s3MaxConcurrentUploads }}
-            - --s3-max-retries-per-upload={{ .Values.snsWorker.args.s3MaxRetriesPerUpload }}
-            - --s3-max-backoff={{ .Values.snsWorker.args.s3MaxBackoff }}
-            - --s3-max-retries-timeout={{ .Values.snsWorker.args.s3MaxRetriesTimeout }}
-            - --s3-recheck-duration={{ .Values.snsWorker.args.s3RecheckDuration }}
-            - --s3-regular-recheck-duration={{ .Values.snsWorker.args.s3RegularRecheckDuration }}
-            - --gc-batch-size={{ .Values.snsWorker.args.gcBatchSize }}
-            - --cleanup-interval={{ .Values.snsWorker.args.cleanupInterval }}
-            - --liveness-threshold={{ .Values.snsWorker.args.livenessThreshold }}
-            - --lifo={{ .Values.snsWorker.args.lifo }}
-            - --enable-compression={{ .Values.snsWorker.args.enableCompression }}
-            - --schedule-policy={{ .Values.snsWorker.args.schedulePolicy }}
-            - --tenant-api-key=$(TENANT_API_KEY)
+            - {{ $pgNotifyChannel | quote }}
+            {{- end }}
             {{- with .Values.snsWorker.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
+            {{- with .Values.commonConfig.databaseUser }}
+            - name: DATABASE_USER
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.databasePassword }}
+            - name: DATABASE_PASSWORD
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.databaseEndpoint }}
+            - name: DATABASE_ENDPOINT
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
             - name: DATABASE_URL
               value: {{ .Values.commonConfig.databaseUrl | quote }}
+            {{- with .Values.snsWorker.config.s3BucketName }}
             - name: S3_BUCKET_NAME
-              value: {{ .Values.snsWorker.config.s3BucketName | quote }}
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
           {{- if default .Values.commonConfig.tracing.enabled .Values.snsWorker.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint | quote }}

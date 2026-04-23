@@ -1,4 +1,5 @@
 {{- if .Values.tfheWorker.enabled -}}
+{{- $disabled := default (list) .Values.tfheWorker.disabledArgs -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -51,33 +52,48 @@ spec:
           image: {{ .Values.tfheWorker.image.name }}:{{ .Values.tfheWorker.image.tag }}
           command: ["tfhe_worker"]
           args:
+            {{- if not (has "database-url" $disabled) }}
             - --database-url=$(DATABASE_URL)
+            {{- end }}
+            {{- if not (has "metrics-addr" $disabled) }}
             - --metrics-addr=0.0.0.0:{{ .Values.tfheWorker.ports.metrics }}
-            - --log-level={{ .Values.tfheWorker.args.logLevel }}
-            - --service-name={{ .Values.tfheWorker.args.serviceName }}
-            - --run-bg-worker={{ .Values.tfheWorker.args.runBgWorker }}
-            - --worker-polling-interval-ms={{ .Values.tfheWorker.args.workerPollingIntervalMs }}
-            - --work-items-batch-size={{ .Values.tfheWorker.args.workItemsBatchSize }}
-            - --dependence-chains-per-batch={{ .Values.tfheWorker.args.dependenceChainsPerBatch }}
-            - --key-cache-size={{ .Values.tfheWorker.args.keyCacheSize }}
-            - --coprocessor-fhe-threads={{ .Values.tfheWorker.args.coprocessorFheThreads }}
-            - --tokio-threads={{ .Values.tfheWorker.args.tokioThreads }}
-            - --pg-pool-max-connections={{ .Values.tfheWorker.args.pgPoolMaxConnections }}
-            - --generate-fhe-keys={{ .Values.tfheWorker.args.generateFheKeys }}
-            - --dcid-ttl-sec={{ .Values.tfheWorker.args.dcidTtlSec }}
-            - --disable-dcid-locking={{ .Values.tfheWorker.args.disableDcidLocking }}
-            - --dcid-timeslice-sec={{ .Values.tfheWorker.args.dcidTimesliceSec }}
-            - --processed-dcid-ttl-sec={{ .Values.tfheWorker.args.processedDcidTtlSec }}
-            - --dcid-cleanup-interval-sec={{ .Values.tfheWorker.args.dcidCleanupIntervalSec }}
-            - --dcid-max-no-progress-cycles={{ .Values.tfheWorker.args.dcidMaxNoProgressCycles }}
+            {{- end }}
+            {{- if not (has "health-check-port" $disabled) }}
+            - --health-check-port={{ .Values.tfheWorker.ports.healthcheck }}
+            {{- end }}
             {{- with .Values.tfheWorker.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
+            {{- with .Values.commonConfig.databaseUser }}
+            - name: DATABASE_USER
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.databasePassword }}
+            - name: DATABASE_PASSWORD
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.databaseEndpoint }}
+            - name: DATABASE_ENDPOINT
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
             - name: DATABASE_URL
               value: {{ .Values.commonConfig.databaseUrl | quote }}
-            - name: ACL_CONTRACT_ADDRESS
-              value: {{ .Values.commonConfig.aclContractAddress | quote }}
           {{- if default .Values.commonConfig.tracing.enabled .Values.tfheWorker.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint | quote }}
