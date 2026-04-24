@@ -55,6 +55,11 @@ spec:
             {{- if not (has "database-url" $disabled) }}
             - --database-url=$(DATABASE_URL)
             {{- end }}
+            {{- with .Values.commonConfig.tenantApiKey }}
+            {{- if and (or .value .valueFrom) (not (has "tenant-api-key" $disabled)) }}
+            - --tenant-api-key=$(TENANT_API_KEY)
+            {{- end }}
+            {{- end }}
             {{- if not (has "bucket-name-ct64" $disabled) }}
             - --bucket-name-ct64=$(S3_BUCKET_NAME)
             {{- end }}
@@ -100,6 +105,15 @@ spec:
             {{- end }}
             - name: DATABASE_URL
               value: {{ .Values.commonConfig.databaseUrl | quote }}
+            {{- with .Values.commonConfig.tenantApiKey }}
+            - name: TENANT_API_KEY
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
             {{- with .Values.snsWorker.config.s3BucketName }}
             - name: S3_BUCKET_NAME
               {{- if .value }}

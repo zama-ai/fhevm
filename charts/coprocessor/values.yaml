@@ -26,9 +26,10 @@ commonConfig:
   # Database connection string.
   databaseUrl: "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/coprocessor"
 
-  # Optional tenant API key. When set, TENANT_API_KEY env var and
-  # --coprocessor-api-key arg are injected into host listener components.
-  # Accepts `value` or `valueFrom` (secretKeyRef/configMapKeyRef).
+  # Optional tenant API key. Accepts `value` or `valueFrom`
+  # (secretKeyRef/configMapKeyRef). Injected as TENANT_API_KEY for dbMigration,
+  # host listeners, and v0.11 snsWorker; host listeners also render
+  # --coprocessor-api-key and v0.11 snsWorker renders --tenant-api-key.
   tenantApiKey: {}
 
   # Gateway chain configuration. Consumed by gwListener and txSender.
@@ -175,6 +176,14 @@ hostListenerShared:
     tag: v0.11.0
 
   replicas: 1
+
+  # Component-specific configuration
+  config:
+    # Host chain RPC URL for v0.11 delegation management. Rendered as
+    # HOST_CHAIN_URL and referenced by the built-in --host-chain-url arg when
+    # set. Accepts `value` or `valueFrom` (secretKeyRef/configMapKeyRef).
+    # Leave unset to inject nothing.
+    hostChainUrl: {}
 
   # Additional environment variables.
   env: []
@@ -955,6 +964,7 @@ snsWorker:
   # Full sns_worker CLI for v0.11 / v0.12 images:
   #   built-in via template: --database-url, --bucket-name-ct64,
   #     --bucket-name-ct128, --metrics-addr, --health-check-port
+  #   v0.11 built-in when commonConfig.tenantApiKey is set: --tenant-api-key
   #   shared extraArgs:
   #     --pg-listen-channels
   #     - event_pbs_computations
@@ -983,7 +993,6 @@ snsWorker:
   #     --metric-sns-op-latency=0.1:10.0:0.1
   #     --gauge-update-interval-secs=10          # enable on only some workers to avoid duplicate DB load
   #   v0.11 only:
-  #     --tenant-api-key=$(TENANT_API_KEY)
   #     --keys-file-path=/path/to/keys
   extraArgs: []
 
@@ -1082,6 +1091,14 @@ txSender:
 
   replicas: 1
 
+  # Component-specific configuration
+  config:
+    # Host chain RPC URL for v0.11 delegation management. Rendered as
+    # HOST_CHAIN_URL and referenced by the built-in --host-chain-url arg when
+    # set. Accepts `value` or `valueFrom` (secretKeyRef/configMapKeyRef).
+    # Leave unset to inject nothing.
+    hostChainUrl: {}
+
   # Additional environment variables.
   env: []
 
@@ -1108,6 +1125,7 @@ txSender:
   #     --input-verification-address, --ciphertext-commits-address,
   #     --signer-type, --health-check-port, --metrics-addr
   #   built-in when wallet.awsKms.enabled=false: --private-key
+  #   v0.11 built-in when txSender.config.hostChainUrl is set: --host-chain-url
   #   legacy built-in for v0.11 only: --multichain-acl-address
   #     disable via disabledArgs on v0.12+ images
   #   shared extraArgs:
@@ -1139,7 +1157,6 @@ txSender:
   #     --gauge-update-interval-secs=10
   #     --required-txn-confirmations=0           # hidden/deprecated
   #   v0.11 only:
-  #     --host-chain-url=ws://...
   #     --delegation-block-delay=10
   #     --delegation-clear-after-n-blocks=648000
   #     --delegation-fallback-polling=30

@@ -58,6 +58,11 @@ spec:
             {{- if not (has "gateway-url" $disabled) }}
             - --gateway-url=$(GATEWAY_URL)
             {{- end }}
+            {{- with .Values.txSender.config.hostChainUrl }}
+            {{- if and (or .value .valueFrom) (not (has "host-chain-url" $disabled)) }}
+            - --host-chain-url=$(HOST_CHAIN_URL)
+            {{- end }}
+            {{- end }}
             {{- if not (has "input-verification-address" $disabled) }}
             - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
             {{- end }}
@@ -118,6 +123,15 @@ spec:
               value: {{ .Values.commonConfig.databaseUrl | quote }}
             {{- with .Values.commonConfig.gatewayUrl }}
             - name: GATEWAY_URL
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.txSender.config.hostChainUrl }}
+            - name: HOST_CHAIN_URL
               {{- if .value }}
               value: {{ .value | quote }}
               {{- else if .valueFrom }}
