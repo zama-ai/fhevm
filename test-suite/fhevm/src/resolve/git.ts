@@ -6,6 +6,12 @@ import { run } from "../utils/process";
 
 const FHEVM_CLI_PATH = "test-suite/fhevm/fhevm-cli";
 const LATEST_SUPPORTED_PROFILE_PATH = "test-suite/fhevm/profiles/latest-supported.json";
+const MODERN_CLI_PATHS = [
+  "test-suite/fhevm/bun.lock",
+  "test-suite/fhevm/package.json",
+  "test-suite/fhevm/src/cli.ts",
+  LATEST_SUPPORTED_PROFILE_PATH,
+];
 const SAFE_REF = /^[A-Za-z0-9._/-]+$/;
 
 const remoteRef = (ref: string) => `origin/${ref}`;
@@ -39,6 +45,16 @@ const gitShow = async (object: string) => {
     return undefined;
   }
   return shown.stdout;
+};
+
+const gitExists = async (object: string) => (await git(["cat-file", "-e", object], true)).code === 0;
+
+/** Ensures release baseline resolution only runs on branches with the TypeScript CLI layout. */
+export const assertModernCliBaseline = async (commit: string) => {
+  const exists = await Promise.all(MODERN_CLI_PATHS.map((file) => gitExists(`${commit}:${file}`)));
+  if (!exists.every(Boolean)) {
+    throw new GitHubApiError(`sha release baseline ${commit.toLowerCase()} does not contain the TypeScript fhevm CLI layout`);
+  }
 };
 
 const parseLegacyExport = (text: string, key: string) =>

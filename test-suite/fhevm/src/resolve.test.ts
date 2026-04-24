@@ -103,9 +103,10 @@ describe("resolve", () => {
     ).not.toThrow();
   });
 
-  test("rejects unsupported old release refs for sha resolution", () => {
-    expect(() => assertSupportedShaRef("release/0.12.x")).toThrow("release/0.13.x and newer");
-    expect(assertSupportedShaRef("release/0.13.x")).toBe("release/0.13.x");
+  test("validates release ref syntax for sha resolution", () => {
+    expect(() => assertSupportedShaRef("release/not-a-version")).toThrow("expected release/<major>.<minor>.x");
+    expect(assertSupportedShaRef("release/0.12.x")).toBe("release/0.12.x");
+    expect(assertSupportedShaRef("release/42.7.x")).toBe("release/42.7.x");
   });
 
   test("treats newer release branches like main for relayer", () => {
@@ -116,7 +117,7 @@ describe("resolve", () => {
         RELAYER_VERSION: "ignored",
         RELAYER_MIGRATE_VERSION: "ignored",
       },
-      "release/0.13.x",
+      "release/42.7.x",
     );
     expect(bundle.env.CORE_VERSION).toBe("v0.13.10-rc.0");
     expect(bundle.env.RELAYER_VERSION).toBe("abcdef0");

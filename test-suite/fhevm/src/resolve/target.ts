@@ -12,7 +12,7 @@ import {
 } from "../compat/compat";
 import { GitHubApiError } from "../errors";
 import { gitopsFile, mainCommits, packageTags } from "./github";
-import { assertCommitOnRef, baselineDefaults, refCommits } from "./git";
+import { assertCommitOnRef, assertModernCliBaseline, baselineDefaults, refCommits } from "./git";
 import { NON_NETWORK_COMPANIONS } from "./presets";
 import { LATEST_SUPPORTED_PROFILE } from "../layout";
 import type { VersionBundle, VersionTarget } from "../types";
@@ -107,18 +107,9 @@ export const REPO_TAG = /^[0-9a-f]{7}$/;
 export const SHA_REF = /^(?:[0-9a-f]{7}|[0-9a-f]{40})$/i;
 export const SIMPLE_ACL_MIN_SHA = COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA;
 export const SHA_RUNTIME_COMPAT_MIN_SHA = "1272b10b308b064e7477ca3272712b90b50280d9";
-const MIN_SUPPORTED_RELEASE = { major: 0, minor: 13 };
 const DEFAULT_SHA_REF = "main";
 const RELEASE_REF_PREFIX = "release/";
-const RELEASE_REF = /^release\/(\d+)\.(\d+)\.x$/;
-
-const parseReleaseRef = (ref: string) => {
-  const match = ref.match(RELEASE_REF);
-  if (!match) {
-    return undefined;
-  }
-  return { major: Number(match[1]), minor: Number(match[2]) };
-};
+const RELEASE_REF = /^release\/\d+\.\d+\.x$/;
 
 export const normalizeShaRef = (ref?: string) => ref?.trim() || DEFAULT_SHA_REF;
 
@@ -126,17 +117,8 @@ export const assertSupportedShaRef = (ref: string) => {
   if (!ref.startsWith(RELEASE_REF_PREFIX)) {
     return ref;
   }
-  const release = parseReleaseRef(ref);
-  if (!release) {
+  if (!RELEASE_REF.test(ref)) {
     throw new GitHubApiError(`Unsupported release ref ${ref}; expected release/<major>.<minor>.x`);
-  }
-  if (
-    release.major < MIN_SUPPORTED_RELEASE.major ||
-    (release.major === MIN_SUPPORTED_RELEASE.major && release.minor < MIN_SUPPORTED_RELEASE.minor)
-  ) {
-    throw new GitHubApiError(
-      `Unsupported release ref ${ref}; sha resolution supports ${RELEASE_REF_PREFIX}${MIN_SUPPORTED_RELEASE.major}.${MIN_SUPPORTED_RELEASE.minor}.x and newer`,
-    );
   }
   return ref;
 };
@@ -374,6 +356,7 @@ const releaseBaselineBundle = async (bundle: VersionBundle, requested: string, r
   if (!ref.startsWith(RELEASE_REF_PREFIX)) {
     return bundle;
   }
+  await assertModernCliBaseline(requested);
   return applyReleaseBaselineDefaults(bundle, await baselineDefaults(requested), ref);
 };
 
