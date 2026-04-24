@@ -184,45 +184,6 @@ export const shaRuntimeCompatFloor = (commits: string[]) => {
   return floor;
 };
 
-/** Rejects locked/cached sha bundles that fall below the supported main-history floors. */
-export const assertSupportedShaBundle = (bundle: VersionBundle, commits: string[]) => {
-  if (bundle.target !== "sha") {
-    return;
-  }
-  const floor = simpleAclFloor(commits);
-  const compatFloor = shaRuntimeCompatFloor(commits);
-  const refs = [
-    ...new Set(
-      Object.entries(bundle.env)
-        .filter(([key, value]) => REPO_KEYS.has(key) && SHA_REF.test(value))
-        .map(([, value]) => value.toLowerCase()),
-    ),
-  ];
-  for (const ref of refs) {
-    const tag = ref.slice(0, 7);
-    const index = commits.findIndex((sha) => ref.length === 40 ? sha.toLowerCase() === ref : sha.startsWith(tag));
-    if (index < 0) {
-      throw new Error(
-        `sha target ${ref.length === 40 ? ref : tag} is unsupported; only main commits at or after ${SIMPLE_ACL_MIN_SHA.slice(0, 7)} are supported`,
-      );
-    }
-    if (index > floor) {
-      throw new Error(`sha target ${tag} predates the simple-ACL cutover and is unsupported`);
-    }
-    if (index > compatFloor) {
-      throw new Error(
-        `sha target ${tag} predates the modern gw-listener drift-address cutover (${SHA_RUNTIME_COMPAT_MIN_SHA.slice(0, 7)}) and is unsupported by the current CLI; use latest-supported or a newer sha`,
-      );
-    }
-  }
-};
-
-/** Reports which repo-owned packages are missing a given tag in GHCR. */
-export const missingRepoPackages = (packageTagsMap: Record<string, Set<string>>, tag: string) =>
-  Object.entries(REPO_PACKAGES)
-    .filter(([key]) => !packageTagsMap[key]?.has(tag))
-    .map(([, pkg]) => decodeURIComponent(pkg));
-
 /** Builds a preset bundle for floating local targets and their companion pins. */
 export const presetBundle = (
   target: "latest-main" | "sha",
