@@ -92,3 +92,9 @@ npm run test:full:devnet
 # Test all tests on testnet (including slow ones)
 npm run test:full:testnet
 ```
+
+## Run tests in cleartext mode
+
+```sh
+npm run test
+```
