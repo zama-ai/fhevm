@@ -33,16 +33,6 @@ jobs:
           persist-credentials: 'false'
           fetch-depth: 0
 
-      - name: Check release resolver support
-        run: |
-          set -euo pipefail
-          case "$BASE_REF" in
-            release/0.11.x|release/0.12.x)
-              echo "Frozen orchestrated baselines require the TypeScript fhevm CLI; ${BASE_REF} uses the legacy bash CLI." >&2
-              exit 1
-              ;;
-          esac
-
       - name: Setup Bun
         uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
 
