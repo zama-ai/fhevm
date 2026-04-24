@@ -1,5 +1,3 @@
-BEGIN;
-
 -- Enforce that tenants has zero or one row.
 DO $$
 BEGIN
@@ -88,37 +86,8 @@ CREATE UNIQUE INDEX idx_ciphertexts128_no_tenant ON ciphertexts128 (handle);
 CREATE UNIQUE INDEX idx_computations_no_tenant ON computations (output_handle, transaction_id);
 CREATE UNIQUE INDEX idx_pbs_computations_no_tenant ON pbs_computations (handle);
 
--- ciphertext_digest: add host_chain_id and key_id_gw.
-ALTER TABLE ciphertext_digest ADD COLUMN host_chain_id BIGINT DEFAULT NULL;
-UPDATE ciphertext_digest SET host_chain_id = (SELECT chain_id FROM tenants WHERE tenant_id = ciphertext_digest.tenant_id);
-ALTER TABLE ciphertext_digest ALTER COLUMN host_chain_id SET NOT NULL;
-ALTER TABLE ciphertext_digest ADD CONSTRAINT ciphertext_digest_host_chain_id_positive CHECK (host_chain_id >= 0);
-ALTER TABLE ciphertext_digest ADD COLUMN key_id_gw BYTEA DEFAULT NULL;
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM ciphertext_digest) AND NOT EXISTS (SELECT 1 FROM tenants) THEN
-        RAISE EXCEPTION 'ciphertext_digest has rows but tenants is empty; cannot populate key_id_gw';
-    END IF;
-END $$;
-UPDATE ciphertext_digest SET key_id_gw = (SELECT key_id FROM tenants LIMIT 1);
-ALTER TABLE ciphertext_digest ALTER COLUMN key_id_gw SET NOT NULL;
-
--- computations: add host_chain_id.
--- TODO: host_chain_id can be part of an index, but will be done in the future where we want workers per host chain
-ALTER TABLE computations ADD COLUMN host_chain_id BIGINT DEFAULT NULL;
-UPDATE computations SET host_chain_id = (SELECT chain_id FROM tenants WHERE tenant_id = computations.tenant_id);
-ALTER TABLE computations ALTER COLUMN host_chain_id SET NOT NULL;
-ALTER TABLE computations ADD CONSTRAINT computations_host_chain_id_positive CHECK (host_chain_id >= 0);
-
--- pbs_computations: add host_chain_id, keep tenant_id.
--- TODO: host_chain_id can be part of an index, but will be done in the future where we want workers per host chain
-ALTER TABLE pbs_computations ADD COLUMN host_chain_id BIGINT DEFAULT NULL;
-UPDATE pbs_computations SET host_chain_id = (SELECT chain_id FROM tenants WHERE tenant_id = pbs_computations.tenant_id);
-ALTER TABLE pbs_computations ALTER COLUMN host_chain_id SET NOT NULL;
-ALTER TABLE pbs_computations ADD CONSTRAINT pbs_computations_host_chain_id_positive CHECK (host_chain_id >= 0);
-
--- Set host_chain_id and key_id_gw defaults for backward compatibility with old code that does not
--- supply these columns. Uses the single host chain / key inserted above (or 0 / empty on empty DB).
+-- Add host_chain_id/key_id_gw with constant defaults. PostgreSQL 11+ stores
+-- constant defaults in metadata for existing rows, avoiding full-table rewrites.
 DO $$
 DECLARE
     hcid BIGINT;
@@ -127,10 +96,15 @@ BEGIN
     SELECT COALESCE((SELECT chain_id FROM host_chains LIMIT 1), 0) INTO hcid;
     SELECT COALESCE((SELECT key_id_gw FROM keys LIMIT 1), ''::bytea) INTO kid;
 
-    EXECUTE format('ALTER TABLE computations ALTER COLUMN host_chain_id SET DEFAULT %s', hcid);
-    EXECUTE format('ALTER TABLE pbs_computations ALTER COLUMN host_chain_id SET DEFAULT %s', hcid);
-    EXECUTE format('ALTER TABLE ciphertext_digest ALTER COLUMN host_chain_id SET DEFAULT %s', hcid);
-    EXECUTE format('ALTER TABLE ciphertext_digest ALTER COLUMN key_id_gw SET DEFAULT %L::bytea', kid::text);
+    EXECUTE format('ALTER TABLE computations ADD COLUMN host_chain_id BIGINT NOT NULL DEFAULT %s', hcid);
+    EXECUTE format('ALTER TABLE pbs_computations ADD COLUMN host_chain_id BIGINT NOT NULL DEFAULT %s', hcid);
+    EXECUTE format('ALTER TABLE ciphertext_digest ADD COLUMN host_chain_id BIGINT NOT NULL DEFAULT %s', hcid);
+    EXECUTE format('ALTER TABLE ciphertext_digest ADD COLUMN key_id_gw BYTEA NOT NULL DEFAULT %L::bytea', kid::text);
 END $$;
 
-COMMIT;
+ALTER TABLE ciphertext_digest
+    ADD CONSTRAINT ciphertext_digest_host_chain_id_positive CHECK (host_chain_id >= 0) NOT VALID;
+ALTER TABLE computations
+    ADD CONSTRAINT computations_host_chain_id_positive CHECK (host_chain_id >= 0) NOT VALID;
+ALTER TABLE pbs_computations
+    ADD CONSTRAINT pbs_computations_host_chain_id_positive CHECK (host_chain_id >= 0) NOT VALID;

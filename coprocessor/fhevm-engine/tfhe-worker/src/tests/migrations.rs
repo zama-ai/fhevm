@@ -6,7 +6,7 @@ use test_harness::instance::{setup_test_db, ImportMode};
 /// The version number of the remove_tenants migration under test.
 const TARGET_MIGRATION_VERSION: i64 = 20260128095635;
 
-/// Runs all migrations before the target version and returns the target migration's SQL.
+/// Runs all migrations before the target version and returns the target migration SQL files.
 async fn run_migrations_before_target(pool: &PgPool) -> String {
     let migrator = sqlx::migrate!("./migrations");
     let mut target_sql = None;
@@ -225,7 +225,7 @@ async fn test_remove_tenants_migration_with_data() {
     sqlx::raw_sql(&target_sql)
         .execute(&pool)
         .await
-        .expect("remove_tenants migration should succeed");
+        .expect("Run target migration");
 
     // Phase 4: Assert the new schema and data correctness.
 
@@ -428,7 +428,6 @@ async fn test_remove_tenants_migration_rejects_multiple_tenants() {
     .await
     .expect("Insert two tenants");
 
-    // Running the target migration should fail due to the >1 row check.
     let result = sqlx::raw_sql(&target_sql).execute(&pool).await;
 
     assert!(
@@ -455,7 +454,7 @@ async fn test_remove_tenants_migration_empty_db() {
     sqlx::raw_sql(&target_sql)
         .execute(&pool)
         .await
-        .expect("remove_tenants migration should succeed on empty DB");
+        .expect("Run target migration");
 
     // Verify the new tables exist and are empty.
     assert!(table_exists(&pool, "tenants").await);
