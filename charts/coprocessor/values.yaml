@@ -115,6 +115,28 @@ dbMigration:
   # Override the container command. Defaults to ["/initialize_db.sh"] when unset.
   command:
 
+  # Component-specific configuration
+  config:
+    # Host chain ID. Rendered as the CHAIN_ID env var.
+    # Leave unset/empty to inject nothing.
+    chainId: ""
+
+    # Host chain ACL contract address. Rendered as the ACL_CONTRACT_ADDRESS
+    # env var. Accepts `value` (literal) or `valueFrom`
+    # (secretKeyRef/configMapKeyRef). Leave unset to inject nothing.
+    # Example:
+    #   aclContractAddress:
+    #     valueFrom:
+    #       configMapKeyRef:
+    #         name: eth-sc-addresses
+    #         key: acl.address
+    aclContractAddress: {}
+
+    # Host chain input verifier (a.k.a. FHEVM executor) contract address.
+    # Rendered as the INPUT_VERIFIER_ADDRESS env var. Accepts `value`
+    # or `valueFrom`. Leave unset to inject nothing.
+    inputVerifierAddress: {}
+
   # Additional Environment variables
   env: []
 

@@ -76,6 +76,37 @@ spec:
           {{- end }}
           - name: DATABASE_URL
             value: {{ .Values.commonConfig.databaseUrl | quote }}
+          {{- with .Values.commonConfig.tenantApiKey }}
+          - name: TENANT_API_KEY
+            {{- if .value }}
+            value: {{ .value | quote }}
+            {{- else if .valueFrom }}
+            valueFrom:
+              {{- toYaml .valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
+          {{- with .Values.dbMigration.config.chainId }}
+          - name: CHAIN_ID
+            value: {{ . | quote }}
+          {{- end }}
+          {{- with .Values.dbMigration.config.aclContractAddress }}
+          - name: ACL_CONTRACT_ADDRESS
+            {{- if .value }}
+            value: {{ .value | quote }}
+            {{- else if .valueFrom }}
+            valueFrom:
+              {{- toYaml .valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
+          {{- with .Values.dbMigration.config.inputVerifierAddress }}
+          - name: INPUT_VERIFIER_ADDRESS
+            {{- if .value }}
+            value: {{ .value | quote }}
+            {{- else if .valueFrom }}
+            valueFrom:
+              {{- toYaml .valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
         {{- with .Values.commonConfig.env }}
           {{- toYaml . | nindent 10 }}
         {{- end }}
