@@ -63,14 +63,19 @@ async fn test_decryption_context_not_found(
         .connect_mocked_client(asserter);
     info!("Gateway mock started!");
 
-    // Mocking Host chain ACL to ALLOW decryption
-    // Public: 1 ACL check, User legacy: 2 ACL checks (user + contract), V2: 1 (direct ownership)
+    // Mocking Host chain ACL to ALLOW decryption.
+    // Per attempt: Public → 1 bool; Legacy user → 2 bools; V2 → 1 U256 (invalidation) + 1 bool.
     let acl_responses = match event_type {
-        TestEventType::PublicDecryption | TestEventType::UserDecryptionV2 => {
-            vec![true; MAX_DECRYPTION_ATTEMPTS as usize]
+        TestEventType::PublicDecryption => {
+            vec![true.abi_encode(); MAX_DECRYPTION_ATTEMPTS as usize]
         }
-        TestEventType::UserDecryption => vec![true; 2 * MAX_DECRYPTION_ATTEMPTS as usize],
-        _ => unreachable!(),
+        TestEventType::UserDecryptionV2 => (0..MAX_DECRYPTION_ATTEMPTS)
+            .flat_map(|_| vec![U256::ZERO.abi_encode(), true.abi_encode()])
+            .collect(),
+        TestEventType::UserDecryption => {
+            vec![true.abi_encode(); 2 * MAX_DECRYPTION_ATTEMPTS as usize]
+        }
+        _ => vec![],
     };
     let acl_contracts_mock =
         init_host_chains_acl_contracts_mock(sns_ct.ctHandle.as_slice(), acl_responses);
@@ -121,7 +126,7 @@ async fn test_decryption_context_not_found(
 #[case::user_decryption_v2(TestEventType::UserDecryptionV2)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_decryption_context_invalid(#[case] kind: TestEventType) -> anyhow::Result<()> {
+async fn test_decryption_context_invalid(#[case] event_type: TestEventType) -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::default()
         .with_db(DbInstance::setup().await?)
         .build();
@@ -146,7 +151,7 @@ async fn test_decryption_context_invalid(#[case] kind: TestEventType) -> anyhow:
     // Default context_id = TESTING_KMS_CONTEXT
 
     // Only 1 attempt needed — irrecoverable error means no retry
-    match kind {
+    match event_type {
         TestEventType::PublicDecryption => {
             asserter.push_success(&false.abi_encode());
         }
@@ -163,12 +168,13 @@ async fn test_decryption_context_invalid(#[case] kind: TestEventType) -> anyhow:
         .connect_mocked_client(asserter);
     info!("Gateway mock started!");
 
-    // Mocking Host chain ACL to ALLOW decryption (1 attempt only)
-    // Public: 1 check, User legacy: 2 (user + contract), V2: 1 (direct ownership)
-    let acl_responses = match kind {
-        TestEventType::PublicDecryption | TestEventType::UserDecryptionV2 => vec![true],
-        TestEventType::UserDecryption => vec![true; 2],
-        _ => unreachable!(),
+    // Mocking Host chain ACL to ALLOW decryption (1 attempt only, irrecoverable error).
+    // Per attempt: Public → 1 bool; Legacy user → 2 bools; V2 → 1 U256 (invalidation) + 1 bool.
+    let acl_responses = match event_type {
+        TestEventType::PublicDecryption => vec![true.abi_encode()],
+        TestEventType::UserDecryptionV2 => vec![U256::ZERO.abi_encode(), true.abi_encode()],
+        TestEventType::UserDecryption => vec![true.abi_encode(); 2],
+        _ => vec![],
     };
     let acl_contracts_mock =
         init_host_chains_acl_contracts_mock(sns_ct.ctHandle.as_slice(), acl_responses);
@@ -191,20 +197,20 @@ async fn test_decryption_context_invalid(#[case] kind: TestEventType) -> anyhow:
     )
     .await?;
 
-    insert_rand_request(test_instance.db(), kind, insert_options).await?;
+    insert_rand_request(test_instance.db(), event_type, insert_options).await?;
 
     let cancel_token = CancellationToken::new();
     let kms_worker_task = tokio::spawn(kms_worker.start(cancel_token.clone()));
     info!("KmsWorker started!");
 
     // Waiting for kms_worker to mark the request as failed (immediately — irrecoverable)
-    while let Err(e) = check_request_failed_in_db(test_instance.db(), kind).await {
+    while let Err(e) = check_request_failed_in_db(test_instance.db(), event_type).await {
         warn!("Request not yet failed: {e}");
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
 
     // Verify no pending requests remain
-    check_no_uncompleted_request_in_db(test_instance.db(), kind).await?;
+    check_no_uncompleted_request_in_db(test_instance.db(), event_type).await?;
 
     cancel_token.cancel();
     kms_worker_task.await.unwrap();

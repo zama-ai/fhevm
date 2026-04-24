@@ -3,7 +3,7 @@ mod common;
 use crate::common::{create_mock_user_decryption_request_tx, init_kms_worker};
 use alloy::{
     hex::FromHex,
-    primitives::FixedBytes,
+    primitives::{FixedBytes, U256},
     providers::{ProviderBuilder, mock::Asserter},
     sol_types::SolValue,
 };
@@ -26,7 +26,7 @@ use kms_grpc::kms::v1::Empty;
 use kms_worker::core::Config;
 use mocktail::{MockSet, StatusCode, server::MockServer};
 use rstest::rstest;
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
@@ -81,20 +81,22 @@ async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::R
         .connect_mocked_client(asserter.clone());
     info!("Gateway mock started!");
 
-    // Mocking Host chain
-    let acl_contracts_mock = match event_type {
-        TestEventType::PublicDecryption | TestEventType::UserDecryptionV2 => {
-            init_host_chains_acl_contracts_mock(
-                sns_ct.ctHandle.as_slice(),
-                vec![true; MAX_DECRYPTION_ATTEMPTS as usize],
-            )
+    // Mocking Host chain.
+    // Per attempt: Public → 1 bool; Legacy user → 2 bools; V2 → 1 U256 (invalidation) + 1 bool.
+    let acl_responses = match event_type {
+        TestEventType::PublicDecryption => {
+            vec![true.abi_encode(); MAX_DECRYPTION_ATTEMPTS as usize]
         }
-        TestEventType::UserDecryption => init_host_chains_acl_contracts_mock(
-            sns_ct.ctHandle.as_slice(),
-            vec![true; 2 * MAX_DECRYPTION_ATTEMPTS as usize],
-        ),
-        _ => HashMap::new(),
+        TestEventType::UserDecryptionV2 => (0..MAX_DECRYPTION_ATTEMPTS)
+            .flat_map(|_| vec![U256::ZERO.abi_encode(), true.abi_encode()])
+            .collect(),
+        TestEventType::UserDecryption => {
+            vec![true.abi_encode(); 2 * MAX_DECRYPTION_ATTEMPTS as usize]
+        }
+        _ => vec![],
     };
+    let acl_contracts_mock =
+        init_host_chains_acl_contracts_mock(sns_ct.ctHandle.as_slice(), acl_responses);
 
     // Insert request in DB to trigger kms_worker job
     let request = insert_rand_request(test_instance.db(), event_type, insert_options).await?;
