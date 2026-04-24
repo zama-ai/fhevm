@@ -20,7 +20,7 @@ use fhevm_gateway_bindings::decryption::Decryption::{
     userDecryptionRequest_1Call as userDecryptionRequestCall,
 };
 use fhevm_host_bindings::acl::ACL::ACLInstance;
-use futures::future::try_join_all;
+use futures::future::join_all;
 use kms_grpc::kms::v1::{
     Eip712DomainMsg, PublicDecryptionRequest, RequestId, TypedCiphertext, UserDecryptionRequest,
 };
@@ -359,11 +359,11 @@ where
         let calls = allowed_contracts
             .iter()
             .map(|c| async move { acl_contract.isAllowed(handle, *c).call().await });
-        let results = try_join_all(calls)
-            .await
-            .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
+        let results = join_all(calls).await;
 
-        if results.into_iter().any(|allowed| allowed) {
+        // Short-circuit on first positive. Individual transport errors are tolerated as long as at
+        // least one contract returns true.
+        if results.into_iter().any(|r| matches!(r, Ok(true))) {
             Ok(())
         } else {
             Err(ProcessingError::Recoverable(anyhow!(
