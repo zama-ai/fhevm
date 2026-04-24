@@ -64,10 +64,10 @@ spec:
             {{- if not (has "kms-generation-address" $disabled) }}
             - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
             {{- end }}
-            {{- if and .Values.commonConfig.gatewayContractAddresses.ciphertextCommits (not (has "ciphertext-commits-address" $disabled)) }}
+            {{- if and (or .Values.commonConfig.gatewayContractAddresses.ciphertextCommits.value .Values.commonConfig.gatewayContractAddresses.ciphertextCommits.valueFrom) (not (has "ciphertext-commits-address" $disabled)) }}
             - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
             {{- end }}
-            {{- if and .Values.commonConfig.gatewayContractAddresses.gatewayConfig (not (has "gateway-config-address" $disabled)) }}
+            {{- if and (or .Values.commonConfig.gatewayContractAddresses.gatewayConfig.value .Values.commonConfig.gatewayContractAddresses.gatewayConfig.valueFrom) (not (has "gateway-config-address" $disabled)) }}
             - --gateway-config-address=$(GATEWAY_CONFIG_ADDRESS)
             {{- end }}
             {{- if not (has "health-check-port" $disabled) }}
@@ -109,31 +109,66 @@ spec:
             {{- end }}
             - name: DATABASE_URL
               value: {{ .Values.commonConfig.databaseUrl | quote }}
+            {{- with .Values.commonConfig.gatewayUrl }}
             - name: GATEWAY_URL
-              value: {{ .Values.commonConfig.gatewayUrl | quote }}
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
             {{- with .Values.commonConfig.gatewayContractAddresses.inputVerification }}
             - name: INPUT_VERIFICATION_ADDRESS
-              value: {{ . | quote }}
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
             {{- end }}
             {{- with .Values.commonConfig.gatewayContractAddresses.kmsGeneration }}
             - name: KMS_GENERATION_ADDRESS
-              value: {{ . | quote }}
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
             {{- end }}
             {{- with .Values.commonConfig.gatewayContractAddresses.ciphertextCommits }}
             - name: CIPHERTEXT_COMMITS_ADDRESS
-              value: {{ . | quote }}
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
             {{- end }}
             {{- with .Values.commonConfig.gatewayContractAddresses.gatewayConfig }}
             - name: GATEWAY_CONFIG_ADDRESS
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.gwListener.config.chainId }}
+            - name: CHAIN_ID
               value: {{ . | quote }}
             {{- end }}
           {{- if default .Values.commonConfig.tracing.enabled .Values.gwListener.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint | quote }}
             - name: OTEL_SERVICE_NAME
+              {{- if .Values.gwListener.tracing.service }}
+              value: {{ .Values.gwListener.tracing.service | quote }}
+              {{- else }}
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+              {{- end }}
           {{- end }}
           {{- with .Values.commonConfig.env }}
             {{- toYaml . | nindent 12 }}

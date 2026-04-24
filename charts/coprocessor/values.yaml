@@ -32,12 +32,15 @@ commonConfig:
   tenantApiKey: {}
 
   # Gateway chain configuration. Consumed by gwListener and txSender.
-  gatewayUrl: "ws://gateway-rpc-node:8548"
+  # Each field accepts either a literal `value` or a `valueFrom` block
+  # (secretKeyRef or configMapKeyRef). Leave unset to inject nothing.
+  gatewayUrl: {}
   gatewayContractAddresses:
-    inputVerification: null   # required by gwListener, txSender
-    kmsGeneration: null       # required by gwListener
-    ciphertextCommits: null   # required by txSender; optional for gwListener (drift detection)
-    gatewayConfig: null       # optional for gwListener (drift detection)
+    inputVerification: {}     # required by gwListener, txSender
+    kmsGeneration: {}         # required by gwListener
+    ciphertextCommits: {}     # required by txSender; optional for gwListener (drift detection)
+    gatewayConfig: {}         # optional for gwListener (drift detection)
+    multichainAcl: {}         # legacy v0.11 txSender only; disable the arg on v0.12+
 
   # Distributed tracing configuration
   tracing:
@@ -118,10 +121,6 @@ dbMigration:
   # serviceAccountName: existing SA for workload identity (e.g. IRSA). Unset = namespace default.
   serviceAccountName:
 
-  # Persistent volume for migration data
-  storage:
-    size: 2Gi
-
   resources:
     requests:
       cpu: 100m
@@ -158,27 +157,36 @@ hostListenerShared:
   # Additional environment variables.
   env: []
 
-  # Template-injected args (suppress individually via disabledArgs):
-  #   --database-url, --url, --acl-contract-address, --tfhe-contract-address,
-  #   --health-port, --service-name, --coprocessor-api-key
-
   # Structured args. serviceName is the only modeled key; per-chain
   # chains[].hostListener.serviceName takes precedence when set.
   args:
     # serviceName: host-listener
 
-  # Suppress any template-injected arg above. Values are kebab-case flag names
-  # (no leading `--`).
+  # Suppress any template-injected arg above. Values are kebab-case flag names (no leading `--`).
   disabledArgs: []
 
-  # Additional raw CLI flags, appended after template-injected args. Common
-  # tuning knobs (consult the host_listener binary for the full list):
-  #   - --log-level=info
-  #   - --dependent-ops-max-per-chain=0
-  #   - --initial-block-time=12
-  #   - --reorg-maximum-duration-in-blocks=50
-  #   - --catchup-finalization-in-blocks=20
-  #   - --dependence-cache-size=10000
+  # Additional raw CLI flags, appended after template-injected args.
+  # Full host_listener CLI for v0.11 / v0.12 images:
+  #   built-in via template: --database-url, --url, --acl-contract-address,
+  #     --tfhe-contract-address, --health-port, --service-name
+  #   v0.11 built-in only: --coprocessor-api-key
+  #   shared flags:
+  #     --initial-block-time=12                  # switches to observed block time once available
+  #     --log-level=INFO
+  #     --reorg-maximum-duration-in-blocks=50
+  #     --catchup-finalization-in-blocks=20      # wait N blocks before treating a block as finalized
+  #     --catchup-margin=5
+  #     --catchup-paging=100
+  #     --start-at-block=-40                     # can be negative from the latest block
+  #     --end-at-block=-15                       # stop catchup at a specific block
+  #     --only-catchup-loop                      # requires --end-at-block
+  #     --catchup-loop-sleep-secs=60
+  #     --dependence-cache-size=10000
+  #     --dependence-by-connexity                # connected components instead of linear chains
+  #     --dependence-cross-block                 # allow chains across L1 block boundaries
+  #     --timeout-request-websocket=15           # websocket RPC timeout in seconds
+  #   v0.12.* only:
+  #     --dependent-ops-max-per-chain=0          # 0 disables slow-lane decisions
   extraArgs: []
 
   # Service ports configuration
@@ -220,6 +228,10 @@ hostListenerShared:
   # Distributed tracing (inherits from commonConfig but can be overridden)
   tracing:
     enabled: false
+    # Stable logical service name for OTEL traces. If empty, OTEL_SERVICE_NAME
+    # falls back to the pod name (metadata.name), which fragments traces across
+    # pod replicas and rollouts. Set a stable string per environment.
+    service: ""
 
   # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
   nodeSelector:
@@ -255,10 +267,6 @@ hostListenerPollerShared:
   # Additional environment variables.
   env: []
 
-  # Template-injected args (suppress individually via disabledArgs):
-  #   --database-url, --url, --acl-contract-address, --tfhe-contract-address,
-  #   --health-port, --metrics-addr, --service-name, --coprocessor-api-key
-
   # Structured args. serviceName is the only modeled key; per-chain
   # chains[].hostListenerPoller.serviceName takes precedence when set.
   args:
@@ -268,14 +276,25 @@ hostListenerPollerShared:
   # (no leading `--`).
   disabledArgs: []
 
-  # Additional raw CLI flags, appended after template-injected args. Common
-  # tuning knobs (consult the host_listener_poller binary for the full list):
-  #   - --log-level=info
-  #   - --finality-lag=15
-  #   - --batch-size=100
-  #   - --poll-interval-ms=6000
-  #   - --max-http-retries=45
-  #   - --rpc-compute-units-per-second=1000
+  # Additional raw CLI flags, appended after template-injected args.
+  # Full host_listener_poller CLI for v0.11 / v0.12 images:
+  #   built-in via template: --database-url, --url (alias: --rpc-url),
+  #     --acl-contract-address, --tfhe-contract-address, --health-port,
+  #     --metrics-addr, --service-name
+  #   v0.11 built-in only: --coprocessor-api-key
+  #   shared flags:
+  #     --finality-lag=15
+  #     --batch-size=100                        # maximum number of blocks to process per iteration
+  #     --poll-interval-ms=6000                 # half block time on Ethereum
+  #     --retry-interval-ms=1000                # backoff between RPC/DB retries
+  #     --max-http-retries=45                   # retries in addition to the initial attempt
+  #     --rpc-compute-units-per-second=1000
+  #     --log-level=INFO
+  #     --dependence-cache-size=10000
+  #     --dependence-by-connexity
+  #     --dependence-cross-block
+  #   v0.12 only:
+  #     --dependent-ops-max-per-chain=0
   extraArgs: []
 
   # Service ports configuration
@@ -317,6 +336,10 @@ hostListenerPollerShared:
   # Distributed tracing (inherits from commonConfig but can be overridden)
   tracing:
     enabled: false
+    # Stable logical service name for OTEL traces. If empty, OTEL_SERVICE_NAME
+    # falls back to the pod name (metadata.name), which fragments traces across
+    # pod replicas and rollouts. Set a stable string per environment.
+    service: ""
 
   # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
   nodeSelector:
@@ -352,10 +375,6 @@ hostListenerCatchupOnlyShared:
   # Additional environment variables.
   env: []
 
-  # Template-injected args (suppress individually via disabledArgs):
-  #   --database-url, --url, --acl-contract-address, --tfhe-contract-address,
-  #   --health-port, --service-name, --coprocessor-api-key
-
   # Structured args. serviceName is the only modeled key; per-chain
   # chains[].hostListenerCatchupOnly.serviceName takes precedence when set.
   args:
@@ -366,14 +385,27 @@ hostListenerCatchupOnlyShared:
   disabledArgs: []
 
   # Additional raw CLI flags, appended after template-injected args.
-  # NOTE: --only-catchup-loop requires --end-at-block to be set. Common
-  # tuning knobs (consult the host_listener binary for the full list):
-  #   - --log-level=info
-  #   - --only-catchup-loop
-  #   - --end-at-block=-15
-  #   - --start-at-block=-30
-  #   - --catchup-loop-sleep-secs=60
-  #   - --catchup-paging=100
+  # Full host_listener CLI for catchup-only releases:
+  #   built-in via template: --database-url, --url, --acl-contract-address,
+  #     --tfhe-contract-address, --health-port, --service-name
+  #   v0.11 built-in only: --coprocessor-api-key
+  #   shared flags:
+  #     --initial-block-time=12
+  #     --log-level=INFO
+  #     --reorg-maximum-duration-in-blocks=50
+  #     --catchup-finalization-in-blocks=20
+  #     --only-catchup-loop                      # requires --end-at-block
+  #     --end-at-block=-15                       # relative to the latest block when negative
+  #     --start-at-block=-30                     # optional catchup start
+  #     --catchup-loop-sleep-secs=60
+  #     --catchup-margin=5
+  #     --catchup-paging=100
+  #     --dependence-cache-size=10000
+  #     --dependence-by-connexity
+  #     --dependence-cross-block
+  #     --timeout-request-websocket=15
+  #   v0.12 only:
+  #     --dependent-ops-max-per-chain=0
   extraArgs: []
 
   # Service ports configuration
@@ -415,6 +447,10 @@ hostListenerCatchupOnlyShared:
   # Distributed tracing (inherits from commonConfig but can be overridden)
   tracing:
     enabled: false
+    # Stable logical service name for OTEL traces. If empty, OTEL_SERVICE_NAME
+    # falls back to the pod name (metadata.name), which fragments traces across
+    # pod replicas and rollouts. Set a stable string per environment.
+    service: ""
 
   # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
   nodeSelector:
@@ -474,19 +510,19 @@ hostListenerCatchupOnlyShared:
 #     #     key: fhevm_executor.address
 #     hostListener:
 #       enabled: true
-#       useLegacyName: false  # set true on exactly one chain to keep the unsuffixed legacy resource names
+#       useLegacyName: true   # set true on exactly one chain to keep the unsuffixed legacy resource names
 #       serviceName:          # optional per-chain override for --service-name
 #       extraArgs: []         # appended after top-level hostListenerShared.extraArgs
 #       env: []               # appended after top-level hostListenerShared.env
 #     hostListenerPoller:
 #       enabled: true
-#       useLegacyName: false
+#       useLegacyName: true
 #       serviceName:
 #       extraArgs: []         # appended after top-level hostListenerPollerShared.extraArgs
 #       env: []               # appended after top-level hostListenerPollerShared.env
 #     hostListenerCatchupOnly:
 #       enabled: true
-#       useLegacyName: false
+#       useLegacyName: true
 #       serviceName:
 #       extraArgs: []         # appended after top-level hostListenerCatchupOnlyShared.extraArgs
 #       env: []               # appended after top-level hostListenerCatchupOnlyShared.env
@@ -507,30 +543,46 @@ gwListener:
 
   replicas: 1
 
-  # Additional environment variables. DATABASE_URL, GATEWAY_URL,
-  # INPUT_VERIFICATION_ADDRESS, KMS_GENERATION_ADDRESS and (when supplied)
-  # DATABASE_USER/PASSWORD/ENDPOINT + CIPHERTEXT_COMMITS_ADDRESS +
-  # GATEWAY_CONFIG_ADDRESS are injected from commonConfig. Use env to set
-  # component-specific variables or override any of the above.
+  # Component-specific configuration
+  config:
+    # Host chain ID. Rendered as the CHAIN_ID env var, consumed by the
+    # gw_listener binary (also settable via --host-chain-id arg).
+    # Leave unset/empty to inject nothing.
+    chainId: ""
+
+  # Additional environment variables.
   env: []
 
   # Template-injected args (suppress individually via disabledArgs):
-  #   --database-url, --gw-url, --input-verification-address,
-  #   --kms-generation-address, --ciphertext-commits-address,
-  #   --gateway-config-address, --health-check-port, --metrics-addr
-  # ciphertext-commits-address and gateway-config-address only render when
-  # set on commonConfig.gatewayContractAddresses.
   disabledArgs: []
 
-  # Additional raw CLI flags, appended after template-injected args. Common
-  # tuning knobs (consult the gw_listener binary for the full list):
-  #   - --log-level=info
-  #   - --service-name=gw-listener
-  #   - --database-pool-size=16
-  #   - --get-logs-poll-interval=500ms
-  #   - --provider-max-retries=10
-  #   - --drift-no-consensus-timeout=5m
-  #   - --drift-post-consensus-grace=5m
+  # Additional raw CLI flags, appended after template-injected args.
+  # Full gw_listener CLI for v0.11 / v0.12 images:
+  #   built-in via template: --database-url, --gw-url,
+  #     --input-verification-address, --kms-generation-address,
+  #     --health-check-port, --metrics-addr
+  #   v0.12 built-in when values are set: --ciphertext-commits-address,
+  #     --gateway-config-address
+  #   shared flags:
+  #     --database-pool-size=16
+  #     --verify-proof-req-database-channel=event_zkpok_new_work
+  #     --error-sleep-initial-secs=1
+  #     --error-sleep-max-secs=10
+  #     --health-check-timeout=4s
+  #     --provider-max-retries=4294967295
+  #     --provider-retry-interval=4s
+  #     --log-level=INFO
+  #     --host-chain-id=1                        # or set CHAIN_ID in env
+  #     --get-logs-poll-interval=500ms
+  #     --get-logs-block-batch-size=100
+  #     --log-last-processed-every-number-of-updates=50
+  #     --service-name=gw-listener
+  #     --replay-from-block=-100                # can be negative from the last processed block
+  #       alias: --catchup-kms-generation-from-block
+  #   v0.12 only:
+  #     --replay-skip-verify-proof
+  #     --drift-no-consensus-timeout=5m
+  #     --drift-post-consensus-grace=5m
   extraArgs: []
 
   # Service ports configuration
@@ -572,6 +624,10 @@ gwListener:
   # Distributed tracing (inherits from commonConfig but can be overridden)
   tracing:
     enabled: false
+    # Stable logical service name for OTEL traces. If empty, OTEL_SERVICE_NAME
+    # falls back to the pod name (metadata.name), which fragments traces across
+    # pod replicas and rollouts. Set a stable string per environment.
+    service: ""
 
   # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
   nodeSelector:
@@ -599,22 +655,46 @@ tfheWorker:
 
   replicas: 1
 
-  # Additional environment variables. DATABASE_URL (and when supplied,
-  # DATABASE_USER/PASSWORD/ENDPOINT) is injected from commonConfig.
+  # Additional environment variables
   env: []
 
-  # Template-injected args (suppress individually via disabledArgs):
-  #   --database-url, --metrics-addr, --health-check-port
+  # Suppress template-injected args
   disabledArgs: []
 
-  # Additional raw CLI flags, appended after template-injected args. Common
-  # tuning knobs (consult the tfhe_worker binary for the full list):
-  #   - --log-level=INFO
-  #   - --service-name=tfhe-worker
-  #   - --work-items-batch-size=100
-  #   - --coprocessor-fhe-threads=64
-  #   - --tokio-threads=16
-  #   - --pg-pool-max-connections=10
+  # Additional raw CLI flags, appended after template-injected args.
+  # Full tfhe_worker CLI for v0.11 / v0.12 images:
+  #   built-in via template: --database-url, --metrics-addr, --health-check-port
+  #   shared flags:
+  #     --run-bg-worker                          # run the background worker loop
+  #     --worker-polling-interval-ms=1000
+  #     --generate-fhe-keys                      # unsafe; testing only
+  #     --work-items-batch-size=100
+  #     --dependence-chains-per-batch=20
+  #     --coprocessor-fhe-threads=32
+  #     --tokio-threads=4
+  #     --pg-pool-max-connections=10
+  #     --service-name=tfhe-worker
+  #     --log-level=INFO
+  #     --worker-id=<uuid>                       # defaults to a random UUID at startup
+  #     --dcid-ttl-sec=30                        # lock TTL in seconds
+  #     --disable-dcid-locking=false             # unsafe; may duplicate DCID work
+  #     --dcid-timeslice-sec=90                  # release the lock after this slice
+  #     --dcid-cleanup-interval-sec=3600         # expired lock cleanup interval
+  #     --dcid-max-no-progress-cycles=2
+  #     --dcid-ignore-dependency-count-threshold=100
+  #     --metric-rerand-batch-latency=0.1:5.0:0.01
+  #     --metric-fhe-batch-latency=0.2:5.0:0.05
+  #   v0.11 only:
+  #     --tenant-key-cache-size=32
+  #     --coprocessor-private-key=/path/to/key
+  #     --run-server
+  #     --server-addr=...
+  #     --server-maximum-ciphertexts-to-get=...
+  #     --server-maximum-ciphertexts-to-schedule=...
+  #     --maximum-compact-inputs-upload=...
+  #     --maximum-handles-per-input=...
+  #   v0.12 only:
+  #     --key-cache-size=32                      # alias: --tenant-key-cache-size
   extraArgs: []
 
   # Service ports configuration
@@ -657,7 +737,7 @@ tfheWorker:
   # If enabled, overrides commonConfig.tracing.enabled for this component
   tracing:
     enabled: false
-    service: "coprocessor_server"
+    service: "tfhe-worker"
 
   # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
   nodeSelector:
@@ -671,7 +751,6 @@ tfheWorker:
       maxUnavailable: 0
 
   # Horizontal Pod Autoscaler configuration
-  # TODO: check dependencies required for hpa (metrics-server?)
   hpa:
     enabled: false
     minReplicas: 1
@@ -711,24 +790,27 @@ zkProofWorker:
 
   replicas: 1
 
-  # Additional environment variables. DATABASE_URL (and when supplied,
-  # DATABASE_USER/PASSWORD/ENDPOINT) is injected from commonConfig.
+  # Additional environment variables.
   env: []
 
-  # Template-injected args (suppress individually via disabledArgs):
-  #   --database-url, --metrics-addr, --health-check-port
-  # --pg-listen-channel and --pg-notify-channel are NOT injected; pass them
-  # via extraArgs (the binary requires them).
+  # Suppress template-injected args
   disabledArgs: []
 
-  # Additional raw CLI flags, appended after template-injected args. Common
-  # tuning knobs (consult the zkproof_worker binary for the full list):
-  #   - --pg-listen-channel=event_zkpok_new_work    # required
-  #   - --pg-notify-channel=event_zkpok_computed    # required
-  #   - --log-level=INFO
-  #   - --service-name=zkproof-worker
-  #   - --worker-thread-count=8
-  #   - --pg-pool-connections=5
+  # Additional raw CLI flags, appended after template-injected args.
+  # Full zkproof_worker CLI for v0.11 / v0.12 images:
+  #   built-in via template: --database-url, --metrics-addr, --health-check-port
+  #   required extraArgs:
+  #     --pg-listen-channel=event_zkpok_new_work
+  #     --pg-notify-channel=event_zkpok_computed
+  #   other flags:
+  #     --pg-polling-interval=60
+  #     --pg-pool-connections=5
+  #     --pg-timeout=15s
+  #     --pg-auto-explain-with-min-duration=30s
+  #     --worker-thread-count=8
+  #     --service-name=zkproof-worker
+  #     --log-level=INFO
+  #     --metric-zkverify-op-latency=0.01:2.0:0.01
   extraArgs: []
 
   # Service ports configuration
@@ -770,6 +852,10 @@ zkProofWorker:
   # Distributed tracing (inherits from commonConfig but can be overridden)
   tracing:
     enabled: false
+    # Stable logical service name for OTEL traces. If empty, OTEL_SERVICE_NAME
+    # falls back to the pod name (metadata.name), which fragments traces across
+    # pod replicas and rollouts. Set a stable string per environment.
+    service: ""
 
   # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
   nodeSelector:
@@ -836,35 +922,47 @@ snsWorker:
     #         key: s3BucketName
     s3BucketName: {}
 
-  # Additional environment variables. DATABASE_URL (and when supplied,
-  # DATABASE_USER/PASSWORD/ENDPOINT) is injected from commonConfig;
-  # S3_BUCKET_NAME is injected from config.s3BucketName when set.
+  # Additional environment variables
   env: []
-
-  # Template-injected args (suppress individually via disabledArgs):
-  #   --database-url, --bucket-name-ct64, --bucket-name-ct128,
-  #   --metrics-addr, --health-check-port, --pg-listen-channels,
-  #   --pg-notify-channel
-  # --pg-listen-channels and --pg-notify-channel only render when the
-  # matching keys under args are set.
-  args:
-    # pgListenChannels:
-    #   - event_pbs_computations
-    #   - event_ciphertext_computed
-    # pgNotifyChannel: event_ciphertext128_computed
 
   # Suppress any template-injected arg above. Values are kebab-case flag names
   # (no leading `--`).
   disabledArgs: []
 
-  # Additional raw CLI flags, appended after template-injected args. Common
-  # tuning knobs (consult the sns_worker binary for the full list):
-  #   - --log-level=INFO
-  #   - --service-name=sns-executor
-  #   - --work-items-batch-size=4
-  #   - --s3-max-concurrent-uploads=100
-  #   - --schedule-policy=rayon_parallel
-  #   - --keys-file-path=/path/to/keys
+  # Additional raw CLI flags, appended after template-injected args.
+  # Full sns_worker CLI for v0.11 / v0.12 images:
+  #   built-in via template: --database-url, --bucket-name-ct64,
+  #     --bucket-name-ct128, --metrics-addr, --health-check-port
+  #   shared extraArgs:
+  #     --pg-listen-channels
+  #     - event_pbs_computations
+  #     - event_ciphertext_computed
+  #     --pg-notify-channel
+  #     - event_ciphertext128_computed
+  #     --work-items-batch-size=4
+  #     --pg-polling-interval=60
+  #     --pg-pool-connections=10
+  #     --pg-timeout=15s
+  #     --pg-auto-explain-with-min-duration=30s
+  #     --service-name=sns-executor
+  #     --s3-max-concurrent-uploads=100
+  #     --s3-max-retries-per-upload=100
+  #     --s3-max-backoff=10s
+  #     --s3-max-retries-timeout=120s
+  #     --s3-recheck-duration=2s
+  #     --s3-regular-recheck-duration=120s
+  #     --cleanup-interval=15min
+  #     --gc-batch-size=1000                     # set to 0 to disable GC
+  #     --log-level=INFO
+  #     --liveness-threshold=70s
+  #     --lifo=false                             # default FIFO when false
+  #     --enable-compression=true
+  #     --schedule-policy=rayon_parallel
+  #     --metric-sns-op-latency=0.1:10.0:0.1
+  #     --gauge-update-interval-secs=10          # enable on only some workers to avoid duplicate DB load
+  #   v0.11 only:
+  #     --tenant-api-key=$(TENANT_API_KEY)
+  #     --keys-file-path=/path/to/keys
   extraArgs: []
 
   # Service ports configuration
@@ -906,6 +1004,10 @@ snsWorker:
   # Distributed tracing (inherits from commonConfig but can be overridden)
   tracing:
     enabled: false
+    # Stable logical service name for OTEL traces. If empty, OTEL_SERVICE_NAME
+    # falls back to the pod name (metadata.name), which fragments traces across
+    # pod replicas and rollouts. Set a stable string per environment.
+    service: ""
 
   # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
   nodeSelector:
@@ -958,10 +1060,7 @@ txSender:
 
   replicas: 1
 
-  # Additional environment variables. DATABASE_URL, GATEWAY_URL,
-  # INPUT_VERIFICATION_ADDRESS, CIPHERTEXT_COMMITS_ADDRESS and signer material
-  # (TX_SENDER_PRIVATE_KEY or AWS_KEY_ID) are injected from commonConfig +
-  # wallet config; DATABASE_USER/PASSWORD/ENDPOINT are injected when supplied.
+  # Additional environment variables.
   env: []
 
   # Wallet configuration for transaction signing
@@ -978,20 +1077,52 @@ txSender:
       key: private-key
       value: ""  # devnet only: set a raw private key here to skip secret creation (not for production)
 
-  # Template-injected args (suppress individually via disabledArgs):
-  #   --database-url, --gateway-url, --input-verification-address,
-  #   --ciphertext-commits-address, --signer-type, --private-key (private-key
-  #   mode only), --health-check-port, --metrics-addr
+  # Suppress template-injected args
   disabledArgs: []
 
-  # Additional raw CLI flags, appended after template-injected args. Common
-  # tuning knobs (consult the transaction_sender binary for the full list):
-  #   - --log-level=INFO
-  #   - --service-name=txn-sender
-  #   - --database-pool-size=10
-  #   - --verify-proof-resp-database-channel=event_zkpok_computed
-  #   - --add-ciphertexts-database-channel=event_ciphertexts_uploaded
-  #   - --gas-limit-overprovision-percent=120
+  # Additional raw CLI flags, appended after template-injected args.
+  # Full transaction_sender CLI for v0.11 / v0.12 images:
+  #   built-in via template: --database-url, --gateway-url,
+  #     --input-verification-address, --ciphertext-commits-address,
+  #     --signer-type, --health-check-port, --metrics-addr
+  #   built-in when wallet.awsKms.enabled=false: --private-key
+  #   legacy built-in for v0.11 only: --multichain-acl-address
+  #     disable via disabledArgs on v0.12+ images
+  #   shared extraArgs:
+  #     --database-pool-size=10
+  #     --database-polling-interval-secs=1
+  #     --verify-proof-resp-database-channel=event_zkpok_computed
+  #     --add-ciphertexts-database-channel=event_ciphertexts_uploaded
+  #     --allow-handle-database-channel=event_allowed_handle
+  #     --verify-proof-resp-batch-limit=128
+  #     --verify-proof-resp-max-retries=6
+  #     --verify-proof-remove-after-max-retries=true
+  #     --add-ciphertexts-batch-limit=10
+  #     --allow-handle-batch-limit=10
+  #     --allow-handle-max-retries=2147483647
+  #     --add-ciphertexts-max-retries=2147483647
+  #     --error-sleep-initial-secs=1
+  #     --error-sleep-max-secs=4
+  #     --send-txn-sync-timeout-secs=4           # alias: --txn-receipt-timeout-secs
+  #     --review-after-unlimited-retries=30
+  #     --provider-max-retries=4294967295
+  #     --provider-retry-interval=4s
+  #     --health-check-timeout=4s
+  #     --log-level=INFO
+  #     --gas-limit-overprovision-percent=120
+  #     --graceful-shutdown-timeout=8s
+  #     --service-name=txn-sender
+  #     --metric-host-txn-latency=0.1:60.0:0.1
+  #     --metric-zkproof-txn-latency=0.1:60.0:0.1
+  #     --gauge-update-interval-secs=10
+  #     --required-txn-confirmations=0           # hidden/deprecated
+  #   v0.11 only:
+  #     --host-chain-url=ws://...
+  #     --delegation-block-delay=10
+  #     --delegation-clear-after-n-blocks=648000
+  #     --delegation-fallback-polling=30
+  #     --delegation-max-retry=100000
+  #     --retry-immediately-on-nonce-error=0     # hidden/deprecated
   extraArgs: []
 
   # Service ports configuration
@@ -1033,6 +1164,10 @@ txSender:
   # Distributed tracing (inherits from commonConfig but can be overridden)
   tracing:
     enabled: false
+    # Stable logical service name for OTEL traces. If empty, OTEL_SERVICE_NAME
+    # falls back to the pod name (metadata.name), which fragments traces across
+    # pod replicas and rollouts. Set a stable string per environment.
+    service: ""
 
   # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
   nodeSelector:

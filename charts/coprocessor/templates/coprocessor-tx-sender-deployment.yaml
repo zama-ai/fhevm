@@ -64,6 +64,9 @@ spec:
             {{- if not (has "ciphertext-commits-address" $disabled) }}
             - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
             {{- end }}
+            {{- if not (has "multichain-acl-address" $disabled) }}
+            - --multichain-acl-address=$(MULTICHAIN_ACL_ADDRESS)
+            {{- end }}
             {{- if not (has "signer-type" $disabled) }}
             {{- if .Values.txSender.wallet.awsKms.enabled }}
             - --signer-type=aws-kms
@@ -113,15 +116,41 @@ spec:
             {{- end }}
             - name: DATABASE_URL
               value: {{ .Values.commonConfig.databaseUrl | quote }}
+            {{- with .Values.commonConfig.gatewayUrl }}
             - name: GATEWAY_URL
-              value: {{ .Values.commonConfig.gatewayUrl | quote }}
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
             {{- with .Values.commonConfig.gatewayContractAddresses.inputVerification }}
             - name: INPUT_VERIFICATION_ADDRESS
-              value: {{ . | quote }}
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
             {{- end }}
             {{- with .Values.commonConfig.gatewayContractAddresses.ciphertextCommits }}
             - name: CIPHERTEXT_COMMITS_ADDRESS
-              value: {{ . | quote }}
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.gatewayContractAddresses.multichainAcl }}
+            - name: MULTICHAIN_ACL_ADDRESS
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
             {{- end }}
             {{- if .Values.txSender.wallet.awsKms.enabled }}
             - name: AWS_KEY_ID
@@ -143,9 +172,13 @@ spec:
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint | quote }}
             - name: OTEL_SERVICE_NAME
+              {{- if .Values.txSender.tracing.service }}
+              value: {{ .Values.txSender.tracing.service | quote }}
+              {{- else }}
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+              {{- end }}
           {{- end }}
           {{- with .Values.commonConfig.env }}
             {{- toYaml . | nindent 12 }}

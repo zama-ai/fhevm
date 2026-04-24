@@ -47,29 +47,6 @@
 {{- end -}}
 {{- end -}}
 
-{{- define "coprocessor.renderChainEnvValue" -}}
-{{- $name := .name -}}
-{{- $value := .value -}}
-{{- $valueFrom := .valueFrom -}}
-{{- $fieldName := .fieldName -}}
-{{- $chainName := .chainName -}}
-{{- $hasValue := not (empty $value) -}}
-{{- $hasValueFrom := not (empty $valueFrom) -}}
-{{- if and $hasValue $hasValueFrom -}}
-{{- fail (printf "chains entry %q: only one of %s or %sValueFrom may be set" $chainName $fieldName $fieldName) -}}
-{{- end -}}
-{{- if not (or $hasValue $hasValueFrom) -}}
-{{- fail (printf "chains entry %q: %s or %sValueFrom is required" $chainName $fieldName $fieldName) -}}
-{{- end -}}
-- name: {{ $name }}
-{{- if $hasValue }}
-  value: {{ $value | quote }}
-{{- else }}
-  valueFrom:
-{{ toYaml $valueFrom | nindent 4 }}
-{{- end }}
-{{- end -}}
-
 {{- define "txSenderName" -}}
 {{- $txSenderNameDefault := printf "%s-%s" .Release.Name "tx-sender" }}
 {{- default $txSenderNameDefault .Values.txSender.nameOverride | trunc 63 | trimSuffix "-" -}}

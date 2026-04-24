@@ -1,8 +1,5 @@
 {{- if .Values.snsWorker.enabled -}}
-{{- $args := default (dict) .Values.snsWorker.args -}}
 {{- $disabled := default (list) .Values.snsWorker.disabledArgs -}}
-{{- $pgListenChannels := get $args "pgListenChannels" -}}
-{{- $pgNotifyChannel := get $args "pgNotifyChannel" -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -70,16 +67,6 @@ spec:
             {{- if not (has "health-check-port" $disabled) }}
             - --health-check-port={{ .Values.snsWorker.ports.healthcheck }}
             {{- end }}
-            {{- if and $pgListenChannels (not (has "pg-listen-channels" $disabled)) }}
-            - --pg-listen-channels
-            {{- range $pgListenChannels }}
-            - {{ . | quote }}
-            {{- end }}
-            {{- end }}
-            {{- if and $pgNotifyChannel (not (has "pg-notify-channel" $disabled)) }}
-            - --pg-notify-channel
-            - {{ $pgNotifyChannel | quote }}
-            {{- end }}
             {{- with .Values.snsWorker.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -126,9 +113,13 @@ spec:
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint | quote }}
             - name: OTEL_SERVICE_NAME
+              {{- if .Values.snsWorker.tracing.service }}
+              value: {{ .Values.snsWorker.tracing.service | quote }}
+              {{- else }}
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+              {{- end }}
           {{- end }}
           {{- with .Values.commonConfig.env }}
             {{- toYaml . | nindent 12 }}

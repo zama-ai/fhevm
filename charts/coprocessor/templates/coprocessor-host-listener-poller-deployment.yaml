@@ -130,16 +130,44 @@ spec:
                 {{- toYaml .valueFrom | nindent 16 }}
               {{- end }}
             {{- end }}
-            {{- include "coprocessor.renderChainEnvValue" (dict "name" "ETHEREUM_RPC_HTTP_URL" "value" $chain.httpUrl "valueFrom" $chain.httpUrlValueFrom "fieldName" "httpUrl" "chainName" $chain.name) | nindent 12 }}
-            {{- include "coprocessor.renderChainEnvValue" (dict "name" "ACL_CONTRACT_ADDRESS" "value" $chain.aclContractAddress "valueFrom" $chain.aclContractAddressValueFrom "fieldName" "aclContractAddress" "chainName" $chain.name) | nindent 12 }}
-            {{- include "coprocessor.renderChainEnvValue" (dict "name" "FHEVM_EXECUTOR_CONTRACT_ADDRESS" "value" $chain.fhevmExecutorContractAddress "valueFrom" $chain.fhevmExecutorContractAddressValueFrom "fieldName" "fhevmExecutorContractAddress" "chainName" $chain.name) | nindent 12 }}
+            {{- if or $chain.httpUrl $chain.httpUrlValueFrom }}
+            - name: ETHEREUM_RPC_HTTP_URL
+              {{- if $chain.httpUrl }}
+              value: {{ $chain.httpUrl | quote }}
+              {{- else if $chain.httpUrlValueFrom }}
+              valueFrom:
+                {{- toYaml $chain.httpUrlValueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if or $chain.aclContractAddress $chain.aclContractAddressValueFrom }}
+            - name: ACL_CONTRACT_ADDRESS
+              {{- if $chain.aclContractAddress }}
+              value: {{ $chain.aclContractAddress | quote }}
+              {{- else if $chain.aclContractAddressValueFrom }}
+              valueFrom:
+                {{- toYaml $chain.aclContractAddressValueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if or $chain.fhevmExecutorContractAddress $chain.fhevmExecutorContractAddressValueFrom }}
+            - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
+              {{- if $chain.fhevmExecutorContractAddress }}
+              value: {{ $chain.fhevmExecutorContractAddress | quote }}
+              {{- else if $chain.fhevmExecutorContractAddressValueFrom }}
+              valueFrom:
+                {{- toYaml $chain.fhevmExecutorContractAddressValueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
           {{- if default $.Values.commonConfig.tracing.enabled $.Values.hostListenerPollerShared.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ $.Values.commonConfig.tracing.endpoint | quote }}
             - name: OTEL_SERVICE_NAME
+              {{- if $.Values.hostListenerPollerShared.tracing.service }}
+              value: {{ $.Values.hostListenerPollerShared.tracing.service | quote }}
+              {{- else }}
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+              {{- end }}
           {{- end }}
           {{- with $.Values.commonConfig.env }}
             {{- toYaml . | nindent 12 }}

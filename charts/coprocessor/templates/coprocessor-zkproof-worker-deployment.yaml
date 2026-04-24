@@ -98,9 +98,13 @@ spec:
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint | quote }}
             - name: OTEL_SERVICE_NAME
+              {{- if .Values.zkProofWorker.tracing.service }}
+              value: {{ .Values.zkProofWorker.tracing.service | quote }}
+              {{- else }}
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+              {{- end }}
           {{- end }}
           {{- with .Values.commonConfig.env }}
             {{- toYaml . | nindent 12 }}
