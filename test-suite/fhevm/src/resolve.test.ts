@@ -104,42 +104,8 @@ describe("resolve", () => {
   });
 
   test("rejects unsupported old release refs for sha resolution", () => {
-    expect(() => assertSupportedShaRef("release/0.10.x")).toThrow("release/0.11.x and newer");
-    expect(assertSupportedShaRef("release/0.11.x")).toBe("release/0.11.x");
-  });
-
-  test("pins release/0.11.x relayer and test-suite from the supported backport baseline", () => {
-    const bundle = applyReleaseBaselineDefaults(
-      presetBundle("sha", "9670a07", "sha-9670a07.json"),
-      {
-        CORE_VERSION: "v0.13.0-rc.2",
-        RELAYER_VERSION: "v0.9.0-rc.1",
-        RELAYER_MIGRATE_VERSION: "v0.9.0-rc.1",
-      },
-      "release/0.11.x",
-    );
-    expect(bundle.env.CORE_VERSION).toBe("v0.13.0-rc.2");
-    expect(bundle.env.RELAYER_VERSION).toBe("v0.9.0");
-    expect(bundle.env.RELAYER_MIGRATE_VERSION).toBe("v0.9.0");
-    expect(bundle.env.TEST_SUITE_VERSION).toBe("v0.11.0-2");
-    expect(bundle.sources.at(-1)).toBe("baseline=release/0.11.x-backport");
-  });
-
-  test("pins release/0.12.x relayer from the supported backport baseline", () => {
-    const bundle = applyReleaseBaselineDefaults(
-      presetBundle("sha", "5e7db95", "sha-5e7db95.json"),
-      {
-        CORE_VERSION: "v0.13.10-rc.0",
-        RELAYER_VERSION: "sha-5e38c70",
-        RELAYER_MIGRATE_VERSION: "v0.10.0-rc.1",
-      },
-      "release/0.12.x",
-    );
-    expect(bundle.env.CORE_VERSION).toBe("v0.13.10-rc.0");
-    expect(bundle.env.RELAYER_VERSION).toBe("v0.11.1");
-    expect(bundle.env.RELAYER_MIGRATE_VERSION).toBe("v0.11.0");
-    expect(bundle.env.TEST_SUITE_VERSION).toBe("5e7db95");
-    expect(bundle.sources.at(-1)).toBe("baseline=release/0.12.x-backport");
+    expect(() => assertSupportedShaRef("release/0.12.x")).toThrow("release/0.13.x and newer");
+    expect(assertSupportedShaRef("release/0.13.x")).toBe("release/0.13.x");
   });
 
   test("treats newer release branches like main for relayer", () => {

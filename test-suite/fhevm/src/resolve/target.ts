@@ -107,21 +107,10 @@ export const REPO_TAG = /^[0-9a-f]{7}$/;
 export const SHA_REF = /^(?:[0-9a-f]{7}|[0-9a-f]{40})$/i;
 export const SIMPLE_ACL_MIN_SHA = COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA;
 export const SHA_RUNTIME_COMPAT_MIN_SHA = "1272b10b308b064e7477ca3272712b90b50280d9";
-const MIN_SUPPORTED_RELEASE = { major: 0, minor: 11 };
+const MIN_SUPPORTED_RELEASE = { major: 0, minor: 13 };
 const DEFAULT_SHA_REF = "main";
 const RELEASE_REF_PREFIX = "release/";
 const RELEASE_REF = /^release\/(\d+)\.(\d+)\.x$/;
-const RELEASE_BACKPORT_BASELINES: Record<string, Partial<Pick<VersionBundle["env"], "RELAYER_VERSION" | "RELAYER_MIGRATE_VERSION" | "TEST_SUITE_VERSION">>> = {
-  "release/0.11.x": {
-    RELAYER_VERSION: "v0.9.0",
-    RELAYER_MIGRATE_VERSION: "v0.9.0",
-    TEST_SUITE_VERSION: "v0.11.0-2",
-  },
-  "release/0.12.x": {
-    RELAYER_VERSION: "v0.11.1",
-    RELAYER_MIGRATE_VERSION: "v0.11.0",
-  },
-};
 
 const parseReleaseRef = (ref: string) => {
   const match = ref.match(RELEASE_REF);
@@ -369,19 +358,15 @@ const repoPackageTags = async (targetTag?: string) =>
     ),
   ) as Record<string, Set<string>>;
 
-const releaseBackportBaseline = (ref: string) => RELEASE_BACKPORT_BASELINES[ref];
-
-export const applyReleaseBaselineDefaults = (bundle: VersionBundle, defaults: Record<string, string>, ref: string) => {
-  const backport = releaseBackportBaseline(ref);
+export const applyReleaseBaselineDefaults = (bundle: VersionBundle, defaults: Record<string, string>, ref: string): VersionBundle => {
   const env = {
     ...bundle.env,
     ...(defaults.CORE_VERSION ? { CORE_VERSION: defaults.CORE_VERSION } : {}),
-    ...(backport ?? {}),
   };
   return {
     ...bundle,
     env,
-    sources: [...bundle.sources, `baseline=${backport ? `${ref}-backport` : "release-defaults"}`],
+    sources: [...bundle.sources, "baseline=release-defaults"],
   };
 };
 

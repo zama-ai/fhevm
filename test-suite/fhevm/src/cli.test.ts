@@ -142,7 +142,7 @@ describe("cli", () => {
   });
 
   test("rejects --ref without a sha target", async () => {
-    const result = await execCli(["up", "--target", "latest-main", "--ref", "release/0.12.x"]);
+    const result = await execCli(["up", "--target", "latest-main", "--ref", "release/0.13.x"]);
     expect(result.code).toBe(1);
     expect(result.stderr).toContain("--ref requires --target sha");
   });
@@ -173,7 +173,7 @@ describe("cli", () => {
 
   test("sha target accepts ref before validating the sha value", async () => {
     await withState(persistedState(), async (env) => {
-      const result = await execCli(["up", "--target", "sha", "--sha", "invalidhex", "--ref", "release/0.12.x"], env);
+      const result = await execCli(["up", "--target", "sha", "--sha", "invalidhex", "--ref", "release/0.13.x"], env);
       expect(result.code).toBe(1);
       expect(result.stderr).toContain("Invalid sha invalidhex; expected 7 or 40 hex characters");
       expect(result.stderr).not.toContain("--ref requires --target sha");

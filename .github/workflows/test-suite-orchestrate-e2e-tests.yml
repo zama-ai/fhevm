@@ -33,6 +33,16 @@ jobs:
           persist-credentials: 'false'
           fetch-depth: 0
 
+      - name: Check release resolver support
+        run: |
+          set -euo pipefail
+          case "$BASE_REF" in
+            release/0.11.x|release/0.12.x)
+              echo "Frozen orchestrated baselines require the TypeScript fhevm CLI; ${BASE_REF} uses the legacy bash CLI." >&2
+              exit 1
+              ;;
+          esac
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
 
@@ -116,7 +126,6 @@ jobs:
       BASE_COMMIT_HASH: ${{ github.event.pull_request.base.sha }}
       BASE_REF: ${{ github.base_ref }}
       NEW_COMMIT_HASH: ${{ github.event.pull_request.head.sha }}
-      IS_RELEASE_PR: ${{ startsWith(github.base_ref, 'release/') }}
       DOCKER_BUILD_RESULTS: ${{ toJSON(needs) }}
     runs-on: ubuntu-latest
     outputs:
@@ -173,23 +182,6 @@ jobs:
             echo "$key=" >> "$GITHUB_OUTPUT"
           done
 
-          if [ "$IS_RELEASE_PR" = "true" ]; then
-            if git cat-file -e "${BASE_COMMIT_HASH}:test-suite/fhevm/profiles/latest-supported.json" 2>/dev/null; then
-              defaults_json="$(git show "${BASE_COMMIT_HASH}:test-suite/fhevm/profiles/latest-supported.json")"
-              core_version="$(printf '%s' "$defaults_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["env"]["CORE_VERSION"])')"
-            elif git cat-file -e "${BASE_COMMIT_HASH}:test-suite/fhevm/fhevm-cli" 2>/dev/null; then
-              defaults_shell="$(git show "${BASE_COMMIT_HASH}:test-suite/fhevm/fhevm-cli")"
-              core_version="$(printf '%s' "$defaults_shell" | sed -n 's/^export CORE_VERSION=.*:-"\\([^"]*\\)".*/\\1/p' | head -n 1)"
-            else
-              core_version=""
-            fi
-            if [ -z "$core_version" ]; then
-              echo "Could not extract release CORE_VERSION from ${BASE_COMMIT_HASH}" >&2
-              exit 1
-            fi
-            echo "kms-core-version=$core_version" >> "$GITHUB_OUTPUT"
-          fi
-
           failures=()
           while IFS='|' read -r job result_key output_key; do
             result="$(jq -r --arg job "$job" --arg key "$result_key" '.[$job].outputs[$key] // "missing"' "$needs_file")"
@@ -245,11 +237,7 @@ jobs:
               echo "test-suite-version=$short_tag" >> "$GITHUB_OUTPUT"
               ;;
             skipped)
-              if [ "$BASE_REF" = "release/0.11.x" ]; then
-                echo "test-suite-version=" >> "$GITHUB_OUTPUT"
-              else
-                echo "test-suite-version=$base_short_tag" >> "$GITHUB_OUTPUT"
-              fi
+              echo "test-suite-version=$base_short_tag" >> "$GITHUB_OUTPUT"
               ;;
             *)
               echo "Required repo-owned build outputs failed: test-suite-docker-build.build_result=$test_suite_result" >&2
