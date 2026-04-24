@@ -203,13 +203,11 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let extra_data: Vec<u8> = row.try_get("extra_data")?;
 
     // `signature IS NULL` is the sole variant discriminator for `user_decryption_requests` rows.
-    // See migration 20260421092426_unified_user_decryption.sql. `try_get(...).ok().flatten()`
-    // tolerates both missing column (older SELECT queries) and NULL value → both map to the legacy
-    // variant.
-    let signature = row
-        .try_get::<Option<Vec<u8>>, _>("signature")
-        .ok()
-        .flatten();
+    let signature: Option<Vec<u8>> = match row.try_get::<Option<Vec<u8>>, _>("signature") {
+        Ok(v) => v,
+        Err(sqlx::Error::ColumnNotFound(_)) => None,
+        Err(e) => return Err(anyhow::Error::from(e)),
+    };
 
     let kind = match signature {
         None => ProtocolEventKind::UserDecryption(UserDecryptionRequest {
