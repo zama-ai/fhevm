@@ -17,6 +17,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/.."
 
 # ==============================================================================
+# Unset CHAIN environment variable
+# ==============================================================================
+
+[[ -n "${CHAIN:-}" ]] && echo "Warning: unsetting CHAIN=$CHAIN" >&2; unset CHAIN
+
+# ==============================================================================
 
 DEPLOYER_MNEMONIC="adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer"
 DEPLOYER_MNEMONIC_DERIVATION_PREFIX="m/44'/60'/0'/0/"
@@ -28,6 +34,8 @@ DEPLOYER_ADDRESS="$(cast wallet address --mnemonic "$DEPLOYER_MNEMONIC" --mnemon
 
 UUPS_DEPLOYER_PRIVATE_KEY="$(cast wallet private-key --mnemonic "$DEPLOYER_MNEMONIC" --mnemonic-derivation-path "${DEPLOYER_MNEMONIC_DERIVATION_PREFIX}${UUPS_DEPLOYER_MNEMONIC_DERIVATION_INDEX}")"
 UUPS_DEPLOYER_ADDRESS="$(cast wallet address --mnemonic "$DEPLOYER_MNEMONIC" --mnemonic-derivation-path "${DEPLOYER_MNEMONIC_DERIVATION_PREFIX}${UUPS_DEPLOYER_MNEMONIC_DERIVATION_INDEX}")"
+
+# ==============================================================================
 
 # Load the test-user mnemonic from sdk/js-sdk/test/.env so the same identity
 # used by the js-sdk test suite signs `initFheTest` here.
@@ -48,124 +56,12 @@ FHE_TEST_USER_ADDRESS="$(cast wallet address --mnemonic "test test test test tes
 
 # ==============================================================================
 
-print_usage() {
-    cat <<'EOF'
-Usage: ./script/fhevm-anvil.sh [options] [-- <anvil args>]
+RPC_URL="http://127.0.0.1:8545"
 
-Options:
-  --port <port>           Port for anvil (default: 8545).
-  --chain-id <id>         Chain id for anvil (default: anvil's own, 31337).
-  --block-time <sec>      Pass-through --block-time to anvil.
-  --deploy-timeout <s>    How long to wait for anvil readiness (default: 30s).
-  -h, --help              Show this help.
-
-Anything after `--` is forwarded to anvil unchanged, e.g.:
-  ./script/fhevm-anvil-fund.sh --port 8546 -- --accounts 20 --balance 10000
-EOF
-}
-
-PORT=8545
-CHAIN_ID=""
-BLOCK_TIME=""
-DEPLOY_TIMEOUT=30
-declare -a ANVIL_EXTRA=()
-
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --port)
-            PORT="${2:?--port requires a value}"
-            shift 2
-            ;;
-        --chain-id)
-            CHAIN_ID="${2:?--chain-id requires a value}"
-            shift 2
-            ;;
-        --block-time)
-            BLOCK_TIME="${2:?--block-time requires a value}"
-            shift 2
-            ;;
-        --deploy-timeout)
-            DEPLOY_TIMEOUT="${2:?--deploy-timeout requires a value}"
-            shift 2
-            ;;
-        -h|--help)
-            print_usage
-            exit 0
-            ;;
-        --)
-            shift
-            ANVIL_EXTRA=("$@")
-            break
-            ;;
-        *)
-            echo "Error: unknown option: $1" >&2
-            print_usage >&2
-            exit 1
-            ;;
-    esac
-done
-
-if ! command -v anvil >/dev/null 2>&1; then
-    echo "Error: anvil not found in PATH. Install Foundry: https://book.getfoundry.sh/getting-started/installation" >&2
+if ! cast chain-id --rpc-url "$RPC_URL" >/dev/null 2>&1; then
+    echo "Error: nothing is listening on $RPC_URL. Start Anvil or use another --rpc-url." >&2
     exit 1
 fi
-
-if ! command -v cast >/dev/null 2>&1; then
-    echo "Error: cast not found in PATH." >&2
-    exit 1
-fi
-
-if ! command -v forge >/dev/null 2>&1; then
-    echo "Error: forge not found in PATH." >&2
-    exit 1
-fi
-
-# ---- Launch anvil ----
-
-RPC_URL="http://127.0.0.1:${PORT}"
-
-if cast chain-id --rpc-url "$RPC_URL" >/dev/null 2>&1; then
-    echo "Error: something is already listening on $RPC_URL. Stop it or pick another --port." >&2
-    exit 1
-fi
-
-declare -a ANVIL_ARGS=(--port "$PORT")
-if [[ -n "$CHAIN_ID" ]]; then
-    ANVIL_ARGS+=(--chain-id "$CHAIN_ID")
-fi
-if [[ -n "$BLOCK_TIME" ]]; then
-    ANVIL_ARGS+=(--block-time "$BLOCK_TIME")
-fi
-if [[ ${#ANVIL_EXTRA[@]} -gt 0 ]]; then
-    ANVIL_ARGS+=("${ANVIL_EXTRA[@]}")
-fi
-
-echo "🚚 Launching anvil on ${RPC_URL}..."
-anvil "${ANVIL_ARGS[@]}" &
-ANVIL_PID=$!
-
-cleanup() {
-    if [[ -n "${ANVIL_PID:-}" ]] && kill -0 "$ANVIL_PID" 2>/dev/null; then
-        kill "$ANVIL_PID" 2>/dev/null || true
-        wait "$ANVIL_PID" 2>/dev/null || true
-    fi
-}
-trap cleanup EXIT INT TERM
-
-echo "🛺 Waiting for anvil to become ready (timeout: ${DEPLOY_TIMEOUT}s)..."
-DEADLINE=$(( $(date +%s) + DEPLOY_TIMEOUT ))
-until cast chain-id --rpc-url "$RPC_URL" >/dev/null 2>&1; do
-    if ! kill -0 "$ANVIL_PID" 2>/dev/null; then
-        echo "Error: anvil exited before becoming ready." >&2
-        exit 1
-    fi
-    if (( $(date +%s) > DEADLINE )); then
-        echo "Error: anvil did not become ready within ${DEPLOY_TIMEOUT}s." >&2
-        exit 1
-    fi
-    sleep 0.2
-done
-echo "anvil is ready."
 
 # ==============================================================================
 #
@@ -295,5 +191,3 @@ echo "✅ initFheTest complete. ${FHE_TEST_USER_ADDRESS}"
 
 echo
 echo "✅ FHEVM stack deployed and initialized on ${RPC_URL} (chain-id: $(cast chain-id --rpc-url "$RPC_URL"))."
-echo "anvil is running as PID ${ANVIL_PID}. Press Ctrl-C to stop."
-wait "$ANVIL_PID"
