@@ -1,4 +1,4 @@
-import type { PriceData } from './common';
+import type { NBucketedCost, PriceData } from './common';
 
 export function generateSolidityHCULimit(priceData: PriceData): string {
   if (!priceData) {
@@ -21,6 +21,7 @@ export function generateSolidityHCULimit(priceData: PriceData): string {
    * transaction level, including the maximum number of homomorphic complexity units (HCU) per transaction.
    * @dev The contract is designed to be used with the FHEVMExecutor contract.
   */
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned if the sender is not the FHEVMExecutor.
     error CallerMustBeFHEVMExecutorContract();
@@ -79,7 +80,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 2;
+    uint256 private constant MINOR_VERSION = 3;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -106,7 +107,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /// Constant used for making sure the version number used in the \`reinitializer\` modifier is
     /// identical between \`initializeFromEmptyProxy\` and the \`reinitializeVX\` method
-    uint64 private constant REINITIALIZER_VERSION = 3;
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.HCULimit")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant HCULimitStorageLocation =
@@ -137,18 +138,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
-     * @notice Re-initializes the contract from V1.
-     * @param hcuCapPerBlock New global HCU cap per block.
-     * @param maxHCUDepthPerTx Maximum sequential HCU depth per transaction.
-     * @param maxHCUPerTx Maximum total HCU per transaction.
+     * @notice Re-initializes the contract from V2.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV2(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx, uint48 maxHCUPerTx) public virtual reinitializer(REINITIALIZER_VERSION) {
-        _setHCUPerBlock(hcuCapPerBlock);
-        _setMaxHCUPerTx(maxHCUPerTx);
-        _setMaxHCUDepthPerTx(maxHCUDepthPerTx);
-    }
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
 \n\n`;
 
@@ -268,6 +262,21 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 opHCU;
     `;
           break;
+        case -1:
+          output += `
+        /**
+         * @notice Check the homomorphic complexity units limit for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
+         * @param resultType Result type.
+         * @param values Input ciphertext handles.
+         * @param result Result handle.
+         * @param caller Original dapp caller address from FHEVMExecutor.
+         */
+        function ${functionName}(FheType resultType, bytes32[] calldata values, bytes32 result, address caller) external virtual {
+        if(msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        uint256 n = values.length;
+        uint256 opHCU;
+    `;
+          break;
         default:
           throw new Error('Number of inputs must be less than 4');
       }
@@ -297,6 +306,9 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
       output += `${generatePriceChecks(data.types)}
       `;
       output += `${generateCheckTransactionLimit(data.numberInputs, false)}`;
+    } else if (data.nBucketed) {
+      output += generateNBucketedPriceChecks(data.nBucketed);
+      output += generateVariadicTransactionLimit();
     } else {
       throw new Error('No prices provided for the operation');
     }
@@ -642,6 +654,49 @@ function generatePriceChecks(prices: { [key: string]: number }): string {
       )
       .join(' else ') + 'else { revert UnsupportedOperation();}'
   );
+}
+
+function generateNBucketedPriceChecks(nBucketed: Partial<Record<string, NBucketedCost>>): string {
+  const typeChecks = Object.entries(nBucketed)
+    .map(([typeName, buckets]) => {
+      if (!buckets) return '';
+      const entries: Array<[number, number]> = [];
+      entries.push([10, buckets.le10]);
+      if (buckets.le30 !== undefined) entries.push([30, buckets.le30]);
+      if (buckets.le60 !== undefined) entries.push([60, buckets.le60]);
+      if (buckets.le100 !== undefined) entries.push([100, buckets.le100]);
+
+      const lines = entries.map(([threshold, cost], i) => {
+        if (i === entries.length - 1) return `else opHCU = ${cost};`;
+        if (i === 0) return `if (n <= ${threshold}) opHCU = ${cost};`;
+        return `else if (n <= ${threshold}) opHCU = ${cost};`;
+      });
+      return `if (resultType == FheType.${typeName}) {
+        ${lines.join('\n        ')}
+      }`;
+    })
+    .join(' else ');
+  return typeChecks + ' else { revert UnsupportedOperation(); }';
+}
+
+function generateVariadicTransactionLimit(): string {
+  return `
+    _updateAndVerifyHCUTransactionLimit(opHCU, caller);
+
+    uint256 maxInputDepth = 0;
+    for (uint256 i = 0; i < values.length; i++) {
+        uint256 inputDepth = _getHCUForHandle(values[i]);
+        if (inputDepth > maxInputDepth) {
+            maxInputDepth = inputDepth;
+        }
+    }
+
+    uint256 totalHCU = opHCU + maxInputDepth;
+    if (totalHCU > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
+        revert HCUTransactionDepthLimitExceeded();
+    }
+    _setHCUForHandle(result, totalHCU);
+  `;
 }
 
 function generateCheckTransactionLimit(numberInputs: number, isScalar: boolean): string {
