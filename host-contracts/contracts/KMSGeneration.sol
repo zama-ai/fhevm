@@ -24,8 +24,9 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     /**
      * @notice The PrepKeygenVerification typed definition.
      * @dev prepKeygenId: The ID of the preprocessing keygen request.
+     *      extraData: Additional context data.
      */
-    string private constant EIP712_PREP_KEYGEN_TYPE = "PrepKeygenVerification(uint256 prepKeygenId)";
+    string private constant EIP712_PREP_KEYGEN_TYPE = "PrepKeygenVerification(uint256 prepKeygenId,bytes extraData)";
 
     /**
      * @notice The hash of the PrepKeygenVerification typed definition.
@@ -286,8 +287,10 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             revert PrepKeygenNotRequested(prepKeygenId);
         }
 
+        bytes memory extraData = $.requestExtraData[prepKeygenId];
+
         // Compute the digest of the PrepKeygenVerification struct.
-        bytes32 digest = _hashPrepKeygenVerification(prepKeygenId);
+        bytes32 digest = _hashPrepKeygenVerification(prepKeygenId, extraData);
 
         // Recover the signer address from the signature and check that it is a KMS node
         address kmsSigner = _validateEIP712Signature(digest, signature);
@@ -319,7 +322,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             // Get the keyId associated to the prepKeygenId
             uint256 keyId = $.keygenIdPairs[prepKeygenId];
 
-            emit KeygenRequest(prepKeygenId, keyId, $.requestExtraData[prepKeygenId]);
+            emit KeygenRequest(prepKeygenId, keyId, extraData);
         }
     }
 
@@ -707,10 +710,15 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     /**
      * @notice Computes the hash of a PrepKeygenVerification struct
      * @param prepKeygenId The ID of the preprocessing keygen request.
+     * @param extraData The extra data for replay protection.
      * @return The hash of the PrepKeygenVerification struct
      */
-    function _hashPrepKeygenVerification(uint256 prepKeygenId) internal view virtual returns (bytes32) {
-        return _hashTypedDataV4(keccak256(abi.encode(EIP712_PREP_KEYGEN_TYPE_HASH, prepKeygenId)));
+    function _hashPrepKeygenVerification(
+        uint256 prepKeygenId,
+        bytes memory extraData
+    ) internal view virtual returns (bytes32) {
+        return
+            _hashTypedDataV4(keccak256(abi.encode(EIP712_PREP_KEYGEN_TYPE_HASH, prepKeygenId, keccak256(extraData))));
     }
 
     /**

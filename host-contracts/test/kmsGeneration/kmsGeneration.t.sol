@@ -36,7 +36,8 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     string internal constant EIP712_DOMAIN_NAME = "KMSGeneration";
     string internal constant EIP712_DOMAIN_VERSION = "1";
-    bytes32 internal constant EIP712_PREP_KEYGEN_TYPE_HASH = keccak256("PrepKeygenVerification(uint256 prepKeygenId)");
+    bytes32 internal constant EIP712_PREP_KEYGEN_TYPE_HASH =
+        keccak256("PrepKeygenVerification(uint256 prepKeygenId,bytes extraData)");
     bytes32 internal constant EIP712_KEY_DIGEST_TYPE_HASH = keccak256("KeyDigest(uint8 keyType,bytes digest)");
     bytes32 internal constant EIP712_KEYGEN_TYPE_HASH =
         keccak256(
@@ -139,12 +140,16 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         return abi.encodePacked(uint8(0x01), contextId);
     }
 
-    function _hashPrepKeygen(uint256 prepKeygenId) internal view returns (bytes32) {
-        return _hashPrepKeygen(kmsGenerationAdd, prepKeygenId);
+    function _hashPrepKeygen(uint256 prepKeygenId, bytes memory extraData) internal view returns (bytes32) {
+        return _hashPrepKeygen(kmsGenerationAdd, prepKeygenId, extraData);
     }
 
-    function _hashPrepKeygen(address verifier, uint256 prepKeygenId) internal view returns (bytes32) {
-        bytes32 structHash = keccak256(abi.encode(EIP712_PREP_KEYGEN_TYPE_HASH, prepKeygenId));
+    function _hashPrepKeygen(
+        address verifier,
+        uint256 prepKeygenId,
+        bytes memory extraData
+    ) internal view returns (bytes32) {
+        bytes32 structHash = keccak256(abi.encode(EIP712_PREP_KEYGEN_TYPE_HASH, prepKeygenId, keccak256(extraData)));
         return MessageHashUtils.toTypedDataHash(_computeDomainSeparator(verifier), structHash);
     }
 
@@ -236,7 +241,8 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     /// @dev Hash + sign + prank + call prepKeygenResponse for a single KMS node.
     function _doPrepKeygenResponse(uint256 prepKeygenId, uint256 pk, address sender) internal {
-        bytes32 digest = _hashPrepKeygen(prepKeygenId);
+        bytes memory extraData = _buildExtraData();
+        bytes32 digest = _hashPrepKeygen(prepKeygenId, extraData);
         bytes memory sig = _computeSignature(pk, digest);
         vm.prank(sender);
         kmsGeneration.prepKeygenResponse(prepKeygenId, sig);
@@ -324,7 +330,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
             crsConsensusTxSenders: crsTxSenders,
             crsConsensusDigest: _hashCrsgen(verifier, activeCrsId, 4096, hex"deadbeef", extraData),
             prepKeygenConsensusTxSenders: prepTxSenders,
-            prepKeygenConsensusDigest: _hashPrepKeygen(verifier, activePrepKeygenId),
+            prepKeygenConsensusDigest: _hashPrepKeygen(verifier, activePrepKeygenId, extraData),
             crsMaxBitLength: 4096,
             prepKeygenParamsType: IKMSGeneration.ParamsType.Default,
             crsParamsType: IKMSGeneration.ParamsType.Default,
@@ -469,7 +475,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
 
-        bytes32 prepDigest = _hashPrepKeygen(prepKeygenId);
+        bytes32 prepDigest = _hashPrepKeygen(prepKeygenId, extraData);
         bytes memory prepSig = _computeSignature(kmsPk0, prepDigest);
         vm.expectEmit(true, true, true, true, address(kmsGeneration));
         emit IKMSGeneration.PrepKeygenResponse(prepKeygenId, prepSig, kmsTxSender0);
@@ -564,39 +570,25 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     }
 
     function test_revertReplayAcrossContexts() public {
+        bytes memory oldExtraData = _buildExtraData();
+
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
         vm.prank(owner);
         kmsGeneration.abortKeygen(PREP_KEYGEN_COUNTER_BASE + 1);
 
-        // Rotate to a new context with different KMS nodes.
-        KmsNode[] memory newNodes = new KmsNode[](2);
-        newNodes[0] = KmsNode({
-            txSenderAddress: address(0xB1),
-            signerAddress: vm.addr(0x500),
-            ipAddress: "127.0.0.10",
-            storageUrl: "https://s10.example.com"
-        });
-        newNodes[1] = KmsNode({
-            txSenderAddress: address(0xB2),
-            signerAddress: vm.addr(0x600),
-            ipAddress: "127.0.0.11",
-            storageUrl: "https://s11.example.com"
-        });
         vm.prank(owner);
-        protocolConfig.defineNewKmsContext(newNodes, _defaultThresholds());
+        protocolConfig.defineNewKmsContext(_makeKmsNodes(2), _defaultThresholds());
 
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
 
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 2;
-        // Sign with old context signer (kmsPk0) — not valid in the new context
-        bytes32 replayDigest = _hashPrepKeygen(prepKeygenId);
+        bytes32 replayDigest = _hashPrepKeygen(prepKeygenId, oldExtraData);
         bytes memory replaySig = _computeSignature(kmsPk0, replayDigest);
 
-        // Old txSender is no longer a KMS tx sender in the new context
         vm.prank(kmsTxSender0);
-        vm.expectPartialRevert(IKMSGeneration.NotKmsTxSender.selector);
+        vm.expectPartialRevert(IKMSGeneration.KmsSignerDoesNotMatchTxSender.selector);
         kmsGeneration.prepKeygenResponse(prepKeygenId, replaySig);
     }
 
@@ -656,7 +648,8 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         _doPrepKeygenResponse(prepKeygenId, kmsPk0, kmsTxSender0);
 
-        bytes32 digest = _hashPrepKeygen(prepKeygenId);
+        bytes memory extraData = _buildExtraData();
+        bytes32 digest = _hashPrepKeygen(prepKeygenId, extraData);
         bytes memory sig = _computeSignature(kmsPk0, digest);
         vm.expectRevert(
             abi.encodeWithSelector(IKMSGeneration.KmsAlreadySignedForPrepKeygen.selector, prepKeygenId, kmsSigner0)
@@ -752,8 +745,9 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
 
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
+        bytes memory extraData = _buildExtraData();
         // Sign with kmsSigner0's key but send from kmsTxSender1
-        bytes32 prepDigest = _hashPrepKeygen(prepKeygenId);
+        bytes32 prepDigest = _hashPrepKeygen(prepKeygenId, extraData);
         bytes memory prepSig = _computeSignature(kmsPk0, prepDigest);
 
         vm.prank(kmsTxSender1);
