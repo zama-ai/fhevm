@@ -12,7 +12,6 @@ import {
 } from "../compat/compat";
 import { GitHubApiError } from "../errors";
 import { gitopsFile, mainCommits, packageTags } from "./github";
-import { assertCommitOnRef, assertModernCliBaseline, baselineDefaults, refCommits } from "./git";
 import { NON_NETWORK_COMPANIONS } from "./presets";
 import { LATEST_SUPPORTED_PROFILE } from "../layout";
 import type { VersionBundle, VersionTarget } from "../types";
@@ -107,24 +106,6 @@ export const REPO_TAG = /^[0-9a-f]{7}$/;
 export const SHA_REF = /^(?:[0-9a-f]{7}|[0-9a-f]{40})$/i;
 export const SIMPLE_ACL_MIN_SHA = COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA;
 export const SHA_RUNTIME_COMPAT_MIN_SHA = "1272b10b308b064e7477ca3272712b90b50280d9";
-const DEFAULT_SHA_REF = "main";
-const RELEASE_REF_PREFIX = "release/";
-const RELEASE_REF = /^release\/\d+\.\d+\.x$/;
-
-export const normalizeShaRef = (ref?: string) => ref?.trim() || DEFAULT_SHA_REF;
-
-export const assertSupportedShaRef = (ref: string) => {
-  if (!ref.startsWith(RELEASE_REF_PREFIX)) {
-    return ref;
-  }
-  if (!RELEASE_REF.test(ref)) {
-    throw new GitHubApiError(`Unsupported release ref ${ref}; expected release/<major>.<minor>.x`);
-  }
-  return ref;
-};
-
-export const bundleShaRef = (bundle: VersionBundle) =>
-  assertSupportedShaRef(bundle.sources.find((source) => source.startsWith("ref="))?.slice(4) ?? DEFAULT_SHA_REF);
 
 /** Recursively collects image references from loosely structured YAML documents. */
 const walkImages = (node: unknown, out: Array<{ repository: string; tag: string }>) => {
@@ -208,8 +189,8 @@ export const assertSupportedShaBundle = (bundle: VersionBundle, commits: string[
   if (bundle.target !== "sha") {
     return;
   }
-  const floor = commits.indexOf(SIMPLE_ACL_MIN_SHA);
-  const compatFloor = commits.indexOf(SHA_RUNTIME_COMPAT_MIN_SHA);
+  const floor = simpleAclFloor(commits);
+  const compatFloor = shaRuntimeCompatFloor(commits);
   const refs = [
     ...new Set(
       Object.entries(bundle.env)
@@ -222,13 +203,13 @@ export const assertSupportedShaBundle = (bundle: VersionBundle, commits: string[
     const index = commits.findIndex((sha) => ref.length === 40 ? sha.toLowerCase() === ref : sha.startsWith(tag));
     if (index < 0) {
       throw new Error(
-        `sha target ${ref.length === 40 ? ref : tag} is unsupported by the selected git history`,
+        `sha target ${ref.length === 40 ? ref : tag} is unsupported; only main commits at or after ${SIMPLE_ACL_MIN_SHA.slice(0, 7)} are supported`,
       );
     }
-    if (floor >= 0 && index > floor) {
+    if (index > floor) {
       throw new Error(`sha target ${tag} predates the simple-ACL cutover and is unsupported`);
     }
-    if (compatFloor >= 0 && index > compatFloor) {
+    if (index > compatFloor) {
       throw new Error(
         `sha target ${tag} predates the modern gw-listener drift-address cutover (${SHA_RUNTIME_COMPAT_MIN_SHA.slice(0, 7)}) and is unsupported by the current CLI; use latest-supported or a newer sha`,
       );
@@ -340,30 +321,10 @@ const repoPackageTags = async (targetTag?: string) =>
     ),
   ) as Record<string, Set<string>>;
 
-export const applyReleaseBaselineDefaults = (bundle: VersionBundle, defaults: Record<string, string>, ref: string): VersionBundle => {
-  const env = {
-    ...bundle.env,
-    ...(defaults.CORE_VERSION ? { CORE_VERSION: defaults.CORE_VERSION } : {}),
-  };
-  return {
-    ...bundle,
-    env,
-    sources: [...bundle.sources, "baseline=release-defaults"],
-  };
-};
-
-const releaseBaselineBundle = async (bundle: VersionBundle, requested: string, ref: string) => {
-  if (!ref.startsWith(RELEASE_REF_PREFIX)) {
-    return bundle;
-  }
-  await assertModernCliBaseline(requested);
-  return applyReleaseBaselineDefaults(bundle, await baselineDefaults(requested), ref);
-};
-
 /** Resolves a user-facing version target into a concrete version bundle. */
 export const resolveTarget = async (
   target: VersionTarget,
-  options: { sha?: string; ref?: string } = {},
+  options: { sha?: string } = {},
 ): Promise<VersionBundle> => {
   if (target === "latest-supported") {
     try {
@@ -390,21 +351,8 @@ export const resolveTarget = async (
     if (!SHA_REF.test(requested)) {
       throw new GitHubApiError(`Invalid sha ${requested}; expected 7 or 40 hex characters`);
     }
-    const ref = assertSupportedShaRef(normalizeShaRef(options.ref));
     const tag = shortSha(requested);
-    try {
-      await assertCommitOnRef(ref, requested);
-      const commits = await refCommits(ref, 5000);
-      const bundle = await releaseBaselineBundle(
-        presetBundle(target, tag, `sha-${tag}.json`, [`requested-sha=${requested.toLowerCase()}`, `ref=${ref}`]),
-        requested,
-        ref,
-      );
-      assertSupportedShaBundle(bundle, commits);
-      return bundle;
-    } catch (error) {
-      throw new GitHubApiError(error instanceof Error ? error.message : String(error));
-    }
+    return presetBundle(target, tag, `sha-${tag}.json`, [`requested-sha=${requested.toLowerCase()}`]);
   }
 
   const [packageTagsMap, commits] = await Promise.all([repoPackageTags(), mainCommits(5000)]);

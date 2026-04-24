@@ -141,12 +141,6 @@ describe("cli", () => {
     expect(result.stderr).toContain("--target sha requires --sha");
   });
 
-  test("rejects --ref without a sha target", async () => {
-    const result = await execCli(["up", "--target", "latest-main", "--ref", "release/42.7.x"]);
-    expect(result.code).toBe(1);
-    expect(result.stderr).toContain("--ref requires --target sha");
-  });
-
   test("rejects combining resume with an explicit target", async () => {
     const result = await execCli(["up", "--target", "latest-main", "--resume"]);
     expect(result.code).toBe(1);
@@ -168,15 +162,6 @@ describe("cli", () => {
       expect(result.code).toBe(1);
       expect(result.stderr).toContain("Invalid sha invalidhex; expected 7 or 40 hex characters");
       expect(result.stderr).not.toContain("Hint: run with --resume");
-    });
-  });
-
-  test("sha target accepts ref before validating the sha value", async () => {
-    await withState(persistedState(), async (env) => {
-      const result = await execCli(["up", "--target", "sha", "--sha", "invalidhex", "--ref", "release/42.7.x"], env);
-      expect(result.code).toBe(1);
-      expect(result.stderr).toContain("Invalid sha invalidhex; expected 7 or 40 hex characters");
-      expect(result.stderr).not.toContain("--ref requires --target sha");
     });
   });
 

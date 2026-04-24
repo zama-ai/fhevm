@@ -14,9 +14,7 @@ import {
 import {
   SIMPLE_ACL_MIN_SHA,
   SHA_RUNTIME_COMPAT_MIN_SHA,
-  applyReleaseBaselineDefaults,
   applyVersionEnvOverrides,
-  assertSupportedShaRef,
   assertSupportedShaBundle,
   missingRepoPackages,
   presetBundle,
@@ -90,41 +88,6 @@ describe("resolve", () => {
     ).not.toThrow();
   });
 
-  test("accepts sha bundles when selected branch history lacks main cutover anchors", () => {
-    const commits = [
-      "5e7db95000000000000000000000000000000000",
-      "4e7db95000000000000000000000000000000000",
-    ];
-    expect(() =>
-      assertSupportedShaBundle(
-        presetBundle("sha", "5e7db95", "sha-5e7db95.json"),
-        commits,
-      ),
-    ).not.toThrow();
-  });
-
-  test("validates release ref syntax for sha resolution", () => {
-    expect(() => assertSupportedShaRef("release/not-a-version")).toThrow("expected release/<major>.<minor>.x");
-    expect(assertSupportedShaRef("release/0.12.x")).toBe("release/0.12.x");
-    expect(assertSupportedShaRef("release/42.7.x")).toBe("release/42.7.x");
-  });
-
-  test("treats newer release branches like main for relayer", () => {
-    const bundle = applyReleaseBaselineDefaults(
-      presetBundle("sha", "abcdef0", "sha-abcdef0.json"),
-      {
-        CORE_VERSION: "v0.13.10-rc.0",
-        RELAYER_VERSION: "ignored",
-        RELAYER_MIGRATE_VERSION: "ignored",
-      },
-      "release/42.7.x",
-    );
-    expect(bundle.env.CORE_VERSION).toBe("v0.13.10-rc.0");
-    expect(bundle.env.RELAYER_VERSION).toBe("abcdef0");
-    expect(bundle.env.RELAYER_MIGRATE_VERSION).toBe("abcdef0");
-    expect(bundle.sources.at(-1)).toBe("baseline=release-defaults");
-  });
-
   test("only caches immutable sha targets", () => {
     expect(targetUsesCache("latest-supported")).toBe(false);
     expect(targetUsesCache("latest-main")).toBe(false);
@@ -158,34 +121,6 @@ describe("resolve", () => {
           process.env,
         ),
       ).rejects.toThrow("invalid lockName");
-    });
-  });
-
-  test("rejects stale sha lock files during resolve", async () => {
-    await withTempStateDir(async (stateDir) => {
-      const lockFile = path.join(stateDir, "stale-sha-lock.json");
-      await writeFile(
-        lockFile,
-        JSON.stringify({
-          target: "sha",
-          lockName: "sha-0000000.json",
-          sources: ["preset=sha", "repo-owned=0000000", "requested-sha=0000000", "ref=main"],
-          env: presetBundle("sha", "0000000", "sha-0000000.json").env,
-        }),
-      );
-      await expect(
-        resolveBundle(
-          {
-            target: "sha",
-            requestedTarget: undefined,
-            sha: undefined,
-            ref: undefined,
-            lockFile,
-            reset: false,
-          },
-          process.env,
-        ),
-      ).rejects.toThrow("unsupported");
     });
   });
 

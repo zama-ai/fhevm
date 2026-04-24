@@ -157,7 +157,6 @@ export type UpOptions = {
   target: VersionTarget;
   requestedTarget?: VersionTarget;
   sha?: string;
-  ref?: string;
   overrides: LocalOverride[];
   scenarioPath?: string;
   fromStep?: StepName;

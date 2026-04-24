@@ -23,7 +23,6 @@ jobs:
       contents: 'read' # Required to checkout repository code
     env:
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
-      BASE_REF: ${{ github.base_ref }}
     outputs:
       lock-artifact-name: ${{ steps.resolve-baseline.outputs.lock-artifact-name }}
     steps:
@@ -45,7 +44,7 @@ jobs:
         working-directory: test-suite/fhevm
         run: |
           set -euo pipefail
-          lock_path="$(./fhevm-cli resolve --target sha --sha "$BASE_SHA" --ref "$BASE_REF" --reset | tail -n 1)"
+          lock_path="$(./fhevm-cli resolve --target sha --sha "$BASE_SHA" --reset | tail -n 1)"
           artifact_name="fhevm-base-lock-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           echo "lock-path=$lock_path" >> "$GITHUB_OUTPUT"
           echo "lock-artifact-name=$artifact_name" >> "$GITHUB_OUTPUT"
@@ -111,10 +110,9 @@ jobs:
       - test-suite-docker-build
     if: ${{ (success() || failure()) && (startsWith(github.head_ref, 'mergify/merge-queue/') || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'e2e orchestrate test')) }}
     permissions:
-      contents: 'read' # Required to read the checked-in release baseline defaults
+      contents: 'read' # Required to read repository metadata
     env:
       BASE_COMMIT_HASH: ${{ github.event.pull_request.base.sha }}
-      BASE_REF: ${{ github.base_ref }}
       NEW_COMMIT_HASH: ${{ github.event.pull_request.head.sha }}
       DOCKER_BUILD_RESULTS: ${{ toJSON(needs) }}
     runs-on: ubuntu-latest
