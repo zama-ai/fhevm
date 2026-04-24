@@ -20,7 +20,7 @@ use fhevm_gateway_bindings::decryption::Decryption::{
     userDecryptionRequest_1Call as userDecryptionRequestCall,
 };
 use fhevm_host_bindings::acl::ACL::ACLInstance;
-use futures::future::join_all;
+use futures::future::{join_all, try_join_all};
 use kms_grpc::kms::v1::{
     Eip712DomainMsg, PublicDecryptionRequest, RequestId, TypedCiphertext, UserDecryptionRequest,
 };
@@ -224,13 +224,15 @@ where
     /// RFC016 unified user decryption check — verifies the full ACL authorization for a
     /// `UserDecryptionRequestV2` payload.
     ///
-    /// 1. (deferred — see TODO below) signature invalidation check
-    /// 2. validity window (`startTimestamp <= now <= startTimestamp + durationSeconds`)
-    /// 3. `userAddress ∉ allowedContracts` when `allowedContracts` is non-empty
+    /// 1. validity window (`startTimestamp <= now <= startTimestamp + durationSeconds`)
+    /// 2. `userAddress ∉ allowedContracts` when `allowedContracts` is non-empty
+    /// 3. signature invalidation: `startTimestamp >= ACL.decryptionSignatureInvalidatedBefore(userAddress)`
     /// 4. per-handle ownership (direct `isAllowed` if `ownerAddress == userAddress`, else
     ///    `isHandleDelegatedForUserDecryption`)
     /// 5. per-handle contract allowance (any `isAllowed(handle, c)` for `c ∈ allowedContracts`,
     ///    no-op in permissive mode)
+    ///
+    /// Note: EIP-712 signature verification (step 1 in RFC016) is deferred to RFC-012 implementation.
     #[tracing::instrument(skip_all)]
     pub async fn check_user_decryption_request_v2(
         &self,
@@ -242,10 +244,6 @@ where
         );
 
         let payload = &request.payload;
-
-        // TODO(RFC016 signature invalidation): fetch
-        // `ACL.decryptionSignatureInvalidatedBefore(userAddress)` once the `fhevm-host-bindings`
-        // `ACL` binding exposes it, and reject when `validity.startTimestamp < invalidationTs`.
 
         // Validity window
         let start = payload.requestValidity.startTimestamp;
@@ -270,28 +268,40 @@ where
             )));
         }
 
-        for entry in &request.handles {
-            let chain_id = extract_chain_id_from_handle(entry.handle.as_slice())
-                .map_err(ProcessingError::Irrecoverable)?;
-            let acl_contract = self.acl_contracts.get(&chain_id).ok_or_else(|| {
-                ProcessingError::Recoverable(anyhow!(
-                    "No ACL contract config found for chain id {chain_id}"
-                ))
-            })?;
+        // RFC-012 enforces that all handles share the same chain_id (as it's part of the EIP-712)
+        let chain_id = request
+            .handles
+            .first()
+            .ok_or_else(|| ProcessingError::Irrecoverable(anyhow!("request contains no handles")))
+            .map(|h| extract_chain_id_from_handle(h.handle.as_slice()))?
+            .map_err(ProcessingError::Irrecoverable)?;
+        let acl_contract = self.acl_contracts.get(&chain_id).ok_or_else(|| {
+            ProcessingError::Recoverable(anyhow!(
+                "No ACL contract config found for chain id {chain_id}"
+            ))
+        })?;
+        self.inner_invalidation_check_for_user_decryption_v2(
+            acl_contract,
+            payload.userAddress,
+            start,
+        )
+        .await?;
 
+        try_join_all(request.handles.iter().map(|handle_entry| async move {
             tokio::try_join!(
                 self.inner_ownership_check_for_user_decryption_v2(
                     acl_contract,
-                    entry,
+                    handle_entry,
                     payload.userAddress,
                 ),
                 self.inner_allowed_contracts_check_for_user_decryption_v2(
                     acl_contract,
-                    entry.handle,
+                    handle_entry.handle,
                     &payload.allowedContracts,
                 ),
-            )?;
-        }
+            )
+        }))
+        .await?;
 
         info!(
             "RFC016 ACL check passed for {} handles!",
@@ -371,6 +381,28 @@ where
                 hex::encode(handle)
             )))
         }
+    }
+
+    /// RFC016 signature invalidation check. Rejects if `startTimestamp < invalidationTs`, meaning
+    /// the user has invalidated all signatures issued before `invalidationTs`.
+    async fn inner_invalidation_check_for_user_decryption_v2(
+        &self,
+        acl_contract: &ACLInstance<HP>,
+        user_address: Address,
+        start_timestamp: U256,
+    ) -> Result<(), ProcessingError> {
+        let invalidation_ts = acl_contract
+            .decryptionSignatureInvalidatedBefore(user_address)
+            .call()
+            .await
+            .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
+        if start_timestamp < invalidation_ts {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "RFC016 signature invalidated: startTimestamp {start_timestamp} < \
+                 invalidatedBefore {invalidation_ts} for userAddress {user_address}"
+            )));
+        }
+        Ok(())
     }
 
     async fn inner_acl_check_for_user_decryption(
@@ -565,7 +597,6 @@ mod tests {
     enum ExpectedOutcome {
         Ok,
         Recoverable,
-        #[allow(unused)]
         Irrecoverable,
     }
 
@@ -874,6 +905,78 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
+    // Invalidation check (validity window passes, empty allowedContracts, direct ownership)
+    // -------------------------------------------------------------------------
+    enum InvalidationMock {
+        Zero,         // invalidation_ts = 0 → start (≈ now-3600) >= 0 → passes
+        AboveStart,   // invalidation_ts = u64::MAX → start < u64::MAX → fails
+        EqualToStart, // invalidation_ts = start → start < start is false → passes
+        TransportError,
+    }
+
+    #[rstest]
+    #[case::not_invalidated(InvalidationMock::Zero, ExpectedOutcome::Ok)]
+    #[case::invalidated(InvalidationMock::AboveStart, ExpectedOutcome::Irrecoverable)]
+    #[case::boundary_passes(InvalidationMock::EqualToStart, ExpectedOutcome::Ok)]
+    #[case::transport_error(InvalidationMock::TransportError, ExpectedOutcome::Recoverable)]
+    #[tokio::test]
+    async fn check_user_decryption_request_v2_invalidation(
+        #[case] mock: InvalidationMock,
+        #[case] expected: ExpectedOutcome,
+    ) {
+        let asserter = Asserter::new();
+        let sns_ct = rand_sns_ct();
+        let user_address = rand_address();
+        let processor = setup_test_processor(asserter.clone(), &sns_ct);
+
+        const START_OFFSET_SECS: i64 = -3600;
+        let start = U256::from((Utc::now().timestamp() + START_OFFSET_SECS) as u64);
+
+        let passes = match mock {
+            InvalidationMock::Zero => {
+                asserter.push_success(&U256::ZERO.abi_encode());
+                true
+            }
+            InvalidationMock::AboveStart => {
+                asserter.push_success(&U256::from(u64::MAX).abi_encode());
+                false
+            }
+            InvalidationMock::EqualToStart => {
+                asserter.push_success(&start.abi_encode());
+                true
+            }
+            InvalidationMock::TransportError => {
+                asserter.push_failure_msg("transport error");
+                false
+            }
+        };
+
+        if passes {
+            asserter.push_success(&true.abi_encode()); // ownership: direct path passes
+        }
+
+        let request = make_v2_request(
+            &sns_ct,
+            user_address,
+            user_address,
+            vec![],
+            START_OFFSET_SECS,
+            86400,
+        );
+        let result = processor.check_user_decryption_request_v2(&request).await;
+
+        match expected {
+            ExpectedOutcome::Ok => result.unwrap(),
+            ExpectedOutcome::Recoverable => {
+                assert!(matches!(result, Err(ProcessingError::Recoverable(_))))
+            }
+            ExpectedOutcome::Irrecoverable => {
+                assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))))
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Ownership check (empty allowedContracts → 1 RPC per test)
     // -------------------------------------------------------------------------
     enum OwnershipMock {
@@ -911,6 +1014,7 @@ mod tests {
             OwnershipMock::DirectPath(r) => (user_address, r),
             OwnershipMock::DelegatedPath(r) => (rand_address(), r),
         };
+        asserter.push_success(&U256::ZERO.abi_encode()); // invalidation check: not invalidated
         match acl_response {
             Some(v) => asserter.push_success(&v.abi_encode()),
             None => asserter.push_failure_msg("transport error"),
@@ -953,6 +1057,7 @@ mod tests {
         let user_address = rand_address();
         let processor = setup_test_processor(asserter.clone(), &sns_ct);
 
+        asserter.push_success(&U256::ZERO.abi_encode()); // invalidation check: not invalidated
         asserter.push_success(&true.abi_encode()); // ownership always passes
         match contract_response {
             Some(v) => asserter.push_success(&v.abi_encode()),

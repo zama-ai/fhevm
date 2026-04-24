@@ -3,7 +3,7 @@ mod common;
 use crate::common::{create_mock_user_decryption_request_tx, init_kms_worker};
 use alloy::{
     hex::FromHex,
-    primitives::FixedBytes,
+    primitives::{FixedBytes, U256},
     providers::{ProviderBuilder, mock::Asserter},
     sol_types::SolValue,
 };
@@ -34,7 +34,7 @@ use kms_worker::core::Config;
 use mocktail::{MockSet, server::MockServer};
 use rstest::rstest;
 use sqlx::{Pool, Postgres};
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
@@ -95,20 +95,16 @@ async fn test_processing_request(
     // Mocking Host chain. ACL call counts per variant:
     //   - Public:            1 `isAllowedForDecryption`
     //   - Legacy user:       2 `isAllowed` (user + contract)
-    //   - RFC016 user (V2):  1 `isAllowed(handle, userAddress)` — the inserter uses the direct
-    //                        ownership path with empty `allowedContracts`, so no per-contract loop.
-    let acl_contracts_mock = match event_type {
-        TestEventType::PublicDecryption => {
-            init_host_chains_acl_contracts_mock(sns_ct.ctHandle.as_slice(), vec![true])
-        }
-        TestEventType::UserDecryption => {
-            init_host_chains_acl_contracts_mock(sns_ct.ctHandle.as_slice(), vec![true, true])
-        }
-        TestEventType::UserDecryptionV2 => {
-            init_host_chains_acl_contracts_mock(sns_ct.ctHandle.as_slice(), vec![true])
-        }
-        _ => HashMap::new(),
+    //   - RFC016 user (V2):  1 U256 (`decryptionSignatureInvalidatedBefore`) + 1 `isAllowed`
+    //                        (direct ownership path, empty `allowedContracts`)
+    let acl_responses = match event_type {
+        TestEventType::PublicDecryption => vec![true.abi_encode()],
+        TestEventType::UserDecryptionV2 => vec![U256::ZERO.abi_encode(), true.abi_encode()],
+        TestEventType::UserDecryption => vec![true.abi_encode(); 2],
+        _ => vec![],
     };
+    let acl_contracts_mock =
+        init_host_chains_acl_contracts_mock(sns_ct.ctHandle.as_slice(), acl_responses);
 
     // Insert request in DB to trigger kms_worker job
     let request = insert_rand_request(test_instance.db(), event_type, insert_options).await?;

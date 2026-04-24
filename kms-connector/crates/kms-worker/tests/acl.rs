@@ -1,7 +1,11 @@
 mod common;
 
 use crate::common::{create_mock_user_decryption_request_tx, init_kms_worker};
-use alloy::providers::{ProviderBuilder, mock::Asserter};
+use alloy::{
+    primitives::U256,
+    providers::{ProviderBuilder, mock::Asserter},
+    sol_types::SolValue,
+};
 use connector_utils::tests::{
     db::requests::{
         InsertRequestOptions, TestEventType, check_no_uncompleted_request_in_db,
@@ -55,14 +59,19 @@ async fn test_decryption_acl_failure(#[case] event_type: TestEventType) -> anyho
         .connect_mocked_client(asserter);
     info!("Gateway mock started!");
 
-    // Mocking Host chain ACL to DENY decryption
-    // Public: 1 ACL check, User legacy: 2 ACL checks (user + contract), V2: 1 (direct ownership)
+    // Mocking Host chain ACL to DENY decryption.
+    // Per attempt: Public → 1 bool; Legacy user → 2 bools; V2 → 1 U256 (invalidation) + 1 bool.
     let acl_responses = match event_type {
-        TestEventType::PublicDecryption | TestEventType::UserDecryptionV2 => {
-            vec![false; MAX_DECRYPTION_ATTEMPTS as usize]
+        TestEventType::PublicDecryption => {
+            vec![false.abi_encode(); MAX_DECRYPTION_ATTEMPTS as usize]
         }
-        TestEventType::UserDecryption => vec![false; 2 * MAX_DECRYPTION_ATTEMPTS as usize],
-        _ => unreachable!(),
+        TestEventType::UserDecryptionV2 => (0..MAX_DECRYPTION_ATTEMPTS)
+            .flat_map(|_| vec![U256::ZERO.abi_encode(), false.abi_encode()])
+            .collect(),
+        TestEventType::UserDecryption => {
+            vec![false.abi_encode(); 2 * MAX_DECRYPTION_ATTEMPTS as usize]
+        }
+        _ => vec![],
     };
     let acl_contracts_mock =
         init_host_chains_acl_contracts_mock(sns_ct.ctHandle.as_slice(), acl_responses);
