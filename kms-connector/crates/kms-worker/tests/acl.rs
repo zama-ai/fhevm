@@ -2,16 +2,13 @@ mod common;
 
 use crate::common::{create_mock_user_decryption_request_tx, init_kms_worker};
 use alloy::providers::{ProviderBuilder, mock::Asserter};
-use connector_utils::{
-    tests::{
-        db::requests::{
-            InsertRequestOptions, check_no_uncompleted_request_in_db, check_request_failed_in_db,
-            insert_rand_request,
-        },
-        rand::{rand_digest, rand_sns_ct},
-        setup::{DbInstance, TestInstanceBuilder, init_host_chains_acl_contracts_mock},
+use connector_utils::tests::{
+    db::requests::{
+        InsertRequestOptions, TestEventType, check_no_uncompleted_request_in_db,
+        check_request_failed_in_db, insert_rand_request,
     },
-    types::db::EventType,
+    rand::{rand_digest, rand_sns_ct},
+    setup::{DbInstance, TestInstanceBuilder, init_host_chains_acl_contracts_mock},
 };
 use kms_worker::core::Config;
 use mocktail::server::MockServer;
@@ -21,11 +18,12 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 #[rstest]
-#[case::public_decryption(EventType::PublicDecryptionRequest)]
-#[case::user_decryption(EventType::UserDecryptionRequest)]
+#[case::public_decryption(TestEventType::PublicDecryption)]
+#[case::user_decryption(TestEventType::UserDecryption)]
+#[case::user_decryption_v2(TestEventType::UserDecryptionV2)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_decryption_acl_failure(#[case] event_type: EventType) -> anyhow::Result<()> {
+async fn test_decryption_acl_failure(#[case] event_type: TestEventType) -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::default()
         .with_db(DbInstance::setup().await?)
         .build();
@@ -42,13 +40,13 @@ async fn test_decryption_acl_failure(#[case] event_type: EventType) -> anyhow::R
         .with_tx_hash(tx_hash);
     for _ in 0..MAX_DECRYPTION_ATTEMPTS {
         match event_type {
-            EventType::PublicDecryptionRequest => (),
-            EventType::UserDecryptionRequest => {
+            TestEventType::PublicDecryption | TestEventType::UserDecryptionV2 => (),
+            TestEventType::UserDecryption => {
                 // Mocking `get_transaction_by_hash` call result
                 let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
                 asserter.push_success(&mock_tx);
             }
-            _ => panic!("Unexpected event type"),
+            _ => panic!("Unexpected event kind"),
         };
     }
 
@@ -58,10 +56,12 @@ async fn test_decryption_acl_failure(#[case] event_type: EventType) -> anyhow::R
     info!("Gateway mock started!");
 
     // Mocking Host chain ACL to DENY decryption
-    // Public: 1 ACL check, User: 2 ACL checks (user + contract)
+    // Public: 1 ACL check, User legacy: 2 ACL checks (user + contract), V2: 1 (direct ownership)
     let acl_responses = match event_type {
-        EventType::PublicDecryptionRequest => vec![false; MAX_DECRYPTION_ATTEMPTS as usize],
-        EventType::UserDecryptionRequest => vec![false; 2 * MAX_DECRYPTION_ATTEMPTS as usize],
+        TestEventType::PublicDecryption | TestEventType::UserDecryptionV2 => {
+            vec![false; MAX_DECRYPTION_ATTEMPTS as usize]
+        }
+        TestEventType::UserDecryption => vec![false; 2 * MAX_DECRYPTION_ATTEMPTS as usize],
         _ => unreachable!(),
     };
     let acl_contracts_mock =

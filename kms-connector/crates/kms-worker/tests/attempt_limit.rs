@@ -10,7 +10,8 @@ use alloy::{
 use connector_utils::{
     tests::{
         db::requests::{
-            InsertRequestOptions, check_no_uncompleted_request_in_db, insert_rand_request,
+            InsertRequestOptions, TestEventType, check_no_uncompleted_request_in_db,
+            insert_rand_request,
         },
         rand::{rand_digest, rand_sns_ct},
         setup::{
@@ -18,7 +19,7 @@ use connector_utils::{
             init_host_chains_acl_contracts_mock,
         },
     },
-    types::{ProtocolEventKind, db::EventType},
+    types::ProtocolEventKind,
 };
 use fhevm_gateway_bindings::gateway_config::GatewayConfig::Coprocessor;
 use kms_grpc::kms::v1::Empty;
@@ -30,14 +31,15 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 #[rstest]
-#[case::public_decryption_removal_after_max_attempt_reached(EventType::PublicDecryptionRequest)]
-#[case::user_decryption_removal_after_max_attempt_reached(EventType::UserDecryptionRequest)]
-#[case::prep_keygen_processing_not_removed_on_error(EventType::PrepKeygenRequest)]
-#[case::keygen_processing_not_removed_on_error(EventType::KeygenRequest)]
-#[case::crsgen_processing_not_removed_on_error(EventType::CrsgenRequest)]
+#[case::public_decryption_removal_after_max_attempt_reached(TestEventType::PublicDecryption)]
+#[case::user_decryption_removal_after_max_attempt_reached(TestEventType::UserDecryption)]
+#[case::user_decryption_v2_removal_after_max_attempt_reached(TestEventType::UserDecryptionV2)]
+#[case::prep_keygen_processing_not_removed_on_error(TestEventType::PrepKeygen)]
+#[case::keygen_processing_not_removed_on_error(TestEventType::Keygen)]
+#[case::crsgen_processing_not_removed_on_error(TestEventType::Crsgen)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_request_processing(#[case] event_type: EventType) -> anyhow::Result<()> {
+async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::Result<()> {
     // Setup real DB and S3 instance
     let test_instance = TestInstanceBuilder::default()
         .with_db(DbInstance::setup().await?)
@@ -58,7 +60,7 @@ async fn test_request_processing(#[case] event_type: EventType) -> anyhow::Resul
         .with_sns_ct_materials(vec![sns_ct.clone()])
         .with_tx_hash(tx_hash);
     for attempt in 0..MAX_DECRYPTION_ATTEMPTS {
-        if matches!(event_type, EventType::UserDecryptionRequest) {
+        if matches!(event_type, TestEventType::UserDecryption) {
             // Mocking `get_transaction_by_hash` call result
             let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
             asserter.push_success(&mock_tx);
@@ -80,12 +82,14 @@ async fn test_request_processing(#[case] event_type: EventType) -> anyhow::Resul
     info!("Gateway mock started!");
 
     // Mocking Host chain
-    let acl_contracts_mock = match &event_type {
-        EventType::PublicDecryptionRequest => init_host_chains_acl_contracts_mock(
-            sns_ct.ctHandle.as_slice(),
-            vec![true; MAX_DECRYPTION_ATTEMPTS as usize],
-        ),
-        EventType::UserDecryptionRequest => init_host_chains_acl_contracts_mock(
+    let acl_contracts_mock = match event_type {
+        TestEventType::PublicDecryption | TestEventType::UserDecryptionV2 => {
+            init_host_chains_acl_contracts_mock(
+                sns_ct.ctHandle.as_slice(),
+                vec![true; MAX_DECRYPTION_ATTEMPTS as usize],
+            )
+        }
+        TestEventType::UserDecryption => init_host_chains_acl_contracts_mock(
             sns_ct.ctHandle.as_slice(),
             vec![true; 2 * MAX_DECRYPTION_ATTEMPTS as usize],
         ),

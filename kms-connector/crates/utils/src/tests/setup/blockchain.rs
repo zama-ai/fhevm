@@ -14,7 +14,13 @@ use fhevm_gateway_bindings::{
     gateway_config::GatewayConfig::{self, GatewayConfigInstance},
 };
 use fhevm_host_bindings::kms_generation::KMSGeneration::{self, KMSGenerationInstance};
-use std::{path::PathBuf, process::Command, str::FromStr, sync::LazyLock, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    process::Command,
+    str::FromStr,
+    sync::LazyLock,
+    time::Duration,
+};
 use testcontainers::{
     ContainerAsync, GenericImage, ImageExt,
     core::{ContainerPort, WaitFor},
@@ -110,11 +116,11 @@ impl GatewayInstance {
         let (decryption_addr, gateway_config_addr, kms_generation_addr, kms_verifier_addr) =
             tokio::task::spawn_blocking(move || {
                 let decryption = deploy_contract(
-                    "contracts/mocks/DecryptionMock.sol",
+                    "DecryptionMock.sol",
                     "DecryptionMock",
                     &rpc_url,
                     &private_key,
-                    &gateway_contracts_path,
+                    &kms_connector_tests_path,
                 )?;
 
                 let gateway_config = deploy_contract(
@@ -208,7 +214,7 @@ fn deploy_contract(
     contract_name: &str,
     rpc_url: &str,
     private_key: &str,
-    gateway_contracts_root: &std::path::Path,
+    contracts_root: &Path,
 ) -> anyhow::Result<Address> {
     info!("Deploying {} via forge create...", contract_name);
     let contract_spec = format!("{}:{}", contract_path, contract_name);
@@ -222,9 +228,9 @@ fn deploy_contract(
             "--private-key",
             private_key,
             "--root",
-            gateway_contracts_root
+            contracts_root
                 .to_str()
-                .ok_or_else(|| anyhow::anyhow!("Invalid gateway-contracts path"))?,
+                .ok_or_else(|| anyhow::anyhow!("Invalid contracts root path"))?,
             &contract_spec,
         ])
         .output()

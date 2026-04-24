@@ -7,17 +7,20 @@ use alloy::{
 use anyhow::anyhow;
 use connector_utils::{
     tests::{
-        rand::{rand_address, rand_public_key, rand_signature, rand_u256},
+        db::requests::TestEventType,
+        rand::{rand_address, rand_digest, rand_public_key, rand_signature, rand_u256},
         setup::TestInstance,
     },
-    types::{
-        ProtocolEventKind,
-        db::{EventType, ParamsTypeDb},
-    },
+    types::{ProtocolEventKind, db::ParamsTypeDb},
 };
 use fhevm_gateway_bindings::decryption::{
-    Decryption::{PublicDecryptionRequest, UserDecryptionRequest_0 as UserDecryptionRequest},
-    IDecryption::{ContractsInfo, RequestValidity},
+    Decryption::{
+        HandleEntry, PublicDecryptionRequest, UserDecryptionRequest_0 as UserDecryptionRequest,
+        UserDecryptionRequest_1 as UserDecryptionRequestV2,
+    },
+    IDecryption::{
+        ContractsInfo, RequestValidity, RequestValiditySeconds, UserDecryptionRequestPayload,
+    },
 };
 use fhevm_host_bindings::kms_generation::KMSGeneration::{
     CrsgenRequest, KeygenRequest, PrepKeygenRequest,
@@ -69,11 +72,11 @@ pub async fn start_test_listener(
 
 pub async fn mock_event_on_gw(
     test_instance: &TestInstance,
-    event_type: EventType,
+    event_type: TestEventType,
 ) -> anyhow::Result<(ProtocolEventKind, Option<u64>)> {
     info!("Mocking {event_type} on Anvil...");
     let (pending_tx, event) = match event_type {
-        EventType::PublicDecryptionRequest => {
+        TestEventType::PublicDecryption => {
             let rand_extra_data = rand_signature();
             let event = PublicDecryptionRequest {
                 extraData: rand_extra_data.clone().into(),
@@ -86,7 +89,7 @@ pub async fn mock_event_on_gw(
                 .await?;
             (tx, event.into())
         }
-        EventType::UserDecryptionRequest => {
+        TestEventType::UserDecryption => {
             let rand_user_addr = rand_address();
             let rand_pub_key = rand_public_key();
             let event = UserDecryptionRequest {
@@ -94,8 +97,6 @@ pub async fn mock_event_on_gw(
                 publicKey: rand_pub_key.clone().into(),
                 ..Default::default()
             };
-            // `userDecryptionRequest_1` is the legacy overload in the generated bindings
-            // (`_0` is the RFC016 shape). Only the legacy signature is exercised here.
             let tx = test_instance
                 .decryption_contract()
                 .userDecryptionRequest_1(
@@ -111,7 +112,42 @@ pub async fn mock_event_on_gw(
                 .await?;
             (tx, event.into())
         }
-        EventType::PrepKeygenRequest => {
+        TestEventType::UserDecryptionV2 => {
+            let handles = vec![HandleEntry {
+                handle: rand_digest(),
+                contractAddress: rand_address(),
+                ownerAddress: rand_address(),
+            }];
+            let payload = UserDecryptionRequestPayload {
+                userAddress: rand_address(),
+                publicKey: rand_public_key().into(),
+                allowedContracts: vec![],
+                requestValidity: RequestValiditySeconds::default(),
+                extraData: vec![].into(),
+                signature: rand_signature().into(),
+            };
+            let event = UserDecryptionRequestV2 {
+                decryptionId: U256::ZERO,
+                snsCtMaterials: vec![],
+                handles: handles.clone(),
+                payload: payload.clone(),
+            };
+            let tx = test_instance
+                .decryption_contract()
+                .userDecryptionRequest_0(
+                    handles,
+                    payload.userAddress,
+                    payload.publicKey,
+                    payload.allowedContracts,
+                    payload.requestValidity,
+                    payload.signature,
+                    payload.extraData,
+                )
+                .send()
+                .await?;
+            (tx, event.into())
+        }
+        TestEventType::PrepKeygen => {
             let event = PrepKeygenRequest {
                 paramsType: ParamsTypeDb::Test as u8,
                 ..Default::default()
@@ -123,7 +159,7 @@ pub async fn mock_event_on_gw(
                 .await?;
             (tx, event.into())
         }
-        EventType::KeygenRequest => {
+        TestEventType::Keygen => {
             let rand_prep_id = rand_u256();
             let event = KeygenRequest {
                 prepKeygenId: rand_prep_id,
@@ -136,7 +172,7 @@ pub async fn mock_event_on_gw(
                 .await?;
             (tx, event.into())
         }
-        EventType::CrsgenRequest => {
+        TestEventType::Crsgen => {
             let rand_max_bit_length = rand_u256();
             let event = CrsgenRequest {
                 maxBitLength: rand_max_bit_length,
@@ -161,21 +197,26 @@ pub async fn mock_event_on_gw(
     Ok((event, block_number))
 }
 
-pub async fn fetch_from_db(db: &Pool<Postgres>, event_type: EventType) -> sqlx::Result<Vec<PgRow>> {
+pub async fn fetch_from_db(
+    db: &Pool<Postgres>,
+    event_type: TestEventType,
+) -> sqlx::Result<Vec<PgRow>> {
     info!("Checking {event_type} is stored in DB...");
     let query = match event_type {
-        EventType::PublicDecryptionRequest => "SELECT * FROM public_decryption_requests",
-        EventType::UserDecryptionRequest => "SELECT * FROM user_decryption_requests",
-        EventType::PrepKeygenRequest => "SELECT * FROM prep_keygen_requests",
-        EventType::KeygenRequest => "SELECT * FROM keygen_requests",
-        EventType::CrsgenRequest => "SELECT * FROM crsgen_requests",
+        TestEventType::PublicDecryption => "SELECT * FROM public_decryption_requests",
+        TestEventType::UserDecryption | TestEventType::UserDecryptionV2 => {
+            "SELECT * FROM user_decryption_requests"
+        }
+        TestEventType::PrepKeygen => "SELECT * FROM prep_keygen_requests",
+        TestEventType::Keygen => "SELECT * FROM keygen_requests",
+        TestEventType::Crsgen => "SELECT * FROM crsgen_requests",
     };
     sqlx::query(query).fetch_all(db).await
 }
 
 pub async fn poll_db_for_event(
     db: &Pool<Postgres>,
-    event_type: EventType,
+    event_type: TestEventType,
     expected_event: &ProtocolEventKind,
 ) -> anyhow::Result<()> {
     let timeout = Duration::from_secs(30);
@@ -213,7 +254,7 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
         }
         ProtocolEventKind::UserDecryptionV2(e) => {
             for r in rows {
-                if e.payload.publicKey.to_vec() == r.try_get::<Vec<u8>, _>("public_key")?
+                if e.payload.signature.to_vec() == r.try_get::<Vec<u8>, _>("signature")?
                     && e.payload.userAddress
                         == Address::from(r.try_get::<[u8; 20], _>("user_address")?)
                 {
