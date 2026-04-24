@@ -1,9 +1,6 @@
-use connector_utils::{
-    tests::{
-        db::requests::{InsertRequestOptions, insert_rand_request},
-        setup::TestInstanceBuilder,
-    },
-    types::db::EventType,
+use connector_utils::tests::{
+    db::requests::{InsertRequestOptions, TestEventType, insert_rand_request},
+    setup::TestInstanceBuilder,
 };
 use kms_worker::core::{Config, DbEventPicker, EventPicker};
 use rstest::rstest;
@@ -12,55 +9,19 @@ use std::time::Duration;
 use tracing::info;
 
 #[rstest]
+#[case::public_decryption(TestEventType::PublicDecryption)]
+#[case::user_decryption(TestEventType::UserDecryption)]
+#[case::user_decryption_v2(TestEventType::UserDecryptionV2)]
+#[case::prep_keygen(TestEventType::PrepKeygen)]
+#[case::keygen(TestEventType::Keygen)]
+#[case::crsgen(TestEventType::Crsgen)]
+#[case::prss_init(TestEventType::PrssInit)]
+#[case::key_reshare_same_set(TestEventType::KeyReshareSameSet)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_pick_public_decryption_with_polling_backup() -> anyhow::Result<()> {
-    test_pick_request_with_polling_backup(EventType::PublicDecryptionRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_pick_user_decryption_with_polling_backup() -> anyhow::Result<()> {
-    test_pick_request_with_polling_backup(EventType::UserDecryptionRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_pick_prep_keygen_with_polling_backup() -> anyhow::Result<()> {
-    test_pick_request_with_polling_backup(EventType::PrepKeygenRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_pick_keygen_with_polling_backup() -> anyhow::Result<()> {
-    test_pick_request_with_polling_backup(EventType::KeygenRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_pick_crsgen_with_polling_backup() -> anyhow::Result<()> {
-    test_pick_request_with_polling_backup(EventType::CrsgenRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_pick_prss_init_with_polling_backup() -> anyhow::Result<()> {
-    test_pick_request_with_polling_backup(EventType::PrssInit).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_pick_key_reshare_same_set_with_polling_backup() -> anyhow::Result<()> {
-    test_pick_request_with_polling_backup(EventType::KeyReshareSameSet).await
-}
-
-async fn test_pick_request_with_polling_backup(event_type: EventType) -> anyhow::Result<()> {
+async fn test_pick_request_with_polling_backup(
+    #[case] event_type: TestEventType,
+) -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_setup().await?;
 
     info!("Inserting {event_type} before starting the event picker...");

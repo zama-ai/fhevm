@@ -1,12 +1,10 @@
 use alloy::primitives::U256;
-use connector_utils::{
-    tests::{
-        db::requests::{
-            InsertRequestOptions, check_no_uncompleted_request_in_db, insert_rand_request,
-        },
-        setup::TestInstanceBuilder,
+use connector_utils::tests::{
+    db::requests::{
+        InsertRequestOptions, TestEventType, check_no_uncompleted_request_in_db,
+        insert_rand_request,
     },
-    types::db::EventType,
+    setup::TestInstanceBuilder,
 };
 use kms_worker::core::{Config, DbEventPicker, EventPicker};
 use rstest::rstest;
@@ -15,54 +13,18 @@ use std::time::Duration;
 use tracing::info;
 
 #[rstest]
+#[case::public_decryption(TestEventType::PublicDecryption)]
+#[case::user_decryption(TestEventType::UserDecryption)]
+#[case::user_decryption_v2(TestEventType::UserDecryptionV2)]
+#[case::prep_keygen(TestEventType::PrepKeygen)]
+#[case::keygen(TestEventType::Keygen)]
+#[case::crsgen(TestEventType::Crsgen)]
+// Not possible to have parallel PRSS Init the only ID currently allowed is 1.
+// #[case::prss_init(TestEventType::PrssInit)]
+#[case::key_reshare_same_set(TestEventType::KeyReshareSameSet)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_parallel_public_decryption_picking() -> anyhow::Result<()> {
-    test_parallel_request_picking(EventType::PublicDecryptionRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_parallel_user_decryption_picking() -> anyhow::Result<()> {
-    test_parallel_request_picking(EventType::UserDecryptionRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_parallel_prep_keygen_picking() -> anyhow::Result<()> {
-    test_parallel_request_picking(EventType::PrepKeygenRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_parallel_keygen_picking() -> anyhow::Result<()> {
-    test_parallel_request_picking(EventType::KeygenRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_parallel_crsgen_picking() -> anyhow::Result<()> {
-    test_parallel_request_picking(EventType::CrsgenRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-#[ignore = "Not possible to have parallel PRSS Init the only ID currently allowed is 1"]
-async fn test_parallel_prss_init_picking() -> anyhow::Result<()> {
-    test_parallel_request_picking(EventType::PrssInit).await
-}
-
-#[tokio::test]
-async fn test_parallel_key_reshare_same_set_picking() -> anyhow::Result<()> {
-    test_parallel_request_picking(EventType::KeyReshareSameSet).await
-}
-
-async fn test_parallel_request_picking(event_type: EventType) -> anyhow::Result<()> {
+async fn test_parallel_request_picking(#[case] event_type: TestEventType) -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_setup().await?;
     let mut event_picker = init_event_picker(test_instance.db().clone()).await?;
 

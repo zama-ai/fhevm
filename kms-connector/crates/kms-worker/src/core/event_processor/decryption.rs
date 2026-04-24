@@ -554,8 +554,11 @@ mod tests {
         sol_types::SolValue,
         transports::http::reqwest,
     };
-    use connector_utils::tests::rand::{rand_address, rand_sns_ct};
-    use fhevm_gateway_bindings::decryption::Decryption::CtHandleContractPair;
+    use connector_utils::tests::rand::{rand_address, rand_public_key, rand_sns_ct, rand_u256};
+    use fhevm_gateway_bindings::decryption::{
+        Decryption::CtHandleContractPair,
+        IDecryption::{RequestValiditySeconds, UserDecryptionRequestPayload},
+    };
     use fhevm_host_bindings::acl::ACL;
     use rstest::rstest;
 
@@ -564,6 +567,37 @@ mod tests {
         Recoverable,
         #[allow(unused)]
         Irrecoverable,
+    }
+
+    struct MockContextManager;
+
+    impl ContextManager for MockContextManager {
+        async fn validate_context(&self, _context_id: U256) -> Result<(), ProcessingError> {
+            Ok(())
+        }
+    }
+
+    fn setup_test_processor(
+        asserter: Asserter,
+        sns_ct: &SnsCiphertextMaterial,
+    ) -> DecryptionProcessor<impl Provider + use<>, impl Provider + use<>, MockContextManager> {
+        let mock_provider = ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .connect_mocked_client(asserter);
+        let chain_id = extract_chain_id_from_handle(sns_ct.ctHandle.as_slice()).unwrap();
+        let acl_contracts = HashMap::from([(
+            chain_id,
+            ACL::new(Address::default(), mock_provider.clone()),
+        )]);
+        let config = Config::default();
+        let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
+        DecryptionProcessor::new(
+            &config,
+            MockContextManager,
+            mock_provider,
+            acl_contracts,
+            s3_service,
+        )
     }
 
     enum PubDecryptACLMock {
@@ -584,25 +618,9 @@ mod tests {
         #[case] expected: ExpectedOutcome,
     ) {
         let asserter = Asserter::new();
-        let mock_provider = ProviderBuilder::new()
-            .disable_recommended_fillers()
-            .connect_mocked_client(asserter.clone());
         let sns_ct = rand_sns_ct();
-        let acl_contracts_mock = HashMap::from([(
-            extract_chain_id_from_handle(sns_ct.ctHandle.as_slice()).unwrap(),
-            ACL::new(Address::default(), mock_provider.clone()),
-        )]);
-
+        let decryption_processor = setup_test_processor(asserter.clone(), &sns_ct);
         let sns_ciphertexts = vec![sns_ct];
-        let config = Config::default();
-        let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
-        let decryption_processor = DecryptionProcessor::new(
-            &config,
-            MockContextManager,
-            mock_provider,
-            acl_contracts_mock,
-            s3_service,
-        );
 
         match mock_response {
             PubDecryptACLMock::Failure(msg) => asserter.push_failure_msg(msg),
@@ -659,15 +677,8 @@ mod tests {
         #[case] expected: ExpectedOutcome,
     ) {
         let asserter = Asserter::new();
-        let mock_provider = ProviderBuilder::new()
-            .disable_recommended_fillers()
-            .connect_mocked_client(asserter.clone());
-
         let sns_ct = rand_sns_ct();
-        let acl_contracts_mock = HashMap::from([(
-            extract_chain_id_from_handle(sns_ct.ctHandle.as_slice()).unwrap(),
-            ACL::new(Address::default(), mock_provider.clone()),
-        )]);
+        let decryption_processor = setup_test_processor(asserter.clone(), &sns_ct);
 
         // Use non-delegated userDecryptionRequestCall (requires only 2 ACL checks)
         let calldata = userDecryptionRequestCall {
@@ -680,15 +691,6 @@ mod tests {
         .abi_encode();
         let sns_ciphertexts = vec![sns_ct];
         let user_address = Address::default();
-        let config = Config::default();
-        let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
-        let decryption_processor = DecryptionProcessor::new(
-            &config,
-            MockContextManager,
-            mock_provider,
-            acl_contracts_mock,
-            s3_service,
-        );
 
         match mock_response {
             UserDecryptACLMock::Failure(msg) => asserter.push_failure_msg(msg),
@@ -744,15 +746,8 @@ mod tests {
         #[case] expected_error_msg: Option<&str>,
     ) {
         let asserter = Asserter::new();
-        let mock_provider = ProviderBuilder::new()
-            .disable_recommended_fillers()
-            .connect_mocked_client(asserter.clone());
-
         let sns_ct = rand_sns_ct();
-        let acl_contracts_mock = HashMap::from([(
-            extract_chain_id_from_handle(sns_ct.ctHandle.as_slice()).unwrap(),
-            ACL::new(Address::default(), mock_provider.clone()),
-        )]);
+        let decryption_processor = setup_test_processor(asserter.clone(), &sns_ct);
 
         let calldata = delegatedUserDecryptionRequestCall {
             ctHandleContractPairs: vec![CtHandleContractPair {
@@ -764,15 +759,6 @@ mod tests {
         .abi_encode();
         let sns_ciphertexts = vec![sns_ct];
         let user_address = Address::default();
-        let config = Config::default();
-        let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
-        let decryption_processor = DecryptionProcessor::new(
-            &config,
-            MockContextManager,
-            mock_provider,
-            acl_contracts_mock,
-            s3_service,
-        );
 
         match mock_response {
             DelegatedUserDecryptACLMock::Failure(msg) => asserter.push_failure_msg(msg),
@@ -803,11 +789,194 @@ mod tests {
         }
     }
 
-    struct MockContextManager;
+    fn make_v2_request(
+        sns_ct: &SnsCiphertextMaterial,
+        owner_address: Address,
+        user_address: Address,
+        allowed_contracts: Vec<Address>,
+        start_offset_secs: i64,
+        duration_secs: u64,
+    ) -> UserDecryptionRequestV2 {
+        let start = (Utc::now().timestamp() + start_offset_secs) as u64;
+        UserDecryptionRequestV2 {
+            decryptionId: rand_u256(),
+            snsCtMaterials: vec![sns_ct.clone()],
+            handles: vec![HandleEntry {
+                handle: sns_ct.ctHandle,
+                contractAddress: rand_address(),
+                ownerAddress: owner_address,
+            }],
+            payload: UserDecryptionRequestPayload {
+                userAddress: user_address,
+                publicKey: Bytes::from(rand_public_key()),
+                allowedContracts: allowed_contracts,
+                requestValidity: RequestValiditySeconds {
+                    startTimestamp: U256::from(start),
+                    durationSeconds: U256::from(duration_secs),
+                },
+                extraData: Bytes::default(),
+                signature: Bytes::default(),
+            },
+        }
+    }
 
-    impl ContextManager for MockContextManager {
-        async fn validate_context(&self, _context_id: U256) -> Result<(), ProcessingError> {
-            Ok(())
+    #[rstest]
+    #[case::not_yet_valid(3600_i64, 86400_u64, ExpectedOutcome::Recoverable)]
+    #[case::expired(-(2 * 3600_i64), 3600_u64, ExpectedOutcome::Irrecoverable)]
+    #[tokio::test]
+    async fn check_user_decryption_request_v2_validity_window(
+        #[case] start_offset_secs: i64,
+        #[case] duration_secs: u64,
+        #[case] expected: ExpectedOutcome,
+    ) {
+        let sns_ct = rand_sns_ct();
+        let user_address = rand_address();
+        let processor = setup_test_processor(Asserter::new(), &sns_ct);
+        let request = make_v2_request(
+            &sns_ct,
+            user_address,
+            user_address,
+            vec![],
+            start_offset_secs,
+            duration_secs,
+        );
+
+        let result = processor.check_user_decryption_request_v2(&request).await;
+
+        match expected {
+            ExpectedOutcome::Ok => result.unwrap(),
+            ExpectedOutcome::Recoverable => {
+                assert!(matches!(result, Err(ProcessingError::Recoverable(_))))
+            }
+            ExpectedOutcome::Irrecoverable => {
+                assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))))
+            }
+        }
+    }
+
+    // Test userAddress ∈ allowedContracts
+    #[tokio::test]
+    async fn check_user_decryption_request_v2_user_in_allowed_contracts() {
+        let sns_ct = rand_sns_ct();
+        let user_address = rand_address();
+        let processor = setup_test_processor(Asserter::new(), &sns_ct);
+        let request = make_v2_request(
+            &sns_ct,
+            user_address,
+            user_address,
+            vec![user_address],
+            -3600,
+            86400,
+        );
+
+        let result = processor.check_user_decryption_request_v2(&request).await;
+        assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))));
+    }
+
+    // -------------------------------------------------------------------------
+    // Ownership check (empty allowedContracts → 1 RPC per test)
+    // -------------------------------------------------------------------------
+    enum OwnershipMock {
+        DirectPath(Option<bool>),
+        DelegatedPath(Option<bool>),
+    }
+
+    #[rstest]
+    #[case::direct_transport_error(OwnershipMock::DirectPath(None), ExpectedOutcome::Recoverable)]
+    #[case::direct_allowed(OwnershipMock::DirectPath(Some(true)), ExpectedOutcome::Ok)]
+    #[case::direct_not_allowed(
+        OwnershipMock::DirectPath(Some(false)),
+        ExpectedOutcome::Recoverable
+    )]
+    #[case::delegated_transport_error(
+        OwnershipMock::DelegatedPath(None),
+        ExpectedOutcome::Recoverable
+    )]
+    #[case::delegated_yes(OwnershipMock::DelegatedPath(Some(true)), ExpectedOutcome::Ok)]
+    #[case::delegated_no(
+        OwnershipMock::DelegatedPath(Some(false)),
+        ExpectedOutcome::Recoverable
+    )]
+    #[tokio::test]
+    async fn check_user_decryption_request_v2_ownership(
+        #[case] mock: OwnershipMock,
+        #[case] expected: ExpectedOutcome,
+    ) {
+        let asserter = Asserter::new();
+        let sns_ct = rand_sns_ct();
+        let user_address = rand_address();
+        let processor = setup_test_processor(asserter.clone(), &sns_ct);
+
+        let (owner_address, acl_response) = match mock {
+            OwnershipMock::DirectPath(r) => (user_address, r),
+            OwnershipMock::DelegatedPath(r) => (rand_address(), r),
+        };
+        match acl_response {
+            Some(v) => asserter.push_success(&v.abi_encode()),
+            None => asserter.push_failure_msg("transport error"),
+        }
+
+        let request = make_v2_request(&sns_ct, owner_address, user_address, vec![], -3600, 86400);
+        let result = processor.check_user_decryption_request_v2(&request).await;
+
+        match expected {
+            ExpectedOutcome::Ok => result.unwrap(),
+            ExpectedOutcome::Recoverable => {
+                assert!(matches!(result, Err(ProcessingError::Recoverable(_))))
+            }
+            ExpectedOutcome::Irrecoverable => {
+                assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))))
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Allowed contracts check (direct ownership always passes → 2 RPCs)
+    //
+    // Two `isAllowed` calls are made concurrently via `tokio::try_join!`. The Asserter
+    // serves responses in FIFO order, but poll ordering between the two futures is not
+    // guaranteed. The test design is robust to either ordering: ownership and contracts
+    // failures are both Recoverable, so swapping which future receives which response
+    // doesn't change the expected outcome.
+    // -------------------------------------------------------------------------
+    #[rstest]
+    #[case::transport_error(None, ExpectedOutcome::Recoverable)]
+    #[case::at_least_one_allowed(Some(true), ExpectedOutcome::Ok)]
+    #[case::none_allowed(Some(false), ExpectedOutcome::Recoverable)]
+    #[tokio::test]
+    async fn check_user_decryption_request_v2_allowed_contracts(
+        #[case] contract_response: Option<bool>,
+        #[case] expected: ExpectedOutcome,
+    ) {
+        let asserter = Asserter::new();
+        let sns_ct = rand_sns_ct();
+        let user_address = rand_address();
+        let processor = setup_test_processor(asserter.clone(), &sns_ct);
+
+        asserter.push_success(&true.abi_encode()); // ownership always passes
+        match contract_response {
+            Some(v) => asserter.push_success(&v.abi_encode()),
+            None => asserter.push_failure_msg("transport error"),
+        }
+
+        let request = make_v2_request(
+            &sns_ct,
+            user_address,
+            user_address,
+            vec![rand_address()],
+            -3600,
+            86400,
+        );
+        let result = processor.check_user_decryption_request_v2(&request).await;
+
+        match expected {
+            ExpectedOutcome::Ok => result.unwrap(),
+            ExpectedOutcome::Recoverable => {
+                assert!(matches!(result, Err(ProcessingError::Recoverable(_))))
+            }
+            ExpectedOutcome::Irrecoverable => {
+                assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))))
+            }
         }
     }
 }
