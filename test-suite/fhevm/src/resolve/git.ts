@@ -49,11 +49,13 @@ const gitShow = async (object: string) => {
 
 const gitExists = async (object: string) => (await git(["cat-file", "-e", object], true)).code === 0;
 
-/** Ensures release baseline resolution only runs on branches with the TypeScript CLI layout. */
+/** Ensures release baseline resolution only runs on branches with checked-in resolver defaults. */
 export const assertModernCliBaseline = async (commit: string) => {
   const exists = await Promise.all(MODERN_CLI_PATHS.map((file) => gitExists(`${commit}:${file}`)));
   if (!exists.every(Boolean)) {
-    throw new GitHubApiError(`sha release baseline ${commit.toLowerCase()} does not contain the TypeScript fhevm CLI layout`);
+    throw new GitHubApiError(
+      `Cannot resolve release baseline ${commit.toLowerCase()}: the selected commit does not contain the checked-in fhevm CLI profile`,
+    );
   }
 };
 
