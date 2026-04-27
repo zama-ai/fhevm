@@ -8,6 +8,16 @@ import { delegatedUserDecryptSingleHandle, waitForBlock } from '../utils';
 const NOT_ALLOWED_ON_HOST_ACL = 'not_allowed_on_host_acl';
 const DELEGATION_EXPIRY_SECONDS = 75;
 const DELEGATION_EXPIRY_POLL_MS = 2_000;
+// Default delegation lifetime for tests that don't intentionally expire mid-run.
+const ONE_DAY_SECONDS = 24 * 60 * 60;
+// Mocha timeout for tests that wait through one or more coprocessor propagation
+// cycles (~6m37s observed on Sepolia for the existing per-contract revoke test).
+const SLOW_TEST_TIMEOUT_MS = 10 * 60 * 1000;
+// Host-chain blocks to wait for the coprocessor to absorb an ACL change.
+const PROPAGATION_BLOCKS = 15;
+// Encrypted token balance Alice transfers to the smart wallet in the outer
+// `before` hook; reused as the expected value in delegated-decrypt assertions.
+const SMART_WALLET_INITIAL_BALANCE = 500000n;
 
 const relayerErrorLabel = (error: unknown): string | undefined => {
   if (typeof error !== 'object' || error === null || !('relayerApiError' in error)) {
@@ -50,7 +60,7 @@ describe('Delegated user decryption', function () {
     await mintTx.wait();
 
     // Alice transfers some tokens to the smartWallet contract.
-    const transferAmount = 500000n;
+    const transferAmount = SMART_WALLET_INITIAL_BALANCE;
     const input = this.instances.alice.createEncryptedInput(this.tokenAddress, this.signers.alice.address);
     input.add64(transferAmount);
     const encryptedTransferAmount = await input.encrypt();
@@ -67,7 +77,7 @@ describe('Delegated user decryption', function () {
 
   it('test delegated user decryption - smartWallet owner delegates his own EOA to decrypt the smartWallet balance', async function () {
     // Bob (smartWallet owner) delegates decryption rights to his own EOA.
-    const expirationTimestamp = Math.floor(Date.now() / 1000) + 86400; // 24 hours from now
+    const expirationTimestamp = Math.floor(Date.now() / 1000) + ONE_DAY_SECONDS;
     const delegateTx = await this.smartWallet
       .connect(this.signers.bob)
       .delegateUserDecryption(
@@ -77,9 +87,9 @@ describe('Delegated user decryption', function () {
       );
     await delegateTx.wait();
 
-    // Wait for 15 blocks to ensure delegation is propagated by the coprocessor.
+    // Wait for the coprocessor to absorb the ACL change.
     const currentBlock = await ethers.provider.getBlockNumber();
-    await waitForBlock(currentBlock + 15);
+    await waitForBlock(currentBlock + PROPAGATION_BLOCKS);
 
     // Get the encrypted balance handle of the smartWallet.
     const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
@@ -99,12 +109,12 @@ describe('Delegated user decryption', function () {
     );
 
     // Verify the decrypted balance matches what was transferred.
-    expect(decryptedBalance).to.equal(500000n);
+    expect(decryptedBalance).to.equal(SMART_WALLET_INITIAL_BALANCE);
   });
 
   it('test delegated user decryption - smartWallet owner delegates a third EOA to decrypt the smartWallet balance', async function () {
     // Bob (smartWallet owner) delegates decryption rights to Carol's EOA.
-    const expirationTimestamp = Math.floor(Date.now() / 1000) + 86400; // 24 hours from now
+    const expirationTimestamp = Math.floor(Date.now() / 1000) + ONE_DAY_SECONDS;
     const delegateTx = await this.smartWallet
       .connect(this.signers.bob)
       .delegateUserDecryption(
@@ -114,9 +124,9 @@ describe('Delegated user decryption', function () {
       );
     await delegateTx.wait();
 
-    // Wait for 15 blocks to ensure delegation is propagated by the coprocessor.
+    // Wait for the coprocessor to absorb the ACL change.
     const currentBlock = await ethers.provider.getBlockNumber();
-    await waitForBlock(currentBlock + 15);
+    await waitForBlock(currentBlock + PROPAGATION_BLOCKS);
 
     // Get the encrypted balance handle of the smartWallet.
     const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
@@ -136,12 +146,12 @@ describe('Delegated user decryption', function () {
     );
 
     // Verify the decrypted balance matches what was transferred.
-    expect(decryptedBalance).to.equal(500000n);
+    expect(decryptedBalance).to.equal(SMART_WALLET_INITIAL_BALANCE);
   });
 
   it('test delegated user decryption - smartWallet can execute transference of funds to a third EOA', async function () {
     // First, Bob needs to delegate so the smartWallet can initiate transfers.
-    const expirationTimestamp = Math.floor(Date.now() / 1000) + 86400;
+    const expirationTimestamp = Math.floor(Date.now() / 1000) + ONE_DAY_SECONDS;
     const delegateTx = await this.smartWallet
       .connect(this.signers.bob)
       .delegateUserDecryption(
@@ -151,9 +161,9 @@ describe('Delegated user decryption', function () {
       );
     await delegateTx.wait();
 
-    // Wait for 15 blocks to ensure delegation is propagated by the coprocessor.
+    // Wait for the coprocessor to absorb the ACL change.
     let currentBlock = await ethers.provider.getBlockNumber();
-    await waitForBlock(currentBlock + 15);
+    await waitForBlock(currentBlock + PROPAGATION_BLOCKS);
 
     // Get the current smartWallet balance before transfer
     const smartWalletBalanceBefore = await this.token.balanceOf(this.smartWalletAddress);
@@ -222,9 +232,9 @@ describe('Delegated user decryption', function () {
   describe('negative-acl', function () {
     it('should reject when delegation has been revoked', async function () {
       // 10min — observed ~6m37s due to two 15-block waits for delegation propagation in sepolia
-      this.timeout(600000); 
+      this.timeout(SLOW_TEST_TIMEOUT_MS); 
       // First, ensure Bob has delegation.
-      const expirationTimestamp = Math.floor(Date.now() / 1000) + 86400;
+      const expirationTimestamp = Math.floor(Date.now() / 1000) + ONE_DAY_SECONDS;
       const delegateTx = await this.smartWallet
         .connect(this.signers.bob)
         .delegateUserDecryption(
@@ -234,9 +244,9 @@ describe('Delegated user decryption', function () {
         );
       await delegateTx.wait();
 
-      // Wait for 15 blocks to ensure delegation is propagated by the coprocessor.
+      // Wait for the coprocessor to absorb the ACL change.
       const currentBlock1 = await ethers.provider.getBlockNumber();
-      await waitForBlock(currentBlock1 + 15);
+      await waitForBlock(currentBlock1 + PROPAGATION_BLOCKS);
 
       // Revoke the delegation for Bob's EOA.
       const revokeTx = await this.smartWallet
@@ -249,7 +259,7 @@ describe('Delegated user decryption', function () {
 
       // Wait for 15 blocks to ensure revocation is propagated by the coprocessor.
       const currentBlock2 = await ethers.provider.getBlockNumber();
-      await waitForBlock(currentBlock2 + 15);
+      await waitForBlock(currentBlock2 + PROPAGATION_BLOCKS);
 
       // Try to decrypt the smartWallet balance with Bob's EOA, which should now fail.
       const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
@@ -299,13 +309,13 @@ describe('Delegated user decryption', function () {
       await dummy.waitForDeployment();
       const wrongAddress = await dummy.getAddress();
 
-      const expirationTimestamp = Math.floor(Date.now() / 1000) + 86400;
+      const expirationTimestamp = Math.floor(Date.now() / 1000) + ONE_DAY_SECONDS;
       const tx = await this.smartWallet
         .connect(this.signers.bob)
         .delegateUserDecryption(this.signers.eve.address, wrongAddress, expirationTimestamp);
       await tx.wait();
       const currentBlock = await ethers.provider.getBlockNumber();
-      await waitForBlock(currentBlock + 15);
+      await waitForBlock(currentBlock + PROPAGATION_BLOCKS);
 
       const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
       const { publicKey, privateKey } = this.instances.eve.generateKeypair();
@@ -338,7 +348,7 @@ describe('Delegated user decryption', function () {
       await waitForDelegationExpiry(expirationTimestamp);
 
       const currentBlock = await ethers.provider.getBlockNumber();
-      await waitForBlock(currentBlock + 15);
+      await waitForBlock(currentBlock + PROPAGATION_BLOCKS);
 
       const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
       const { publicKey, privateKey } = this.instances.eve.generateKeypair();
