@@ -146,7 +146,6 @@ jobs:
         run: |
           set -euo pipefail
           short_tag="$(git rev-parse --short=7 "$NEW_COMMIT_HASH")"
-          base_short_tag="$(git rev-parse --short=7 "$BASE_COMMIT_HASH")"
           needs_file="$RUNNER_TEMP/docker-build-results.json"
           printf '%s' "$DOCKER_BUILD_RESULTS" > "$needs_file"
 
@@ -178,7 +177,7 @@ jobs:
                 echo "$output_key=$short_tag" >> "$GITHUB_OUTPUT"
                 ;;
               skipped)
-                echo "$output_key=$base_short_tag" >> "$GITHUB_OUTPUT"
+                echo "$output_key=" >> "$GITHUB_OUTPUT"
                 ;;
               *)
                 failures+=("$job.$result_key=$result")
@@ -225,7 +224,7 @@ jobs:
               echo "test-suite-version=$short_tag" >> "$GITHUB_OUTPUT"
               ;;
             skipped)
-              echo "test-suite-version=$base_short_tag" >> "$GITHUB_OUTPUT"
+              echo "test-suite-version=" >> "$GITHUB_OUTPUT"
               ;;
             *)
               echo "Required repo-owned build outputs failed: test-suite-docker-build.build_result=$test_suite_result" >&2
