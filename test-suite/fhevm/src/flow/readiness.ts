@@ -1,4 +1,5 @@
 import { BootstrapTimeout, ContainerCrashed, MinioError, PreflightError, ProbeTimeout, RpcError } from "../errors";
+import { requiresLegacyGatewayKmsGenerationAddress } from "../compat/compat";
 import {
   COPROCESSOR_DB_CONTAINER,
   CRSGEN_ID_SELECTOR,
@@ -280,8 +281,30 @@ export const probeBootstrap = async (state: State) => {
   const discovery = state.discovery!;
   const keyPrefix = discovery.minioKeyPrefix ?? "PUB";
   try {
+    const defaultHostKey = defaultHostChainKey(state.scenario.hostChains);
+    const useGatewayKmsGeneration = requiresLegacyGatewayKmsGenerationAddress(state);
+    const rawRpcUrl = useGatewayKmsGeneration
+      ? discovery.endpoints.gateway.http
+      : discovery.endpoints.hosts[defaultHostKey]?.http;
+    const contractAddress = useGatewayKmsGeneration
+      ? discovery.gateway.KMS_GENERATION_ADDRESS
+      : discovery.hosts[defaultHostKey]?.KMS_GENERATION_CONTRACT_ADDRESS;
+    if (!rawRpcUrl) {
+      throw new PreflightError(
+        useGatewayKmsGeneration
+          ? "Missing gateway RPC endpoint for bootstrap probe"
+          : `Missing host RPC endpoint for chain "${defaultHostKey}" during bootstrap probe`,
+      );
+    }
+    const rpcUrl = hostReachableRpcUrl(rawRpcUrl);
+    if (!contractAddress) {
+      throw new PreflightError(
+        useGatewayKmsGeneration
+          ? "Missing gateway KMS_GENERATION_ADDRESS for bootstrap probe"
+          : `Missing host KMS_GENERATION_CONTRACT_ADDRESS for chain "${defaultHostKey}" during bootstrap probe`,
+      );
+    }
     const ethCallRaw = async (data: string) => {
-      const rpcUrl = hostReachableRpcUrl(discovery.endpoints.gateway.http);
       const response = await fetch(rpcUrl, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -289,7 +312,7 @@ export const probeBootstrap = async (state: State) => {
           jsonrpc: "2.0",
           id: 1,
           method: "eth_call",
-          params: [{ to: withHexPrefix(discovery.gateway.KMS_GENERATION_ADDRESS), data }, "latest"],
+          params: [{ to: withHexPrefix(contractAddress), data }, "latest"],
         }),
       });
       if (!response.ok) return 0n;

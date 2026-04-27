@@ -3,6 +3,7 @@
  */
 import {
   compatPolicyForState,
+  requiresLegacyGatewayKmsGenerationAddress,
   requiresLegacyRelayerUrl,
   requiresMultichainAclAddress,
 } from "../compat/compat";
@@ -123,6 +124,9 @@ const applyDiscoveryEnv = (
     return;
   }
   const primaryHost = state.discovery.hosts[defaultChain.key] ?? {};
+  const kmsGenerationAddress = requiresLegacyGatewayKmsGenerationAddress(plan)
+    ? state.discovery.gateway.KMS_GENERATION_ADDRESS
+    : primaryHost.KMS_GENERATION_CONTRACT_ADDRESS;
 
   updateContracts(envs["gateway-sc"], state.discovery.gateway);
   updateContracts(envs["gateway-mocked-payment"], {
@@ -142,7 +146,7 @@ const applyDiscoveryEnv = (
     INPUT_VERIFICATION_ADDRESS: state.discovery.gateway.INPUT_VERIFICATION_ADDRESS,
     CIPHERTEXT_COMMITS_ADDRESS: state.discovery.gateway.CIPHERTEXT_COMMITS_ADDRESS,
     ...(requiresMultichainAclAddress(plan) ? { MULTICHAIN_ACL_ADDRESS: state.discovery.gateway.MULTICHAIN_ACL_ADDRESS } : {}),
-    KMS_GENERATION_ADDRESS: state.discovery.gateway.KMS_GENERATION_ADDRESS,
+    KMS_GENERATION_ADDRESS: kmsGenerationAddress,
   });
 
   const kmsHostChains = chains.map((chain) => {
@@ -157,7 +161,7 @@ const applyDiscoveryEnv = (
   updateContracts(envs["kms-connector"], {
     KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
     KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS: state.discovery.gateway.GATEWAY_CONFIG_ADDRESS,
-    KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS: state.discovery.gateway.KMS_GENERATION_ADDRESS,
+    KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS: kmsGenerationAddress,
     KMS_CONNECTOR_HOST_CHAINS: JSON.stringify(kmsHostChains),
   });
   updateContracts(envs["relayer"], {

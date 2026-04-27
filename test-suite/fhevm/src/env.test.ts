@@ -81,6 +81,63 @@ describe("env", () => {
     expect(rendered.componentEnvs["test-suite"].CHAIN_ID_HOST).toBe("543210");
   });
 
+  test("sources kms-generation addresses from host contracts for modern bundles", async () => {
+    const templateEnvs = Object.fromEntries(
+      await Promise.all(
+        COMPONENTS.map(async (component) => [
+          component,
+          await readEnvFile(path.join(TEMPLATE_ENV_DIR, `.env.${component}`)),
+        ]),
+      ),
+    ) as Record<string, Record<string, string>>;
+    const state: State = {
+      target: "latest-main",
+      lockPath: "/tmp/latest-main.json",
+      requiresGitHub: true,
+      versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
+      overrides: [],
+      scenario: testDefaultScenario(),
+      discovery: {
+        gateway: {
+          GATEWAY_CONFIG_ADDRESS: "0x0000000000000000000000000000000000000001",
+          INPUT_VERIFICATION_ADDRESS: "0x0000000000000000000000000000000000000002",
+          CIPHERTEXT_COMMITS_ADDRESS: "0x0000000000000000000000000000000000000003",
+          DECRYPTION_ADDRESS: "0x0000000000000000000000000000000000000004",
+        },
+        hosts: {
+          host: {
+            ACL_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000010",
+            FHEVM_EXECUTOR_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000011",
+            INPUT_VERIFIER_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000012",
+            KMS_VERIFIER_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000013",
+            PAUSER_SET_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000014",
+            KMS_GENERATION_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000015",
+          },
+        },
+        kmsSigner: "",
+        fheKeyId: "f".repeat(64),
+        crsKeyId: "c".repeat(64),
+        endpoints: {
+          gateway: { http: "http://gateway-node:8546", ws: "ws://gateway-node:8546" },
+          hosts: { host: { http: "http://host-node:8545", ws: "ws://host-node:8545" } },
+          minioInternal: "http://minio:9000",
+          minioExternal: "http://localhost:9000",
+        },
+      },
+      completedSteps: [],
+      updatedAt: "2026-04-27T00:00:00.000Z",
+    };
+
+    const rendered = await renderEnvMaps({ discovery: state.discovery }, stackSpecForState(state), templateEnvs, deriveWallet);
+
+    expect(rendered.componentEnvs["coprocessor"].KMS_GENERATION_ADDRESS).toBe(
+      "0x0000000000000000000000000000000000000015",
+    );
+    expect(rendered.componentEnvs["kms-connector"].KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS).toBe(
+      "0x0000000000000000000000000000000000000015",
+    );
+  });
+
   test("treats the first explicit chain key as the default runtime chain", async () => {
     const templateEnvs = Object.fromEntries(
       await Promise.all(

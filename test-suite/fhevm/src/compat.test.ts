@@ -6,6 +6,7 @@ import {
   MODERN_RELAYER_IMAGE_REPOSITORY,
   MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY,
   compatPolicyForState,
+  requiresLegacyGatewayKmsGenerationAddress,
   requiresLegacyKmsCoreConfig,
   requiresLegacyRelayerUrl,
   validateBundleCompatibility,
@@ -89,6 +90,19 @@ describe("compat", () => {
     });
     expect(policy.coprocessorDropFlags["host-listener"]).toContain("--kms-generation-address");
     expect(policy.coprocessorDropFlags["host-listener-poller"]).toContain("--kms-generation-address");
+  });
+
+  test("treats sha-style gateway bundles as modern kms-generation sourcing", () => {
+    expect(
+      requiresLegacyGatewayKmsGenerationAddress({
+        versions: {
+          target: "latest-main",
+          lockName: "latest-main.json",
+          env: { GATEWAY_VERSION: "abcdef0" } as Record<string, string>,
+          sources: [],
+        },
+      }),
+    ).toBe(false);
   });
 
   test("detects legacy relayer URL behavior", () => {

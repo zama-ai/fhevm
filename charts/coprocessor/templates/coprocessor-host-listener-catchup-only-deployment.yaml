@@ -88,6 +88,7 @@ spec:
               value: {{ required (printf "chains entry %q: aclContractAddress is required" $chain.name) $chain.aclContractAddress | quote }}
             - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
               value: {{ required (printf "chains entry %q: fhevmExecutorContractAddress is required" $chain.name) $chain.fhevmExecutorContractAddress | quote }}
+            {{- if .Values.commonConfig.kmsGenerationContractAddress }}
             - name: KMS_GENERATION_ADDRESS
               value: {{ .Values.commonConfig.kmsGenerationContractAddress | quote }}
             {{- end }}
