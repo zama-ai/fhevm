@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import { createInstances } from '../instance';
+import { aclAddress, createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { delegatedUserDecryptSingleHandle, waitForBlock } from '../utils';
 
@@ -368,6 +368,558 @@ describe('Delegated user decryption', function () {
       } catch (error: unknown) {
         expect(relayerErrorLabel(error)).to.equal(NOT_ALLOWED_ON_HOST_ACL);
       }
+    });
+  });
+
+  describe('wildcard delegation', function () {
+    // Wildcard delegation lets the delegator grant decryption rights for every
+    // contract in one shot via the ACL's `WILDCARD_DELEGATION_ADDRESS()` sentinel.
+
+
+    // Distinct handle values seeded into each fixture target so test sites
+    // can refer to them by purpose rather than by raw numeral.
+    const TARGET_B_VALUE = 424242n;
+    const TARGET_C_VALUE = 777n;
+    const TARGET_D_VALUE = 314159n;
+    const ALICE_EXTRA_MINT = 123n;
+
+    const ACL_WILDCARD_ABI = [
+      'function WILDCARD_DELEGATION_ADDRESS() view returns (address)',
+      'function delegateForUserDecryption(address delegate, address contractAddress, uint64 expirationDate)',
+    ];
+
+    const EXPECTED_WILDCARD_ADDRESS = ethers.getAddress(`0x${'f'.repeat(40)}`);
+
+    // Send an ACL-mutating tx (delegate / revoke), wait for the receipt, then
+    // wait `PROPAGATION_BLOCKS` for the coprocessor to propagate the change.
+    const txAndPropagate = async (call: () => Promise<any>) => {
+      const tx = await call();
+      await tx.wait();
+      await waitForBlock((await ethers.provider.getBlockNumber()) + PROPAGATION_BLOCKS);
+    };
+
+    // Expect a delegated user-decryption call to be rejected by the host ACL.
+    const expectNotAllowed = async (call: () => Promise<unknown>, failMessage: string) => {
+      try {
+        await call();
+        expect.fail(failMessage);
+      } catch (error: unknown) {
+        expect(relayerErrorLabel(error)).to.equal(NOT_ALLOWED_ON_HOST_ACL);
+      }
+    };
+
+    before(async function () {
+      // Read the wildcard sentinel from the deployed ACL once and reuse it
+      // via `this.wildcardAddress` across scenarios.
+      const acl = new ethers.Contract(aclAddress, ACL_WILDCARD_ABI, ethers.provider);
+      this.wildcardAddress = await acl.WILDCARD_DELEGATION_ADDRESS();
+
+      // Deploy a `WildcardDelegationTarget` so cross-contract coverage runs
+      // against an address distinct from the outer `before`'s EncryptedERC20.
+      const targetFactory = await ethers.getContractFactory('WildcardDelegationTarget');
+      this.targetB = await targetFactory.connect(this.signers.alice).deploy();
+      await this.targetB.waitForDeployment();
+      this.targetBAddress = await this.targetB.getAddress();
+
+      // Alice seeds the target with a handle owned (allow-granted) by the delegator.
+      const inputForB = this.instances.alice.createEncryptedInput(this.targetBAddress, this.signers.alice.address);
+      inputForB.add64(TARGET_B_VALUE);
+      const encryptedForB = await inputForB.encrypt();
+      await (
+        await this.targetB
+          .connect(this.signers.alice)
+          .deposit(this.smartWalletAddress, encryptedForB.handles[0], encryptedForB.inputProof)
+      ).wait();
+      this.delegatorHandleOnB = await this.targetB.valueOf(this.smartWalletAddress);
+    });
+
+    it('exposes WILDCARD_DELEGATION_ADDRESS() at the expected sentinel value', async function () {
+      expect(this.wildcardAddress).to.equal(EXPECTED_WILDCARD_ADDRESS);
+    });
+
+    describe('happy paths', function () {
+      it('one wildcard delegation covers handles on two distinct contracts', async function () {
+        const expirationTimestamp = Math.floor(Date.now() / 1000) + ONE_DAY_SECONDS;
+        await txAndPropagate(() =>
+          this.smartWallet
+            .connect(this.signers.bob)
+            .delegateUserDecryption(this.signers.bob.address, this.wildcardAddress, expirationTimestamp),
+        );
+
+        // Decrypt handle on the EncryptedERC20 token (A) — covered by wildcard.
+        const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
+        let kp = this.instances.bob.generateKeypair();
+        const balance = await delegatedUserDecryptSingleHandle(
+          this.instances.bob,
+          balanceHandle,
+          this.tokenAddress,
+          this.smartWalletAddress,
+          this.signers.bob.address,
+          this.signers.bob,
+          kp.privateKey,
+          kp.publicKey,
+        );
+        expect(balance).to.equal(SMART_WALLET_INITIAL_BALANCE);
+
+        // Decrypt handle on the WildcardDelegationTarget (B) — also covered.
+        kp = this.instances.bob.generateKeypair();
+        const valueOnB = await delegatedUserDecryptSingleHandle(
+          this.instances.bob,
+          this.delegatorHandleOnB,
+          this.targetBAddress,
+          this.smartWalletAddress,
+          this.signers.bob.address,
+          this.signers.bob,
+          kp.privateKey,
+          kp.publicKey,
+        );
+        expect(valueOnB).to.equal(TARGET_B_VALUE);
+      });
+
+      it('wildcard covers contracts deployed after the delegation was set', async function () {
+        const expirationTimestamp = Math.floor(Date.now() / 1000) + ONE_DAY_SECONDS;
+        const tx = await this.smartWallet
+          .connect(this.signers.bob)
+          .delegateUserDecryption(this.signers.bob.address, this.wildcardAddress, expirationTimestamp);
+        await tx.wait();
+
+        // Deploy a brand-new app contract C, then seed it with a handle for the
+        // smart wallet. The wildcard delegation must still cover the handle even
+        // though contract C did not exist when the delegation was set.
+        const targetFactory = await ethers.getContractFactory('WildcardDelegationTarget');
+        const targetC = await targetFactory.connect(this.signers.alice).deploy();
+        await targetC.waitForDeployment();
+        const targetCAddress = await targetC.getAddress();
+        const inputForC = this.instances.alice.createEncryptedInput(targetCAddress, this.signers.alice.address);
+        inputForC.add64(TARGET_C_VALUE);
+        const encryptedForC = await inputForC.encrypt();
+        await (
+          await targetC
+            .connect(this.signers.alice)
+            .deposit(this.smartWalletAddress, encryptedForC.handles[0], encryptedForC.inputProof)
+        ).wait();
+        const handleOnC = await targetC.valueOf(this.smartWalletAddress);
+        await waitForBlock((await ethers.provider.getBlockNumber()) + PROPAGATION_BLOCKS);
+
+        const kp = this.instances.bob.generateKeypair();
+        const value = await delegatedUserDecryptSingleHandle(
+          this.instances.bob,
+          handleOnC,
+          targetCAddress,
+          this.smartWalletAddress,
+          this.signers.bob.address,
+          this.signers.bob,
+          kp.privateKey,
+          kp.publicKey,
+        );
+        expect(value).to.equal(TARGET_C_VALUE);
+      });
+
+      it('wildcard and per-contract delegation can coexist for the same delegate', async function () {
+        const expirationTimestamp = Math.floor(Date.now() / 1000) + ONE_DAY_SECONDS;
+        await txAndPropagate(() =>
+          this.smartWallet
+            .connect(this.signers.bob)
+            .delegateUserDecryption(this.signers.bob.address, this.tokenAddress, expirationTimestamp),
+        );
+        await txAndPropagate(() =>
+          this.smartWallet
+            .connect(this.signers.bob)
+            .delegateUserDecryption(this.signers.bob.address, this.wildcardAddress, expirationTimestamp),
+        );
+
+        const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
+        const kp = this.instances.bob.generateKeypair();
+        const balance = await delegatedUserDecryptSingleHandle(
+          this.instances.bob,
+          balanceHandle,
+          this.tokenAddress,
+          this.smartWalletAddress,
+          this.signers.bob.address,
+          this.signers.bob,
+          kp.privateKey,
+          kp.publicKey,
+        );
+        expect(balance).to.equal(SMART_WALLET_INITIAL_BALANCE);
+      });
+    });
+
+    describe('negative paths', function () {
+      it('rejects after the wildcard delegation expires', async function () {
+        this.timeout(SLOW_TEST_TIMEOUT_MS);
+        const latestBlock = await ethers.provider.getBlock('latest');
+        const expirationTimestamp = latestBlock!.timestamp + DELEGATION_EXPIRY_SECONDS;
+        const tx = await this.smartWallet
+          .connect(this.signers.bob)
+          .delegateUserDecryption(this.signers.eve.address, this.wildcardAddress, expirationTimestamp);
+        await tx.wait();
+
+        await waitForDelegationExpiry(expirationTimestamp);
+        await waitForBlock((await ethers.provider.getBlockNumber()) + PROPAGATION_BLOCKS);
+
+        const kp = this.instances.eve.generateKeypair();
+        await expectNotAllowed(
+          () =>
+            delegatedUserDecryptSingleHandle(
+              this.instances.eve,
+              this.delegatorHandleOnB,
+              this.targetBAddress,
+              this.smartWalletAddress,
+              this.signers.eve.address,
+              this.signers.eve,
+              kp.privateKey,
+              kp.publicKey,
+            ),
+          'Expected delegated user decrypt to be rejected after wildcard expiry',
+        );
+      });
+
+      it('rejects when the requesting EOA is not the registered wildcard delegate', async function () {
+        // The wildcard is granted to Eve. Carol — a different EOA — tries
+        // to use it. Delegations are recorded per (delegator, delegate)
+        // pair, so a wildcard issued to Eve does not authorize Carol.
+        const expirationTimestamp = Math.floor(Date.now() / 1000) + ONE_DAY_SECONDS;
+        await txAndPropagate(() =>
+          this.smartWallet
+            .connect(this.signers.bob)
+            .delegateUserDecryption(this.signers.eve.address, this.wildcardAddress, expirationTimestamp),
+        );
+
+        const unauthorizedDelegate = this.signers.carol;
+        const kp = this.instances.carol.generateKeypair();
+        await expectNotAllowed(
+          () =>
+            delegatedUserDecryptSingleHandle(
+              this.instances.carol,
+              this.delegatorHandleOnB,
+              this.targetBAddress,
+              this.smartWalletAddress,
+              unauthorizedDelegate.address,
+              unauthorizedDelegate,
+              kp.privateKey,
+              kp.publicKey,
+            ),
+          'Expected delegated user decrypt to be rejected for non-delegate caller',
+        );
+      });
+
+      it('does not bypass ownership: rejects when the delegator is not allowed on the handle', async function () {
+        // The smart wallet holds a wildcard delegation to Bob. Alice then
+        // mints a fresh handle she keeps for herself (no transfer), so the
+        // handle is owned by Alice — not the smart wallet. Wildcard
+        // delegation does not bypass the requirement that the delegator
+        // actually owns the handle.
+        const expirationTimestamp = Math.floor(Date.now() / 1000) + ONE_DAY_SECONDS;
+        const tx = await this.smartWallet
+          .connect(this.signers.bob)
+          .delegateUserDecryption(this.signers.bob.address, this.wildcardAddress, expirationTimestamp);
+        await tx.wait();
+
+        await (await this.token.connect(this.signers.alice).mint(ALICE_EXTRA_MINT)).wait();
+        const aliceOnlyHandle = await this.token.balanceOf(this.signers.alice.address);
+        await waitForBlock((await ethers.provider.getBlockNumber()) + PROPAGATION_BLOCKS);
+
+        const kp = this.instances.bob.generateKeypair();
+        await expectNotAllowed(
+          () =>
+            delegatedUserDecryptSingleHandle(
+              this.instances.bob,
+              aliceOnlyHandle,
+              this.tokenAddress,
+              this.smartWalletAddress,
+              this.signers.bob.address,
+              this.signers.bob,
+              kp.privateKey,
+              kp.publicKey,
+            ),
+          'Expected rejection: smart wallet is not allowed on Alice-owned handle',
+        );
+      });
+
+      it('does not bypass ownership: rejects when the app contract is not allowed on the handle', async function () {
+        // The smart wallet wildcard-delegates to Bob. Bob signs a request
+        // claiming the token-balance handle lives on `targetB`, but the
+        // handle was issued by the EncryptedERC20 token — `targetB` never
+        // had access to it. Wildcard authorizes the delegate, not the app
+        // contract's access to the handle.
+        const expirationTimestamp = Math.floor(Date.now() / 1000) + ONE_DAY_SECONDS;
+        await txAndPropagate(() =>
+          this.smartWallet
+            .connect(this.signers.bob)
+            .delegateUserDecryption(this.signers.bob.address, this.wildcardAddress, expirationTimestamp),
+        );
+
+        const tokenBalanceHandle = await this.token.balanceOf(this.smartWalletAddress);
+        const appContractWithoutAccess = this.targetBAddress;
+        const kp = this.instances.bob.generateKeypair();
+        await expectNotAllowed(
+          () =>
+            delegatedUserDecryptSingleHandle(
+              this.instances.bob,
+              tokenBalanceHandle,
+              appContractWithoutAccess,
+              this.smartWalletAddress,
+              this.signers.bob.address,
+              this.signers.bob,
+              kp.privateKey,
+              kp.publicKey,
+            ),
+          'Expected rejection: targetB is not allowed on the token-balance handle',
+        );
+      });
+
+      it('does not allow transitive delegation: a wildcard recipient cannot re-grant onward', async function () {
+        // Bob's smart wallet wildcard-delegates to Carol. Carol then tries to
+        // wildcard-delegate to Dave from her own EOA via a direct ACL call.
+        // The (Carol, Dave) entry has no bearing on handles owned by the smart
+        // wallet — Dave's request as delegate of the smart wallet must still be
+        // rejected.
+        const expirationTimestamp = Math.floor(Date.now() / 1000) + ONE_DAY_SECONDS;
+        await txAndPropagate(() =>
+          this.smartWallet
+            .connect(this.signers.bob)
+            .delegateUserDecryption(this.signers.carol.address, this.wildcardAddress, expirationTimestamp),
+        );
+
+        const acl = new ethers.Contract(aclAddress, ACL_WILDCARD_ABI, this.signers.carol);
+        await txAndPropagate(() =>
+          acl.delegateForUserDecryption(this.signers.dave.address, this.wildcardAddress, BigInt(expirationTimestamp)),
+        );
+
+        const kp = this.instances.dave.generateKeypair();
+        await expectNotAllowed(
+          () =>
+            delegatedUserDecryptSingleHandle(
+              this.instances.dave,
+              this.delegatorHandleOnB,
+              this.targetBAddress,
+              this.smartWalletAddress,
+              this.signers.dave.address,
+              this.signers.dave,
+              kp.privateKey,
+              kp.publicKey,
+            ),
+          "Expected rejection: Carol's onward delegation must not grant Dave access to smart-wallet handles",
+        );
+      });
+    });
+
+    describe('revocation matrix', function () {
+      it('revoking the wildcard leaves the per-contract entry active', async function () {
+        this.timeout(SLOW_TEST_TIMEOUT_MS);
+        const expirationTimestamp = Math.floor(Date.now() / 1000) + ONE_DAY_SECONDS;
+        await txAndPropagate(() =>
+          this.smartWallet
+            .connect(this.signers.bob)
+            .delegateUserDecryption(this.signers.carol.address, this.wildcardAddress, expirationTimestamp),
+        );
+        await txAndPropagate(() =>
+          this.smartWallet
+            .connect(this.signers.bob)
+            .delegateUserDecryption(this.signers.carol.address, this.tokenAddress, expirationTimestamp),
+        );
+        await txAndPropagate(() =>
+          this.smartWallet
+            .connect(this.signers.bob)
+            .revokeUserDecryptionDelegation(this.signers.carol.address, this.wildcardAddress),
+        );
+
+        // appA still works via the surviving per-contract entry.
+        const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
+        let kp = this.instances.carol.generateKeypair();
+        const balance = await delegatedUserDecryptSingleHandle(
+          this.instances.carol,
+          balanceHandle,
+          this.tokenAddress,
+          this.smartWalletAddress,
+          this.signers.carol.address,
+          this.signers.carol,
+          kp.privateKey,
+          kp.publicKey,
+        );
+        expect(balance).to.equal(SMART_WALLET_INITIAL_BALANCE);
+
+        // appB rejects — wildcard is gone and there is no per-contract entry for B.
+        kp = this.instances.carol.generateKeypair();
+        await expectNotAllowed(
+          () =>
+            delegatedUserDecryptSingleHandle(
+              this.instances.carol,
+              this.delegatorHandleOnB,
+              this.targetBAddress,
+              this.smartWalletAddress,
+              this.signers.carol.address,
+              this.signers.carol,
+              kp.privateKey,
+              kp.publicKey,
+            ),
+          'Expected rejection on appB after wildcard revocation',
+        );
+      });
+
+      it('revoking the per-contract entry leaves the wildcard active', async function () {
+        const expirationTimestamp = Math.floor(Date.now() / 1000) + ONE_DAY_SECONDS;
+        await txAndPropagate(() =>
+          this.smartWallet
+            .connect(this.signers.bob)
+            .delegateUserDecryption(this.signers.carol.address, this.wildcardAddress, expirationTimestamp),
+        );
+        await txAndPropagate(() =>
+          this.smartWallet
+            .connect(this.signers.bob)
+            .delegateUserDecryption(this.signers.carol.address, this.tokenAddress, expirationTimestamp),
+        );
+        await txAndPropagate(() =>
+          this.smartWallet
+            .connect(this.signers.bob)
+            .revokeUserDecryptionDelegation(this.signers.carol.address, this.tokenAddress),
+        );
+
+        // Both A and B continue to work via the surviving wildcard.
+        const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
+        let kp = this.instances.carol.generateKeypair();
+        const balance = await delegatedUserDecryptSingleHandle(
+          this.instances.carol,
+          balanceHandle,
+          this.tokenAddress,
+          this.smartWalletAddress,
+          this.signers.carol.address,
+          this.signers.carol,
+          kp.privateKey,
+          kp.publicKey,
+        );
+        expect(balance).to.equal(SMART_WALLET_INITIAL_BALANCE);
+
+        kp = this.instances.carol.generateKeypair();
+        const valueOnB = await delegatedUserDecryptSingleHandle(
+          this.instances.carol,
+          this.delegatorHandleOnB,
+          this.targetBAddress,
+          this.smartWalletAddress,
+          this.signers.carol.address,
+          this.signers.carol,
+          kp.privateKey,
+          kp.publicKey,
+        );
+        expect(valueOnB).to.equal(TARGET_B_VALUE);
+      });
+
+      it('revoking both entries rejects on every contract', async function () {
+        this.timeout(SLOW_TEST_TIMEOUT_MS);
+        const expirationTimestamp = Math.floor(Date.now() / 1000) + ONE_DAY_SECONDS;
+        await txAndPropagate(() =>
+          this.smartWallet
+            .connect(this.signers.bob)
+            .delegateUserDecryption(this.signers.carol.address, this.wildcardAddress, expirationTimestamp),
+        );
+        await txAndPropagate(() =>
+          this.smartWallet
+            .connect(this.signers.bob)
+            .delegateUserDecryption(this.signers.carol.address, this.tokenAddress, expirationTimestamp),
+        );
+        await txAndPropagate(() =>
+          this.smartWallet
+            .connect(this.signers.bob)
+            .revokeUserDecryptionDelegation(this.signers.carol.address, this.wildcardAddress),
+        );
+        await txAndPropagate(() =>
+          this.smartWallet
+            .connect(this.signers.bob)
+            .revokeUserDecryptionDelegation(this.signers.carol.address, this.tokenAddress),
+        );
+
+        const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
+        let kp = this.instances.carol.generateKeypair();
+        await expectNotAllowed(
+          () =>
+            delegatedUserDecryptSingleHandle(
+              this.instances.carol,
+              balanceHandle,
+              this.tokenAddress,
+              this.smartWalletAddress,
+              this.signers.carol.address,
+              this.signers.carol,
+              kp.privateKey,
+              kp.publicKey,
+            ),
+          'Expected rejection on appA after revoking both entries',
+        );
+
+        kp = this.instances.carol.generateKeypair();
+        await expectNotAllowed(
+          () =>
+            delegatedUserDecryptSingleHandle(
+              this.instances.carol,
+              this.delegatorHandleOnB,
+              this.targetBAddress,
+              this.smartWalletAddress,
+              this.signers.carol.address,
+              this.signers.carol,
+              kp.privateKey,
+              kp.publicKey,
+            ),
+          'Expected rejection on appB after revoking both entries',
+        );
+      });
+    });
+
+    describe('independence', function () {
+      it("revoking one delegator's wildcard does not affect another delegator's", async function () {
+        this.timeout(SLOW_TEST_TIMEOUT_MS);
+
+        // Stand up a second smart wallet (Y) owned by Dave, with its own handle
+        // on a fresh app contract. Both wallets wildcard-delegate to Carol.
+        // Revoking Bob's wildcard must leave Dave's wildcard untouched.
+        const smartWalletYFactory = await ethers.getContractFactory('SmartWalletWithDelegation');
+        const smartWalletY = await smartWalletYFactory.connect(this.signers.dave).deploy(this.signers.dave.address);
+        await smartWalletY.waitForDeployment();
+        const smartWalletYAddress = await smartWalletY.getAddress();
+
+        const targetFactory = await ethers.getContractFactory('WildcardDelegationTarget');
+        const targetD = await targetFactory.connect(this.signers.alice).deploy();
+        await targetD.waitForDeployment();
+        const targetDAddress = await targetD.getAddress();
+        const inputForD = this.instances.alice.createEncryptedInput(targetDAddress, this.signers.alice.address);
+        inputForD.add64(TARGET_D_VALUE);
+        const encryptedForD = await inputForD.encrypt();
+        await (
+          await targetD
+            .connect(this.signers.alice)
+            .deposit(smartWalletYAddress, encryptedForD.handles[0], encryptedForD.inputProof)
+        ).wait();
+        const handleForY = await targetD.valueOf(smartWalletYAddress);
+
+        const expirationTimestamp = Math.floor(Date.now() / 1000) + ONE_DAY_SECONDS;
+        await txAndPropagate(() =>
+          this.smartWallet
+            .connect(this.signers.bob)
+            .delegateUserDecryption(this.signers.carol.address, this.wildcardAddress, expirationTimestamp),
+        );
+        await txAndPropagate(() =>
+          smartWalletY
+            .connect(this.signers.dave)
+            .delegateUserDecryption(this.signers.carol.address, this.wildcardAddress, expirationTimestamp),
+        );
+        await txAndPropagate(() =>
+          this.smartWallet
+            .connect(this.signers.bob)
+            .revokeUserDecryptionDelegation(this.signers.carol.address, this.wildcardAddress),
+        );
+
+        // Y's wildcard is untouched: Carol can still decrypt Y's handle.
+        const kp = this.instances.carol.generateKeypair();
+        const valueOnD = await delegatedUserDecryptSingleHandle(
+          this.instances.carol,
+          handleForY,
+          targetDAddress,
+          smartWalletYAddress,
+          this.signers.carol.address,
+          this.signers.carol,
+          kp.privateKey,
+          kp.publicKey,
+        );
+        expect(valueOnD).to.equal(TARGET_D_VALUE);
+      });
     });
   });
 });
