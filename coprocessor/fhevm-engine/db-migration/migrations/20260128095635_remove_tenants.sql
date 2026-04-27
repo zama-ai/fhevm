@@ -77,6 +77,17 @@ BEGIN
     EXECUTE format('ALTER TABLE pbs_computations ALTER COLUMN tenant_id SET DEFAULT %s', tid);
 END $$;
 
+-- Add unique indices for new code that queries without tenant_id.
+-- On large databases these should be pre-created with CREATE INDEX CONCURRENTLY
+-- by running initialize_db.sh with RUN_MIGRATIONS_UNTIL_REMOVE_TENANTS=true.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_allowed_handles_no_tenant ON allowed_handles (handle, account_address);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_input_blobs_no_tenant ON input_blobs (blob_hash);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ciphertext_digest_no_tenant ON ciphertext_digest (handle);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ciphertexts_no_tenant ON ciphertexts (handle, ciphertext_version);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ciphertexts128_no_tenant ON ciphertexts128 (handle);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_computations_no_tenant ON computations (output_handle, transaction_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pbs_computations_no_tenant ON pbs_computations (handle);
+
 -- Add host_chain_id/key_id_gw with constant defaults. PostgreSQL 11+ stores
 -- constant defaults in metadata for existing rows, avoiding full-table rewrites.
 DO $$
