@@ -1,7 +1,7 @@
 {{- range $i, $chain := .Values.chains }}
 {{- if (($chain.hostListenerCatchupOnly).enabled) }}
 {{- $useLegacyName := $chain.hostListenerCatchupOnly.useLegacyName | default false -}}
-{{- $deploymentName := ternary (printf "%s-host-listener-catchup-only" $.Release.Name) (printf "%s-host-listener-catchup-only-%s" $.Release.Name $chain.name) $useLegacyName -}}
+{{- $deploymentName := ternary (printf "%s-host-listener-catchup-only" $.Release.Name | trunc 63 | trimSuffix "-") (printf "%s-host-listener-catchup-only-%s" $.Release.Name $chain.name | trunc 63 | trimSuffix "-") $useLegacyName -}}
 {{- $appLabel := ternary "coprocessor-host-listener-catchup-only" (printf "coprocessor-host-listener-catchup-only-%s" $chain.name) $useLegacyName -}}
 {{- $args := default (dict) $.Values.hostListenerCatchupOnlyShared.args -}}
 {{- $disabled := default (list) $.Values.hostListenerCatchupOnlyShared.disabledArgs -}}
