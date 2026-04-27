@@ -162,11 +162,6 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
                     )
                     .await
             }
-            ProtocolEventKind::PrepKeygen(req) => {
-                self.kms_generation_processor
-                    .prepare_prep_keygen_request(req)
-                    .await
-            }
             ProtocolEventKind::UserDecryptionV2(req) => {
                 // The RFC016 event carries the full payload, so unlike the legacy path we don't
                 // need to re-fetch the transaction calldata.
@@ -184,7 +179,7 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
                             payload.publicKey.clone(),
                         )),
                     )
-                    .await?
+                    .await
             }
             ProtocolEventKind::PrepKeygen(req) => {
                 self.kms_generation_processor
