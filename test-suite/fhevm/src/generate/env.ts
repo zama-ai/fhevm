@@ -62,6 +62,29 @@ const applyTopologyEnv = (
   envs["host-sc"].COPROCESSOR_THRESHOLD = String(plan.topology.threshold);
 };
 
+/** Keeps host-contract deployment KMS inputs aligned with the gateway-side source of truth. */
+const applyHostScKmsEnv = (envs: Record<string, Record<string, string>>) => {
+  const gatewayEnv = envs["gateway-sc"];
+  const hostEnv = envs["host-sc"];
+  hostEnv.NUM_KMS_NODES = gatewayEnv.NUM_KMS_NODES;
+  hostEnv.PUBLIC_DECRYPTION_THRESHOLD = gatewayEnv.PUBLIC_DECRYPTION_THRESHOLD;
+  hostEnv.USER_DECRYPTION_THRESHOLD = gatewayEnv.USER_DECRYPTION_THRESHOLD;
+  hostEnv.KMS_GEN_THRESHOLD = gatewayEnv.KMS_GENERATION_THRESHOLD;
+  hostEnv.MPC_THRESHOLD = gatewayEnv.MPC_THRESHOLD;
+
+  const numKmsNodes = Number(gatewayEnv.NUM_KMS_NODES ?? "0");
+  for (let index = 0; index < numKmsNodes; index += 1) {
+    const txSender = gatewayEnv[`KMS_TX_SENDER_ADDRESS_${index}`];
+    const signer = gatewayEnv[`KMS_SIGNER_ADDRESS_${index}`];
+    const storageUrl = gatewayEnv[`KMS_NODE_STORAGE_URL_${index}`];
+    const ipAddress = gatewayEnv[`KMS_NODE_IP_ADDRESS_${index}`];
+    if (txSender) hostEnv[`KMS_TX_SENDER_ADDRESS_${index}`] = txSender;
+    if (signer) hostEnv[`KMS_SIGNER_ADDRESS_${index}`] = signer;
+    if (storageUrl) hostEnv[`KMS_NODE_STORAGE_URL_${index}`] = storageUrl;
+    if (ipAddress) hostEnv[`KMS_NODE_IP_${index}`] = ipAddress;
+  }
+};
+
 /** Applies base runtime defaults before compat or discovery-specific rewrites. */
 const applyBaseRuntimeEnv = (
   envs: Record<string, Record<string, string>>,
@@ -244,6 +267,7 @@ export const renderEnvMaps = async (
     throw new Error("Missing default host chain");
   }
   applyTopologyEnv(envs, plan);
+  applyHostScKmsEnv(envs);
   applyBaseRuntimeEnv(envs, state);
   applyCompatEnv(envs, plan);
   applyDiscoveryEnv(envs, state, plan);

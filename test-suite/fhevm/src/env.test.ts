@@ -81,6 +81,45 @@ describe("env", () => {
     expect(rendered.componentEnvs["test-suite"].CHAIN_ID_HOST).toBe("543210");
   });
 
+  test("projects gateway kms node settings into host contract envs", async () => {
+    const templateEnvs = Object.fromEntries(
+      await Promise.all(
+        COMPONENTS.map(async (component) => [
+          component,
+          await readEnvFile(path.join(TEMPLATE_ENV_DIR, `.env.${component}`)),
+        ]),
+      ),
+    ) as Record<string, Record<string, string>>;
+    const state: State = {
+      target: "latest-main",
+      lockPath: "/tmp/latest-main.json",
+      requiresGitHub: true,
+      versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
+      overrides: [],
+      scenario: testDefaultScenario(),
+      completedSteps: [],
+      updatedAt: "2026-04-28T00:00:00.000Z",
+    };
+
+    const rendered = await renderEnvMaps({ discovery: undefined }, stackSpecForState(state), templateEnvs, deriveWallet);
+
+    expect(rendered.componentEnvs["host-sc"].KMS_TX_SENDER_ADDRESS_0).toBe(
+      rendered.componentEnvs["gateway-sc"].KMS_TX_SENDER_ADDRESS_0,
+    );
+    expect(rendered.componentEnvs["host-sc"].KMS_NODE_STORAGE_URL_0).toBe(
+      rendered.componentEnvs["gateway-sc"].KMS_NODE_STORAGE_URL_0,
+    );
+    expect(rendered.componentEnvs["host-sc"].USER_DECRYPTION_THRESHOLD).toBe(
+      rendered.componentEnvs["gateway-sc"].USER_DECRYPTION_THRESHOLD,
+    );
+    expect(rendered.componentEnvs["host-sc"].KMS_GEN_THRESHOLD).toBe(
+      rendered.componentEnvs["gateway-sc"].KMS_GENERATION_THRESHOLD,
+    );
+    expect(rendered.componentEnvs["host-sc"].MPC_THRESHOLD).toBe(
+      rendered.componentEnvs["gateway-sc"].MPC_THRESHOLD,
+    );
+  });
+
   test("sources kms-generation addresses from host contracts for modern bundles", async () => {
     const templateEnvs = Object.fromEntries(
       await Promise.all(
