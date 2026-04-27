@@ -415,7 +415,7 @@ interface IInputVerifier {
  */
 library Impl {
     /// keccak256(abi.encode(uint256(keccak256("confidential.storage.config")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant CoprocessorConfigLocation =
+    bytes32 private constant COPROCESSOR_CONFIG_LOCATION =
         0x9e7b61f58c47dc699ac88507c4f5bb9f121c03808c5676a8078fe583e4649700;
 
     /**
@@ -423,7 +423,7 @@ library Impl {
      */
     function getCoprocessorConfig() internal pure returns (CoprocessorConfig storage $) {
         assembly {
-            $.slot := CoprocessorConfigLocation
+            $.slot := COPROCESSOR_CONFIG_LOCATION
         }
     }
 
