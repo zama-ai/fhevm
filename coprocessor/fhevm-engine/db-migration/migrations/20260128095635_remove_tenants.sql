@@ -78,13 +78,42 @@ BEGIN
 END $$;
 
 -- Add unique indices for new code that queries without tenant_id.
-CREATE UNIQUE INDEX idx_allowed_handles_no_tenant ON allowed_handles (handle, account_address);
-CREATE UNIQUE INDEX idx_input_blobs_no_tenant ON input_blobs (blob_hash);
-CREATE UNIQUE INDEX idx_ciphertext_digest_no_tenant ON ciphertext_digest (handle);
-CREATE UNIQUE INDEX idx_ciphertexts_no_tenant ON ciphertexts (handle, ciphertext_version);
-CREATE UNIQUE INDEX idx_ciphertexts128_no_tenant ON ciphertexts128 (handle);
-CREATE UNIQUE INDEX idx_computations_no_tenant ON computations (output_handle, transaction_id);
-CREATE UNIQUE INDEX idx_pbs_computations_no_tenant ON pbs_computations (handle);
+-- These may be pre-created by /run_pre_indexes.sh. Refuse invalid leftovers instead
+-- of letting IF NOT EXISTS silently skip a broken index.
+DO $$
+DECLARE
+    idx_name TEXT;
+BEGIN
+    FOREACH idx_name IN ARRAY ARRAY[
+        'idx_allowed_handles_no_tenant',
+        'idx_input_blobs_no_tenant',
+        'idx_ciphertext_digest_no_tenant',
+        'idx_ciphertexts_no_tenant',
+        'idx_ciphertexts128_no_tenant',
+        'idx_computations_no_tenant',
+        'idx_pbs_computations_no_tenant'
+    ] LOOP
+        IF EXISTS (
+            SELECT 1
+            FROM pg_class c
+            JOIN pg_index i ON i.indexrelid = c.oid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public'
+              AND c.relname = idx_name
+              AND NOT i.indisvalid
+        ) THEN
+            RAISE EXCEPTION 'Index % exists but is invalid; drop/recreate it before running this migration', idx_name;
+        END IF;
+    END LOOP;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_allowed_handles_no_tenant ON allowed_handles (handle, account_address);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_input_blobs_no_tenant ON input_blobs (blob_hash);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ciphertext_digest_no_tenant ON ciphertext_digest (handle);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ciphertexts_no_tenant ON ciphertexts (handle, ciphertext_version);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ciphertexts128_no_tenant ON ciphertexts128 (handle);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_computations_no_tenant ON computations (output_handle, transaction_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pbs_computations_no_tenant ON pbs_computations (handle);
 
 -- Add host_chain_id/key_id_gw with constant defaults. PostgreSQL 11+ stores
 -- constant defaults in metadata for existing rows, avoiding full-table rewrites.
