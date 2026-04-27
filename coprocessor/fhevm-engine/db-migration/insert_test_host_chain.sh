@@ -11,7 +11,7 @@ fi
 
 CHAIN_ID=${CHAIN_ID:-"12345"}
 
-if [[ -z "$DATABASE_URL" || -z "$ACL_CONTRACT_ADDRESS" ]]; then
+if [[ -z "${DATABASE_URL:-}" || -z "${ACL_CONTRACT_ADDRESS:-}" ]]; then
     echo "Error: One or more required environment variables are missing."; exit 1;
 fi
 

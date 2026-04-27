@@ -1,4 +1,3 @@
-use std::str::FromStr;
 use std::time::{Duration, SystemTime};
 
 use aws_config::{BehaviorVersion, Region};
@@ -153,7 +152,7 @@ pub fn resolve_database_url_from_option(
     match database_url {
         Some(database_url) => Ok(database_url),
         None => match std::env::var(DATABASE_URL_ENV) {
-            Ok(database_url) => DatabaseURL::from_str(&database_url).map_err(Into::into),
+            Ok(database_url) => Ok(DatabaseURL::from(database_url)),
             Err(_) if env_flag_enabled(DATABASE_IAM_AUTH_ENABLED) => {
                 Err(DatabaseConnectionError::MissingDatabaseUrl)
             }

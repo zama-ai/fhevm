@@ -21,13 +21,15 @@ WORKDIR /app/coprocessor/fhevm-engine
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/app/coprocessor/fhevm-engine/target,sharing=locked \
-    cargo build --release -p fhevm-engine-common --bin resolve_database_url
+    cargo build --release -p fhevm-engine-common --bin resolve_database_url && \
+    mkdir -p /out && \
+    cp target/release/resolve_database_url /out/
 
 # Stage 2: Runtime image
 FROM cgr.dev/zama.ai/postgres:17 AS prod
 
 COPY  --from=builder --chown=fhevm:fhevm /usr/local/cargo/bin/sqlx /usr/local/bin/sqlx
-COPY  --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/release/resolve_database_url /usr/local/bin/resolve_database_url
+COPY  --from=builder --chown=fhevm:fhevm /out/resolve_database_url /usr/local/bin/resolve_database_url
 COPY  --from=builder --chown=fhevm:fhevm /app/initialize_db.sh /initialize_db.sh
 COPY  --from=builder --chown=fhevm:fhevm /app/insert_test_host_chain.sh /insert_test_host_chain.sh
 COPY  --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/db-migration/prepare_database_url.sh /prepare_database_url.sh

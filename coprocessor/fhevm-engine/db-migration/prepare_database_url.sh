@@ -20,6 +20,8 @@ resolve_database_url_cmd() {
     /usr/local/bin/resolve_database_url
   elif [[ -x "${workspace_dir}/target/release/resolve_database_url" ]]; then
     "${workspace_dir}/target/release/resolve_database_url"
+  elif [[ -x "${workspace_dir}/target/debug/resolve_database_url" ]]; then
+    "${workspace_dir}/target/debug/resolve_database_url"
   elif command -v cargo >/dev/null 2>&1; then
     (
       cd "${workspace_dir}"

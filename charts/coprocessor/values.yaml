@@ -101,27 +101,14 @@ config:
       key: coprocessor.hex
 
   # Database connection configuration
+  # Bootstrap of the literal-password Secret is gated by
+  # commonConfig.database.authMode (only created when set to "password").
+  # Runtime auth and IAM settings live under commonConfig.database.
   database:
-    # `password` keeps the historical secret-backed DATABASE_URL.
-    # `iam` expects a passwordless PostgreSQL URL and resolves short-lived
-    # IAM tokens at runtime using the pod's AWS identity.
-    authMode: password
-
     secret:
       name: coprocessor-db-url
       key: coprocessor-db-url
       value: "postgresql://postgres:postgres@postgresql:5432/coprocessor"
-
-    iam:
-      # Example:
-      # postgresql://coprocessor@my-db.cluster-xyz.eu-west-2.rds.amazonaws.com:5432/coprocessor
-      url: ""
-      # Optional. If unset, the AWS SDK resolves the region from the
-      # environment (e.g. AWS_REGION set by IRSA). Set this only when
-      # connecting to a database in a different region.
-      region: ""
-      # Required when authMode=iam. The runtime enforces verify-full TLS.
-      sslRootCertPath: ""
 
   # Helm hook annotations for deployment ordering
   annotations:
