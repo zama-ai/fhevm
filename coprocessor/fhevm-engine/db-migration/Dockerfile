@@ -7,7 +7,7 @@ WORKDIR /app
 
 # Install sqlx-cli
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
-    cargo install sqlx-cli --version 0.7.2 \
+    cargo install sqlx-cli --version 0.8.6 \
     --no-default-features --features postgres --locked
 
 # Copy migrations and initialization script
@@ -15,7 +15,6 @@ COPY coprocessor/fhevm-engine/ ./coprocessor/fhevm-engine
 COPY coprocessor/proto/ ./coprocessor/proto/
 COPY coprocessor/fhevm-engine/db-migration/initialize_db.sh ./initialize_db.sh
 COPY coprocessor/fhevm-engine/db-migration/insert_test_host_chain.sh ./insert_test_host_chain.sh
-COPY coprocessor/fhevm-engine/db-migration/run_pre_indexes.sh ./run_pre_indexes.sh
 COPY coprocessor/fhevm-engine/db-migration/migrations ./migrations
 
 WORKDIR /app/coprocessor/fhevm-engine
@@ -26,7 +25,6 @@ FROM cgr.dev/zama.ai/postgres:17 AS prod
 COPY  --from=builder --chown=fhevm:fhevm /usr/local/cargo/bin/sqlx /usr/local/bin/sqlx
 COPY  --from=builder --chown=fhevm:fhevm /app/initialize_db.sh /initialize_db.sh
 COPY  --from=builder --chown=fhevm:fhevm /app/insert_test_host_chain.sh /insert_test_host_chain.sh
-COPY  --from=builder --chown=fhevm:fhevm /app/run_pre_indexes.sh /run_pre_indexes.sh
 COPY  --from=builder --chown=fhevm:fhevm /app/migrations /migrations
 COPY  --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/db-migration/db-scripts /db-scripts
 COPY  --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/db-migration/revert_coprocessor_db_state.sh /revert_coprocessor_db_state.sh
