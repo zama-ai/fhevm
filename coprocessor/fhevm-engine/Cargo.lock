@@ -7121,9 +7121,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe"
-version = "1.6.0"
+version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11f66a1aeaee5d65031510bd75d687acbd3bc8843281c0f7a0549c96a7f2b698"
+checksum = "c15298cfa418ee5cb50446ebeea88dc44378a35b0d6c66eabdd3b7953b239e85"
 dependencies = [
  "aligned-vec",
  "bincode",
@@ -7189,9 +7189,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe-ntt"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e4802eabdc20d780bfc32f0e631a3b6d79dc01b3597c7c7ebae0b5df60046b6"
+checksum = "10650c743ade46b166c698c8349902ed5986784a7db418c51f810bea25f09e3d"
 dependencies = [
  "aligned-vec",
  "bytemuck",
