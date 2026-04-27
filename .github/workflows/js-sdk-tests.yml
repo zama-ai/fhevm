@@ -1,6 +1,9 @@
 name: js-sdk-tests
 
 on:
+  push:
+    branches:
+      - devex/js-sdk # triggers on every push to your branch
   workflow_dispatch:
     inputs:
       release:
@@ -12,7 +15,7 @@ on:
 permissions: {}
 
 jobs:
-  publish:
+  run-tests:
     name: js-sdk-tests/test
     runs-on: ubuntu-latest
     defaults:
@@ -96,17 +99,16 @@ jobs:
       #    which starts Anvil, deploys the FHEVM stack, runs only
       #    test/fheTest/viem-cleartext, and then tears the local chain down.
       # -----------------------------------------------------------------------
-      - name: Test package
-        run: npm run test
+      - name: Setup Forge Soldeer
+        run: cd contracts && forge soldeer install
 
-      # -----------------------------------------------------------------------
-      # 8. Pack inspection
-      #    "npm pack --dry-run" lists every file that would be included in the
-      #    tarball, along with its size and the total packed/unpacked sizes.
-      #    This is useful to catch .npmignore or "files" field issues — e.g.,
-      #    accidentally shipping test fixtures, source maps, or missing the
-      #    generated src/_cjs, src/_esm, or src/_types outputs — without
-      #    actually creating the .tgz.
-      # -----------------------------------------------------------------------
-      - name: Inspect pack contents
-        run: cd src && npm pack --dry-run
+      - name: Set .env.localhost
+        run: echo 'RPC_URL="http://127.0.0.1:8545"' > test/.env.localhost
+
+      - name: Set .env
+        run: |
+          echo 'MNEMONIC="test test test test test test test test test test test junk"' > test/.env
+          echo 'ZAMA_FHEVM_API_KEY="zmr_mainnet_blahblah"' >> test/.env
+
+      - name: Run forge tests
+        run: npm run test:localhost

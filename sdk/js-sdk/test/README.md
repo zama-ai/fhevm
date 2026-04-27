@@ -19,7 +19,7 @@ In `sdk/js-sdk/test/.env.mainnet`, set:
 RPC_URL="https://ethereum-rpc.publicnode.com"
 ```
 
-In `sdk/js-sdk/test/.env.localhostFhevm`, set:
+In `sdk/js-sdk/test/.env.localhost` and `sdk/js-sdk/test/.env.localhostFhevm`, set:
 
 ```
 RPC_URL="http://localhost:8545"
@@ -38,6 +38,12 @@ export CHAIN=devnet && source ../test/.env && export MNEMONIC && forge script sc
 
 # Run the initialization script ()
 export CHAIN=devnet && source ../test/.env && export MNEMONIC && forge script script/InitFHETest.s.sol --rpc-url https://ethereum-sepolia-rpc.publicnode.com --broadcast
+```
+
+Add to `/etc/hosts`:
+
+```sh
+127.0.0.1	minio
 ```
 
 # Build
