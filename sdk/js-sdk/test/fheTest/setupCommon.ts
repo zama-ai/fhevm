@@ -31,6 +31,10 @@ export function isV2(chainName: FheTestChainName) {
   return chainName === 'localhostFhevm' || chainName === 'localhost' || chainName === 'devnet';
 }
 
+export function isCleartext(chainName: FheTestChainName) {
+  return chainName === 'localhost';
+}
+
 // ---------------------------------------------------------------------------
 // .env parser (no external dependency)
 // ---------------------------------------------------------------------------

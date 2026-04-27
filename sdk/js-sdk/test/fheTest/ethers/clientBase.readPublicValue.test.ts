@@ -7,6 +7,7 @@ import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
 import { fheTypeIdFromName } from '../../../src/core/handle/FheType.js';
 import { toFhevmHandle } from '../../../src/core/handle/FhevmHandle.js';
 import { asEncryptedValue } from '../../../src/core/handle/EncryptedValue.js';
+import { isCleartext } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -38,7 +39,7 @@ const decryptTestCases: readonly FheType[] = [
 
 ////////////////////////////////////////////////////////////////////////////////
 
-describe('Base client — readPublicValue', () => {
+describe.runIf(!isCleartext(getEthersTestConfig().chainName))('Base client — readPublicValue', () => {
   let config: FheTestEthersConfig;
 
   beforeAll(() => {

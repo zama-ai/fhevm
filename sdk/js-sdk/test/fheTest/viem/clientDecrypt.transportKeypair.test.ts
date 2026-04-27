@@ -1,3 +1,10 @@
+import { describe, it, expect, beforeAll } from 'vitest';
+import { createFhevmDecryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
+import { serializeE2eTransportKeypair, parseE2eTransportKeypair } from '@fhevm/sdk/actions/chain';
+import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
+import { isCleartext } from '../setupCommon.js';
+
+////////////////////////////////////////////////////////////////////////////////
 //
 // Sepolia Testnet:
 // ----------------
@@ -11,12 +18,9 @@
 // ----------------
 // CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.transportKeypair.test.ts
 //
-import { describe, it, expect, beforeAll } from 'vitest';
-import { createFhevmDecryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import { serializeE2eTransportKeypair, parseE2eTransportKeypair } from '@fhevm/sdk/actions/chain';
-import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
+////////////////////////////////////////////////////////////////////////////////
 
-describe('Decrypt client — e2e transport keypair', () => {
+describe.runIf(!isCleartext(getViemTestConfig().chainName))('Decrypt client — e2e transport keypair', () => {
   let config: FheTestViemConfig;
 
   beforeAll(() => {

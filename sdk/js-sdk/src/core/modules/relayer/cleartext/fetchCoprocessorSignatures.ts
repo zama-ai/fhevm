@@ -1,5 +1,3 @@
-import { asUint32BigInt, randomUniqueUints } from '../../../base/uint.js';
-import { getTrustedClient } from '../../../runtime/CoreFhevm-p.js';
 import type { Bytes65Hex, BytesHex, ChecksummedAddress } from '../../../types/primitives.js';
 import type { CleartextEthereumModule } from '../../ethereum/types-ct.js';
 import type {
@@ -7,6 +5,8 @@ import type {
   FetchCoprocessorSignaturesReturnType,
   RelayerClientWithRuntime,
 } from '../types.js';
+import { asUint32BigInt, randomUniqueUints } from '../../../base/uint.js';
+import { getTrustedClient } from '../../../runtime/CoreFhevm-p.js';
 import { getCoprocessorSignersPrivateKeyMap } from './signers.js';
 
 /*

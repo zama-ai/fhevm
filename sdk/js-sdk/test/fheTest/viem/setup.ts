@@ -38,7 +38,9 @@ function buildConfig(): FheTestViemConfig {
       ? viemSepolia
       : env.chainName === 'mainnet'
         ? viemMainnet
-        : viemAnvil;
+        : env.chainName === 'localhostFhevm'
+          ? { ...viemAnvil, id: env.fhevmChain.id }
+          : viemAnvil;
 
   const account = mnemonicToAccount(env.mnemonic);
   const bobAccount = mnemonicToAccount(env.mnemonic, {

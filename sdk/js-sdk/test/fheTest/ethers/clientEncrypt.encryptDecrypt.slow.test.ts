@@ -7,6 +7,7 @@ import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
 import { createTypedValueArray } from '../../../src/core/base/typedValue.js';
 import { isBytes32Hex } from '../../../src/core/base/bytes.js';
 import { toFhevmHandle } from '../../../src/core/handle/FhevmHandle.js';
+import { isCleartext } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -62,7 +63,7 @@ const encryptTestCases: TypedValue[] = createTypedValueArray([
 
 ////////////////////////////////////////////////////////////////////////////////
 
-describe(
+describe.runIf(!isCleartext(getEthersTestConfig().chainName))(
   'Encrypt-Decrypt',
   () => {
     let config: FheTestEthersConfig;

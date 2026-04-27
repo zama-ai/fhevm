@@ -1,8 +1,16 @@
-export const FHETestAddresses = {
-  mainnet: '0x7553CB9124f974Ee475E5cE45482F90d5B6076BC',
-  testnet: '0x1E7eA8fE4877E6ea5dc8856f0dA92da8d5066241',
-  devnet: '0x54ED156e4c905598eF34BBDa7b4a04A008EE8bC2',
-};
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+// Single source of truth for FHETest addresses lives in the sibling JSON
+// file so the shell deploy scripts (`assert_fhetest_address_in_abi_v2` in
+// fhevm-lib.sh) can also read/validate them.
+export const FHETestAddresses = JSON.parse(
+  readFileSync(join(import.meta.dirname, 'fhe-test-addresses-v1.json'), 'utf-8'),
+) as Readonly<{
+  mainnet: string;
+  testnet: string;
+  devnet: string;
+}>;
 
 export const FHETestABI = [
   {

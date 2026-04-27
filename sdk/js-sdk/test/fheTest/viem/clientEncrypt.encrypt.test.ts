@@ -5,6 +5,7 @@ import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
 import { createTypedValueArray } from '../../../src/core/base/typedValue.js';
 import { isBytes32Hex } from '../../../src/core/base/bytes.js';
 import { toFhevmHandle } from '../../../src/core/handle/FhevmHandle.js';
+import { isCleartext } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -59,7 +60,7 @@ const encryptTestCases: TypedValue[] = createTypedValueArray([
 
 ////////////////////////////////////////////////////////////////////////////////
 
-describe('Encrypt', () => {
+describe.runIf(!isCleartext(getViemTestConfig().chainName))('Encrypt', () => {
   let config: FheTestViemConfig;
 
   beforeAll(() => {

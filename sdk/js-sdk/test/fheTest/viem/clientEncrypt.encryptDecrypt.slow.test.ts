@@ -3,7 +3,7 @@ import type { EncryptedValue } from '../../../src/core/types/encryptedTypes.js';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmDecryptClient, createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
-import { isV2, getBaseEnv } from '../setupCommon.js';
+import { isV2, getBaseEnv, isCleartext } from '../setupCommon.js';
 import { FHETestABI } from '../abi-v2.js';
 import { createTypedValueArray } from '../../../src/core/base/typedValue.js';
 import { createWalletClient, http, type Hex } from 'viem';
@@ -64,7 +64,7 @@ const encryptTestCases: TypedValue[] = createTypedValueArray([
 
 ////////////////////////////////////////////////////////////////////////////////
 
-describe.runIf(isV2(getViemTestConfig().chainName))(
+describe.runIf(isV2(getViemTestConfig().chainName) && !isCleartext(getViemTestConfig().chainName))(
   'Encrypt-Decrypt',
   () => {
     let config: FheTestViemConfig;

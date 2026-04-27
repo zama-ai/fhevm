@@ -6,6 +6,10 @@ const chain = process.env.CHAIN ?? 'sepolia';
 export default defineConfig({
   resolve: {
     alias: {
+      //
+      // WARNING!!!! Order matters! '<xxx>/cleartext' MUST BE LISTED BEFORE '<xxx>' !!!
+      //
+      '@fhevm/sdk/ethers/cleartext': join(__dirname, '../../src/ethers/cleartext/index.ts'),
       '@fhevm/sdk/ethers': join(__dirname, '../../src/ethers/index.ts'),
       '@fhevm/sdk/viem/cleartext': join(__dirname, '../../src/viem/cleartext/index.ts'),
       '@fhevm/sdk/viem': join(__dirname, '../../src/viem/index.ts'),

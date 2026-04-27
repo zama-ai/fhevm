@@ -7,13 +7,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEST_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 JS_SDK_DIR="$(cd "$TEST_DIR/.." && pwd)"
 CONTRACTS_DIR="$JS_SDK_DIR/contracts"
-DEPLOY_SCRIPT="$CONTRACTS_DIR/script/fhevm-deploy.sh"
+
+DEPLOY_FHEVM_SCRIPT="$CONTRACTS_DIR/script/fhevm-deploy.sh"
+DEPLOY_FHE_TEST_SCRIPT="$CONTRACTS_DIR/script/fhetest-deploy.sh"
 
 PORT="${PORT:-8545}"
 RPC_URL="${RPC_URL:-http://127.0.0.1:${PORT}}"
 CHAIN_ID="${CHAIN_ID:-31337}"
 READY_TIMEOUT="${READY_TIMEOUT:-30}"
-TEST_TARGET="test/fheTest/viem-cleartext"
 
 ANVIL_PID=""
 
@@ -32,8 +33,17 @@ done
 # Check if 'fhevm-deploy.sh' exists
 # ------------------------------------------------------------------------------
 
-if [[ ! -x "$DEPLOY_SCRIPT" ]]; then
-    echo "Error: deploy script not found or not executable at $DEPLOY_SCRIPT" >&2
+if [[ ! -x "$DEPLOY_FHEVM_SCRIPT" ]]; then
+    echo "Error: deploy FHEVM script not found or not executable at $DEPLOY_FHEVM_SCRIPT" >&2
+    exit 1
+fi
+
+# ------------------------------------------------------------------------------
+# Check if 'fhetest-deploy.sh' exists
+# ------------------------------------------------------------------------------
+
+if [[ ! -x "$DEPLOY_FHE_TEST_SCRIPT" ]]; then
+    echo "Error: deploy FHETest script not found or not executable at $DEPLOY_FHE_TEST_SCRIPT" >&2
     exit 1
 fi
 
@@ -98,7 +108,9 @@ echo "✅ Anvil is ready."
 echo "🏗️  Deploying FHEVM cleartext stack..."
 (
     cd "$CONTRACTS_DIR"
-    bash "$DEPLOY_SCRIPT"
+    bash "$DEPLOY_FHEVM_SCRIPT"
+    sleep 1
+    bash "$DEPLOY_FHE_TEST_SCRIPT"
 )
 
 echo

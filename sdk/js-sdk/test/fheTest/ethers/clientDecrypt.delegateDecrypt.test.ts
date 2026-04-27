@@ -8,6 +8,7 @@ import { fheTypeIdFromName } from '../../../src/core/handle/FheType.js';
 import { ethers } from 'ethers';
 import { toFhevmHandle } from '../../../src/core/handle/FhevmHandle.js';
 import { asEncryptedValue } from '../../../src/core/handle/EncryptedValue.js';
+import { isCleartext } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -108,7 +109,7 @@ async function getUserDecryptionDelegationExpirationDate(parameters: {
   );
 }
 
-describe(
+describe.runIf(!isCleartext(getEthersTestConfig().chainName))(
   'Decrypt client — delegated decrypt',
   () => {
     let config: FheTestEthersConfig;

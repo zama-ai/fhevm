@@ -16,6 +16,65 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/.."
 
+# load utils (fhevm_assert_chain, fhevm_rpc_url, is_anvil, ...)
+source "$SCRIPT_DIR/fhevm-lib.sh"
+
+# ==============================================================================
+# CLI options
+# ==============================================================================
+
+chain_default="localhost"
+chain_cli=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --chain)
+            chain_cli="${2:?--chain requires a value}"
+            shift 2
+            ;;
+        -h|--help)
+            cat <<EOF
+Usage: fhevm-deploy.sh [options]
+
+Options:
+  --chain <name>        FHEVM chain (mainnet | testnet | devnet | localhost | localhostFhevm) [default: localhost].
+                        Precedence: --chain flag > \$CHAIN env > $chain_default
+  -h, --help            Show this help.
+EOF
+            exit 0
+            ;;
+        *)
+            echo "Error: unknown option: $1" >&2
+            exit 1
+            ;;
+    esac
+done
+
+# Resolve chain. Read $CHAIN BEFORE unsetting it below (the unset is for
+# downstream forge invocations that would otherwise pick CHAIN up from env).
+chain="${chain_cli:-${CHAIN:-$chain_default}}"
+fhevm_assert_chain "$chain"
+
+# only chain="localhost" for the moment
+case "$chain" in
+    localhost) ;;
+    *)
+        echo "❌ fhevm-deploy.sh only supports chain=localhost; got '$chain'" >&2
+        exit 1
+        ;;
+esac
+
+# Derive RPC URL from the resolved chain via fhevm-lib.
+rpc_url="$(fhevm_rpc_url "$chain")"
+
+# Fail-fast: anvil must already be running at $rpc_url. is_anvil returns
+# non-zero both for "RPC unreachable" and "wrong client running" — both are
+# blocking for this script (it relies on anvil_setBalance and a fresh chain).
+if ! is_anvil "$rpc_url"; then
+    echo "❌ anvil is not running at $rpc_url (or another client is on that port)" >&2
+    echo "   Start anvil first, e.g.:  anvil --port 8545" >&2
+    exit 1
+fi
+
 # ==============================================================================
 # Unset CHAIN environment variable
 # ==============================================================================
@@ -24,170 +83,180 @@ cd "$SCRIPT_DIR/.."
 
 # ==============================================================================
 
-DEPLOYER_MNEMONIC="adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer"
-DEPLOYER_MNEMONIC_DERIVATION_PREFIX="m/44'/60'/0'/0/"
-DEPLOYER_MNEMONIC_DERIVATION_INDEX="5"
-UUPS_DEPLOYER_MNEMONIC_DERIVATION_INDEX="4"
+fhevm_mnemonic="test test test test test test test future home engine virtual motion"
+fhevm_host_contracts_mnemonic="adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer"
 
-DEPLOYER_PRIVATE_KEY="$(cast wallet private-key --mnemonic "$DEPLOYER_MNEMONIC" --mnemonic-derivation-path "${DEPLOYER_MNEMONIC_DERIVATION_PREFIX}${DEPLOYER_MNEMONIC_DERIVATION_INDEX}")"
-DEPLOYER_ADDRESS="$(cast wallet address --mnemonic "$DEPLOYER_MNEMONIC" --mnemonic-derivation-path "${DEPLOYER_MNEMONIC_DERIVATION_PREFIX}${DEPLOYER_MNEMONIC_DERIVATION_INDEX}")"
+deployer_mnemonic=${fhevm_host_contracts_mnemonic}
+deployer_mnemonic_index=5
+empty_uups_mnemonic=${fhevm_host_contracts_mnemonic}
+empty_uups_mnemonic_index=100
 
-UUPS_DEPLOYER_PRIVATE_KEY="$(cast wallet private-key --mnemonic "$DEPLOYER_MNEMONIC" --mnemonic-derivation-path "${DEPLOYER_MNEMONIC_DERIVATION_PREFIX}${UUPS_DEPLOYER_MNEMONIC_DERIVATION_INDEX}")"
-UUPS_DEPLOYER_ADDRESS="$(cast wallet address --mnemonic "$DEPLOYER_MNEMONIC" --mnemonic-derivation-path "${DEPLOYER_MNEMONIC_DERIVATION_PREFIX}${UUPS_DEPLOYER_MNEMONIC_DERIVATION_INDEX}")"
+chain_id_gateway=654321
+
+num_kms_nodes=4
+num_coprocessors=4
+
+kms_threshold=1
+coprocessor_threshold=1
+
+hcu_cap_per_block=281474976710655
+max_hcu_depth_per_tx=5000000
+max_hcu_per_tx=20000000
+
+pausers_mnemonic=${fhevm_host_contracts_mnemonic}
+pausers_mnemonic_index=2
+num_pausers=2
+
+# Calculated as `address(uint160(uint256(keccak256("fhevm.cheat.address cleartext input verification"))))`.
+input_verification_address=0x6189F6c0c3E40B4a3c72ec86262295D78d845297
+
+# Calculated as `address(uint160(uint256(keccak256("fhevm.cheat.address cleartext decryption"))))`.
+decryption_address=0xEaaA2FC6BC259dF015Aa7Dc8e59e0B67df622721
+
+default_anvil_balance=10000
 
 # ==============================================================================
 
-# Load the test-user mnemonic from sdk/js-sdk/test/.env so the same identity
-# used by the js-sdk test suite signs `initFheTest` here.
-FHE_TEST_ENV_FILE="$SCRIPT_DIR/../../test/.env"
-if [[ ! -f "$FHE_TEST_ENV_FILE" ]]; then
-    echo "Error: $FHE_TEST_ENV_FILE not found — expected MNEMONIC there for FHE_TEST_USER." >&2
-    exit 1
-fi
-# shellcheck disable=SC1090
-source "$FHE_TEST_ENV_FILE"
-if [[ -z "${MNEMONIC:-}" ]]; then
-    echo "Error: MNEMONIC not defined in $FHE_TEST_ENV_FILE." >&2
-    exit 1
-fi
+# kms_nodes_mnemonic=${fhevm_host_contracts_mnemonic}
+# kms_nodes_mnemonic_path="m/44'/60'/0'/0/"
+# kms_nodes_mnemonic_index=7
 
-FHE_TEST_USER_PRIVATE_KEY="$(cast wallet private-key --mnemonic "test test test test test test test future home engine virtual motion" --mnemonic-derivation-path "m/44'/60'/0'/0/0")"
-FHE_TEST_USER_ADDRESS="$(cast wallet address --mnemonic "test test test test test test test future home engine virtual motion" --mnemonic-derivation-path "m/44'/60'/0'/0/0")"
+# coprocessors_mnemonic=${fhevm_host_contracts_mnemonic}
+# coprocessors_mnemonic_path="m/44'/60'/0'/0/"
+# coprocessors_mnemonic_index=11
+
+kms_nodes_mnemonic=${fhevm_mnemonic}
+kms_nodes_mnemonic_path="m/44'/60'/0'/3/"
+kms_nodes_mnemonic_index=0
+
+coprocessors_mnemonic=${fhevm_mnemonic}
+coprocessors_mnemonic_path="m/44'/60'/0'/2/"
+coprocessors_mnemonic_index=0
 
 # ==============================================================================
 
-RPC_URL="http://127.0.0.1:8545"
-
-if ! cast chain-id --rpc-url "$RPC_URL" >/dev/null 2>&1; then
-    echo "Error: nothing is listening on $RPC_URL. Start Anvil or use another --rpc-url." >&2
-    exit 1
-fi
+declare -a FORGE_ENV=(
+    "DEPLOYER_MNEMONIC=${deployer_mnemonic}"
+    "DEPLOYER_MNEMONIC_INDEX=${deployer_mnemonic_index}"
+    "EMPTY_UUPS_MNEMONIC=${empty_uups_mnemonic}"
+    "EMPTY_UUPS_MNEMONIC_INDEX=${empty_uups_mnemonic_index}"
+    "CHAIN_ID_GATEWAY=${chain_id_gateway}"
+    "NUM_KMS_NODES=${num_kms_nodes}"
+    "KMS_NODES_MNEMONIC=${kms_nodes_mnemonic}"
+    "KMS_NODES_MNEMONIC_PATH=${kms_nodes_mnemonic_path}"
+    "KMS_NODES_MNEMONIC_INDEX=${kms_nodes_mnemonic_index}"
+    "NUM_COPROCESSORS=${num_coprocessors}"
+    "COPROCESSORS_MNEMONIC=${coprocessors_mnemonic}"
+    "COPROCESSORS_MNEMONIC_PATH=${coprocessors_mnemonic_path}"
+    "COPROCESSORS_MNEMONIC_INDEX=${coprocessors_mnemonic_index}"
+    "PUBLIC_DECRYPTION_THRESHOLD=${kms_threshold}"
+    "COPROCESSOR_THRESHOLD=${coprocessor_threshold}"
+    "HCU_CAP_PER_BLOCK=${hcu_cap_per_block}"
+    "MAX_HCU_DEPTH_PER_TX=${max_hcu_depth_per_tx}"
+    "MAX_HCU_PER_TX=${max_hcu_per_tx}"
+    "NUM_PAUSERS=${num_pausers}"
+    "PAUSERS_MNEMONIC=${pausers_mnemonic}"
+    "PAUSERS_MNEMONIC_INDEX=${pausers_mnemonic_index}"
+    "DECRYPTION_ADDRESS=${decryption_address}"
+    "INPUT_VERIFICATION_ADDRESS=${input_verification_address}"
+)
 
 # ==============================================================================
 #
-# ---- Fund deployer addresses via anvil_setBalance ----
+# ---- Generate FHEVM host contracts addresses ----
 #
 # ==============================================================================
 
-DEPLOYER_FUND_WEI="$(cast to-hex "$(cast to-wei 20000 ether)")" # 20_000 ETH
-
-echo "🍟 Funding ${DEPLOYER_ADDRESS} with 20_000 ETH"
-cast rpc anvil_setBalance "$DEPLOYER_ADDRESS" "$DEPLOYER_FUND_WEI" --rpc-url "$RPC_URL" >/dev/null
-
-echo "🍟 Funding ${FHE_TEST_USER_ADDRESS} with 20_000 ETH"
-cast rpc anvil_setBalance "$FHE_TEST_USER_ADDRESS" "$DEPLOYER_FUND_WEI" --rpc-url "$RPC_URL" >/dev/null
-
-echo
-echo "💰 Balances after funding:"
-printf "  %-20s %s : %s ETH\n" "deployer"          "$DEPLOYER_ADDRESS"        "$(cast from-wei "$(cast balance "$DEPLOYER_ADDRESS"      --rpc-url "$RPC_URL")")"
-printf "  %-20s %s : %s ETH\n" "deployer"          "$FHE_TEST_USER_ADDRESS"   "$(cast from-wei "$(cast balance "$FHE_TEST_USER_ADDRESS"      --rpc-url "$RPC_URL")")"
+env "${FORGE_ENV[@]}" forge script script/DeployCleartextFHEVMHost.s.sol:WriteFHEVMHostAddressesDotSol 
 
 # ==============================================================================
 #
-# ---- Deploy the FHEVM host contracts ----
+# ---- Fund deployers ----
 #
 # ==============================================================================
 
-echo
-echo "🏗️  Running DeployFHEVMHost.s.sol against ${RPC_URL}..."
-forge script script/DeployFHEVMHost.s.sol:DeployFHEVMHost \
-    --rpc-url "$RPC_URL" \
-    --broadcast \
-    --non-interactive
-
-# ==============================================================================
-#
-# ---- Install FhevmCheats on the live anvil ----
-#
-# `DeployFHEVMHost.s.sol` installs FhevmCheats via `vm.etch(...)` which is a
-# simulation-only cheatcode — it never broadcasts, so the live anvil has no
-# code at FHEVM_CHEATS_ADDRESS after `--broadcast` finishes. Plant the runtime
-# bytecode directly via `anvil_setCode`, then populate storage by calling
-# `setAll(...)` as a real tx.
-# ==============================================================================
-
-if ! command -v jq >/dev/null 2>&1; then
-    echo "Error: jq not found in PATH (needed to read forge artifacts)." >&2
-    exit 1
-fi
-
-FHEVM_CHEATS_ADDRESS="0xC71923396eE5fFc886cb769aC7841b8d8d94DD50"
-
-CHEATS_ARTIFACT="out/FhevmCheats.sol/FhevmCheats.json"
-if [[ ! -f "$CHEATS_ARTIFACT" ]]; then
-    echo "Error: $CHEATS_ARTIFACT not found — did forge build run?" >&2
-    exit 1
-fi
-CHEATS_RUNTIME="$(jq -r '.deployedBytecode.object // .deployedBytecode' "$CHEATS_ARTIFACT")"
-
-echo
-echo "🧩 Etching FhevmCheats runtime at ${FHEVM_CHEATS_ADDRESS}..."
-cast rpc anvil_setCode "$FHEVM_CHEATS_ADDRESS" "$CHEATS_RUNTIME" --rpc-url "$RPC_URL" >/dev/null
-
-# Host addresses are baked into src/host-contracts/addresses/FHEVMHostAddresses.sol
-# as `address constant <name> = address(0x...)`.
-extract_fhevm_addr() {
-    local name="$1"
-    local src="src/host-contracts/addresses/FHEVMHostAddresses.sol"
-    sed -nE "s/^[[:space:]]*address[[:space:]]+constant[[:space:]]+${name}[[:space:]]*=[[:space:]]*address\(([^)]+)\).*/\1/p" "$src"
+forge_json() {
+    local target="$1"
+    env "${FORGE_ENV[@]}" forge script "$target" --rpc-url "${rpc_url}" --non-interactive 2>&1 | awk '
+      /JSON_RESULT_START/ { capture=1; next }
+      /JSON_RESULT_END/   { capture=0; exit }
+      capture
+    '
 }
-ACL_ADD="$(extract_fhevm_addr aclAdd)"
-FHEVM_EXECUTOR_ADD="$(extract_fhevm_addr fhevmExecutorAdd)"
-KMS_VERIFIER_ADD="$(extract_fhevm_addr kmsVerifierAdd)"
-INPUT_VERIFIER_ADD="$(extract_fhevm_addr inputVerifierAdd)"
-HCU_LIMIT_ADD="$(extract_fhevm_addr hcuLimitAdd)"
-PAUSER_SET_ADD="$(extract_fhevm_addr pauserSetAdd)"
 
-# FHETest is deployed at deployer nonce 19 by DeployFHEVMHost. Pull the actual
-# address from the forge broadcast log rather than recomputing, so we stay
-# correct even if the deploy sequence changes.
-CHAIN_ID_DEC="$(($(cast chain-id --rpc-url "$RPC_URL")))"
-BROADCAST_LOG="broadcast/DeployFHEVMHost.s.sol/${CHAIN_ID_DEC}/run-latest.json"
-if [[ ! -f "$BROADCAST_LOG" ]]; then
-    echo "Error: $BROADCAST_LOG not found — forge broadcast didn't write a log for chain ${CHAIN_ID_DEC}." >&2
-    exit 1
-fi
-FHE_TEST_ADD="$(jq -r '[.transactions[] | select(.contractName == "FHETest") | .contractAddress] | last // ""' "$BROADCAST_LOG")"
-if [[ -z "$FHE_TEST_ADD" || "$FHE_TEST_ADD" == "null" ]]; then
-    echo "Error: FHETest contract address not found in $BROADCAST_LOG." >&2
-    exit 1
-fi
+signers_json="$(forge_json script/DeployCleartextFHEVMHost.s.sol:PrintFhevmSigners)"
 
-echo "🧩 Populating FhevmCheats.setAll(...)"
-cast send "$FHEVM_CHEATS_ADDRESS" \
-    "setAll((address,address,address,address,address,address),address)" \
-    "(${ACL_ADD},${FHEVM_EXECUTOR_ADD},${KMS_VERIFIER_ADD},${INPUT_VERIFIER_ADD},${HCU_LIMIT_ADD},${PAUSER_SET_ADD})" \
-    "$FHE_TEST_ADD" \
-    --private-key "$DEPLOYER_PRIVATE_KEY" --rpc-url "$RPC_URL" >/dev/null
+deployer_address="$(jq -r '.deployer.address' <<<"$signers_json")"
+empty_uups_deployer_address="$(jq -r '.emptyUupsDeployer.address' <<<"$signers_json")"
+
+echo "deployer:           $deployer_address"
+echo "emptyUupsDeployer:  $empty_uups_deployer_address"
+
+# Funds the deployer and emptyUupsDeployer addresses on anvil via
+# anvil_setBalance. Skips emptyUupsDeployer when it's the zero address
+# (single-key flow → resolveDeployersAsJson emits 0x000…000).
+#
+# Usage: fund_anvil_deployers <deployer_address> <empty_uups_deployer_address> <amount_eth>
+# Thin wrapper over fhevm-lib's `set_anvil_balance`. The lib helper already
+# silently skips the zero-address case (emptyUupsDeployer when not configured).
+fund_anvil_deployers() {
+    local deployer_addr="$1"
+    local empty_uups_addr="$2"
+
+    set_anvil_balance "$deployer_addr"   "$default_anvil_balance" "$rpc_url"
+    set_anvil_balance "$empty_uups_addr" "$default_anvil_balance" "$rpc_url"
+}
+
+# Verifies the deployer and emptyUupsDeployer balances on $rpc_url match the
+# expected amount in ETH. Skips emptyUupsDeployer when it's the zero address.
+# Returns non-zero on any mismatch.
+#
+# Usage: verify_anvil_balances <deployer_address> <empty_uups_address> <expected_eth>
+# Thin wrapper over fhevm-lib's `verify_balance`. Both calls return non-zero
+# on mismatch; `set -euo pipefail` propagates the failure to the caller.
+verify_anvil_balances() {
+    local deployer_addr="$1"
+    local empty_uups_addr="$2"
+    local expected_eth="$3"
+
+    verify_balance "$deployer_addr"   "$expected_eth" "$rpc_url" "deployer"
+    verify_balance "$empty_uups_addr" "$expected_eth" "$rpc_url" "emptyUupsDeployer"
+}
+
+if is_anvil "$rpc_url"; then
+    fund_anvil_deployers "$deployer_address" "$empty_uups_deployer_address"
+    verify_anvil_balances "$deployer_address" "$empty_uups_deployer_address" "$default_anvil_balance"
+else
+    echo "ℹ️  Not on anvil (or RPC unreachable); skipping anvil_setBalance funding."
+fi
 
 # ==============================================================================
 #
-# ---- Retrieve FHETest address from FhevmCheats and initialize it ----
+# ---- Deploy ----
 #
 # ==============================================================================
 
 echo
-echo "🔎 Reading FHETest address from FhevmCheats at ${FHEVM_CHEATS_ADDRESS}..."
-FHE_TEST_ADDRESS="$(cast call "$FHEVM_CHEATS_ADDRESS" "fheTest()(address)" --rpc-url "$RPC_URL")"
-if [[ -z "$FHE_TEST_ADDRESS" || "$FHE_TEST_ADDRESS" == "0x0000000000000000000000000000000000000000" ]]; then
-    echo "Error: FhevmCheats.fheTest() returned the zero address — did DeployFHEVMHost succeed?" >&2
-    exit 1
-fi
-echo "  fheTest: $FHE_TEST_ADDRESS"
+echo "🚚  Deploying Cleartext FHEVM Host Constracts ..."
+
+env "${FORGE_ENV[@]}" forge script \
+    script/DeployCleartextFHEVMHost.s.sol:Deploy \
+    --non-interactive \
+    --rpc-url "${rpc_url}" \
+    --broadcast
+
+# ==============================================================================
+#
+# ---- Verify ----
+#
+# ==============================================================================
 
 echo
-echo "🚀 Calling FHETest(${FHE_TEST_ADDRESS}).initFheTest(true)..."
-cast send "$FHE_TEST_ADDRESS" "initFheTest(bool)" true \
-    --private-key "$DEPLOYER_PRIVATE_KEY" \
-    --rpc-url "$RPC_URL" >/dev/null
-echo "✅ initFheTest complete. ${DEPLOYER_ADDRESS}"
+echo "🥬  Verifying Cleartext FHEVM Host Constracts ..."
 
-echo
-echo "🚀 Calling FHETest(${FHE_TEST_ADDRESS}).initFheTest(true)..."
-cast send "$FHE_TEST_ADDRESS" "initFheTest(bool)" true \
-    --private-key "$FHE_TEST_USER_PRIVATE_KEY" \
-    --rpc-url "$RPC_URL" >/dev/null
-echo "✅ initFheTest complete. ${FHE_TEST_USER_ADDRESS}"
+env "${FORGE_ENV[@]}" forge script \
+    script/DeployCleartextFHEVMHost.s.sol:Verify \
+    --non-interactive \
+    --rpc-url "${rpc_url}"
 
-echo
-echo "✅ FHEVM stack deployed and initialized on ${RPC_URL} (chain-id: $(cast chain-id --rpc-url "$RPC_URL"))."
+echo "✅  ok"

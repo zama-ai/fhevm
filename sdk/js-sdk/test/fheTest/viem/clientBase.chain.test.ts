@@ -1,3 +1,11 @@
+import { resolveFhevmConfig } from '@fhevm/sdk/actions/host';
+import { createFhevmBaseClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { safeJSONstringify } from '../../../src/core/base/string.js';
+import { type FheTestViemConfig, getViemTestConfig } from './setup.js';
+import { isCleartext } from '../setupCommon.js';
+
+////////////////////////////////////////////////////////////////////////////////
 //
 // Sepolia Testnet:
 // ----------------
@@ -11,13 +19,9 @@
 // ----------------
 // CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.chain.test.ts
 //
-import { resolveFhevmConfig } from '@fhevm/sdk/actions/host';
-import { createFhevmBaseClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import { beforeAll, describe, expect, it } from 'vitest';
-import { safeJSONstringify } from '../../../src/core/base/string.js';
-import { type FheTestViemConfig, getViemTestConfig } from './setup.js';
+////////////////////////////////////////////////////////////////////////////////
 
-describe('Base client — chain resolution', () => {
+describe.runIf(!isCleartext(getViemTestConfig().chainName))('Base client — chain resolution', () => {
   let config: FheTestViemConfig;
 
   beforeAll(() => {

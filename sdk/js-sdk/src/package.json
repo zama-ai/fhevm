@@ -78,7 +78,7 @@
     "./package.json": "./package.json"
   },
   "peerDependencies": {
-    "ethers": ">=6",
+    "ethers": ">=6.8.0",
     "typescript": ">=5.0.4",
     "viem": ">=2"
   },
@@ -95,6 +95,7 @@
   },
   "dependencies": {
     "@noble/hashes": "2.0.1",
+    "@noble/curve": "2.0.1",
     "wasm-feature-detect": "^1.8.0"
   },
   "repository": {

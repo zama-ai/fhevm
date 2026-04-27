@@ -13,12 +13,12 @@ import {
 import { sepolia } from './core/chains/index.js';
 import { ethers } from 'ethers';
 //import { safeJSONstringify } from "./core/base/string.js";
-import { decryptActions } from './ethers/decorators/decrypt.js';
 // import type {
 //   SignedDelegatedDecryptionPermit,
 //   SignedSelfDecryptionPermit,
 // } from "./core/types/signedDecryptionPermit.js";
 import { createFhevmBaseClient } from './ethers/clients/createFhevmBaseClient.js';
+import { decryptActions } from './ethers/clients/decorators/decrypt.js';
 
 // node --test --import tsx ./src/index.hello.test.ts
 

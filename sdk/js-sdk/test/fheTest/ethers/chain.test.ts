@@ -1,3 +1,8 @@
+import { describe, it, expect, beforeAll } from 'vitest';
+import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
+import { isCleartext } from '../setupCommon.js';
+
+////////////////////////////////////////////////////////////////////////////////
 //
 // Sepolia Testnet:
 // ----------------
@@ -11,10 +16,9 @@
 // ----------------
 // CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts ethers/chain.test.ts
 //
-import { describe, it, expect, beforeAll } from 'vitest';
-import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
+////////////////////////////////////////////////////////////////////////////////
 
-describe('Chain — SDK chain config vs on-chain', () => {
+describe.runIf(!isCleartext(getEthersTestConfig().chainName))('Chain — SDK chain config vs on-chain', () => {
   let config: FheTestEthersConfig;
 
   beforeAll(() => {

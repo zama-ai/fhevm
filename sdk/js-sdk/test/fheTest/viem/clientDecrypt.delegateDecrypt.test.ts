@@ -5,7 +5,7 @@ import type { Handle } from '../../../src/core/types/encryptedTypes-p.js';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmDecryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
-import { isV2, getBaseEnv } from '../setupCommon.js';
+import { isV2, getBaseEnv, isCleartext } from '../setupCommon.js';
 import { FHETestABI } from '../abi-v2.js';
 import { fheTypeIdFromName } from '../../../src/core/handle/FheType.js';
 import { toFhevmHandle } from '../../../src/core/handle/FhevmHandle.js';
@@ -117,7 +117,7 @@ async function getUserDecryptionDelegationExpirationDate(parameters: {
   });
 }
 
-describe.runIf(isV2(getViemTestConfig().chainName))(
+describe.runIf(isV2(getViemTestConfig().chainName) && !isCleartext(getViemTestConfig().chainName))(
   'Decrypt client — delegated decrypt',
   () => {
     let config: FheTestViemConfig;
