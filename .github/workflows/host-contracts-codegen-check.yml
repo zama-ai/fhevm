@@ -13,8 +13,8 @@ jobs:
   check-changes:
     name: host-contracts-codegen-check/check-changes
     permissions:
-      contents: 'read'
-      pull-requests: 'read'
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
     runs-on: ubuntu-latest
     outputs:
       changes: ${{ steps.filter.outputs.changes }}
@@ -40,7 +40,7 @@ jobs:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes == 'true' }}
     permissions:
-      contents: 'read'
+      contents: 'read' # Required to checkout repository code
     runs-on: ubuntu-latest
     steps:
       - name: Checkout project
