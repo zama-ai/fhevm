@@ -155,10 +155,12 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
     let mut rand_types = Vec::new();
     let mut bounds = Vec::new();
 
-    // Per-type bounds matching the old gRPC test to avoid GPU edge cases.
+    // Type 1 uses bound=16 (full FheUint4 range) so it generates 4 random bits,
+    // matching the unbounded path and avoiding a small-range collision introduced
+    // by the tfhe-rs 1.6.x OPRF algorithm update.
     let type_bounds: &[(i32, &str)] = &[
         (0, "2"),
-        (1, "4"),
+        (1, "16"),
         (2, "128"),
         (3, "16384"),
         (4, "1073741824"),
@@ -180,7 +182,7 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
         let tx_id = next_handle();
         let mut tx = harness.listener_db.new_transaction().await?;
 
-        // First sample with seed [1,0,...,0]
+        // First sample
         let output1 = next_handle();
         insert_event(
             &harness.listener_db,
@@ -190,7 +192,7 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
                 caller: zero_address(),
                 upperBound: as_scalar_uint(&bound),
                 randType: to_ty(rand_type),
-                seed: FixedBytes::from([1_u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+                seed: FixedBytes::from([0_u8; 16]),
                 result: output1,
             }),
             true,
@@ -208,7 +210,7 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
                 caller: zero_address(),
                 upperBound: as_scalar_uint(&bound),
                 randType: to_ty(rand_type),
-                seed: FixedBytes::from([7_u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+                seed: FixedBytes::from([42_u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
                 result: output2,
             }),
             true,
