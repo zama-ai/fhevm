@@ -116,9 +116,16 @@ Key operator-tunable fields in the config file:
 | `storage.cron.user_decrypt_expiry`              | Retention for user decrypt records        | `7d`           |
 | `storage.cron.input_proof_expiry`               | Retention for input proof records         | `7d`           |
 | `http.retry_after.max_seconds`                  | Max Retry-After header value              | `300`          |
-| `http.enable_admin_endpoint`                    | Enable runtime config via `/admin/config` | `false`        |
+| `http.enable_admin_endpoint`                    | Enable runtime config via `/admin/config` (see security note below) | `false`        |
 
 Configuration is hierarchical: YAML file -> environment variables (`APP_` prefix, `__` nesting) -> CLI args.
+
+### Admin endpoint security
+
+`/admin/config` is primarily intended for testing and benchmarking. It is disabled by default and intentionally has no application-level authentication. When enabling it, restrict reachability via network-level controls:
+
+- bind `http.endpoint` to loopback (`127.0.0.1:3000`) or an internal-only subnet, or
+- place the endpoint behind an authentication layer.
 
 ## Monitoring
 
