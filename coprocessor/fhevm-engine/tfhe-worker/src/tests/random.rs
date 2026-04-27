@@ -155,9 +155,7 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
     let mut rand_types = Vec::new();
     let mut bounds = Vec::new();
 
-    // Type 1 uses bound=16 (full FheUint4 range) so it generates 4 random bits,
-    // matching the unbounded path and avoiding a small-range collision introduced
-    // by the tfhe-rs 1.6.x OPRF algorithm update.
+    // Per-type bounds matching the old gRPC test to avoid GPU edge cases.
     let type_bounds: &[(i32, &str)] = &[
         (0, "2"),
         (1, "16"),
