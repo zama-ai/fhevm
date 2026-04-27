@@ -3,6 +3,7 @@ use crate::{
     types::db::{OperationStatus, ParamsTypeDb, SnsCiphertextMaterialDbItem},
 };
 use alloy::primitives::{Address, FixedBytes, U256};
+use anyhow::anyhow;
 use fhevm_gateway_bindings::{
     decryption::{
         Decryption::{
@@ -228,7 +229,7 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
                 || contract_addresses.len() != sns_ct_materials.len()
             {
                 anyhow::bail!(
-                    "handle owner/contract array length mismatch for RFC016 user decryption row"
+                    "handle owner/contract array length mismatch for user decryption row"
                 );
             }
 
@@ -259,8 +260,12 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
                     publicKey: public_key.into(),
                     allowedContracts: allowed_contracts,
                     requestValidity: RequestValiditySeconds {
-                        startTimestamp: U256::from(start_timestamp as u64),
-                        durationSeconds: U256::from(duration_seconds as u64),
+                        startTimestamp: U256::try_from(start_timestamp).map_err(|_| {
+                            anyhow!("start_timestamp is negative: {start_timestamp}")
+                        })?,
+                        durationSeconds: U256::try_from(duration_seconds).map_err(|_| {
+                            anyhow!("duration_seconds is negative: {duration_seconds}")
+                        })?,
                     },
                     extraData: extra_data.into(),
                     signature: signature.into(),
