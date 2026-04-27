@@ -9,6 +9,17 @@ use tokio_util::sync::CancellationToken;
 
 const CHAIN_A: i64 = 100;
 
+/// Builds a `RevertRunnerConfig` for tests. Defaults pin the attempts
+/// thresholds high enough that they never trip incidentally; tests for the
+/// breaker itself override `max_recent_attempts` / `recent_attempts_window`.
+fn runner_cfg(grace_period: Duration) -> RevertRunnerConfig {
+    RevertRunnerConfig {
+        grace_period,
+        max_recent_attempts: 100,
+        recent_attempts_window: Duration::from_secs(3600),
+    }
+}
+
 async fn setup_chain_and_computation(pool: &PgPool, chain_id: i64, block_number: i64) -> Vec<u8> {
     sqlx::query(
         "INSERT INTO host_chains (chain_id, name, acl_contract_address) \
@@ -179,9 +190,7 @@ async fn runner_processes_concurrent_signals_from_multiple_chains() {
         .expect("should create B");
     assert!(id_b > id_a, "B should have a newer id than A");
 
-    let cfg = RevertRunnerConfig {
-        grace_period: Duration::from_millis(10),
-    };
+    let cfg = runner_cfg(Duration::from_millis(10));
     let cancel = CancellationToken::new();
     drift_revert::handle_pending_signal_on_startup(&pool, Some(cfg), &cancel)
         .await
@@ -194,8 +203,9 @@ async fn runner_processes_concurrent_signals_from_multiple_chains() {
             .await
             .unwrap();
     assert_eq!(rows.len(), 2, "both signals should remain as audit trail");
+    let done = SignalStatus::Done.as_db_str();
     for (id, status) in &rows {
-        assert_eq!(status, "done", "signal {id} should be Done");
+        assert_eq!(status, &done, "signal {id} should be Done");
     }
 }
 
@@ -218,14 +228,154 @@ async fn runner_refuses_on_failed_latest() {
     setup_failed_signal(&pool).await;
 
     let cancel = CancellationToken::new();
-    let cfg = RevertRunnerConfig {
-        grace_period: Duration::from_millis(10),
-    };
+    let cfg = runner_cfg(Duration::from_millis(10));
     let result = drift_revert::handle_pending_signal_on_startup(&pool, Some(cfg), &cancel).await;
     assert!(
         result.is_err(),
         "runner startup must refuse while latest signal is Failed"
     );
+}
+
+/// Inserts `count` signals on `host_chain_id` already in `Done` state to
+/// represent recent successful reverts.
+async fn insert_done_signals(pool: &PgPool, host_chain_id: i64, count: u32) {
+    for _ in 0..count {
+        sqlx::query(
+            "INSERT INTO drift_revert_signal (host_chain_id, offending_host_block_number, status) \
+             VALUES ($1, 1, $2)",
+        )
+        .bind(host_chain_id)
+        .bind(SignalStatus::Done.as_db_str())
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn runner_marks_failed_when_too_many_recent_attempts() {
+    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let pool = PgPool::connect(db.db_url()).await.unwrap();
+
+    setup_chain_and_computation(&pool, CHAIN_A, 10).await;
+    insert_done_signals(&pool, CHAIN_A, 3).await;
+    drift_revert::create_revert_signal(&pool, CHAIN_A, 10)
+        .await
+        .unwrap()
+        .unwrap();
+
+    let cfg = RevertRunnerConfig {
+        grace_period: Duration::from_millis(10),
+        max_recent_attempts: 3,
+        recent_attempts_window: Duration::from_secs(3600),
+    };
+    let cancel = CancellationToken::new();
+    let err = drift_revert::handle_pending_signal_on_startup(&pool, Some(cfg), &cancel)
+        .await
+        .expect_err("runner must refuse when too many recent attempts");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("too many recent attempts"),
+        "error should mention too-many-attempts, got: {msg}"
+    );
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn runner_too_many_attempts_isolates_per_chain() {
+    const CHAIN_B: i64 = 200;
+    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let pool = PgPool::connect(db.db_url()).await.unwrap();
+
+    // Many recent dones on B should NOT block reverts on A.
+    sqlx::query(
+        "INSERT INTO host_chains (chain_id, name, acl_contract_address) \
+         VALUES ($1, 'test-b', '0x2')",
+    )
+    .bind(CHAIN_B)
+    .execute(&pool)
+    .await
+    .unwrap();
+    insert_done_signals(&pool, CHAIN_B, 5).await;
+
+    setup_chain_and_computation(&pool, CHAIN_A, 10).await;
+    drift_revert::create_revert_signal(&pool, CHAIN_A, 10)
+        .await
+        .unwrap()
+        .unwrap();
+
+    let cfg = RevertRunnerConfig {
+        grace_period: Duration::from_millis(10),
+        max_recent_attempts: 3,
+        recent_attempts_window: Duration::from_secs(3600),
+    };
+    let cancel = CancellationToken::new();
+    drift_revert::handle_pending_signal_on_startup(&pool, Some(cfg), &cancel)
+        .await
+        .expect("runner should process A despite B having many recent attempts");
+
+    // Chain A's signal must now be Done (runner processed it).
+    let chain_a_status: String = sqlx::query_scalar(
+        "SELECT status FROM drift_revert_signal WHERE host_chain_id = $1 ORDER BY id DESC LIMIT 1",
+    )
+    .bind(CHAIN_A)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(chain_a_status, SignalStatus::Done.as_db_str());
+
+    // Revert SQL ran on chain A: the block-10 computation we seeded was past
+    // the revert target (block 9) and must be gone.
+    let remaining: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM computations WHERE host_chain_id = $1")
+            .bind(CHAIN_A)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        remaining, 0,
+        "chain A's computation should have been reverted"
+    );
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn runner_too_many_attempts_ignores_old_dones_outside_window() {
+    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let pool = PgPool::connect(db.db_url()).await.unwrap();
+    setup_chain_and_computation(&pool, CHAIN_A, 10).await;
+
+    // 5 Done signals on chain A, but with updated_at 2 hours in the past —
+    // outside any reasonable recent window. The runner should NOT count them.
+    for _ in 0..5 {
+        sqlx::query(
+            "INSERT INTO drift_revert_signal \
+             (host_chain_id, offending_host_block_number, status, updated_at) \
+             VALUES ($1, 1, $2, NOW() - INTERVAL '2 hours')",
+        )
+        .bind(CHAIN_A)
+        .bind(SignalStatus::Done.as_db_str())
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    drift_revert::create_revert_signal(&pool, CHAIN_A, 10)
+        .await
+        .unwrap()
+        .unwrap();
+
+    // Threshold of 3 within a 1-hour window. Old Dones don't count → runner proceeds.
+    let cfg = RevertRunnerConfig {
+        grace_period: Duration::from_millis(10),
+        max_recent_attempts: 3,
+        recent_attempts_window: Duration::from_secs(3600),
+    };
+    let cancel = CancellationToken::new();
+    drift_revert::handle_pending_signal_on_startup(&pool, Some(cfg), &cancel)
+        .await
+        .expect("runner must not trip when historical Dones are outside the window");
 }
 
 #[tokio::test]
@@ -294,9 +444,7 @@ async fn runner_resumes_from_reverting_status_without_grace_period() {
 
     // Grace period is set very large; if the runner incorrectly waits it,
     // the test should complete in under a second anyway — we assert it did.
-    let cfg = RevertRunnerConfig {
-        grace_period: Duration::from_secs(30),
-    };
+    let cfg = runner_cfg(Duration::from_secs(30));
     let cancel = CancellationToken::new();
     let started = std::time::Instant::now();
     drift_revert::handle_pending_signal_on_startup(&pool, Some(cfg), &cancel)
@@ -374,6 +522,96 @@ async fn waiter_waits_until_all_chains_done() {
         .expect("waiter task should succeed");
 }
 
+#[tokio::test]
+#[serial(db)]
+async fn waiter_bails_when_revert_fails_during_wait() {
+    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let pool = PgPool::connect(db.db_url()).await.unwrap();
+    setup_chain_and_computation(&pool, CHAIN_A, 10).await;
+    let id = drift_revert::create_revert_signal(&pool, CHAIN_A, 10)
+        .await
+        .unwrap()
+        .unwrap();
+
+    let cancel = CancellationToken::new();
+    let waiter = {
+        let pool = pool.clone();
+        let cancel = cancel.clone();
+        tokio::spawn(async move {
+            drift_revert::handle_pending_signal_on_startup(&pool, None, &cancel).await
+        })
+    };
+
+    // Let the waiter enter its poll loop, then transition the signal to Failed.
+    tokio::time::sleep(drift_revert::POLL_INTERVAL * 2).await;
+    drift_revert::update_signal_status(&pool, id, &SignalStatus::Failed("simulated".to_owned()))
+        .await
+        .unwrap();
+
+    let result = tokio::time::timeout(Duration::from_secs(3), waiter)
+        .await
+        .expect("waiter should finish within timeout")
+        .expect("task should not panic");
+    let err = result.expect_err("waiter must bail when signal becomes Failed during wait");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("Failed") && msg.contains("simulated"),
+        "error should reference Failed status with reason, got: {msg}"
+    );
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn waiter_bails_on_old_failed_even_when_newer_is_done() {
+    const CHAIN_B: i64 = 200;
+    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let pool = PgPool::connect(db.db_url()).await.unwrap();
+
+    setup_chain_and_computation(&pool, CHAIN_A, 10).await;
+    sqlx::query(
+        "INSERT INTO host_chains (chain_id, name, acl_contract_address) \
+         VALUES ($1, 'test-b', '0x2')",
+    )
+    .bind(CHAIN_B)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Older signal on chain A: Failed.
+    let id_a = drift_revert::create_revert_signal(&pool, CHAIN_A, 10)
+        .await
+        .unwrap()
+        .unwrap();
+    let reason_marker = "older-chain-a-marker";
+    drift_revert::update_signal_status(
+        &pool,
+        id_a,
+        &SignalStatus::Failed(reason_marker.to_owned()),
+    )
+    .await
+    .unwrap();
+
+    // Newer signal on chain B: Done.
+    sqlx::query(
+        "INSERT INTO drift_revert_signal (host_chain_id, offending_host_block_number, status) \
+         VALUES ($1, 1, $2)",
+    )
+    .bind(CHAIN_B)
+    .bind(SignalStatus::Done.as_db_str())
+    .execute(&pool)
+    .await
+    .unwrap();
+    // The `blocking_signal` query prioritizes Failed → bails.
+    let cancel = CancellationToken::new();
+    let result = drift_revert::handle_pending_signal_on_startup(&pool, None, &cancel).await;
+    let err = result.expect_err("waiter must bail despite newer Done signal masking older Failed");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("Failed") && msg.contains(reason_marker),
+        "error should reference the older Failed signal, got: {msg}"
+    );
+}
+
 struct MockReExec {
     called: Arc<Mutex<bool>>,
 }
@@ -446,9 +684,7 @@ async fn handle_pending_signal_runner_marks_done() {
         .await
         .expect("create signal");
 
-    let cfg = RevertRunnerConfig {
-        grace_period: Duration::from_millis(10),
-    };
+    let cfg = runner_cfg(Duration::from_millis(10));
 
     let cancel = CancellationToken::new();
     drift_revert::handle_pending_signal_on_startup(&pool, Some(cfg), &cancel)
@@ -597,9 +833,7 @@ async fn init_handles_pending_signal_and_spawns_watcher() {
         .await
         .expect("create signal");
 
-    let cfg = RevertRunnerConfig {
-        grace_period: Duration::from_millis(10),
-    };
+    let cfg = runner_cfg(Duration::from_millis(10));
 
     let mock = MockReExec::new();
 

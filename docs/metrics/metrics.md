@@ -153,6 +153,12 @@ Note that recommendations assume a smoke test that runs transactions/requests at
  - **Alarm**: Any non-zero increase.
     - **Recommendation**: alarm on `increase(counter[1m]) > 0`.
 
+#### Metric Name: `coprocessor_drift_revert_too_many_attempts_counter`
+ - **Type**: Counter (labeled by `host_chain_id`)
+ - **Description**: Number of times the revert runner refused to revert because too many successful reverts already happened in the recent window for this host chain. Indicates a deterministic loop where reverts succeed but drift keeps recurring (e.g. a tfhe-worker bug). The signal is marked Failed and the service refuses to start until an operator intervenes. Emitted by gw-listener only.
+ - **Alarm**: Any non-zero increase.
+    - **Recommendation**: alarm on `increase(counter[1m]) > 0`.
+
 ### zkproof-worker
 
 Metrics for zkproof-worker are to be added in future releases, if/when needed. Currently, the transaction-sender handles ZK proof related metrics, please see its section.

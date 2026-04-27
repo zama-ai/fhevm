@@ -128,6 +128,16 @@ struct Conf {
     /// Also readable from `DRIFT_AUTO_REVERT_ENABLED` env var.
     #[arg(long, env = "DRIFT_AUTO_REVERT_ENABLED", default_value_t = false)]
     drift_auto_revert_enabled: bool,
+
+    /// Maximum number of successful reverts allowed for a host chain within
+    /// `--drift-auto-revert-recent-attempts-window` before refusing further
+    /// reverts. Catches loops where each revert succeeds but drift recurs.
+    #[arg(long, default_value_t = 2)]
+    drift_auto_revert_max_recent_attempts: u32,
+
+    /// Time window over which `--drift-auto-revert-max-recent-attempts` is counted.
+    #[arg(long, default_value = "30m", value_parser = parse_duration)]
+    drift_auto_revert_recent_attempts_window: Duration,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -240,6 +250,8 @@ async fn main() -> anyhow::Result<()> {
         cancel_token.clone(),
         Some(RevertRunnerConfig {
             grace_period: config.drift_auto_revert_grace_period,
+            max_recent_attempts: conf.drift_auto_revert_max_recent_attempts,
+            recent_attempts_window: conf.drift_auto_revert_recent_attempts_window,
         }),
     )
     .await?;

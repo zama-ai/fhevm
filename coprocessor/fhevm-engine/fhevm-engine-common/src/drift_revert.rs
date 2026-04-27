@@ -49,6 +49,17 @@ static REVERT_FAILURE_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
     .unwrap()
 });
 
+static TOO_MANY_ATTEMPTS_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "coprocessor_drift_revert_too_many_attempts_counter",
+        "Number of times the revert runner refused to revert because too many \
+         successful reverts already happened in the recent window — indicates a \
+         deterministic loop where reverts succeed but drift keeps recurring",
+        &["host_chain_id"]
+    )
+    .unwrap()
+});
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SignalStatus {
     Pending,
@@ -57,13 +68,15 @@ pub enum SignalStatus {
     Failed(String),
 }
 
+const FAILED_DB_PREFIX: &str = "failed: ";
+
 impl SignalStatus {
-    fn as_db_str(&self) -> String {
+    pub fn as_db_str(&self) -> String {
         match self {
             Self::Pending => "pending".to_owned(),
             Self::Reverting => "reverting".to_owned(),
             Self::Done => "done".to_owned(),
-            Self::Failed(reason) => format!("failed: {reason}"),
+            Self::Failed(reason) => format!("{FAILED_DB_PREFIX}{reason}"),
         }
     }
 
@@ -72,12 +85,17 @@ impl SignalStatus {
             "pending" => Self::Pending,
             "reverting" => Self::Reverting,
             "done" => Self::Done,
-            other => Self::Failed(other.strip_prefix("failed: ").unwrap_or(other).to_owned()),
+            other => Self::Failed(
+                other
+                    .strip_prefix(FAILED_DB_PREFIX)
+                    .unwrap_or(other)
+                    .to_owned(),
+            ),
         }
     }
 
-    pub fn is_in_flight(&self) -> bool {
-        matches!(self, Self::Pending | Self::Reverting)
+    fn failed_like_pattern() -> String {
+        format!("{FAILED_DB_PREFIX}%")
     }
 }
 
@@ -146,6 +164,49 @@ pub async fn oldest_in_flight_signal(
          WHERE status = $1 OR status = $2 \
          ORDER BY id ASC LIMIT 1",
     )
+    .bind(SignalStatus::Pending.as_db_str())
+    .bind(SignalStatus::Reverting.as_db_str())
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(signal_from_row))
+}
+
+/// Fetch the most recent Failed signal across any host chain.
+pub async fn latest_failed_signal(
+    pool: &Pool<Postgres>,
+) -> anyhow::Result<Option<DriftRevertSignal>> {
+    let row = sqlx::query(
+        "SELECT id, host_chain_id, offending_host_block_number, status
+         FROM drift_revert_signal
+         WHERE status LIKE $1
+         ORDER BY id DESC LIMIT 1",
+    )
+    .bind(SignalStatus::failed_like_pattern())
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(signal_from_row))
+}
+
+/// Fetch the signal that should block service startup, in priority order:
+///   1. Most recent Failed signal — caller must bail.
+///   2. Oldest in-flight (Pending or Reverting) — caller must wait.
+///   3. None — caller can proceed.
+async fn blocking_signal(pool: &Pool<Postgres>) -> anyhow::Result<Option<DriftRevertSignal>> {
+    let row = sqlx::query(
+        "SELECT id, host_chain_id, offending_host_block_number, status FROM (
+            (SELECT 1 AS priority, id, host_chain_id, offending_host_block_number, status
+             FROM drift_revert_signal
+             WHERE status LIKE $1
+             ORDER BY id DESC LIMIT 1)
+            UNION ALL
+            (SELECT 2 AS priority, id, host_chain_id, offending_host_block_number, status
+             FROM drift_revert_signal
+             WHERE status = $2 OR status = $3
+             ORDER BY id ASC LIMIT 1)
+         ) sq
+         ORDER BY priority ASC LIMIT 1",
+    )
+    .bind(SignalStatus::failed_like_pattern())
     .bind(SignalStatus::Pending.as_db_str())
     .bind(SignalStatus::Reverting.as_db_str())
     .fetch_optional(pool)
@@ -262,46 +323,54 @@ pub async fn wait_for_in_flight_signal(pool: &Pool<Postgres>) -> anyhow::Result<
 /// any host chain, or until `cancel_token` fires. Used by non-runner services
 /// to wait for all pending reverts to finish on startup.
 ///
-/// Returns an error if at any point the latest signal transitions to `Failed`
-/// — the waiter must not let the service start on a DB where recovery failed.
+/// Returns an error if any host chain has an unresolved `Failed` signal at
+/// any point — the waiter must not let the service start on a DB where any
+/// chain's revert failed.
 pub async fn wait_for_revert_done(
     pool: &Pool<Postgres>,
     cancel_token: &CancellationToken,
 ) -> anyhow::Result<()> {
-    match oldest_in_flight_signal(pool).await? {
-        None => return Ok(()),
-        Some(signal) => info!(
-            signal_id = signal.id,
-            host_chain_id = signal.host_chain_id,
-            status = signal.status.as_db_str(),
-            "Waiting for drift revert to complete"
-        ),
-    }
+    let Some(signal) = blocking_signal(pool).await? else {
+        return Ok(());
+    };
+    bail_if_failed(
+        &signal,
+        "Unresolved Failed drift revert signal — refusing to start",
+    )?;
+    info!(
+        signal_id = signal.id,
+        host_chain_id = signal.host_chain_id,
+        status = signal.status.as_db_str(),
+        "Waiting for drift revert to complete"
+    );
+
     loop {
-        if cancel_token.is_cancelled() {
-            return Ok(());
-        }
-        // Abort if the revert failed while we were waiting.
-        if let Some(signal) = latest_signal(pool).await? {
-            if let SignalStatus::Failed(reason) = &signal.status {
-                error!(
-                    signal_id = signal.id,
-                    host_chain_id = signal.host_chain_id,
-                    reason,
-                    "Drift revert transitioned to Failed while waiting"
-                );
-                anyhow::bail!("drift revert signal {} is Failed: {reason}", signal.id);
-            }
-        }
-        if oldest_in_flight_signal(pool).await?.is_none() {
-            info!("Drift revert complete, resuming normal operation");
-            return Ok(());
-        }
         tokio::select! {
             _ = cancel_token.cancelled() => return Ok(()),
             _ = tokio::time::sleep(POLL_INTERVAL) => {}
         }
+        match blocking_signal(pool).await? {
+            None => {
+                info!("Drift revert complete, resuming normal operation");
+                return Ok(());
+            }
+            Some(s) => bail_if_failed(&s, "Drift revert reached Failed state while waiting")?,
+        }
     }
+}
+
+/// Logs and bails if `signal` has `Failed` status. No-op otherwise.
+fn bail_if_failed(signal: &DriftRevertSignal, message: &str) -> anyhow::Result<()> {
+    if let SignalStatus::Failed(reason) = &signal.status {
+        error!(
+            signal_id = signal.id,
+            host_chain_id = signal.host_chain_id,
+            reason,
+            "{message}"
+        );
+        anyhow::bail!("drift revert signal {} is Failed: {reason}", signal.id);
+    }
+    Ok(())
 }
 
 /// Prepare the revert SQL by replacing psql-specific syntax with concrete
@@ -392,6 +461,14 @@ pub struct RevertRunnerConfig {
     /// How long to wait after detecting a pending signal at startup before
     /// running the revert SQL. Gives other services time to also re-exec.
     pub grace_period: Duration,
+    /// Maximum number of successful reverts allowed for a host chain within
+    /// `recent_attempts_window`. Once exceeded, the next signal is marked
+    /// `Failed` with reason "too many recent attempts" instead of running
+    /// another (likely futile) revert. Catches deterministic recovery loops
+    /// where each revert succeeds but the underlying drift recurs.
+    pub max_recent_attempts: u32,
+    /// Time window over which `max_recent_attempts` is counted.
+    pub recent_attempts_window: Duration,
 }
 
 /// Watch for a pending drift-revert signal during normal service operation.
@@ -443,17 +520,19 @@ pub async fn handle_pending_signal_on_startup(
     runner_cfg: Option<RevertRunnerConfig>,
     cancel_token: &CancellationToken,
 ) -> anyhow::Result<()> {
-    if let Some(signal) = latest_signal(pool).await? {
-        if let SignalStatus::Failed(reason) = &signal.status {
-            error!(
-                signal_id = signal.id,
-                host_chain_id = signal.host_chain_id,
-                reason,
-                "Refusing to start: latest drift revert is Failed — operator must investigate \
-                 (mark Failed → Pending to retry, or Failed → Done to acknowledge)"
-            );
-            anyhow::bail!("drift revert signal {} is Failed: {reason}", signal.id);
-        }
+    if let Some(signal) = latest_failed_signal(pool).await? {
+        let reason = match &signal.status {
+            SignalStatus::Failed(r) => r.as_str(),
+            _ => "unknown",
+        };
+        error!(
+            signal_id = signal.id,
+            host_chain_id = signal.host_chain_id,
+            reason,
+            "Refusing to start: an unresolved Failed drift revert signal exists — operator \
+             must investigate (mark Failed → Pending to retry, or Failed → Done to acknowledge)"
+        );
+        anyhow::bail!("drift revert signal {} is Failed: {reason}", signal.id);
     }
 
     if let Some(cfg) = runner_cfg {
@@ -461,6 +540,27 @@ pub async fn handle_pending_signal_on_startup(
     } else {
         wait_for_revert_done(pool, cancel_token).await
     }
+}
+
+/// Counts successful reverts (status = Done) for `host_chain_id` within the
+/// recent `window`.
+async fn count_recent_done_signals(
+    pool: &Pool<Postgres>,
+    host_chain_id: i64,
+    window: Duration,
+) -> anyhow::Result<i64> {
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM drift_revert_signal \
+         WHERE host_chain_id = $1 \
+           AND status = $2 \
+           AND updated_at > NOW() - make_interval(secs => $3)",
+    )
+    .bind(host_chain_id)
+    .bind(SignalStatus::Done.as_db_str())
+    .bind(window.as_secs() as i64)
+    .fetch_one(pool)
+    .await?;
+    Ok(count)
 }
 
 /// Runner path: process all in-flight signals (oldest first) until none remain.
@@ -477,6 +577,33 @@ async fn run_all_pending_as_runner(
             status = signal.status.as_db_str(),
             "Found pending drift revert signal on startup"
         );
+
+        // Refuse to retry if too many successful reverts already happened on
+        // this chain in the recent window — drift keeps recurring, the revert
+        // alone isn't fixing it. Mark Failed and bail; operator must investigate.
+        let recent_dones =
+            count_recent_done_signals(pool, signal.host_chain_id, cfg.recent_attempts_window)
+                .await?;
+        if recent_dones >= cfg.max_recent_attempts as i64 {
+            let reason = format!(
+                "too many recent attempts: {recent_dones} successful reverts on chain {} \
+                 in the last {}s (threshold {})",
+                signal.host_chain_id,
+                cfg.recent_attempts_window.as_secs(),
+                cfg.max_recent_attempts,
+            );
+            error!(
+                signal_id = signal.id,
+                host_chain_id = signal.host_chain_id,
+                reason = %reason,
+                "Refusing to revert: too many recent attempts on this chain"
+            );
+            update_signal_status(pool, signal.id, &SignalStatus::Failed(reason.clone())).await?;
+            TOO_MANY_ATTEMPTS_COUNTER
+                .with_label_values(&[&signal.host_chain_id.to_string()])
+                .inc();
+            return Err(anyhow::anyhow!(reason));
+        }
 
         // Grace period: give other services time to re-exec too.
         // Only wait it once per process startup — if we're on the 2nd signal,
