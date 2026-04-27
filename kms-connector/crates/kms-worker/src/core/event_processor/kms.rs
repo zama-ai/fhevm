@@ -59,6 +59,7 @@ where
             params: prep_keygen_request.paramsType as i32,
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
             context_id: Some(u256_to_request_id(parsed_extra_data.context_id)),
+            extra_data: prep_keygen_request.extraData.to_vec(),
             // Used to generate other types of key, but not planned to be supported by the Gateway
             keyset_config: Some(UNCOMPRESSED_KEY_SET_CONFIG),
         }))
