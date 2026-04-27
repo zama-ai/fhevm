@@ -77,15 +77,15 @@ sqlx = { version = "0.8.6", default-features = false, features = [
 ] }
 testcontainers = "0.24.0"
 thiserror = "2.0.12"
-tfhe = { version = "=1.5.4", features = [
+tfhe = { version = "=1.6.1", features = [
     "boolean",
     "shortint",
     "integer",
     "zk-pok",
     "experimental-force_fft_algo_dif4",
 ] }
-tfhe-versionable = "=0.6.2"
-tfhe-zk-pok = "=0.8.0"
+tfhe-versionable = "=0.7.0"
+tfhe-zk-pok = "=0.8.1"
 time = "0.3.47"
 tokio = { version = "1.45.0", features = ["full"] }
 tokio-util = "0.7.15"
