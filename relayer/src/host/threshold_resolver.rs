@@ -58,24 +58,24 @@ pub enum ThresholdResolverError {
 /// Thresholds are cached permanently (no TTL) since they don't change after
 /// context creation. Context ID 0 is pre-seeded with the static config default.
 pub struct ThresholdResolver {
-    contract: HostProtocolConfig,
+    protocol_config_contract: HostProtocolConfig,
     /// Cached thresholds keyed by context ID. The on-chain uint256 is narrowed
     /// to u32 at the contract fetch boundary with an explicit range check.
     /// The repository layer handles u32 ↔ i64 conversion for DB storage (BIGINT).
-    context_thresholds: Cache<U256, u32>,
+    context_thresholds_cache: Cache<U256, u32>,
     retry_config: RetrySettings,
 }
 
 impl ThresholdResolver {
     pub async fn new(
-        config: &ProtocolConfigSettings,
+        protocol_config_settings: &ProtocolConfigSettings,
         default_threshold: u32,
         max_capacity: u64,
     ) -> anyhow::Result<Self> {
-        let url = Url::parse(&config.ethereum_http_rpc_url)
+        let url = Url::parse(&protocol_config_settings.ethereum_http_rpc_url)
             .map_err(|e| anyhow::anyhow!("Invalid ProtocolConfig URL: {}", e))?;
 
-        let address = Address::from_str(&config.address)
+        let address = Address::from_str(&protocol_config_settings.address)
             .map_err(|e| anyhow::anyhow!("Invalid ProtocolConfig address: {}", e))?;
 
         let provider = Arc::new(
@@ -86,27 +86,28 @@ impl ThresholdResolver {
 
         let contract = IProtocolConfig::new(address, provider);
 
-        let context_thresholds = Cache::builder().max_capacity(max_capacity).build();
+        let context_thresholds_cache = Cache::builder().max_capacity(max_capacity).build();
 
-        // Pre-seed default: context_id 0 is invalid and maps to the static config value
-        context_thresholds
+        // Pre-seed default: context_id 0 maps to the static config value for
+        // requests with extra_data 0x00 (existing default context).
+        context_thresholds_cache
             .insert(U256::ZERO, default_threshold)
             .await;
 
         Ok(Self {
-            contract,
-            context_thresholds,
-            retry_config: config.retry.clone(),
+            protocol_config_contract: contract,
+            context_thresholds_cache,
+            retry_config: protocol_config_settings.retry.clone(),
         })
     }
 
     /// Resolve the user decrypt threshold for a given context ID.
     /// Returns error if all retries are exhausted (errors are not cached).
     pub async fn resolve(&self, context_id: U256) -> Result<u32, ThresholdResolverError> {
-        let contract = self.contract.clone();
+        let contract = self.protocol_config_contract.clone();
         let retry_config = self.retry_config.clone();
 
-        self.context_thresholds
+        self.context_thresholds_cache
             .entry(context_id)
             .or_try_insert_with(async move {
                 fetch_with_retry(&contract, &retry_config, context_id).await
