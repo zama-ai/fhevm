@@ -1,6 +1,6 @@
 # -- Listener image
 image:
-  repository: ghcr.io/zama-ai/listener
+  repository: hub.zama.org/ghcr/zama-ai/fhevm/listener/listener-core
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
@@ -111,8 +111,9 @@ listeners: []
 # ---------------------------------------------------------------------------
 podSecurityContext:
   runAsNonRoot: true
-  runAsUser: 65534
-  fsGroup: 65534
+  runAsUser: 10000
+  runAsGroup: 10001
+  fsGroup: 10001
   seccompProfile:
     type: RuntimeDefault
 
