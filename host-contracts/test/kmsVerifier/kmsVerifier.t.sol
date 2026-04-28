@@ -35,7 +35,6 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
     address internal signer3;
 
     address internal proxy;
-    address internal implementation;
 
     function setUp() public {
         signer0 = vm.addr(privateKeySigner0);
@@ -47,18 +46,8 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         (protocolConfig, ) = _deployProtocolConfig(owner, _makeKmsNodes(3), _defaultThresholds());
         (kmsGeneration, ) = _deployKMSGeneration(owner);
 
-        proxy = UnsafeUpgrades.deployUUPSProxy(
-            address(new EmptyUUPSProxy()),
-            abi.encodeCall(EmptyUUPSProxy.initialize, ())
-        );
-        implementation = address(new KMSVerifier());
-        UnsafeUpgrades.upgradeProxy(
-            proxy,
-            implementation,
-            abi.encodeCall(KMSVerifier.initializeFromEmptyProxy, (verifyingContractSource, uint64(block.chainid))),
-            owner
-        );
-        kmsVerifier = KMSVerifier(proxy);
+        (kmsVerifier, ) = _deployKMSVerifier(owner, verifyingContractSource, uint64(block.chainid));
+        proxy = address(kmsVerifier);
     }
 
     // -----------------------------------------------------------------------
