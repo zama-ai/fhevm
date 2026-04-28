@@ -4,7 +4,6 @@ use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
 use fhevm_engine_common::database::resolve_database_url_from_option;
-use fhevm_engine_common::{metrics_server, telemetry, utils::DatabaseURL};
 use fhevm_engine_common::{
     drift_revert::{self, RevertRunnerConfig},
     metrics_server, telemetry,

@@ -1,5 +1,4 @@
 use ::tracing::{error, info};
-use fhevm_engine_common::database::resolve_database_url_from_option;
 use fhevm_engine_common::keys::{FhevmKeys, SerializedFhevmKeys};
 use fhevm_engine_common::{drift_revert, healthz_server, metrics_server, telemetry};
 use tokio_util::sync::CancellationToken;
@@ -102,10 +101,6 @@ pub async fn async_main(
             args.clone(),
             health_check.clone(),
         ));
-    }
-
-    if set.is_empty() {
-        panic!("No tasks specified to run");
     }
 
     while let Some(res) = set.join_next().await {

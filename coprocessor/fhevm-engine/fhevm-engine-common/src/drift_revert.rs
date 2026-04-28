@@ -536,7 +536,7 @@ pub async fn handle_pending_signal_on_startup(
     }
 
     if let Some(cfg) = runner_cfg {
-        run_all_pending_as_runner(pool, &cfg).await
+        run_all_pending_as_runner(pool, &cfg, cancel_token).await
     } else {
         wait_for_revert_done(pool, cancel_token).await
     }
@@ -568,7 +568,9 @@ async fn count_recent_done_signals(
 async fn run_all_pending_as_runner(
     pool: &Pool<Postgres>,
     cfg: &RevertRunnerConfig,
+    cancel_token: &CancellationToken,
 ) -> anyhow::Result<()> {
+    let mut waited_grace = false;
     while let Some(signal) = oldest_in_flight_signal(pool).await? {
         info!(
             signal_id = signal.id,
@@ -609,8 +611,14 @@ async fn run_all_pending_as_runner(
         // Only wait it once per process startup — if we're on the 2nd signal,
         // services have already had time to re-exec during the first revert.
         if matches!(signal.status, SignalStatus::Pending) {
-            info!(grace_period = ?cfg.grace_period, "Waiting grace period before revert");
-            tokio::time::sleep(cfg.grace_period).await;
+            if !waited_grace {
+                info!(grace_period = ?cfg.grace_period, "Waiting grace period before revert");
+                tokio::select! {
+                    _ = cancel_token.cancelled() => return Ok(()),
+                    _ = tokio::time::sleep(cfg.grace_period) => {}
+                }
+                waited_grace = true;
+            }
             update_signal_status(pool, signal.id, &SignalStatus::Reverting).await?;
         }
 

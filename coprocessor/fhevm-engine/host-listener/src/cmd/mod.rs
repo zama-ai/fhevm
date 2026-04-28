@@ -1067,7 +1067,11 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         args.health_port,
         cancel_token.clone(),
     );
-    tokio::spawn(async move { health_check_server.start().await });
+    tokio::spawn(async move {
+        if let Err(err) = health_check_server.start().await {
+            error!(error = %err, "Health check server failed");
+        }
+    });
 
     // Drift-revert: must run before any DB state reads so we don't read
     // pre-revert state.
