@@ -30,7 +30,8 @@
     "test": "npm run test:localhost && npm run test:localhostFhevm",
     "fhevm:restart": "./scripts/fhevm-cli-restart.sh",
     "fhevm:stop": "./scripts/fhevm-cli-stop.sh",
-    "fhevm:clean": "./scripts/fhevm-cli-clean.sh"
+    "fhevm:clean": "./scripts/fhevm-cli-clean.sh",
+    "version": "node ./scripts/generate-version.cjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
