@@ -86,18 +86,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     // Helpers
     // -----------------------------------------------------------------------
 
-    function _makeKmsNodes(uint256 count) internal pure returns (KmsNode[] memory nodes) {
-        nodes = new KmsNode[](count);
-        for (uint256 i = 0; i < count; i++) {
-            nodes[i] = KmsNode({
-                txSenderAddress: address(uint160(0xA1 + i)),
-                signerAddress: vm.addr((i + 1) * 0x100),
-                ipAddress: string.concat("127.0.0.", vm.toString(i + 1)),
-                storageUrl: string.concat("https://s", vm.toString(i), ".example.com")
-            });
-        }
-    }
-
     function _assertNoEventEmitted(bytes32 eventSelector, string memory message) internal {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         for (uint256 i = 0; i < logs.length; i++) {

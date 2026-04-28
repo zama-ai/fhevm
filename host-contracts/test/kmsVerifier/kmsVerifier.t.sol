@@ -24,17 +24,15 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
     address internal constant owner = address(456);
 
     /// @dev Signer variables.
-    uint256 internal constant privateKeySigner0 = 0x022;
-    uint256 internal constant privateKeySigner1 = 0x03;
-    uint256 internal constant privateKeySigner2 = 0x04;
-    uint256 internal constant privateKeySigner3 = 0x05;
-    uint256 internal constant privateKeySigner4 = 0x06;
+    uint256 internal constant privateKeySigner0 = 0x100;
+    uint256 internal constant privateKeySigner1 = 0x200;
+    uint256 internal constant privateKeySigner2 = 0x300;
+    uint256 internal constant privateKeySigner3 = 0x400;
 
     address internal signer0;
     address internal signer1;
     address internal signer2;
     address internal signer3;
-    address internal signer4;
 
     address internal proxy;
     address internal implementation;
@@ -44,11 +42,9 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         signer1 = vm.addr(privateKeySigner1);
         signer2 = vm.addr(privateKeySigner2);
         signer3 = vm.addr(privateKeySigner3);
-        signer4 = vm.addr(privateKeySigner4);
 
         _deployACL(owner);
-        address[] memory signers = _makeSignerList(3);
-        (protocolConfig, ) = _deployProtocolConfig(owner, _makeTestNodes(signers), _defaultThresholds());
+        (protocolConfig, ) = _deployProtocolConfig(owner, _makeKmsNodes(3), _defaultThresholds());
         (kmsGeneration, ) = _deployKMSGeneration(owner);
 
         proxy = UnsafeUpgrades.deployUUPSProxy(
@@ -126,26 +122,6 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         proof = abi.encodePacked(uint8(1), signature, extraData);
     }
 
-    function _makeSignerList(uint256 numberSigners) internal view returns (address[] memory signers) {
-        require(numberSigners > 0 && numberSigners < 6, "invalid signer count");
-        signers = new address[](numberSigners);
-        if (numberSigners >= 1) {
-            signers[0] = signer0;
-        }
-        if (numberSigners >= 2) {
-            signers[1] = signer1;
-        }
-        if (numberSigners >= 3) {
-            signers[2] = signer2;
-        }
-        if (numberSigners >= 4) {
-            signers[3] = signer3;
-        }
-        if (numberSigners == 5) {
-            signers[4] = signer4;
-        }
-    }
-
     function _makeSingleSignerList(address signer) internal pure returns (address[] memory signers) {
         signers = new address[](1);
         signers[0] = signer;
@@ -156,17 +132,16 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
 
         address[] memory newSigners = _makeSingleSignerList(signer3);
         vm.prank(owner);
-        protocolConfig.defineNewKmsContext(_makeTestNodes(newSigners), _defaultThresholds());
+        protocolConfig.defineNewKmsContext(_makeKmsNodesFromSigners(newSigners), _defaultThresholds());
         currentCtx = protocolConfig.getCurrentKmsContextId();
     }
 
     function _rotateToThresholdTwoContext() internal {
-        address[] memory signers = _makeSignerList(3);
         IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
         thresholds.publicDecryption = 2;
 
         vm.prank(owner);
-        protocolConfig.defineNewKmsContext(_makeTestNodes(signers), thresholds);
+        protocolConfig.defineNewKmsContext(_makeKmsNodes(3), thresholds);
         assertEq(protocolConfig.getPublicDecryptionThreshold(), 2);
     }
 
@@ -205,7 +180,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
 
         address[] memory nextSigners = _makeSingleSignerList(signer3);
         vm.prank(owner);
-        protocolConfig.defineNewKmsContext(_makeTestNodes(nextSigners), _defaultThresholds());
+        protocolConfig.defineNewKmsContext(_makeKmsNodesFromSigners(nextSigners), _defaultThresholds());
 
         uint256 nextCtx = protocolConfig.getCurrentKmsContextId();
         assertEq(kmsVerifier.getCurrentKmsContextId(), nextCtx);
@@ -263,7 +238,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
 
         address[] memory nextSigners = _makeSingleSignerList(signer3);
         vm.prank(owner);
-        protocolConfig.defineNewKmsContext(_makeTestNodes(nextSigners), _defaultThresholds());
+        protocolConfig.defineNewKmsContext(_makeKmsNodesFromSigners(nextSigners), _defaultThresholds());
 
         address[] memory historicalSigners = kmsVerifier.getSignersForKmsContext(historicalCtx);
         assertEq(historicalSigners.length, 3);
@@ -296,9 +271,8 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
 
     function test_VerifyDecryptionEIP712KMSSignaturesFailAsExpectedIfNoSignerAdded() public {
         // Rotate to a single-signer context (only signer0)
-        address[] memory singleSigner = _makeSingleSignerList(signer0);
         vm.prank(owner);
-        protocolConfig.defineNewKmsContext(_makeTestNodes(singleSigner), _defaultThresholds());
+        protocolConfig.defineNewKmsContext(_makeKmsNodes(1), _defaultThresholds());
 
         bytes32[] memory handlesList = _generateMockHandlesList(3);
 
@@ -405,13 +379,13 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         IProtocolConfig.KmsThresholds memory t2 = _defaultThresholds();
         t2.publicDecryption = 2;
         vm.prank(owner);
-        protocolConfig.defineNewKmsContext(_makeTestNodes(_makeSignerList(3)), t2);
+        protocolConfig.defineNewKmsContext(_makeKmsNodes(3), t2);
         uint256 historicalCtx = protocolConfig.getCurrentKmsContextId();
         assertEq(protocolConfig.getPublicDecryptionThreshold(), 2);
 
         // Rotate again to a single-signer context with threshold=1 (now current)
         vm.prank(owner);
-        protocolConfig.defineNewKmsContext(_makeTestNodes(_makeSingleSignerList(signer3)), _defaultThresholds());
+        protocolConfig.defineNewKmsContext(_makeKmsNodesFromSigners(_makeSingleSignerList(signer3)), _defaultThresholds());
         assertEq(protocolConfig.getPublicDecryptionThreshold(), 1);
 
         // Verify against historical context with only 1 signature — must fail (threshold=2)
@@ -574,7 +548,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
 
         address[] memory nextSigners = _makeSingleSignerList(signer3);
         vm.prank(owner);
-        protocolConfig.defineNewKmsContext(_makeTestNodes(nextSigners), _defaultThresholds());
+        protocolConfig.defineNewKmsContext(_makeKmsNodesFromSigners(nextSigners), _defaultThresholds());
 
         bytes memory v1ExtraData = abi.encodePacked(uint8(0x01), ctx1);
         (address[] memory oldCtxSigners, uint256 oldCtxThreshold) = kmsVerifier

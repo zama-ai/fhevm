@@ -17,27 +17,6 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     ProtocolConfig internal protocolConfig;
 
     address internal constant owner = address(456);
-    address internal constant txSender0 = address(0xA1);
-    address internal constant txSender1 = address(0xA2);
-    address internal constant signer0 = address(0xB1);
-    address internal constant signer1 = address(0xB2);
-
-    function _makeNodes(uint256 count) internal pure returns (KmsNode[] memory) {
-        return _makeNodes(count, 0);
-    }
-
-    function _makeNodes(uint256 count, uint256 startIdx) internal pure returns (KmsNode[] memory) {
-        KmsNode[] memory nodes = new KmsNode[](count);
-        for (uint256 i = 0; i < count; i++) {
-            nodes[i] = KmsNode({
-                txSenderAddress: address(uint160(0xA1 + startIdx + i)),
-                signerAddress: address(uint160(0xB1 + startIdx + i)),
-                ipAddress: "127.0.0.1",
-                storageUrl: "https://storage.example.com"
-            });
-        }
-        return nodes;
-    }
 
     function _deployEmptyProtocolConfigProxy() internal {
         address emptyProxyImpl = address(new EmptyUUPSProxy());
@@ -62,7 +41,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             kmsGen: 3,
             mpc: 4
         });
-        (ProtocolConfig pc, ) = _deployProtocolConfig(owner, _makeNodes(4), thresholds);
+        (ProtocolConfig pc, ) = _deployProtocolConfig(owner, _makeKmsNodes(4), thresholds);
         protocolConfig = pc;
     }
 
@@ -74,7 +53,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             impl,
             abi.encodeCall(
                 ProtocolConfig.initializeFromMigration,
-                (migratedContextId, _makeNodes(2), _defaultThresholds())
+                (migratedContextId, _makeKmsNodes(2), _defaultThresholds())
             )
         );
         protocolConfig = ProtocolConfig(protocolConfigAdd);
@@ -96,7 +75,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
     function _revertThreshold(IProtocolConfig.KmsThresholds memory t, bytes memory expectedRevert) internal {
         _setupEmptyProxy();
-        _upgradeProxyExpectRevert(_makeNodes(1), t, expectedRevert);
+        _upgradeProxyExpectRevert(_makeKmsNodes(1), t, expectedRevert);
     }
 
     /// @dev Asserts all seven context-guarded view functions revert for the given context ID.
@@ -105,16 +84,16 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.getKmsSignersForContext(contextId);
 
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
-        protocolConfig.isKmsSignerForContext(contextId, signer0);
+        protocolConfig.isKmsSignerForContext(contextId, address(0xDEAD));
 
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
         protocolConfig.getKmsNodesForContext(contextId);
 
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
-        protocolConfig.isKmsTxSenderForContext(contextId, txSender0);
+        protocolConfig.isKmsTxSenderForContext(contextId, address(0xDEAD));
 
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
-        protocolConfig.getKmsNodeForContext(contextId, txSender0);
+        protocolConfig.getKmsNodeForContext(contextId, address(0xDEAD));
 
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
         protocolConfig.getUserDecryptionThresholdForContext(contextId);
@@ -138,10 +117,11 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     function test_initSignersRegistered() public {
         _setupDefault();
         uint256 contextId = protocolConfig.getCurrentKmsContextId();
-        assertTrue(protocolConfig.isKmsSignerForContext(contextId, signer0));
-        assertTrue(protocolConfig.isKmsSignerForContext(contextId, signer1));
-        assertTrue(protocolConfig.isKmsTxSenderForContext(contextId, txSender0));
-        assertTrue(protocolConfig.isKmsTxSenderForContext(contextId, txSender1));
+        KmsNode[] memory nodes = _makeKmsNodes(2);
+        assertTrue(protocolConfig.isKmsSignerForContext(contextId, nodes[0].signerAddress));
+        assertTrue(protocolConfig.isKmsSignerForContext(contextId, nodes[1].signerAddress));
+        assertTrue(protocolConfig.isKmsTxSenderForContext(contextId, nodes[0].txSenderAddress));
+        assertTrue(protocolConfig.isKmsTxSenderForContext(contextId, nodes[1].txSenderAddress));
         // Negative: unregistered addresses must return false.
         assertFalse(protocolConfig.isKmsSignerForContext(contextId, address(0xDEAD)));
         assertFalse(protocolConfig.isKmsTxSenderForContext(contextId, address(0xDEAD)));
@@ -158,37 +138,35 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     function test_initNodesMetadata() public {
         _setupDefault();
         uint256 contextId = protocolConfig.getCurrentKmsContextId();
-        KmsNode memory node = protocolConfig.getKmsNodeForContext(contextId, txSender0);
-        assertEq(node.txSenderAddress, txSender0);
-        assertEq(node.signerAddress, signer0);
-        assertEq(node.ipAddress, "127.0.0.1");
-        assertEq(node.storageUrl, "https://storage.example.com");
+        KmsNode[] memory expectedNodes = _makeKmsNodes(1);
+        KmsNode memory node = protocolConfig.getKmsNodeForContext(contextId, expectedNodes[0].txSenderAddress);
+        assertEq(node.txSenderAddress, expectedNodes[0].txSenderAddress);
+        assertEq(node.signerAddress, expectedNodes[0].signerAddress);
+        assertEq(node.ipAddress, expectedNodes[0].ipAddress);
+        assertEq(node.storageUrl, expectedNodes[0].storageUrl);
     }
 
     function test_initGetKmsNodesForContext() public {
         _setupDefault();
         uint256 contextId = protocolConfig.getCurrentKmsContextId();
         KmsNode[] memory nodes = protocolConfig.getKmsNodesForContext(contextId);
+        KmsNode[] memory expectedNodes = _makeKmsNodes(4);
         assertEq(nodes.length, 4);
-        assertEq(nodes[0].txSenderAddress, txSender0);
-        assertEq(nodes[0].signerAddress, signer0);
-        assertEq(nodes[1].txSenderAddress, txSender1);
-        assertEq(nodes[1].signerAddress, signer1);
-        assertEq(nodes[2].txSenderAddress, address(0xA3));
-        assertEq(nodes[2].signerAddress, address(0xB3));
-        assertEq(nodes[3].txSenderAddress, address(0xA4));
-        assertEq(nodes[3].signerAddress, address(0xB4));
+        for (uint256 i = 0; i < expectedNodes.length; i++) {
+            assertEq(nodes[i].txSenderAddress, expectedNodes[i].txSenderAddress);
+            assertEq(nodes[i].signerAddress, expectedNodes[i].signerAddress);
+        }
     }
 
     function test_initGetSignersForContext() public {
         _setupDefault();
         uint256 contextId = protocolConfig.getCurrentKmsContextId();
         address[] memory signers = protocolConfig.getKmsSignersForContext(contextId);
+        KmsNode[] memory expectedNodes = _makeKmsNodes(4);
         assertEq(signers.length, 4);
-        assertEq(signers[0], signer0);
-        assertEq(signers[1], signer1);
-        assertEq(signers[2], address(0xB3));
-        assertEq(signers[3], address(0xB4));
+        for (uint256 i = 0; i < expectedNodes.length; i++) {
+            assertEq(signers[i], expectedNodes[i].signerAddress);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -207,8 +185,8 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
     function test_revertNullTxSender() public {
         _setupEmptyProxy();
-        KmsNode[] memory nodes = new KmsNode[](1);
-        nodes[0] = KmsNode({txSenderAddress: address(0), signerAddress: signer0, ipAddress: "", storageUrl: ""});
+        KmsNode[] memory nodes = _makeKmsNodes(1);
+        nodes[0].txSenderAddress = address(0);
         _upgradeProxyExpectRevert(
             nodes,
             _defaultThresholds(),
@@ -218,8 +196,8 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
     function test_revertNullSigner() public {
         _setupEmptyProxy();
-        KmsNode[] memory nodes = new KmsNode[](1);
-        nodes[0] = KmsNode({txSenderAddress: txSender0, signerAddress: address(0), ipAddress: "", storageUrl: ""});
+        KmsNode[] memory nodes = _makeKmsNodes(1);
+        nodes[0].signerAddress = address(0);
         _upgradeProxyExpectRevert(
             nodes,
             _defaultThresholds(),
@@ -229,25 +207,23 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
     function test_revertDuplicateTxSender() public {
         _setupEmptyProxy();
-        KmsNode[] memory nodes = new KmsNode[](2);
-        nodes[0] = KmsNode({txSenderAddress: txSender0, signerAddress: signer0, ipAddress: "", storageUrl: ""});
-        nodes[1] = KmsNode({txSenderAddress: txSender0, signerAddress: signer1, ipAddress: "", storageUrl: ""});
+        KmsNode[] memory nodes = _makeKmsNodes(2);
+        nodes[1].txSenderAddress = nodes[0].txSenderAddress;
         _upgradeProxyExpectRevert(
             nodes,
             _defaultThresholds(),
-            abi.encodeWithSelector(IProtocolConfig.KmsTxSenderAlreadyRegistered.selector, txSender0)
+            abi.encodeWithSelector(IProtocolConfig.KmsTxSenderAlreadyRegistered.selector, nodes[0].txSenderAddress)
         );
     }
 
     function test_revertDuplicateSigner() public {
         _setupEmptyProxy();
-        KmsNode[] memory nodes = new KmsNode[](2);
-        nodes[0] = KmsNode({txSenderAddress: txSender0, signerAddress: signer0, ipAddress: "", storageUrl: ""});
-        nodes[1] = KmsNode({txSenderAddress: txSender1, signerAddress: signer0, ipAddress: "", storageUrl: ""});
+        KmsNode[] memory nodes = _makeKmsNodes(2);
+        nodes[1].signerAddress = nodes[0].signerAddress;
         _upgradeProxyExpectRevert(
             nodes,
             _defaultThresholds(),
-            abi.encodeWithSelector(IProtocolConfig.KmsSignerAlreadyRegistered.selector, signer0)
+            abi.encodeWithSelector(IProtocolConfig.KmsSignerAlreadyRegistered.selector, nodes[0].signerAddress)
         );
     }
 
@@ -312,7 +288,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     function test_defineNewContext() public {
         _setupDefault();
 
-        KmsNode[] memory newNodes = _makeNodes(1, 4);
+        KmsNode[] memory newNodes = _makeKmsNodes(1);
 
         IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
         vm.expectEmit(true, false, false, true, address(protocolConfig));
@@ -331,7 +307,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _setupDefault();
         uint256 firstContextId = protocolConfig.getCurrentKmsContextId();
 
-        KmsNode[] memory newNodes = _makeNodes(1, 4);
+        KmsNode[] memory newNodes = _makeKmsNodes(1);
 
         vm.prank(owner);
         protocolConfig.defineNewKmsContext(newNodes, _defaultThresholds());
@@ -347,7 +323,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _setupDefault();
         uint256 firstContextId = protocolConfig.getCurrentKmsContextId();
 
-        KmsNode[] memory newNodes = _makeNodes(1, 4);
+        KmsNode[] memory newNodes = _makeKmsNodes(1);
         vm.prank(owner);
         protocolConfig.defineNewKmsContext(newNodes, _defaultThresholds());
 
@@ -378,7 +354,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _setupDefault();
         uint256 firstContextId = protocolConfig.getCurrentKmsContextId();
 
-        KmsNode[] memory newNodes = _makeNodes(1, 4);
+        KmsNode[] memory newNodes = _makeKmsNodes(1);
         vm.prank(owner);
         protocolConfig.defineNewKmsContext(newNodes, _defaultThresholds());
 
@@ -412,7 +388,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _setupEmptyProxy();
 
         address impl = address(new ProtocolConfig());
-        KmsNode[] memory nodes = _makeNodes(2);
+        KmsNode[] memory nodes = _makeKmsNodes(2);
         IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
         uint256 invalidContextId = KMS_CONTEXT_COUNTER_BASE;
 
@@ -448,7 +424,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 firstContextId = protocolConfig.getCurrentKmsContextId();
 
         vm.prank(owner);
-        protocolConfig.defineNewKmsContext(_makeNodes(1, 4), _defaultThresholds());
+        protocolConfig.defineNewKmsContext(_makeKmsNodes(1), _defaultThresholds());
 
         vm.prank(owner);
         protocolConfig.destroyKmsContext(firstContextId);
@@ -474,7 +450,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             mpc: 1
         });
         vm.prank(owner);
-        protocolConfig.defineNewKmsContext(_makeNodes(2, 4), newThresholds);
+        protocolConfig.defineNewKmsContext(_makeKmsNodes(2), newThresholds);
         uint256 secondContextId = protocolConfig.getCurrentKmsContextId();
 
         // New context returns its own threshold
@@ -495,7 +471,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             mpc: 1
         });
         vm.prank(owner);
-        protocolConfig.defineNewKmsContext(_makeNodes(2, 4), newThresholds);
+        protocolConfig.defineNewKmsContext(_makeKmsNodes(2), newThresholds);
         uint256 secondContextId = protocolConfig.getCurrentKmsContextId();
 
         assertEq(protocolConfig.getPublicDecryptionThresholdForContext(secondContextId), 2);
@@ -518,7 +494,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         });
 
         vm.prank(owner);
-        protocolConfig.defineNewKmsContext(_makeNodes(2, 4), newThresholds);
+        protocolConfig.defineNewKmsContext(_makeKmsNodes(2), newThresholds);
 
         assertEq(protocolConfig.getPublicDecryptionThreshold(), 2);
         assertEq(protocolConfig.getUserDecryptionThreshold(), 1);
@@ -536,7 +512,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         // onlyFromEmptyProxy fires first (version is 2, not 1) before reinitializer.
         vm.prank(owner);
         vm.expectRevert(UUPSUpgradeableEmptyProxy.NotInitializingFromEmptyProxy.selector);
-        protocolConfig.initializeFromEmptyProxy(_makeNodes(1), _defaultThresholds());
+        protocolConfig.initializeFromEmptyProxy(_makeKmsNodes(1), _defaultThresholds());
     }
 
     function test_revertMigrationAfterInit() public {
@@ -545,7 +521,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 migratedId = KMS_CONTEXT_COUNTER_BASE + 5;
         vm.prank(owner);
         vm.expectRevert(UUPSUpgradeableEmptyProxy.NotInitializingFromEmptyProxy.selector);
-        protocolConfig.initializeFromMigration(migratedId, _makeNodes(1), _defaultThresholds());
+        protocolConfig.initializeFromMigration(migratedId, _makeKmsNodes(1), _defaultThresholds());
     }
 
     // -----------------------------------------------------------------------
@@ -556,7 +532,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _setupDefault();
         vm.prank(address(0x999));
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
-        protocolConfig.defineNewKmsContext(_makeNodes(1, 4), _defaultThresholds());
+        protocolConfig.defineNewKmsContext(_makeKmsNodes(1), _defaultThresholds());
     }
 
     function test_revertDestroyContextNotOwner() public {

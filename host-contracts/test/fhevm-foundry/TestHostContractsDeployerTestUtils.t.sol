@@ -49,9 +49,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
     function test_DeployKMSVerifier_UsesProxyUpgradeFlow() public {
         // KMSVerifier inherits ACLOwnable as well, ensuring the ACL proxy is in place avoids upgrade reverts.
         _deployACL(OWNER);
-        KmsNode[] memory initialKmsNodes = new KmsNode[](2);
-        initialKmsNodes[0] = _makeTestNode(address(0x2222), 1);
-        initialKmsNodes[1] = _makeTestNode(address(0x4444), 2);
+        KmsNode[] memory initialKmsNodes = _makeKmsNodes(2);
         _deployProtocolConfig(OWNER, initialKmsNodes, _defaultThresholds());
 
         (KMSVerifier kmsVerifierProxy, address kmsVerifierImplementation) = _deployKMSVerifier(
@@ -130,8 +128,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
     }
 
     function test_DeployFullHostStack_DeploysAndWiresAllContracts() public {
-        KmsNode[] memory initialKmsNodes = new KmsNode[](1);
-        initialKmsNodes[0] = _makeTestNode(address(0x7777), 1);
+        KmsNode[] memory initialKmsNodes = _makeKmsNodes(1);
         address[] memory inputSigners = new address[](1);
         inputSigners[0] = address(0x8888);
         address pauser = address(0xbeef);
@@ -180,9 +177,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
     function test_DeployProtocolConfig_UsesProxyUpgradeFlow() public {
         _deployACL(OWNER);
 
-        KmsNode[] memory nodes = new KmsNode[](2);
-        nodes[0] = _makeTestNode(address(0x2222), 1);
-        nodes[1] = _makeTestNode(address(0x4444), 2);
+        KmsNode[] memory nodes = _makeKmsNodes(2);
 
         (ProtocolConfig pcProxy, address pcImplementation) = _deployProtocolConfig(OWNER, nodes, _defaultThresholds());
 
@@ -200,8 +195,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         _deployACL(OWNER);
 
         // KMSGeneration reads from ProtocolConfig so we need it deployed
-        KmsNode[] memory nodes = new KmsNode[](1);
-        nodes[0] = _makeTestNode(address(0x2222), 1);
+        KmsNode[] memory nodes = _makeKmsNodes(1);
         _deployProtocolConfig(OWNER, nodes, _defaultThresholds());
 
         (KMSGeneration kgProxy, address kgImplementation) = _deployKMSGeneration(OWNER);

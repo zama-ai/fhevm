@@ -21,8 +21,7 @@ contract TestIntegrationACL is HostContractsDeployerTestUtils {
     address[] private inputSigners;
 
     function setUp() public {
-        KmsNode[] memory initialKmsNodes = new KmsNode[](1);
-        initialKmsNodes[0] = _makeTestNode(address(0x7777), 1);
+        KmsNode[] memory initialKmsNodes = _makeKmsNodes(1);
         inputSigners = new address[](1);
         inputSigners[0] = address(0x8888);
 
