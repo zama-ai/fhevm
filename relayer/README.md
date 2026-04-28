@@ -176,7 +176,9 @@ GET  /admin/config
 POST /admin/config
 ```
 
-Controlled by `enable_admin_endpoint` (returns `403 Forbidden` when disabled). Supports runtime tuning of throttler TPS and retry-after fields.
+Controlled by `enable_admin_endpoint` (returns `403 Forbidden` when disabled). Supports runtime tuning of throttler TPS and retry-after fields. Primarily intended for testing and benchmarking.
+
+> **Note.** These endpoints are disabled by default and intentionally have no application-level authentication. When enabling them, restrict reachability via network-level controls — bind `http.endpoint` to loopback or an internal subnet, or place the endpoint behind an authentication layer.
 
 ## Observability
 
