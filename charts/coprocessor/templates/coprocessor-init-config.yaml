@@ -1,4 +1,5 @@
 {{- if .Values.config.enabled }}
+{{- $databaseAuthMode := include "coprocessorDatabaseAuthMode" . -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -21,12 +22,14 @@ data:
     else
       echo "skipping: secret ${COPROCESSOR_KEY_SECRET_NAME} already exists" 2>&1
     fi
-    DATABASE_SECRET_NAME="{{ .Values.config.database.secret.name }}"
-    DATABASE_SECRET_KEY="{{ .Values.config.database.secret.key }}"
-    if ! kubectl get secret ${DATABASE_SECRET_NAME}; then
-      DATABASE_SECRET_VALUE="{{ .Values.config.database.secret.value }}"
-      kubectl create secret generic ${DATABASE_SECRET_NAME} --from-literal ${DATABASE_SECRET_KEY}=${DATABASE_SECRET_VALUE}
-    else
-      echo "skipping: secret ${DATABASE_SECRET_NAME} already exists" 2>&1
+    if [ "{{ $databaseAuthMode }}" = "password" ]; then
+      DATABASE_SECRET_NAME="{{ .Values.config.database.secret.name }}"
+      DATABASE_SECRET_KEY="{{ .Values.config.database.secret.key }}"
+      if ! kubectl get secret ${DATABASE_SECRET_NAME}; then
+        DATABASE_SECRET_VALUE="{{ .Values.config.database.secret.value }}"
+        kubectl create secret generic ${DATABASE_SECRET_NAME} --from-literal ${DATABASE_SECRET_KEY}=${DATABASE_SECRET_VALUE}
+      else
+        echo "skipping: secret ${DATABASE_SECRET_NAME} already exists" 2>&1
+      fi
     fi
 {{- end }}

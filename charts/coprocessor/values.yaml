@@ -21,6 +21,20 @@ commonConfig:
   # Can use $(VAR_NAME) syntax to reference variables from commonConfig.env
   databaseUrl: "postgresql://postgres:postgres@postgresql:5432/coprocessor"
 
+  # Database authentication mode
+  database:
+    # `password` uses databaseUrl as-is (credentials embedded or via env).
+    # `iam` keeps databaseUrl passwordless and resolves short-lived IAM tokens
+    # at runtime using the pod's AWS identity.
+    authMode: password
+    iam:
+      # Optional when authMode=iam. If unset, the AWS SDK resolves the region
+      # from the environment (e.g. AWS_REGION set by IRSA). Set this only when
+      # connecting to a database in a different region.
+      region: ""
+      # Required when authMode=iam. The runtime enforces verify-full TLS.
+      sslRootCertPath: ""
+
   # Host chain configuration
   hostChainWsUrl: "ws://ethereum-node:8546"
   hostChainHttpUrl: "http://ethereum-node:8545"
@@ -87,6 +101,9 @@ config:
       key: coprocessor.hex
 
   # Database connection configuration
+  # Bootstrap of the literal-password Secret is gated by
+  # commonConfig.database.authMode (only created when set to "password").
+  # Runtime auth and IAM settings live under commonConfig.database.
   database:
     secret:
       name: coprocessor-db-url

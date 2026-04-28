@@ -1,4 +1,5 @@
 use clap::{command, Parser};
+use fhevm_engine_common::database::resolve_database_url_from_option;
 use fhevm_engine_common::telemetry::{self, MetricsConfig};
 use fhevm_engine_common::{healthz_server::HttpServer, metrics_server, utils::DatabaseURL};
 use humantime::parse_duration;
@@ -88,7 +89,13 @@ async fn main() {
         "otlp-layer",
     );
 
-    let database_url = args.database_url.clone().unwrap_or_default();
+    let database_url = match resolve_database_url_from_option(args.database_url.clone()) {
+        Ok(database_url) => database_url,
+        Err(err) => {
+            error!(error = %err, "Invalid database configuration");
+            std::process::exit(1);
+        }
+    };
 
     let conf = zkproof_worker::Config {
         database_url,

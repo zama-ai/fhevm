@@ -10,6 +10,9 @@ license.workspace = true
 anyhow = { workspace = true }
 alloy = { workspace = true, features = ["providers", "provider-ws"] }
 alloy-provider = { workspace = true }
+aws-config = { workspace = true }
+aws-credential-types = { workspace = true }
+aws-sigv4 = { workspace = true }
 bigdecimal = { workspace = true }
 hex = { workspace = true }
 lru = { workspace = true }
@@ -32,6 +35,7 @@ serde_json = { workspace = true}
 http = {workspace = true}
 thiserror = { workspace = true }
 prometheus = { workspace = true }
+url = { workspace = true }
 
 
 # crates.io dependencies
@@ -58,3 +62,7 @@ tonic-build = { workspace = true }
 [[bin]]
 name = "generate-keys"
 path = "src/bin/generate_keys.rs"
+
+[[bin]]
+name = "resolve_database_url"
+path = "src/bin/resolve_database_url.rs"

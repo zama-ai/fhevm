@@ -1,5 +1,6 @@
 pub mod chain_id;
 pub mod crs;
+pub mod database;
 pub mod db_keys;
 #[cfg(feature = "gpu")]
 pub mod gpu_memory;
