@@ -3,6 +3,13 @@ host_chains:
     url: "http://host-node:8545"
     acl_address: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
 
+protocol_config:
+  ethereum_http_rpc_url: "http://host-node:8545"
+  address: "0x52054F36036811ca418be59e41Fc6DD1b9e4F4c8"
+  retry:
+    max_attempts: 3
+    retry_interval_ms: 1000
+
 gateway:
   blockchain_rpc:
     read_http_url: "http://gateway-node:8546"
