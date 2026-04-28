@@ -23,10 +23,22 @@ commonConfig:
   databasePassword: {}
   databaseEndpoint: {}
 
-  # Database authentication mode. Either:
-  #   "password" — DATABASE_URL embeds DATABASE_PASSWORD, or
-  #   "iam"      — DATABASE_URL is passwordless; the runtime resolves
+  # Database connection string. Plain string. May reference other env vars via
+  # $(VAR_NAME) syntax — DATABASE_USER, DATABASE_PASSWORD, and DATABASE_ENDPOINT
+  # are all declared before DATABASE_URL and are available for substitution.
+  # Required for the coprocessor to connect.
+  #   password mode example: "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/coprocessor"
+  #   iam mode example:      "postgresql://$(DATABASE_USER)@$(DATABASE_ENDPOINT)/coprocessor"
+  databaseUrl: ""
+
+  # Database authentication mode. Controls which auxiliary env vars the chart
+  # injects:
+  #   "password" — injects DATABASE_PASSWORD (from databasePassword).
+  #   "iam"      — injects DATABASE_IAM_AUTH_ENABLED=true, DATABASE_IAM_REGION,
+  #                and DATABASE_SSL_ROOT_CERT_PATH; the runtime resolves
   #                short-lived AWS RDS IAM tokens using the pod's AWS identity.
+  # Your databaseUrl should match: embed the password in password mode, omit
+  # it in iam mode (the runtime overwrites the URL password with the IAM token).
   databaseAuthMode: password
 
   # Optional when databaseAuthMode=iam. Pins the AWS region used for IAM token

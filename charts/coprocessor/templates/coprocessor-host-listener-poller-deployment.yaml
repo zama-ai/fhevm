@@ -120,8 +120,10 @@ spec:
                 {{- toYaml .valueFrom | nindent 16 }}
               {{- end }}
             {{- end }}
+            {{- end }}
+            {{- with $.Values.commonConfig.databaseUrl }}
             - name: DATABASE_URL
-              value: "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/coprocessor"
+              value: {{ . | quote }}
             {{- end }}
             {{- if eq (include "coprocessorDatabaseAuthMode" $) "iam" }}
             - name: DATABASE_IAM_AUTH_ENABLED
@@ -144,8 +146,6 @@ spec:
                 {{- toYaml .valueFrom | nindent 16 }}
               {{- end }}
             {{- end }}
-            - name: DATABASE_URL
-              value: "postgresql://$(DATABASE_USER)@$(DATABASE_ENDPOINT)/coprocessor"
             {{- end }}
             {{- with $.Values.commonConfig.tenantApiKey }}
             - name: TENANT_API_KEY

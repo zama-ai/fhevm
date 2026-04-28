@@ -75,8 +75,10 @@ spec:
               {{- toYaml .valueFrom | nindent 14 }}
             {{- end }}
           {{- end }}
+          {{- end }}
+          {{- with .Values.commonConfig.databaseUrl }}
           - name: DATABASE_URL
-            value: "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/coprocessor"
+            value: {{ . | quote }}
           {{- end }}
           {{- with .Values.commonConfig.tenantApiKey }}
           - name: TENANT_API_KEY
@@ -130,8 +132,6 @@ spec:
               {{- toYaml .valueFrom | nindent 14 }}
             {{- end }}
           {{- end }}
-          - name: DATABASE_URL
-            value: "postgresql://$(DATABASE_USER)@$(DATABASE_ENDPOINT)/coprocessor"
           {{- end }}
         {{- with .Values.commonConfig.env }}
           {{- toYaml . | nindent 10 }}
