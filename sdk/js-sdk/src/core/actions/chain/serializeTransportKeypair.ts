@@ -24,5 +24,3 @@ export function serializeTransportKeypair(
 ): SerializeTransportKeypairReturnType {
   return serializeTransportKeypair_(parameters.transportKeypair);
 }
-
-////////////////////////////////////////////////////////////////////////////////

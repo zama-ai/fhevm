@@ -6,8 +6,8 @@ import { toTransportKeypair, type TransportKeypair } from '../../kms/TransportKe
 ////////////////////////////////////////////////////////////////////////////////
 
 export type ParseTransportKeypairParameters = {
-  /** The serialized keypair — output of `serializeE2eTransportKeypair` or a previously parsed object. */
-  readonly serialized: string | Record<string, unknown>;
+  readonly publicKey: string;
+  readonly privateKey: string;
 };
 
 export type ParseTransportKeypairReturnType = TransportKeypair;
@@ -16,9 +16,5 @@ export async function parseTransportKeypair(
   fhevm: Fhevm<FhevmChain, FhevmRuntime, OptionalNativeClient>,
   parameters: ParseTransportKeypairParameters,
 ): Promise<ParseTransportKeypairReturnType> {
-  const parsed =
-    typeof parameters.serialized === 'string' ? (JSON.parse(parameters.serialized) as unknown) : parameters.serialized;
-  return toTransportKeypair(fhevm, parsed);
+  return toTransportKeypair(fhevm, parameters);
 }
-
-////////////////////////////////////////////////////////////////////////////////

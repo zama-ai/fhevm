@@ -35,6 +35,11 @@
       "import": "./_esm/ethers/index.js",
       "default": "./_cjs/ethers/index.js"
     },
+    "./ethers/cleartext": {
+      "types": "./_types/ethers/cleartext/index.d.ts",
+      "import": "./_esm/ethers/cleartext/index.js",
+      "default": "./_cjs/ethers/cleartext/index.js"
+    },
     "./types": {
       "types": "./_types/core/types/index.d.ts",
       "import": "./_esm/core/types/index.js",

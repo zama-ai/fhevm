@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmDecryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import { serializeE2eTransportKeypair, parseE2eTransportKeypair } from '@fhevm/sdk/actions/chain';
+import { serializeTransportKeypair, parseTransportKeypair } from '@fhevm/sdk/actions/chain';
 import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
 import { isCleartext } from '../setupCommon.js';
 
@@ -54,7 +54,7 @@ describe.runIf(!isCleartext(getEthersTestConfig().chainName))('Decrypt client â€
     await client.ready;
 
     const keypair = await client.generateTransportKeypair();
-    const serialized = serializeE2eTransportKeypair(client, {
+    const serialized = serializeTransportKeypair(client, {
       transportKeypair: keypair,
     });
 
@@ -81,16 +81,16 @@ describe.runIf(!isCleartext(getEthersTestConfig().chainName))('Decrypt client â€
     const original = await client.generateTransportKeypair();
 
     // Serialize to hex
-    const serialized = serializeE2eTransportKeypair(client, {
+    const serialized = serializeTransportKeypair(client, {
       transportKeypair: original,
     });
 
     // Parse back from hex
-    const parsed = await parseE2eTransportKeypair(client, { serialized });
+    const parsed = await parseTransportKeypair(client, serialized);
     expect(parsed).toBeDefined();
 
     // Serialize again and compare â€” should be identical
-    const reSerialized = serializeE2eTransportKeypair(client, {
+    const reSerialized = serializeTransportKeypair(client, {
       transportKeypair: parsed,
     });
     expect(reSerialized.publicKey).toBe(serialized.publicKey);

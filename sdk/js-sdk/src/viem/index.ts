@@ -1,4 +1,4 @@
-export { setFhevmRuntimeConfig } from './internal/config.js';
+export { setFhevmRuntimeConfig, hasFhevmRuntimeConfig } from './internal/config.js';
 
 export { createFhevmBaseClient } from './clients/createFhevmBaseClient.js';
 export { createFhevmDecryptClient } from './clients/createFhevmDecryptClient.js';

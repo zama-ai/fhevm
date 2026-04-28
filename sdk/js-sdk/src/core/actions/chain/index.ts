@@ -1,6 +1,6 @@
 export {
-  type VerifyKmsDelegatedUserDecryptEIP712Parameters,
-  verifyKmsDelegatedUserDecryptEip712 as verifyKmsDelegatedUserDecryptEIP712,
+  type VerifyKmsDelegatedUserDecryptEip712Parameters,
+  verifyKmsDelegatedUserDecryptEip712,
 } from './verifyKmsDelegatedUserDecryptEip712.js';
 
 export { type CreateKmsEIP712DomainReturnType, createKmsEIP712Domain } from './createKmsEip712Domain.js';
@@ -12,15 +12,15 @@ export {
 } from './fetchFheEncryptionKeyBytes.js';
 
 export {
-  type ParseTransportKeypairParameters as ParseE2eTransportKeypairParameters,
-  type ParseTransportKeypairReturnType as ParseE2eTransportKeypairReturnType,
-  parseTransportKeypair as parseE2eTransportKeypair,
+  type ParseTransportKeypairParameters,
+  type ParseTransportKeypairReturnType,
+  parseTransportKeypair,
 } from './parseTransportKeypair.js';
 
 export {
-  type SerializeTransportKeypairParameters as SerializeE2eTransportKeypairParameters,
-  type SerializeTransportKeypairReturnType as SerializeE2eTransportKeypairReturnType,
-  serializeTransportKeypair as serializeE2eTransportKeypair,
+  type SerializeTransportKeypairParameters,
+  type SerializeTransportKeypairReturnType,
+  serializeTransportKeypair,
 } from './serializeTransportKeypair.js';
 
 export {
@@ -45,9 +45,9 @@ export {
 } from '../base/signDecryptionPermit.js';
 
 export {
-  type CreateKmsUserDecryptEip712Parameters as CreateKmsUserDecryptEIP712Parameters,
-  type CreateKmsUserDecryptEip712ReturnType as CreateKmsUserDecryptEIP712ReturnType,
-  createKmsUserDecryptEip712 as createKmsUserDecryptEIP712,
+  type CreateKmsUserDecryptEip712Parameters,
+  type CreateKmsUserDecryptEip712ReturnType,
+  createKmsUserDecryptEip712,
 } from './createKmsUserDecryptEip712.js';
 
 export {

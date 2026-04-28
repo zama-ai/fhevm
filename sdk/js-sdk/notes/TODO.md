@@ -42,6 +42,7 @@
 - remove userDecryptModule
 - rename RelayerPublicDecryptOptions etc. does not match the API names
 - MAX_INPUT_INDEX = 254 (see https://github.com/zama-ai/fhevm/blob/main/coprocessor/fhevm-engine/zkproof-worker/src/verifier.rs#L40)
+- do not export private types like: SignDecryptionPermitContext
 
 ```ts
     function checkSignatures(
