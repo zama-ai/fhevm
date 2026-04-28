@@ -10,25 +10,14 @@ export {
 } from './generateTransportKeypair.js';
 
 export {
-  type DecryptSelfValuesFromPairsParameters,
-  type DecryptDelegatedValuesFromPairsParameters,
+  type DecryptValuesFromPairsParameters,
   type DecryptValuesFromPairsReturnType,
   decryptValuesFromPairs,
 } from './decryptValuesFromPairs.js';
 
-export {
-  type DecryptSelfValueParameters,
-  type DecryptDelegatedValueParameters,
-  type DecryptValueReturnType,
-  decryptValue,
-} from './decryptValue.js';
+export { type DecryptValueParameters, type DecryptValueReturnType, decryptValue } from './decryptValue.js';
 
-export {
-  type DecryptSelfValuesParameters,
-  type DecryptDelegatedValuesParameters,
-  type DecryptValuesReturnType,
-  decryptValues,
-} from './decryptValues.js';
+export { type DecryptValuesParameters, type DecryptValuesReturnType, decryptValues } from './decryptValues.js';
 
 export {
   type DecryptKmsSignedcryptedSharesParameters,

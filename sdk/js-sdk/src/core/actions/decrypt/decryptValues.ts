@@ -1,12 +1,8 @@
-/* eslint-disable @typescript-eslint/unified-signatures */
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { TypedValue } from '../../types/primitives.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { RelayerDelegatedUserDecryptOptions, RelayerUserDecryptOptions } from '../../types/relayer.js';
-import type {
-  SignedDelegatedDecryptionPermit,
-  SignedSelfDecryptionPermit,
-} from '../../types/signedDecryptionPermit.js';
+import type { SignedDecryptionPermit } from '../../types/signedDecryptionPermit.js';
 import type { WithDecrypt } from '../../types/coreFhevmRuntime.js';
 import type { TransportKeypair } from '../../kms/TransportKeypair-p.js';
 import type { EncryptedValueLike } from '../../types/encryptedTypes.js';
@@ -16,20 +12,12 @@ import { toFhevmHandle } from '../../handle/FhevmHandle.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type DecryptValuesParametersBase = {
+export type DecryptValuesParameters = {
   readonly encryptedValues: readonly EncryptedValueLike[];
   readonly contractAddress: string;
   readonly transportKeypair: TransportKeypair;
-};
-
-export type DecryptSelfValuesParameters = DecryptValuesParametersBase & {
-  readonly signedPermit: SignedSelfDecryptionPermit;
-  readonly options?: RelayerUserDecryptOptions | undefined;
-};
-
-export type DecryptDelegatedValuesParameters = DecryptValuesParametersBase & {
-  readonly signedPermit: SignedDelegatedDecryptionPermit;
-  readonly options?: RelayerDelegatedUserDecryptOptions | undefined;
+  readonly signedPermit: SignedDecryptionPermit;
+  readonly options?: RelayerUserDecryptOptions | RelayerDelegatedUserDecryptOptions | undefined;
 };
 
 export type DecryptValuesReturnType = readonly TypedValue[];
@@ -38,17 +26,7 @@ export type DecryptValuesReturnType = readonly TypedValue[];
 
 export async function decryptValues(
   fhevm: Fhevm<FhevmChain, WithDecrypt>,
-  parameters: DecryptSelfValuesParameters,
-): Promise<DecryptValuesReturnType>;
-
-export async function decryptValues(
-  fhevm: Fhevm<FhevmChain, WithDecrypt>,
-  parameters: DecryptDelegatedValuesParameters,
-): Promise<DecryptValuesReturnType>;
-
-export async function decryptValues(
-  fhevm: Fhevm<FhevmChain, WithDecrypt>,
-  parameters: DecryptSelfValuesParameters | DecryptDelegatedValuesParameters,
+  parameters: DecryptValuesParameters,
 ): Promise<DecryptValuesReturnType> {
   const { encryptedValues, contractAddress, ...rest } = parameters;
 
@@ -62,5 +40,8 @@ export async function decryptValues(
     };
   });
 
-  return decryptValuesFromPairs_(fhevm, { ...rest, pairs: sanitizedPairs });
+  return decryptValuesFromPairs_(fhevm, {
+    ...rest,
+    pairs: sanitizedPairs,
+  } as Parameters<typeof decryptValuesFromPairs_>[1]);
 }
