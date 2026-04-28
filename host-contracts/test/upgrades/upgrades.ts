@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import { ethers, upgrades } from 'hardhat';
 
-import { ACL, ACLUpgradedExample, ProtocolConfig } from '../../types';
+import { ACL, ACLUpgradedExample } from '../../types';
 import { getSigners, initSigners } from '../signers';
 
 const KEY_COUNTER_BASE = BigInt(4) << BigInt(248);
@@ -121,33 +121,28 @@ describe('Upgrades', function () {
   it('deploy upgradeable KMSVerifier', async function () {
     const kmsFactory = await ethers.getContractFactory('contracts/KMSVerifier.sol:KMSVerifier', this.signers.fred);
     const kmsFactoryUpgraded = await ethers.getContractFactory('KMSVerifierUpgradedExample', this.signers.fred); // because account[5] is set in `.env to be owner of ACL/Host
-    const protocolConfigAddress = dotenv.parse(
-      fs.readFileSync('addresses/.env.host'),
-    ).PROTOCOL_CONFIG_CONTRACT_ADDRESS!;
-    const protocolConfig = (await ethers.getContractAt(
-      'ProtocolConfig',
-      protocolConfigAddress,
-    )) as unknown as ProtocolConfig;
     const emptyUUPS = await deployEmptyProxy(this.emptyUUPSFactory);
+    const verifyingContractSource = process.env.DECRYPTION_ADDRESS!;
+    const chainIDSource = +process.env.CHAIN_ID_GATEWAY!;
     const kms = await upgrades.upgradeProxy(emptyUUPS, kmsFactory, {
       call: {
         fn: 'initializeFromEmptyProxy',
-        args: [process.env.DECRYPTION_ADDRESS!, +process.env.CHAIN_ID_GATEWAY!],
+        args: [verifyingContractSource, chainIDSource],
       },
       unsafeAllow: ['missing-initializer'],
     });
     await kms.waitForDeployment();
     expect(await kms.getVersion()).to.equal('KMSVerifier v0.3.0');
 
-    const currentContextId = await protocolConfig.getCurrentKmsContextId();
-    const protocolSigners = await protocolConfig.getKmsSignersForContext(currentContextId);
-    expect(await kms.getCurrentKmsContextId()).to.equal(currentContextId);
-    expect(await kms.getKmsSigners()).to.deep.equal(protocolSigners);
-    expect(await kms.isSigner(protocolSigners[0])).to.equal(true);
+    const domain = Array.from(await kms.eip712Domain());
+    expect(domain.slice(1, 5)).to.deep.equal(['Decryption', '1', BigInt(chainIDSource), verifyingContractSource]);
 
+    const kmsAddress = await kms.getAddress();
     const kms2 = await upgrades.upgradeProxy(kms, kmsFactoryUpgraded);
     await kms2.waitForDeployment();
+    expect(await kms2.getAddress()).to.equal(kmsAddress);
     expect(await kms2.getVersion()).to.equal('KMSVerifier v0.4.0');
+    expect(Array.from(await kms2.eip712Domain())).to.deep.equal(domain);
   });
 
   it('deploy upgradeable FHEVMExecutor', async function () {
