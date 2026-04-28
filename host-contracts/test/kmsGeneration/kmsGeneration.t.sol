@@ -559,7 +559,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         kmsGeneration.keygenResponse(KEY_COUNTER_BASE + 1, _mockKeyDigests(), hex"");
     }
 
-    function test_revertReplayAcrossContexts() public {
+    function test_revertPrepKeygenResponseSignedWithStaleContextExtraData() public {
         bytes memory oldExtraData = _buildExtraData();
 
         vm.prank(owner);
@@ -580,6 +580,57 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         vm.prank(kmsTxSender0);
         vm.expectPartialRevert(IKMSGeneration.KmsSignerDoesNotMatchTxSender.selector);
         kmsGeneration.prepKeygenResponse(prepKeygenId, replaySig);
+    }
+
+    function test_revertKeygenResponseSignedWithStaleContextExtraData() public {
+        bytes memory oldExtraData = _buildExtraData();
+
+        vm.prank(owner);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        vm.prank(owner);
+        kmsGeneration.abortKeygen(PREP_KEYGEN_COUNTER_BASE + 1);
+
+        vm.prank(owner);
+        protocolConfig.defineNewKmsContext(_makeKmsNodes(2), _defaultThresholds());
+
+        vm.prank(owner);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+
+        uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 2;
+        uint256 keyId = KEY_COUNTER_BASE + 2;
+        _doPrepKeygenResponse(prepKeygenId, kmsPk0, kmsTxSender0);
+
+        IKMSGeneration.KeyDigest[] memory digests = _mockKeyDigests();
+        bytes32 replayDigest = _hashKeygen(prepKeygenId, keyId, digests, oldExtraData);
+        bytes memory replaySig = _computeSignature(kmsPk0, replayDigest);
+
+        vm.prank(kmsTxSender0);
+        vm.expectPartialRevert(IKMSGeneration.KmsSignerDoesNotMatchTxSender.selector);
+        kmsGeneration.keygenResponse(keyId, digests, replaySig);
+    }
+
+    function test_revertCrsgenResponseSignedWithStaleContextExtraData() public {
+        bytes memory oldExtraData = _buildExtraData();
+
+        vm.prank(owner);
+        kmsGeneration.crsgenRequest(4096, IKMSGeneration.ParamsType.Default);
+        vm.prank(owner);
+        kmsGeneration.abortCrsgen(CRS_COUNTER_BASE + 1);
+
+        vm.prank(owner);
+        protocolConfig.defineNewKmsContext(_makeKmsNodes(2), _defaultThresholds());
+
+        vm.prank(owner);
+        kmsGeneration.crsgenRequest(4096, IKMSGeneration.ParamsType.Default);
+
+        uint256 crsId = CRS_COUNTER_BASE + 2;
+        bytes memory crsDigestData = hex"deadbeef";
+        bytes32 replayDigest = _hashCrsgen(crsId, 4096, crsDigestData, oldExtraData);
+        bytes memory replaySig = _computeSignature(kmsPk0, replayDigest);
+
+        vm.prank(kmsTxSender0);
+        vm.expectPartialRevert(IKMSGeneration.KmsSignerDoesNotMatchTxSender.selector);
+        kmsGeneration.crsgenResponse(crsId, crsDigestData, replaySig);
     }
 
     // -----------------------------------------------------------------------
