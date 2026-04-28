@@ -50,32 +50,12 @@ describe('Upgrades', function () {
   it('deploy upgradeable ProtocolConfig', async function () {
     const factory = await ethers.getContractFactory('ProtocolConfig', this.signers.fred);
     const factoryUpgraded = await ethers.getContractFactory('ProtocolConfigUpgradedExample', this.signers.fred);
-    const nodes = [
-      {
-        txSenderAddress: '0x0000000000000000000000000000000000001111',
-        signerAddress: '0x0000000000000000000000000000000000002222',
-        ipAddress: '127.0.0.1',
-        storageUrl: 'https://s0.example.com',
-      },
-      {
-        txSenderAddress: '0x0000000000000000000000000000000000003333',
-        signerAddress: '0x0000000000000000000000000000000000004444',
-        ipAddress: '127.0.0.2',
-        storageUrl: 'https://s1.example.com',
-      },
-      {
-        txSenderAddress: '0x0000000000000000000000000000000000005555',
-        signerAddress: '0x0000000000000000000000000000000000006666',
-        ipAddress: '127.0.0.3',
-        storageUrl: 'https://s2.example.com',
-      },
-      {
-        txSenderAddress: '0x0000000000000000000000000000000000007777',
-        signerAddress: '0x0000000000000000000000000000000000008888',
-        ipAddress: '127.0.0.4',
-        storageUrl: 'https://s3.example.com',
-      },
-    ];
+    const nodes = Array.from({ length: 4 }, (_, i) => ({
+      txSenderAddress: `0x${(0x1111 + i * 0x2222).toString(16).padStart(40, '0')}`,
+      signerAddress: `0x${(0x2222 + i * 0x2222).toString(16).padStart(40, '0')}`,
+      ipAddress: `127.0.0.${i + 1}`,
+      storageUrl: `https://s${i}.example.com`,
+    }));
     const thresholds = { publicDecryption: 1, userDecryption: 2, kmsGen: 3, mpc: 4 };
     const emptyUUPS = await deployEmptyProxy(this.emptyUUPSFactory);
     const pc = await upgrades.upgradeProxy(emptyUUPS, factory, {
