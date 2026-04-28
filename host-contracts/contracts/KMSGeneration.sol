@@ -567,6 +567,9 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         if (!$.isRequestDone[keyId]) {
             revert KeyNotGenerated(keyId);
         }
+        if ($.consensusDigest[keyId] == bytes32(0)) {
+            revert KeyAborted(keyId);
+        }
 
         // Get the prepKeygenId associated to the keyId
         uint256 prepKeygenId = $.keygenIdPairs[keyId];
@@ -582,6 +585,9 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
         if (!$.isRequestDone[crsId]) {
             revert CrsNotGenerated(crsId);
+        }
+        if ($.consensusDigest[crsId] == bytes32(0)) {
+            revert CrsAborted(crsId);
         }
 
         return $.requestParamsType[crsId];
@@ -605,7 +611,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
     /**
      * @notice See {IKMSGeneration-getConsensusTxSenders}.
-     * The returned list remains empty until the consensus is reached.
+     * The returned list remains empty until the consensus is reached, including for aborted requests.
      */
     function getConsensusTxSenders(uint256 requestId) external view virtual returns (address[] memory) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
@@ -629,6 +635,9 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             revert KeyNotGenerated(keyId);
         }
         bytes32 digest = $.consensusDigest[keyId];
+        if (digest == bytes32(0)) {
+            revert KeyAborted(keyId);
+        }
         address[] memory consensusTxSenders = $.consensusTxSenderAddresses[keyId][digest];
 
         uint256 contextId = _extractContextIdFromExtraData($.requestExtraData[keyId]);
@@ -646,6 +655,9 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             revert CrsNotGenerated(crsId);
         }
         bytes32 digest = $.consensusDigest[crsId];
+        if (digest == bytes32(0)) {
+            revert CrsAborted(crsId);
+        }
         address[] memory consensusTxSenders = $.consensusTxSenderAddresses[crsId][digest];
 
         uint256 contextId = _extractContextIdFromExtraData($.requestExtraData[crsId]);
