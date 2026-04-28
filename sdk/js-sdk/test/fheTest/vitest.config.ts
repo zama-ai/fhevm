@@ -26,6 +26,7 @@ export default defineConfig({
     testTimeout: 120_000,
     hookTimeout: 120_000,
     retry: 0,
+    fileParallelism: false,
     env: {
       CHAIN: chain,
     },
