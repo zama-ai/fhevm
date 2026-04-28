@@ -114,11 +114,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
             );
     }
 
-    function _computeSignature(uint256 privateKey, bytes32 digest) internal pure returns (bytes memory) {
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
-        return abi.encodePacked(r, s, v);
-    }
-
     function _buildExtraData() internal view returns (bytes memory) {
         uint256 contextId = protocolConfig.getCurrentKmsContextId();
         return _buildExtraDataForContextId(contextId);

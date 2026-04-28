@@ -256,6 +256,11 @@ abstract contract HostContractsDeployerTestUtils is Test {
         return IProtocolConfig.KmsThresholds({publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1});
     }
 
+    function _computeSignature(uint256 privateKey, bytes32 digest) internal pure returns (bytes memory signature) {
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
+        return abi.encodePacked(r, s, v);
+    }
+
     function _makeKmsNodes(uint256 count) internal pure returns (KmsNode[] memory nodes) {
         nodes = new KmsNode[](count);
         for (uint256 i = 0; i < count; i++) {

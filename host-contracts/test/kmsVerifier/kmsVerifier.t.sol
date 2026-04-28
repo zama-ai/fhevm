@@ -54,11 +54,6 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
     // Helpers
     // -----------------------------------------------------------------------
 
-    function _computeSignature(uint256 privateKey, bytes32 digest) internal pure returns (bytes memory signature) {
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
-        return abi.encodePacked(r, s, v);
-    }
-
     function _computeDigest(
         bytes32[] memory handlesList,
         bytes memory decryptedResult,
