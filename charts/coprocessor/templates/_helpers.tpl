@@ -66,3 +66,11 @@
 {{- $snsWorkerNameDefault := printf "%s-%s" .Release.Name "sns-worker" }}
 {{- default $snsWorkerNameDefault .Values.snsWorker.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
+
+{{- define "coprocessorDatabaseAuthMode" -}}
+{{- $authMode := default "password" .Values.commonConfig.databaseAuthMode -}}
+{{- if not (or (eq $authMode "password") (eq $authMode "iam")) -}}
+{{- fail (printf "commonConfig.databaseAuthMode must be either \"password\" or \"iam\", got %q" $authMode) -}}
+{{- end -}}
+{{- $authMode -}}
+{{- end -}}

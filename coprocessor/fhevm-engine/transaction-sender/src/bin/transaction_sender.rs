@@ -13,6 +13,7 @@ use alloy::{
 use anyhow::Context;
 use aws_config::BehaviorVersion;
 use clap::{Parser, ValueEnum};
+use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Level};
@@ -315,10 +316,13 @@ async fn main() -> anyhow::Result<()> {
         graceful_shutdown_timeout: conf.graceful_shutdown_timeout,
     };
 
-    let db_pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(conf.database_pool_size)
-        .connect(conf.database_url.unwrap_or_default().as_str())
-        .await?;
+    let database_url = resolve_database_url_from_option(conf.database_url)?;
+    let (db_pool, _pool_refresh_handle) = connect_pool_with_options(
+        &database_url,
+        sqlx::postgres::PgPoolOptions::new().max_connections(conf.database_pool_size),
+        Some(&cancel_token),
+    )
+    .await?;
 
     let transaction_sender = std::sync::Arc::new(
         TransactionSender::new(

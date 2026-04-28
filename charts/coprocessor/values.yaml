@@ -23,8 +23,22 @@ commonConfig:
   databasePassword: {}
   databaseEndpoint: {}
 
-  # Database connection string.
-  databaseUrl: "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/coprocessor"
+  # Database authentication mode. Either:
+  #   "password" — DATABASE_URL embeds DATABASE_PASSWORD, or
+  #   "iam"      — DATABASE_URL is passwordless; the runtime resolves
+  #                short-lived AWS RDS IAM tokens using the pod's AWS identity.
+  databaseAuthMode: password
+
+  # Optional when databaseAuthMode=iam. Pins the AWS region used for IAM token
+  # signing. If unset, the AWS SDK resolves the region from the environment
+  # (e.g. AWS_REGION set by IRSA). Accepts `value` or `valueFrom`
+  # (secretKeyRef/configMapKeyRef).
+  databaseIamRegion: {}
+
+  # Required when databaseAuthMode=iam. Path inside the pod to the RDS CA
+  # bundle. The runtime enforces verify-full TLS. Accepts `value` or
+  # `valueFrom` (secretKeyRef/configMapKeyRef).
+  databaseSslRootCertPath: {}
 
   # Optional tenant API key. Accepts `value` or `valueFrom`
   # (secretKeyRef/configMapKeyRef). Injected as TENANT_API_KEY for dbMigration,
@@ -57,44 +71,6 @@ commonConfig:
 # -----------------------------------------------------------------------------
 podAnnotations: {}
 podLabels: {}
-
-# -----------------------------------------------------------------------------
-# Coprocessor Configuration Setup
-# -----------------------------------------------------------------------------
-# Initializes secrets and configuration required by other components
-config:
-  enabled: true
-
-  image:
-    name: hub.zama.org/zama-protocol/zama-ai/security-hub/infra/kube-utils
-    tag: v0.4.3
-
-  # Coprocessor cryptographic key configuration
-  # TODO: this should be deprecated, to be confirmed
-  coprocessorKey:
-    secret:
-      name: coprocessor-key
-      key: coprocessor.hex
-
-  # Database connection configuration
-  database:
-    secret:
-      name: coprocessor-db-url
-      key: coprocessor-db-url
-      value: "postgresql://postgres:postgres@postgresql:5432/coprocessor"
-
-  # Helm hook annotations for deployment ordering
-  annotations:
-    # "helm.sh/hook": "pre-install"
-    # "helm.sh/hook-weight": "-1"
-
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
 
 # -----------------------------------------------------------------------------
 # Database Migration
