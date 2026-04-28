@@ -45,12 +45,10 @@ async function deployLegacyKMSVerifier(deployer: Wallet, targetContextId: bigint
   }
 
   const proxyAddress = await deployFreshEmptyProxy(deployer);
-  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
   const legacyImplementation = await ethers.getContractFactory(
     'test/migration-only-previous-contracts/KMSVerifier.sol:KMSVerifier',
     deployer,
   );
-  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
 
   const numNodes = +getRequiredEnvVar('NUM_KMS_NODES');
   const signerAddresses = Array.from({ length: numNodes }, (_, idx) => getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`));
@@ -58,7 +56,7 @@ async function deployLegacyKMSVerifier(deployer: Wallet, targetContextId: bigint
   const verifyingContractSource = getRequiredEnvVar('DECRYPTION_ADDRESS');
   const chainIDSource = +getRequiredEnvVar('CHAIN_ID_GATEWAY');
 
-  const legacyVerifier = await upgrades.upgradeProxy(proxy, legacyImplementation, {
+  const legacyVerifier = await upgrades.upgradeProxy(proxyAddress, legacyImplementation, {
     call: {
       fn: 'initializeFromEmptyProxy',
       args: [verifyingContractSource, chainIDSource, signerAddresses, threshold],
