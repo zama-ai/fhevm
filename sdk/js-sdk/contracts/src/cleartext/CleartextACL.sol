@@ -280,6 +280,10 @@ contract CleartextACL is ACL {
         $.handleSaved[inputHandle] = true;
     }
 
+    function requireNotPaused() public view virtual {
+        _requireNotPaused();
+    }
+
     //     function publicDecrypt(bytes32[] memory handles, address kmsVerifierAdd)
     //         external
     //         view

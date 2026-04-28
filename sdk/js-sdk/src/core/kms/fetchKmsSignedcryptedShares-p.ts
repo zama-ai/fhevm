@@ -15,6 +15,7 @@ import { assertKmsDecryptionBitLimit } from './utils.js';
 import { checkPersistAllowed } from '../host-contracts/checkPersistAllowed.js';
 import { assertExtraDataMatchesKmsSingersContext } from '../host-contracts/KmsSignersContext-p.js';
 import { createKmsEip712Domain } from './createKmsEip712Domain.js';
+import { checkDelegation } from '../host-contracts/checkDelegation.js';
 
 /*
     See: in KMS (eip712Domain)
@@ -118,11 +119,20 @@ export async function fetchKmsSignedcryptedShares(context: Context, parameters: 
   signedPermit.assertNotExpired();
 
   // 7. Check: ACL permissions (user is signer or delegatorAddress)
-  await checkPersistAllowed(context, {
-    address: context.chain.fhevm.contracts.acl.address as ChecksummedAddress,
-    userAddress: encryptedDataOwnerAddress,
-    handleContractPairs,
-  });
+  if (signedPermit.isDelegated) {
+    await checkDelegation(context, {
+      address: context.chain.fhevm.contracts.acl.address as ChecksummedAddress,
+      delegate: signerAddress,
+      delegator: encryptedDataOwnerAddress,
+      handleContractPairs,
+    });
+  } else {
+    await checkPersistAllowed(context, {
+      address: context.chain.fhevm.contracts.acl.address as ChecksummedAddress,
+      userAddress: encryptedDataOwnerAddress,
+      handleContractPairs,
+    });
+  }
 
   // 8. Verify the EIP712 signature
   // Not required because a signedPermit is guaranteed to be verified.
