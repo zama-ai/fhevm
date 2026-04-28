@@ -64,8 +64,7 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
-            - name: DATABASE_URL
-              value: {{ .Values.commonConfig.databaseUrl | quote }}
+{{- include "coprocessorDatabaseEnv" . | nindent 12 }}
           {{- if default .Values.commonConfig.tracing.enabled .Values.zkProofWorker.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint | quote }}

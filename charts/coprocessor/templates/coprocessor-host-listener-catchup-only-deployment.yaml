@@ -82,8 +82,7 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
-            - name: DATABASE_URL
-              value: {{ $.Values.commonConfig.databaseUrl | quote }}
+{{- include "coprocessorDatabaseEnv" $ | nindent 12 }}
             {{- include "coprocessor.renderChainEnvValue" (dict "name" "ETHEREUM_RPC_URL" "value" $chain.wsUrl "valueFrom" $chain.wsUrlValueFrom "fieldName" "wsUrl" "chainName" $chain.name) | nindent 12 }}
             - name: ACL_CONTRACT_ADDRESS
               value: {{ required (printf "chains entry %q: aclContractAddress is required" $chain.name) $chain.aclContractAddress | quote }}
