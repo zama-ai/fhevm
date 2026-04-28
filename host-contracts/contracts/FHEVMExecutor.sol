@@ -123,7 +123,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         fheIfThenElse,
         fheRand,
         fheRandBounded,
-        fheSum
+        fheSum,
+        fheIsIn
     }
 
     /// @notice Name of the contract.
@@ -682,6 +683,41 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
+     * @notice              Evaluates whether an encrypted value is a member of an encrypted set.
+     * @param value         Ciphertext handle for the value to test.
+     * @param values        Encrypted set of ciphertext handles to test membership against.
+     * @param valueType     FheType of the ciphertext value.
+     * @return result       Result handle of type FheBool.
+     */
+    function fheIsIn(
+        bytes32 value,
+        bytes32[] calldata values,
+        FheType valueType
+    ) public virtual returns (bytes32 result) {
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
+            (1 << uint8(FheType.Uint16)) +
+            (1 << uint8(FheType.Uint32)) +
+            (1 << uint8(FheType.Uint64)) +
+            (1 << uint8(FheType.Uint128)) +
+            (1 << uint8(FheType.Uint160)) +
+            (1 << uint8(FheType.Uint256));
+        if ((1 << uint8(valueType)) & supportedTypes == 0) revert UnsupportedType();
+
+        uint256 maxSize = (valueType == FheType.Uint64 ||
+            valueType == FheType.Uint128 ||
+            valueType == FheType.Uint160 ||
+            valueType == FheType.Uint256)
+            ? 60
+            : 100;
+        if (values.length > maxSize) revert FHECollectionSizeInvalid(values.length, maxSize);
+        if (_typeOf(value) != valueType) revert IncompatibleTypes();
+
+        result = _naryOp(Operators.fheIsIn, value, values, FheType.Bool);
+        HCU_LIMIT.checkHCUForFheIsIn(valueType, value, values, result, msg.sender);
+        emit FheIsIn(msg.sender, value, values, result);
+    }
+
+    /**
      * @notice          Performs the casting to a target type.
      * @param ct        Value to cast.
      * @param toType    Target type.
@@ -982,6 +1018,35 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
                 COMPUTATION_DOMAIN_SEPARATOR,
                 op,
                 values.length,
+                values,
+                ACL,
+                block.chainid,
+                blockhash(block.number - 1),
+                block.timestamp
+            )
+        );
+        result = _appendMetadataToPrehandle(result, resultType);
+        ACL.allowTransient(result, msg.sender);
+    }
+
+    function _naryOp(
+        Operators op,
+        bytes32 value,
+        bytes32[] calldata values,
+        FheType resultType
+    ) internal virtual returns (bytes32 result) {
+        if (!ACL.isAllowed(value, msg.sender)) revert ACLNotAllowed(value, msg.sender);
+        FheType valueType = _typeOf(value);
+        for (uint256 i = 0; i < values.length; i++) {
+            if (!ACL.isAllowed(values[i], msg.sender)) revert ACLNotAllowed(values[i], msg.sender);
+            if (_typeOf(values[i]) != valueType) revert IncompatibleTypes();
+        }
+        result = keccak256(
+            abi.encodePacked(
+                COMPUTATION_DOMAIN_SEPARATOR,
+                op,
+                values.length,
+                value,
                 values,
                 ACL,
                 block.chainid,

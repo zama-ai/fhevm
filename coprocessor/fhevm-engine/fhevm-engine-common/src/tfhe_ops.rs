@@ -750,6 +750,60 @@ pub fn check_fhe_operand_types(
 
                     Ok(())
                 }
+                SupportedFheOperations::FheIsIn => {
+                    const FHE_IS_IN_MAX_SET_SIZE_WIDE: usize = 60;
+                    const FHE_IS_IN_MAX_SET_SIZE_NARROW: usize = 100;
+
+                    if input_handles.is_empty() {
+                        return Err(FhevmError::UnexpectedOperandCountForFheOperation {
+                            fhe_operation,
+                            fhe_operation_name: format!("{:?}", fhe_op),
+                            expected_operands: 1,
+                            got_operands: 0,
+                        });
+                    }
+
+                    let first_type = get_ct_type(&input_handles[0])?;
+
+                    let fhe_is_in_max = match first_type {
+                        5..=8 => FHE_IS_IN_MAX_SET_SIZE_WIDE, // Uint64 | Uint128 | Uint160/eaddress | Uint256
+                        2..=4 => FHE_IS_IN_MAX_SET_SIZE_NARROW, // Uint8 | Uint16 | Uint32
+                        _ => {
+                            return Err(FhevmError::UnsupportedFheTypes {
+                                fhe_operation: format!(
+                                    "{:?}: type {first_type} is not supported for FheIsIn",
+                                    fhe_op
+                                ),
+                                input_types: vec![],
+                            })
+                        }
+                    };
+
+                    let set_size = input_handles.len() - 1;
+                    if set_size > fhe_is_in_max {
+                        return Err(FhevmError::UnexpectedOperandCountForFheOperation {
+                            fhe_operation,
+                            fhe_operation_name: format!("{:?}", fhe_op),
+                            expected_operands: fhe_is_in_max,
+                            got_operands: set_size,
+                        });
+                    }
+
+                    for (i, handle) in input_handles.iter().enumerate().skip(1) {
+                        let handle_type = get_ct_type(handle)?;
+                        if handle_type != first_type {
+                            return Err(FhevmError::UnsupportedFheTypes {
+                                fhe_operation: format!(
+                                    "{:?}: handle at index {i} has type {handle_type}, expected {first_type}",
+                                    fhe_op
+                                ),
+                                input_types: vec![],
+                            });
+                        }
+                    }
+
+                    Ok(())
+                }
                 other => Err(FhevmError::UnsupportedFheTypes {
                     fhe_operation: format!("Unexpected op_type branch: {:?}", other),
                     input_types: vec![],
@@ -3248,6 +3302,170 @@ pub fn perform_fhe_operation_impl(
                 }),
             }
         }
+        SupportedFheOperations::FheIsIn => {
+            if input_operands.is_empty() {
+                return Err(FhevmError::UnsupportedFheTypes {
+                    fhe_operation: format!(
+                        "{:?}: requires the ciphertext value operand",
+                        fhe_operation
+                    ),
+                    input_types: vec![],
+                });
+            }
+            match &input_operands[0] {
+                SupportedFheCiphertexts::FheUint8(value) => {
+                    let result = input_operands[1..]
+                        .iter()
+                        .map(|op| match op {
+                            SupportedFheCiphertexts::FheUint8(ct) => Ok(value.eq(ct)),
+                            _ => Err(FhevmError::UnsupportedFheTypes {
+                                fhe_operation: format!(
+                                    "{:?}: set elements must match value type",
+                                    fhe_operation
+                                ),
+                                input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                            }),
+                        })
+                        .collect::<Result<Vec<FheBool>, _>>()?
+                        .into_iter()
+                        .reduce(|acc, eq| acc | eq)
+                        .unwrap_or(
+                            FheBool::try_encrypt_trivial(false).expect("trivial encrypt bool"),
+                        );
+                    Ok(SupportedFheCiphertexts::FheBool(result))
+                }
+                SupportedFheCiphertexts::FheUint16(value) => {
+                    let result = input_operands[1..]
+                        .iter()
+                        .map(|op| match op {
+                            SupportedFheCiphertexts::FheUint16(ct) => Ok(value.eq(ct)),
+                            _ => Err(FhevmError::UnsupportedFheTypes {
+                                fhe_operation: format!(
+                                    "{:?}: set elements must match value type",
+                                    fhe_operation
+                                ),
+                                input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                            }),
+                        })
+                        .collect::<Result<Vec<FheBool>, _>>()?
+                        .into_iter()
+                        .reduce(|acc, eq| acc | eq)
+                        .unwrap_or(
+                            FheBool::try_encrypt_trivial(false).expect("trivial encrypt bool"),
+                        );
+                    Ok(SupportedFheCiphertexts::FheBool(result))
+                }
+                SupportedFheCiphertexts::FheUint32(value) => {
+                    let result = input_operands[1..]
+                        .iter()
+                        .map(|op| match op {
+                            SupportedFheCiphertexts::FheUint32(ct) => Ok(value.eq(ct)),
+                            _ => Err(FhevmError::UnsupportedFheTypes {
+                                fhe_operation: format!(
+                                    "{:?}: set elements must match value type",
+                                    fhe_operation
+                                ),
+                                input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                            }),
+                        })
+                        .collect::<Result<Vec<FheBool>, _>>()?
+                        .into_iter()
+                        .reduce(|acc, eq| acc | eq)
+                        .unwrap_or(
+                            FheBool::try_encrypt_trivial(false).expect("trivial encrypt bool"),
+                        );
+                    Ok(SupportedFheCiphertexts::FheBool(result))
+                }
+                SupportedFheCiphertexts::FheUint64(value) => {
+                    let result = input_operands[1..]
+                        .iter()
+                        .map(|op| match op {
+                            SupportedFheCiphertexts::FheUint64(ct) => Ok(value.eq(ct)),
+                            _ => Err(FhevmError::UnsupportedFheTypes {
+                                fhe_operation: format!(
+                                    "{:?}: set elements must match value type",
+                                    fhe_operation
+                                ),
+                                input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                            }),
+                        })
+                        .collect::<Result<Vec<FheBool>, _>>()?
+                        .into_iter()
+                        .reduce(|acc, eq| acc | eq)
+                        .unwrap_or(
+                            FheBool::try_encrypt_trivial(false).expect("trivial encrypt bool"),
+                        );
+                    Ok(SupportedFheCiphertexts::FheBool(result))
+                }
+                SupportedFheCiphertexts::FheUint128(value) => {
+                    let result = input_operands[1..]
+                        .iter()
+                        .map(|op| match op {
+                            SupportedFheCiphertexts::FheUint128(ct) => Ok(value.eq(ct)),
+                            _ => Err(FhevmError::UnsupportedFheTypes {
+                                fhe_operation: format!(
+                                    "{:?}: set elements must match value type",
+                                    fhe_operation
+                                ),
+                                input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                            }),
+                        })
+                        .collect::<Result<Vec<FheBool>, _>>()?
+                        .into_iter()
+                        .reduce(|acc, eq| acc | eq)
+                        .unwrap_or(
+                            FheBool::try_encrypt_trivial(false).expect("trivial encrypt bool"),
+                        );
+                    Ok(SupportedFheCiphertexts::FheBool(result))
+                }
+                SupportedFheCiphertexts::FheUint160(value) => {
+                    let result = input_operands[1..]
+                        .iter()
+                        .map(|op| match op {
+                            SupportedFheCiphertexts::FheUint160(ct) => Ok(value.eq(ct)),
+                            _ => Err(FhevmError::UnsupportedFheTypes {
+                                fhe_operation: format!(
+                                    "{:?}: set elements must match value type",
+                                    fhe_operation
+                                ),
+                                input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                            }),
+                        })
+                        .collect::<Result<Vec<FheBool>, _>>()?
+                        .into_iter()
+                        .reduce(|acc, eq| acc | eq)
+                        .unwrap_or(
+                            FheBool::try_encrypt_trivial(false).expect("trivial encrypt bool"),
+                        );
+                    Ok(SupportedFheCiphertexts::FheBool(result))
+                }
+                SupportedFheCiphertexts::FheUint256(value) => {
+                    let result = input_operands[1..]
+                        .iter()
+                        .map(|op| match op {
+                            SupportedFheCiphertexts::FheUint256(ct) => Ok(value.eq(ct)),
+                            _ => Err(FhevmError::UnsupportedFheTypes {
+                                fhe_operation: format!(
+                                    "{:?}: set elements must match value type",
+                                    fhe_operation
+                                ),
+                                input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                            }),
+                        })
+                        .collect::<Result<Vec<FheBool>, _>>()?
+                        .into_iter()
+                        .reduce(|acc, eq| acc | eq)
+                        .unwrap_or(
+                            FheBool::try_encrypt_trivial(false).expect("trivial encrypt bool"),
+                        );
+                    Ok(SupportedFheCiphertexts::FheBool(result))
+                }
+                _ => Err(FhevmError::UnsupportedFheTypes {
+                    fhe_operation: format!("{:?}", fhe_operation),
+                    input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                }),
+            }
+        }
     }
 }
 
@@ -3619,6 +3837,174 @@ mod fhe_sum_tests {
         assert!(
             check_fhe_operand_types(FHE_SUM_OP, &handles, &scalars).is_err(),
             "mixed types should fail"
+        );
+    }
+}
+
+#[cfg(test)]
+mod fhe_is_in_tests {
+    use super::{
+        check_fhe_operand_types, does_fhe_operation_support_scalar, SupportedFheOperations,
+    };
+    use crate::types::FheOperationType;
+
+    const FHE_IS_IN_OP: i32 = SupportedFheOperations::FheIsIn as i32;
+
+    fn handle_with_type(type_byte: u8) -> Vec<u8> {
+        let mut h = vec![0u8; 32];
+        h[30] = type_byte;
+        h
+    }
+
+    fn scalar_bytes(v: u64) -> Vec<u8> {
+        v.to_be_bytes().to_vec()
+    }
+
+    #[test]
+    fn fhe_is_in_op_type_is_other() {
+        assert!(SupportedFheOperations::FheIsIn.op_type() == FheOperationType::Other);
+    }
+
+    #[test]
+    fn fhe_is_in_try_from_i16_roundtrip() {
+        let op = SupportedFheOperations::try_from(29i16).unwrap();
+        assert_eq!(op, SupportedFheOperations::FheIsIn);
+    }
+
+    #[test]
+    fn fhe_is_in_does_not_have_more_than_one_scalar() {
+        // FheIsIn now uses all ciphertext handles — no scalar flag.
+        assert!(!SupportedFheOperations::FheIsIn.does_have_more_than_one_scalar());
+    }
+
+    #[test]
+    fn fhe_is_in_scalar_not_directly_supported() {
+        assert!(!does_fhe_operation_support_scalar(
+            &SupportedFheOperations::FheIsIn
+        ));
+    }
+
+    #[test]
+    fn fhe_is_in_valid_single_element_set() {
+        let value = handle_with_type(2); // Uint8
+        let set_elem = handle_with_type(2); // Uint8 ciphertext
+        assert!(check_fhe_operand_types(FHE_IS_IN_OP, &[value, set_elem], &[false, false]).is_ok());
+    }
+
+    #[test]
+    fn fhe_is_in_valid_multi_element_set() {
+        let value = handle_with_type(5); // Uint64
+        let handles: Vec<Vec<u8>> = std::iter::once(value)
+            .chain((0..10).map(|_| handle_with_type(5)))
+            .collect();
+        let scalars: Vec<bool> = std::iter::repeat_n(false, 11).collect();
+        assert!(check_fhe_operand_types(FHE_IS_IN_OP, &handles, &scalars).is_ok());
+    }
+
+    #[test]
+    fn fhe_is_in_rejects_empty_inputs() {
+        assert!(check_fhe_operand_types(FHE_IS_IN_OP, &[], &[]).is_err());
+    }
+
+    #[test]
+    fn fhe_is_in_accepts_single_ciphertext_empty_set() {
+        // Empty set (only the value ciphertext) is valid; execution returns trivial false.
+        let value = handle_with_type(2); // Uint8
+        assert!(check_fhe_operand_types(FHE_IS_IN_OP, &[value], &[false]).is_ok());
+    }
+
+    #[test]
+    fn fhe_is_in_rejects_first_operand_as_scalar() {
+        let scalar = scalar_bytes(5);
+        let set_elem = handle_with_type(2);
+        assert!(
+            check_fhe_operand_types(FHE_IS_IN_OP, &[scalar, set_elem], &[true, false]).is_err()
+        );
+    }
+
+    #[test]
+    fn fhe_is_in_rejects_any_operand_as_scalar() {
+        let value = handle_with_type(2); // Uint8
+        let scalar_elem = scalar_bytes(42);
+        // set element must be ciphertext, not scalar
+        assert!(
+            check_fhe_operand_types(FHE_IS_IN_OP, &[value, scalar_elem], &[false, true]).is_err()
+        );
+    }
+
+    #[test]
+    fn fhe_is_in_rejects_unsupported_type_ebytes128() {
+        let value = handle_with_type(9); // EBytes128 (not supported)
+        let set_elem = handle_with_type(9);
+        assert!(
+            check_fhe_operand_types(FHE_IS_IN_OP, &[value, set_elem], &[false, false]).is_err()
+        );
+    }
+
+    #[test]
+    fn fhe_is_in_rejects_too_many_set_elements_narrow() {
+        // Uint8 max is 100; 101 elements should fail.
+        let value = handle_with_type(2); // Uint8
+        let handles: Vec<Vec<u8>> = std::iter::once(value)
+            .chain((0..101).map(|_| handle_with_type(2)))
+            .collect();
+        let scalars: Vec<bool> = std::iter::repeat_n(false, 102).collect();
+        assert!(check_fhe_operand_types(FHE_IS_IN_OP, &handles, &scalars).is_err());
+    }
+
+    #[test]
+    fn fhe_is_in_rejects_too_many_set_elements_wide() {
+        // Uint64 max is 60; 61 elements should fail.
+        let value = handle_with_type(5); // Uint64
+        let handles: Vec<Vec<u8>> = std::iter::once(value)
+            .chain((0..61).map(|_| handle_with_type(5)))
+            .collect();
+        let scalars: Vec<bool> = std::iter::repeat_n(false, 62).collect();
+        assert!(check_fhe_operand_types(FHE_IS_IN_OP, &handles, &scalars).is_err());
+    }
+
+    #[test]
+    fn fhe_is_in_accepts_max_set_size_narrow() {
+        // Uint8 max is 100; exactly 100 elements should succeed.
+        let value = handle_with_type(2); // Uint8
+        let handles: Vec<Vec<u8>> = std::iter::once(value)
+            .chain((0..100).map(|_| handle_with_type(2)))
+            .collect();
+        let scalars: Vec<bool> = std::iter::repeat_n(false, 101).collect();
+        assert!(check_fhe_operand_types(FHE_IS_IN_OP, &handles, &scalars).is_ok());
+    }
+
+    #[test]
+    fn fhe_is_in_accepts_max_set_size_wide() {
+        // Uint64 max is 60; exactly 60 elements should succeed.
+        let value = handle_with_type(5); // Uint64
+        let handles: Vec<Vec<u8>> = std::iter::once(value)
+            .chain((0..60).map(|_| handle_with_type(5)))
+            .collect();
+        let scalars: Vec<bool> = std::iter::repeat_n(false, 61).collect();
+        assert!(check_fhe_operand_types(FHE_IS_IN_OP, &handles, &scalars).is_ok());
+    }
+
+    #[test]
+    fn fhe_is_in_supported_types_uint8_through_uint256() {
+        for type_byte in 2u8..=8u8 {
+            let value = handle_with_type(type_byte);
+            let set_elem = handle_with_type(type_byte);
+            assert!(
+                check_fhe_operand_types(FHE_IS_IN_OP, &[value, set_elem], &[false, false]).is_ok(),
+                "type {type_byte} should be supported"
+            );
+        }
+    }
+
+    #[test]
+    fn fhe_is_in_rejects_mixed_type_set_elements() {
+        // value is Uint8 (2), set element is Uint32 (4) — must be rejected.
+        let value = handle_with_type(2);
+        let wrong_type_elem = handle_with_type(4);
+        assert!(
+            check_fhe_operand_types(FHE_IS_IN_OP, &[value, wrong_type_elem], &[false, false])
+                .is_err()
         );
     }
 }

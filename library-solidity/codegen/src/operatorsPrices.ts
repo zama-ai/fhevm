@@ -481,4 +481,17 @@ export const ALL_OPERATORS_PRICES: PriceData = {
       Uint128: { le10: 219000, le30: 355000, le60: 552000 },
     },
   },
+  fheIsIn: {
+    supportScalar: false,
+    numberInputs: -2,
+    nBucketed: {
+      Uint8: { le10: 91000, le30: 189000, le60: 315000, le100: 477000 },
+      Uint16: { le10: 131000, le30: 278000, le60: 482000, le100: 771000 },
+      Uint32: { le10: 175000, le30: 383000, le60: 677000, le100: 1054000 },
+      Uint64: { le10: 278000, le30: 627000, le60: 1121000 },
+      Uint128: { le10: 326000, le30: 682000, le60: 1174000 },
+      Uint160: { le10: 365000, le30: 745000, le60: 1128000 },
+      Uint256: { le10: 409000, le30: 747000, le60: 1202000 },
+    },
+  },
 };

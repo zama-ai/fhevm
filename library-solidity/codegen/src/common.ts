@@ -112,13 +112,15 @@ export type FheOperatorName =
   | 'ifThenElse'
   | 'fheRand'
   | 'fheRandBounded'
-  | 'fheSum';
+  | 'fheSum'
+  | 'fheIsIn';
 
 export type NBucketedCost = {
   le10: number;
   le30?: number;
   le60?: number;
   le100?: number;
+  le128?: number;
 };
 
 export type PriceData = Record<
