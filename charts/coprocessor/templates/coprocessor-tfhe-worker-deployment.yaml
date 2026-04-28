@@ -155,17 +155,4 @@ spec:
           readinessProbe:
             {{- toYaml (omit .Values.tfheWorker.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
-      {{- if .Values.config.enabled }}
-          volumeMounts:
-            - name: coprocessor-account
-              mountPath: /accounts
-      volumes:
-        - name: coprocessor-account
-          secret:
-            secretName: {{ .Values.config.coprocessorKey.secret.name }}
-            defaultMode: 0644
-            items:
-              - key: {{ .Values.config.coprocessorKey.secret.key }}
-                path: {{ .Values.config.coprocessorKey.secret.key }}
-      {{- end }}
 {{- end -}}
