@@ -13,6 +13,7 @@ import {
 } from '../../tasks/utils/kmsGenerationMigrationEnv';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import type { KMSGeneration, ProtocolConfig } from '../../types';
+import { deployEmptyProxy } from '../utils/deploymentHelpers';
 
 const HOST_ENV_FILE = path.join(__dirname, '../../addresses/.env.host');
 
@@ -27,9 +28,7 @@ const CRS_COUNTER_BASE = BigInt(5) << BigInt(248);
  */
 async function deployFreshEmptyProxy(deployer: Wallet): Promise<string> {
   const factory = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  const proxy = await upgrades.deployProxy(factory, { initializer: 'initialize', kind: 'uups' });
-  await proxy.waitForDeployment();
-  return proxy.getAddress();
+  return deployEmptyProxy(factory);
 }
 
 /**

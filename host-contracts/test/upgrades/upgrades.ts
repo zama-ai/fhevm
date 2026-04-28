@@ -5,13 +5,10 @@ import { ethers, upgrades } from 'hardhat';
 
 import { ACL, ACLUpgradedExample } from '../../types';
 import { getSigners, initSigners } from '../signers';
+import { deployEmptyProxy } from '../utils/deploymentHelpers';
 
 const KEY_COUNTER_BASE = BigInt(4) << BigInt(248);
 const CRS_COUNTER_BASE = BigInt(5) << BigInt(248);
-
-async function deployEmptyProxy(factory: any) {
-  return upgrades.deployProxy(factory, { initializer: 'initialize', kind: 'uups' });
-}
 
 describe('Upgrades', function () {
   before(async function () {
@@ -25,10 +22,7 @@ describe('Upgrades', function () {
 
   it('deploy upgradeable ACL', async function () {
     const nonceBef = await ethers.provider.getTransactionCount(this.signers.alice);
-    const emptyUUPSACL = await upgrades.deployProxy(this.emptyUUPSFactoryACL, [this.signers.alice.address], {
-      initializer: 'initialize',
-      kind: 'uups',
-    });
+    const emptyUUPSACL = await deployEmptyProxy(this.emptyUUPSFactoryACL, [this.signers.alice.address]);
     const acl = await upgrades.upgradeProxy(emptyUUPSACL, this.aclFactory, {
       call: { fn: 'initializeFromEmptyProxy' },
     });
