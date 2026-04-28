@@ -1190,8 +1190,13 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         );
         bytes memory keySig = _computeSignature(kmsPk1, keyDigest);
 
+        vm.recordLogs();
         vm.prank(kmsTxSender1);
         migrated.keygenResponse(state.activeKeyId, _mockKeyDigests(), keySig);
+        _assertNoEventEmitted(
+            IKMSGeneration.ActivateKey.selector,
+            "late migrated keygen response should not emit ActivateKey"
+        );
 
         address[] memory keyConsTxSenders = migrated.getConsensusTxSenders(state.activeKeyId);
         assertEq(keyConsTxSenders.length, 2);
@@ -1256,7 +1261,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         vm.recordLogs();
         _doPrepKeygenResponse(prepKeygenId, kmsPk3, kmsTxSender3);
         _assertNoEventEmitted(
-            keccak256("KeygenRequest(uint256,uint256,bytes)"),
+            IKMSGeneration.KeygenRequest.selector,
             "4th prepKeygen response should not emit KeygenRequest"
         );
     }
@@ -1284,7 +1289,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         vm.recordLogs();
         _doKeygenResponse(prepKeygenId, keyId, kmsPk3, kmsTxSender3);
         _assertNoEventEmitted(
-            keccak256("ActivateKey(uint256,string[],IKMSGeneration.KeyDigest[])"),
+            IKMSGeneration.ActivateKey.selector,
             "4th keygen response should not emit ActivateKey"
         );
     }
@@ -1306,7 +1311,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         vm.recordLogs();
         _doCrsgenResponse(crsId, kmsPk3, kmsTxSender3);
         _assertNoEventEmitted(
-            keccak256("ActivateCrs(uint256,string[],bytes)"),
+            IKMSGeneration.ActivateCrs.selector,
             "4th crsgen response should not emit ActivateCrs"
         );
     }
