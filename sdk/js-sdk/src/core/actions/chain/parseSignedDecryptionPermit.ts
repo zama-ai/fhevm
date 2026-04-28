@@ -2,13 +2,14 @@ import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { SignedDecryptionPermit } from '../../types/signedDecryptionPermit.js';
 import type { TransportKeypair } from '../../kms/TransportKeypair-p.js';
+import type { SerializeSignedDecryptionPermitReturnType } from './serializeSignedDecryptionPermit.js';
 import { parseSignedDecryptionPermit as parseSignedDecryptionPermit_ } from '../../kms/SignedDecryptionPermit-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
 export type ParseSignedDecryptionPermitParameters = {
-  /** The serialized permit — a JSON string or a previously parsed object. */
-  readonly serialized: string | Record<string, unknown>;
+  /** The serialized permit — a previously parsed permit object. */
+  readonly serializedPermit: SerializeSignedDecryptionPermitReturnType;
   /** The transport keypair that was used when signing the permit. */
   readonly transportKeypair: TransportKeypair;
 };
@@ -27,9 +28,7 @@ export async function parseSignedDecryptionPermit(
   fhevm: Fhevm<FhevmChain>,
   parameters: ParseSignedDecryptionPermitParameters,
 ): Promise<ParseSignedDecryptionPermitReturnType> {
-  const { serialized, transportKeypair } = parameters;
+  const { serializedPermit, transportKeypair } = parameters;
 
-  const parsed = typeof serialized === 'string' ? (JSON.parse(serialized) as unknown) : serialized;
-
-  return parseSignedDecryptionPermit_(fhevm, transportKeypair, parsed);
+  return parseSignedDecryptionPermit_(fhevm, transportKeypair, serializedPermit);
 }
