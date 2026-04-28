@@ -27,6 +27,12 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     KMSGenerationHarness internal kmsGenerationHarness;
     ProtocolConfig internal protocolConfig;
 
+    struct MigrationFixture {
+        address migrateProxy;
+        address kmsGenImpl;
+        KMSGeneration.MigrationState state;
+    }
+
     // Counter bases (matching contract)
     uint256 internal constant PREP_KEYGEN_COUNTER_BASE = uint256(3) << 248;
     uint256 internal constant KEY_COUNTER_BASE = uint256(4) << 248;
@@ -99,6 +105,11 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     {
         (migrateProxy, kmsGenImpl) = _deployMigrationProxy();
         state = _defaultMigrationState(migrateProxy);
+    }
+
+    function _deployMigrationFixture() internal returns (MigrationFixture memory fixture) {
+        (fixture.migrateProxy, fixture.kmsGenImpl) = _deployMigrationProxy();
+        fixture.state = _defaultMigrationState(fixture.migrateProxy);
     }
 
     function _computeDomainSeparator(address verifier) internal view returns (bytes32) {
@@ -362,6 +373,11 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
             kmsGenImpl,
             abi.encodeCall(KMSGeneration.initializeFromMigration, (state))
         );
+    }
+
+    function _expectMigrationRevert(MigrationFixture memory fixture, bytes memory expectedRevert) internal {
+        vm.expectRevert(expectedRevert);
+        _upgradeMigrationProxy(fixture.migrateProxy, fixture.kmsGenImpl, fixture.state);
     }
 
     // -----------------------------------------------------------------------
@@ -1102,72 +1118,56 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     }
 
     function test_migrationRejectsEmptyKeyDigests() public {
-        (
-            address migrateProxy,
-            address kmsGenImpl,
-            KMSGeneration.MigrationState memory state
-        ) = _deployMigrationProxyAndState();
-        state.activeKeyDigests = new IKMSGeneration.KeyDigest[](0);
+        MigrationFixture memory fixture = _deployMigrationFixture();
+        fixture.state.activeKeyDigests = new IKMSGeneration.KeyDigest[](0);
 
-        vm.expectRevert(abi.encodeWithSelector(KMSGeneration.InvalidMigrationMaterial.selector, state.activeKeyId));
-        _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
+        _expectMigrationRevert(
+            fixture,
+            abi.encodeWithSelector(KMSGeneration.InvalidMigrationMaterial.selector, fixture.state.activeKeyId)
+        );
     }
 
     function test_migrationRejectsEmptyCrsDigest() public {
-        (
-            address migrateProxy,
-            address kmsGenImpl,
-            KMSGeneration.MigrationState memory state
-        ) = _deployMigrationProxyAndState();
-        state.activeCrsDigest = "";
+        MigrationFixture memory fixture = _deployMigrationFixture();
+        fixture.state.activeCrsDigest = "";
 
-        vm.expectRevert(abi.encodeWithSelector(KMSGeneration.InvalidMigrationMaterial.selector, state.activeCrsId));
-        _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
+        _expectMigrationRevert(
+            fixture,
+            abi.encodeWithSelector(KMSGeneration.InvalidMigrationMaterial.selector, fixture.state.activeCrsId)
+        );
     }
 
     function test_migrationRejectsActiveKeyWithoutConsensusTxSenders() public {
-        (
-            address migrateProxy,
-            address kmsGenImpl,
-            KMSGeneration.MigrationState memory state
-        ) = _deployMigrationProxyAndState();
-        state.keyConsensusTxSenders = new address[](0);
+        MigrationFixture memory fixture = _deployMigrationFixture();
+        fixture.state.keyConsensusTxSenders = new address[](0);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(KMSGeneration.InvalidMigrationConsensusState.selector, state.activeKeyId)
+        _expectMigrationRevert(
+            fixture,
+            abi.encodeWithSelector(KMSGeneration.InvalidMigrationConsensusState.selector, fixture.state.activeKeyId)
         );
-        _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
     }
 
     function test_migrationRejectsActivePrepKeygenWithoutConsensusDigest() public {
-        (
-            address migrateProxy,
-            address kmsGenImpl,
-            KMSGeneration.MigrationState memory state
-        ) = _deployMigrationProxyAndState();
-        state.prepKeygenConsensusDigest = bytes32(0);
+        MigrationFixture memory fixture = _deployMigrationFixture();
+        fixture.state.prepKeygenConsensusDigest = bytes32(0);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(KMSGeneration.InvalidMigrationConsensusState.selector, state.activePrepKeygenId)
+        _expectMigrationRevert(
+            fixture,
+            abi.encodeWithSelector(KMSGeneration.InvalidMigrationConsensusState.selector, fixture.state.activePrepKeygenId)
         );
-        _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
     }
 
     function test_migrationRejectsBelowKmsGenThresholdQuorum() public {
         // Raise kmsGen threshold to 3 on a freshly-defined context before building migration state.
         _switchToMultiSignerContext();
 
-        (
-            address migrateProxy,
-            address kmsGenImpl,
-            KMSGeneration.MigrationState memory state
-        ) = _deployMigrationProxyAndState();
+        MigrationFixture memory fixture = _deployMigrationFixture();
         // _defaultMigrationState ships only 1 tx sender per request, below the kmsGen threshold of 3.
         // The first validated request (the active key) is the one that reverts.
-        vm.expectRevert(
-            abi.encodeWithSelector(KMSGeneration.InvalidMigrationConsensusState.selector, state.activeKeyId)
+        _expectMigrationRevert(
+            fixture,
+            abi.encodeWithSelector(KMSGeneration.InvalidMigrationConsensusState.selector, fixture.state.activeKeyId)
         );
-        _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
     }
 
     function test_migrationAcceptsExactlyKmsGenThresholdQuorum() public {
@@ -1194,22 +1194,18 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     }
 
     function test_migrationRejectsUnknownConsensusTxSender() public {
-        (
-            address migrateProxy,
-            address kmsGenImpl,
-            KMSGeneration.MigrationState memory state
-        ) = _deployMigrationProxyAndState();
+        MigrationFixture memory fixture = _deployMigrationFixture();
         address unknownTxSender = address(0xBEEF);
-        state.keyConsensusTxSenders[0] = unknownTxSender;
+        fixture.state.keyConsensusTxSenders[0] = unknownTxSender;
 
-        vm.expectRevert(
+        _expectMigrationRevert(
+            fixture,
             abi.encodeWithSelector(
                 KMSGeneration.UnknownMigrationConsensusTxSender.selector,
-                state.activeKeyId,
+                fixture.state.activeKeyId,
                 unknownTxSender
             )
         );
-        _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
     }
 
     function test_migrationLateSignerStillUpdatesConsensusTxSenders() public {
@@ -1239,39 +1235,33 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     }
 
     function test_migrationRejectsKeyCounterAheadOfImportedState() public {
-        (
-            address migrateProxy,
-            address kmsGenImpl,
-            KMSGeneration.MigrationState memory state
-        ) = _deployMigrationProxyAndState();
-        state.keyCounter++;
+        MigrationFixture memory fixture = _deployMigrationFixture();
+        fixture.state.keyCounter++;
 
-        vm.expectRevert(KMSGeneration.InvalidMigrationCounterState.selector);
-        _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
+        _expectMigrationRevert(
+            fixture,
+            abi.encodeWithSelector(KMSGeneration.InvalidMigrationCounterState.selector)
+        );
     }
 
     function test_migrationRejectsCrsCounterAheadOfImportedState() public {
-        (
-            address migrateProxy,
-            address kmsGenImpl,
-            KMSGeneration.MigrationState memory state
-        ) = _deployMigrationProxyAndState();
-        state.crsCounter++;
+        MigrationFixture memory fixture = _deployMigrationFixture();
+        fixture.state.crsCounter++;
 
-        vm.expectRevert(KMSGeneration.InvalidMigrationCounterState.selector);
-        _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
+        _expectMigrationRevert(
+            fixture,
+            abi.encodeWithSelector(KMSGeneration.InvalidMigrationCounterState.selector)
+        );
     }
 
     function test_migrationRejectsPrepCounterAheadOfImportedState() public {
-        (
-            address migrateProxy,
-            address kmsGenImpl,
-            KMSGeneration.MigrationState memory state
-        ) = _deployMigrationProxyAndState();
-        state.prepKeygenCounter++;
+        MigrationFixture memory fixture = _deployMigrationFixture();
+        fixture.state.prepKeygenCounter++;
 
-        vm.expectRevert(KMSGeneration.InvalidMigrationCounterState.selector);
-        _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
+        _expectMigrationRevert(
+            fixture,
+            abi.encodeWithSelector(KMSGeneration.InvalidMigrationCounterState.selector)
+        );
     }
 
     // -----------------------------------------------------------------------
