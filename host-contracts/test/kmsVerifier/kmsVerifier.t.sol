@@ -95,12 +95,16 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         }
     }
 
+    function _mockDecryptedResult() internal pure returns (bytes memory) {
+        return abi.encodePacked(keccak256("test"));
+    }
+
     function _buildSingleSignerProof(
         uint256 signerKey,
         bytes memory extraData
     ) internal view returns (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) {
         handlesList = _generateMockHandlesList(3);
-        decryptedResult = abi.encodePacked(keccak256("test"));
+        decryptedResult = _mockDecryptedResult();
         bytes32 digest = _computeDigest(handlesList, decryptedResult, extraData);
         bytes memory signature = _computeSignature(signerKey, digest);
         proof = abi.encodePacked(uint8(1), signature, extraData);
@@ -190,7 +194,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
     function test_VerifyDecryptionEIP712KMSSignaturesWork() public {
         bytes32[] memory handlesList = _generateMockHandlesList(3);
 
-        bytes memory decryptedResult = abi.encodePacked(keccak256("test"), keccak256("test"), keccak256("test"));
+        bytes memory decryptedResult = _mockDecryptedResult();
         bytes memory extraData = abi.encodePacked(uint8(0));
         bytes32 digest = _computeDigest(handlesList, decryptedResult, extraData);
 
@@ -234,7 +238,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
     function test_VerifyDecryptionEIP712KMSSignaturesFailAsExpectedIfDigestIsInvalid() public {
         bytes32[] memory handlesList = _generateMockHandlesList(3);
 
-        bytes memory decryptedResult = abi.encodePacked(keccak256("test"), keccak256("test"), keccak256("test"));
+        bytes memory decryptedResult = _mockDecryptedResult();
         bytes memory extraData = abi.encodePacked(uint8(0));
         bytes[] memory signatures = new bytes[](2);
 
@@ -260,7 +264,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
 
         bytes32[] memory handlesList = _generateMockHandlesList(3);
 
-        bytes memory decryptedResult = abi.encodePacked(keccak256("test"), keccak256("test"), keccak256("test"));
+        bytes memory decryptedResult = _mockDecryptedResult();
         bytes memory extraData = abi.encodePacked(uint8(0));
         bytes32 digest = _computeDigest(handlesList, decryptedResult, extraData);
 
@@ -281,7 +285,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
 
     function test_VerifyDecryptionEIP712KMSSignaturesFailAsExpectedIfNoSignatureProvided() public {
         bytes32[] memory handlesList = _generateMockHandlesList(3);
-        bytes memory decryptedResult = abi.encodePacked(keccak256("test"), keccak256("test"), keccak256("test"));
+        bytes memory decryptedResult = _mockDecryptedResult();
         bytes memory decryptionProof = abi.encodePacked(uint8(0), bytes1(0x00));
 
         vm.expectPartialRevert(KMSVerifier.KMSZeroSignature.selector);
@@ -292,7 +296,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         _rotateToThresholdTwoContext();
 
         bytes32[] memory handlesList = _generateMockHandlesList(3);
-        bytes memory decryptedResult = abi.encodePacked(keccak256("test"), keccak256("test"), keccak256("test"));
+        bytes memory decryptedResult = _mockDecryptedResult();
         bytes memory extraData = abi.encodePacked(uint8(0));
         bytes32 digest = _computeDigest(handlesList, decryptedResult, extraData);
 
@@ -309,7 +313,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         _rotateToThresholdTwoContext();
 
         bytes32[] memory handlesList = _generateMockHandlesList(3);
-        bytes memory decryptedResult = abi.encodePacked(keccak256("test"), keccak256("test"), keccak256("test"));
+        bytes memory decryptedResult = _mockDecryptedResult();
         bytes memory extraData = abi.encodePacked(uint8(0));
         bytes32 digest = _computeDigest(handlesList, decryptedResult, extraData);
 
@@ -329,7 +333,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
 
     function test_VerifyDecryptionEIP712KMSSignaturesFailsIfEmptyDecryptionProof() public {
         bytes32[] memory handlesList = _generateMockHandlesList(3);
-        bytes memory decryptedResult = abi.encodePacked(keccak256("test"), keccak256("test"), keccak256("test"));
+        bytes memory decryptedResult = _mockDecryptedResult();
 
         vm.expectRevert(KMSVerifier.EmptyDecryptionProof.selector);
         kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, new bytes(0));
@@ -339,7 +343,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         uint256 randomValue
     ) public {
         bytes32[] memory handlesList = _generateMockHandlesList(3);
-        bytes memory decryptedResult = abi.encodePacked(keccak256("test"), keccak256("test"), keccak256("test"));
+        bytes memory decryptedResult = _mockDecryptedResult();
         bytes memory decryptionProof = abi.encodePacked(uint8(3), randomValue);
 
         vm.expectRevert(KMSVerifier.DeserializingDecryptionProofFail.selector);
@@ -383,7 +387,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
 
         // Verify against historical context with 2 valid signatures — must succeed
         handlesList = _generateMockHandlesList(3);
-        decryptedResult = abi.encodePacked(keccak256("test"));
+        decryptedResult = _mockDecryptedResult();
         bytes32 digest = _computeDigest(handlesList, decryptedResult, extraData);
         bytes[] memory signatures = new bytes[](2);
         signatures[0] = _computeSignature(privateKeySigner0, digest);
@@ -421,7 +425,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
 
     function test_VerificationFailsWithMalformedV1ExtraData() public {
         bytes32[] memory handlesList = _generateMockHandlesList(3);
-        bytes memory decryptedResult = abi.encodePacked(keccak256("test"));
+        bytes memory decryptedResult = _mockDecryptedResult();
         bytes memory extraData = abi.encodePacked(uint8(0x01), uint8(0x42));
         bytes32 digest = _computeDigest(handlesList, decryptedResult, extraData);
 
