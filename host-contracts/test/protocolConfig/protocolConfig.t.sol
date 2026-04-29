@@ -108,65 +108,44 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
     function test_initSuccess() public {
         _setupDefault();
+
+        // Version and current context.
         assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.1.0");
         uint256 contextId = protocolConfig.getCurrentKmsContextId();
         assertEq(contextId, KMS_CONTEXT_COUNTER_BASE + 1);
         assertTrue(protocolConfig.isValidKmsContext(contextId));
-    }
 
-    function test_initSignersRegistered() public {
-        _setupDefault();
-        uint256 contextId = protocolConfig.getCurrentKmsContextId();
-        KmsNode[] memory nodes = _makeKmsNodes(2);
-        assertTrue(protocolConfig.isKmsSignerForContext(contextId, nodes[0].signerAddress));
-        assertTrue(protocolConfig.isKmsSignerForContext(contextId, nodes[1].signerAddress));
-        assertTrue(protocolConfig.isKmsTxSenderForContext(contextId, nodes[0].txSenderAddress));
-        assertTrue(protocolConfig.isKmsTxSenderForContext(contextId, nodes[1].txSenderAddress));
-        // Negative: unregistered addresses must return false.
-        assertFalse(protocolConfig.isKmsSignerForContext(contextId, address(0xDEAD)));
-        assertFalse(protocolConfig.isKmsTxSenderForContext(contextId, address(0xDEAD)));
-    }
-
-    function test_initThresholds() public {
-        _setupDefault();
+        // Thresholds.
         assertEq(protocolConfig.getPublicDecryptionThreshold(), 1);
         assertEq(protocolConfig.getUserDecryptionThreshold(), 2);
         assertEq(protocolConfig.getKmsGenThreshold(), 3);
         assertEq(protocolConfig.getMpcThreshold(), 4);
-    }
 
-    function test_initNodesMetadata() public {
-        _setupDefault();
-        uint256 contextId = protocolConfig.getCurrentKmsContextId();
-        KmsNode[] memory expectedNodes = _makeKmsNodes(1);
-        KmsNode memory node = protocolConfig.getKmsNodeForContext(contextId, expectedNodes[0].txSenderAddress);
-        assertEq(node.txSenderAddress, expectedNodes[0].txSenderAddress);
-        assertEq(node.signerAddress, expectedNodes[0].signerAddress);
-        assertEq(node.ipAddress, expectedNodes[0].ipAddress);
-        assertEq(node.storageUrl, expectedNodes[0].storageUrl);
-    }
-
-    function test_initGetKmsNodesForContext() public {
-        _setupDefault();
-        uint256 contextId = protocolConfig.getCurrentKmsContextId();
-        KmsNode[] memory nodes = protocolConfig.getKmsNodesForContext(contextId);
+        // Context node arrays and registered signer/tx sender mappings.
         KmsNode[] memory expectedNodes = _makeKmsNodes(4);
-        assertEq(nodes.length, 4);
+        KmsNode[] memory nodes = protocolConfig.getKmsNodesForContext(contextId);
+        address[] memory signers = protocolConfig.getKmsSignersForContext(contextId);
+        assertEq(nodes.length, expectedNodes.length);
+        assertEq(signers.length, expectedNodes.length);
         for (uint256 i = 0; i < expectedNodes.length; i++) {
             assertEq(nodes[i].txSenderAddress, expectedNodes[i].txSenderAddress);
             assertEq(nodes[i].signerAddress, expectedNodes[i].signerAddress);
-        }
-    }
-
-    function test_initGetSignersForContext() public {
-        _setupDefault();
-        uint256 contextId = protocolConfig.getCurrentKmsContextId();
-        address[] memory signers = protocolConfig.getKmsSignersForContext(contextId);
-        KmsNode[] memory expectedNodes = _makeKmsNodes(4);
-        assertEq(signers.length, 4);
-        for (uint256 i = 0; i < expectedNodes.length; i++) {
+            assertEq(nodes[i].ipAddress, expectedNodes[i].ipAddress);
+            assertEq(nodes[i].storageUrl, expectedNodes[i].storageUrl);
             assertEq(signers[i], expectedNodes[i].signerAddress);
+            assertTrue(protocolConfig.isKmsSignerForContext(contextId, expectedNodes[i].signerAddress));
+            assertTrue(protocolConfig.isKmsTxSenderForContext(contextId, expectedNodes[i].txSenderAddress));
+
+            // Direct node lookup by tx sender.
+            KmsNode memory node = protocolConfig.getKmsNodeForContext(contextId, expectedNodes[i].txSenderAddress);
+            assertEq(node.txSenderAddress, expectedNodes[i].txSenderAddress);
+            assertEq(node.signerAddress, expectedNodes[i].signerAddress);
+            assertEq(node.ipAddress, expectedNodes[i].ipAddress);
+            assertEq(node.storageUrl, expectedNodes[i].storageUrl);
         }
+        // Negative: unregistered addresses must return false.
+        assertFalse(protocolConfig.isKmsSignerForContext(contextId, address(0xDEAD)));
+        assertFalse(protocolConfig.isKmsTxSenderForContext(contextId, address(0xDEAD)));
     }
 
     // -----------------------------------------------------------------------
@@ -342,12 +321,12 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.destroyKmsContext(currentId);
     }
 
-    function test_revertDestroyInvalidContext() public {
+    function testFuzz_revertDestroyInvalidContext(uint256 invalidContextId) public {
         _setupDefault();
-        uint256 invalidId = KMS_CONTEXT_COUNTER_BASE + 999;
+        vm.assume(invalidContextId != protocolConfig.getCurrentKmsContextId());
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidId));
-        protocolConfig.destroyKmsContext(invalidId);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidContextId));
+        protocolConfig.destroyKmsContext(invalidContextId);
     }
 
     function test_revertDestroyAlreadyDestroyedContext() public {
@@ -414,9 +393,10 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     // View-function guards (invalid & destroyed contexts)
     // -----------------------------------------------------------------------
 
-    function test_revertViewFunctionsForInvalidContext() public {
+    function testFuzz_revertViewFunctionsForInvalidContext(uint256 invalidContextId) public {
         _setupDefault();
-        _expectAllViewsRevertForContext(KMS_CONTEXT_COUNTER_BASE + 999);
+        vm.assume(invalidContextId != protocolConfig.getCurrentKmsContextId());
+        _expectAllViewsRevertForContext(invalidContextId);
     }
 
     function test_revertViewFunctionsForDestroyedContext() public {
