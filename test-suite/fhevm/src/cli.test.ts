@@ -115,11 +115,13 @@ describe("cli", () => {
     const result = await execCli(["test", "list"]);
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("standard");
+    expect(result.stdout).toContain("js-sdk - standard");
     expect(result.stdout).toContain("multi-chain-isolation");
     expect(result.stdout).toContain("ciphertext-drift - standard, 2+ coprocessors");
   });
 
-  test("standard suite includes multi-chain isolation coverage", () => {
+  test("standard suite includes client and multi-chain coverage", () => {
+    expect(STANDARD_TEST_PROFILES).toContain("js-sdk");
     expect(STANDARD_TEST_PROFILES).toContain("multi-chain-isolation");
   });
 

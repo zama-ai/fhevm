@@ -34,25 +34,34 @@ const coprocessorAddress = requireEnv(
   'FHEVM_EXECUTOR_CONTRACT_ADDRESS',
 );
 
-const inputAdd = process.env.INPUT_VERIFIER_CONTRACT_ADDRESS || defaults?.inputVerifierContractAddress;
-if (!inputAdd) throw new Error('INPUT_VERIFIER_CONTRACT_ADDRESS is required');
+const inputAdd = requireEnv(
+  process.env.INPUT_VERIFIER_CONTRACT_ADDRESS || defaults?.inputVerifierContractAddress,
+  'INPUT_VERIFIER_CONTRACT_ADDRESS',
+);
 
-const gatewayChainID = Number(process.env.CHAIN_ID_GATEWAY) || defaults?.gatewayChainId;
-if (!gatewayChainID) throw new Error('CHAIN_ID_GATEWAY is required');
+const gatewayChainID = (() => {
+  const value = Number(process.env.CHAIN_ID_GATEWAY) || defaults?.gatewayChainId;
+  if (!value) throw new Error('CHAIN_ID_GATEWAY is required');
+  return value;
+})();
 
-const hostChainID = Number(process.env.CHAIN_ID_HOST) || defaults?.chainId;
-if (!hostChainID) throw new Error('CHAIN_ID_HOST is required');
+const hostChainID = (() => {
+  const value = Number(process.env.CHAIN_ID_HOST) || defaults?.chainId;
+  if (!value) throw new Error('CHAIN_ID_HOST is required');
+  return value;
+})();
 
-const verifyingContractAddressDecryption =
-  process.env.DECRYPTION_ADDRESS || defaults?.verifyingContractAddressDecryption;
-if (!verifyingContractAddressDecryption) throw new Error('DECRYPTION_ADDRESS is required');
+const verifyingContractAddressDecryption = requireEnv(
+  process.env.DECRYPTION_ADDRESS || defaults?.verifyingContractAddressDecryption,
+  'DECRYPTION_ADDRESS',
+);
 
-const verifyingContractAddressInputVerification =
-  process.env.INPUT_VERIFICATION_ADDRESS || defaults?.verifyingContractAddressInputVerification;
-if (!verifyingContractAddressInputVerification) throw new Error('INPUT_VERIFICATION_ADDRESS is required');
+const verifyingContractAddressInputVerification = requireEnv(
+  process.env.INPUT_VERIFICATION_ADDRESS || defaults?.verifyingContractAddressInputVerification,
+  'INPUT_VERIFICATION_ADDRESS',
+);
 
-const relayerUrl = process.env.RELAYER_URL || defaults?.relayerUrl;
-if (!relayerUrl) throw new Error('RELAYER_URL is required');
+const relayerUrl = requireEnv(process.env.RELAYER_URL || defaults?.relayerUrl, 'RELAYER_URL');
 
 // API key is a secret - support hardhat vars for secure storage
 // Auth is optional since internal smoke tests don't go through Kong
@@ -85,4 +94,15 @@ export const createInstance = async () => {
 };
 
 // Export coprocessor config addresses for smoke tests
-export { aclAddress, coprocessorAddress, kmsVerifierAddress };
+export {
+  aclAddress,
+  apiKey,
+  coprocessorAddress,
+  gatewayChainID,
+  hostChainID,
+  inputAdd as inputVerifierAddress,
+  kmsVerifierAddress,
+  relayerUrl,
+  verifyingContractAddressDecryption,
+  verifyingContractAddressInputVerification,
+};

@@ -61,6 +61,7 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "paused-gateway-contracts": "Run pause-mode checks with gateway contracts paused.",
   "input-proof": "Run basic user input proof coverage.",
   "input-proof-compute-decrypt": "Run compute-and-decrypt input proof coverage.",
+  "js-sdk": "Run SDK package client coverage against the e2e stack.",
   "user-decryption": "Run user decryption coverage.",
   "delegated-user-decryption": "Run delegated user decryption coverage.",
   "public-decryption": "Run async public decryption coverage.",

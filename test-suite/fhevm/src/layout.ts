@@ -247,6 +247,7 @@ export const TEST_GREP: Record<string, string> = {
     "test paused gateway user input|test paused gateway HTTP public decrypt",
   "input-proof": "test user input uint64",
   "input-proof-compute-decrypt": "test add 42 to uint64 input and decrypt",
+  "js-sdk": "js-sdk encrypts uint64 input and decrypts computed result",
   "user-decryption": "test user decrypt",
   "delegated-user-decryption": "test delegated user decrypt",
   "public-decryption":
@@ -278,6 +279,7 @@ export const STANDARD_TEST_PROFILES = [
   "coprocessor-db-state-revert",
   "input-proof",
   "input-proof-compute-decrypt",
+  "js-sdk",
   "user-decryption",
   "delegated-user-decryption",
   "erc20",

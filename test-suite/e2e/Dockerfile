@@ -1,4 +1,4 @@
-ARG NODE_VERSION=20.19.1-alpine3.21
+ARG NODE_VERSION=22.15.1-alpine3.21
 ARG RELAYER_SDK_VERSION=""
 
 # --- Builder Stage ---
@@ -24,6 +24,7 @@ RUN addgroup -g 10001 fhevm && \
 # Copy only dependency manifests first for better cache reuse
 COPY package.json package-lock.json ./
 COPY library-solidity/package.json ./library-solidity/package.json
+COPY sdk/js-sdk/package.json ./sdk/js-sdk/package.json
 COPY test-suite/e2e/package.json ./test-suite/e2e/
 
 # Install dependencies
@@ -35,7 +36,17 @@ RUN npm ci && \
 
 # Copy sources after deps are cached
 COPY library-solidity ./library-solidity
+COPY sdk/js-sdk ./sdk/js-sdk
 COPY test-suite/e2e ./test-suite/e2e
+
+RUN npm run --workspace @fhevm/sdk build:cjs && \
+    npm run --workspace @fhevm/sdk build:esm && \
+    npm run --workspace @fhevm/sdk build:types && \
+    cd /app/sdk/js-sdk/src && \
+    npm pack --pack-destination /tmp && \
+    rm -rf /app/node_modules/@fhevm/sdk && \
+    mkdir -p /app/node_modules/@fhevm/sdk && \
+    tar -xzf /tmp/fhevm-sdk-*.tgz -C /app/node_modules/@fhevm/sdk --strip-components=1
 
 WORKDIR /app/test-suite/e2e
 
