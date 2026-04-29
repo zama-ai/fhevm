@@ -151,6 +151,7 @@ jobs:
       RELAYER_MIGRATE_VERSION: ${{ inputs.relayer-migrate-version }}
       RELAYER_VERSION: ${{ inputs.relayer-version }}
       CORE_VERSION: ${{ inputs.kms-core-version }}
+      ORCHESTRATED: ${{ inputs.orchestrated && 'true' || 'false' }}
       SCENARIO: ${{ inputs.scenario || 'two-of-two' }}
       TEST_PROFILE: ${{ inputs.test-profile || 'standard' }}
     runs-on: large_ubuntu_32
@@ -267,8 +268,25 @@ jobs:
         run: |
           echo "COMPAT_OVERRIDES=test-suite" >> "$GITHUB_ENV"
 
+      - name: Require frozen baseline lock for orchestrated runs
+        if: ${{ inputs.compat-test == '' && inputs.orchestrated && inputs.lock-artifact-name == '' && github.event_name != 'workflow_dispatch' }}
+        run: |
+          echo "Orchestrated e2e requires a frozen baseline lock artifact" >&2
+          exit 1
+
       - name: Resolve latest-main lock once
         if: ${{ inputs.compat-test == '' && inputs.lock-artifact-name == '' && !inputs.orchestrated }}
+        working-directory: test-suite/fhevm
+        run: |
+          lock_file="$(./fhevm-cli resolve --target latest-main | tail -n1)"
+          if [ ! -f "$lock_file" ]; then
+            echo "Could not locate resolved lock file: $lock_file" >&2
+            exit 1
+          fi
+          echo "LOCK_FILE=$lock_file" >> "$GITHUB_ENV"
+
+      - name: Resolve orchestrated manual baseline lock once
+        if: ${{ inputs.compat-test == '' && inputs.lock-artifact-name == '' && inputs.orchestrated && github.event_name == 'workflow_dispatch' }}
         working-directory: test-suite/fhevm
         run: |
           lock_file="$(./fhevm-cli resolve --target latest-main | tail -n1)"
@@ -284,6 +302,9 @@ jobs:
           args=(--scenario "$SCENARIO")
           if [ -n "${LOCK_FILE:-}" ]; then
             args+=(--lock-file "$LOCK_FILE")
+          elif [ "$ORCHESTRATED" = "true" ]; then
+            echo "Orchestrated e2e requires a frozen baseline lock artifact" >&2
+            exit 1
           else
             args+=(--target latest-main)
           fi
@@ -304,6 +325,9 @@ jobs:
           args=(--scenario "$SCENARIO")
           if [ -n "${LOCK_FILE:-}" ]; then
             args+=(--lock-file "$LOCK_FILE")
+          elif [ "$ORCHESTRATED" = "true" ]; then
+            echo "Orchestrated e2e requires a frozen baseline lock artifact" >&2
+            exit 1
           else
             args+=(--target latest-main)
           fi
