@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE kms_key_activation_events\n        SET\n            status = 'ready',\n            key_content_sns_pk = $1,\n            key_content_sks_key = $2,\n            key_content_public = $3,\n            last_updated_at = NOW()\n        WHERE chain_id = $4 AND block_hash = $5 AND key_id = $6\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Oid",
+        "Bytea",
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "abcefbb55f5db1ea419367e43d905f0a27f738fc2ba4877ff9fa0b4458667cbf"
+}
