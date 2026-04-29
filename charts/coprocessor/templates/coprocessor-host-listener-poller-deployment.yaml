@@ -31,6 +31,9 @@ spec:
         {{- with $.Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+        {{- with $.Values.hostListenerPollerShared.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       {{- with $.Values.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}

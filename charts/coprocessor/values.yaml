@@ -81,6 +81,9 @@ commonConfig:
 # -----------------------------------------------------------------------------
 # Global Pod Configuration
 # -----------------------------------------------------------------------------
+# podLabels is merged into every pod template (Deployments + dbMigration Job).
+# Per-component overrides at <component>.podLabels are merged on top and win
+# on key conflict.
 podAnnotations: {}
 podLabels: {}
 
@@ -139,6 +142,9 @@ dbMigration:
     limits:
       cpu: 500m
       memory: 512Mi
+
+  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
+  podLabels: {}
 
   # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
   nodeSelector:
@@ -252,6 +258,9 @@ hostListenerShared:
     # pod replicas and rollouts. Set a stable string per environment.
     service: ""
 
+  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
+  podLabels: {}
+
   # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
   nodeSelector:
   affinity:
@@ -359,6 +368,9 @@ hostListenerPollerShared:
     # falls back to the pod name (metadata.name), which fragments traces across
     # pod replicas and rollouts. Set a stable string per environment.
     service: ""
+
+  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
+  podLabels: {}
 
   # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
   nodeSelector:
@@ -470,6 +482,9 @@ hostListenerCatchupOnlyShared:
     # falls back to the pod name (metadata.name), which fragments traces across
     # pod replicas and rollouts. Set a stable string per environment.
     service: ""
+
+  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
+  podLabels: {}
 
   # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
   nodeSelector:
@@ -648,6 +663,9 @@ gwListener:
     # pod replicas and rollouts. Set a stable string per environment.
     service: ""
 
+  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
+  podLabels: {}
+
   # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
   nodeSelector:
   affinity:
@@ -757,6 +775,9 @@ tfheWorker:
   tracing:
     enabled: false
     service: "tfhe-worker"
+
+  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
+  podLabels: {}
 
   # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
   nodeSelector:
@@ -875,6 +896,9 @@ zkProofWorker:
     # falls back to the pod name (metadata.name), which fragments traces across
     # pod replicas and rollouts. Set a stable string per environment.
     service: ""
+
+  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
+  podLabels: {}
 
   # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
   nodeSelector:
@@ -1027,6 +1051,9 @@ snsWorker:
     # falls back to the pod name (metadata.name), which fragments traces across
     # pod replicas and rollouts. Set a stable string per environment.
     service: ""
+
+  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
+  podLabels: {}
 
   # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
   nodeSelector:
@@ -1195,6 +1222,9 @@ txSender:
     # falls back to the pod name (metadata.name), which fragments traces across
     # pod replicas and rollouts. Set a stable string per environment.
     service: ""
+
+  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
+  podLabels: {}
 
   # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
   nodeSelector:
