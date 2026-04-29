@@ -38,9 +38,18 @@ alloy = { version = "=1.0.38", default-features = false, features = [
 ] }
 anyhow = { version = "=1.0.98", default-features = false }
 async-trait = { version = "=0.1.88", default-features = false }
+# AWS SDK service crates expose a feature `rustls` for the legacy TLS stack (rustls 0.21 + hyper 0.14).
+# Use default-https-client + rt-tokio so only the modern HTTPS client (rustls 0.23) is compiled.
 aws-config = { version = "=1.8.6", default-features = true }
-aws-sdk-kms = { version = "=1.86.0", default-features = true }
-aws-sdk-s3 = { version = "=1.105.0", default-features = true }
+aws-sdk-kms = { version = "=1.86.0", default-features = false, features = [
+    "default-https-client",
+    "rt-tokio",
+] }
+aws-sdk-s3 = { version = "=1.105.0", default-features = false, features = [
+    "default-https-client",
+    "rt-tokio",
+    "sigv4a",
+] }
 clap = { version = "=4.5.47", default-features = true, features = [
     "cargo",
     "derive",
@@ -54,7 +63,7 @@ opentelemetry = "=0.30.0"
 opentelemetry-otlp = { version = "=0.30.0", features = ["grpc-tonic"] }
 opentelemetry_sdk = "=0.30.0"
 prometheus = { version = "=0.14.0", default-features = false, features = ["protobuf"] }
-rustls = { version = "=0.23.31", default-features = false, features = [
+rustls = { version = "=0.23.40", default-features = false, features = [
     "aws-lc-rs",
 ] }
 serde = { version = "=1.0.228", default-features = false, features = [
