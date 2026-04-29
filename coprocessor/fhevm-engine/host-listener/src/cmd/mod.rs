@@ -1075,8 +1075,12 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
 
     // Drift-revert: must run before any DB state reads so we don't read
     // pre-revert state.
-    drift_revert::init(args.database_url.as_str(), cancel_token.clone(), None)
-        .await?;
+    drift_revert::init(
+        db.pool.read().await.clone(),
+        cancel_token.clone(),
+        None,
+    )
+    .await?;
 
     if args.dependent_ops_max_per_chain == 0 {
         let promoted = db.promote_all_dep_chains_to_fast_priority().await?;

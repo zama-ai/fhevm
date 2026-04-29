@@ -403,7 +403,6 @@ pub async fn run_computation_loop(
     events_tx: InternalEvents,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let port = conf.health_checks.port;
-    let db_url = conf.db.url.clone();
 
     let service = Arc::new(
         SwitchNSquashService::create(
@@ -430,7 +429,7 @@ pub async fn run_computation_loop(
         anyhow::Ok(())
     });
 
-    drift_revert::init(db_url.as_str(), token.clone(), None).await?;
+    drift_revert::init(pool_mngr.pool().clone(), token.clone(), None).await?;
 
     // Run the main service loop
     service.run(pool_mngr).await;

@@ -3,7 +3,7 @@ use std::time::Duration;
 use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
-use fhevm_engine_common::database::resolve_database_url_from_option;
+use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
 use fhevm_engine_common::{
     drift_revert::{self, RevertRunnerConfig},
     metrics_server, telemetry,
@@ -14,6 +14,7 @@ use gw_listener::gw_listener::GatewayListener;
 use gw_listener::http_server::HttpServer;
 use gw_listener::ConfigSettings;
 use humantime::parse_duration;
+use sqlx::postgres::PgPoolOptions;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Level};
@@ -243,9 +244,16 @@ async fn main() -> anyhow::Result<()> {
         "Starting HTTP health check server"
     );
 
+    let (db_pool, _pool_refresh_handle) = connect_pool_with_options(
+        &config.database_url,
+        PgPoolOptions::new().max_connections(config.database_pool_size),
+        Some(&cancel_token),
+    )
+    .await?;
+
     // gw-listener is the revert runner — it runs the revert SQL if pending.
     drift_revert::init(
-        config.database_url.as_str(),
+        db_pool.clone(),
         cancel_token.clone(),
         Some(RevertRunnerConfig {
             grace_period: config.drift_auto_revert_grace_period,
@@ -255,7 +263,7 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
 
-    let gw_listener_fut = tokio::spawn(async move { gw_listener.run().await });
+    let gw_listener_fut = tokio::spawn(async move { gw_listener.run(db_pool).await });
 
     let gw_listener_res = gw_listener_fut.await;
     let http_server_res = http_server_fut.await;

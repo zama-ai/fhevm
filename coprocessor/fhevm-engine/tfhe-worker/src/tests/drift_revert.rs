@@ -838,7 +838,7 @@ async fn init_handles_pending_signal_and_spawns_watcher() {
     let mock = MockReExec::new();
 
     // init as runner: handles the pending signal (revert + mark done).
-    drift_revert::init_with_reexec(db.db_url(), cancel.clone(), Some(cfg), mock)
+    drift_revert::init_with_reexec(pool.clone(), cancel.clone(), Some(cfg), mock)
         .await
         .expect("init");
 

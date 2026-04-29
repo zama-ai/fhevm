@@ -1,6 +1,8 @@
 use ::tracing::{error, info};
+use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
 use fhevm_engine_common::keys::{FhevmKeys, SerializedFhevmKeys};
 use fhevm_engine_common::{drift_revert, healthz_server, metrics_server, telemetry};
+use sqlx::postgres::PgPoolOptions;
 use tokio_util::sync::CancellationToken;
 
 use std::sync::{Once, OnceLock};
@@ -64,7 +66,7 @@ pub async fn async_main(
     let cancel_token = CancellationToken::new();
     info!(target: "async_main", args = ?args, "Starting runtime with args");
 
-    let database_url = args.database_url.clone().unwrap_or_default();
+    let database_url = resolve_database_url_from_option(args.database_url.clone())?;
 
     let health_check = health_check::HealthCheck::new(database_url.clone());
 
@@ -91,7 +93,13 @@ pub async fn async_main(
         Ok(())
     });
 
-    drift_revert::init(database_url.as_str(), cancel_token.clone(), None).await?;
+    let (drift_revert_pool, _pool_refresh_handle) = connect_pool_with_options(
+        &database_url,
+        PgPoolOptions::new().max_connections(1),
+        Some(&cancel_token),
+    )
+    .await?;
+    drift_revert::init(drift_revert_pool, cancel_token.clone(), None).await?;
 
     if args.run_bg_worker {
         let gpu_enabled = fhevm_engine_common::utils::log_backend();

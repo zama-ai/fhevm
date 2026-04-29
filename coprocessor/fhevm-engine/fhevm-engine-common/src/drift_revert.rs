@@ -11,7 +11,6 @@ use std::sync::LazyLock;
 use std::time::Duration;
 
 use prometheus::{register_int_counter_vec, IntCounterVec};
-use sqlx::postgres::PgPoolOptions;
 use sqlx::{Pool, Postgres, Row};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -680,26 +679,21 @@ async fn run_all_pending_as_runner(
 /// Pass `Some(RevertRunnerConfig)` for the revert runner (e.g. gw-listener),
 /// `None` for all other services.
 pub async fn init(
-    database_url: &str,
+    pool: Pool<Postgres>,
     cancel_token: CancellationToken,
     runner_cfg: Option<RevertRunnerConfig>,
 ) -> anyhow::Result<()> {
-    init_with_reexec(database_url, cancel_token, runner_cfg, ProcessReExec::new()).await
+    init_with_reexec(pool, cancel_token, runner_cfg, ProcessReExec::new()).await
 }
 
 /// Like [`init`] but lets the caller inject a custom `ReExec` implementation.
 /// Primarily used by tests to swap in a mock.
 pub async fn init_with_reexec<R: ReExec + 'static>(
-    database_url: &str,
+    pool: Pool<Postgres>,
     cancel_token: CancellationToken,
     runner_cfg: Option<RevertRunnerConfig>,
     re_exec: R,
 ) -> anyhow::Result<()> {
-    let pool = PgPoolOptions::new()
-        .max_connections(1)
-        .connect(database_url)
-        .await?;
-
     handle_pending_signal_on_startup(&pool, runner_cfg, &cancel_token).await?;
 
     tokio::spawn(async move {

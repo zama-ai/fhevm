@@ -244,9 +244,6 @@ async fn main() -> anyhow::Result<()> {
     let cancel_token = CancellationToken::new();
     install_signal_handlers(cancel_token.clone())?;
 
-    let db_url = conf.database_url.clone().unwrap_or_default();
-    let db_url = db_url.as_str();
-
     // Try to get the chain ID until cancelled.
     let chain_id = tokio::select! {
         chain_id = get_chain_id(
@@ -357,7 +354,7 @@ async fn main() -> anyhow::Result<()> {
     let http_server_fut = tokio::spawn(async move { http_server.start().await });
     metrics_server::spawn(conf.metrics_addr.clone(), cancel_token.child_token());
 
-    drift_revert::init(db_url, cancel_token.clone(), None).await?;
+    drift_revert::init(db_pool.clone(), cancel_token.clone(), None).await?;
 
     let transaction_sender_fut = tokio::spawn(async move { transaction_sender.run().await });
 

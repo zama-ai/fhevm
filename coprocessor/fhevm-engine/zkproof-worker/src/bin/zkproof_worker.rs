@@ -139,7 +139,7 @@ async fn main() {
 
     metrics_server::spawn(args.metrics_addr.clone(), cancel_token.child_token());
 
-    drift_revert::init(conf.database_url.as_str(), cancel_token.clone(), None)
+    drift_revert::init(service.pool(), cancel_token.clone(), None)
         .await
         .unwrap_or_else(|err| {
             error!(error = %err, "Drift-revert init failed");

@@ -112,6 +112,10 @@ impl ZkProofService {
         })
     }
 
+    pub fn pool(&self) -> PgPool {
+        self.pool_mngr.pool().clone()
+    }
+
     pub async fn run(&self) -> Result<(), ExecutionError> {
         execute_verify_proofs_loop(
             self.pool_mngr.clone(),

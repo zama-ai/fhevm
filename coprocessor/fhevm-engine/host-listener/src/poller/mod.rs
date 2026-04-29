@@ -154,7 +154,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
     });
 
     fhevm_engine_common::drift_revert::init(
-        config.database_url.as_str(),
+        db.pool.read().await.clone(),
         cancel_token.clone(),
         None,
     )
