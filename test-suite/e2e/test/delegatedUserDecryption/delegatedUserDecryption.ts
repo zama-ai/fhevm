@@ -1,4 +1,5 @@
 import { expect } from 'chai';
+import type { ContractTransactionResponse } from 'ethers';
 import { ethers } from 'hardhat';
 
 import { aclAddress, createInstances } from '../instance';
@@ -257,7 +258,7 @@ describe('Delegated user decryption', function () {
         );
       await revokeTx.wait();
 
-      // Wait for 15 blocks to ensure revocation is propagated by the coprocessor.
+      // Wait for the coprocessor to absorb the revocation.
       const currentBlock2 = await ethers.provider.getBlockNumber();
       await waitForBlock(currentBlock2 + PROPAGATION_BLOCKS);
 
@@ -392,7 +393,7 @@ describe('Delegated user decryption', function () {
 
     // Send an ACL-mutating tx (delegate / revoke), wait for the receipt, then
     // wait `PROPAGATION_BLOCKS` for the coprocessor to propagate the change.
-    const txAndPropagate = async (call: () => Promise<any>) => {
+    const txAndPropagate = async (call: () => Promise<ContractTransactionResponse>) => {
       const tx = await call();
       await tx.wait();
       await waitForBlock((await ethers.provider.getBlockNumber()) + PROPAGATION_BLOCKS);
