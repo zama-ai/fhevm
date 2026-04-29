@@ -249,7 +249,7 @@ async fn download_and_store_key_activation<
                 public_key_downloaded = public_key.is_some(),
                 "Finished downloading keys for activation"
             );
-            let server_key_sns = server_key
+            let sks_key = server_key
                 .as_ref()
                 .map(|bytes| extract_server_key_without_ns(bytes))
                 .transpose()?;
@@ -257,7 +257,7 @@ async fn download_and_store_key_activation<
                 tx,
                 activation,
                 server_key,
-                server_key_sns,
+                sks_key,
                 public_key,
             )
             .await?)

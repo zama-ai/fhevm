@@ -23,6 +23,7 @@ pub fn extract_server_key_without_ns(
         noise_squashing_key,
         noise_squashing_compression_key,
         re_randomization_keyswitching_key,
+        oprf_key,
         tag,
     ) = server_key.into_raw_parts();
 
@@ -44,6 +45,7 @@ pub fn extract_server_key_without_ns(
         None,                              // noise squashing key excluded
         None, // noise squashing compression key excluded
         re_randomization_keyswitching_key, // rerandomisation keyswitching key excluded
+        oprf_key,
         tag,
     )))
 }

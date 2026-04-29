@@ -237,8 +237,8 @@ pub(crate) async fn activate_ready_key_activations(
             UPDATE keys AS k
             SET
                 pks_key = COALESCE(e.key_content_public, k.pks_key),
-                sks_key = COALESCE(e.key_content_server, k.sks_key),
-                sns_pk = COALESCE(e.key_content_sns_server, k.sns_pk)
+                sks_key = COALESCE(e.key_content_sks_key, k.sks_key),
+                sns_pk = COALESCE(e.key_content_sns_pk, k.sns_pk)
             FROM kms_key_activation_events AS e
             WHERE
                 e.chain_id = $1
@@ -387,14 +387,14 @@ pub(crate) async fn all_pending_key_activations_to_download(
             key_id,
             key_digest_server,
             key_digest_public,
-            key_content_server IS NOT NULL AS has_server_key,
+            key_content_sks_key IS NOT NULL AS has_server_key,
             key_content_public IS NOT NULL AS has_public_key,
             storage_urls
         FROM kms_key_activation_events
         WHERE
             status = 'pending'
             AND (
-                key_content_server IS NULL AND key_digest_server IS NOT NULL
+                key_content_sks_key IS NULL AND key_digest_server IS NOT NULL
                 OR key_content_public IS NULL AND key_digest_public IS NOT NULL
             )
         FOR UPDATE SKIP LOCKED
@@ -475,13 +475,13 @@ pub(crate) async fn all_pending_crs_activations_to_download(
 pub async fn set_ready_key_activation(
     tx: &mut Transaction<'_, Postgres>,
     activation: &PendingKeyActivation,
-    server_key: Option<Vec<u8>>,
-    server_key_sns: Option<Vec<u8>>,
+    sns_pk: Option<Vec<u8>>,
+    sks_key: Option<Vec<u8>>,
     public_key: Option<Vec<u8>>,
 ) -> anyhow::Result<()> {
-    let server_key_sns_oid = if let Some(server_key_sns) = server_key_sns {
+    let sns_pk_oid = if let Some(sns_pk) = sns_pk {
         Some(
-            write_large_object_in_chunks_tx(tx, &server_key_sns, CHUNK_SIZE)
+            write_large_object_in_chunks_tx(tx, &sns_pk, CHUNK_SIZE)
                 .await?,
         )
     } else {
@@ -492,14 +492,14 @@ pub async fn set_ready_key_activation(
         UPDATE kms_key_activation_events
         SET
             status = 'ready',
-            key_content_server = $1,
-            key_content_sns_server = $2,
+            key_content_sns_pk = $1,
+            key_content_sks_key = $2,
             key_content_public = $3,
             last_updated_at = NOW()
         WHERE chain_id = $4 AND block_hash = $5 AND key_id = $6
         "#,
-        server_key,
-        server_key_sns_oid,
+        sns_pk_oid,
+        sks_key,
         public_key,
         activation.chain_id.as_i64(),
         activation.block_hash,
