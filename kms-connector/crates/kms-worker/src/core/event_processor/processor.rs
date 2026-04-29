@@ -103,16 +103,18 @@ pub enum ProcessingError {
 }
 
 /// ERC-1271 (RFC-012) signature errors map onto `ProcessingError` so callers can use the `?`
-/// operator: transport blips retry, every deterministic rejection (bad signature, wrong magic,
-/// revert, malformed return) is terminal — the request will never become valid.
+/// operator. Missing code at an EOA is terminal, but smart-account validation can depend on
+/// mutable wallet state, so negative ERC-1271 results are retried through the existing attempt
+/// and validity-window limits.
 impl From<Erc1271Error> for ProcessingError {
     fn from(err: Erc1271Error) -> Self {
         match err {
-            Erc1271Error::Transport(_) => Self::Recoverable(anyhow::Error::new(err)),
-            Erc1271Error::EoaMismatchNoCode(_)
-            | Erc1271Error::EmptySigOnEoa(_)
+            Erc1271Error::EoaMismatchNoCode(_) | Erc1271Error::EmptySigOnEoa(_) => {
+                Self::Irrecoverable(anyhow::Error::new(err))
+            }
+            Erc1271Error::Transport(_)
             | Erc1271Error::WrongMagic(..)
-            | Erc1271Error::Rejected(..) => Self::Irrecoverable(anyhow::Error::new(err)),
+            | Erc1271Error::Rejected(..) => Self::Recoverable(anyhow::Error::new(err)),
         }
     }
 }
