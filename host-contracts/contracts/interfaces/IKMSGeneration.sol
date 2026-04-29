@@ -176,10 +176,22 @@ interface IKMSGeneration {
     error KeyNotGenerated(uint256 keyId);
 
     /**
+     * @notice Error thrown when an FHE key generation was aborted.
+     * @param keyId The ID of the key.
+     */
+    error KeyAborted(uint256 keyId);
+
+    /**
      * @notice Error thrown when a CRS has not been generated.
      * @param crsId The ID of the CRS.
      */
     error CrsNotGenerated(uint256 crsId);
+
+    /**
+     * @notice Error thrown when a CRS generation was aborted.
+     * @param crsId The ID of the CRS.
+     */
+    error CrsAborted(uint256 crsId);
 
     /**
      * @notice Error thrown when the deserializing of the extra data fails.
@@ -316,6 +328,7 @@ interface IKMSGeneration {
 
     /**
      * @notice Get the KMS transaction sender addresses that propagated valid signatures for a request.
+     * @dev Returns an empty list for requests that are pending or aborted, as no consensus digest is stored.
      * @param requestId The ID of the request.
      * @return The KMS transaction sender addresses.
      */

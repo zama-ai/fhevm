@@ -900,7 +900,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
     }
 
-    function test_abortedKeyViewsMatchGateway() public {
+    function test_revertGetAbortedKeyViews() public {
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
 
@@ -909,10 +909,11 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         kmsGeneration.abortKeygen(prepKeygenId);
 
-        assertEq(uint256(kmsGeneration.getKeyParamsType(keyId)), uint256(IKMSGeneration.ParamsType.Default));
-        (string[] memory keyUrls, IKMSGeneration.KeyDigest[] memory keyDigests) = kmsGeneration.getKeyMaterials(keyId);
-        assertEq(keyUrls.length, 0);
-        assertEq(keyDigests.length, 0);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeyAborted.selector, keyId));
+        kmsGeneration.getKeyParamsType(keyId);
+
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeyAborted.selector, keyId));
+        kmsGeneration.getKeyMaterials(keyId);
     }
 
     function test_crsgenAfterAbort() public {
@@ -935,7 +936,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
     }
 
-    function test_abortedCrsViewsMatchGateway() public {
+    function test_revertGetAbortedCrsViews() public {
         vm.prank(owner);
         kmsGeneration.crsgenRequest(4096, IKMSGeneration.ParamsType.Default);
 
@@ -943,10 +944,11 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         kmsGeneration.abortCrsgen(crsId);
 
-        assertEq(uint256(kmsGeneration.getCrsParamsType(crsId)), uint256(IKMSGeneration.ParamsType.Default));
-        (string[] memory crsUrls, bytes memory crsDigest) = kmsGeneration.getCrsMaterials(crsId);
-        assertEq(crsUrls.length, 0);
-        assertEq(crsDigest.length, 0);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CrsAborted.selector, crsId));
+        kmsGeneration.getCrsParamsType(crsId);
+
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CrsAborted.selector, crsId));
+        kmsGeneration.getCrsMaterials(crsId);
     }
 
     // -----------------------------------------------------------------------
