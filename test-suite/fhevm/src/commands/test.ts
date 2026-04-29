@@ -793,10 +793,6 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     return undefined;
   };
 
-  const ciphertextDriftSkipReason = () =>
-    ciphertextDriftNetworkRequirement(options.network) ??
-    (state.scenario.topology.count < 2 ? "topology has fewer than 2 coprocessors" : ciphertextDriftRequirement());
-
   const ciphertextDriftAutoRecoverySkipReason = () =>
     ciphertextDriftNetworkRequirement(options.network) ??
     (state.scenario.topology.count < 3 ||
@@ -941,6 +937,16 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           `[drift-auto-recovery] drift detected in ${warning.container} for handle 0x${injectedHandleHex}`,
         );
 
+        // Cross-check that drift was visible on chain (≥2 distinct digests
+        // across the AddCiphertextMaterial submissions). Folded in from the
+        // former `ciphertext-drift` profile so this single test covers both
+        // detection and recovery.
+        const ciphertextCommitsAddress = state.discovery!.gateway.CIPHERTEXT_COMMITS_ADDRESS;
+        if (ciphertextCommitsAddress) {
+          const gatewayRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.gateway.http);
+          await assertOnChainDivergence(gatewayRpcUrl, ciphertextCommitsAddress, injectedHandleHex);
+        }
+
         const dbOptions = {
           instanceIndex: faultyInstanceIndex,
           postgresContainer: postgres.postgresContainer,
@@ -1065,13 +1071,6 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           const skipReason = multiChainIsolationSkipReason();
           if (skipReason) {
             console.log(`[test] skipping multi-chain-isolation: ${skipReason}`);
-            continue;
-          }
-        }
-        if (profile === "ciphertext-drift") {
-          const skipReason = ciphertextDriftSkipReason();
-          if (skipReason) {
-            console.log(`[test] skipping ciphertext-drift: ${skipReason}`);
             continue;
           }
         }
