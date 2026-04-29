@@ -1165,8 +1165,11 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         log_iter.reset_for_catchup_loop();
     }
     cancel_token.cancel();
-    background_tasks.abort_all();
-    while background_tasks.join_next().await.is_some() {}
+    for t in background_tasks.join_all().await.iter() {
+        if let Err(err) = t {
+            error!(error = %err, "Error in background task");
+        }
+    }
     anyhow::Result::Ok(())
 }
 
