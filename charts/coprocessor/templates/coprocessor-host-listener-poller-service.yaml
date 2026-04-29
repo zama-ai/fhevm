@@ -1,21 +1,27 @@
-{{- if .Values.hostListenerPoller.enabled }}
+{{- range $i, $chain := .Values.chains }}
+{{- if (($chain.hostListenerPoller).enabled) }}
+{{- $useLegacyName := $chain.hostListenerPoller.useLegacyName | default false -}}
+{{- $deploymentName := ternary (printf "%s-host-listener-poller" $.Release.Name) (printf "%s-host-listener-poller-%s" $.Release.Name $chain.name) $useLegacyName -}}
+{{- $appLabel := ternary "coprocessor-host-listener-poller" (printf "coprocessor-host-listener-poller-%s" $chain.name) $useLegacyName -}}
+---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
-    app: coprocessor-host-listener-poller
-    app.kubernetes.io/name: {{ include "hostListenerPollerName" . }}
-  name: {{ include "hostListenerPollerName" . }}
+    app: {{ $appLabel }}
+    app.kubernetes.io/name: {{ $deploymentName }}
+  name: {{ $deploymentName }}
 spec:
   ports:
     - name: metrics
-      port: {{ .Values.hostListenerPoller.ports.metrics }}
+      port: {{ $.Values.hostListenerPollerShared.ports.metrics }}
       targetPort: metrics
     - name: healthcheck
-      port: {{ .Values.hostListenerPoller.ports.healthcheck }}
+      port: {{ $.Values.hostListenerPollerShared.ports.healthcheck }}
       targetPort: healthcheck
   selector:
-    app: coprocessor-host-listener-poller
-    app.kubernetes.io/name: {{ include "hostListenerPollerName" . }}
+    app: {{ $appLabel }}
+    app.kubernetes.io/name: {{ $deploymentName }}
   type: ClusterIP
+{{- end }}
 {{- end }}

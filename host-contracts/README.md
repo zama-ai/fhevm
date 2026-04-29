@@ -56,6 +56,20 @@ The values to feed into those setter tasks should come from the currently deploy
 environment you are upgrading. A practical source of truth is the verified source bundle of
 the implementation currently behind the proxy, specifically `addresses/FHEVMHostAddresses.sol`.
 
+If the upgrade baseline predates `ProtocolConfig` and `KMSGeneration` (for example
+`UPGRADE_FROM_TAG=v0.11.1` in CI), run:
+
+```bash
+npx hardhat task:ensureMigrationProxyAddresses
+```
+
+This compatibility task only deploys empty UUPS proxies for missing address keys and appends
+the missing generated constants so prepare-upgrade tasks can compile against the current
+source tree. Keep it as a forward-compat safeguard if a manifest contract starts importing
+those generated addresses before the baseline tag catches up. `DEPLOYER_PRIVATE_KEY` is only
+required when the task actually needs to bootstrap missing proxies. Once the baseline tag
+includes those contracts, the task becomes a no-op and the bootstrap step can be removed.
+
 Then run:
 
 ```bash
@@ -89,19 +103,15 @@ KMSVerifier context (ProtocolConfig) or a frozen Gateway contract (KMSGeneration
 
 ### ProtocolConfig migration
 
-Requires one additional env var:
-
-| Variable              | Description                                                                                     |
-| --------------------- | ----------------------------------------------------------------------------------------------- |
-| `EXISTING_CONTEXT_ID` | The context ID from the old KMSVerifier to preserve. Must be `>= KMS_CONTEXT_COUNTER_BASE + 1`. |
+Uses `MIGRATION_CONTEXT_ID` (shared with KMSGeneration — see table below).
 
 ```bash
-EXISTING_CONTEXT_ID="<context_id>" \
+MIGRATION_CONTEXT_ID="<context_id>" \
 npx hardhat task:deployProtocolConfigFromMigration --network <network>
 ```
 
 The migrated ProtocolConfig seeds its internal counter so that the first context it creates
-has exactly `EXISTING_CONTEXT_ID`, preserving context continuity for downstream consumers.
+has exactly `MIGRATION_CONTEXT_ID`, preserving context continuity for downstream consumers.
 
 ### KMSGeneration migration
 
@@ -134,3 +144,16 @@ MIGRATION_KEY_COUNTER="…" \
 # … (all variables above) …
 npx hardhat task:deployKMSGenerationFromMigration --network <network>
 ```
+
+`task:deployProtocolConfigFromMigration` must run before `task:deployKMSGenerationFromMigration`.
+`task:deployKMSGenerationFromMigration` validates the migrated signer / tx-sender consensus sets
+against the canonical `ProtocolConfig` state during initialization.
+
+### Breaking changes for event consumers
+
+`KMSVerifier` no longer emits context-lifecycle events after the migration to canonical
+`ProtocolConfig` state. Off-chain consumers should move to the `ProtocolConfig` emitter at
+`protocolConfigAdd` (`addresses/FHEVMHostAddresses.sol`):
+
+- `KMSVerifier.NewContextSet(uint256,address[],uint256)` -> `ProtocolConfig.NewKmsContext(uint256,KmsNode[],KmsThresholds)`
+- `KMSVerifier.KMSContextDestroyed(uint256)` -> `ProtocolConfig.KmsContextDestroyed(uint256)`

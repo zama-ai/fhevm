@@ -15,12 +15,10 @@ import "./tasks/addHostChains";
 import "./tasks/addPausers";
 import "./tasks/blockExplorerVerify";
 import "./tasks/deployment";
-import "./tasks/generateKmsMaterials";
 import "./tasks/getters";
 import "./tasks/mockedTokenFund";
 import "./tasks/ownership";
 import "./tasks/pauseContracts";
-import "./tasks/reshareKeys";
 import "./tasks/upgradeContracts";
 
 const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || "./.env";

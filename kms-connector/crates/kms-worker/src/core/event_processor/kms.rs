@@ -7,7 +7,10 @@ use connector_utils::types::{KmsGrpcRequest, extra_data::parse_extra_data, u256_
 use fhevm_host_bindings::kms_generation::KMSGeneration::{
     CrsgenRequest, KeygenRequest, PrepKeygenRequest,
 };
-use kms_grpc::kms::v1::{CrsGenRequest, Eip712DomainMsg, KeyGenPreprocRequest, KeyGenRequest};
+use kms_grpc::kms::v1::{
+    CompressedKeyConfig, ComputeKeyType, CrsGenRequest, Eip712DomainMsg, KeyGenPreprocRequest,
+    KeyGenRequest, KeyGenSecretKeyConfig, KeySetConfig, KeySetType, StandardKeySetConfig,
+};
 use tracing::error;
 
 #[derive(Clone)]
@@ -28,7 +31,7 @@ where
         let domain = Eip712DomainMsg {
             name: config.kms_generation_contract.domain_name.clone(),
             version: config.kms_generation_contract.domain_version.clone(),
-            chain_id: U256::from(config.gateway_chain_id).to_be_bytes_vec(),
+            chain_id: U256::from(config.ethereum_chain_id).to_be_bytes_vec(),
             verifying_contract: config.kms_generation_contract.address.to_string(),
             salt: None,
         };
@@ -57,7 +60,7 @@ where
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
             context_id: Some(u256_to_request_id(parsed_extra_data.context_id)),
             // Used to generate other types of key, but not planned to be supported by the Gateway
-            keyset_config: None,
+            keyset_config: Some(UNCOMPRESSED_KEY_SET_CONFIG),
         }))
     }
 
@@ -81,7 +84,7 @@ where
             context_id: Some(u256_to_request_id(parsed_extra_data.context_id)),
             extra_data: keygen_request.extraData.to_vec(),
             // Used to generate other types of key, but not planned to be supported by the Gateway
-            keyset_config: None,
+            keyset_config: Some(UNCOMPRESSED_KEY_SET_CONFIG),
             keyset_added_info: None,
         }))
     }
@@ -119,3 +122,12 @@ where
         }))
     }
 }
+
+const UNCOMPRESSED_KEY_SET_CONFIG: KeySetConfig = KeySetConfig {
+    keyset_type: KeySetType::Standard as i32,
+    standard_keyset_config: Some(StandardKeySetConfig {
+        compute_key_type: ComputeKeyType::Cpu as i32,
+        secret_key_config: KeyGenSecretKeyConfig::GenerateAll as i32,
+        compressed_key_config: CompressedKeyConfig::CompressedNone as i32,
+    }),
+};

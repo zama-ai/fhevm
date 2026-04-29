@@ -86,9 +86,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
     function _deployKMSVerifier(
         address owner,
         address verifyingContractSource,
-        uint64 chainIDSource,
-        address[] memory initialSigners,
-        uint256 initialThreshold
+        uint64 chainIDSource
     ) internal returns (KMSVerifier kmsVerifierProxy, address kmsVerifierImplementation) {
         address emptyProxyImplementation = address(new EmptyUUPSProxy());
 
@@ -105,10 +103,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         vm.prank(owner);
         EmptyUUPSProxy(kmsVerifierAdd).upgradeToAndCall(
             kmsVerifierImplementation,
-            abi.encodeCall(
-                KMSVerifier.initializeFromEmptyProxy,
-                (verifyingContractSource, chainIDSource, initialSigners, initialThreshold)
-            )
+            abi.encodeCall(KMSVerifier.initializeFromEmptyProxy, (verifyingContractSource, chainIDSource))
         );
 
         kmsVerifierProxy = KMSVerifier(kmsVerifierAdd);
@@ -173,8 +168,8 @@ abstract contract HostContractsDeployerTestUtils is Test {
         address kmsVerifyingSource,
         address inputVerifyingSource,
         uint64 chainIDSource,
-        address[] memory kmsSigners,
-        uint256 kmsThreshold,
+        KmsNode[] memory initialKmsNodes,
+        IProtocolConfig.KmsThresholds memory initialThresholds,
         address[] memory inputSigners,
         uint256 inputThreshold
     ) internal {
@@ -182,7 +177,9 @@ abstract contract HostContractsDeployerTestUtils is Test {
         PauserSet pauserSet = _deployPauserSet();
         (FHEVMExecutor fheExecutor, ) = _deployFHEVMExecutor(owner);
         _deployHCULimit(owner);
-        _deployKMSVerifier(owner, kmsVerifyingSource, chainIDSource, kmsSigners, kmsThreshold);
+        (ProtocolConfig protocolConfigProxy, ) = _deployProtocolConfig(owner, initialKmsNodes, initialThresholds);
+        _deployKMSGeneration(owner);
+        _deployKMSVerifier(owner, kmsVerifyingSource, chainIDSource);
         _deployInputVerifier(owner, inputVerifyingSource, chainIDSource, inputSigners, inputThreshold);
 
         vm.prank(owner);
@@ -191,7 +188,11 @@ abstract contract HostContractsDeployerTestUtils is Test {
         require(fheExecutor.getACLAddress() == aclAdd, "executor ACL wiring");
         require(fheExecutor.getHCULimitAddress() == hcuLimitAdd, "executor HCU wiring");
         require(aclProxy.getPauserSetAddress() == pauserSetAdd, "ACL PauserSet wiring");
-        require(KMSVerifier(kmsVerifierAdd).getThreshold() == kmsThreshold, "KMS threshold wiring");
+        require(protocolConfigProxy.getCurrentKmsContextId() != 0, "ProtocolConfig wiring");
+        require(
+            protocolConfigProxy.getPublicDecryptionThreshold() == initialThresholds.publicDecryption,
+            "KMS threshold wiring"
+        );
         require(InputVerifier(inputVerifierAdd).getThreshold() == inputThreshold, "Input threshold wiring");
     }
 
@@ -249,5 +250,26 @@ abstract contract HostContractsDeployerTestUtils is Test {
         vm.etch(pauserSetAdd, address(new PauserSet()).code);
         vm.label(pauserSetAdd, "PauserSet");
         pauserSet = PauserSet(pauserSetAdd);
+    }
+
+    function _defaultThresholds() internal pure returns (IProtocolConfig.KmsThresholds memory) {
+        return IProtocolConfig.KmsThresholds({publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1});
+    }
+
+    function _makeTestNode(address signer, uint256 nodeId) internal pure returns (KmsNode memory) {
+        return
+            KmsNode({
+                txSenderAddress: address(uint160(0xA000 + nodeId)),
+                signerAddress: signer,
+                ipAddress: "127.0.0.1",
+                storageUrl: "https://storage.example.com"
+            });
+    }
+
+    function _makeTestNodes(address[] memory signers) internal pure returns (KmsNode[] memory nodes) {
+        nodes = new KmsNode[](signers.length);
+        for (uint256 i = 0; i < signers.length; i++) {
+            nodes[i] = _makeTestNode(signers[i], i + 1);
+        }
     }
 }

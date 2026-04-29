@@ -1,16 +1,22 @@
-{{- if .Values.hostListenerCatchupOnly.serviceMonitor.enabled -}}
+{{- range $i, $chain := .Values.chains }}
+{{- if and (($chain.hostListenerCatchupOnly).enabled) $.Values.hostListenerCatchupOnlyShared.serviceMonitor.enabled }}
+{{- $useLegacyName := $chain.hostListenerCatchupOnly.useLegacyName | default false -}}
+{{- $deploymentName := ternary (printf "%s-host-listener-catchup-only" $.Release.Name) (printf "%s-host-listener-catchup-only-%s" $.Release.Name $chain.name) $useLegacyName -}}
+{{- $appLabel := ternary "coprocessor-host-listener-catchup-only" (printf "coprocessor-host-listener-catchup-only-%s" $chain.name) $useLegacyName -}}
+---
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   labels:
-    app: coprocessor-host-listener-catchup-only
-    app.kubernetes.io/name: {{ include "hostListenerCatchupOnlyName" . }}
-  name: {{ include "hostListenerCatchupOnlyName" . }}
+    app: {{ $appLabel }}
+    app.kubernetes.io/name: {{ $deploymentName }}
+  name: {{ $deploymentName }}
 spec:
   selector:
     matchLabels:
-      app: coprocessor-host-listener-catchup-only
-      app.kubernetes.io/name: {{ include "hostListenerCatchupOnlyName" . }}
+      app: {{ $appLabel }}
+      app.kubernetes.io/name: {{ $deploymentName }}
   endpoints:
   - port: metrics
-{{- end -}}
+{{- end }}
+{{- end }}

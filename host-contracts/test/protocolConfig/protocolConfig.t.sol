@@ -10,12 +10,11 @@ import {KmsNode} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
+import {KMS_CONTEXT_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {kmsGenerationAdd, protocolConfigAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 
 contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     ProtocolConfig internal protocolConfig;
-
-    uint256 internal constant KMS_CONTEXT_COUNTER_BASE = uint256(0x07) << 248;
 
     address internal constant owner = address(456);
     address internal constant txSender0 = address(0xA1);
@@ -38,10 +37,6 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             });
         }
         return nodes;
-    }
-
-    function _defaultThresholds() internal pure returns (IProtocolConfig.KmsThresholds memory) {
-        return IProtocolConfig.KmsThresholds({publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1});
     }
 
     function _deployEmptyProtocolConfigProxy() internal {
@@ -113,7 +108,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _upgradeProxyExpectRevert(_makeNodes(1), t, expectedRevert);
     }
 
-    /// @dev Asserts all six context-guarded view functions revert for the given context ID.
+    /// @dev Asserts all seven context-guarded view functions revert for the given context ID.
     function _expectAllViewsRevertForContext(uint256 contextId) internal {
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
         protocolConfig.getKmsSignersForContext(contextId);
@@ -132,6 +127,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
         protocolConfig.getUserDecryptionThresholdForContext(contextId);
+
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
+        protocolConfig.getPublicDecryptionThresholdForContext(contextId);
     }
 
     // -----------------------------------------------------------------------
@@ -506,6 +504,29 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertEq(protocolConfig.getUserDecryptionThresholdForContext(secondContextId), 1);
         // Old context still returns the original threshold
         assertEq(protocolConfig.getUserDecryptionThresholdForContext(firstContextId), 2);
+    }
+
+    function test_getPublicDecryptionThresholdForContext() public {
+        _setupDefault();
+        uint256 firstContextId = protocolConfig.getCurrentKmsContextId();
+        assertEq(protocolConfig.getPublicDecryptionThresholdForContext(firstContextId), 1);
+
+        IProtocolConfig.KmsThresholds memory newThresholds = IProtocolConfig.KmsThresholds({
+            publicDecryption: 2,
+            userDecryption: 1,
+            kmsGen: 2,
+            mpc: 1
+        });
+        vm.prank(owner);
+        protocolConfig.defineNewKmsContext(_makeNodes(2, 4), newThresholds);
+        uint256 secondContextId = protocolConfig.getCurrentKmsContextId();
+
+        assertEq(protocolConfig.getPublicDecryptionThresholdForContext(secondContextId), 2);
+        assertEq(protocolConfig.getPublicDecryptionThresholdForContext(firstContextId), 1);
+
+        uint256 invalidId = KMS_CONTEXT_COUNTER_BASE + 999;
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidId));
+        protocolConfig.getPublicDecryptionThresholdForContext(invalidId);
     }
 
     function test_thresholdsAfterContextRotation() public {

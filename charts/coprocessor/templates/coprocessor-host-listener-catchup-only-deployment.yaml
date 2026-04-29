@@ -1,29 +1,35 @@
-{{- if .Values.hostListenerCatchupOnly.enabled -}}
+{{- range $i, $chain := .Values.chains }}
+{{- if (($chain.hostListenerCatchupOnly).enabled) }}
+{{- $useLegacyName := $chain.hostListenerCatchupOnly.useLegacyName | default false -}}
+{{- $deploymentName := ternary (printf "%s-host-listener-catchup-only" $.Release.Name) (printf "%s-host-listener-catchup-only-%s" $.Release.Name $chain.name) $useLegacyName -}}
+{{- $appLabel := ternary "coprocessor-host-listener-catchup-only" (printf "coprocessor-host-listener-catchup-only-%s" $chain.name) $useLegacyName -}}
+{{- $serviceName := coalesce $chain.hostListenerCatchupOnly.serviceName $.Values.hostListenerCatchupOnlyShared.args.serviceName (printf "host-listener-catchup-only-%s" $chain.name) -}}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    app: coprocessor-host-listener-catchup-only
-    app.kubernetes.io/name: {{ include "hostListenerCatchupOnlyName" . }}
-  name: {{ include "hostListenerCatchupOnlyName" . }}
+    app: {{ $appLabel }}
+    app.kubernetes.io/name: {{ $deploymentName }}
+  name: {{ $deploymentName }}
 spec:
-  replicas: {{ .Values.hostListenerCatchupOnly.replicas }}
+  replicas: {{ $.Values.hostListenerCatchupOnlyShared.replicas }}
   selector:
     matchLabels:
-      app: coprocessor-host-listener-catchup-only
-  {{- if .Values.hostListenerCatchupOnly.updateStrategy }}
+      app: {{ $appLabel }}
+  {{- if $.Values.hostListenerCatchupOnlyShared.updateStrategy }}
   strategy:
-    {{- toYaml .Values.hostListenerCatchupOnly.updateStrategy | nindent 4 }}
+    {{- toYaml $.Values.hostListenerCatchupOnlyShared.updateStrategy | nindent 4 }}
   {{- end }}
   template:
     metadata:
       labels:
-        app: coprocessor-host-listener-catchup-only
-        app.kubernetes.io/name: {{ include "hostListenerCatchupOnlyName" . }}
-        {{- with .Values.podLabels }}
+        app: {{ $appLabel }}
+        app.kubernetes.io/name: {{ $deploymentName }}
+        {{- with $.Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- with .Values.podAnnotations }}
+      {{- with $.Values.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -31,89 +37,94 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
-      {{- with .Values.hostListenerCatchupOnly.nodeSelector }}
+      {{- with $.Values.hostListenerCatchupOnlyShared.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.hostListenerCatchupOnly.affinity }}
+      {{- with $.Values.hostListenerCatchupOnlyShared.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.hostListenerCatchupOnly.tolerations }}
+      {{- with $.Values.hostListenerCatchupOnlyShared.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if .Values.hostListenerCatchupOnly.serviceAccountName }}
-      serviceAccountName: {{ .Values.hostListenerCatchupOnly.serviceAccountName }}
+      {{- if $.Values.hostListenerCatchupOnlyShared.serviceAccountName }}
+      serviceAccountName: {{ $.Values.hostListenerCatchupOnlyShared.serviceAccountName }}
       {{- end }}
       containers:
         - name: coprocessor-host-listener-catchup-only
-          image: {{ .Values.hostListenerCatchupOnly.image.name }}:{{ .Values.hostListenerCatchupOnly.image.tag }}
+          image: {{ $.Values.hostListenerCatchupOnlyShared.image.name }}:{{ $.Values.hostListenerCatchupOnlyShared.image.tag }}
           command: ["host_listener"]
           args:
             - --database-url=$(DATABASE_URL)
             - --url=$(ETHEREUM_RPC_URL)
             - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
             - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
-            - --health-port={{ .Values.hostListenerCatchupOnly.ports.healthcheck }}
-            - --dependent-ops-max-per-chain={{ int .Values.commonConfig.dependentOpsMaxPerChain }}
-            - --log-level={{ .Values.hostListenerCatchupOnly.args.logLevel }}
-            - --initial-block-time={{ .Values.hostListenerCatchupOnly.args.initialBlockTime }}
-            - --dependence-cache-size={{ .Values.hostListenerCatchupOnly.args.dependenceCacheSize }}
-            - --reorg-maximum-duration-in-blocks={{ .Values.hostListenerCatchupOnly.args.reorgMaximumDurationInBlocks }}
-            - --service-name={{ .Values.hostListenerCatchupOnly.args.serviceName }}
-            - --catchup-finalization-in-blocks={{ .Values.hostListenerCatchupOnly.args.catchupFinalizationInBlocks }}
-            {{- if .Values.hostListenerCatchupOnly.args.onlyCatchupLoop }}
+            - --health-port={{ $.Values.hostListenerCatchupOnlyShared.ports.healthcheck }}
+            - --dependent-ops-max-per-chain={{ int $.Values.commonConfig.dependentOpsMaxPerChain }}
+            - --log-level={{ $.Values.hostListenerCatchupOnlyShared.args.logLevel }}
+            - --initial-block-time={{ $.Values.hostListenerCatchupOnlyShared.args.initialBlockTime }}
+            - --dependence-cache-size={{ $.Values.hostListenerCatchupOnlyShared.args.dependenceCacheSize }}
+            - --reorg-maximum-duration-in-blocks={{ $.Values.hostListenerCatchupOnlyShared.args.reorgMaximumDurationInBlocks }}
+            - --service-name={{ $serviceName }}
+            - --catchup-finalization-in-blocks={{ $.Values.hostListenerCatchupOnlyShared.args.catchupFinalizationInBlocks }}
+            {{- if $.Values.hostListenerCatchupOnlyShared.args.onlyCatchupLoop }}
             - --only-catchup-loop
             {{- end }}
-            - --end-at-block={{ .Values.hostListenerCatchupOnly.args.endAtBlock }}
-            - --catchup-loop-sleep-secs={{ .Values.hostListenerCatchupOnly.args.catchupLoopSleepSecs }}
+            - --end-at-block={{ $.Values.hostListenerCatchupOnlyShared.args.endAtBlock }}
+            - --catchup-loop-sleep-secs={{ $.Values.hostListenerCatchupOnlyShared.args.catchupLoopSleepSecs }}
             - --coprocessor-api-key=$(TENANT_API_KEY)
-            {{- with .Values.hostListenerCatchupOnly.extraArgs }}
+            {{- with $.Values.hostListenerCatchupOnlyShared.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with $chain.hostListenerCatchupOnly.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
-            - name: DATABASE_URL
-              value: {{ .Values.commonConfig.databaseUrl | quote }}
-            - name: ETHEREUM_RPC_URL
-              value: {{ .Values.commonConfig.hostChainWsUrl | quote }}
+{{- include "coprocessorDatabaseEnv" $ | nindent 12 }}
+            {{- include "coprocessor.renderChainEnvValue" (dict "name" "ETHEREUM_RPC_URL" "value" $chain.wsUrl "valueFrom" $chain.wsUrlValueFrom "fieldName" "wsUrl" "chainName" $chain.name) | nindent 12 }}
             - name: ACL_CONTRACT_ADDRESS
-              value: {{ required "commonConfig.aclContractAddress is required" .Values.commonConfig.aclContractAddress | quote }}
+              value: {{ required (printf "chains entry %q: aclContractAddress is required" $chain.name) $chain.aclContractAddress | quote }}
             - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
-              value: {{ required "commonConfig.fhevmExecutorContractAddress is required" .Values.commonConfig.fhevmExecutorContractAddress | quote }}
-          {{- if default .Values.commonConfig.tracing.enabled .Values.hostListenerCatchupOnly.tracing.enabled }}
+              value: {{ required (printf "chains entry %q: fhevmExecutorContractAddress is required" $chain.name) $chain.fhevmExecutorContractAddress | quote }}
+          {{- if default $.Values.commonConfig.tracing.enabled $.Values.hostListenerCatchupOnlyShared.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: {{ .Values.commonConfig.tracing.endpoint | quote }}
+              value: {{ $.Values.commonConfig.tracing.endpoint | quote }}
             - name: OTEL_SERVICE_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
           {{- end }}
-          {{- with .Values.commonConfig.env }}
+          {{- with $.Values.commonConfig.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.hostListenerCatchupOnly.env }}
+          {{- with $.Values.hostListenerCatchupOnlyShared.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $chain.hostListenerCatchupOnly.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
           ports:
-            {{- range $portName, $portValue := .Values.hostListenerCatchupOnly.ports }}
+            {{- range $portName, $portValue := $.Values.hostListenerCatchupOnlyShared.ports }}
             - name: {{ $portName }}
               containerPort: {{ $portValue }}
               protocol: TCP
             {{- end }}
           resources:
             requests:
-              cpu: {{ .Values.hostListenerCatchupOnly.resources.requests.cpu | default "100m" }}
-              memory: {{ .Values.hostListenerCatchupOnly.resources.requests.memory | default "256Mi" }}
+              cpu: {{ $.Values.hostListenerCatchupOnlyShared.resources.requests.cpu | default "100m" }}
+              memory: {{ $.Values.hostListenerCatchupOnlyShared.resources.requests.memory | default "256Mi" }}
             limits:
-              cpu: {{ .Values.hostListenerCatchupOnly.resources.limits.cpu | default "500m" }}
-              memory: {{ .Values.hostListenerCatchupOnly.resources.limits.memory | default "512Mi" }}
-          {{- if and .Values.hostListenerCatchupOnly.probes .Values.hostListenerCatchupOnly.probes.liveness.enabled }}
+              cpu: {{ $.Values.hostListenerCatchupOnlyShared.resources.limits.cpu | default "500m" }}
+              memory: {{ $.Values.hostListenerCatchupOnlyShared.resources.limits.memory | default "512Mi" }}
+          {{- if and $.Values.hostListenerCatchupOnlyShared.probes $.Values.hostListenerCatchupOnlyShared.probes.liveness.enabled }}
           livenessProbe:
-            {{- toYaml (omit .Values.hostListenerCatchupOnly.probes.liveness "enabled") | nindent 12 }}
+            {{- toYaml (omit $.Values.hostListenerCatchupOnlyShared.probes.liveness "enabled") | nindent 12 }}
           {{- end }}
-          {{- if and .Values.hostListenerCatchupOnly.probes .Values.hostListenerCatchupOnly.probes.readiness.enabled }}
+          {{- if and $.Values.hostListenerCatchupOnlyShared.probes $.Values.hostListenerCatchupOnlyShared.probes.readiness.enabled }}
           readinessProbe:
-            {{- toYaml (omit .Values.hostListenerCatchupOnly.probes.readiness "enabled") | nindent 12 }}
+            {{- toYaml (omit $.Values.hostListenerCatchupOnlyShared.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
-{{- end -}}
+{{- end }}
+{{- end }}

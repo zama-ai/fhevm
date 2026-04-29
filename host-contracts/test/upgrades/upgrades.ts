@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import { ethers, upgrades } from 'hardhat';
 
-import { ACL, ACLUpgradedExample } from '../../types';
+import { ACL, ACLUpgradedExample, ProtocolConfig } from '../../types';
 import { getSigners, initSigners } from '../signers';
 
 async function deployEmptyProxy(factory: any) {
@@ -31,12 +31,12 @@ describe('Upgrades', function () {
     });
     await acl.waitForDeployment();
     const ownerBef = await acl.owner();
-    expect(await acl.getVersion()).to.equal('ACL v0.3.0');
+    expect(await acl.getVersion()).to.equal('ACL v0.4.0');
     const acl2 = await upgrades.upgradeProxy(acl, this.aclFactoryUpgraded);
     await acl2.waitForDeployment();
     const ownerAft = await acl2.owner();
     expect(ownerBef).to.equal(ownerAft);
-    expect(await acl2.getVersion()).to.equal('ACL v0.4.0');
+    expect(await acl2.getVersion()).to.equal('ACL v0.5.0');
     const aclAddress = ethers.getCreateAddress({
       from: this.signers.alice.address,
       nonce: nonceBef + 1,
@@ -115,15 +115,35 @@ describe('Upgrades', function () {
   });
 
   it('deploy upgradeable KMSVerifier', async function () {
-    const kmsFactory = await ethers.getContractFactory('KMSVerifier', this.signers.fred);
+    const kmsFactory = await ethers.getContractFactory('contracts/KMSVerifier.sol:KMSVerifier', this.signers.fred);
     const kmsFactoryUpgraded = await ethers.getContractFactory('KMSVerifierUpgradedExample', this.signers.fred); // because account[5] is set in `.env to be owner of ACL/Host
+    const protocolConfigAddress = dotenv.parse(
+      fs.readFileSync('addresses/.env.host'),
+    ).PROTOCOL_CONFIG_CONTRACT_ADDRESS!;
+    const protocolConfig = (await ethers.getContractAt(
+      'ProtocolConfig',
+      protocolConfigAddress,
+    )) as unknown as ProtocolConfig;
     const emptyUUPS = await deployEmptyProxy(this.emptyUUPSFactory);
-    const kms = await upgrades.upgradeProxy(emptyUUPS, kmsFactory, { unsafeAllow: ['missing-initializer'] });
+    const kms = await upgrades.upgradeProxy(emptyUUPS, kmsFactory, {
+      call: {
+        fn: 'initializeFromEmptyProxy',
+        args: [process.env.DECRYPTION_ADDRESS!, +process.env.CHAIN_ID_GATEWAY!],
+      },
+      unsafeAllow: ['missing-initializer'],
+    });
     await kms.waitForDeployment();
-    expect(await kms.getVersion()).to.equal('KMSVerifier v0.2.0');
+    expect(await kms.getVersion()).to.equal('KMSVerifier v0.3.0');
+
+    const currentContextId = await protocolConfig.getCurrentKmsContextId();
+    const protocolSigners = await protocolConfig.getKmsSignersForContext(currentContextId);
+    expect(await kms.getCurrentKmsContextId()).to.equal(currentContextId);
+    expect(await kms.getKmsSigners()).to.deep.equal(protocolSigners);
+    expect(await kms.isSigner(protocolSigners[0])).to.equal(true);
+
     const kms2 = await upgrades.upgradeProxy(kms, kmsFactoryUpgraded);
     await kms2.waitForDeployment();
-    expect(await kms2.getVersion()).to.equal('KMSVerifier v0.3.0');
+    expect(await kms2.getVersion()).to.equal('KMSVerifier v0.4.0');
   });
 
   it('deploy upgradeable FHEVMExecutor', async function () {
@@ -137,10 +157,10 @@ describe('Upgrades', function () {
       call: { fn: 'initializeFromEmptyProxy' },
     });
     await executor.waitForDeployment();
-    expect(await executor.getVersion()).to.equal('FHEVMExecutor v0.3.0');
+    expect(await executor.getVersion()).to.equal('FHEVMExecutor v0.4.0');
     const executor2 = await upgrades.upgradeProxy(executor, executorFactoryUpgraded);
     await executor2.waitForDeployment();
-    expect(await executor2.getVersion()).to.equal('FHEVMExecutor v0.4.0');
+    expect(await executor2.getVersion()).to.equal('FHEVMExecutor v0.5.0');
   });
 
   it('deploy upgradeable HCULimit', async function () {
@@ -154,7 +174,7 @@ describe('Upgrades', function () {
       },
     });
     await payment.waitForDeployment();
-    expect(await payment.getVersion()).to.equal('HCULimit v0.2.0');
+    expect(await payment.getVersion()).to.equal('HCULimit v0.3.0');
     const payment2 = await upgrades.upgradeProxy(payment, paymentFactoryUpgraded);
     await payment2.waitForDeployment();
     expect(await payment2.getVersion()).to.equal('HCULimit v0.4.0');
@@ -164,11 +184,11 @@ describe('Upgrades', function () {
     const origACLAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).ACL_CONTRACT_ADDRESS;
     const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
     const acl = (await this.aclFactory.attach(origACLAdd, deployer)) as ACL;
-    expect(await acl.getVersion()).to.equal('ACL v0.3.0');
+    expect(await acl.getVersion()).to.equal('ACL v0.4.0');
     const newaclFactoryUpgraded = await ethers.getContractFactory('ACLUpgradedExample', deployer);
     const acl2 = (await upgrades.upgradeProxy(acl, newaclFactoryUpgraded)) as unknown as ACLUpgradedExample;
     await acl2.waitForDeployment();
-    expect(await acl2.getVersion()).to.equal('ACL v0.4.0');
+    expect(await acl2.getVersion()).to.equal('ACL v0.5.0');
     expect(await acl2.getAddress()).to.equal(origACLAdd);
     const newSigner = (await ethers.getSigners())[1];
     await acl2.transferOwnership(newSigner);

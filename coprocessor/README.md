@@ -108,6 +108,12 @@ Options:
 
 For more details on configuration, please check [Coprocessor Configuration](docs/getting_started/fhevm/coprocessor/configuration.md)
 
+For AWS RDS/PostgreSQL IAM authentication, keep `DATABASE_URL` passwordless, for example
+`postgresql://coprocessor@my-db.cluster-xyz.eu-west-2.rds.amazonaws.com:5432/coprocessor`,
+and set `DATABASE_IAM_AUTH_ENABLED=true`. `DATABASE_IAM_REGION` and
+`DATABASE_SSL_ROOT_CERT_PATH` should also be set so the runtime can sign tokens for the correct
+region and enforce `verify-full` TLS with the expected CA bundle.
+
 ##### host-listener
 
 ```bash
@@ -131,7 +137,7 @@ Options:
 
 ```bash
 $ gw_listener --help
-Usage: gw_listener [OPTIONS] --gw-url <GW_URL> --input-verification-address <INPUT_VERIFICATION_ADDRESS> --kms-generation-address <KMS_GENERATION_ADDRESS>
+Usage: gw_listener [OPTIONS] --gw-url <GW_URL> --input-verification-address <INPUT_VERIFICATION_ADDRESS>
 
 Options:
       --database-url <DATABASE_URL>
@@ -143,8 +149,6 @@ Options:
       --gw-url <GW_URL>
           
   -i, --input-verification-address <INPUT_VERIFICATION_ADDRESS>
-          
-      --kms-generation-address <KMS_GENERATION_ADDRESS>
           
       --error-sleep-initial-secs <ERROR_SLEEP_INITIAL_SECS>
           [default: 1]
@@ -168,8 +172,6 @@ Options:
           [default: 100]
       --service-name <SERVICE_NAME>
           gw-listener service name in OTLP traces [default: gw-listener]
-      --catchup-kms-generation-from-block <CATCHUP_KMS_GENERATION_FROM_BLOCK>
-          Can be negative from last processed block
   -h, --help
           Print help
   -V, --version

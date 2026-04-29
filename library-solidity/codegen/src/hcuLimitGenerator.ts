@@ -1,4 +1,4 @@
-import type { PriceData } from './common';
+import type { NBucketedCost, PriceData } from './common';
 
 export function generateSolidityHCULimit(priceData: PriceData): string {
   if (!priceData) {
@@ -21,6 +21,11 @@ export function generateSolidityHCULimit(priceData: PriceData): string {
    * transaction level, including the maximum number of homomorphic complexity units (HCU) per transaction.
    * @dev The contract is designed to be used with the FHEVMExecutor contract.
   */
+/// @dev This contract was migrated from Ownable2StepUpgradeable to ACLOwnable.
+/// Deployed proxies retain residual \`_owner\` and \`_pendingOwner\` values in the
+/// Ownable2StepUpgradeable EIP-7201 storage namespace. These slots are unused
+/// by ACLOwnable and have no effect on contract behavior.
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned if the sender is not the FHEVMExecutor.
     error CallerMustBeFHEVMExecutorContract();
@@ -79,13 +84,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 2;
+    uint256 private constant MINOR_VERSION = 3;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
 
     /// @notice FHEVMExecutor address.
-    address private constant fhevmExecutorAddress = fhevmExecutorAdd;
+    address private constant FHEVM_EXECUTOR_ADDRESS = fhevmExecutorAdd;
 
     /// @custom:storage-location erc7201:fhevm.storage.HCULimit
     /// @dev All five uint48 fields pack into a single 256-bit slot (5 × 48 = 240 bits).
@@ -106,15 +111,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /// Constant used for making sure the version number used in the \`reinitializer\` modifier is
     /// identical between \`initializeFromEmptyProxy\` and the \`reinitializeVX\` method
-    uint64 private constant REINITIALIZER_VERSION = 3;
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.HCULimit")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant HCULimitStorageLocation =
+    bytes32 private constant HCU_LIMIT_STORAGE_LOCATION =
       0xc13af6c514bff8997f30c90003baa82bd02aad978179d1ce58d85c4319ad6500;
 
     function _getHCULimitStorage() internal pure virtual returns (HCULimitStorage storage $) {
         assembly {
-            $.slot := HCULimitStorageLocation
+            $.slot := HCU_LIMIT_STORAGE_LOCATION
         }
     }
 
@@ -137,18 +142,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
-     * @notice Re-initializes the contract from V1.
-     * @param hcuCapPerBlock New global HCU cap per block.
-     * @param maxHCUDepthPerTx Maximum sequential HCU depth per transaction.
-     * @param maxHCUPerTx Maximum total HCU per transaction.
+     * @notice Re-initializes the contract from V2.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV2(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx, uint48 maxHCUPerTx) public virtual reinitializer(REINITIALIZER_VERSION) {
-        _setHCUPerBlock(hcuCapPerBlock);
-        _setMaxHCUPerTx(maxHCUPerTx);
-        _setMaxHCUDepthPerTx(maxHCUDepthPerTx);
-    }
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
 \n\n`;
 
@@ -168,7 +166,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         * @param caller Original caller address from FHEVMExecutor.
          */
          function ${functionName}(FheType resultType, bytes1 scalarByte, bytes32 ct, bytes32 result, address caller) external virtual {
-        if(msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if(msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
     `;
           break;
@@ -184,7 +182,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
          * @param caller Original dapp caller address from FHEVMExecutor.
          */
          function ${functionName}(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external virtual {
-        if(msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if(msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
     `;
           break;
@@ -204,7 +202,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
          * @param caller Original dapp caller address from FHEVMExecutor.
          */
          function ${functionName}(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 /*rhs*/, bytes32 result, address caller) external virtual {
-        if(msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if(msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
            `;
           break;
@@ -221,7 +219,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
          * @param caller Original dapp caller address from FHEVMExecutor.
          */
         function ${functionName}(FheType resultType, bytes32 result, address caller) external virtual {
-        if(msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if(msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
     `;
           break;
@@ -234,7 +232,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         * @param caller Original caller address from FHEVMExecutor.
         */
         function ${functionName}(FheType resultType, bytes32 ct, bytes32 result, address caller) external virtual {
-        if(msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if(msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
     `;
           break;
@@ -249,7 +247,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
          * @param caller Original dapp caller address from FHEVMExecutor.
          */
         function ${functionName}(FheType resultType, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external virtual {
-        if(msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if(msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
     `;
           break;
@@ -264,7 +262,22 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
          * @param caller Original dapp caller address from FHEVMExecutor.
          */
         function ${functionName}(FheType resultType, bytes32 lhs, bytes32 middle, bytes32 rhs, bytes32 result, address caller) external virtual {
-        if(msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        if(msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
+        uint256 opHCU;
+    `;
+          break;
+        case -1:
+          output += `
+        /**
+         * @notice Check the homomorphic complexity units limit for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
+         * @param resultType Result type.
+         * @param values Input ciphertext handles.
+         * @param result Result handle.
+         * @param caller Original dapp caller address from FHEVMExecutor.
+         */
+        function ${functionName}(FheType resultType, bytes32[] calldata values, bytes32 result, address caller) external virtual {
+        if(msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
+        uint256 n = values.length;
         uint256 opHCU;
     `;
           break;
@@ -297,6 +310,9 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
       output += `${generatePriceChecks(data.types)}
       `;
       output += `${generateCheckTransactionLimit(data.numberInputs, false)}`;
+    } else if (data.nBucketed) {
+      output += generateNBucketedPriceChecks(data.nBucketed);
+      output += generateVariadicTransactionLimit();
     } else {
       throw new Error('No prices provided for the operation');
     }
@@ -558,10 +574,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /**
      * @notice Getter function for the FHEVMExecutor contract address.
-     * @return fhevmExecutorAddress Address of the FHEVMExecutor.
+     * @return FHEVM_EXECUTOR_ADDRESS Address of the FHEVMExecutor.
      */
     function getFHEVMExecutorAddress() public view virtual returns (address) {
-        return fhevmExecutorAddress;
+        return FHEVM_EXECUTOR_ADDRESS;
     }
 
     /**
@@ -642,6 +658,49 @@ function generatePriceChecks(prices: { [key: string]: number }): string {
       )
       .join(' else ') + 'else { revert UnsupportedOperation();}'
   );
+}
+
+function generateNBucketedPriceChecks(nBucketed: Partial<Record<string, NBucketedCost>>): string {
+  const typeChecks = Object.entries(nBucketed)
+    .map(([typeName, buckets]) => {
+      if (!buckets) return '';
+      const entries: Array<[number, number]> = [];
+      entries.push([10, buckets.le10]);
+      if (buckets.le30 !== undefined) entries.push([30, buckets.le30]);
+      if (buckets.le60 !== undefined) entries.push([60, buckets.le60]);
+      if (buckets.le100 !== undefined) entries.push([100, buckets.le100]);
+
+      const lines = entries.map(([threshold, cost], i) => {
+        if (i === entries.length - 1) return `else opHCU = ${cost};`;
+        if (i === 0) return `if (n <= ${threshold}) opHCU = ${cost};`;
+        return `else if (n <= ${threshold}) opHCU = ${cost};`;
+      });
+      return `if (resultType == FheType.${typeName}) {
+        ${lines.join('\n        ')}
+      }`;
+    })
+    .join(' else ');
+  return typeChecks + ' else { revert UnsupportedOperation(); }';
+}
+
+function generateVariadicTransactionLimit(): string {
+  return `
+    _updateAndVerifyHCUTransactionLimit(opHCU, caller);
+
+    uint256 maxInputDepth = 0;
+    for (uint256 i = 0; i < values.length; i++) {
+        uint256 inputDepth = _getHCUForHandle(values[i]);
+        if (inputDepth > maxInputDepth) {
+            maxInputDepth = inputDepth;
+        }
+    }
+
+    uint256 totalHCU = opHCU + maxInputDepth;
+    if (totalHCU > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
+        revert HCUTransactionDepthLimitExceeded();
+    }
+    _setHCUForHandle(result, totalHCU);
+  `;
 }
 
 function generateCheckTransactionLimit(numberInputs: number, isScalar: boolean): string {

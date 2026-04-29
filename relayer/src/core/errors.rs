@@ -1,7 +1,9 @@
 use crate::{
     config::settings::AppConfigError,
     gateway::arbitrum::transaction::{engine::GatewayTxnError, fhevm::FhevmError},
-    host::redact_alloy_error,
+    host::{
+        extra_data::ExtraDataError, redact_alloy_error, threshold_resolver::ThresholdResolverError,
+    },
     readiness::ReadinessCheckError,
 };
 use serde::{Deserialize, Serialize};
@@ -75,11 +77,26 @@ pub enum EventProcessingError {
 
     #[error("Host ACL check failed: {0}")]
     HostAclFailed(String),
+
+    #[error("Threshold resolution failed: {0}")]
+    ThresholdResolutionFailed(String),
 }
 
 impl From<GatewayTxnError> for EventProcessingError {
     fn from(e: GatewayTxnError) -> Self {
         EventProcessingError::TransactionError(Box::new(e))
+    }
+}
+
+impl From<ThresholdResolverError> for EventProcessingError {
+    fn from(e: ThresholdResolverError) -> Self {
+        EventProcessingError::ThresholdResolutionFailed(e.to_string())
+    }
+}
+
+impl From<ExtraDataError> for EventProcessingError {
+    fn from(e: ExtraDataError) -> Self {
+        EventProcessingError::ThresholdResolutionFailed(e.to_string())
     }
 }
 

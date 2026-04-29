@@ -1103,4 +1103,141 @@ describe('FHEVM manual operations', function () {
     };
     assert.deepEqual(res.clearValues, expectedRes);
   });
+
+  it('test operator "sum" euint16 - two elements', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add16(1000n);
+    input.add16(2000n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint16(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint16();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 3000n);
+  });
+
+  it('test operator "sum" euint32 - two elements', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add32(100000n);
+    input.add32(200000n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint32(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint32();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 300000n);
+  });
+
+  it('test operator "sum" euint8 - three elements', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add8(10n);
+    input.add8(20n);
+    input.add8(30n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint8(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.handles[2],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint8();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 60n);
+  });
+
+  it('test operator "sum" euint64 - two elements', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add64(1000000n);
+    input.add64(2000000n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint64(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint64();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 3000000n);
+  });
+
+  it('test operator "sum" euint128 - two elements', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add128(100000000000000000000n);
+    input.add128(200000000000000000000n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint128(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint128();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 300000000000000000000n);
+  });
+
+  it('test operator "sum" euint8 - duplicate handle counted twice', async function () {
+    const value = 7;
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add8(value);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint8_duplicate(
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint8();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], value * 2);
+  });
+
+  it('test operator "sum" euint8 - uninitialized element treated as 0', async function () {
+    const tx = await this.contract.test_sum_euint8_uninitialized();
+    await tx.wait();
+    const handle = await this.contract.resEuint8();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 5n);
+  });
+
+  it('test operator "sum" euint8 - empty array returns 0', async function () {
+    const tx = await this.contract.test_sum_euint8_empty();
+    await tx.wait();
+    const handle = await this.contract.resEuint8();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 0n);
+  });
+
+  it('test operator "sum" euint8 - single element returns fresh handle', async function () {
+    const value = 42;
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add8(value);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint8_single(
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint8();
+    assert.notEqual(handle, encryptedAmount.handles[0]);
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], BigInt(value));
+  });
+
+  it('test operator "sum" euint8 - 100 elements at max array size', async function () {
+    const tx = await this.contract.test_sum_euint8_max_array();
+    await tx.wait();
+    const handle = await this.contract.resEuint8();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 100n);
+  });
 });

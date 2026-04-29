@@ -30,6 +30,8 @@ task('task:deployAllHostContracts').setAction(async function (_, hre) {
 
   await hre.run('task:deployACL');
   await hre.run('task:deployFHEVMExecutor');
+  await hre.run('task:deployProtocolConfig');
+  await hre.run('task:deployKMSGeneration');
   await hre.run('task:deployKMSVerifier');
   await hre.run('task:deployInputVerifier');
   await hre.run('task:deployHCULimit');
@@ -144,7 +146,32 @@ task('task:deployFHEVMExecutor').setAction(async function (_taskArguments: TaskA
 // KMSVerifier
 ////////////////////////////////////////////////////////////////////////////////
 
-task('task:deployKMSVerifier').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
+function buildKmsNodes() {
+  const numSigners = +getRequiredEnvVar('NUM_KMS_NODES');
+  const nodes = [];
+  for (let idx = 0; idx < numSigners; idx++) {
+    const signerAddress = getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`);
+    nodes.push({
+      txSenderAddress: signerAddress,
+      signerAddress,
+      ipAddress: '',
+      storageUrl: '',
+    });
+  }
+  return nodes;
+}
+
+function buildKmsThresholds() {
+  const threshold = +getRequiredEnvVar('KMS_THRESHOLD');
+  return {
+    publicDecryption: threshold,
+    userDecryption: threshold,
+    kmsGen: threshold,
+    mpc: threshold,
+  };
+}
+
+task('task:deployKMSVerifier').setAction(async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
@@ -153,24 +180,56 @@ task('task:deployKMSVerifier').setAction(async function (taskArguments: TaskArgu
   const proxyAddress = parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
 
-  const verifyingContractSource = process.env.DECRYPTION_ADDRESS!;
-  const chainIDSource = +process.env.CHAIN_ID_GATEWAY!;
-  const initialThreshold = +process.env.KMS_THRESHOLD!;
-  let initialSigners: string[] = [];
-  const numSigners = getRequiredEnvVar('NUM_KMS_NODES');
-
-  for (let idx = 0; idx < +numSigners; idx++) {
-    const kmsSignerAddress = getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`);
-    initialSigners.push(kmsSignerAddress);
-  }
+  const verifyingContractSource = getRequiredEnvVar('DECRYPTION_ADDRESS');
+  const chainIDSource = +getRequiredEnvVar('CHAIN_ID_GATEWAY');
   await upgrades.upgradeProxy(proxy, newImplem, {
     call: {
       fn: 'initializeFromEmptyProxy',
-      args: [verifyingContractSource, chainIDSource, initialSigners, initialThreshold],
+      args: [verifyingContractSource, chainIDSource],
     },
   });
   console.info('KMSVerifier code set successfully at address:', proxyAddress);
-  console.info(`${numSigners} KMS signers were added to KMSVerifier at initialization`);
+});
+
+////////////////////////////////////////////////////////////////////////////////
+// ProtocolConfig
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:deployProtocolConfig').setAction(async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const newImplem = await ethers.getContractFactory('fhevmTemp/contracts/ProtocolConfig.sol:ProtocolConfig', deployer);
+  const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
+  const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+
+  await upgrades.upgradeProxy(proxy, newImplem, {
+    call: {
+      fn: 'initializeFromEmptyProxy',
+      args: [buildKmsNodes(), buildKmsThresholds()],
+    },
+  });
+  console.info('ProtocolConfig code set successfully at address:', proxyAddress);
+});
+
+////////////////////////////////////////////////////////////////////////////////
+// KMSGeneration
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:deployKMSGeneration').setAction(async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const newImplem = await ethers.getContractFactory('fhevmTemp/contracts/KMSGeneration.sol:KMSGeneration', deployer);
+  const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
+  const proxyAddress = parsedEnv.KMS_GENERATION_CONTRACT_ADDRESS;
+  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+
+  await upgrades.upgradeProxy(proxy, newImplem, {
+    call: { fn: 'initializeFromEmptyProxy' },
+  });
+  console.info('KMSGeneration code set successfully at address:', proxyAddress);
 });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -193,8 +252,8 @@ task('task:deployInputVerifier')
 
     const proxyAddress = parsedEnv.INPUT_VERIFIER_CONTRACT_ADDRESS;
     const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-    const verifyingContractSource = process.env.INPUT_VERIFICATION_ADDRESS!;
-    const chainIDSource = +process.env.CHAIN_ID_GATEWAY!;
+    const verifyingContractSource = getRequiredEnvVar('INPUT_VERIFICATION_ADDRESS');
+    const chainIDSource = +getRequiredEnvVar('CHAIN_ID_GATEWAY');
 
     let initialSigners: string[] = [];
     const numSigners = getRequiredEnvVar('NUM_COPROCESSORS');

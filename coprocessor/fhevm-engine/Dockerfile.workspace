@@ -95,7 +95,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cp target/${CARGO_PROFILE}/gw_listener /out/ && \
     cp target/${CARGO_PROFILE}/sns_worker /out/ && \
     cp target/${CARGO_PROFILE}/transaction_sender /out/ && \
-    cp target/${CARGO_PROFILE}/zkproof_worker /out/
+    cp target/${CARGO_PROFILE}/zkproof_worker /out/ && \
+    cp target/${CARGO_PROFILE}/resolve_database_url /out/
 
 # =============================================================================
 # Stage 1b: Build sqlx-cli for db-migration
@@ -108,7 +109,7 @@ WORKDIR /app
 # Install sqlx-cli
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cargo install sqlx-cli --version 0.7.2 \
-    --no-default-features --features postgres --locked
+    --no-default-features --features postgres,rustls --locked
 
 # =============================================================================
 # Stage 2a: tfhe-worker runtime
@@ -196,18 +197,22 @@ FROM cgr.dev/zama.ai/postgres:17 AS db-migration
 
 # Copy sqlx-cli from sqlx_builder
 COPY --from=sqlx_builder /usr/local/cargo/bin/sqlx /usr/local/bin/sqlx
+COPY --from=builder /out/resolve_database_url /usr/local/bin/resolve_database_url
 
 # Copy migrations and initialization script from source
 COPY coprocessor/fhevm-engine/db-migration/initialize_db.sh /initialize_db.sh
 COPY coprocessor/fhevm-engine/db-migration/insert_test_host_chain.sh /insert_test_host_chain.sh
+COPY coprocessor/fhevm-engine/db-migration/prepare_database_url.sh /prepare_database_url.sh
 COPY coprocessor/fhevm-engine/db-migration/migrations /migrations
+COPY coprocessor/fhevm-engine/db-migration/db-scripts /db-scripts
+COPY coprocessor/fhevm-engine/db-migration/revert_coprocessor_db_state.sh /revert_coprocessor_db_state.sh
 
 # Copy user/group from builder for consistency
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
 
 # Set ownership
-RUN chown -R fhevm:fhevm /initialize_db.sh /insert_test_host_chain.sh /migrations
+RUN chown -R fhevm:fhevm /initialize_db.sh /insert_test_host_chain.sh /prepare_database_url.sh /migrations /db-scripts /revert_coprocessor_db_state.sh
 
 USER fhevm:fhevm
 

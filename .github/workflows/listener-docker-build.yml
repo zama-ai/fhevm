@@ -1,0 +1,117 @@
+name: listener-docker-build
+
+on:
+  workflow_call:
+    inputs:
+      is_workflow_call:
+        description: "Indicates if the workflow is called from another workflow"
+        type: boolean
+        default: true
+        required: false
+    secrets:
+      AWS_ACCESS_KEY_S3_USER:
+        required: true
+      AWS_SECRET_KEY_S3_USER:
+        required: true
+      BLOCKCHAIN_ACTIONS_TOKEN:
+        required: true
+      GHCR_READ_TOKEN:
+        required: true
+      CGR_USERNAME:
+        required: true
+      CGR_PASSWORD:
+        required: true
+    outputs:
+      build_result:
+        description: "Result of the build job of this workflow"
+        value: ${{ jobs.build.result }}
+  release:
+    types:
+      - published
+  workflow_dispatch:
+  push:
+    branches: ['main', 'release/*']
+
+permissions: {}
+
+jobs:
+  is-latest-commit:
+    uses: ./.github/workflows/is-latest-commit.yml
+    if: github.event_name == 'push'
+
+  check-changes:
+    if: github.event_name == 'push' || inputs.is_workflow_call
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    secrets:
+      GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+    permissions:
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      docker-image: fhevm/listener/listener-core
+      filters: |
+        listener:
+          - .github/workflows/listener-docker-build.yml
+          - listener/Dockerfile.ci
+          - listener/Cargo.toml
+          - listener/Cargo.lock
+          - listener/crates/**
+          - listener/rust-toolchain.toml
+
+  build:
+    needs: [is-latest-commit, check-changes]
+    concurrency:
+      group: listener-build-${{ github.ref_name }}
+      cancel-in-progress: true
+    if: |
+      always()
+      && (
+        github.event_name == 'release'
+        || github.event_name == 'workflow_dispatch'
+        || (github.event_name == 'push' && needs.is-latest-commit.outputs.is_latest == 'true' && needs.check-changes.outputs.changes == 'true')
+        || (inputs.is_workflow_call && needs.check-changes.outputs.changes == 'true')
+      )
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
+    secrets:
+      AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
+      AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
+    permissions:
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
+      attestations: 'write' # Required to create build attestations
+      packages: 'write' # Required to publish Docker images
+      id-token: 'write' # Required for OIDC authentication
+    with:
+      use-cgr-secrets: true
+      working-directory: "."
+      docker-context: "."
+      push_image: true
+      image-name: "fhevm/listener/listener-core"
+      docker-file: "listener/Dockerfile.ci"
+      app-cache-dir: "fhevm-listener"
+      rust-toolchain-file-path: listener/rust-toolchain.toml
+
+  re-tag-image:
+    needs: [is-latest-commit, check-changes]
+    if: |
+      always()
+      && (
+        github.event_name == 'push' && needs.is-latest-commit.outputs.is_latest == 'true' && needs.check-changes.outputs.changes != 'true'
+      )
+    permissions:
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      packages: 'write' # Required to publish Docker images
+      id-token: 'write' # Required for OIDC authentication
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/listener/listener-core"
+      previous-tag-or-commit: ${{ needs.check-changes.outputs.base-commit }}
+      new-tag-or-commit: ${{ github.event.after }}

@@ -178,6 +178,10 @@ impl RecoveryTestSetup {
             hc.url = format!("http://localhost:{}", self.host_port);
         }
 
+        // Wire protocol_config URL to the host mock server
+        settings.protocol_config.ethereum_http_rpc_url =
+            format!("http://localhost:{}", self.host_port);
+
         // Register default ACL allow-all pattern on host mock
         register_host_acl_allow_all(&self.host_server, &settings.host_chains);
 

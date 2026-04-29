@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH ranked_blocks AS (\n                SELECT id,\n                       ROW_NUMBER() OVER (\n                           ORDER BY block_number DESC, created_at DESC\n                       ) as rn\n                FROM blocks\n                WHERE chain_id = $1\n            )\n            DELETE FROM blocks\n            WHERE chain_id = $1 AND id IN (SELECT id FROM ranked_blocks WHERE rn > $2)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "13863e97044e6a4b779477d74bdc391e60e15e489392e8259d88c0857b97c145"
+}
