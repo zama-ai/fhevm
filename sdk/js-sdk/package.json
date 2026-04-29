@@ -18,6 +18,7 @@
     "prettier:ext": "./scripts/prettier/check-file-casing.sh && ./scripts/prettier/check-import-order.sh ./scripts/prettier/check-no-leading-comment.sh",
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
     "prettier:write": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
+    "test:unit": "npx vitest run --config src/vitest.config.ts --coverage",
     "test:browser": "npx playwright test --config test/browser/playwright.config.ts",
     "test:browser:manual": "npx vite --config test/browser/vite.config.ts",
     "test:fast:testnet": "CHAIN=sepolia npx vitest run --config test/fheTest/vitest.config.ts --exclude '**/**.slow.test.ts' test/fheTest/ethers test/fheTest/viem",
@@ -39,9 +40,11 @@
     "@playwright/test": "^1.58.2",
     "@size-limit/preset-big-lib": "^12.0.1",
     "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^4.1.4",
     "eslint": "^10.0.2",
     "eslint-plugin-jsdoc": "^62.9.0",
     "ethers": "^6.15.0",
+    "prettier": "^3.6.2",
     "size-limit": "^12.0.1",
     "test": "vitest -c ./test/vitest.config.ts",
     "tsx": "^4.21.0",
@@ -50,7 +53,6 @@
     "viem": "^2.46.3",
     "vite": "^7.3.1",
     "vitest": "^4.0.18",
-    "prettier": "^3.6.2",
     "wasm-feature-detect": "^1.8.0"
   },
   "imports": {
