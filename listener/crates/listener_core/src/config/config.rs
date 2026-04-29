@@ -320,6 +320,52 @@ impl Default for CleanerConfig {
     }
 }
 
+/// Catchup consumer configuration.
+///
+/// Controls the broker-side wiring for the `catchup` queue: how many messages
+/// the consumer prefetches in parallel and the idle threshold (in seconds)
+/// after which a pending message becomes eligible for re-claim by the sweeper.
+#[derive(Debug, Deserialize, Clone)]
+pub struct CatchupConfig {
+    #[serde(default = "default_catchup_prefetch")]
+    pub prefetch: usize,
+
+    #[serde(default = "default_catchup_claim_min_idle_secs")]
+    pub claim_min_idle_secs: u64,
+}
+
+fn default_catchup_prefetch() -> usize {
+    5
+}
+fn default_catchup_claim_min_idle_secs() -> u64 {
+    3600
+}
+
+impl Default for CatchupConfig {
+    fn default() -> Self {
+        Self {
+            prefetch: default_catchup_prefetch(),
+            claim_min_idle_secs: default_catchup_claim_min_idle_secs(),
+        }
+    }
+}
+
+impl CatchupConfig {
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        if self.prefetch == 0 {
+            return Err(ConfigError::Validation(
+                "catchup.prefetch_count must be > 0".to_string(),
+            ));
+        }
+        if self.claim_min_idle_secs == 0 {
+            return Err(ConfigError::Validation(
+                "catchup.claim_min_idle_secs must be > 0".to_string(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Deserialize, Clone, Derivative)]
 #[derivative(Debug)]
 pub struct BlockchainConfig {
@@ -341,6 +387,9 @@ pub struct BlockchainConfig {
 
     #[serde(default)]
     pub strategy: StrategyConfig,
+
+    #[serde(default)]
+    pub catchup: CatchupConfig,
 }
 
 fn default_finality_depth() -> u64 {
@@ -376,6 +425,7 @@ impl BlockchainConfig {
             )));
         }
         self.strategy.validate()?;
+        self.catchup.validate()?;
         Ok(())
     }
 }
@@ -862,6 +912,7 @@ mod tests {
                 ..Default::default()
             },
             strategy: StrategyConfig::default(),
+            catchup: CatchupConfig::default(),
         };
         let result = config.validate();
         assert!(result.is_err());
@@ -921,6 +972,7 @@ mod tests {
             finality_depth: default_finality_depth(),
             cleaner: CleanerConfig::default(),
             strategy: StrategyConfig::default(),
+            catchup: CatchupConfig::default(),
         };
         let result = config.validate();
         assert!(result.is_err());
@@ -1038,6 +1090,7 @@ mod tests {
             network: "ethereum-mainnet".to_string(),
             cleaner: CleanerConfig::default(),
             strategy: StrategyConfig::default(),
+            catchup: CatchupConfig::default(),
             finality_depth: 15,
         };
         let result = config.validate();
@@ -1076,6 +1129,7 @@ mod tests {
             network: "ethereum-mainnet".to_string(),
             cleaner: CleanerConfig::default(),
             strategy: StrategyConfig::default(),
+            catchup: CatchupConfig::default(),
             finality_depth: 15,
         };
         let debug_output = format!("{:?}", blockchain_config);
@@ -1120,5 +1174,64 @@ mod tests {
         let result = config.validate();
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("max_connections"));
+    }
+
+    #[test]
+    fn test_catchup_config_defaults() {
+        let config = CatchupConfig::default();
+        assert_eq!(config.prefetch, 5);
+        assert_eq!(config.claim_min_idle_secs, 3600);
+    }
+
+    #[test]
+    fn test_catchup_default_passes_validation() {
+        assert!(CatchupConfig::default().validate().is_ok());
+    }
+
+    #[test]
+    fn test_catchup_rejects_zero_prefetch() {
+        let config = CatchupConfig {
+            prefetch: 0,
+            claim_min_idle_secs: 3600,
+        };
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("prefetch"));
+    }
+
+    #[test]
+    fn test_catchup_rejects_zero_claim_min_idle_secs() {
+        let config = CatchupConfig {
+            prefetch: 5,
+            claim_min_idle_secs: 0,
+        };
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("claim_min_idle_secs")
+        );
+    }
+
+    #[test]
+    fn test_blockchain_validate_propagates_catchup_error() {
+        let config = BlockchainConfig {
+            r#type: "evm".to_string(),
+            chain_id: 1,
+            rpc_url: "https://rpc.example.com".to_string(),
+            network: "ethereum-mainnet".to_string(),
+            finality_depth: 64,
+            cleaner: CleanerConfig::default(),
+            strategy: StrategyConfig::default(),
+            catchup: CatchupConfig {
+                prefetch: 0,
+                claim_min_idle_secs: 3600,
+            },
+        };
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("prefetch"));
     }
 }
