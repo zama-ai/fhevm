@@ -84,6 +84,53 @@ async fn on_drift_detected_creates_signal_with_correct_block() {
 
 #[tokio::test]
 #[serial(db)]
+async fn on_drift_detected_picks_earliest_block_for_duplicate_handle() {
+    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let pool = PgPool::connect(db.db_url()).await.unwrap();
+
+    let earliest = 30;
+    let later = 70;
+
+    // Seed host_chain + computation at the later block first, then add a
+    // second computation row with the same handle at the earlier block.
+    let handle = setup_chain_and_computation(&pool, CHAIN_A, later).await;
+
+    let dup_txn_id: Vec<u8> = vec![0xEE; 32];
+    sqlx::query("INSERT INTO transactions (id, chain_id, block_number) VALUES ($1, $2, $3)")
+        .bind(&dup_txn_id)
+        .bind(CHAIN_A)
+        .bind(earliest)
+        .execute(&pool)
+        .await
+        .expect("insert duplicate transaction");
+    sqlx::query(
+        "INSERT INTO computations (output_handle, dependencies, fhe_operation, is_scalar, \
+         transaction_id, host_chain_id, block_number) \
+         VALUES ($1, ARRAY[]::bytea[], 1, false, $2, $3, $4)",
+    )
+    .bind(&handle)
+    .bind(&dup_txn_id)
+    .bind(CHAIN_A)
+    .bind(earliest)
+    .execute(&pool)
+    .await
+    .expect("insert duplicate computation");
+
+    drift_revert::on_drift_detected(&pool, &handle, CHAIN_A).await;
+
+    let signal = drift_revert::latest_signal(&pool)
+        .await
+        .expect("latest_signal")
+        .expect("should have a signal");
+
+    assert_eq!(
+        signal.offending_host_block_number, earliest,
+        "must pick the earliest block so the revert wipes all duplicates"
+    );
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn on_drift_detected_no_signal_when_handle_not_found() {
     let db = setup_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
@@ -136,6 +183,77 @@ async fn on_drift_detected_skips_when_in_flight() {
         .await
         .expect("second call");
     assert!(result.is_none(), "should skip when in-flight");
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn create_revert_signal_lowers_pending_to_earlier_block() {
+    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let pool = PgPool::connect(db.db_url()).await.unwrap();
+
+    setup_chain_and_computation(&pool, CHAIN_A, 10).await;
+
+    // First detection: signal at block 120. Drifts arriving in computation-
+    // finish order (not host-block order) is the realistic case.
+    let first_id = drift_revert::create_revert_signal(&pool, CHAIN_A, 120)
+        .await
+        .expect("first call")
+        .expect("should create signal");
+
+    // Earlier drift detected later — must pull the existing pending signal
+    // back to 110 so the runner reverts far enough to wipe both.
+    let second_id = drift_revert::create_revert_signal(&pool, CHAIN_A, 110)
+        .await
+        .expect("second call")
+        .expect("should report lowered signal");
+
+    assert_eq!(
+        second_id, first_id,
+        "lowering must reuse the existing signal id, not create a new row"
+    );
+
+    let signal = drift_revert::latest_signal(&pool).await.unwrap().unwrap();
+    assert_eq!(signal.id, second_id);
+    assert_eq!(signal.offending_host_block_number, 110);
+    assert_eq!(signal.status, SignalStatus::Pending);
+
+    // A subsequent detection at a later block must NOT raise the signal back.
+    let third = drift_revert::create_revert_signal(&pool, CHAIN_A, 130)
+        .await
+        .expect("third call");
+    assert!(third.is_none(), "later block must not raise the target");
+    let signal = drift_revert::latest_signal(&pool).await.unwrap().unwrap();
+    assert_eq!(signal.id, second_id);
+    assert_eq!(signal.offending_host_block_number, 110);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn create_revert_signal_does_not_lower_reverting_signal() {
+    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let pool = PgPool::connect(db.db_url()).await.unwrap();
+
+    setup_chain_and_computation(&pool, CHAIN_A, 10).await;
+
+    let id = drift_revert::create_revert_signal(&pool, CHAIN_A, 120)
+        .await
+        .expect("create")
+        .expect("should create");
+
+    // Once the runner has committed (Reverting), an earlier drift detection
+    // must NOT change the in-flight target — the runner is past convergence.
+    drift_revert::update_signal_status(&pool, id, &SignalStatus::Reverting)
+        .await
+        .unwrap();
+
+    let result = drift_revert::create_revert_signal(&pool, CHAIN_A, 110)
+        .await
+        .expect("second call");
+    assert!(result.is_none(), "must not lower a Reverting signal");
+
+    let signal = drift_revert::latest_signal(&pool).await.unwrap().unwrap();
+    assert_eq!(signal.offending_host_block_number, 120);
+    assert_eq!(signal.status, SignalStatus::Reverting);
 }
 
 #[tokio::test]

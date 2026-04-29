@@ -24,7 +24,8 @@ pub const POLL_INTERVAL: Duration = Duration::from_secs(2);
 static SIGNAL_CREATED_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "coprocessor_drift_revert_signal_created_counter",
-        "Number of drift-revert signals created (one per detected consensus drift that required a revert)",
+        "Number of drift-revert signal recordings (one per detected consensus drift; \
+         includes both new signals and existing pending signals lowered to an earlier block)",
         &["host_chain_id"]
     )
     .unwrap()
@@ -106,23 +107,49 @@ pub struct DriftRevertSignal {
     pub status: SignalStatus,
 }
 
-/// Create a new drift revert signal.
-/// Returns `Some(id)` if created, `None` if there's already an in-flight
-/// revert for this host chain. Multiple chains can have concurrent in-flight
-/// signals; the runner processes them one at a time (oldest first).
+/// Record a drift revert signal for `host_chain_id`. Atomically:
+///   - INSERT a new Pending signal if no in-flight signal exists for this chain.
+///   - Else, if a Pending signal exists pointing at a later block, lower its
+///     `offending_host_block_number` to the new (earlier) value.
+///   - Else (Reverting or Pending already at earlier-or-equal
+///     block) no-op.
+///
+/// Lowering matters because drifts can be observed out of host-block order.
+/// The runner commits to whatever block is set when the grace period ends, so
+/// lowering during the grace window pulls the revert target back to the
+/// earliest known drift.
+///
+/// In practice the `lower` branch only fires in the original gw-listener
+/// process, between signal creation and re-exec.
+/// After re-exec, the new process runs the revert during `init` before the
+/// drift detector restarts, meaning this function cannot be called.
+///
+/// Returns `Some(id)` for either action (created or lowered), `None` for
+/// no-op.
 pub async fn create_revert_signal(
     pool: &Pool<Postgres>,
     host_chain_id: i64,
     offending_host_block_number: i64,
 ) -> anyhow::Result<Option<i64>> {
     let row = sqlx::query(
-        "INSERT INTO drift_revert_signal (host_chain_id, offending_host_block_number, status) \
-         SELECT $1, $2, $3 \
-         WHERE NOT EXISTS ( \
-             SELECT 1 FROM drift_revert_signal \
-             WHERE host_chain_id = $1 AND (status = $3 OR status = $4) \
+        "WITH ins AS ( \
+            INSERT INTO drift_revert_signal (host_chain_id, offending_host_block_number, status) \
+            SELECT $1, $2, $3 \
+            WHERE NOT EXISTS ( \
+                SELECT 1 FROM drift_revert_signal \
+                WHERE host_chain_id = $1 AND (status = $3 OR status = $4) \
+            ) \
+            RETURNING id \
+         ), upd AS ( \
+            UPDATE drift_revert_signal \
+            SET offending_host_block_number = $2, updated_at = NOW() \
+            WHERE host_chain_id = $1 \
+              AND status = $3 \
+              AND offending_host_block_number > $2 \
+              AND NOT EXISTS (SELECT 1 FROM ins) \
+            RETURNING id \
          ) \
-         RETURNING id",
+         SELECT id FROM ins UNION ALL SELECT id FROM upd",
     )
     .bind(host_chain_id)
     .bind(offending_host_block_number)
@@ -131,13 +158,7 @@ pub async fn create_revert_signal(
     .fetch_optional(pool)
     .await?;
 
-    match row {
-        Some(r) => {
-            let id: i64 = r.get("id");
-            Ok(Some(id))
-        }
-        None => Ok(None),
-    }
+    Ok(row.map(|r| r.get("id")))
 }
 
 /// Fetch the latest signal row (by id), if any.
@@ -255,9 +276,8 @@ pub async fn on_drift_detected(pool: &Pool<Postgres>, handle: &[u8], host_chain_
     }
 
     let host_block: Option<i64> = match sqlx::query_scalar(
-        "SELECT block_number FROM computations \
-         WHERE output_handle = $1 AND host_chain_id = $2 \
-         LIMIT 1",
+        "SELECT MIN(block_number) FROM computations \
+         WHERE output_handle = $1 AND host_chain_id = $2",
     )
     .bind(handle)
     .bind(host_chain_id)
@@ -286,17 +306,18 @@ pub async fn on_drift_detected(pool: &Pool<Postgres>, handle: &[u8], host_chain_
                 .inc();
             info!(
                 host_chain_id,
-                block, id, "Drift revert signal created successfully"
+                block, id, "Drift revert signal recorded (created or lowered to earlier block)"
             );
         }
         Ok(None) => {
             warn!(
                 host_chain_id,
-                block, "Drift revert signal already in flight, skipping creation"
+                block,
+                "Drift revert signal not recorded: revert already in flight or pending at earlier block"
             );
         }
         Err(e) => {
-            error!(error = %e, "Failed to create drift revert signal");
+            error!(error = %e, "Failed to record drift revert signal");
         }
     }
 }
