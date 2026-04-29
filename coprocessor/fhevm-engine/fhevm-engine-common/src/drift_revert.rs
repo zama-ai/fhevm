@@ -411,17 +411,30 @@ fn prepare_revert_sql(chain_id: i64, to_block_number: i64) -> String {
 
 /// Execute the revert SQL script against the database.
 ///
-/// `to_block = max(1, offending_host_block_number - 1)` — we subtract 1
-/// because the script reverts everything strictly greater than `to_block`,
-/// and we want the offending block itself gone. If ciphertexts from earlier
-/// blocks also drifted (due to out-of-order processing), the drift detector
-/// will catch them eventually in subsequent rounds.
+/// `to_block = offending_host_block_number - 1` — we subtract 1 because the
+/// script reverts everything strictly greater than `to_block`, and we want the
+/// offending block itself gone. If ciphertexts from earlier blocks also
+/// drifted (due to out-of-order processing), the drift detector will catch
+/// them eventually in subsequent rounds.
+///
+/// Refuses to revert when `offending <= 1`: the SQL script rejects
+/// `to_block <= 0`, and clamping to `to_block = 1` would silently leave
+/// block 1's drifted state in place (the SQL only deletes blocks `> to_block`).
+/// Drift on block 1 is realistic only on fresh chains / test environments and
+/// requires operator intervention to wipe the chain explicitly.
 pub async fn execute_revert(
     pool: &Pool<Postgres>,
     host_chain_id: i64,
     offending_host_block_number: i64,
 ) -> anyhow::Result<()> {
-    let to_block_number = (offending_host_block_number - 1).max(1);
+    if offending_host_block_number <= 1 {
+        anyhow::bail!(
+            "refusing auto-revert for offending block {offending_host_block_number} on \
+             chain {host_chain_id}: cannot delete block <= 1 via the revert script — \
+             operator must wipe the chain manually"
+        );
+    }
+    let to_block_number = offending_host_block_number - 1;
 
     info!(
         host_chain_id,

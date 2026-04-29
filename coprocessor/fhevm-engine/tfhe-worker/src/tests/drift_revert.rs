@@ -939,6 +939,35 @@ async fn execute_revert_deletes_computations_after_offending_block() {
 
 #[tokio::test]
 #[serial(db)]
+async fn execute_revert_refuses_when_offending_block_le_1() {
+    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let pool = PgPool::connect(db.db_url()).await.unwrap();
+
+    sqlx::query(
+        "INSERT INTO host_chains (chain_id, name, acl_contract_address) \
+         VALUES ($1, 'test', '0x1')",
+    )
+    .bind(CHAIN_A)
+    .execute(&pool)
+    .await
+    .expect("insert host_chain");
+
+    let err = drift_revert::execute_revert(&pool, CHAIN_A, 1)
+        .await
+        .expect_err("must refuse for offending == 1");
+    assert!(
+        err.to_string().contains("cannot delete block <= 1"),
+        "unexpected error: {err}"
+    );
+
+    // offending == 0 / negative are equally invalid.
+    drift_revert::execute_revert(&pool, CHAIN_A, 0)
+        .await
+        .expect_err("must refuse for offending == 0");
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn init_handles_pending_signal_and_spawns_watcher() {
     let db = setup_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
