@@ -13,7 +13,11 @@ pragma solidity ^0.8.24;
 enum RequestType {
     _deprecated_, // 0: DEPRECATED
     PublicDecrypt, // 1
-    UserDecrypt // 2
+    UserDecrypt, // 2
+    _deprecated_3_, // 3: was PrepKeygen
+    _deprecated_4_, // 4: was Keygen
+    _deprecated_5_, // 5: was Crsgen
+    _deprecated_6_ // 6: was KeyReshare
 }
 
 // Bit position to left shift for initializing the counters
