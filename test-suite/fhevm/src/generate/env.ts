@@ -251,6 +251,18 @@ const validateEnvMaps = (
   for (const env of [...Object.values(envs), ...Object.values(instanceEnvs)]) {
     assertNoGeneratedPlaceholders(env);
   }
+  validateGeneratedKmsThresholds(envs["gateway-sc"], "gateway-sc", [
+    "PUBLIC_DECRYPTION_THRESHOLD",
+    "USER_DECRYPTION_THRESHOLD",
+    "KMS_GENERATION_THRESHOLD",
+  ]);
+  validateGeneratedGatewayMpcThreshold(envs["gateway-sc"]);
+  validateGeneratedKmsThresholds(envs["host-sc"], "host-sc", [
+    "PUBLIC_DECRYPTION_THRESHOLD",
+    "USER_DECRYPTION_THRESHOLD",
+    "KMS_GEN_THRESHOLD",
+    "MPC_THRESHOLD",
+  ]);
 };
 
 /** Renders component and per-instance env maps from state, topology, and discovery. */
