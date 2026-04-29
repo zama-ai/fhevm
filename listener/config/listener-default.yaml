@@ -51,6 +51,9 @@ blockchain:
     compute_block: false
     compute_block_allow_skipping: true
     max_exponential_backoff_ms: 20000
+  catchup:
+    prefetch: 5
+    claim_min_idle_secs: 3600
 
 telemetry:
   enabled: true
