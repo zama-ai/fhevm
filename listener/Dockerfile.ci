@@ -1,0 +1,58 @@
+# syntax=docker/dockerfile:1
+
+# Default must match rust-toolchain.toml; CI overrides via --build-arg
+ARG RUST_IMAGE_VERSION=1.91.1
+
+# ── Builder (self-contained Chainguard dev image + inlined Rust setup) ──
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0-dev AS builder
+
+ARG RUST_IMAGE_VERSION
+
+USER root
+
+# Install build dependencies. Trimmed for pure-Rust + rustls dep tree.
+RUN apk add --no-cache curl bash git gcc libstdc++ build-base openssl-dev
+
+# Create unprivileged fhevm user (matches fhevm convention: uid 10000, gid 10001)
+RUN addgroup -g 10001 fhevm && \
+    adduser -D -u 10000 -G fhevm fhevm
+
+# Install Rust toolchain (pinned to rust-toolchain.toml channel)
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH="/usr/local/cargo/bin:${PATH}" \
+    RUSTFLAGS="-C target-feature=-crt-static" \
+    CC=gcc
+
+SHELL ["/bin/ash", "-o", "pipefail", "-c"]
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    sh -s -- -y --default-toolchain=${RUST_IMAGE_VERSION} --profile=minimal
+
+WORKDIR /app
+COPY listener/ /app/
+
+ENV SQLX_OFFLINE=true
+
+# Build with BuildKit caches for cargo registry and target directory
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/app/target,sharing=locked \
+    cargo build --release -p listener_core && \
+    cp target/release/listener_core /tmp/listener_core
+
+# ── Runtime (minimal Chainguard glibc) ──────────────────────────────────
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS prod
+
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /tmp/listener_core /app/listener_core
+COPY --from=builder --chown=fhevm:fhevm /app/crates/listener_core/migrations/ /app/migrations/
+
+USER fhevm:fhevm
+WORKDIR /app
+
+ENTRYPOINT ["/app/listener_core"]
+CMD ["--config", "/config.yaml"]
+
+# ── Dev (alias of prod; required because common-docker.yml builds --target dev) ──
+FROM prod AS dev

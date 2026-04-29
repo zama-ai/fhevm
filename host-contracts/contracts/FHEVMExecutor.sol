@@ -678,7 +678,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
 
         result = _naryOp(Operators.fheSum, values, resultType);
         HCU_LIMIT.checkHCUForFheSum(resultType, values, result, msg.sender);
-        emit FheSum(msg.sender, values, resultType, result);
+        emit FheSum(msg.sender, values, result);
     }
 
     /**

@@ -152,7 +152,7 @@ const abi = [
   'event FheIfThenElse(address indexed caller, bytes32 control, bytes32 ifTrue, bytes32 ifFalse, bytes32 result)',
   'event FheRand(address indexed caller, uint8 randType, bytes16 seed, bytes32 result)',
   'event FheRandBounded(address indexed caller, uint256 upperBound, uint8 randType, bytes16 seed, bytes32 result)',
-  'event FheSum(address indexed caller, bytes32[] values, uint8 resultType, bytes32 result)',
+  'event FheSum(address indexed caller, bytes32[] values, bytes32 result)',
 ];
 
 async function processAllPastFHEVMExecutorEvents() {
@@ -605,7 +605,7 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       break;
 
     case 'FheSum': {
-      handle = ethers.toBeHex(event.args[3], 32);
+      handle = ethers.toBeHex(event.args[2], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearText = 0n;
       for (const valueHandle of event.args[1] as string[]) {
@@ -1319,7 +1319,7 @@ export function getTxHCUFromTxReceipt(
         break;
 
       case 'FheSum': {
-        handleResult = ethers.toBeHex(event.args[3], 32);
+        handleResult = ethers.toBeHex(event.args[2], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
         if (!type) {

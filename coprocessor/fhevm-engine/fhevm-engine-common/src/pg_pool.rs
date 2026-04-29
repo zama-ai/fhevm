@@ -1,7 +1,9 @@
+use crate::database::{connect_pool_with_options, PoolRefreshHandle};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Executor;
 use sqlx::{Pool, Postgres};
 use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 use tokio::task::{AbortHandle, JoinHandle, JoinSet};
@@ -14,6 +16,7 @@ const CODE_DEADLOCK_DETECTED: &str = "40P01";
 #[derive(Clone)]
 pub struct PostgresPoolManager {
     pool: Pool<Postgres>,
+    _pool_refresh_handle: Arc<PoolRefreshHandle>,
     cancel_token: CancellationToken,
     params: Params,
 }
@@ -31,12 +34,15 @@ impl PostgresPoolManager {
         retry_db_conn_interval: Duration,
         auto_explain_with_min_duration: Option<Duration>,
     ) -> Option<Self> {
+        let database_url = crate::utils::DatabaseURL::from(url.to_owned());
         let pool = loop {
             if cancel_token.is_cancelled() {
                 return None;
             }
 
-            match PgPoolOptions::new()
+            match connect_pool_with_options(
+                &database_url,
+                PgPoolOptions::new()
                 .max_connections(max_connections)
                 .acquire_timeout(acquire_timeout)
                 .after_connect(move |conn, _meta| {
@@ -51,27 +57,32 @@ impl PostgresPoolManager {
                         }
                         Result::<_, sqlx::Error>::Ok(())
                     })
-                })
-                .connect(url)
-                .await {
-                    Ok(p) => break p,
-                    Err(err) => {
-                        error!( error=%err, "Failed to create initial DB pool; retrying...");
-                        sleep(retry_db_conn_interval).await;
-                        continue;
-                    }
+                }),
+                Some(&cancel_token),
+            )
+            .await
+            {
+                Ok((p, refresh_handle)) => {
+                    break (p, Arc::new(refresh_handle));
+                }
+                Err(err) => {
+                    error!( error=%err, "Failed to create initial DB pool; retrying...");
+                    sleep(retry_db_conn_interval).await;
+                    continue;
+                }
                 }
         };
 
         Some(Self {
             params: Params {
-                url: url.to_string(),
+                url: database_url.as_str().to_owned(),
                 acquire_timeout,
                 max_connections,
                 retry_db_conn_interval,
                 auto_explain_with_min_duration,
             },
-            pool,
+            pool: pool.0,
+            _pool_refresh_handle: pool.1,
             cancel_token,
         })
     }

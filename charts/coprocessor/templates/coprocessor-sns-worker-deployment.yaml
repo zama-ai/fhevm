@@ -83,8 +83,7 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
-            - name: DATABASE_URL
-              value: {{ .Values.commonConfig.databaseUrl | quote }}
+{{- include "coprocessorDatabaseEnv" . | nindent 12 }}
             - name: S3_BUCKET_NAME
               value: {{ .Values.snsWorker.config.s3BucketName | quote }}
           {{- if default .Values.commonConfig.tracing.enabled .Values.snsWorker.tracing.enabled }}

@@ -5,6 +5,9 @@ use alloy_primitives::Uint;
 use anyhow::Result;
 use bigdecimal::BigDecimal;
 use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::database::{
+    connect_pool_with_options_and_connect_options, PoolRefreshHandle,
+};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::AllowEvents;
 use fhevm_engine_common::types::SchedulePriority;
@@ -80,6 +83,12 @@ const RECONNECTION_DELAY: Duration = Duration::from_millis(100);
 type DbErrorCode = std::borrow::Cow<'static, str>;
 const STATEMENT_CANCELLED: DbErrorCode = DbErrorCode::Borrowed("57014"); // SQLSTATE code for statement cancelled
 
+fn apply_connection_options(options: PgConnectOptions) -> PgConnectOptions {
+    options.options([
+        ("statement_timeout", "10000"), // 10 seconds
+    ])
+}
+
 fn slow_lane_reset_advisory_lock_key(chain_id: ChainId) -> i64 {
     SLOW_LANE_RESET_ADVISORY_LOCK_KEY_BASE.saturating_add(chain_id.as_i64())
 }
@@ -111,6 +120,7 @@ pub fn retry_on_sqlx_error(err: &SqlxError, retry_count: &mut usize) -> bool {
 pub struct Database {
     url: DatabaseURL,
     pub pool: Arc<RwLock<sqlx::Pool<Postgres>>>,
+    pool_refresh_handle: Arc<RwLock<PoolRefreshHandle>>,
     pub chain_id: ChainId,
     pub dependence_chain: ChainCache,
     pub tick: HeartBeat,
@@ -137,7 +147,7 @@ impl Database {
         chain_id: ChainId,
         dependence_cache_size: u16,
     ) -> Result<Self> {
-        let pool = Self::new_pool(url).await;
+        let (pool, pool_refresh_handle) = Self::new_pool(url).await;
         let bucket_cache = tokio::sync::RwLock::new(lru::LruCache::new(
             std::num::NonZeroU16::new(
                 dependence_cache_size.max(MINIMUM_BUCKET_CACHE_SIZE),
@@ -149,6 +159,7 @@ impl Database {
             url: url.clone(),
             chain_id,
             pool: Arc::new(RwLock::new(pool)),
+            pool_refresh_handle: Arc::new(RwLock::new(pool_refresh_handle)),
             dependence_chain: bucket_cache,
             tick: HeartBeat::default(),
         })
@@ -254,18 +265,18 @@ impl Database {
         Ok(slow_dep_chain_ids)
     }
 
-    async fn new_pool(url: &DatabaseURL) -> PgPool {
-        let options: PgConnectOptions = url.parse().expect("bad url");
-        let options = options.options([
-            ("statement_timeout", "10000"), // 5 seconds
-        ]);
+    async fn new_pool(url: &DatabaseURL) -> (PgPool, PoolRefreshHandle) {
         let connect = || {
-            PgPoolOptions::new()
-                .min_connections(2)
-                .max_lifetime(Duration::from_secs(10 * 60))
-                .max_connections(8)
-                .acquire_timeout(Duration::from_secs(5))
-                .connect_with(options.clone())
+            connect_pool_with_options_and_connect_options(
+                url,
+                PgPoolOptions::new()
+                    .min_connections(2)
+                    .max_lifetime(Duration::from_secs(10 * 60))
+                    .max_connections(8)
+                    .acquire_timeout(Duration::from_secs(5)),
+                None,
+                apply_connection_options,
+            )
         };
         let mut pool = connect().await;
         while let Err(err) = pool {
@@ -289,13 +300,22 @@ impl Database {
 
     pub async fn reconnect(&mut self) {
         tokio::time::sleep(RECONNECTION_DELAY).await;
-        let old_pool = {
-            let new_pool = Self::new_pool(&self.url).await;
+        let (old_pool, old_refresh_handle) = {
+            let (new_pool, new_refresh_handle) =
+                Self::new_pool(&self.url).await;
             let mut pool = self.pool.write().await;
-            std::mem::replace(&mut *pool, new_pool)
+            let mut pool_refresh_handle =
+                self.pool_refresh_handle.write().await;
+            let old_pool = std::mem::replace(&mut *pool, new_pool);
+            let old_refresh_handle = std::mem::replace(
+                &mut *pool_refresh_handle,
+                new_refresh_handle,
+            );
+            (old_pool, old_refresh_handle)
         };
         // doing the close outside out of lock
         old_pool.close().await;
+        drop(old_refresh_handle);
     }
 
     #[allow(clippy::too_many_arguments)]

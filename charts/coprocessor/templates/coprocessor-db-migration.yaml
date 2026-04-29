@@ -42,8 +42,7 @@ spec:
         image: {{ .Values.dbMigration.image.name }}:{{ .Values.dbMigration.image.tag }}
         command: ["/initialize_db.sh"]
         env:
-          - name: DATABASE_URL
-            value: {{ .Values.commonConfig.databaseUrl | quote }}
+{{- include "coprocessorDatabaseEnv" . | nindent 10 }}
         {{- with .Values.commonConfig.env }}
           {{- toYaml . | nindent 10 }}
         {{- end }}
