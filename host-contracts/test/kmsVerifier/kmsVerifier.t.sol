@@ -339,12 +339,16 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, new bytes(0));
     }
 
-    function test_VerifyDecryptionEIP712KMSSignaturesFailsIfDeserializingDecryptionProofFail(
-        uint256 randomValue
+    function testFuzz_VerifyDecryptionEIP712KMSSignaturesFailsIfDeserializingDecryptionProofFail(
+        uint8 numSigners,
+        uint16 rawProofLength
     ) public {
+        numSigners = uint8(bound(uint256(numSigners), 1, type(uint8).max));
+        uint256 proofLength = bound(uint256(rawProofLength), 1, 65 * uint256(numSigners));
         bytes32[] memory handlesList = _generateMockHandlesList(3);
         bytes memory decryptedResult = _mockDecryptedResult();
-        bytes memory decryptionProof = abi.encodePacked(uint8(3), randomValue);
+        bytes memory decryptionProof = new bytes(proofLength);
+        decryptionProof[0] = bytes1(numSigners);
 
         vm.expectRevert(KMSVerifier.DeserializingDecryptionProofFail.selector);
         kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, decryptionProof);
@@ -415,51 +419,37 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
     }
 
-    function test_VerificationFailsWithUnsupportedExtraDataVersion() public {
-        bytes memory extraData = abi.encodePacked(uint8(0x02));
+    function testFuzz_VerificationFailsWithUnsupportedExtraDataVersion(bytes calldata extraData) public {
+        vm.assume(extraData.length != 0);
+        vm.assume(uint8(extraData[0]) != 0x00);
+        vm.assume(uint8(extraData[0]) != 0x01);
+        uint8 version = uint8(extraData[0]);
         (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) = _buildSingleSignerProof(
             privateKeySigner0,
             extraData
         );
 
-        vm.expectRevert(abi.encodeWithSelector(KMSVerifier.UnsupportedExtraDataVersion.selector, uint8(0x02)));
+        vm.expectRevert(abi.encodeWithSelector(KMSVerifier.UnsupportedExtraDataVersion.selector, version));
         kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
     }
 
-    function test_VerificationFailsWithMalformedV1ExtraData() public {
-        bytes32[] memory handlesList = _generateMockHandlesList(3);
-        bytes memory decryptedResult = _mockDecryptedResult();
-        bytes memory extraData = abi.encodePacked(uint8(0x01), uint8(0x42));
-        bytes32 digest = _computeDigest(handlesList, decryptedResult, extraData);
-
-        bytes memory sig = _computeSignature(privateKeySigner0, digest);
-        bytes memory decryptionProof = abi.encodePacked(uint8(1), sig, extraData);
-
-        vm.expectRevert(KMSVerifier.DeserializingExtraDataFail.selector);
-        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, decryptionProof);
-    }
-
-    function test_VerificationFailsForInvalidContextWithV1ExtraData() public {
-        uint256 nonExistentCtx = KMS_CONTEXT_COUNTER_BASE + 999;
+    function testFuzz_VerificationFailsWithMalformedV1ExtraData(bytes calldata malformedSuffix) public {
+        vm.assume(malformedSuffix.length < 32);
+        bytes memory extraData = abi.encodePacked(uint8(0x01), malformedSuffix);
         (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) = _buildSingleSignerProof(
             privateKeySigner0,
-            abi.encodePacked(uint8(0x01), nonExistentCtx)
+            extraData
         );
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, nonExistentCtx));
-        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
 
-        (handlesList, decryptedResult, proof) = _buildSingleSignerProof(
-            privateKeySigner0,
-            abi.encodePacked(uint8(0x01), KMS_CONTEXT_COUNTER_BASE)
-        );
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, KMS_CONTEXT_COUNTER_BASE));
+        vm.expectRevert(KMSVerifier.DeserializingExtraDataFail.selector);
         kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
+    }
 
-        (handlesList, decryptedResult, proof) = _buildSingleSignerProof(
-            privateKeySigner0,
-            abi.encodePacked(uint8(0x01), uint256(0))
-        );
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, uint256(0)));
+    function testFuzz_VerificationFailsForInvalidContextWithV1ExtraData(uint256 invalidCtx) public {
+        vm.assume(invalidCtx != kmsVerifier.getCurrentKmsContextId());
+        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) =
+            _buildSingleSignerProof(privateKeySigner0, abi.encodePacked(uint8(0x01), invalidCtx));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidCtx));
         kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
     }
 
