@@ -64,6 +64,13 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_S3_CONNECT_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
 # s3_connect_timeout = "3s"
 
+# Gas cap for the host-chain `IERC1271.isValidSignature` static call (RFC-012).
+# Bounds resource use when verifying signatures from smart-account users (Safe, Argent,
+# ERC-4337). 100k is the RFC's suggested starting point; tune up for deep multisig
+# thresholds. (optional, defaults to 100000)
+# ENV: KMS_CONNECTOR_ERC1271_GAS_LIMIT
+# erc1271_gas_limit = 100000
+
 # The maximum number of tasks to process events/responses concurrently (optional, defaults to 1000)
 # ENV: KMS_CONNECTOR_TASK_LIMIT
 # task_limit = 1000
