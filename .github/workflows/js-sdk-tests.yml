@@ -94,7 +94,15 @@ jobs:
         run: npm run build
 
       # -----------------------------------------------------------------------
-      # 7. Test
+      # 7. Unit tests
+      #    Runs fast, isolated unit tests (src/**/*.test.ts) with type-checking.
+      #    No network or chain required.
+      # -----------------------------------------------------------------------
+      - name: Run unit tests
+        run: npm run test:unit
+
+      # -----------------------------------------------------------------------
+      # 8. Locahost cleartext chain Test
       #    package.json maps "test" to the local cleartext integration runner,
       #    which starts Anvil, deploys the FHEVM stack, runs only
       #    test/fheTest/viem-cleartext, and then tears the local chain down.
