@@ -1286,7 +1286,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         vm.prank(sender);
 
         vm.expectEmit(true, true, true, true);
-        emit FHEEvents.FheSum(sender, values, FheType(fheType), expectedResult);
+        emit FHEEvents.FheSum(sender, values, expectedResult);
         bytes32 result = fhevmExecutor.fheSum(values, FheType(fheType));
         assertEq(result, expectedResult);
     }
@@ -2045,7 +2045,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         vm.prank(sender);
 
         vm.expectEmit(true, true, true, true);
-        emit FHEEvents.FheSum(sender, values, FheType(fheType), expectedResult);
+        emit FHEEvents.FheSum(sender, values, expectedResult);
         bytes32 result = fhevmExecutor.fheSum(values, FheType(fheType));
         assertEq(result, expectedResult);
     }
@@ -2057,7 +2057,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
 
         vm.prank(sender);
         vm.expectEmit(true, true, true, true);
-        emit FHEEvents.FheSum(sender, empty, FheType.Uint8, expectedResult);
+        emit FHEEvents.FheSum(sender, empty, expectedResult);
         bytes32 result = fhevmExecutor.fheSum(empty, FheType.Uint8);
         assertEq(result, expectedResult);
     }
