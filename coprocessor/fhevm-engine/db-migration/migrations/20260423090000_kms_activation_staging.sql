@@ -1,4 +1,4 @@
-CREATE TABLE kms_key_activation_events (
+CREATE TABLE IF NOT EXISTS kms_key_activation_events (
     chain_id BIGINT NOT NULL CHECK (chain_id >= 0),
     block_hash BYTEA NOT NULL,
     block_number BIGINT NOT NULL,
@@ -27,7 +27,7 @@ CREATE TABLE kms_key_activation_events (
     UNIQUE (chain_id, block_hash, key_id)
 );
 
-CREATE TABLE kms_crs_activation_events (
+CREATE TABLE IF NOT EXISTS kms_crs_activation_events (
     chain_id BIGINT NOT NULL CHECK (chain_id >= 0),
     block_hash BYTEA NOT NULL,
     block_number BIGINT NOT NULL,
