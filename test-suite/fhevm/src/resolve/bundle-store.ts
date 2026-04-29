@@ -11,10 +11,8 @@ import { GitHubApiError } from "../errors";
 import {
   PACKAGE_TO_REPOSITORY,
   applyVersionEnvOverrides,
-  assertSupportedShaBundle,
   resolveTarget,
 } from "./target";
-import { mainCommits } from "./github";
 
 const VERSION_KEYS = Object.keys(PACKAGE_TO_REPOSITORY);
 const SAFE_LOCK_NAME = /^[A-Za-z0-9._-]+\.json$/;
@@ -67,15 +65,7 @@ const validateBundleCompat = async (bundle: VersionBundle) => {
 };
 
 const validateRuntimeCompat = async (bundle: VersionBundle) => {
-  await validateBundleCompat(bundle);
-  if (bundle.target === "sha") {
-    try {
-      assertSupportedShaBundle(bundle, await mainCommits(5000));
-    } catch (error) {
-      throw new GitHubApiError(error instanceof Error ? error.message : String(error));
-    }
-  }
-  return bundle;
+  return validateBundleCompat(bundle);
 };
 
 /** Writes a resolved bundle into the persistent lock directory. */
@@ -154,7 +144,7 @@ const cachedResolve = async (options: CachedResolveOptions) => {
   }
 
   console.log(`[resolve] resolving ${options.target} bundle`);
-  if (options.target === "latest-main" || options.target === "sha") {
+  if (options.target === "latest-main") {
     console.log("[resolve] fetching main commits and published image tags");
   }
   const bundle = await withProgressLogs(resolveTarget(options.target, { sha: options.sha }), `still fetching ${options.target} metadata`);
