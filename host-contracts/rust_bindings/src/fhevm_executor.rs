@@ -2287,8 +2287,7 @@ pub mod FHEVMExecutor {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"`\x80`@R`\x046\x10a\x02/W_5`\xE0\x1C\x80cu\x13\xA4\x04\x11a\x01-W\x80c\xCC\xC4\x80\xA1\x11a\0\xAAW\x80c\xD9\x98\x82\xD5\x11a\0nW\x80c\xD9\x98\x82\xD5\x14a\teW\x80c\xE0xir\x14a\t\xA1W\x80c\xF5\x1C\xCF\xB0\x14a\t\xCBW\x80c\xF6\x85\x9B\xDC\x14a\n\x07W\x80c\xF7\x7F?\x1D\x14a\n1Wa\x02/V[\x80c\xCC\xC4\x80\xA1\x14a\x089W\x80c\xCFM\x18\xAA\x14a\x08uW\x80c\xD5\x80\xC0c\x14a\x08\xB1W\x80c\xD7]n\x8A\x14a\x08\xEDW\x80c\xD8\t,\xBC\x14a\t)Wa\x02/V[\x80c\x91\xF9\x8F\xFE\x11a\0\xF1W\x80c\x91\xF9\x8F\xFE\x14a\x071W\x80c\x9C\xD0z\xCB\x14a\x07mW\x80c\xA8\xC7\xC2\xC1\x14a\x07\xA9W\x80c\xAD<\xB1\xCC\x14a\x07\xD3W\x80c\xC0!2\x9E\x14a\x07\xFDWa\x02/V[\x80cu\x13\xA4\x04\x14a\x06\x17W\x80cw\x02\xDC\xFF\x14a\x06SW\x80cz)\x7FK\x14a\x06\x8FW\x80c\x856.\xE7\x14a\x06\xB9W\x80c\x8BI\xCE\xB4\x14a\x06\xF5Wa\x02/V[\x80c61\x8Dd\x11a\x01\xBBW\x80cW\xF0\xA5h\x11a\x01\x7FW\x80cW\xF0\xA5h\x14a\x04\xEBW\x80cZS\xAC\xCB\x14a\x05'W\x80cc\xA2\xDB)\x14a\x05cW\x80cgT\xB3`\x14a\x05\x9FW\x80cr\x10v\x81\x14a\x05\xDBWa\x02/V[\x80c61\x8Dd\x14a\x04\x17W\x80c9\xF78\x10\x14a\x04SW\x80cH\xEE\xF4~\x14a\x04iW\x80cO\x1E\xF2\x86\x14a\x04\xA5W\x80cR\xD1\x90-\x14a\x04\xC1Wa\x02/V[\x80c\x11{/8\x11a\x02\x02W\x80c\x11{/8\x14a\x03\x11W\x80c\x12:\xBB(\x14a\x03MW\x80c\x13\x91T\x7F\x14a\x03cW\x80c\x18+m\x98\x14a\x03\x9FW\x80c\x1C\x89\xEED\x14a\x03\xDBWa\x02/V[\x80c\x04U\x9Fq\x14a\x023W\x80c\x04\xA8\xD1\x99\x14a\x02oW\x80c\x08\xBF\x83*\x14a\x02\xABW\x80c\r\x8En,\x14a\x02\xE7W[_\x80\xFD[4\x80\x15a\x02>W_\x80\xFD[Pa\x02Y`\x04\x806\x03\x81\x01\x90a\x02T\x91\x90ah\x81V[a\nmV[`@Qa\x02f\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x02zW_\x80\xFD[Pa\x02\x95`\x04\x806\x03\x81\x01\x90a\x02\x90\x91\x90ai}V[a\x0C\x1EV[`@Qa\x02\xA2\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x02\xB6W_\x80\xFD[Pa\x02\xD1`\x04\x806\x03\x81\x01\x90a\x02\xCC\x91\x90aklV[a\x0E\xCBV[`@Qa\x02\xDE\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x02\xF2W_\x80\xFD[Pa\x02\xFBa\x10\xE8V[`@Qa\x03\x08\x91\x90alfV[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x03\x1CW_\x80\xFD[Pa\x037`\x04\x806\x03\x81\x01\x90a\x032\x91\x90ah\x81V[a\x11cV[`@Qa\x03D\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x03XW_\x80\xFD[Pa\x03aa\x13\x13V[\0[4\x80\x15a\x03nW_\x80\xFD[Pa\x03\x89`\x04\x806\x03\x81\x01\x90a\x03\x84\x91\x90ah\x81V[a\x148V[`@Qa\x03\x96\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x03\xAAW_\x80\xFD[Pa\x03\xC5`\x04\x806\x03\x81\x01\x90a\x03\xC0\x91\x90ah\x81V[a\x15\xE9V[`@Qa\x03\xD2\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x03\xE6W_\x80\xFD[Pa\x04\x01`\x04\x806\x03\x81\x01\x90a\x03\xFC\x91\x90al\x86V[a\x17\x9AV[`@Qa\x04\x0E\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x04\"W_\x80\xFD[Pa\x04=`\x04\x806\x03\x81\x01\x90a\x048\x91\x90ah\x81V[a\x1C\xD8V[`@Qa\x04J\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x04^W_\x80\xFD[Pa\x04ga\x1E\x89V[\0[4\x80\x15a\x04tW_\x80\xFD[Pa\x04\x8F`\x04\x806\x03\x81\x01\x90a\x04\x8A\x91\x90al\xF7V[a\x1F\xF9V[`@Qa\x04\x9C\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[a\x04\xBF`\x04\x806\x03\x81\x01\x90a\x04\xBA\x91\x90am5V[a mV[\0[4\x80\x15a\x04\xCCW_\x80\xFD[Pa\x04\xD5a \x8CV[`@Qa\x04\xE2\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x04\xF6W_\x80\xFD[Pa\x05\x11`\x04\x806\x03\x81\x01\x90a\x05\x0C\x91\x90ah\x81V[a \xBDV[`@Qa\x05\x1E\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x052W_\x80\xFD[Pa\x05M`\x04\x806\x03\x81\x01\x90a\x05H\x91\x90ah\x81V[a\"nV[`@Qa\x05Z\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x05nW_\x80\xFD[Pa\x05\x89`\x04\x806\x03\x81\x01\x90a\x05\x84\x91\x90ah\x81V[a$\xBFV[`@Qa\x05\x96\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x05\xAAW_\x80\xFD[Pa\x05\xC5`\x04\x806\x03\x81\x01\x90a\x05\xC0\x91\x90ah\x81V[a&\xB9V[`@Qa\x05\xD2\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x05\xE6W_\x80\xFD[Pa\x06\x01`\x04\x806\x03\x81\x01\x90a\x05\xFC\x91\x90ah\x81V[a(\x8FV[`@Qa\x06\x0E\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x06\"W_\x80\xFD[Pa\x06=`\x04\x806\x03\x81\x01\x90a\x068\x91\x90ah\x81V[a*@V[`@Qa\x06J\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x06^W_\x80\xFD[Pa\x06y`\x04\x806\x03\x81\x01\x90a\x06t\x91\x90am\x8FV[a+\xF1V[`@Qa\x06\x86\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x06\x9AW_\x80\xFD[Pa\x06\xA3a.\x0FV[`@Qa\x06\xB0\x91\x90am\xFAV[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x06\xC4W_\x80\xFD[Pa\x06\xDF`\x04\x806\x03\x81\x01\x90a\x06\xDA\x91\x90ah\x81V[a.\x13V[`@Qa\x06\xEC\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x07\0W_\x80\xFD[Pa\x07\x1B`\x04\x806\x03\x81\x01\x90a\x07\x16\x91\x90ah\x81V[a/\xC4V[`@Qa\x07(\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x07<W_\x80\xFD[Pa\x07W`\x04\x806\x03\x81\x01\x90a\x07R\x91\x90ah\x81V[a1\xBEV[`@Qa\x07d\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x07xW_\x80\xFD[Pa\x07\x93`\x04\x806\x03\x81\x01\x90a\x07\x8E\x91\x90al\xF7V[a3\x94V[`@Qa\x07\xA0\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x07\xB4W_\x80\xFD[Pa\x07\xBDa6\xE1V[`@Qa\x07\xCA\x91\x90an\"V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x07\xDEW_\x80\xFD[Pa\x07\xE7a6\xFCV[`@Qa\x07\xF4\x91\x90alfV[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x08\x08W_\x80\xFD[Pa\x08#`\x04\x806\x03\x81\x01\x90a\x08\x1E\x91\x90ah\x81V[a75V[`@Qa\x080\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x08DW_\x80\xFD[Pa\x08_`\x04\x806\x03\x81\x01\x90a\x08Z\x91\x90ah\x81V[a9\x0BV[`@Qa\x08l\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x08\x80W_\x80\xFD[Pa\x08\x9B`\x04\x806\x03\x81\x01\x90a\x08\x96\x91\x90ah\x81V[a:\xE1V[`@Qa\x08\xA8\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x08\xBCW_\x80\xFD[Pa\x08\xD7`\x04\x806\x03\x81\x01\x90a\x08\xD2\x91\x90an;V[a=2V[`@Qa\x08\xE4\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x08\xF8W_\x80\xFD[Pa\t\x13`\x04\x806\x03\x81\x01\x90a\t\x0E\x91\x90anfV[a>\xFBV[`@Qa\t \x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\t4W_\x80\xFD[Pa\tO`\x04\x806\x03\x81\x01\x90a\tJ\x91\x90ah\x81V[a?kV[`@Qa\t\\\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\tpW_\x80\xFD[Pa\t\x8B`\x04\x806\x03\x81\x01\x90a\t\x86\x91\x90ah\x81V[aA\x8AV[`@Qa\t\x98\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\t\xACW_\x80\xFD[Pa\t\xB5aC\x84V[`@Qa\t\xC2\x91\x90an\"V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\t\xD6W_\x80\xFD[Pa\t\xF1`\x04\x806\x03\x81\x01\x90a\t\xEC\x91\x90an;V[aC\x9FV[`@Qa\t\xFE\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\n\x12W_\x80\xFD[Pa\n\x1BaE\x8CV[`@Qa\n(\x91\x90an\"V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\n<W_\x80\xFD[Pa\nW`\x04\x806\x03\x81\x01\x90a\nR\x91\x90ah\x81V[aE\xA7V[`@Qa\nd\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xF3[_\x80`\x06`S\x81\x11\x15a\n\x83Wa\n\x82an\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a\n\x9EWa\n\x9Dan\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a\n\xB9Wa\n\xB8an\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a\n\xD4Wa\n\xD3an\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a\n\xEFWa\n\xEEan\x91V[[`\xFF\x16`\x01\x90\x1Ba\x0B\0\x91\x90an\xEBV[a\x0B\n\x91\x90an\xEBV[a\x0B\x14\x91\x90an\xEBV[a\x0B\x1E\x91\x90an\xEBV[\x90P_a\x0B+\x86\x83aG\xC6V[\x90Pa\x0B;`\x12\x87\x87\x87\x85aH,V[\x92Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\x04U?\xB6\x82\x86\x89\x89\x883`@Q\x87c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a\x0B\x94\x96\x95\x94\x93\x92\x91\x90aosV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a\x0B\xABW_\x80\xFD[PZ\xF1\x15\x80\x15a\x0B\xBDW=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F\xC1\x1Db\xB1<6\n\x83\x08$\x87\x06K\xE1\xEC\x08x\xB2\xF0\xBEO\x01+\xF5\x9F\x89\xE1(\x06=G\xFF\x87\x87\x87\x87`@Qa\x0C\r\x94\x93\x92\x91\x90ao\xD2V[`@Q\x80\x91\x03\x90\xA2PP\x93\x92PPPV[_\x80`\x06`S\x81\x11\x15a\x0C4Wa\x0C3an\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a\x0COWa\x0CNan\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a\x0CjWa\x0Cian\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a\x0C\x85Wa\x0C\x84an\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a\x0C\xA0Wa\x0C\x9Fan\x91V[[`\xFF\x16`\x01\x90\x1Ba\x0C\xB1\x91\x90an\xEBV[a\x0C\xBB\x91\x90an\xEBV[a\x0C\xC5\x91\x90an\xEBV[a\x0C\xCF\x91\x90an\xEBV[\x90P_\x81\x84`S\x81\x11\x15a\x0C\xE6Wa\x0C\xE5an\x91V[[`\xFF\x16`\x01\x90\x1B\x16\x03a\r%W`@Q\x7F\xC6\xDEFj\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x05`S\x81\x11\x15a\r:Wa\r9an\x91V[[\x84`S\x81\x11\x15a\rMWa\rLan\x91V[[\x14\x80a\r}WP`\x06`S\x81\x11\x15a\rhWa\rgan\x91V[[\x84`S\x81\x11\x15a\r{Wa\rzan\x91V[[\x14[a\r\x88W`da\r\x8BV[`<[`\xFF\x16\x90P\x80\x86\x86\x90P\x11\x15a\r\xDDW\x85\x85\x90P\x81`@Q\x7F\xEE\xAFf\x9A\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01a\r\xD4\x92\x91\x90ap$V[`@Q\x80\x91\x03\x90\xFD[a\r\xEA`\x1C\x87\x87\x87aK\x87V[\x92Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\xB9f%T\x85\x88\x88\x873`@Q\x86c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a\x0EA\x95\x94\x93\x92\x91\x90ap\xC3V[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a\x0EXW_\x80\xFD[PZ\xF1\x15\x80\x15a\x0EjW=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F\xED\xF9=\xB5\xD6\xC3\n\x17\x1B\xB8[\x9AI\xDE\xBC\xF3\xDB\xA7s\x1Al>S\x96^\xCA\x92\xC7\xAE\x85\x80\x8D\x87\x87\x87\x87`@Qa\x0E\xBA\x94\x93\x92\x91\x90aq\x0FV[`@Q\x80\x91\x03\x90\xA2PP\x93\x92PPPV[_\x80`@Q\x80`@\x01`@R\x80\x86s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81R` \x013s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81RP\x90P_a\x0F\x1A\x87aN4V[\x90P\x80`S\x81\x11\x15a\x0F/Wa\x0F.an\x91V[[\x84`S\x81\x11\x15a\x0FBWa\x0FAan\x91V[[\x14a\x0FyW`@Q\x7F\xB9h\x84a\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[s6w!B\xB7Hq\xF2U\xCB\xD7\xA3\xE8\x9B@\x1D>E\x82_s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\xE61}\xF5\x83\x89\x88`@Q\x84c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a\x0F\xCA\x93\x92\x91\x90aq\xDBV[` `@Q\x80\x83\x03\x81_\x87Z\xF1\x15\x80\x15a\x0F\xE6W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x10\n\x91\x90ar+V[\x92PsP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c>9\\\xEC\x843`@Q\x83c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a\x10[\x92\x91\x90arVV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a\x10rW_\x80\xFD[PZ\xF1\x15\x80\x15a\x10\x84W=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F\xDC7\r\xB35\x89\xE73q\xDC>\xE4,x\x9C\0=3n\xEF\xCB|?V\xFE\x0FQ\xAE[\x1D\x97\x02\x88\x88\x88\x88\x88`@Qa\x10\xD6\x95\x94\x93\x92\x91\x90ar}V[`@Q\x80\x91\x03\x90\xA2PP\x94\x93PPPPV[```@Q\x80`@\x01`@R\x80`\r\x81R` \x01\x7FFHEVMExecutor\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81RPa\x11)_aNlV[a\x113`\x04aNlV[a\x11<_aNlV[`@Q` \x01a\x11O\x94\x93\x92\x91\x90as\xA3V[`@Q` \x81\x83\x03\x03\x81R\x90`@R\x90P\x90V[_\x80`\x06`S\x81\x11\x15a\x11yWa\x11xan\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a\x11\x94Wa\x11\x93an\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a\x11\xAFWa\x11\xAEan\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a\x11\xCAWa\x11\xC9an\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a\x11\xE5Wa\x11\xE4an\x91V[[`\xFF\x16`\x01\x90\x1Ba\x11\xF6\x91\x90an\xEBV[a\x12\0\x91\x90an\xEBV[a\x12\n\x91\x90an\xEBV[a\x12\x14\x91\x90an\xEBV[\x90P_a\x12!\x86\x83aG\xC6V[\x90Pa\x120_\x87\x87\x87\x85aH,V[\x92Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\xC19\x0C4\x82\x86\x89\x89\x883`@Q\x87c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a\x12\x89\x96\x95\x94\x93\x92\x91\x90aosV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a\x12\xA0W_\x80\xFD[PZ\xF1\x15\x80\x15a\x12\xB2W=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F\xDB\x90P\xD6R@C\x16!\xD6\x1Do\x94\xB9p\xE6?S\xA6zWfaN\xE6\xE5\xC5\xBB\xD4\x1C\x8E.\x87\x87\x87\x87`@Qa\x13\x02\x94\x93\x92\x91\x90ao\xD2V[`@Q\x80\x91\x03\x90\xA2PP\x93\x92PPPV[`\x05_a\x13\x1EaO6V[\x90P\x80_\x01`\x08\x90T\x90a\x01\0\n\x90\x04`\xFF\x16\x80a\x13fWP\x81g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81_\x01_\x90T\x90a\x01\0\n\x90\x04g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x10\x15[\x15a\x13\x9DW`@Q\x7F\xF9.\xE8\xA9\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x81\x81_\x01_a\x01\0\n\x81T\x81g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x02\x19\x16\x90\x83g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x02\x17\x90UP`\x01\x81_\x01`\x08a\x01\0\n\x81T\x81`\xFF\x02\x19\x16\x90\x83\x15\x15\x02\x17\x90UP_\x81_\x01`\x08a\x01\0\n\x81T\x81`\xFF\x02\x19\x16\x90\x83\x15\x15\x02\x17\x90UP\x7F\xC7\xF5\x05\xB2\xF3q\xAE!u\xEEI\x13\xF4I\x9E\x1F&3\xA7\xB5\x93c!\xEE\xD1\xCD\xAE\xB6\x11Q\x81\xD2\x82`@Qa\x14,\x91\x90at#V[`@Q\x80\x91\x03\x90\xA1PPV[_\x80`\x06`S\x81\x11\x15a\x14NWa\x14Man\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a\x14iWa\x14han\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a\x14\x84Wa\x14\x83an\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a\x14\x9FWa\x14\x9Ean\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a\x14\xBAWa\x14\xB9an\x91V[[`\xFF\x16`\x01\x90\x1Ba\x14\xCB\x91\x90an\xEBV[a\x14\xD5\x91\x90an\xEBV[a\x14\xDF\x91\x90an\xEBV[a\x14\xE9\x91\x90an\xEBV[\x90P_a\x14\xF6\x86\x83aG\xC6V[\x90Pa\x15\x06`\x0E\x87\x87\x87_aH,V[\x92Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\xC2w\xA96\x82\x86\x89\x89\x883`@Q\x87c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a\x15_\x96\x95\x94\x93\x92\x91\x90aosV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a\x15vW_\x80\xFD[PZ\xF1\x15\x80\x15a\x15\x88W=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F8\xC3\xA6<B0\xDE[t\x1FIO\xFBT\xE3\x08q\x04\x03\x02y\xBC{\xCC\xEE\x8A\xD9\xAD1q+!\x87\x87\x87\x87`@Qa\x15\xD8\x94\x93\x92\x91\x90ao\xD2V[`@Q\x80\x91\x03\x90\xA2PP\x93\x92PPPV[_\x80`\x06`S\x81\x11\x15a\x15\xFFWa\x15\xFEan\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a\x16\x1AWa\x16\x19an\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a\x165Wa\x164an\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a\x16PWa\x16Oan\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a\x16kWa\x16jan\x91V[[`\xFF\x16`\x01\x90\x1Ba\x16|\x91\x90an\xEBV[a\x16\x86\x91\x90an\xEBV[a\x16\x90\x91\x90an\xEBV[a\x16\x9A\x91\x90an\xEBV[\x90P_a\x16\xA7\x86\x83aG\xC6V[\x90Pa\x16\xB7`\x01\x87\x87\x87\x85aH,V[\x92Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\xD63\xC9k\x82\x86\x89\x89\x883`@Q\x87c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a\x17\x10\x96\x95\x94\x93\x92\x91\x90aosV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a\x17'W_\x80\xFD[PZ\xF1\x15\x80\x15a\x179W=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F\xEBm7\xBD'\x1A\xBE\x13\x95\xB2\x1Dmx\xF3H}e\x84\x86(r\xC2\x9F\xFD?\x90sn\xE9\x9Bs\x93\x87\x87\x87\x87`@Qa\x17\x89\x94\x93\x92\x91\x90ao\xD2V[`@Q\x80\x91\x03\x90\xA2PP\x93\x92PPPV[_sP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\x82\x02{m\x843`@Q\x83c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a\x17\xEA\x92\x91\x90arVV[` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x18\x05W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x18)\x91\x90atqV[a\x18lW\x823`@Q\x7F\x9D\xE39,\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01a\x18c\x92\x91\x90arVV[`@Q\x80\x91\x03\x90\xFD[_`\x08`S\x81\x11\x15a\x18\x81Wa\x18\x80an\x91V[[`\xFF\x16`\x01\x90\x1B`\x06`S\x81\x11\x15a\x18\x9CWa\x18\x9Ban\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a\x18\xB7Wa\x18\xB6an\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a\x18\xD2Wa\x18\xD1an\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a\x18\xEDWa\x18\xECan\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a\x19\x08Wa\x19\x07an\x91V[[`\xFF\x16`\x01\x90\x1B_`S\x81\x11\x15a\x19\"Wa\x19!an\x91V[[`\xFF\x16`\x01\x90\x1Ba\x193\x91\x90an\xEBV[a\x19=\x91\x90an\xEBV[a\x19G\x91\x90an\xEBV[a\x19Q\x91\x90an\xEBV[a\x19[\x91\x90an\xEBV[a\x19e\x91\x90an\xEBV[\x90P_a\x19r\x85\x83aG\xC6V[\x90P_`\x08`S\x81\x11\x15a\x19\x89Wa\x19\x88an\x91V[[`\xFF\x16`\x01\x90\x1B`\x06`S\x81\x11\x15a\x19\xA4Wa\x19\xA3an\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a\x19\xBFWa\x19\xBEan\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a\x19\xDAWa\x19\xD9an\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a\x19\xF5Wa\x19\xF4an\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a\x1A\x10Wa\x1A\x0Fan\x91V[[`\xFF\x16`\x01\x90\x1Ba\x1A!\x91\x90an\xEBV[a\x1A+\x91\x90an\xEBV[a\x1A5\x91\x90an\xEBV[a\x1A?\x91\x90an\xEBV[a\x1AI\x91\x90an\xEBV[\x90P_\x81\x86`S\x81\x11\x15a\x1A`Wa\x1A_an\x91V[[`\xFF\x16`\x01\x90\x1B\x16\x03a\x1A\x9FW`@Q\x7F\xC6\xDEFj\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x84`S\x81\x11\x15a\x1A\xB2Wa\x1A\xB1an\x91V[[\x82`S\x81\x11\x15a\x1A\xC5Wa\x1A\xC4an\x91V[[\x03a\x1A\xFCW`@Q\x7F\xB9h\x84a\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x7FFHE_comp\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0`\x17\x87\x87sP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]F`\x01Ca\x1BD\x91\x90at\x9CV[@B`@Q` \x01a\x1B]\x98\x97\x96\x95\x94\x93\x92\x91\x90avmV[`@Q` \x81\x83\x03\x03\x81R\x90`@R\x80Q\x90` \x01 \x93Pa\x1B\x7F\x84\x86aO]V[\x93Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16ci\x93\x1A\xFB\x86\x88\x873`@Q\x85c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a\x1B\xD4\x94\x93\x92\x91\x90av\xFEV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a\x1B\xEBW_\x80\xFD[PZ\xF1\x15\x80\x15a\x1B\xFDW=_\x80>=_\xFD[PPPPsP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c>9\\\xEC\x853`@Q\x83c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a\x1CP\x92\x91\x90arVV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a\x1CgW_\x80\xFD[PZ\xF1\x15\x80\x15a\x1CyW=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F1\xCC\xAEj/\x8E<\xED\x16\x92\xF7|\x8Ff\x813\xE4\xAF\xDA\xAA5\xAF\xE8D\xFFFY\xA6\xC2~b\x7F\x87\x87\x87`@Qa\x1C\xC7\x93\x92\x91\x90awAV[`@Q\x80\x91\x03\x90\xA2PPP\x92\x91PPV[_\x80`\x06`S\x81\x11\x15a\x1C\xEEWa\x1C\xEDan\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a\x1D\tWa\x1D\x08an\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a\x1D$Wa\x1D#an\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a\x1D?Wa\x1D>an\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a\x1DZWa\x1DYan\x91V[[`\xFF\x16`\x01\x90\x1Ba\x1Dk\x91\x90an\xEBV[a\x1Du\x91\x90an\xEBV[a\x1D\x7F\x91\x90an\xEBV[a\x1D\x89\x91\x90an\xEBV[\x90P_a\x1D\x96\x86\x83aG\xC6V[\x90Pa\x1D\xA6`\x13\x87\x87\x87\x85aH,V[\x92Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\x96\x83\x02\xD7\x82\x86\x89\x89\x883`@Q\x87c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a\x1D\xFF\x96\x95\x94\x93\x92\x91\x90aosV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a\x1E\x16W_\x80\xFD[PZ\xF1\x15\x80\x15a\x1E(W=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F\xFD|\x92\x08\xF9V\xBF\x0Cj\xB7jf\x7F\x046\x12E\xAD>\n-\x0E\xFF\x92\xEB\x82z\xCF\xCC\xA6\x8E\xA9\x87\x87\x87\x87`@Qa\x1Ex\x94\x93\x92\x91\x90ao\xD2V[`@Q\x80\x91\x03\x90\xA2PP\x93\x92PPPV[`\x01a\x1E\x93aO\xD6V[g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14a\x1E\xD4W`@Q\x7FoOs\x1F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[`\x05_a\x1E\xDFaO6V[\x90P\x80_\x01`\x08\x90T\x90a\x01\0\n\x90\x04`\xFF\x16\x80a\x1F'WP\x81g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81_\x01_\x90T\x90a\x01\0\n\x90\x04g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x10\x15[\x15a\x1F^W`@Q\x7F\xF9.\xE8\xA9\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x81\x81_\x01_a\x01\0\n\x81T\x81g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x02\x19\x16\x90\x83g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x02\x17\x90UP`\x01\x81_\x01`\x08a\x01\0\n\x81T\x81`\xFF\x02\x19\x16\x90\x83\x15\x15\x02\x17\x90UP_\x81_\x01`\x08a\x01\0\n\x81T\x81`\xFF\x02\x19\x16\x90\x83\x15\x15\x02\x17\x90UP\x7F\xC7\xF5\x05\xB2\xF3q\xAE!u\xEEI\x13\xF4I\x9E\x1F&3\xA7\xB5\x93c!\xEE\xD1\xCD\xAE\xB6\x11Q\x81\xD2\x82`@Qa\x1F\xED\x91\x90at#V[`@Q\x80\x91\x03\x90\xA1PPV[_\x80a \x03aO\xFAV[\x90Pa \x10\x84\x84\x83aP\x99V[\x91P3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7FR\"\xD9k\x83g'\xA1\xD6\xFE\x1E\xE9\xAE\xF2\x7F\x9B\xB5\x07\xBDAyM\xEF\xA3v\xFFld\x8A\xAF\x8F\xF1\x85\x85\x84\x86`@Qa ^\x94\x93\x92\x91\x90aw\xB0V[`@Q\x80\x91\x03\x90\xA2P\x92\x91PPV[a uaSnV[a ~\x82aTTV[a \x88\x82\x82aUGV[PPV[_a \x95aVeV[\x7F6\x08\x94\xA1;\xA1\xA3!\x06g\xC8(I-\xB9\x8D\xCA> v\xCC75\xA9 \xA3\xCAP]8+\xBC_\x1B\x90P\x90V[_\x80`\x06`S\x81\x11\x15a \xD3Wa \xD2an\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a \xEEWa \xEDan\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a!\tWa!\x08an\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a!$Wa!#an\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a!?Wa!>an\x91V[[`\xFF\x16`\x01\x90\x1Ba!P\x91\x90an\xEBV[a!Z\x91\x90an\xEBV[a!d\x91\x90an\xEBV[a!n\x91\x90an\xEBV[\x90P_a!{\x86\x83aG\xC6V[\x90Pa!\x8B`\x02\x87\x87\x87\x85aH,V[\x92Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\x81\x8FMi\x82\x86\x89\x89\x883`@Q\x87c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a!\xE4\x96\x95\x94\x93\x92\x91\x90aosV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a!\xFBW_\x80\xFD[PZ\xF1\x15\x80\x15a\"\rW=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F!SF\xA4\xF9\xF9u\xE6\xD5HN)\x0B\xD4\xE5<\xA1DS\xA9\xD2\x82\xEB\xD3\xCC\xED\xB2\xA0\xF1qu=\x87\x87\x87\x87`@Qa\"]\x94\x93\x92\x91\x90ao\xD2V[`@Q\x80\x91\x03\x90\xA2PP\x93\x92PPPV[_`\x01`\xF8\x1B\x82~\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x19\x16\x14a\"\xCEW`@Q\x7FO\"NS\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x06`S\x81\x11\x15a\"\xE3Wa\"\xE2an\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a\"\xFEWa\"\xFDan\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a#\x19Wa#\x18an\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a#4Wa#3an\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a#OWa#Nan\x91V[[`\xFF\x16`\x01\x90\x1Ba#`\x91\x90an\xEBV[a#j\x91\x90an\xEBV[a#t\x91\x90an\xEBV[a#~\x91\x90an\xEBV[\x90P_a#\x8B\x86\x83aG\xC6V[\x90Pa#\x97\x85\x82aV\xECV[\x15a#\xCEW`@Q\x7F#\xD3Y\xA3\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a#\xDC`\x03\x87\x87\x87\x85aH,V[\x92Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\x9B?x\x1A\x82\x86\x89\x89\x883`@Q\x87c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a$5\x96\x95\x94\x93\x92\x91\x90aosV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a$LW_\x80\xFD[PZ\xF1\x15\x80\x15a$^W=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F;\xAB.\xE0\xE2\xF9\x0FF\x90\xC6\xA8{\xF6<\xF1\xA6\xB6&\x08n\x95\xF21\x86\x0B\x15)f\xE8\xDA\xBB\xF7\x87\x87\x87\x87`@Qa$\xAE\x94\x93\x92\x91\x90ao\xD2V[`@Q\x80\x91\x03\x90\xA2PP\x93\x92PPPV[_\x80`\x08`S\x81\x11\x15a$\xD5Wa$\xD4an\x91V[[`\xFF\x16`\x01\x90\x1B`\x06`S\x81\x11\x15a$\xF0Wa$\xEFan\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a%\x0BWa%\nan\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a%&Wa%%an\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a%AWa%@an\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a%\\Wa%[an\x91V[[`\xFF\x16`\x01\x90\x1B_`S\x81\x11\x15a%vWa%uan\x91V[[`\xFF\x16`\x01\x90\x1Ba%\x87\x91\x90an\xEBV[a%\x91\x91\x90an\xEBV[a%\x9B\x91\x90an\xEBV[a%\xA5\x91\x90an\xEBV[a%\xAF\x91\x90an\xEBV[a%\xB9\x91\x90an\xEBV[\x90P_a%\xC6\x86\x83aG\xC6V[\x90Pa%\xD6`\x06\x87\x87\x87\x85aH,V[\x92Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\xC0\xC5\xDF|\x82\x86\x89\x89\x883`@Q\x87c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a&/\x96\x95\x94\x93\x92\x91\x90aosV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a&FW_\x80\xFD[PZ\xF1\x15\x80\x15a&XW=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7FV\xDF'\x9B\xBF\xB0=\x9E\xD0\x97\xBB\xE2\xF2\x8DR\x0C\xA0\xC1\x16\x12\x062y&\xE9\x86d\xD7\r,$\xC4\x87\x87\x87\x87`@Qa&\xA8\x94\x93\x92\x91\x90ao\xD2V[`@Q\x80\x91\x03\x90\xA2PP\x93\x92PPPV[_\x80`\x08`S\x81\x11\x15a&\xCFWa&\xCEan\x91V[[`\xFF\x16`\x01\x90\x1B`\x06`S\x81\x11\x15a&\xEAWa&\xE9an\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a'\x05Wa'\x04an\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a' Wa'\x1Fan\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a';Wa':an\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a'VWa'Uan\x91V[[`\xFF\x16`\x01\x90\x1Ba'g\x91\x90an\xEBV[a'q\x91\x90an\xEBV[a'{\x91\x90an\xEBV[a'\x85\x91\x90an\xEBV[a'\x8F\x91\x90an\xEBV[\x90P_a'\x9C\x86\x83aG\xC6V[\x90Pa'\xAC`\n\x87\x87\x87\x85aH,V[\x92Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c_v\xEB0\x82\x86\x89\x89\x883`@Q\x87c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a(\x05\x96\x95\x94\x93\x92\x91\x90aosV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a(\x1CW_\x80\xFD[PZ\xF1\x15\x80\x15a(.W=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F\xEB\x0EO\x8D\xC7@X\x19M\x06\x02B_\xE6\x02\xF9U\xC2\" \x0F\x7F\x10\xC6\xFEg\x99/{$\xC7\xE9\x87\x87\x87\x87`@Qa(~\x94\x93\x92\x91\x90ao\xD2V[`@Q\x80\x91\x03\x90\xA2PP\x93\x92PPPV[_\x80`\x06`S\x81\x11\x15a(\xA5Wa(\xA4an\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a(\xC0Wa(\xBFan\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a(\xDBWa(\xDAan\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a(\xF6Wa(\xF5an\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a)\x11Wa)\x10an\x91V[[`\xFF\x16`\x01\x90\x1Ba)\"\x91\x90an\xEBV[a),\x91\x90an\xEBV[a)6\x91\x90an\xEBV[a)@\x91\x90an\xEBV[\x90P_a)M\x86\x83aG\xC6V[\x90Pa)]`\x11\x87\x87\x87_aH,V[\x92Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c;\xB7\xD5\xA3\x82\x86\x89\x89\x883`@Q\x87c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a)\xB6\x96\x95\x94\x93\x92\x91\x90aosV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a)\xCDW_\x80\xFD[PZ\xF1\x15\x80\x15a)\xDFW=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F\rH;\x10\r\x8Cs\xB2\x08\x98N\xC6\x97\xCA\xA3\t\x15!\xEEU%\xCEi\xED\xCF\x97\xD7\xE3\x95\xD3\xD0Y\x87\x87\x87\x87`@Qa*/\x94\x93\x92\x91\x90ao\xD2V[`@Q\x80\x91\x03\x90\xA2PP\x93\x92PPPV[_\x80`\x06`S\x81\x11\x15a*VWa*Uan\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a*qWa*pan\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a*\x8CWa*\x8Ban\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a*\xA7Wa*\xA6an\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a*\xC2Wa*\xC1an\x91V[[`\xFF\x16`\x01\x90\x1Ba*\xD3\x91\x90an\xEBV[a*\xDD\x91\x90an\xEBV[a*\xE7\x91\x90an\xEBV[a*\xF1\x91\x90an\xEBV[\x90P_a*\xFE\x86\x83aG\xC6V[\x90Pa+\x0E`\x10\x87\x87\x87_aH,V[\x92Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c8\xBD\x17\xE5\x82\x86\x89\x89\x883`@Q\x87c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a+g\x96\x95\x94\x93\x92\x91\x90aosV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a+~W_\x80\xFD[PZ\xF1\x15\x80\x15a+\x90W=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F\xDE\xF2\xE7\x04\xA0w(J\x07\xF3\xD0\xB46\xDB\x88\xF5\xD9\x81\xB6\x9FX\xAB|\x1A\xE6#%'\x18\xA6\xDE\x01\x87\x87\x87\x87`@Qa+\xE0\x94\x93\x92\x91\x90ao\xD2V[`@Q\x80\x91\x03\x90\xA2PP\x93\x92PPPV[_\x80`\x08`S\x81\x11\x15a,\x07Wa,\x06an\x91V[[`\xFF\x16`\x01\x90\x1B`\x07`S\x81\x11\x15a,\"Wa,!an\x91V[[`\xFF\x16`\x01\x90\x1B`\x06`S\x81\x11\x15a,=Wa,<an\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a,XWa,Wan\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a,sWa,ran\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a,\x8EWa,\x8Dan\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a,\xA9Wa,\xA8an\x91V[[`\xFF\x16`\x01\x90\x1B_`S\x81\x11\x15a,\xC3Wa,\xC2an\x91V[[`\xFF\x16`\x01\x90\x1Ba,\xD4\x91\x90an\xEBV[a,\xDE\x91\x90an\xEBV[a,\xE8\x91\x90an\xEBV[a,\xF2\x91\x90an\xEBV[a,\xFC\x91\x90an\xEBV[a-\x06\x91\x90an\xEBV[a-\x10\x91\x90an\xEBV[\x90P_a-\x1D\x85\x83aG\xC6V[\x90Pa-,`\x19\x87\x87\x87aXgV[\x92Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c.<9\x06\x82\x88\x88\x88\x883`@Q\x87c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a-\x85\x96\x95\x94\x93\x92\x91\x90aw\xF3V[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a-\x9CW_\x80\xFD[PZ\xF1\x15\x80\x15a-\xAEW=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F`\xBE\x9Da\xAA\xD8I\xFA\xCC(\xC3\x8B\x04\x8C\xB5\xC4\xBE4 \xB8\xFA\"3\xE0\x8C\xFA\x06\xBE\x1Bm\x1C>\x87\x87\x87\x87`@Qa-\xFE\x94\x93\x92\x91\x90axRV[`@Q\x80\x91\x03\x90\xA2PP\x93\x92PPPV[_\x90V[_\x80`\x06`S\x81\x11\x15a.)Wa.(an\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a.DWa.Can\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a._Wa.^an\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a.zWa.yan\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a.\x95Wa.\x94an\x91V[[`\xFF\x16`\x01\x90\x1Ba.\xA6\x91\x90an\xEBV[a.\xB0\x91\x90an\xEBV[a.\xBA\x91\x90an\xEBV[a.\xC4\x91\x90an\xEBV[\x90P_a.\xD1\x86\x83aG\xC6V[\x90Pa.\xE1`\x0F\x87\x87\x87_aH,V[\x92Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16cE\x8F\xB2w\x82\x86\x89\x89\x883`@Q\x87c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a/:\x96\x95\x94\x93\x92\x91\x90aosV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a/QW_\x80\xFD[PZ\xF1\x15\x80\x15a/cW=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F\xC9\xFF\x8F\r\x18\xA3\xF7f\xCE]\xE3\xDE!`v\x05\x01@\xE4\xFC&R\xF5\xE0\xE7E\xF6\xFC\x83l\xDA\x8B\x87\x87\x87\x87`@Qa/\xB3\x94\x93\x92\x91\x90ao\xD2V[`@Q\x80\x91\x03\x90\xA2PP\x93\x92PPPV[_\x80`\x08`S\x81\x11\x15a/\xDAWa/\xD9an\x91V[[`\xFF\x16`\x01\x90\x1B`\x06`S\x81\x11\x15a/\xF5Wa/\xF4an\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a0\x10Wa0\x0Fan\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a0+Wa0*an\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a0FWa0Ean\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a0aWa0`an\x91V[[`\xFF\x16`\x01\x90\x1B_`S\x81\x11\x15a0{Wa0zan\x91V[[`\xFF\x16`\x01\x90\x1Ba0\x8C\x91\x90an\xEBV[a0\x96\x91\x90an\xEBV[a0\xA0\x91\x90an\xEBV[a0\xAA\x91\x90an\xEBV[a0\xB4\x91\x90an\xEBV[a0\xBE\x91\x90an\xEBV[\x90P_a0\xCB\x86\x83aG\xC6V[\x90Pa0\xDB`\x07\x87\x87\x87\x85aH,V[\x92Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\x9F\x92Y\xBB\x82\x86\x89\x89\x883`@Q\x87c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a14\x96\x95\x94\x93\x92\x91\x90aosV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a1KW_\x80\xFD[PZ\xF1\x15\x80\x15a1]W=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7FM2(K\xD3\x19>\xCA\xA4N\x1C\xEC\xA3/A\xC5\xD6\xC3(\x03\xA9.\x07\x96}\xD3\xEEB)r\x15\x82\x87\x87\x87\x87`@Qa1\xAD\x94\x93\x92\x91\x90ao\xD2V[`@Q\x80\x91\x03\x90\xA2PP\x93\x92PPPV[_\x80`\x08`S\x81\x11\x15a1\xD4Wa1\xD3an\x91V[[`\xFF\x16`\x01\x90\x1B`\x06`S\x81\x11\x15a1\xEFWa1\xEEan\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a2\nWa2\tan\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a2%Wa2$an\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a2@Wa2?an\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a2[Wa2Zan\x91V[[`\xFF\x16`\x01\x90\x1Ba2l\x91\x90an\xEBV[a2v\x91\x90an\xEBV[a2\x80\x91\x90an\xEBV[a2\x8A\x91\x90an\xEBV[a2\x94\x91\x90an\xEBV[\x90P_a2\xA1\x86\x83aG\xC6V[\x90Pa2\xB1`\t\x87\x87\x87\x85aH,V[\x92Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\x07\xCC\xDFa\x82\x86\x89\x89\x883`@Q\x87c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a3\n\x96\x95\x94\x93\x92\x91\x90aosV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a3!W_\x80\xFD[PZ\xF1\x15\x80\x15a33W=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F2B \xBF\xC9\xCB\x15\x8BI)\x91\xC0<0\x9C\xD8nSE\xCA\xC4Z\xAC\xAE \x92\xDD\xAB\xE3\x1F\xA3\xD8\x87\x87\x87\x87`@Qa3\x83\x94\x93\x92\x91\x90ao\xD2V[`@Q\x80\x91\x03\x90\xA2PP\x93\x92PPPV[_\x80`\x08`S\x81\x11\x15a3\xAAWa3\xA9an\x91V[[`\xFF\x16`\x01\x90\x1B`\x07`S\x81\x11\x15a3\xC5Wa3\xC4an\x91V[[`\xFF\x16`\x01\x90\x1B`\x06`S\x81\x11\x15a3\xE0Wa3\xDFan\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a3\xFBWa3\xFAan\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a4\x16Wa4\x15an\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a41Wa40an\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a4LWa4Kan\x91V[[`\xFF\x16`\x01\x90\x1B_`S\x81\x11\x15a4fWa4ean\x91V[[`\xFF\x16`\x01\x90\x1Ba4w\x91\x90an\xEBV[a4\x81\x91\x90an\xEBV[a4\x8B\x91\x90an\xEBV[a4\x95\x91\x90an\xEBV[a4\x9F\x91\x90an\xEBV[a4\xA9\x91\x90an\xEBV[a4\xB3\x91\x90an\xEBV[\x90P_\x81\x84`S\x81\x11\x15a4\xCAWa4\xC9an\x91V[[`\xFF\x16`\x01\x90\x1B\x16\x03a5\tW`@Q\x7F\xC6\xDEFj\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x7FFHE_comp\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0`\x18\x85\x85sP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]F`\x01Ca5Q\x91\x90at\x9CV[@B`@Q` \x01a5j\x98\x97\x96\x95\x94\x93\x92\x91\x90ax\x95V[`@Q` \x81\x83\x03\x03\x81R\x90`@R\x80Q\x90` \x01 \x91Pa5\x8C\x82\x84aO]V[\x91Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\xB7\x8B\xEFY\x84\x843`@Q\x84c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a5\xDF\x93\x92\x91\x90ay&V[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a5\xF6W_\x80\xFD[PZ\xF1\x15\x80\x15a6\x08W=_\x80>=_\xFD[PPPPsP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c>9\\\xEC\x833`@Q\x83c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a6[\x92\x91\x90arVV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a6rW_\x80\xFD[PZ\xF1\x15\x80\x15a6\x84W=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F\x06<\xCD\x1B\xBAE\x15\x1D\x91\xF6\xA4\x18\x06PG\xA3\xD0H\xD0X\xA9\"SWG\xBB+WZ\x01\xD26\x85\x85\x85`@Qa6\xD2\x93\x92\x91\x90ay[V[`@Q\x80\x91\x03\x90\xA2P\x92\x91PPV[_s6w!B\xB7Hq\xF2U\xCB\xD7\xA3\xE8\x9B@\x1D>E\x82_\x90P\x90V[`@Q\x80`@\x01`@R\x80`\x05\x81R` \x01\x7F5.0.0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81RP\x81V[_\x80`\x08`S\x81\x11\x15a7KWa7Jan\x91V[[`\xFF\x16`\x01\x90\x1B`\x06`S\x81\x11\x15a7fWa7ean\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a7\x81Wa7\x80an\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a7\x9CWa7\x9Ban\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a7\xB7Wa7\xB6an\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a7\xD2Wa7\xD1an\x91V[[`\xFF\x16`\x01\x90\x1Ba7\xE3\x91\x90an\xEBV[a7\xED\x91\x90an\xEBV[a7\xF7\x91\x90an\xEBV[a8\x01\x91\x90an\xEBV[a8\x0B\x91\x90an\xEBV[\x90P_a8\x18\x86\x83aG\xC6V[\x90Pa8(`\x0B\x87\x87\x87\x85aH,V[\x92Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\x86)\xF5E\x82\x86\x89\x89\x883`@Q\x87c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a8\x81\x96\x95\x94\x93\x92\x91\x90aosV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a8\x98W_\x80\xFD[PZ\xF1\x15\x80\x15a8\xAAW=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F\xC1HgY\x05\xD0z\xD5Io\x8E\xF4\xD8\x19\\\x90u\x03\xF3\xEC\x12\xFD\x10\xED_!$\n\xBCi64\x87\x87\x87\x87`@Qa8\xFA\x94\x93\x92\x91\x90ao\xD2V[`@Q\x80\x91\x03\x90\xA2PP\x93\x92PPPV[_\x80`\x08`S\x81\x11\x15a9!Wa9 an\x91V[[`\xFF\x16`\x01\x90\x1B`\x06`S\x81\x11\x15a9<Wa9;an\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a9WWa9Van\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a9rWa9qan\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a9\x8DWa9\x8Can\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a9\xA8Wa9\xA7an\x91V[[`\xFF\x16`\x01\x90\x1Ba9\xB9\x91\x90an\xEBV[a9\xC3\x91\x90an\xEBV[a9\xCD\x91\x90an\xEBV[a9\xD7\x91\x90an\xEBV[a9\xE1\x91\x90an\xEBV[\x90P_a9\xEE\x86\x83aG\xC6V[\x90Pa9\xFE`\x08\x87\x87\x87\x85aH,V[\x92Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\xF7\xD1\x98\xF8\x82\x86\x89\x89\x883`@Q\x87c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a:W\x96\x95\x94\x93\x92\x91\x90aosV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a:nW_\x80\xFD[PZ\xF1\x15\x80\x15a:\x80W=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F\xE8B\x82\xAA\xEB\xCC\xA6\x98D>9\xA2\xA9H\xA3E\xD0\xD2\xEB\xC6T\xAF\\\xB6W\xA2\xD7\xE8\x05;\xF6\xCB\x87\x87\x87\x87`@Qa:\xD0\x94\x93\x92\x91\x90ao\xD2V[`@Q\x80\x91\x03\x90\xA2PP\x93\x92PPPV[_`\x01`\xF8\x1B\x82~\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x19\x16\x14a;AW`@Q\x7FO\"NS\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x06`S\x81\x11\x15a;VWa;Uan\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a;qWa;pan\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a;\x8CWa;\x8Ban\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a;\xA7Wa;\xA6an\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a;\xC2Wa;\xC1an\x91V[[`\xFF\x16`\x01\x90\x1Ba;\xD3\x91\x90an\xEBV[a;\xDD\x91\x90an\xEBV[a;\xE7\x91\x90an\xEBV[a;\xF1\x91\x90an\xEBV[\x90P_a;\xFE\x86\x83aG\xC6V[\x90Pa<\n\x85\x82aV\xECV[\x15a<AW`@Q\x7F#\xD3Y\xA3\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a<O`\x04\x87\x87\x87\x85aH,V[\x92Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c3\x11\xB1\xBC\x82\x86\x89\x89\x883`@Q\x87c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a<\xA8\x96\x95\x94\x93\x92\x91\x90aosV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a<\xBFW_\x80\xFD[PZ\xF1\x15\x80\x15a<\xD1W=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F\x0Ei\x1C\xD0\xBF\x8CN\x93\x08\xE4\xCE\xD1\xBB\x9C\x96A\x17\xDC\\[\xB9\xB9\xAB[\xDF\xEB\xF2\xC9\xB1:\x89|\x87\x87\x87\x87`@Qa=!\x94\x93\x92\x91\x90ao\xD2V[`@Q\x80\x91\x03\x90\xA2PP\x93\x92PPPV[_\x80`\x08`S\x81\x11\x15a=HWa=Gan\x91V[[`\xFF\x16`\x01\x90\x1B`\x06`S\x81\x11\x15a=cWa=ban\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a=~Wa=}an\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a=\x99Wa=\x98an\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a=\xB4Wa=\xB3an\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a=\xCFWa=\xCEan\x91V[[`\xFF\x16`\x01\x90\x1Ba=\xE0\x91\x90an\xEBV[a=\xEA\x91\x90an\xEBV[a=\xF4\x91\x90an\xEBV[a=\xFE\x91\x90an\xEBV[a>\x08\x91\x90an\xEBV[\x90P_a>\x15\x84\x83aG\xC6V[\x90Pa>\"`\x14\x85a\\\xC6V[\x92Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16cI|\"\xC5\x82\x86\x863`@Q\x85c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a>w\x94\x93\x92\x91\x90av\xFEV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a>\x8EW_\x80\xFD[PZ\xF1\x15\x80\x15a>\xA0W=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F\x8CfM<<\xA5\x83\xFCX\x03\xB8\xA9\x1CIdK\xBD\x95P\xBF\xA8yg\xC7:\xD1\xDE\x83\x02wh\xC0\x85\x85`@Qa>\xEC\x92\x91\x90ay\x90V[`@Q\x80\x91\x03\x90\xA2PP\x91\x90PV[_\x80a?\x05aO\xFAV[\x90Pa?\x11\x83\x82a^\xA9V[\x91P3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F\x0C\x8A\xCA`\x17\x003&\x05\x1E\x19\x91>\xF0&1\xF2K\x80\x11%\xE1\xFA\x8A\x1D\x81.\x86\x83\x19\xFD\xA6\x84\x83\x85`@Qa?]\x93\x92\x91\x90ay\xB7V[`@Q\x80\x91\x03\x90\xA2P\x91\x90PV[_\x80`\x08`S\x81\x11\x15a?\x81Wa?\x80an\x91V[[`\xFF\x16`\x01\x90\x1B`\x07`S\x81\x11\x15a?\x9CWa?\x9Ban\x91V[[`\xFF\x16`\x01\x90\x1B`\x06`S\x81\x11\x15a?\xB7Wa?\xB6an\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a?\xD2Wa?\xD1an\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a?\xEDWa?\xECan\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a@\x08Wa@\x07an\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a@#Wa@\"an\x91V[[`\xFF\x16`\x01\x90\x1B_`S\x81\x11\x15a@=Wa@<an\x91V[[`\xFF\x16`\x01\x90\x1Ba@N\x91\x90an\xEBV[a@X\x91\x90an\xEBV[a@b\x91\x90an\xEBV[a@l\x91\x90an\xEBV[a@v\x91\x90an\xEBV[a@\x80\x91\x90an\xEBV[a@\x8A\x91\x90an\xEBV[\x90P_a@\x97\x86\x83aG\xC6V[\x90Pa@\xA7`\r\x87\x87\x87_aH,V[\x92Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16ck\xAD\x18\xB6\x82\x86\x89\x89\x883`@Q\x87c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01aA\0\x96\x95\x94\x93\x92\x91\x90aosV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15aA\x17W_\x80\xFD[PZ\xF1\x15\x80\x15aA)W=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7Fi`\xC1\xE8\x8Fa\xC3R\xDB\xA3M\x1B\xBFgS\xE3\x02yRd\xD5\xD8\xAE\x82\xF7\x98<p\x04e\x1E]\x87\x87\x87\x87`@QaAy\x94\x93\x92\x91\x90ao\xD2V[`@Q\x80\x91\x03\x90\xA2PP\x93\x92PPPV[_\x80`\x08`S\x81\x11\x15aA\xA0WaA\x9Fan\x91V[[`\xFF\x16`\x01\x90\x1B`\x06`S\x81\x11\x15aA\xBBWaA\xBAan\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15aA\xD6WaA\xD5an\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15aA\xF1WaA\xF0an\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15aB\x0CWaB\x0Ban\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15aB'WaB&an\x91V[[`\xFF\x16`\x01\x90\x1B_`S\x81\x11\x15aBAWaB@an\x91V[[`\xFF\x16`\x01\x90\x1BaBR\x91\x90an\xEBV[aB\\\x91\x90an\xEBV[aBf\x91\x90an\xEBV[aBp\x91\x90an\xEBV[aBz\x91\x90an\xEBV[aB\x84\x91\x90an\xEBV[\x90P_aB\x91\x86\x83aG\xC6V[\x90PaB\xA1`\x05\x87\x87\x87\x85aH,V[\x92Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\xC8\xDECR\x82\x86\x89\x89\x883`@Q\x87c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01aB\xFA\x96\x95\x94\x93\x92\x91\x90aosV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15aC\x11W_\x80\xFD[PZ\xF1\x15\x80\x15aC#W=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F\xE4$\x86\xB0\xCC\xDB\xEF\x81\xA2\x07\\H\xC8\xE5\x15\xC0y\xAE\xA7<\x8B\x82B\x99\x97\xC7*/\xE1\xBFO\xEF\x87\x87\x87\x87`@QaCs\x94\x93\x92\x91\x90ao\xD2V[`@Q\x80\x91\x03\x90\xA2PP\x93\x92PPPV[_s#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9\x90P\x90V[_\x80`\x08`S\x81\x11\x15aC\xB5WaC\xB4an\x91V[[`\xFF\x16`\x01\x90\x1B`\x06`S\x81\x11\x15aC\xD0WaC\xCFan\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15aC\xEBWaC\xEAan\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15aD\x06WaD\x05an\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15aD!WaD an\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15aD<WaD;an\x91V[[`\xFF\x16`\x01\x90\x1B_`S\x81\x11\x15aDVWaDUan\x91V[[`\xFF\x16`\x01\x90\x1BaDg\x91\x90an\xEBV[aDq\x91\x90an\xEBV[aD{\x91\x90an\xEBV[aD\x85\x91\x90an\xEBV[aD\x8F\x91\x90an\xEBV[aD\x99\x91\x90an\xEBV[\x90P_aD\xA6\x84\x83aG\xC6V[\x90PaD\xB3`\x15\x85a\\\xC6V[\x92Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c-\xCB\xC5\xD1\x82\x86\x863`@Q\x85c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01aE\x08\x94\x93\x92\x91\x90av\xFEV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15aE\x1FW_\x80\xFD[PZ\xF1\x15\x80\x15aE1W=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7FU\xAF\xF4\xCCz=\x16\x0C\x83\xF1\xF1[\x81\x80\x11\xED\xE8A\xA0\xB4Y\x7F\xB1M\xCD6\x03\xDF:\x11\xE5\xE0\x85\x85`@QaE}\x92\x91\x90ay\x90V[`@Q\x80\x91\x03\x90\xA2PP\x91\x90PV[_sP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]\x90P\x90V[_\x80`\x08`S\x81\x11\x15aE\xBDWaE\xBCan\x91V[[`\xFF\x16`\x01\x90\x1B`\x07`S\x81\x11\x15aE\xD8WaE\xD7an\x91V[[`\xFF\x16`\x01\x90\x1B`\x06`S\x81\x11\x15aE\xF3WaE\xF2an\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15aF\x0EWaF\ran\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15aF)WaF(an\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15aFDWaFCan\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15aF_WaF^an\x91V[[`\xFF\x16`\x01\x90\x1B_`S\x81\x11\x15aFyWaFxan\x91V[[`\xFF\x16`\x01\x90\x1BaF\x8A\x91\x90an\xEBV[aF\x94\x91\x90an\xEBV[aF\x9E\x91\x90an\xEBV[aF\xA8\x91\x90an\xEBV[aF\xB2\x91\x90an\xEBV[aF\xBC\x91\x90an\xEBV[aF\xC6\x91\x90an\xEBV[\x90P_aF\xD3\x86\x83aG\xC6V[\x90PaF\xE3`\x0C\x87\x87\x87_aH,V[\x92Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c`\xE1!\x89\x82\x86\x89\x89\x883`@Q\x87c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01aG<\x96\x95\x94\x93\x92\x91\x90aosV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15aGSW_\x80\xFD[PZ\xF1\x15\x80\x15aGeW=_\x80>=_\xFD[PPPP3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F\xB3\xD5\xC6d\xEC\x86WX\x18\xE8\xD7_\xF2\\_\x86rP\xDF\x89T\x08\x85I\xC4\x1C\x84\x8C\xD1\x0Ev\xCB\x87\x87\x87\x87`@QaG\xB5\x94\x93\x92\x91\x90ao\xD2V[`@Q\x80\x91\x03\x90\xA2PP\x93\x92PPPV[_aG\xD0\x83aN4V[\x90P_\x82\x82`S\x81\x11\x15aG\xE7WaG\xE6an\x91V[[`\xFF\x16`\x01\x90\x1B\x16\x03aH&W`@Q\x7F\xC6\xDEFj\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x92\x91PPV[_aH6\x83aaVV[sP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\x82\x02{m\x863`@Q\x83c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01aH\x85\x92\x91\x90arVV[` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15aH\xA0W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90aH\xC4\x91\x90atqV[aI\x07W\x843`@Q\x7F\x9D\xE39,\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01aH\xFE\x92\x91\x90arVV[`@Q\x80\x91\x03\x90\xFD[_`\xF8\x1B\x83~\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x19\x16\x03aJ|WsP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\x82\x02{m\x853`@Q\x83c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01aI\x82\x92\x91\x90arVV[` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15aI\x9DW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90aI\xC1\x91\x90atqV[aJ\x04W\x833`@Q\x7F\x9D\xE39,\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01aI\xFB\x92\x91\x90arVV[`@Q\x80\x91\x03\x90\xFD[_aJ\x0E\x85aN4V[\x90P_aJ\x1A\x87aN4V[\x90P\x81`S\x81\x11\x15aJ/WaJ.an\x91V[[\x81`S\x81\x11\x15aJBWaJAan\x91V[[\x14aJyW`@Q\x7F\x1F1X\xC7\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[PP[\x7FFHE_comp\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x86\x86\x86\x86sP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]F`\x01CaJ\xC4\x91\x90at\x9CV[@B`@Q` \x01aJ\xDE\x99\x98\x97\x96\x95\x94\x93\x92\x91\x90az\x0CV[`@Q` \x81\x83\x03\x03\x81R\x90`@R\x80Q\x90` \x01 \x90PaK\0\x81\x83aO]V[\x90PsP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c>9\\\xEC\x823`@Q\x83c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01aKQ\x92\x91\x90arVV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15aKhW_\x80\xFD[PZ\xF1\x15\x80\x15aKzW=_\x80>=_\xFD[PPPP\x95\x94PPPPPV[_\x80_\x90P[\x84\x84\x90P\x81\x10\x15aM&WsP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\x82\x02{m\x86\x86\x84\x81\x81\x10aK\xDBWaK\xDAaz\xAEV[[\x90P` \x02\x0153`@Q\x83c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01aL\0\x92\x91\x90arVV[` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15aL\x1BW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90aL?\x91\x90atqV[aL\x9BW\x84\x84\x82\x81\x81\x10aLVWaLUaz\xAEV[[\x90P` \x02\x0153`@Q\x7F\x9D\xE39,\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01aL\x92\x92\x91\x90arVV[`@Q\x80\x91\x03\x90\xFD[\x82`S\x81\x11\x15aL\xAEWaL\xADan\x91V[[aL\xD0\x86\x86\x84\x81\x81\x10aL\xC4WaL\xC3az\xAEV[[\x90P` \x02\x015aN4V[`S\x81\x11\x15aL\xE2WaL\xE1an\x91V[[\x14aM\x19W`@Q\x7F\x1F1X\xC7\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80\x80`\x01\x01\x91PPaK\x8DV[P\x7FFHE_comp\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x85\x85\x85\x90P\x86\x86sP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]F`\x01CaMr\x91\x90at\x9CV[@B`@Q` \x01aM\x8C\x99\x98\x97\x96\x95\x94\x93\x92\x91\x90a{@V[`@Q` \x81\x83\x03\x03\x81R\x90`@R\x80Q\x90` \x01 \x90PaM\xAE\x81\x83aO]V[\x90PsP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c>9\\\xEC\x823`@Q\x83c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01aM\xFF\x92\x91\x90arVV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15aN\x16W_\x80\xFD[PZ\xF1\x15\x80\x15aN(W=_\x80>=_\xFD[PPPP\x94\x93PPPPV[_\x81`\x1E` \x81\x10aNIWaNHaz\xAEV[[\x1A`\xF8\x1B`\xF8\x1C`\xFF\x16`S\x81\x11\x15aNeWaNdan\x91V[[\x90P\x91\x90PV[``_`\x01aNz\x84aa\x9AV[\x01\x90P_\x81g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x11\x15aN\x98WaN\x97ajHV[[`@Q\x90\x80\x82R\x80`\x1F\x01`\x1F\x19\x16` \x01\x82\x01`@R\x80\x15aN\xCAW\x81` \x01`\x01\x82\x02\x806\x837\x80\x82\x01\x91PP\x90P[P\x90P_\x82` \x01\x82\x01\x90P[`\x01\x15aO+W\x80\x80`\x01\x90\x03\x91PP\x7F0123456789abcdef\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0`\n\x86\x06\x1A\x81S`\n\x85\x81aO WaO\x1Fa{\xCFV[[\x04\x94P_\x85\x03aN\xD7W[\x81\x93PPPP\x91\x90PV[_\x7F\xF0\xC5~\x16\x84\r\xF0@\xF1P\x88\xDC/\x81\xFE9\x1C9#\xBE\xC7>#\xA9f.\xFC\x9C\"\x9Cj\0\x90P\x90V[_\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\0\0\0\0\0\0\0\0\0\0\0_\x1B\x83\x16\x90P`P`\xFF_\x1B\x90\x1B\x81\x17\x90P`\x10Fg\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16_\x1B\x90\x1B\x81\x17\x90P`\x08\x82`S\x81\x11\x15aO\xBBWaO\xBAan\x91V[[`\xFF\x16_\x1B\x90\x1B\x81\x17\x90P_`\xFF\x16_\x1B\x81\x17\x90P\x92\x91PPV[_aO\xDFaO6V[_\x01_\x90T\x90a\x01\0\n\x90\x04g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x90P\x90V[_\x80aP\x04ab\xEBV[\x90P\x7FFHE_seed\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81_\x01TsP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]F`\x01CaPN\x91\x90at\x9CV[@B`@Q` \x01aPe\x96\x95\x94\x93\x92\x91\x90a{\xFCV[`@Q` \x81\x83\x03\x03\x81R\x90`@R\x80Q\x90` \x01 \x91P\x80_\x01_\x81T\x80\x92\x91\x90aP\x90\x90a|kV[\x91\x90PUPP\x90V[_\x80`\x08`S\x81\x11\x15aP\xAFWaP\xAEan\x91V[[`\xFF\x16`\x01\x90\x1B`\x06`S\x81\x11\x15aP\xCAWaP\xC9an\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15aP\xE5WaP\xE4an\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15aQ\0WaP\xFFan\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15aQ\x1BWaQ\x1Aan\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15aQ6WaQ5an\x91V[[`\xFF\x16`\x01\x90\x1BaQG\x91\x90an\xEBV[aQQ\x91\x90an\xEBV[aQ[\x91\x90an\xEBV[aQe\x91\x90an\xEBV[aQo\x91\x90an\xEBV[\x90P_\x81\x85`S\x81\x11\x15aQ\x86WaQ\x85an\x91V[[`\xFF\x16`\x01\x90\x1B\x16\x03aQ\xC5W`@Q\x7F\xC6\xDEFj\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[aQ\xCE\x85ac\x12V[aR\x04W`@Q\x7F$\xE8\xE7B\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[aR\x0E\x85\x85ac6V[\x7FFHE_comp\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0`\x1B\x86\x86\x86`@Q` \x01aRH\x95\x94\x93\x92\x91\x90a|\xD2V[`@Q` \x81\x83\x03\x03\x81R\x90`@R\x80Q\x90` \x01 \x91PaRj\x82\x85aO]V[\x91Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16cl\xF0\xBD%\x85\x843`@Q\x84c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01aR\xBD\x93\x92\x91\x90ay&V[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15aR\xD4W_\x80\xFD[PZ\xF1\x15\x80\x15aR\xE6W=_\x80>=_\xFD[PPPPsP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c>9\\\xEC\x833`@Q\x83c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01aS9\x92\x91\x90arVV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15aSPW_\x80\xFD[PZ\xF1\x15\x80\x15aSbW=_\x80>=_\xFD[PPPPP\x93\x92PPPV[\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x160s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14\x80aT\x1BWP\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16aT\x02ad\x86V[s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14\x15[\x15aTRW`@Q\x7F\xE0|\x8D\xBA\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[V[sP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15aT\xB1W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90aT\xD5\x91\x90a}DV[s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x163s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14aUDW3`@Q\x7F!\xBF\xDA\x10\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01aU;\x91\x90an\"V[`@Q\x80\x91\x03\x90\xFD[PV[\x81s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16cR\xD1\x90-`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x92PPP\x80\x15aU\xAFWP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90aU\xAC\x91\x90ar+V[`\x01[aU\xF0W\x81`@Q\x7FL\x9C\x8C\xE3\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01aU\xE7\x91\x90an\"V[`@Q\x80\x91\x03\x90\xFD[\x7F6\x08\x94\xA1;\xA1\xA3!\x06g\xC8(I-\xB9\x8D\xCA> v\xCC75\xA9 \xA3\xCAP]8+\xBC_\x1B\x81\x14aVVW\x80`@Q\x7F\xAA\x1DI\xA4\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01aVM\x91\x90ah\xE0V[`@Q\x80\x91\x03\x90\xFD[aV`\x83\x83ad\xD9V[PPPV[\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x160s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14aV\xEAW`@Q\x7F\xE0|\x8D\xBA\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[V[_\x80\x83_\x1C\x90P`\x02`S\x81\x11\x15aW\x07WaW\x06an\x91V[[\x83`S\x81\x11\x15aW\x1AWaW\x19an\x91V[[\x03aW-W_\x81`\xFF\x16\x14\x91PPaXaV[`\x03`S\x81\x11\x15aWAWaW@an\x91V[[\x83`S\x81\x11\x15aWTWaWSan\x91V[[\x03aWhW_\x81a\xFF\xFF\x16\x14\x91PPaXaV[`\x04`S\x81\x11\x15aW|WaW{an\x91V[[\x83`S\x81\x11\x15aW\x8FWaW\x8Ean\x91V[[\x03aW\xA5W_\x81c\xFF\xFF\xFF\xFF\x16\x14\x91PPaXaV[`\x05`S\x81\x11\x15aW\xB9WaW\xB8an\x91V[[\x83`S\x81\x11\x15aW\xCCWaW\xCBan\x91V[[\x03aW\xE6W_\x81g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14\x91PPaXaV[`\x06`S\x81\x11\x15aW\xFAWaW\xF9an\x91V[[\x83`S\x81\x11\x15aX\rWaX\x0Can\x91V[[\x03aX/W_\x81o\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14\x91PPaXaV[`@Q\x7F\xC6\xDEFj\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x92\x91PPV[_sP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\x82\x02{m\x853`@Q\x83c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01aX\xB7\x92\x91\x90arVV[` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15aX\xD2W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90aX\xF6\x91\x90atqV[aY9W\x833`@Q\x7F\x9D\xE39,\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01aY0\x92\x91\x90arVV[`@Q\x80\x91\x03\x90\xFD[sP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\x82\x02{m\x843`@Q\x83c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01aY\x88\x92\x91\x90arVV[` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15aY\xA3W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90aY\xC7\x91\x90atqV[aZ\nW\x823`@Q\x7F\x9D\xE39,\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01aZ\x01\x92\x91\x90arVV[`@Q\x80\x91\x03\x90\xFD[sP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\x82\x02{m\x833`@Q\x83c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01aZY\x92\x91\x90arVV[` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15aZtW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90aZ\x98\x91\x90atqV[aZ\xDBW\x813`@Q\x7F\x9D\xE39,\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01aZ\xD2\x92\x91\x90arVV[`@Q\x80\x91\x03\x90\xFD[_aZ\xE5\x85aN4V[\x90P_aZ\xF1\x85aN4V[\x90P_aZ\xFD\x85aN4V[\x90P_`S\x81\x11\x15a[\x12Wa[\x11an\x91V[[\x83`S\x81\x11\x15a[%Wa[$an\x91V[[\x14a[\\W`@Q\x7F\xC6\xDEFj\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80`S\x81\x11\x15a[oWa[nan\x91V[[\x82`S\x81\x11\x15a[\x82Wa[\x81an\x91V[[\x14a[\xB9W`@Q\x7F\x1F1X\xC7\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x7FFHE_comp\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x88\x88\x88\x88sP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]F`\x01Ca\\\x01\x91\x90at\x9CV[@B`@Q` \x01a\\\x1B\x99\x98\x97\x96\x95\x94\x93\x92\x91\x90a}oV[`@Q` \x81\x83\x03\x03\x81R\x90`@R\x80Q\x90` \x01 \x93Pa\\=\x84\x83aO]V[\x93PsP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c>9\\\xEC\x853`@Q\x83c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a\\\x8E\x92\x91\x90arVV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a\\\xA5W_\x80\xFD[PZ\xF1\x15\x80\x15a\\\xB7W=_\x80>=_\xFD[PPPPPPP\x94\x93PPPPV[_sP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\x82\x02{m\x833`@Q\x83c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a]\x16\x92\x91\x90arVV[` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a]1W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a]U\x91\x90atqV[a]\x98W\x813`@Q\x7F\x9D\xE39,\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01a]\x8F\x92\x91\x90arVV[`@Q\x80\x91\x03\x90\xFD[\x7FFHE_comp\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x83\x83sP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]F`\x01Ca]\xDE\x91\x90at\x9CV[@B`@Q` \x01a]\xF6\x97\x96\x95\x94\x93\x92\x91\x90a~\x11V[`@Q` \x81\x83\x03\x03\x81R\x90`@R\x80Q\x90` \x01 \x90P_a^\x18\x83aN4V[\x90Pa^$\x82\x82aO]V[\x91PsP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c>9\\\xEC\x833`@Q\x83c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a^u\x92\x91\x90arVV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a^\x8CW_\x80\xFD[PZ\xF1\x15\x80\x15a^\x9EW=_\x80>=_\xFD[PPPPP\x92\x91PPV[_\x80`\x08`S\x81\x11\x15a^\xBFWa^\xBEan\x91V[[`\xFF\x16`\x01\x90\x1B`\x06`S\x81\x11\x15a^\xDAWa^\xD9an\x91V[[`\xFF\x16`\x01\x90\x1B`\x05`S\x81\x11\x15a^\xF5Wa^\xF4an\x91V[[`\xFF\x16`\x01\x90\x1B`\x04`S\x81\x11\x15a_\x10Wa_\x0Fan\x91V[[`\xFF\x16`\x01\x90\x1B`\x03`S\x81\x11\x15a_+Wa_*an\x91V[[`\xFF\x16`\x01\x90\x1B`\x02`S\x81\x11\x15a_FWa_Ean\x91V[[`\xFF\x16`\x01\x90\x1B_`S\x81\x11\x15a_`Wa__an\x91V[[`\xFF\x16`\x01\x90\x1Ba_q\x91\x90an\xEBV[a_{\x91\x90an\xEBV[a_\x85\x91\x90an\xEBV[a_\x8F\x91\x90an\xEBV[a_\x99\x91\x90an\xEBV[a_\xA3\x91\x90an\xEBV[\x90P_\x81\x85`S\x81\x11\x15a_\xBAWa_\xB9an\x91V[[`\xFF\x16`\x01\x90\x1B\x16\x03a_\xF9W`@Q\x7F\xC6\xDEFj\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x7FFHE_comp\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0`\x1A\x85\x85`@Q` \x01a`1\x94\x93\x92\x91\x90a~\x91V[`@Q` \x81\x83\x03\x03\x81R\x90`@R\x80Q\x90` \x01 \x91Pa`S\x82\x85aO]V[\x91Ps#?\xF8\x8AH\xC1r\xD2\x9FgT\x03\xE6\xA8\xE3\x02\xB0\xF02\xD9s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\xD5\xB8\xB8\xF3\x85\x843`@Q\x84c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01a`\xA6\x93\x92\x91\x90ay&V[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a`\xBDW_\x80\xFD[PZ\xF1\x15\x80\x15a`\xCFW=_\x80>=_\xFD[PPPPsP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c>9\\\xEC\x833`@Q\x83c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01aa\"\x92\x91\x90arVV[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15aa9W_\x80\xFD[PZ\xF1\x15\x80\x15aaKW=_\x80>=_\xFD[PPPPP\x92\x91PPV[`\x01\x81`\xF8\x1C`\xFF\x16\x11\x15aa\x97W`@Q\x7F\xDF{\xF3%\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[PV[_\x80_\x90Pz\x18O\x03\xE9?\xF9\xF4\xDA\xA7\x97\xEDn8\xEDd\xBFj\x1F\x01\0\0\0\0\0\0\0\0\x83\x10aa\xF6Wz\x18O\x03\xE9?\xF9\xF4\xDA\xA7\x97\xEDn8\xEDd\xBFj\x1F\x01\0\0\0\0\0\0\0\0\x83\x81aa\xECWaa\xEBa{\xCFV[[\x04\x92P`@\x81\x01\x90P[m\x04\xEE-mA[\x85\xAC\xEF\x81\0\0\0\0\x83\x10ab3Wm\x04\xEE-mA[\x85\xAC\xEF\x81\0\0\0\0\x83\x81ab)Wab(a{\xCFV[[\x04\x92P` \x81\x01\x90P[f#\x86\xF2o\xC1\0\0\x83\x10abbWf#\x86\xF2o\xC1\0\0\x83\x81abXWabWa{\xCFV[[\x04\x92P`\x10\x81\x01\x90P[c\x05\xF5\xE1\0\x83\x10ab\x8BWc\x05\xF5\xE1\0\x83\x81ab\x81Wab\x80a{\xCFV[[\x04\x92P`\x08\x81\x01\x90P[a'\x10\x83\x10ab\xB0Wa'\x10\x83\x81ab\xA6Wab\xA5a{\xCFV[[\x04\x92P`\x04\x81\x01\x90P[`d\x83\x10ab\xD3W`d\x83\x81ab\xC9Wab\xC8a{\xCFV[[\x04\x92P`\x02\x81\x01\x90P[`\n\x83\x10ab\xE2W`\x01\x81\x01\x90P[\x80\x91PP\x91\x90PV[_\x7FF\x13\xE1w\x1Fku]$>So\xB5\xA2<[\x15\xE2\x82eu\xFE\xE9!\xE8\xFEz\"\xA7`\xC8\0\x90P\x90V[_\x80\x82\x11\x80\x15ac/WP_`\x01\x83ac+\x91\x90at\x9CV[\x83\x16\x14[\x90P\x91\x90PV[`\x02`S\x81\x11\x15acJWacIan\x91V[[\x81`S\x81\x11\x15ac]Wac\\an\x91V[[\x03acsWacn\x82a\x01\0aeKV[ad\x82V[`\x03`S\x81\x11\x15ac\x87Wac\x86an\x91V[[\x81`S\x81\x11\x15ac\x9AWac\x99an\x91V[[\x03ac\xB1Wac\xAC\x82b\x01\0\0aeKV[ad\x82V[`\x04`S\x81\x11\x15ac\xC5Wac\xC4an\x91V[[\x81`S\x81\x11\x15ac\xD8Wac\xD7an\x91V[[\x03ac\xF1Wac\xEC\x82d\x01\0\0\0\0aeKV[ad\x82V[`\x05`S\x81\x11\x15ad\x05Wad\x04an\x91V[[\x81`S\x81\x11\x15ad\x18Wad\x17an\x91V[[\x03ad5Wad0\x82h\x01\0\0\0\0\0\0\0\0aeKV[ad\x82V[`\x06`S\x81\x11\x15adIWadHan\x91V[[\x81`S\x81\x11\x15ad\\Wad[an\x91V[[\x03ad\x81Wad|\x82p\x01\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0aeKV[ad\x82V[[PPV[_ad\xB2\x7F6\x08\x94\xA1;\xA1\xA3!\x06g\xC8(I-\xB9\x8D\xCA> v\xCC75\xA9 \xA3\xCAP]8+\xBC_\x1Bae\x89V[_\x01_\x90T\x90a\x01\0\n\x90\x04s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x90P\x90V[ad\xE2\x82ae\x92V[\x81s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F\xBC|\xD7Z \xEE'\xFD\x9A\xDE\xBA\xB3 A\xF7U!M\xBCk\xFF\xA9\x0C\xC0\"[9\xDA.\\-;`@Q`@Q\x80\x91\x03\x90\xA2_\x81Q\x11\x15ae>Wae8\x82\x82af[V[PaeGV[aeFaf\xDBV[[PPV[\x80\x82\x11\x15ae\x85W`@Q\x7F\xC7\xDA\xDFE\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[PPV[_\x81\x90P\x91\x90PV[_\x81s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16;\x03ae\xEDW\x80`@Q\x7FL\x9C\x8C\xE3\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01ae\xE4\x91\x90an\"V[`@Q\x80\x91\x03\x90\xFD[\x80af\x19\x7F6\x08\x94\xA1;\xA1\xA3!\x06g\xC8(I-\xB9\x8D\xCA> v\xCC75\xA9 \xA3\xCAP]8+\xBC_\x1Bae\x89V[_\x01_a\x01\0\n\x81T\x81s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x02\x19\x16\x90\x83s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x02\x17\x90UPPV[``_\x80\x84s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x84`@Qaf\x84\x91\x90a\x7F\x18V[_`@Q\x80\x83\x03\x81\x85Z\xF4\x91PP=\x80_\x81\x14af\xBCW`@Q\x91P`\x1F\x19`?=\x01\x16\x82\x01`@R=\x82R=_` \x84\x01>af\xC1V[``\x91P[P\x91P\x91Paf\xD1\x85\x83\x83ag\x17V[\x92PPP\x92\x91PPV[_4\x11\x15ag\x15W`@Q\x7F\xB3\x98\x97\x9F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[V[``\x82ag,Wag'\x82ag\xA4V[ag\x9CV[_\x82Q\x14\x80\x15agRWP_\x84s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16;\x14[\x15ag\x94W\x83`@Q\x7F\x99\x96\xB3\x15\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01ag\x8B\x91\x90an\"V[`@Q\x80\x91\x03\x90\xFD[\x81\x90Pag\x9DV[[\x93\x92PPPV[_\x81Q\x11\x15ag\xB6W\x80Q\x80\x82` \x01\xFD[`@Q\x7F\xD6\xBD\xA2u\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`@Q\x90P\x90V[_\x80\xFD[_\x80\xFD[_\x81\x90P\x91\x90PV[ah\x0B\x81ag\xF9V[\x81\x14ah\x15W_\x80\xFD[PV[_\x815\x90Pah&\x81ah\x02V[\x92\x91PPV[_\x7F\xFF\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x82\x16\x90P\x91\x90PV[ah`\x81ah,V[\x81\x14ahjW_\x80\xFD[PV[_\x815\x90Pah{\x81ahWV[\x92\x91PPV[_\x80_``\x84\x86\x03\x12\x15ah\x98Wah\x97ag\xF1V[[_ah\xA5\x86\x82\x87\x01ah\x18V[\x93PP` ah\xB6\x86\x82\x87\x01ah\x18V[\x92PP`@ah\xC7\x86\x82\x87\x01ahmV[\x91PP\x92P\x92P\x92V[ah\xDA\x81ag\xF9V[\x82RPPV[_` \x82\x01\x90Pah\xF3_\x83\x01\x84ah\xD1V[\x92\x91PPV[_\x80\xFD[_\x80\xFD[_\x80\xFD[_\x80\x83`\x1F\x84\x01\x12ai\x1AWai\x19ah\xF9V[[\x825\x90Pg\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x11\x15ai7Wai6ah\xFDV[[` \x83\x01\x91P\x83` \x82\x02\x83\x01\x11\x15aiSWaiRai\x01V[[\x92P\x92\x90PV[`T\x81\x10aifW_\x80\xFD[PV[_\x815\x90Paiw\x81aiZV[\x92\x91PPV[_\x80_`@\x84\x86\x03\x12\x15ai\x94Wai\x93ag\xF1V[[_\x84\x015g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x11\x15ai\xB1Wai\xB0ag\xF5V[[ai\xBD\x86\x82\x87\x01ai\x05V[\x93P\x93PP` ai\xD0\x86\x82\x87\x01aiiV[\x91PP\x92P\x92P\x92V[_s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x82\x16\x90P\x91\x90PV[_aj\x03\x82ai\xDAV[\x90P\x91\x90PV[aj\x13\x81ai\xF9V[\x81\x14aj\x1DW_\x80\xFD[PV[_\x815\x90Paj.\x81aj\nV[\x92\x91PPV[_\x80\xFD[_`\x1F\x19`\x1F\x83\x01\x16\x90P\x91\x90PV[\x7FNH{q\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0_R`A`\x04R`$_\xFD[aj~\x82aj8V[\x81\x01\x81\x81\x10g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x82\x11\x17\x15aj\x9DWaj\x9CajHV[[\x80`@RPPPV[_aj\xAFag\xE8V[\x90Paj\xBB\x82\x82ajuV[\x91\x90PV[_g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x82\x11\x15aj\xDAWaj\xD9ajHV[[aj\xE3\x82aj8V[\x90P` \x81\x01\x90P\x91\x90PV[\x82\x81\x837_\x83\x83\x01RPPPV[_ak\x10ak\x0B\x84aj\xC0V[aj\xA6V[\x90P\x82\x81R` \x81\x01\x84\x84\x84\x01\x11\x15ak,Wak+aj4V[[ak7\x84\x82\x85aj\xF0V[P\x93\x92PPPV[_\x82`\x1F\x83\x01\x12akSWakRah\xF9V[[\x815akc\x84\x82` \x86\x01aj\xFEV[\x91PP\x92\x91PPV[_\x80_\x80`\x80\x85\x87\x03\x12\x15ak\x84Wak\x83ag\xF1V[[_ak\x91\x87\x82\x88\x01ah\x18V[\x94PP` ak\xA2\x87\x82\x88\x01aj V[\x93PP`@\x85\x015g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x11\x15ak\xC3Wak\xC2ag\xF5V[[ak\xCF\x87\x82\x88\x01ak?V[\x92PP``ak\xE0\x87\x82\x88\x01aiiV[\x91PP\x92\x95\x91\x94P\x92PV[_\x81Q\x90P\x91\x90PV[_\x82\x82R` \x82\x01\x90P\x92\x91PPV[_[\x83\x81\x10\x15al#W\x80\x82\x01Q\x81\x84\x01R` \x81\x01\x90Pal\x08V[_\x84\x84\x01RPPPPV[_al8\x82ak\xECV[alB\x81\x85ak\xF6V[\x93PalR\x81\x85` \x86\x01al\x06V[al[\x81aj8V[\x84\x01\x91PP\x92\x91PPV[_` \x82\x01\x90P\x81\x81\x03_\x83\x01Ral~\x81\x84al.V[\x90P\x92\x91PPV[_\x80`@\x83\x85\x03\x12\x15al\x9CWal\x9Bag\xF1V[[_al\xA9\x85\x82\x86\x01ah\x18V[\x92PP` al\xBA\x85\x82\x86\x01aiiV[\x91PP\x92P\x92\x90PV[_\x81\x90P\x91\x90PV[al\xD6\x81al\xC4V[\x81\x14al\xE0W_\x80\xFD[PV[_\x815\x90Pal\xF1\x81al\xCDV[\x92\x91PPV[_\x80`@\x83\x85\x03\x12\x15am\rWam\x0Cag\xF1V[[_am\x1A\x85\x82\x86\x01al\xE3V[\x92PP` am+\x85\x82\x86\x01aiiV[\x91PP\x92P\x92\x90PV[_\x80`@\x83\x85\x03\x12\x15amKWamJag\xF1V[[_amX\x85\x82\x86\x01aj V[\x92PP` \x83\x015g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x11\x15amyWamxag\xF5V[[am\x85\x85\x82\x86\x01ak?V[\x91PP\x92P\x92\x90PV[_\x80_``\x84\x86\x03\x12\x15am\xA6Wam\xA5ag\xF1V[[_am\xB3\x86\x82\x87\x01ah\x18V[\x93PP` am\xC4\x86\x82\x87\x01ah\x18V[\x92PP`@am\xD5\x86\x82\x87\x01ah\x18V[\x91PP\x92P\x92P\x92V[_`\xFF\x82\x16\x90P\x91\x90PV[am\xF4\x81am\xDFV[\x82RPPV[_` \x82\x01\x90Pan\r_\x83\x01\x84am\xEBV[\x92\x91PPV[an\x1C\x81ai\xF9V[\x82RPPV[_` \x82\x01\x90Pan5_\x83\x01\x84an\x13V[\x92\x91PPV[_` \x82\x84\x03\x12\x15anPWanOag\xF1V[[_an]\x84\x82\x85\x01ah\x18V[\x91PP\x92\x91PPV[_` \x82\x84\x03\x12\x15an{Wanzag\xF1V[[_an\x88\x84\x82\x85\x01aiiV[\x91PP\x92\x91PPV[\x7FNH{q\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0_R`!`\x04R`$_\xFD[\x7FNH{q\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0_R`\x11`\x04R`$_\xFD[_an\xF5\x82al\xC4V[\x91Pao\0\x83al\xC4V[\x92P\x82\x82\x01\x90P\x80\x82\x11\x15ao\x18Wao\x17an\xBEV[[\x92\x91PPV[`T\x81\x10ao/Wao.an\x91V[[PV[_\x81\x90Pao?\x82ao\x1EV[\x91\x90PV[_aoN\x82ao2V[\x90P\x91\x90PV[ao^\x81aoDV[\x82RPPV[aom\x81ah,V[\x82RPPV[_`\xC0\x82\x01\x90Pao\x86_\x83\x01\x89aoUV[ao\x93` \x83\x01\x88aodV[ao\xA0`@\x83\x01\x87ah\xD1V[ao\xAD``\x83\x01\x86ah\xD1V[ao\xBA`\x80\x83\x01\x85ah\xD1V[ao\xC7`\xA0\x83\x01\x84an\x13V[\x97\x96PPPPPPPV[_`\x80\x82\x01\x90Pao\xE5_\x83\x01\x87ah\xD1V[ao\xF2` \x83\x01\x86ah\xD1V[ao\xFF`@\x83\x01\x85aodV[ap\x0C``\x83\x01\x84ah\xD1V[\x95\x94PPPPPV[ap\x1E\x81al\xC4V[\x82RPPV[_`@\x82\x01\x90Pap7_\x83\x01\x85ap\x15V[apD` \x83\x01\x84ap\x15V[\x93\x92PPPV[_\x82\x82R` \x82\x01\x90P\x92\x91PPV[_\x80\xFD[\x82\x81\x837PPPV[_aps\x83\x85apKV[\x93P\x7F\x07\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x83\x11\x15ap\xA6Wap\xA5ap[V[[` \x83\x02\x92Pap\xB7\x83\x85\x84ap_V[\x82\x84\x01\x90P\x93\x92PPPV[_`\x80\x82\x01\x90Pap\xD6_\x83\x01\x88aoUV[\x81\x81\x03` \x83\x01Rap\xE9\x81\x86\x88aphV[\x90Pap\xF8`@\x83\x01\x85ah\xD1V[aq\x05``\x83\x01\x84an\x13V[\x96\x95PPPPPPV[_``\x82\x01\x90P\x81\x81\x03_\x83\x01Raq(\x81\x86\x88aphV[\x90Paq7` \x83\x01\x85aoUV[aqD`@\x83\x01\x84ah\xD1V[\x95\x94PPPPPV[aqV\x81ai\xF9V[\x82RPPV[`@\x82\x01_\x82\x01Qaqp_\x85\x01\x82aqMV[P` \x82\x01Qaq\x83` \x85\x01\x82aqMV[PPPPV[_\x81Q\x90P\x91\x90PV[_\x82\x82R` \x82\x01\x90P\x92\x91PPV[_aq\xAD\x82aq\x89V[aq\xB7\x81\x85aq\x93V[\x93Paq\xC7\x81\x85` \x86\x01al\x06V[aq\xD0\x81aj8V[\x84\x01\x91PP\x92\x91PPV[_`\x80\x82\x01\x90Paq\xEE_\x83\x01\x86aq\\V[aq\xFB`@\x83\x01\x85ah\xD1V[\x81\x81\x03``\x83\x01Rar\r\x81\x84aq\xA3V[\x90P\x94\x93PPPPV[_\x81Q\x90Par%\x81ah\x02V[\x92\x91PPV[_` \x82\x84\x03\x12\x15ar@War?ag\xF1V[[_arM\x84\x82\x85\x01ar\x17V[\x91PP\x92\x91PPV[_`@\x82\x01\x90Pari_\x83\x01\x85ah\xD1V[arv` \x83\x01\x84an\x13V[\x93\x92PPPV[_`\xA0\x82\x01\x90Par\x90_\x83\x01\x88ah\xD1V[ar\x9D` \x83\x01\x87an\x13V[\x81\x81\x03`@\x83\x01Rar\xAF\x81\x86aq\xA3V[\x90Par\xBE``\x83\x01\x85aoUV[ar\xCB`\x80\x83\x01\x84ah\xD1V[\x96\x95PPPPPPV[_\x81\x90P\x92\x91PPV[_ar\xE9\x82ak\xECV[ar\xF3\x81\x85ar\xD5V[\x93Pas\x03\x81\x85` \x86\x01al\x06V[\x80\x84\x01\x91PP\x92\x91PPV[\x7F v\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0_\x82\x01RPV[_asC`\x02\x83ar\xD5V[\x91PasN\x82as\x0FV[`\x02\x82\x01\x90P\x91\x90PV[\x7F.\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0_\x82\x01RPV[_as\x8D`\x01\x83ar\xD5V[\x91Pas\x98\x82asYV[`\x01\x82\x01\x90P\x91\x90PV[_as\xAE\x82\x87ar\xDFV[\x91Pas\xB9\x82as7V[\x91Pas\xC5\x82\x86ar\xDFV[\x91Pas\xD0\x82as\x81V[\x91Pas\xDC\x82\x85ar\xDFV[\x91Pas\xE7\x82as\x81V[\x91Pas\xF3\x82\x84ar\xDFV[\x91P\x81\x90P\x95\x94PPPPPV[_g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x82\x16\x90P\x91\x90PV[at\x1D\x81at\x01V[\x82RPPV[_` \x82\x01\x90Pat6_\x83\x01\x84at\x14V[\x92\x91PPV[_\x81\x15\x15\x90P\x91\x90PV[atP\x81at<V[\x81\x14atZW_\x80\xFD[PV[_\x81Q\x90Patk\x81atGV[\x92\x91PPV[_` \x82\x84\x03\x12\x15at\x86Wat\x85ag\xF1V[[_at\x93\x84\x82\x85\x01at]V[\x91PP\x92\x91PPV[_at\xA6\x82al\xC4V[\x91Pat\xB1\x83al\xC4V[\x92P\x82\x82\x03\x90P\x81\x81\x11\x15at\xC9Wat\xC8an\xBEV[[\x92\x91PPV[_\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x82\x16\x90P\x91\x90PV[_\x81\x90P\x91\x90PV[au\x14au\x0F\x82at\xCFV[at\xFAV[\x82RPPV[`\x1D\x81\x10au+Wau*an\x91V[[PV[_\x81\x90Pau;\x82au\x1AV[\x91\x90PV[_auJ\x82au.V[\x90P\x91\x90PV[_\x81`\xF8\x1B\x90P\x91\x90PV[_aug\x82auQV[\x90P\x91\x90PV[au\x7Fauz\x82au@V[au]V[\x82RPPV[_\x81\x90P\x91\x90PV[au\x9Fau\x9A\x82ag\xF9V[au\x85V[\x82RPPV[au\xB6au\xB1\x82aoDV[au]V[\x82RPPV[_\x81\x90P\x91\x90PV[_au\xDFau\xDAau\xD5\x84ai\xDAV[au\xBCV[ai\xDAV[\x90P\x91\x90PV[_au\xF0\x82au\xC5V[\x90P\x91\x90PV[_av\x01\x82au\xE6V[\x90P\x91\x90PV[_\x81``\x1B\x90P\x91\x90PV[_av\x1E\x82av\x08V[\x90P\x91\x90PV[_av/\x82av\x14V[\x90P\x91\x90PV[avGavB\x82au\xF7V[av%V[\x82RPPV[_\x81\x90P\x91\x90PV[avgavb\x82al\xC4V[avMV[\x82RPPV[_avx\x82\x8Bau\x03V[`\x08\x82\x01\x91Pav\x88\x82\x8AaunV[`\x01\x82\x01\x91Pav\x98\x82\x89au\x8EV[` \x82\x01\x91Pav\xA8\x82\x88au\xA5V[`\x01\x82\x01\x91Pav\xB8\x82\x87av6V[`\x14\x82\x01\x91Pav\xC8\x82\x86avVV[` \x82\x01\x91Pav\xD8\x82\x85au\x8EV[` \x82\x01\x91Pav\xE8\x82\x84avVV[` \x82\x01\x91P\x81\x90P\x99\x98PPPPPPPPPV[_`\x80\x82\x01\x90Paw\x11_\x83\x01\x87aoUV[aw\x1E` \x83\x01\x86ah\xD1V[aw+`@\x83\x01\x85ah\xD1V[aw8``\x83\x01\x84an\x13V[\x95\x94PPPPPV[_``\x82\x01\x90PawT_\x83\x01\x86ah\xD1V[awa` \x83\x01\x85aoUV[awn`@\x83\x01\x84ah\xD1V[\x94\x93PPPPV[_\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x82\x16\x90P\x91\x90PV[aw\xAA\x81awvV[\x82RPPV[_`\x80\x82\x01\x90Paw\xC3_\x83\x01\x87ap\x15V[aw\xD0` \x83\x01\x86aoUV[aw\xDD`@\x83\x01\x85aw\xA1V[aw\xEA``\x83\x01\x84ah\xD1V[\x95\x94PPPPPV[_`\xC0\x82\x01\x90Pax\x06_\x83\x01\x89aoUV[ax\x13` \x83\x01\x88ah\xD1V[ax `@\x83\x01\x87ah\xD1V[ax-``\x83\x01\x86ah\xD1V[ax:`\x80\x83\x01\x85ah\xD1V[axG`\xA0\x83\x01\x84an\x13V[\x97\x96PPPPPPPV[_`\x80\x82\x01\x90Paxe_\x83\x01\x87ah\xD1V[axr` \x83\x01\x86ah\xD1V[ax\x7F`@\x83\x01\x85ah\xD1V[ax\x8C``\x83\x01\x84ah\xD1V[\x95\x94PPPPPV[_ax\xA0\x82\x8Bau\x03V[`\x08\x82\x01\x91Pax\xB0\x82\x8AaunV[`\x01\x82\x01\x91Pax\xC0\x82\x89avVV[` \x82\x01\x91Pax\xD0\x82\x88au\xA5V[`\x01\x82\x01\x91Pax\xE0\x82\x87av6V[`\x14\x82\x01\x91Pax\xF0\x82\x86avVV[` \x82\x01\x91Pay\0\x82\x85au\x8EV[` \x82\x01\x91Pay\x10\x82\x84avVV[` \x82\x01\x91P\x81\x90P\x99\x98PPPPPPPPPV[_``\x82\x01\x90Pay9_\x83\x01\x86aoUV[ayF` \x83\x01\x85ah\xD1V[ayS`@\x83\x01\x84an\x13V[\x94\x93PPPPV[_``\x82\x01\x90Payn_\x83\x01\x86ap\x15V[ay{` \x83\x01\x85aoUV[ay\x88`@\x83\x01\x84ah\xD1V[\x94\x93PPPPV[_`@\x82\x01\x90Pay\xA3_\x83\x01\x85ah\xD1V[ay\xB0` \x83\x01\x84ah\xD1V[\x93\x92PPPV[_``\x82\x01\x90Pay\xCA_\x83\x01\x86aoUV[ay\xD7` \x83\x01\x85aw\xA1V[ay\xE4`@\x83\x01\x84ah\xD1V[\x94\x93PPPPV[_\x81\x90P\x91\x90PV[az\x06az\x01\x82ah,V[ay\xECV[\x82RPPV[_az\x17\x82\x8Cau\x03V[`\x08\x82\x01\x91Paz'\x82\x8BaunV[`\x01\x82\x01\x91Paz7\x82\x8Aau\x8EV[` \x82\x01\x91PazG\x82\x89au\x8EV[` \x82\x01\x91PazW\x82\x88ay\xF5V[`\x01\x82\x01\x91Pazg\x82\x87av6V[`\x14\x82\x01\x91Pazw\x82\x86avVV[` \x82\x01\x91Paz\x87\x82\x85au\x8EV[` \x82\x01\x91Paz\x97\x82\x84avVV[` \x82\x01\x91P\x81\x90P\x9A\x99PPPPPPPPPPV[\x7FNH{q\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0_R`2`\x04R`$_\xFD[_\x81\x90P\x92\x91PPV[_az\xF0\x83\x85az\xDBV[\x93P\x7F\x07\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x83\x11\x15a{#Wa{\"ap[V[[` \x83\x02\x92Pa{4\x83\x85\x84ap_V[\x82\x84\x01\x90P\x93\x92PPPV[_a{K\x82\x8Cau\x03V[`\x08\x82\x01\x91Pa{[\x82\x8BaunV[`\x01\x82\x01\x91Pa{k\x82\x8AavVV[` \x82\x01\x91Pa{|\x82\x88\x8Aaz\xE5V[\x91Pa{\x88\x82\x87av6V[`\x14\x82\x01\x91Pa{\x98\x82\x86avVV[` \x82\x01\x91Pa{\xA8\x82\x85au\x8EV[` \x82\x01\x91Pa{\xB8\x82\x84avVV[` \x82\x01\x91P\x81\x90P\x9A\x99PPPPPPPPPPV[\x7FNH{q\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0_R`\x12`\x04R`$_\xFD[_a|\x07\x82\x89au\x03V[`\x08\x82\x01\x91Pa|\x17\x82\x88avVV[` \x82\x01\x91Pa|'\x82\x87av6V[`\x14\x82\x01\x91Pa|7\x82\x86avVV[` \x82\x01\x91Pa|G\x82\x85au\x8EV[` \x82\x01\x91Pa|W\x82\x84avVV[` \x82\x01\x91P\x81\x90P\x97\x96PPPPPPPV[_a|u\x82al\xC4V[\x91P\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x82\x03a|\xA7Wa|\xA6an\xBEV[[`\x01\x82\x01\x90P\x91\x90PV[_\x81\x90P\x91\x90PV[a|\xCCa|\xC7\x82awvV[a|\xB2V[\x82RPPV[_a|\xDD\x82\x88au\x03V[`\x08\x82\x01\x91Pa|\xED\x82\x87aunV[`\x01\x82\x01\x91Pa|\xFD\x82\x86avVV[` \x82\x01\x91Pa}\r\x82\x85au\xA5V[`\x01\x82\x01\x91Pa}\x1D\x82\x84a|\xBBV[`\x10\x82\x01\x91P\x81\x90P\x96\x95PPPPPPV[_\x81Q\x90Pa}>\x81aj\nV[\x92\x91PPV[_` \x82\x84\x03\x12\x15a}YWa}Xag\xF1V[[_a}f\x84\x82\x85\x01a}0V[\x91PP\x92\x91PPV[_a}z\x82\x8Cau\x03V[`\x08\x82\x01\x91Pa}\x8A\x82\x8BaunV[`\x01\x82\x01\x91Pa}\x9A\x82\x8Aau\x8EV[` \x82\x01\x91Pa}\xAA\x82\x89au\x8EV[` \x82\x01\x91Pa}\xBA\x82\x88au\x8EV[` \x82\x01\x91Pa}\xCA\x82\x87av6V[`\x14\x82\x01\x91Pa}\xDA\x82\x86avVV[` \x82\x01\x91Pa}\xEA\x82\x85au\x8EV[` \x82\x01\x91Pa}\xFA\x82\x84avVV[` \x82\x01\x91P\x81\x90P\x9A\x99PPPPPPPPPPV[_a~\x1C\x82\x8Aau\x03V[`\x08\x82\x01\x91Pa~,\x82\x89aunV[`\x01\x82\x01\x91Pa~<\x82\x88au\x8EV[` \x82\x01\x91Pa~L\x82\x87av6V[`\x14\x82\x01\x91Pa~\\\x82\x86avVV[` \x82\x01\x91Pa~l\x82\x85au\x8EV[` \x82\x01\x91Pa~|\x82\x84avVV[` \x82\x01\x91P\x81\x90P\x98\x97PPPPPPPPV[_a~\x9C\x82\x87au\x03V[`\x08\x82\x01\x91Pa~\xAC\x82\x86aunV[`\x01\x82\x01\x91Pa~\xBC\x82\x85au\xA5V[`\x01\x82\x01\x91Pa~\xCC\x82\x84a|\xBBV[`\x10\x82\x01\x91P\x81\x90P\x95\x94PPPPPV[_\x81\x90P\x92\x91PPV[_a~\xF2\x82aq\x89V[a~\xFC\x81\x85a~\xDEV[\x93Pa\x7F\x0C\x81\x85` \x86\x01al\x06V[\x80\x84\x01\x91PP\x92\x91PPV[_a\x7F#\x82\x84a~\xE8V[\x91P\x81\x90P\x92\x91PPV",
     );
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct FheType(u8);
@@ -2299,37 +2298,29 @@ pub mod FHEVMExecutor {
             #[inline]
             fn stv_to_tokens(
                 &self,
-            ) -> <alloy::sol_types::sol_data::Uint<
-                8,
-            > as alloy_sol_types::SolType>::Token<'_> {
+            ) -> <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::Token<'_>
+            {
                 alloy_sol_types::private::SolTypeValue::<
                     alloy::sol_types::sol_data::Uint<8>,
                 >::stv_to_tokens(self)
             }
             #[inline]
             fn stv_eip712_data_word(&self) -> alloy_sol_types::Word {
-                <alloy::sol_types::sol_data::Uint<
-                    8,
-                > as alloy_sol_types::SolType>::tokenize(self)
-                    .0
+                <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::tokenize(self).0
             }
             #[inline]
-            fn stv_abi_encode_packed_to(
-                &self,
-                out: &mut alloy_sol_types::private::Vec<u8>,
-            ) {
+            fn stv_abi_encode_packed_to(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
                 <alloy::sol_types::sol_data::Uint<
                     8,
                 > as alloy_sol_types::SolType>::abi_encode_packed_to(self, out)
             }
             #[inline]
             fn stv_abi_packed_encoded_size(&self) -> usize {
-                <alloy::sol_types::sol_data::Uint<
-                    8,
-                > as alloy_sol_types::SolType>::abi_encoded_size(self)
+                <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::abi_encoded_size(
+                    self,
+                )
             }
         }
-        #[automatically_derived]
         impl FheType {
             /// The Solidity type name.
             pub const NAME: &'static str = stringify!(@ name);
@@ -2371,13 +2362,11 @@ pub mod FHEVMExecutor {
         #[automatically_derived]
         impl alloy_sol_types::SolType for FheType {
             type RustType = u8;
-            type Token<'a> = <alloy::sol_types::sol_data::Uint<
-                8,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> =
+                <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::Token<'a>;
             const SOL_NAME: &'static str = Self::NAME;
-            const ENCODED_SIZE: Option<usize> = <alloy::sol_types::sol_data::Uint<
-                8,
-            > as alloy_sol_types::SolType>::ENCODED_SIZE;
+            const ENCODED_SIZE: Option<usize> =
+                <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::ENCODED_SIZE;
             const PACKED_ENCODED_SIZE: Option<usize> = <alloy::sol_types::sol_data::Uint<
                 8,
             > as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
@@ -2387,15 +2376,11 @@ pub mod FHEVMExecutor {
             }
             #[inline]
             fn type_check(token: &Self::Token<'_>) -> alloy_sol_types::Result<()> {
-                <alloy::sol_types::sol_data::Uint<
-                    8,
-                > as alloy_sol_types::SolType>::type_check(token)
+                <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::type_check(token)
             }
             #[inline]
             fn detokenize(token: Self::Token<'_>) -> Self::RustType {
-                <alloy::sol_types::sol_data::Uint<
-                    8,
-                > as alloy_sol_types::SolType>::detokenize(token)
+                <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::detokenize(token)
             }
         }
         #[automatically_derived]
@@ -2416,21 +2401,18 @@ pub mod FHEVMExecutor {
                 > as alloy_sol_types::EventTopic>::encode_topic_preimage(rust, out)
             }
             #[inline]
-            fn encode_topic(
-                rust: &Self::RustType,
-            ) -> alloy_sol_types::abi::token::WordToken {
-                <alloy::sol_types::sol_data::Uint<
-                    8,
-                > as alloy_sol_types::EventTopic>::encode_topic(rust)
+            fn encode_topic(rust: &Self::RustType) -> alloy_sol_types::abi::token::WordToken {
+                <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::EventTopic>::encode_topic(
+                    rust,
+                )
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ACLNotAllowed(bytes32,address)` and selector `0x9de3392c`.
-```solidity
-error ACLNotAllowed(bytes32 handle, address account);
-```*/
+    ```solidity
+    error ACLNotAllowed(bytes32 handle, address account);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ACLNotAllowed {
@@ -2448,6 +2430,7 @@ error ACLNotAllowed(bytes32 handle, address account);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::FixedBytes<32>,
             alloy::sol_types::sol_data::Address,
@@ -2459,9 +2442,7 @@ error ACLNotAllowed(bytes32 handle, address account);
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2488,9 +2469,7 @@ error ACLNotAllowed(bytes32 handle, address account);
         #[automatically_derived]
         impl alloy_sol_types::SolError for ACLNotAllowed {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "ACLNotAllowed(bytes32,address)";
             const SELECTOR: [u8; 4] = [157u8, 227u8, 57u8, 44u8];
             #[inline]
@@ -2512,19 +2491,18 @@ error ACLNotAllowed(bytes32 handle, address account);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `AddressEmptyCode(address)` and selector `0x9996b315`.
-```solidity
-error AddressEmptyCode(address target);
-```*/
+    ```solidity
+    error AddressEmptyCode(address target);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct AddressEmptyCode {
@@ -2540,14 +2518,13 @@ error AddressEmptyCode(address target);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2571,9 +2548,7 @@ error AddressEmptyCode(address target);
         #[automatically_derived]
         impl alloy_sol_types::SolError for AddressEmptyCode {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "AddressEmptyCode(address)";
             const SELECTOR: [u8; 4] = [153u8, 150u8, 179u8, 21u8];
             #[inline]
@@ -2592,19 +2567,18 @@ error AddressEmptyCode(address target);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `DivisionByZero()` and selector `0x23d359a3`.
-```solidity
-error DivisionByZero();
-```*/
+    ```solidity
+    error DivisionByZero();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct DivisionByZero;
@@ -2617,14 +2591,13 @@ error DivisionByZero();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2648,9 +2621,7 @@ error DivisionByZero();
         #[automatically_derived]
         impl alloy_sol_types::SolError for DivisionByZero {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "DivisionByZero()";
             const SELECTOR: [u8; 4] = [35u8, 211u8, 89u8, 163u8];
             #[inline]
@@ -2665,19 +2636,18 @@ error DivisionByZero();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC1967InvalidImplementation(address)` and selector `0x4c9c8ce3`.
-```solidity
-error ERC1967InvalidImplementation(address implementation);
-```*/
+    ```solidity
+    error ERC1967InvalidImplementation(address implementation);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ERC1967InvalidImplementation {
@@ -2693,14 +2663,13 @@ error ERC1967InvalidImplementation(address implementation);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2709,26 +2678,24 @@ error ERC1967InvalidImplementation(address implementation);
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<ERC1967InvalidImplementation>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<ERC1967InvalidImplementation> for UnderlyingRustTuple<'_> {
             fn from(value: ERC1967InvalidImplementation) -> Self {
                 (value.implementation,)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for ERC1967InvalidImplementation {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for ERC1967InvalidImplementation {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { implementation: tuple.0 }
+                Self {
+                    implementation: tuple.0,
+                }
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolError for ERC1967InvalidImplementation {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "ERC1967InvalidImplementation(address)";
             const SELECTOR: [u8; 4] = [76u8, 156u8, 140u8, 227u8];
             #[inline]
@@ -2747,19 +2714,18 @@ error ERC1967InvalidImplementation(address implementation);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC1967NonPayable()` and selector `0xb398979f`.
-```solidity
-error ERC1967NonPayable();
-```*/
+    ```solidity
+    error ERC1967NonPayable();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ERC1967NonPayable;
@@ -2772,14 +2738,13 @@ error ERC1967NonPayable();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2803,9 +2768,7 @@ error ERC1967NonPayable();
         #[automatically_derived]
         impl alloy_sol_types::SolError for ERC1967NonPayable {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "ERC1967NonPayable()";
             const SELECTOR: [u8; 4] = [179u8, 152u8, 151u8, 159u8];
             #[inline]
@@ -2820,19 +2783,18 @@ error ERC1967NonPayable();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `FHECollectionSizeInvalid(uint256,uint256)` and selector `0xeeaf669a`.
-```solidity
-error FHECollectionSizeInvalid(uint256 size, uint256 limit);
-```*/
+    ```solidity
+    error FHECollectionSizeInvalid(uint256 size, uint256 limit);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct FHECollectionSizeInvalid {
@@ -2850,6 +2812,7 @@ error FHECollectionSizeInvalid(uint256 size, uint256 limit);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::Uint<256>,
             alloy::sol_types::sol_data::Uint<256>,
@@ -2861,9 +2824,7 @@ error FHECollectionSizeInvalid(uint256 size, uint256 limit);
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2872,16 +2833,14 @@ error FHECollectionSizeInvalid(uint256 size, uint256 limit);
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<FHECollectionSizeInvalid>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<FHECollectionSizeInvalid> for UnderlyingRustTuple<'_> {
             fn from(value: FHECollectionSizeInvalid) -> Self {
                 (value.size, value.limit)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for FHECollectionSizeInvalid {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for FHECollectionSizeInvalid {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
                     size: tuple.0,
@@ -2892,9 +2851,7 @@ error FHECollectionSizeInvalid(uint256 size, uint256 limit);
         #[automatically_derived]
         impl alloy_sol_types::SolError for FHECollectionSizeInvalid {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "FHECollectionSizeInvalid(uint256,uint256)";
             const SELECTOR: [u8; 4] = [238u8, 175u8, 102u8, 154u8];
             #[inline]
@@ -2906,29 +2863,28 @@ error FHECollectionSizeInvalid(uint256 size, uint256 limit);
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.size),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.limit),
+                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.size,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.limit,
+                    ),
                 )
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `FailedCall()` and selector `0xd6bda275`.
-```solidity
-error FailedCall();
-```*/
+    ```solidity
+    error FailedCall();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct FailedCall;
@@ -2941,14 +2897,13 @@ error FailedCall();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2972,9 +2927,7 @@ error FailedCall();
         #[automatically_derived]
         impl alloy_sol_types::SolError for FailedCall {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "FailedCall()";
             const SELECTOR: [u8; 4] = [214u8, 189u8, 162u8, 117u8];
             #[inline]
@@ -2989,19 +2942,18 @@ error FailedCall();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `IncompatibleTypes()` and selector `0x1f3158c7`.
-```solidity
-error IncompatibleTypes();
-```*/
+    ```solidity
+    error IncompatibleTypes();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct IncompatibleTypes;
@@ -3014,14 +2966,13 @@ error IncompatibleTypes();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3045,9 +2996,7 @@ error IncompatibleTypes();
         #[automatically_derived]
         impl alloy_sol_types::SolError for IncompatibleTypes {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "IncompatibleTypes()";
             const SELECTOR: [u8; 4] = [31u8, 49u8, 88u8, 199u8];
             #[inline]
@@ -3062,19 +3011,18 @@ error IncompatibleTypes();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidByteLength(uint8,uint256)` and selector `0xb30c0c57`.
-```solidity
-error InvalidByteLength(FheType typeOf, uint256 length);
-```*/
+    ```solidity
+    error InvalidByteLength(FheType typeOf, uint256 length);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct InvalidByteLength {
@@ -3092,6 +3040,7 @@ error InvalidByteLength(FheType typeOf, uint256 length);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (FheType, alloy::sol_types::sol_data::Uint<256>);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
@@ -3100,9 +3049,7 @@ error InvalidByteLength(FheType typeOf, uint256 length);
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3129,9 +3076,7 @@ error InvalidByteLength(FheType typeOf, uint256 length);
         #[automatically_derived]
         impl alloy_sol_types::SolError for InvalidByteLength {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "InvalidByteLength(uint8,uint256)";
             const SELECTOR: [u8; 4] = [179u8, 12u8, 12u8, 87u8];
             #[inline]
@@ -3144,26 +3089,25 @@ error InvalidByteLength(FheType typeOf, uint256 length);
             fn tokenize(&self) -> Self::Token<'_> {
                 (
                     <FheType as alloy_sol_types::SolType>::tokenize(&self.typeOf),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.length),
+                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.length,
+                    ),
                 )
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidInitialization()` and selector `0xf92ee8a9`.
-```solidity
-error InvalidInitialization();
-```*/
+    ```solidity
+    error InvalidInitialization();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct InvalidInitialization;
@@ -3176,14 +3120,13 @@ error InvalidInitialization();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3207,9 +3150,7 @@ error InvalidInitialization();
         #[automatically_derived]
         impl alloy_sol_types::SolError for InvalidInitialization {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "InvalidInitialization()";
             const SELECTOR: [u8; 4] = [249u8, 46u8, 232u8, 169u8];
             #[inline]
@@ -3224,19 +3165,18 @@ error InvalidInitialization();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidType()` and selector `0xb9688461`.
-```solidity
-error InvalidType();
-```*/
+    ```solidity
+    error InvalidType();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct InvalidType;
@@ -3249,14 +3189,13 @@ error InvalidType();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3280,9 +3219,7 @@ error InvalidType();
         #[automatically_derived]
         impl alloy_sol_types::SolError for InvalidType {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "InvalidType()";
             const SELECTOR: [u8; 4] = [185u8, 104u8, 132u8, 97u8];
             #[inline]
@@ -3297,19 +3234,18 @@ error InvalidType();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `IsNotScalar()` and selector `0x4f224e53`.
-```solidity
-error IsNotScalar();
-```*/
+    ```solidity
+    error IsNotScalar();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct IsNotScalar;
@@ -3322,14 +3258,13 @@ error IsNotScalar();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3353,9 +3288,7 @@ error IsNotScalar();
         #[automatically_derived]
         impl alloy_sol_types::SolError for IsNotScalar {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "IsNotScalar()";
             const SELECTOR: [u8; 4] = [79u8, 34u8, 78u8, 83u8];
             #[inline]
@@ -3370,19 +3303,18 @@ error IsNotScalar();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotHostOwner(address)` and selector `0x21bfda10`.
-```solidity
-error NotHostOwner(address sender);
-```*/
+    ```solidity
+    error NotHostOwner(address sender);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct NotHostOwner {
@@ -3398,14 +3330,13 @@ error NotHostOwner(address sender);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3429,9 +3360,7 @@ error NotHostOwner(address sender);
         #[automatically_derived]
         impl alloy_sol_types::SolError for NotHostOwner {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "NotHostOwner(address)";
             const SELECTOR: [u8; 4] = [33u8, 191u8, 218u8, 16u8];
             #[inline]
@@ -3450,19 +3379,18 @@ error NotHostOwner(address sender);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotInitializing()` and selector `0xd7e6bcf8`.
-```solidity
-error NotInitializing();
-```*/
+    ```solidity
+    error NotInitializing();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct NotInitializing;
@@ -3475,14 +3403,13 @@ error NotInitializing();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3506,9 +3433,7 @@ error NotInitializing();
         #[automatically_derived]
         impl alloy_sol_types::SolError for NotInitializing {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "NotInitializing()";
             const SELECTOR: [u8; 4] = [215u8, 230u8, 188u8, 248u8];
             #[inline]
@@ -3523,19 +3448,18 @@ error NotInitializing();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotInitializingFromEmptyProxy()` and selector `0x6f4f731f`.
-```solidity
-error NotInitializingFromEmptyProxy();
-```*/
+    ```solidity
+    error NotInitializingFromEmptyProxy();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct NotInitializingFromEmptyProxy;
@@ -3548,14 +3472,13 @@ error NotInitializingFromEmptyProxy();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3564,16 +3487,14 @@ error NotInitializingFromEmptyProxy();
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<NotInitializingFromEmptyProxy>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<NotInitializingFromEmptyProxy> for UnderlyingRustTuple<'_> {
             fn from(value: NotInitializingFromEmptyProxy) -> Self {
                 ()
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for NotInitializingFromEmptyProxy {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotInitializingFromEmptyProxy {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self
             }
@@ -3581,9 +3502,7 @@ error NotInitializingFromEmptyProxy();
         #[automatically_derived]
         impl alloy_sol_types::SolError for NotInitializingFromEmptyProxy {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "NotInitializingFromEmptyProxy()";
             const SELECTOR: [u8; 4] = [111u8, 79u8, 115u8, 31u8];
             #[inline]
@@ -3598,19 +3517,18 @@ error NotInitializingFromEmptyProxy();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotPowerOfTwo()` and selector `0x24e8e742`.
-```solidity
-error NotPowerOfTwo();
-```*/
+    ```solidity
+    error NotPowerOfTwo();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct NotPowerOfTwo;
@@ -3623,14 +3541,13 @@ error NotPowerOfTwo();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3654,9 +3571,7 @@ error NotPowerOfTwo();
         #[automatically_derived]
         impl alloy_sol_types::SolError for NotPowerOfTwo {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "NotPowerOfTwo()";
             const SELECTOR: [u8; 4] = [36u8, 232u8, 231u8, 66u8];
             #[inline]
@@ -3671,19 +3586,18 @@ error NotPowerOfTwo();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ScalarByteIsNotBoolean()` and selector `0xdf7bf325`.
-```solidity
-error ScalarByteIsNotBoolean();
-```*/
+    ```solidity
+    error ScalarByteIsNotBoolean();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ScalarByteIsNotBoolean;
@@ -3696,14 +3610,13 @@ error ScalarByteIsNotBoolean();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3727,9 +3640,7 @@ error ScalarByteIsNotBoolean();
         #[automatically_derived]
         impl alloy_sol_types::SolError for ScalarByteIsNotBoolean {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "ScalarByteIsNotBoolean()";
             const SELECTOR: [u8; 4] = [223u8, 123u8, 243u8, 37u8];
             #[inline]
@@ -3744,19 +3655,18 @@ error ScalarByteIsNotBoolean();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `SecondOperandIsNotScalar()` and selector `0x4dde0d98`.
-```solidity
-error SecondOperandIsNotScalar();
-```*/
+    ```solidity
+    error SecondOperandIsNotScalar();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct SecondOperandIsNotScalar;
@@ -3769,14 +3679,13 @@ error SecondOperandIsNotScalar();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3785,16 +3694,14 @@ error SecondOperandIsNotScalar();
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<SecondOperandIsNotScalar>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<SecondOperandIsNotScalar> for UnderlyingRustTuple<'_> {
             fn from(value: SecondOperandIsNotScalar) -> Self {
                 ()
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for SecondOperandIsNotScalar {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for SecondOperandIsNotScalar {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self
             }
@@ -3802,9 +3709,7 @@ error SecondOperandIsNotScalar();
         #[automatically_derived]
         impl alloy_sol_types::SolError for SecondOperandIsNotScalar {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "SecondOperandIsNotScalar()";
             const SELECTOR: [u8; 4] = [77u8, 222u8, 13u8, 152u8];
             #[inline]
@@ -3819,19 +3724,18 @@ error SecondOperandIsNotScalar();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `UUPSUnauthorizedCallContext()` and selector `0xe07c8dba`.
-```solidity
-error UUPSUnauthorizedCallContext();
-```*/
+    ```solidity
+    error UUPSUnauthorizedCallContext();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct UUPSUnauthorizedCallContext;
@@ -3844,14 +3748,13 @@ error UUPSUnauthorizedCallContext();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3860,16 +3763,14 @@ error UUPSUnauthorizedCallContext();
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UUPSUnauthorizedCallContext>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<UUPSUnauthorizedCallContext> for UnderlyingRustTuple<'_> {
             fn from(value: UUPSUnauthorizedCallContext) -> Self {
                 ()
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for UUPSUnauthorizedCallContext {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for UUPSUnauthorizedCallContext {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self
             }
@@ -3877,9 +3778,7 @@ error UUPSUnauthorizedCallContext();
         #[automatically_derived]
         impl alloy_sol_types::SolError for UUPSUnauthorizedCallContext {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "UUPSUnauthorizedCallContext()";
             const SELECTOR: [u8; 4] = [224u8, 124u8, 141u8, 186u8];
             #[inline]
@@ -3894,19 +3793,18 @@ error UUPSUnauthorizedCallContext();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `UUPSUnsupportedProxiableUUID(bytes32)` and selector `0xaa1d49a4`.
-```solidity
-error UUPSUnsupportedProxiableUUID(bytes32 slot);
-```*/
+    ```solidity
+    error UUPSUnsupportedProxiableUUID(bytes32 slot);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct UUPSUnsupportedProxiableUUID {
@@ -3922,14 +3820,13 @@ error UUPSUnsupportedProxiableUUID(bytes32 slot);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3938,16 +3835,14 @@ error UUPSUnsupportedProxiableUUID(bytes32 slot);
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UUPSUnsupportedProxiableUUID>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<UUPSUnsupportedProxiableUUID> for UnderlyingRustTuple<'_> {
             fn from(value: UUPSUnsupportedProxiableUUID) -> Self {
                 (value.slot,)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for UUPSUnsupportedProxiableUUID {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for UUPSUnsupportedProxiableUUID {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self { slot: tuple.0 }
             }
@@ -3955,9 +3850,7 @@ error UUPSUnsupportedProxiableUUID(bytes32 slot);
         #[automatically_derived]
         impl alloy_sol_types::SolError for UUPSUnsupportedProxiableUUID {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "UUPSUnsupportedProxiableUUID(bytes32)";
             const SELECTOR: [u8; 4] = [170u8, 29u8, 73u8, 164u8];
             #[inline]
@@ -3976,19 +3869,18 @@ error UUPSUnsupportedProxiableUUID(bytes32 slot);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `UnsupportedType()` and selector `0xc6de466a`.
-```solidity
-error UnsupportedType();
-```*/
+    ```solidity
+    error UnsupportedType();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct UnsupportedType;
@@ -4001,14 +3893,13 @@ error UnsupportedType();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4032,9 +3923,7 @@ error UnsupportedType();
         #[automatically_derived]
         impl alloy_sol_types::SolError for UnsupportedType {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "UnsupportedType()";
             const SELECTOR: [u8; 4] = [198u8, 222u8, 70u8, 106u8];
             #[inline]
@@ -4049,19 +3938,18 @@ error UnsupportedType();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `UpperBoundAboveMaxTypeValue()` and selector `0xc7dadf45`.
-```solidity
-error UpperBoundAboveMaxTypeValue();
-```*/
+    ```solidity
+    error UpperBoundAboveMaxTypeValue();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct UpperBoundAboveMaxTypeValue;
@@ -4074,14 +3962,13 @@ error UpperBoundAboveMaxTypeValue();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4090,16 +3977,14 @@ error UpperBoundAboveMaxTypeValue();
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UpperBoundAboveMaxTypeValue>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<UpperBoundAboveMaxTypeValue> for UnderlyingRustTuple<'_> {
             fn from(value: UpperBoundAboveMaxTypeValue) -> Self {
                 ()
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for UpperBoundAboveMaxTypeValue {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for UpperBoundAboveMaxTypeValue {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self
             }
@@ -4107,9 +3992,7 @@ error UpperBoundAboveMaxTypeValue();
         #[automatically_derived]
         impl alloy_sol_types::SolError for UpperBoundAboveMaxTypeValue {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "UpperBoundAboveMaxTypeValue()";
             const SELECTOR: [u8; 4] = [199u8, 218u8, 223u8, 69u8];
             #[inline]
@@ -4124,19 +4007,18 @@ error UpperBoundAboveMaxTypeValue();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `Cast(address,bytes32,uint8,bytes32)` and selector `0x31ccae6a2f8e3ced1692f77c8f668133e4afdaaa35afe844ff4659a6c27e627f`.
-```solidity
-event Cast(address indexed caller, bytes32 ct, FheType toType, bytes32 result);
-```*/
+    ```solidity
+    event Cast(address indexed caller, bytes32 ct, FheType toType, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4169,19 +4051,18 @@ event Cast(address indexed caller, bytes32 ct, FheType toType, bytes32 result);
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "Cast(address,bytes32,uint8,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                49u8, 204u8, 174u8, 106u8, 47u8, 142u8, 60u8, 237u8, 22u8, 146u8, 247u8,
-                124u8, 143u8, 102u8, 129u8, 51u8, 228u8, 175u8, 218u8, 170u8, 53u8,
-                175u8, 232u8, 68u8, 255u8, 70u8, 89u8, 166u8, 194u8, 126u8, 98u8, 127u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    49u8, 204u8, 174u8, 106u8, 47u8, 142u8, 60u8, 237u8, 22u8, 146u8, 247u8, 124u8,
+                    143u8, 102u8, 129u8, 51u8, 228u8, 175u8, 218u8, 170u8, 53u8, 175u8, 232u8,
+                    68u8, 255u8, 70u8, 89u8, 166u8, 194u8, 126u8, 98u8, 127u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -4201,13 +4082,11 @@ event Cast(address indexed caller, bytes32 ct, FheType toType, bytes32 result);
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -4235,9 +4114,7 @@ event Cast(address indexed caller, bytes32 ct, FheType toType, bytes32 result);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -4261,12 +4138,11 @@ event Cast(address indexed caller, bytes32 ct, FheType toType, bytes32 result);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheAdd(address,bytes32,bytes32,bytes1,bytes32)` and selector `0xdb9050d65240431621d61d6f94b970e63f53a67a5766614ee6e5c5bbd41c8e2e`.
-```solidity
-event FheAdd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheAdd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4302,19 +4178,18 @@ event FheAdd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheAdd(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                219u8, 144u8, 80u8, 214u8, 82u8, 64u8, 67u8, 22u8, 33u8, 214u8, 29u8,
-                111u8, 148u8, 185u8, 112u8, 230u8, 63u8, 83u8, 166u8, 122u8, 87u8, 102u8,
-                97u8, 78u8, 230u8, 229u8, 197u8, 187u8, 212u8, 28u8, 142u8, 46u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    219u8, 144u8, 80u8, 214u8, 82u8, 64u8, 67u8, 22u8, 33u8, 214u8, 29u8, 111u8,
+                    148u8, 185u8, 112u8, 230u8, 63u8, 83u8, 166u8, 122u8, 87u8, 102u8, 97u8, 78u8,
+                    230u8, 229u8, 197u8, 187u8, 212u8, 28u8, 142u8, 46u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -4335,13 +4210,11 @@ event FheAdd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -4374,9 +4247,7 @@ event FheAdd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -4400,12 +4271,11 @@ event FheAdd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheBitAnd(address,bytes32,bytes32,bytes1,bytes32)` and selector `0xe42486b0ccdbef81a2075c48c8e515c079aea73c8b82429997c72a2fe1bf4fef`.
-```solidity
-event FheBitAnd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheBitAnd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4441,19 +4311,18 @@ event FheBitAnd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarB
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheBitAnd(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                228u8, 36u8, 134u8, 176u8, 204u8, 219u8, 239u8, 129u8, 162u8, 7u8, 92u8,
-                72u8, 200u8, 229u8, 21u8, 192u8, 121u8, 174u8, 167u8, 60u8, 139u8, 130u8,
-                66u8, 153u8, 151u8, 199u8, 42u8, 47u8, 225u8, 191u8, 79u8, 239u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    228u8, 36u8, 134u8, 176u8, 204u8, 219u8, 239u8, 129u8, 162u8, 7u8, 92u8, 72u8,
+                    200u8, 229u8, 21u8, 192u8, 121u8, 174u8, 167u8, 60u8, 139u8, 130u8, 66u8,
+                    153u8, 151u8, 199u8, 42u8, 47u8, 225u8, 191u8, 79u8, 239u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -4474,13 +4343,11 @@ event FheBitAnd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarB
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -4513,9 +4380,7 @@ event FheBitAnd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarB
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -4539,12 +4404,11 @@ event FheBitAnd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarB
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheBitOr(address,bytes32,bytes32,bytes1,bytes32)` and selector `0x56df279bbfb03d9ed097bbe2f28d520ca0c1161206327926e98664d70d2c24c4`.
-```solidity
-event FheBitOr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheBitOr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4580,19 +4444,18 @@ event FheBitOr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarBy
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheBitOr(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                86u8, 223u8, 39u8, 155u8, 191u8, 176u8, 61u8, 158u8, 208u8, 151u8, 187u8,
-                226u8, 242u8, 141u8, 82u8, 12u8, 160u8, 193u8, 22u8, 18u8, 6u8, 50u8,
-                121u8, 38u8, 233u8, 134u8, 100u8, 215u8, 13u8, 44u8, 36u8, 196u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    86u8, 223u8, 39u8, 155u8, 191u8, 176u8, 61u8, 158u8, 208u8, 151u8, 187u8,
+                    226u8, 242u8, 141u8, 82u8, 12u8, 160u8, 193u8, 22u8, 18u8, 6u8, 50u8, 121u8,
+                    38u8, 233u8, 134u8, 100u8, 215u8, 13u8, 44u8, 36u8, 196u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -4613,13 +4476,11 @@ event FheBitOr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarBy
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -4652,9 +4513,7 @@ event FheBitOr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarBy
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -4678,12 +4537,11 @@ event FheBitOr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarBy
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheBitXor(address,bytes32,bytes32,bytes1,bytes32)` and selector `0x4d32284bd3193ecaa44e1ceca32f41c5d6c32803a92e07967dd3ee4229721582`.
-```solidity
-event FheBitXor(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheBitXor(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4719,19 +4577,18 @@ event FheBitXor(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarB
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheBitXor(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                77u8, 50u8, 40u8, 75u8, 211u8, 25u8, 62u8, 202u8, 164u8, 78u8, 28u8,
-                236u8, 163u8, 47u8, 65u8, 197u8, 214u8, 195u8, 40u8, 3u8, 169u8, 46u8,
-                7u8, 150u8, 125u8, 211u8, 238u8, 66u8, 41u8, 114u8, 21u8, 130u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    77u8, 50u8, 40u8, 75u8, 211u8, 25u8, 62u8, 202u8, 164u8, 78u8, 28u8, 236u8,
+                    163u8, 47u8, 65u8, 197u8, 214u8, 195u8, 40u8, 3u8, 169u8, 46u8, 7u8, 150u8,
+                    125u8, 211u8, 238u8, 66u8, 41u8, 114u8, 21u8, 130u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -4752,13 +4609,11 @@ event FheBitXor(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarB
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -4791,9 +4646,7 @@ event FheBitXor(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarB
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -4817,12 +4670,11 @@ event FheBitXor(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarB
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheDiv(address,bytes32,bytes32,bytes1,bytes32)` and selector `0x3bab2ee0e2f90f4690c6a87bf63cf1a6b626086e95f231860b152966e8dabbf7`.
-```solidity
-event FheDiv(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheDiv(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4858,19 +4710,18 @@ event FheDiv(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheDiv(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                59u8, 171u8, 46u8, 224u8, 226u8, 249u8, 15u8, 70u8, 144u8, 198u8, 168u8,
-                123u8, 246u8, 60u8, 241u8, 166u8, 182u8, 38u8, 8u8, 110u8, 149u8, 242u8,
-                49u8, 134u8, 11u8, 21u8, 41u8, 102u8, 232u8, 218u8, 187u8, 247u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    59u8, 171u8, 46u8, 224u8, 226u8, 249u8, 15u8, 70u8, 144u8, 198u8, 168u8, 123u8,
+                    246u8, 60u8, 241u8, 166u8, 182u8, 38u8, 8u8, 110u8, 149u8, 242u8, 49u8, 134u8,
+                    11u8, 21u8, 41u8, 102u8, 232u8, 218u8, 187u8, 247u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -4891,13 +4742,11 @@ event FheDiv(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -4930,9 +4779,7 @@ event FheDiv(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -4956,12 +4803,11 @@ event FheDiv(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheEq(address,bytes32,bytes32,bytes1,bytes32)` and selector `0xb3d5c664ec86575818e8d75ff25c5f867250df8954088549c41c848cd10e76cb`.
-```solidity
-event FheEq(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheEq(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4997,19 +4843,18 @@ event FheEq(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheEq(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                179u8, 213u8, 198u8, 100u8, 236u8, 134u8, 87u8, 88u8, 24u8, 232u8, 215u8,
-                95u8, 242u8, 92u8, 95u8, 134u8, 114u8, 80u8, 223u8, 137u8, 84u8, 8u8,
-                133u8, 73u8, 196u8, 28u8, 132u8, 140u8, 209u8, 14u8, 118u8, 203u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    179u8, 213u8, 198u8, 100u8, 236u8, 134u8, 87u8, 88u8, 24u8, 232u8, 215u8, 95u8,
+                    242u8, 92u8, 95u8, 134u8, 114u8, 80u8, 223u8, 137u8, 84u8, 8u8, 133u8, 73u8,
+                    196u8, 28u8, 132u8, 140u8, 209u8, 14u8, 118u8, 203u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -5030,13 +4875,11 @@ event FheEq(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -5069,9 +4912,7 @@ event FheEq(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -5095,12 +4936,11 @@ event FheEq(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheGe(address,bytes32,bytes32,bytes1,bytes32)` and selector `0x38c3a63c4230de5b741f494ffb54e3087104030279bc7bccee8ad9ad31712b21`.
-```solidity
-event FheGe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheGe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -5136,19 +4976,18 @@ event FheGe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheGe(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                56u8, 195u8, 166u8, 60u8, 66u8, 48u8, 222u8, 91u8, 116u8, 31u8, 73u8,
-                79u8, 251u8, 84u8, 227u8, 8u8, 113u8, 4u8, 3u8, 2u8, 121u8, 188u8, 123u8,
-                204u8, 238u8, 138u8, 217u8, 173u8, 49u8, 113u8, 43u8, 33u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    56u8, 195u8, 166u8, 60u8, 66u8, 48u8, 222u8, 91u8, 116u8, 31u8, 73u8, 79u8,
+                    251u8, 84u8, 227u8, 8u8, 113u8, 4u8, 3u8, 2u8, 121u8, 188u8, 123u8, 204u8,
+                    238u8, 138u8, 217u8, 173u8, 49u8, 113u8, 43u8, 33u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -5169,13 +5008,11 @@ event FheGe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -5208,9 +5045,7 @@ event FheGe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -5234,12 +5069,11 @@ event FheGe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheGt(address,bytes32,bytes32,bytes1,bytes32)` and selector `0xc9ff8f0d18a3f766ce5de3de216076050140e4fc2652f5e0e745f6fc836cda8b`.
-```solidity
-event FheGt(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheGt(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -5275,19 +5109,18 @@ event FheGt(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheGt(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                201u8, 255u8, 143u8, 13u8, 24u8, 163u8, 247u8, 102u8, 206u8, 93u8, 227u8,
-                222u8, 33u8, 96u8, 118u8, 5u8, 1u8, 64u8, 228u8, 252u8, 38u8, 82u8,
-                245u8, 224u8, 231u8, 69u8, 246u8, 252u8, 131u8, 108u8, 218u8, 139u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    201u8, 255u8, 143u8, 13u8, 24u8, 163u8, 247u8, 102u8, 206u8, 93u8, 227u8,
+                    222u8, 33u8, 96u8, 118u8, 5u8, 1u8, 64u8, 228u8, 252u8, 38u8, 82u8, 245u8,
+                    224u8, 231u8, 69u8, 246u8, 252u8, 131u8, 108u8, 218u8, 139u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -5308,13 +5141,11 @@ event FheGt(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -5347,9 +5178,7 @@ event FheGt(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -5373,12 +5202,11 @@ event FheGt(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheIfThenElse(address,bytes32,bytes32,bytes32,bytes32)` and selector `0x60be9d61aad849facc28c38b048cb5c4be3420b8fa2233e08cfa06be1b6d1c3e`.
-```solidity
-event FheIfThenElse(address indexed caller, bytes32 control, bytes32 ifTrue, bytes32 ifFalse, bytes32 result);
-```*/
+    ```solidity
+    event FheIfThenElse(address indexed caller, bytes32 control, bytes32 ifTrue, bytes32 ifFalse, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -5414,19 +5242,19 @@ event FheIfThenElse(address indexed caller, bytes32 control, bytes32 ifTrue, byt
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            const SIGNATURE: &'static str = "FheIfThenElse(address,bytes32,bytes32,bytes32,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                96u8, 190u8, 157u8, 97u8, 170u8, 216u8, 73u8, 250u8, 204u8, 40u8, 195u8,
-                139u8, 4u8, 140u8, 181u8, 196u8, 190u8, 52u8, 32u8, 184u8, 250u8, 34u8,
-                51u8, 224u8, 140u8, 250u8, 6u8, 190u8, 27u8, 109u8, 28u8, 62u8,
-            ]);
+            const SIGNATURE: &'static str =
+                "FheIfThenElse(address,bytes32,bytes32,bytes32,bytes32)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    96u8, 190u8, 157u8, 97u8, 170u8, 216u8, 73u8, 250u8, 204u8, 40u8, 195u8, 139u8,
+                    4u8, 140u8, 181u8, 196u8, 190u8, 52u8, 32u8, 184u8, 250u8, 34u8, 51u8, 224u8,
+                    140u8, 250u8, 6u8, 190u8, 27u8, 109u8, 28u8, 62u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -5447,13 +5275,11 @@ event FheIfThenElse(address indexed caller, bytes32 control, bytes32 ifTrue, byt
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -5486,9 +5312,7 @@ event FheIfThenElse(address indexed caller, bytes32 control, bytes32 ifTrue, byt
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -5512,12 +5336,11 @@ event FheIfThenElse(address indexed caller, bytes32 control, bytes32 ifTrue, byt
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheLe(address,bytes32,bytes32,bytes1,bytes32)` and selector `0xdef2e704a077284a07f3d0b436db88f5d981b69f58ab7c1ae623252718a6de01`.
-```solidity
-event FheLe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheLe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -5553,19 +5376,18 @@ event FheLe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheLe(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                222u8, 242u8, 231u8, 4u8, 160u8, 119u8, 40u8, 74u8, 7u8, 243u8, 208u8,
-                180u8, 54u8, 219u8, 136u8, 245u8, 217u8, 129u8, 182u8, 159u8, 88u8,
-                171u8, 124u8, 26u8, 230u8, 35u8, 37u8, 39u8, 24u8, 166u8, 222u8, 1u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    222u8, 242u8, 231u8, 4u8, 160u8, 119u8, 40u8, 74u8, 7u8, 243u8, 208u8, 180u8,
+                    54u8, 219u8, 136u8, 245u8, 217u8, 129u8, 182u8, 159u8, 88u8, 171u8, 124u8,
+                    26u8, 230u8, 35u8, 37u8, 39u8, 24u8, 166u8, 222u8, 1u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -5586,13 +5408,11 @@ event FheLe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -5625,9 +5445,7 @@ event FheLe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -5651,12 +5469,11 @@ event FheLe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheLt(address,bytes32,bytes32,bytes1,bytes32)` and selector `0x0d483b100d8c73b208984ec697caa3091521ee5525ce69edcf97d7e395d3d059`.
-```solidity
-event FheLt(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheLt(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -5692,19 +5509,18 @@ event FheLt(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheLt(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                13u8, 72u8, 59u8, 16u8, 13u8, 140u8, 115u8, 178u8, 8u8, 152u8, 78u8,
-                198u8, 151u8, 202u8, 163u8, 9u8, 21u8, 33u8, 238u8, 85u8, 37u8, 206u8,
-                105u8, 237u8, 207u8, 151u8, 215u8, 227u8, 149u8, 211u8, 208u8, 89u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    13u8, 72u8, 59u8, 16u8, 13u8, 140u8, 115u8, 178u8, 8u8, 152u8, 78u8, 198u8,
+                    151u8, 202u8, 163u8, 9u8, 21u8, 33u8, 238u8, 85u8, 37u8, 206u8, 105u8, 237u8,
+                    207u8, 151u8, 215u8, 227u8, 149u8, 211u8, 208u8, 89u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -5725,13 +5541,11 @@ event FheLt(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -5764,9 +5578,7 @@ event FheLt(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -5790,12 +5602,11 @@ event FheLt(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheMax(address,bytes32,bytes32,bytes1,bytes32)` and selector `0xfd7c9208f956bf0c6ab76a667f04361245ad3e0a2d0eff92eb827acfcca68ea9`.
-```solidity
-event FheMax(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheMax(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -5831,19 +5642,18 @@ event FheMax(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheMax(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                253u8, 124u8, 146u8, 8u8, 249u8, 86u8, 191u8, 12u8, 106u8, 183u8, 106u8,
-                102u8, 127u8, 4u8, 54u8, 18u8, 69u8, 173u8, 62u8, 10u8, 45u8, 14u8,
-                255u8, 146u8, 235u8, 130u8, 122u8, 207u8, 204u8, 166u8, 142u8, 169u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    253u8, 124u8, 146u8, 8u8, 249u8, 86u8, 191u8, 12u8, 106u8, 183u8, 106u8, 102u8,
+                    127u8, 4u8, 54u8, 18u8, 69u8, 173u8, 62u8, 10u8, 45u8, 14u8, 255u8, 146u8,
+                    235u8, 130u8, 122u8, 207u8, 204u8, 166u8, 142u8, 169u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -5864,13 +5674,11 @@ event FheMax(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -5903,9 +5711,7 @@ event FheMax(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -5929,12 +5735,11 @@ event FheMax(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheMin(address,bytes32,bytes32,bytes1,bytes32)` and selector `0xc11d62b13c360a83082487064be1ec0878b2f0be4f012bf59f89e128063d47ff`.
-```solidity
-event FheMin(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheMin(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -5970,19 +5775,18 @@ event FheMin(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheMin(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                193u8, 29u8, 98u8, 177u8, 60u8, 54u8, 10u8, 131u8, 8u8, 36u8, 135u8, 6u8,
-                75u8, 225u8, 236u8, 8u8, 120u8, 178u8, 240u8, 190u8, 79u8, 1u8, 43u8,
-                245u8, 159u8, 137u8, 225u8, 40u8, 6u8, 61u8, 71u8, 255u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    193u8, 29u8, 98u8, 177u8, 60u8, 54u8, 10u8, 131u8, 8u8, 36u8, 135u8, 6u8, 75u8,
+                    225u8, 236u8, 8u8, 120u8, 178u8, 240u8, 190u8, 79u8, 1u8, 43u8, 245u8, 159u8,
+                    137u8, 225u8, 40u8, 6u8, 61u8, 71u8, 255u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -6003,13 +5807,11 @@ event FheMin(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -6042,9 +5844,7 @@ event FheMin(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -6068,12 +5868,11 @@ event FheMin(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheMul(address,bytes32,bytes32,bytes1,bytes32)` and selector `0x215346a4f9f975e6d5484e290bd4e53ca14453a9d282ebd3ccedb2a0f171753d`.
-```solidity
-event FheMul(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheMul(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -6109,19 +5908,18 @@ event FheMul(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheMul(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                33u8, 83u8, 70u8, 164u8, 249u8, 249u8, 117u8, 230u8, 213u8, 72u8, 78u8,
-                41u8, 11u8, 212u8, 229u8, 60u8, 161u8, 68u8, 83u8, 169u8, 210u8, 130u8,
-                235u8, 211u8, 204u8, 237u8, 178u8, 160u8, 241u8, 113u8, 117u8, 61u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    33u8, 83u8, 70u8, 164u8, 249u8, 249u8, 117u8, 230u8, 213u8, 72u8, 78u8, 41u8,
+                    11u8, 212u8, 229u8, 60u8, 161u8, 68u8, 83u8, 169u8, 210u8, 130u8, 235u8, 211u8,
+                    204u8, 237u8, 178u8, 160u8, 241u8, 113u8, 117u8, 61u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -6142,13 +5940,11 @@ event FheMul(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -6181,9 +5977,7 @@ event FheMul(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -6207,12 +6001,11 @@ event FheMul(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheNe(address,bytes32,bytes32,bytes1,bytes32)` and selector `0x6960c1e88f61c352dba34d1bbf6753e302795264d5d8ae82f7983c7004651e5d`.
-```solidity
-event FheNe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheNe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -6248,19 +6041,18 @@ event FheNe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheNe(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                105u8, 96u8, 193u8, 232u8, 143u8, 97u8, 195u8, 82u8, 219u8, 163u8, 77u8,
-                27u8, 191u8, 103u8, 83u8, 227u8, 2u8, 121u8, 82u8, 100u8, 213u8, 216u8,
-                174u8, 130u8, 247u8, 152u8, 60u8, 112u8, 4u8, 101u8, 30u8, 93u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    105u8, 96u8, 193u8, 232u8, 143u8, 97u8, 195u8, 82u8, 219u8, 163u8, 77u8, 27u8,
+                    191u8, 103u8, 83u8, 227u8, 2u8, 121u8, 82u8, 100u8, 213u8, 216u8, 174u8, 130u8,
+                    247u8, 152u8, 60u8, 112u8, 4u8, 101u8, 30u8, 93u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -6281,13 +6073,11 @@ event FheNe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -6320,9 +6110,7 @@ event FheNe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -6346,12 +6134,11 @@ event FheNe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte,
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheNeg(address,bytes32,bytes32)` and selector `0x8c664d3c3ca583fc5803b8a91c49644bbd9550bfa87967c73ad1de83027768c0`.
-```solidity
-event FheNeg(address indexed caller, bytes32 ct, bytes32 result);
-```*/
+    ```solidity
+    event FheNeg(address indexed caller, bytes32 ct, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -6381,19 +6168,18 @@ event FheNeg(address indexed caller, bytes32 ct, bytes32 result);
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheNeg(address,bytes32,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                140u8, 102u8, 77u8, 60u8, 60u8, 165u8, 131u8, 252u8, 88u8, 3u8, 184u8,
-                169u8, 28u8, 73u8, 100u8, 75u8, 189u8, 149u8, 80u8, 191u8, 168u8, 121u8,
-                103u8, 199u8, 58u8, 209u8, 222u8, 131u8, 2u8, 119u8, 104u8, 192u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    140u8, 102u8, 77u8, 60u8, 60u8, 165u8, 131u8, 252u8, 88u8, 3u8, 184u8, 169u8,
+                    28u8, 73u8, 100u8, 75u8, 189u8, 149u8, 80u8, 191u8, 168u8, 121u8, 103u8, 199u8,
+                    58u8, 209u8, 222u8, 131u8, 2u8, 119u8, 104u8, 192u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -6412,13 +6198,11 @@ event FheNeg(address indexed caller, bytes32 ct, bytes32 result);
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -6445,9 +6229,7 @@ event FheNeg(address indexed caller, bytes32 ct, bytes32 result);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -6471,12 +6253,11 @@ event FheNeg(address indexed caller, bytes32 ct, bytes32 result);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheNot(address,bytes32,bytes32)` and selector `0x55aff4cc7a3d160c83f1f15b818011ede841a0b4597fb14dcd3603df3a11e5e0`.
-```solidity
-event FheNot(address indexed caller, bytes32 ct, bytes32 result);
-```*/
+    ```solidity
+    event FheNot(address indexed caller, bytes32 ct, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -6506,19 +6287,18 @@ event FheNot(address indexed caller, bytes32 ct, bytes32 result);
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheNot(address,bytes32,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                85u8, 175u8, 244u8, 204u8, 122u8, 61u8, 22u8, 12u8, 131u8, 241u8, 241u8,
-                91u8, 129u8, 128u8, 17u8, 237u8, 232u8, 65u8, 160u8, 180u8, 89u8, 127u8,
-                177u8, 77u8, 205u8, 54u8, 3u8, 223u8, 58u8, 17u8, 229u8, 224u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    85u8, 175u8, 244u8, 204u8, 122u8, 61u8, 22u8, 12u8, 131u8, 241u8, 241u8, 91u8,
+                    129u8, 128u8, 17u8, 237u8, 232u8, 65u8, 160u8, 180u8, 89u8, 127u8, 177u8, 77u8,
+                    205u8, 54u8, 3u8, 223u8, 58u8, 17u8, 229u8, 224u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -6537,13 +6317,11 @@ event FheNot(address indexed caller, bytes32 ct, bytes32 result);
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -6570,9 +6348,7 @@ event FheNot(address indexed caller, bytes32 ct, bytes32 result);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -6596,12 +6372,11 @@ event FheNot(address indexed caller, bytes32 ct, bytes32 result);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheRand(address,uint8,bytes16,bytes32)` and selector `0x0c8aca6017003326051e19913ef02631f24b801125e1fa8a1d812e868319fda6`.
-```solidity
-event FheRand(address indexed caller, FheType randType, bytes16 seed, bytes32 result);
-```*/
+    ```solidity
+    event FheRand(address indexed caller, FheType randType, bytes16 seed, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -6634,19 +6409,18 @@ event FheRand(address indexed caller, FheType randType, bytes16 seed, bytes32 re
                 alloy::sol_types::sol_data::FixedBytes<16>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheRand(address,uint8,bytes16,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                12u8, 138u8, 202u8, 96u8, 23u8, 0u8, 51u8, 38u8, 5u8, 30u8, 25u8, 145u8,
-                62u8, 240u8, 38u8, 49u8, 242u8, 75u8, 128u8, 17u8, 37u8, 225u8, 250u8,
-                138u8, 29u8, 129u8, 46u8, 134u8, 131u8, 25u8, 253u8, 166u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    12u8, 138u8, 202u8, 96u8, 23u8, 0u8, 51u8, 38u8, 5u8, 30u8, 25u8, 145u8, 62u8,
+                    240u8, 38u8, 49u8, 242u8, 75u8, 128u8, 17u8, 37u8, 225u8, 250u8, 138u8, 29u8,
+                    129u8, 46u8, 134u8, 131u8, 25u8, 253u8, 166u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -6666,13 +6440,11 @@ event FheRand(address indexed caller, FheType randType, bytes16 seed, bytes32 re
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -6700,9 +6472,7 @@ event FheRand(address indexed caller, FheType randType, bytes16 seed, bytes32 re
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -6726,12 +6496,11 @@ event FheRand(address indexed caller, FheType randType, bytes16 seed, bytes32 re
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheRandBounded(address,uint256,uint8,bytes16,bytes32)` and selector `0x5222d96b836727a1d6fe1ee9aef27f9bb507bd41794defa376ff6c648aaf8ff1`.
-```solidity
-event FheRandBounded(address indexed caller, uint256 upperBound, FheType randType, bytes16 seed, bytes32 result);
-```*/
+    ```solidity
+    event FheRandBounded(address indexed caller, uint256 upperBound, FheType randType, bytes16 seed, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -6767,19 +6536,18 @@ event FheRandBounded(address indexed caller, uint256 upperBound, FheType randTyp
                 alloy::sol_types::sol_data::FixedBytes<16>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheRandBounded(address,uint256,uint8,bytes16,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                82u8, 34u8, 217u8, 107u8, 131u8, 103u8, 39u8, 161u8, 214u8, 254u8, 30u8,
-                233u8, 174u8, 242u8, 127u8, 155u8, 181u8, 7u8, 189u8, 65u8, 121u8, 77u8,
-                239u8, 163u8, 118u8, 255u8, 108u8, 100u8, 138u8, 175u8, 143u8, 241u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    82u8, 34u8, 217u8, 107u8, 131u8, 103u8, 39u8, 161u8, 214u8, 254u8, 30u8, 233u8,
+                    174u8, 242u8, 127u8, 155u8, 181u8, 7u8, 189u8, 65u8, 121u8, 77u8, 239u8, 163u8,
+                    118u8, 255u8, 108u8, 100u8, 138u8, 175u8, 143u8, 241u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -6800,13 +6568,11 @@ event FheRandBounded(address indexed caller, uint256 upperBound, FheType randTyp
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -6837,9 +6603,7 @@ event FheRandBounded(address indexed caller, uint256 upperBound, FheType randTyp
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -6863,12 +6627,11 @@ event FheRandBounded(address indexed caller, uint256 upperBound, FheType randTyp
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheRem(address,bytes32,bytes32,bytes1,bytes32)` and selector `0x0e691cd0bf8c4e9308e4ced1bb9c964117dc5c5bb9b9ab5bdfebf2c9b13a897c`.
-```solidity
-event FheRem(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheRem(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -6904,19 +6667,18 @@ event FheRem(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheRem(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                14u8, 105u8, 28u8, 208u8, 191u8, 140u8, 78u8, 147u8, 8u8, 228u8, 206u8,
-                209u8, 187u8, 156u8, 150u8, 65u8, 23u8, 220u8, 92u8, 91u8, 185u8, 185u8,
-                171u8, 91u8, 223u8, 235u8, 242u8, 201u8, 177u8, 58u8, 137u8, 124u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    14u8, 105u8, 28u8, 208u8, 191u8, 140u8, 78u8, 147u8, 8u8, 228u8, 206u8, 209u8,
+                    187u8, 156u8, 150u8, 65u8, 23u8, 220u8, 92u8, 91u8, 185u8, 185u8, 171u8, 91u8,
+                    223u8, 235u8, 242u8, 201u8, 177u8, 58u8, 137u8, 124u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -6937,13 +6699,11 @@ event FheRem(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -6976,9 +6736,7 @@ event FheRem(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -7002,12 +6760,11 @@ event FheRem(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheRotl(address,bytes32,bytes32,bytes1,bytes32)` and selector `0xeb0e4f8dc74058194d0602425fe602f955c222200f7f10c6fe67992f7b24c7e9`.
-```solidity
-event FheRotl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheRotl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -7043,19 +6800,18 @@ event FheRotl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByt
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheRotl(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                235u8, 14u8, 79u8, 141u8, 199u8, 64u8, 88u8, 25u8, 77u8, 6u8, 2u8, 66u8,
-                95u8, 230u8, 2u8, 249u8, 85u8, 194u8, 34u8, 32u8, 15u8, 127u8, 16u8,
-                198u8, 254u8, 103u8, 153u8, 47u8, 123u8, 36u8, 199u8, 233u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    235u8, 14u8, 79u8, 141u8, 199u8, 64u8, 88u8, 25u8, 77u8, 6u8, 2u8, 66u8, 95u8,
+                    230u8, 2u8, 249u8, 85u8, 194u8, 34u8, 32u8, 15u8, 127u8, 16u8, 198u8, 254u8,
+                    103u8, 153u8, 47u8, 123u8, 36u8, 199u8, 233u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -7076,13 +6832,11 @@ event FheRotl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByt
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -7115,9 +6869,7 @@ event FheRotl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByt
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -7141,12 +6893,11 @@ event FheRotl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByt
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheRotr(address,bytes32,bytes32,bytes1,bytes32)` and selector `0xc148675905d07ad5496f8ef4d8195c907503f3ec12fd10ed5f21240abc693634`.
-```solidity
-event FheRotr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheRotr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -7182,19 +6933,18 @@ event FheRotr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByt
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheRotr(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                193u8, 72u8, 103u8, 89u8, 5u8, 208u8, 122u8, 213u8, 73u8, 111u8, 142u8,
-                244u8, 216u8, 25u8, 92u8, 144u8, 117u8, 3u8, 243u8, 236u8, 18u8, 253u8,
-                16u8, 237u8, 95u8, 33u8, 36u8, 10u8, 188u8, 105u8, 54u8, 52u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    193u8, 72u8, 103u8, 89u8, 5u8, 208u8, 122u8, 213u8, 73u8, 111u8, 142u8, 244u8,
+                    216u8, 25u8, 92u8, 144u8, 117u8, 3u8, 243u8, 236u8, 18u8, 253u8, 16u8, 237u8,
+                    95u8, 33u8, 36u8, 10u8, 188u8, 105u8, 54u8, 52u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -7215,13 +6965,11 @@ event FheRotr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByt
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -7254,9 +7002,7 @@ event FheRotr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByt
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -7280,12 +7026,11 @@ event FheRotr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByt
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheShl(address,bytes32,bytes32,bytes1,bytes32)` and selector `0xe84282aaebcca698443e39a2a948a345d0d2ebc654af5cb657a2d7e8053bf6cb`.
-```solidity
-event FheShl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheShl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -7321,19 +7066,18 @@ event FheShl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheShl(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                232u8, 66u8, 130u8, 170u8, 235u8, 204u8, 166u8, 152u8, 68u8, 62u8, 57u8,
-                162u8, 169u8, 72u8, 163u8, 69u8, 208u8, 210u8, 235u8, 198u8, 84u8, 175u8,
-                92u8, 182u8, 87u8, 162u8, 215u8, 232u8, 5u8, 59u8, 246u8, 203u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    232u8, 66u8, 130u8, 170u8, 235u8, 204u8, 166u8, 152u8, 68u8, 62u8, 57u8, 162u8,
+                    169u8, 72u8, 163u8, 69u8, 208u8, 210u8, 235u8, 198u8, 84u8, 175u8, 92u8, 182u8,
+                    87u8, 162u8, 215u8, 232u8, 5u8, 59u8, 246u8, 203u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -7354,13 +7098,11 @@ event FheShl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -7393,9 +7135,7 @@ event FheShl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -7419,12 +7159,11 @@ event FheShl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheShr(address,bytes32,bytes32,bytes1,bytes32)` and selector `0x324220bfc9cb158b492991c03c309cd86e5345cac45aacae2092ddabe31fa3d8`.
-```solidity
-event FheShr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheShr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -7460,19 +7199,18 @@ event FheShr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheShr(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                50u8, 66u8, 32u8, 191u8, 201u8, 203u8, 21u8, 139u8, 73u8, 41u8, 145u8,
-                192u8, 60u8, 48u8, 156u8, 216u8, 110u8, 83u8, 69u8, 202u8, 196u8, 90u8,
-                172u8, 174u8, 32u8, 146u8, 221u8, 171u8, 227u8, 31u8, 163u8, 216u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    50u8, 66u8, 32u8, 191u8, 201u8, 203u8, 21u8, 139u8, 73u8, 41u8, 145u8, 192u8,
+                    60u8, 48u8, 156u8, 216u8, 110u8, 83u8, 69u8, 202u8, 196u8, 90u8, 172u8, 174u8,
+                    32u8, 146u8, 221u8, 171u8, 227u8, 31u8, 163u8, 216u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -7493,13 +7231,11 @@ event FheShr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -7532,9 +7268,7 @@ event FheShr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -7558,12 +7292,11 @@ event FheShr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheSub(address,bytes32,bytes32,bytes1,bytes32)` and selector `0xeb6d37bd271abe1395b21d6d78f3487d6584862872c29ffd3f90736ee99b7393`.
-```solidity
-event FheSub(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-```*/
+    ```solidity
+    event FheSub(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -7599,20 +7332,18 @@ event FheSub(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 alloy::sol_types::sol_data::FixedBytes<1>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheSub(address,bytes32,bytes32,bytes1,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                235u8, 109u8, 55u8, 189u8, 39u8, 26u8, 190u8, 19u8, 149u8, 178u8, 29u8,
-                109u8, 120u8, 243u8, 72u8, 125u8, 101u8, 132u8, 134u8, 40u8, 114u8,
-                194u8, 159u8, 253u8, 63u8, 144u8, 115u8, 110u8, 233u8, 155u8, 115u8,
-                147u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    235u8, 109u8, 55u8, 189u8, 39u8, 26u8, 190u8, 19u8, 149u8, 178u8, 29u8, 109u8,
+                    120u8, 243u8, 72u8, 125u8, 101u8, 132u8, 134u8, 40u8, 114u8, 194u8, 159u8,
+                    253u8, 63u8, 144u8, 115u8, 110u8, 233u8, 155u8, 115u8, 147u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -7633,13 +7364,11 @@ event FheSub(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -7672,9 +7401,7 @@ event FheSub(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -7698,12 +7425,11 @@ event FheSub(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheSum(address,bytes32[],uint8,bytes32)` and selector `0xedf93db5d6c30a171bb85b9a49debcf3dba7731a6c3e53965eca92c7ae85808d`.
-```solidity
-event FheSum(address indexed caller, bytes32[] values, FheType resultType, bytes32 result);
-```*/
+    ```solidity
+    event FheSum(address indexed caller, bytes32[] values, FheType resultType, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -7715,9 +7441,7 @@ event FheSum(address indexed caller, bytes32[] values, FheType resultType, bytes
         #[allow(missing_docs)]
         pub caller: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
-        pub values: alloy::sol_types::private::Vec<
-            alloy::sol_types::private::FixedBytes<32>,
-        >,
+        pub values: alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
         #[allow(missing_docs)]
         pub resultType: <FheType as alloy::sol_types::SolType>::RustType,
         #[allow(missing_docs)]
@@ -7734,25 +7458,22 @@ event FheSum(address indexed caller, bytes32[] values, FheType resultType, bytes
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for FheSum {
             type DataTuple<'a> = (
-                alloy::sol_types::sol_data::Array<
-                    alloy::sol_types::sol_data::FixedBytes<32>,
-                >,
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::FixedBytes<32>>,
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "FheSum(address,bytes32[],uint8,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                237u8, 249u8, 61u8, 181u8, 214u8, 195u8, 10u8, 23u8, 27u8, 184u8, 91u8,
-                154u8, 73u8, 222u8, 188u8, 243u8, 219u8, 167u8, 115u8, 26u8, 108u8, 62u8,
-                83u8, 150u8, 94u8, 202u8, 146u8, 199u8, 174u8, 133u8, 128u8, 141u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    237u8, 249u8, 61u8, 181u8, 214u8, 195u8, 10u8, 23u8, 27u8, 184u8, 91u8, 154u8,
+                    73u8, 222u8, 188u8, 243u8, 219u8, 167u8, 115u8, 26u8, 108u8, 62u8, 83u8, 150u8,
+                    94u8, 202u8, 146u8, 199u8, 174u8, 133u8, 128u8, 141u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -7772,13 +7493,11 @@ event FheSum(address indexed caller, bytes32[] values, FheType resultType, bytes
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -7806,9 +7525,7 @@ event FheSum(address indexed caller, bytes32[] values, FheType resultType, bytes
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -7832,12 +7549,11 @@ event FheSum(address indexed caller, bytes32[] values, FheType resultType, bytes
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `Initialized(uint64)` and selector `0xc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d2`.
-```solidity
-event Initialized(uint64 version);
-```*/
+    ```solidity
+    event Initialized(uint64 version);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -7860,16 +7576,15 @@ event Initialized(uint64 version);
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for Initialized {
             type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<64>,);
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "Initialized(uint64)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                199u8, 245u8, 5u8, 178u8, 243u8, 113u8, 174u8, 33u8, 117u8, 238u8, 73u8,
-                19u8, 244u8, 73u8, 158u8, 31u8, 38u8, 51u8, 167u8, 181u8, 147u8, 99u8,
-                33u8, 238u8, 209u8, 205u8, 174u8, 182u8, 17u8, 81u8, 129u8, 210u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    199u8, 245u8, 5u8, 178u8, 243u8, 113u8, 174u8, 33u8, 117u8, 238u8, 73u8, 19u8,
+                    244u8, 73u8, 158u8, 31u8, 38u8, 51u8, 167u8, 181u8, 147u8, 99u8, 33u8, 238u8,
+                    209u8, 205u8, 174u8, 182u8, 17u8, 81u8, 129u8, 210u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -7884,22 +7599,20 @@ event Initialized(uint64 version);
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        64,
-                    > as alloy_sol_types::SolType>::tokenize(&self.version),
+                    <alloy::sol_types::sol_data::Uint<64> as alloy_sol_types::SolType>::tokenize(
+                        &self.version,
+                    ),
                 )
             }
             #[inline]
@@ -7914,9 +7627,7 @@ event Initialized(uint64 version);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 Ok(())
             }
         }
@@ -7937,12 +7648,11 @@ event Initialized(uint64 version);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `TrivialEncrypt(address,uint256,uint8,bytes32)` and selector `0x063ccd1bba45151d91f6a418065047a3d048d058a922535747bb2b575a01d236`.
-```solidity
-event TrivialEncrypt(address indexed caller, uint256 pt, FheType toType, bytes32 result);
-```*/
+    ```solidity
+    event TrivialEncrypt(address indexed caller, uint256 pt, FheType toType, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -7975,19 +7685,18 @@ event TrivialEncrypt(address indexed caller, uint256 pt, FheType toType, bytes32
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "TrivialEncrypt(address,uint256,uint8,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                6u8, 60u8, 205u8, 27u8, 186u8, 69u8, 21u8, 29u8, 145u8, 246u8, 164u8,
-                24u8, 6u8, 80u8, 71u8, 163u8, 208u8, 72u8, 208u8, 88u8, 169u8, 34u8,
-                83u8, 87u8, 71u8, 187u8, 43u8, 87u8, 90u8, 1u8, 210u8, 54u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    6u8, 60u8, 205u8, 27u8, 186u8, 69u8, 21u8, 29u8, 145u8, 246u8, 164u8, 24u8,
+                    6u8, 80u8, 71u8, 163u8, 208u8, 72u8, 208u8, 88u8, 169u8, 34u8, 83u8, 87u8,
+                    71u8, 187u8, 43u8, 87u8, 90u8, 1u8, 210u8, 54u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -8007,13 +7716,11 @@ event TrivialEncrypt(address indexed caller, uint256 pt, FheType toType, bytes32
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -8041,9 +7748,7 @@ event TrivialEncrypt(address indexed caller, uint256 pt, FheType toType, bytes32
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -8067,12 +7772,11 @@ event TrivialEncrypt(address indexed caller, uint256 pt, FheType toType, bytes32
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `Upgraded(address)` and selector `0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b`.
-```solidity
-event Upgraded(address indexed implementation);
-```*/
+    ```solidity
+    event Upgraded(address indexed implementation);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -8095,19 +7799,18 @@ event Upgraded(address indexed implementation);
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for Upgraded {
             type DataTuple<'a> = ();
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "Upgraded(address)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                188u8, 124u8, 215u8, 90u8, 32u8, 238u8, 39u8, 253u8, 154u8, 222u8, 186u8,
-                179u8, 32u8, 65u8, 247u8, 85u8, 33u8, 77u8, 188u8, 107u8, 255u8, 169u8,
-                12u8, 192u8, 34u8, 91u8, 57u8, 218u8, 46u8, 92u8, 45u8, 59u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    188u8, 124u8, 215u8, 90u8, 32u8, 238u8, 39u8, 253u8, 154u8, 222u8, 186u8,
+                    179u8, 32u8, 65u8, 247u8, 85u8, 33u8, 77u8, 188u8, 107u8, 255u8, 169u8, 12u8,
+                    192u8, 34u8, 91u8, 57u8, 218u8, 46u8, 92u8, 45u8, 59u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -8115,20 +7818,20 @@ event Upgraded(address indexed implementation);
                 topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
-                Self { implementation: topics.1 }
+                Self {
+                    implementation: topics.1,
+                }
             }
             #[inline]
             fn check_signature(
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -8148,9 +7851,7 @@ event Upgraded(address indexed implementation);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.implementation,
                 );
@@ -8174,12 +7875,11 @@ event Upgraded(address indexed implementation);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `VerifyInput(address,bytes32,address,bytes,uint8,bytes32)` and selector `0xdc370db33589e73371dc3ee42c789c003d336eefcb7c3f56fe0f51ae5b1d9702`.
-```solidity
-event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddress, bytes inputProof, FheType inputType, bytes32 result);
-```*/
+    ```solidity
+    event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddress, bytes inputProof, FheType inputType, bytes32 result);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -8218,19 +7918,19 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                 FheType,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            const SIGNATURE: &'static str = "VerifyInput(address,bytes32,address,bytes,uint8,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                220u8, 55u8, 13u8, 179u8, 53u8, 137u8, 231u8, 51u8, 113u8, 220u8, 62u8,
-                228u8, 44u8, 120u8, 156u8, 0u8, 61u8, 51u8, 110u8, 239u8, 203u8, 124u8,
-                63u8, 86u8, 254u8, 15u8, 81u8, 174u8, 91u8, 29u8, 151u8, 2u8,
-            ]);
+            const SIGNATURE: &'static str =
+                "VerifyInput(address,bytes32,address,bytes,uint8,bytes32)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    220u8, 55u8, 13u8, 179u8, 53u8, 137u8, 231u8, 51u8, 113u8, 220u8, 62u8, 228u8,
+                    44u8, 120u8, 156u8, 0u8, 61u8, 51u8, 110u8, 239u8, 203u8, 124u8, 63u8, 86u8,
+                    254u8, 15u8, 81u8, 174u8, 91u8, 29u8, 151u8, 2u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -8252,13 +7952,11 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -8292,9 +7990,7 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -8319,9 +8015,9 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
         }
     };
     /**Constructor`.
-```solidity
-constructor();
-```*/
+    ```solidity
+    constructor();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct constructorCall {}
@@ -8329,14 +8025,13 @@ constructor();
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -8361,9 +8056,7 @@ constructor();
         #[automatically_derived]
         impl alloy_sol_types::SolConstructor for constructorCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -8376,17 +8069,15 @@ constructor();
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `UPGRADE_INTERFACE_VERSION()` and selector `0xad3cb1cc`.
-```solidity
-function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
-```*/
+    ```solidity
+    function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct UPGRADE_INTERFACE_VERSIONCall;
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`UPGRADE_INTERFACE_VERSION()`](UPGRADE_INTERFACE_VERSIONCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -8404,14 +8095,13 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -8420,16 +8110,14 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UPGRADE_INTERFACE_VERSIONCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<UPGRADE_INTERFACE_VERSIONCall> for UnderlyingRustTuple<'_> {
                 fn from(value: UPGRADE_INTERFACE_VERSIONCall) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for UPGRADE_INTERFACE_VERSIONCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for UPGRADE_INTERFACE_VERSIONCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self
                 }
@@ -8437,14 +8125,13 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::String,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -8453,16 +8140,14 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UPGRADE_INTERFACE_VERSIONReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<UPGRADE_INTERFACE_VERSIONReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: UPGRADE_INTERFACE_VERSIONReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for UPGRADE_INTERFACE_VERSIONReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for UPGRADE_INTERFACE_VERSIONReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -8471,14 +8156,10 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for UPGRADE_INTERFACE_VERSIONCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::String;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::String,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "UPGRADE_INTERFACE_VERSION()";
             const SELECTOR: [u8; 4] = [173u8, 60u8, 177u8, 204u8];
             #[inline]
@@ -8493,42 +8174,34 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
+                (<alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(ret),)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: UPGRADE_INTERFACE_VERSIONReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: UPGRADE_INTERFACE_VERSIONReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: UPGRADE_INTERFACE_VERSIONReturn = r.into();
+                    r._0
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `cast(bytes32,uint8)` and selector `0x1c89ee44`.
-```solidity
-function cast(bytes32 ct, FheType toType) external returns (bytes32 result);
-```*/
+    ```solidity
+    function cast(bytes32 ct, FheType toType) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct castCall {
@@ -8537,8 +8210,7 @@ function cast(bytes32 ct, FheType toType) external returns (bytes32 result);
         #[allow(missing_docs)]
         pub toType: <FheType as alloy::sol_types::SolType>::RustType,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`cast(bytes32,uint8)`](castCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -8556,10 +8228,8 @@ function cast(bytes32 ct, FheType toType) external returns (bytes32 result);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (
-                alloy::sol_types::sol_data::FixedBytes<32>,
-                FheType,
-            );
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>, FheType);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
                 alloy::sol_types::private::FixedBytes<32>,
@@ -8567,9 +8237,7 @@ function cast(bytes32 ct, FheType toType) external returns (bytes32 result);
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -8596,14 +8264,13 @@ function cast(bytes32 ct, FheType toType) external returns (bytes32 result);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -8628,14 +8295,10 @@ function cast(bytes32 ct, FheType toType) external returns (bytes32 result);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for castCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::FixedBytes<32>, FheType);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "cast(bytes32,uint8)";
             const SELECTOR: [u8; 4] = [28u8, 137u8, 238u8, 68u8];
             #[inline]
@@ -8663,34 +8326,30 @@ function cast(bytes32 ct, FheType toType) external returns (bytes32 result);
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: castReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: castReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: castReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheAdd(bytes32,bytes32,bytes1)` and selector `0x117b2f38`.
-```solidity
-function fheAdd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheAdd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheAddCall {
@@ -8701,8 +8360,7 @@ function fheAdd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         #[allow(missing_docs)]
         pub scalarByte: alloy::sol_types::private::FixedBytes<1>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheAdd(bytes32,bytes32,bytes1)`](fheAddCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -8720,6 +8378,7 @@ function fheAdd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -8733,9 +8392,7 @@ function fheAdd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -8763,14 +8420,13 @@ function fheAdd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -8799,14 +8455,10 @@ function fheAdd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<1>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheAdd(bytes32,bytes32,bytes1)";
             const SELECTOR: [u8; 4] = [17u8, 123u8, 47u8, 56u8];
             #[inline]
@@ -8839,34 +8491,30 @@ function fheAdd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheAddReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheAddReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheAddReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheBitAnd(bytes32,bytes32,bytes1)` and selector `0xd99882d5`.
-```solidity
-function fheBitAnd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheBitAnd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheBitAndCall {
@@ -8877,8 +8525,7 @@ function fheBitAnd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns
         #[allow(missing_docs)]
         pub scalarByte: alloy::sol_types::private::FixedBytes<1>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheBitAnd(bytes32,bytes32,bytes1)`](fheBitAndCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -8896,6 +8543,7 @@ function fheBitAnd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -8909,9 +8557,7 @@ function fheBitAnd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -8939,14 +8585,13 @@ function fheBitAnd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -8975,14 +8620,10 @@ function fheBitAnd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<1>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheBitAnd(bytes32,bytes32,bytes1)";
             const SELECTOR: [u8; 4] = [217u8, 152u8, 130u8, 213u8];
             #[inline]
@@ -9015,34 +8656,30 @@ function fheBitAnd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheBitAndReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheBitAndReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheBitAndReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheBitOr(bytes32,bytes32,bytes1)` and selector `0x63a2db29`.
-```solidity
-function fheBitOr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheBitOr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheBitOrCall {
@@ -9053,8 +8690,7 @@ function fheBitOr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns 
         #[allow(missing_docs)]
         pub scalarByte: alloy::sol_types::private::FixedBytes<1>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheBitOr(bytes32,bytes32,bytes1)`](fheBitOrCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -9072,6 +8708,7 @@ function fheBitOr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns 
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -9085,9 +8722,7 @@ function fheBitOr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns 
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -9115,14 +8750,13 @@ function fheBitOr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns 
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -9151,14 +8785,10 @@ function fheBitOr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns 
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<1>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheBitOr(bytes32,bytes32,bytes1)";
             const SELECTOR: [u8; 4] = [99u8, 162u8, 219u8, 41u8];
             #[inline]
@@ -9191,34 +8821,30 @@ function fheBitOr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns 
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheBitOrReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheBitOrReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheBitOrReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheBitXor(bytes32,bytes32,bytes1)` and selector `0x8b49ceb4`.
-```solidity
-function fheBitXor(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheBitXor(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheBitXorCall {
@@ -9229,8 +8855,7 @@ function fheBitXor(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns
         #[allow(missing_docs)]
         pub scalarByte: alloy::sol_types::private::FixedBytes<1>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheBitXor(bytes32,bytes32,bytes1)`](fheBitXorCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -9248,6 +8873,7 @@ function fheBitXor(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -9261,9 +8887,7 @@ function fheBitXor(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -9291,14 +8915,13 @@ function fheBitXor(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -9327,14 +8950,10 @@ function fheBitXor(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<1>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheBitXor(bytes32,bytes32,bytes1)";
             const SELECTOR: [u8; 4] = [139u8, 73u8, 206u8, 180u8];
             #[inline]
@@ -9367,34 +8986,30 @@ function fheBitXor(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheBitXorReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheBitXorReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheBitXorReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheDiv(bytes32,bytes32,bytes1)` and selector `0x5a53accb`.
-```solidity
-function fheDiv(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheDiv(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheDivCall {
@@ -9405,8 +9020,7 @@ function fheDiv(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         #[allow(missing_docs)]
         pub scalarByte: alloy::sol_types::private::FixedBytes<1>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheDiv(bytes32,bytes32,bytes1)`](fheDivCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -9424,6 +9038,7 @@ function fheDiv(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -9437,9 +9052,7 @@ function fheDiv(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -9467,14 +9080,13 @@ function fheDiv(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -9503,14 +9115,10 @@ function fheDiv(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<1>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheDiv(bytes32,bytes32,bytes1)";
             const SELECTOR: [u8; 4] = [90u8, 83u8, 172u8, 203u8];
             #[inline]
@@ -9543,34 +9151,30 @@ function fheDiv(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheDivReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheDivReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheDivReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheEq(bytes32,bytes32,bytes1)` and selector `0xf77f3f1d`.
-```solidity
-function fheEq(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheEq(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheEqCall {
@@ -9581,8 +9185,7 @@ function fheEq(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         #[allow(missing_docs)]
         pub scalarByte: alloy::sol_types::private::FixedBytes<1>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheEq(bytes32,bytes32,bytes1)`](fheEqCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -9600,6 +9203,7 @@ function fheEq(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -9613,9 +9217,7 @@ function fheEq(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -9643,14 +9245,13 @@ function fheEq(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -9679,14 +9280,10 @@ function fheEq(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<1>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheEq(bytes32,bytes32,bytes1)";
             const SELECTOR: [u8; 4] = [247u8, 127u8, 63u8, 29u8];
             #[inline]
@@ -9719,34 +9316,30 @@ function fheEq(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheEqReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheEqReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheEqReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheGe(bytes32,bytes32,bytes1)` and selector `0x1391547f`.
-```solidity
-function fheGe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheGe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheGeCall {
@@ -9757,8 +9350,7 @@ function fheGe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         #[allow(missing_docs)]
         pub scalarByte: alloy::sol_types::private::FixedBytes<1>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheGe(bytes32,bytes32,bytes1)`](fheGeCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -9776,6 +9368,7 @@ function fheGe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -9789,9 +9382,7 @@ function fheGe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -9819,14 +9410,13 @@ function fheGe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -9855,14 +9445,10 @@ function fheGe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<1>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheGe(bytes32,bytes32,bytes1)";
             const SELECTOR: [u8; 4] = [19u8, 145u8, 84u8, 127u8];
             #[inline]
@@ -9895,34 +9481,30 @@ function fheGe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheGeReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheGeReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheGeReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheGt(bytes32,bytes32,bytes1)` and selector `0x85362ee7`.
-```solidity
-function fheGt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheGt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheGtCall {
@@ -9933,8 +9515,7 @@ function fheGt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         #[allow(missing_docs)]
         pub scalarByte: alloy::sol_types::private::FixedBytes<1>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheGt(bytes32,bytes32,bytes1)`](fheGtCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -9952,6 +9533,7 @@ function fheGt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -9965,9 +9547,7 @@ function fheGt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -9995,14 +9575,13 @@ function fheGt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -10031,14 +9610,10 @@ function fheGt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<1>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheGt(bytes32,bytes32,bytes1)";
             const SELECTOR: [u8; 4] = [133u8, 54u8, 46u8, 231u8];
             #[inline]
@@ -10071,34 +9646,30 @@ function fheGt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheGtReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheGtReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheGtReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheIfThenElse(bytes32,bytes32,bytes32)` and selector `0x7702dcff`.
-```solidity
-function fheIfThenElse(bytes32 control, bytes32 ifTrue, bytes32 ifFalse) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheIfThenElse(bytes32 control, bytes32 ifTrue, bytes32 ifFalse) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheIfThenElseCall {
@@ -10109,8 +9680,7 @@ function fheIfThenElse(bytes32 control, bytes32 ifTrue, bytes32 ifFalse) externa
         #[allow(missing_docs)]
         pub ifFalse: alloy::sol_types::private::FixedBytes<32>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheIfThenElse(bytes32,bytes32,bytes32)`](fheIfThenElseCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -10128,6 +9698,7 @@ function fheIfThenElse(bytes32 control, bytes32 ifTrue, bytes32 ifFalse) externa
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -10141,9 +9712,7 @@ function fheIfThenElse(bytes32 control, bytes32 ifTrue, bytes32 ifFalse) externa
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -10171,14 +9740,13 @@ function fheIfThenElse(bytes32 control, bytes32 ifTrue, bytes32 ifFalse) externa
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -10207,14 +9775,10 @@ function fheIfThenElse(bytes32 control, bytes32 ifTrue, bytes32 ifFalse) externa
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheIfThenElse(bytes32,bytes32,bytes32)";
             const SELECTOR: [u8; 4] = [119u8, 2u8, 220u8, 255u8];
             #[inline]
@@ -10247,34 +9811,30 @@ function fheIfThenElse(bytes32 control, bytes32 ifTrue, bytes32 ifFalse) externa
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheIfThenElseReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheIfThenElseReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheIfThenElseReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheLe(bytes32,bytes32,bytes1)` and selector `0x7513a404`.
-```solidity
-function fheLe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheLe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheLeCall {
@@ -10285,8 +9845,7 @@ function fheLe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         #[allow(missing_docs)]
         pub scalarByte: alloy::sol_types::private::FixedBytes<1>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheLe(bytes32,bytes32,bytes1)`](fheLeCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -10304,6 +9863,7 @@ function fheLe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -10317,9 +9877,7 @@ function fheLe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -10347,14 +9905,13 @@ function fheLe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -10383,14 +9940,10 @@ function fheLe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<1>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheLe(bytes32,bytes32,bytes1)";
             const SELECTOR: [u8; 4] = [117u8, 19u8, 164u8, 4u8];
             #[inline]
@@ -10423,34 +9976,30 @@ function fheLe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheLeReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheLeReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheLeReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheLt(bytes32,bytes32,bytes1)` and selector `0x72107681`.
-```solidity
-function fheLt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheLt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheLtCall {
@@ -10461,8 +10010,7 @@ function fheLt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         #[allow(missing_docs)]
         pub scalarByte: alloy::sol_types::private::FixedBytes<1>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheLt(bytes32,bytes32,bytes1)`](fheLtCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -10480,6 +10028,7 @@ function fheLt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -10493,9 +10042,7 @@ function fheLt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -10523,14 +10070,13 @@ function fheLt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -10559,14 +10105,10 @@ function fheLt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<1>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheLt(bytes32,bytes32,bytes1)";
             const SELECTOR: [u8; 4] = [114u8, 16u8, 118u8, 129u8];
             #[inline]
@@ -10599,34 +10141,30 @@ function fheLt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheLtReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheLtReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheLtReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheMax(bytes32,bytes32,bytes1)` and selector `0x36318d64`.
-```solidity
-function fheMax(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheMax(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheMaxCall {
@@ -10637,8 +10175,7 @@ function fheMax(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         #[allow(missing_docs)]
         pub scalarByte: alloy::sol_types::private::FixedBytes<1>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheMax(bytes32,bytes32,bytes1)`](fheMaxCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -10656,6 +10193,7 @@ function fheMax(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -10669,9 +10207,7 @@ function fheMax(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -10699,14 +10235,13 @@ function fheMax(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -10735,14 +10270,10 @@ function fheMax(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<1>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheMax(bytes32,bytes32,bytes1)";
             const SELECTOR: [u8; 4] = [54u8, 49u8, 141u8, 100u8];
             #[inline]
@@ -10775,34 +10306,30 @@ function fheMax(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheMaxReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheMaxReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheMaxReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheMin(bytes32,bytes32,bytes1)` and selector `0x04559f71`.
-```solidity
-function fheMin(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheMin(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheMinCall {
@@ -10813,8 +10340,7 @@ function fheMin(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         #[allow(missing_docs)]
         pub scalarByte: alloy::sol_types::private::FixedBytes<1>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheMin(bytes32,bytes32,bytes1)`](fheMinCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -10832,6 +10358,7 @@ function fheMin(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -10845,9 +10372,7 @@ function fheMin(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -10875,14 +10400,13 @@ function fheMin(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -10911,14 +10435,10 @@ function fheMin(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<1>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheMin(bytes32,bytes32,bytes1)";
             const SELECTOR: [u8; 4] = [4u8, 85u8, 159u8, 113u8];
             #[inline]
@@ -10951,34 +10471,30 @@ function fheMin(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheMinReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheMinReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheMinReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheMul(bytes32,bytes32,bytes1)` and selector `0x57f0a568`.
-```solidity
-function fheMul(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheMul(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheMulCall {
@@ -10989,8 +10505,7 @@ function fheMul(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         #[allow(missing_docs)]
         pub scalarByte: alloy::sol_types::private::FixedBytes<1>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheMul(bytes32,bytes32,bytes1)`](fheMulCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -11008,6 +10523,7 @@ function fheMul(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -11021,9 +10537,7 @@ function fheMul(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11051,14 +10565,13 @@ function fheMul(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11087,14 +10600,10 @@ function fheMul(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<1>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheMul(bytes32,bytes32,bytes1)";
             const SELECTOR: [u8; 4] = [87u8, 240u8, 165u8, 104u8];
             #[inline]
@@ -11127,34 +10636,30 @@ function fheMul(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheMulReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheMulReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheMulReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheNe(bytes32,bytes32,bytes1)` and selector `0xd8092cbc`.
-```solidity
-function fheNe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheNe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheNeCall {
@@ -11165,8 +10670,7 @@ function fheNe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         #[allow(missing_docs)]
         pub scalarByte: alloy::sol_types::private::FixedBytes<1>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheNe(bytes32,bytes32,bytes1)`](fheNeCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -11184,6 +10688,7 @@ function fheNe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -11197,9 +10702,7 @@ function fheNe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11227,14 +10730,13 @@ function fheNe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11263,14 +10765,10 @@ function fheNe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<1>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheNe(bytes32,bytes32,bytes1)";
             const SELECTOR: [u8; 4] = [216u8, 9u8, 44u8, 188u8];
             #[inline]
@@ -11303,42 +10801,37 @@ function fheNe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (by
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheNeReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheNeReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheNeReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheNeg(bytes32)` and selector `0xd580c063`.
-```solidity
-function fheNeg(bytes32 ct) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheNeg(bytes32 ct) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheNegCall {
         #[allow(missing_docs)]
         pub ct: alloy::sol_types::private::FixedBytes<32>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheNeg(bytes32)`](fheNegCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -11356,14 +10849,13 @@ function fheNeg(bytes32 ct) external returns (bytes32 result);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11387,14 +10879,13 @@ function fheNeg(bytes32 ct) external returns (bytes32 result);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11419,14 +10910,10 @@ function fheNeg(bytes32 ct) external returns (bytes32 result);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for fheNegCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheNeg(bytes32)";
             const SELECTOR: [u8; 4] = [213u8, 128u8, 192u8, 99u8];
             #[inline]
@@ -11453,42 +10940,37 @@ function fheNeg(bytes32 ct) external returns (bytes32 result);
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheNegReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheNegReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheNegReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheNot(bytes32)` and selector `0xf51ccfb0`.
-```solidity
-function fheNot(bytes32 ct) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheNot(bytes32 ct) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheNotCall {
         #[allow(missing_docs)]
         pub ct: alloy::sol_types::private::FixedBytes<32>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheNot(bytes32)`](fheNotCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -11506,14 +10988,13 @@ function fheNot(bytes32 ct) external returns (bytes32 result);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11537,14 +11018,13 @@ function fheNot(bytes32 ct) external returns (bytes32 result);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11569,14 +11049,10 @@ function fheNot(bytes32 ct) external returns (bytes32 result);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for fheNotCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheNot(bytes32)";
             const SELECTOR: [u8; 4] = [245u8, 28u8, 207u8, 176u8];
             #[inline]
@@ -11603,42 +11079,37 @@ function fheNot(bytes32 ct) external returns (bytes32 result);
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheNotReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheNotReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheNotReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheRand(uint8)` and selector `0xd75d6e8a`.
-```solidity
-function fheRand(FheType randType) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheRand(FheType randType) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheRandCall {
         #[allow(missing_docs)]
         pub randType: <FheType as alloy::sol_types::SolType>::RustType,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheRand(uint8)`](fheRandCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -11656,16 +11127,13 @@ function fheRand(FheType randType) external returns (bytes32 result);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (FheType,);
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                <FheType as alloy::sol_types::SolType>::RustType,
-            );
+            type UnderlyingRustTuple<'a> = (<FheType as alloy::sol_types::SolType>::RustType,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11689,14 +11157,13 @@ function fheRand(FheType randType) external returns (bytes32 result);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11721,14 +11188,10 @@ function fheRand(FheType randType) external returns (bytes32 result);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for fheRandCall {
             type Parameters<'a> = (FheType,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheRand(uint8)";
             const SELECTOR: [u8; 4] = [215u8, 93u8, 110u8, 138u8];
             #[inline]
@@ -11739,7 +11202,9 @@ function fheRand(FheType randType) external returns (bytes32 result);
             }
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
-                (<FheType as alloy_sol_types::SolType>::tokenize(&self.randType),)
+                (<FheType as alloy_sol_types::SolType>::tokenize(
+                    &self.randType,
+                ),)
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
@@ -11751,34 +11216,30 @@ function fheRand(FheType randType) external returns (bytes32 result);
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheRandReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheRandReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheRandReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheRandBounded(uint256,uint8)` and selector `0x48eef47e`.
-```solidity
-function fheRandBounded(uint256 upperBound, FheType randType) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheRandBounded(uint256 upperBound, FheType randType) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheRandBoundedCall {
@@ -11787,8 +11248,7 @@ function fheRandBounded(uint256 upperBound, FheType randType) external returns (
         #[allow(missing_docs)]
         pub randType: <FheType as alloy::sol_types::SolType>::RustType,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheRandBounded(uint256,uint8)`](fheRandBoundedCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -11806,10 +11266,8 @@ function fheRandBounded(uint256 upperBound, FheType randType) external returns (
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (
-                alloy::sol_types::sol_data::Uint<256>,
-                FheType,
-            );
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>, FheType);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
                 alloy::sol_types::private::primitives::aliases::U256,
@@ -11817,9 +11275,7 @@ function fheRandBounded(uint256 upperBound, FheType randType) external returns (
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11846,14 +11302,13 @@ function fheRandBounded(uint256 upperBound, FheType randType) external returns (
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -11862,16 +11317,14 @@ function fheRandBounded(uint256 upperBound, FheType randType) external returns (
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<fheRandBoundedReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<fheRandBoundedReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: fheRandBoundedReturn) -> Self {
                     (value.result,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for fheRandBoundedReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for fheRandBoundedReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { result: tuple.0 }
                 }
@@ -11880,14 +11333,10 @@ function fheRandBounded(uint256 upperBound, FheType randType) external returns (
         #[automatically_derived]
         impl alloy_sol_types::SolCall for fheRandBoundedCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>, FheType);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheRandBounded(uint256,uint8)";
             const SELECTOR: [u8; 4] = [72u8, 238u8, 244u8, 126u8];
             #[inline]
@@ -11899,9 +11348,9 @@ function fheRandBounded(uint256 upperBound, FheType randType) external returns (
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.upperBound),
+                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.upperBound,
+                    ),
                     <FheType as alloy_sol_types::SolType>::tokenize(&self.randType),
                 )
             }
@@ -11915,34 +11364,30 @@ function fheRandBounded(uint256 upperBound, FheType randType) external returns (
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheRandBoundedReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheRandBoundedReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheRandBoundedReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheRem(bytes32,bytes32,bytes1)` and selector `0xcf4d18aa`.
-```solidity
-function fheRem(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheRem(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheRemCall {
@@ -11953,8 +11398,7 @@ function fheRem(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         #[allow(missing_docs)]
         pub scalarByte: alloy::sol_types::private::FixedBytes<1>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheRem(bytes32,bytes32,bytes1)`](fheRemCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -11972,6 +11416,7 @@ function fheRem(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -11985,9 +11430,7 @@ function fheRem(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -12015,14 +11458,13 @@ function fheRem(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -12051,14 +11493,10 @@ function fheRem(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<1>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheRem(bytes32,bytes32,bytes1)";
             const SELECTOR: [u8; 4] = [207u8, 77u8, 24u8, 170u8];
             #[inline]
@@ -12091,34 +11529,30 @@ function fheRem(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheRemReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheRemReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheRemReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheRotl(bytes32,bytes32,bytes1)` and selector `0x6754b360`.
-```solidity
-function fheRotl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheRotl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheRotlCall {
@@ -12129,8 +11563,7 @@ function fheRotl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (
         #[allow(missing_docs)]
         pub scalarByte: alloy::sol_types::private::FixedBytes<1>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheRotl(bytes32,bytes32,bytes1)`](fheRotlCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -12148,6 +11581,7 @@ function fheRotl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -12161,9 +11595,7 @@ function fheRotl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -12191,14 +11623,13 @@ function fheRotl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -12227,14 +11658,10 @@ function fheRotl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<1>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheRotl(bytes32,bytes32,bytes1)";
             const SELECTOR: [u8; 4] = [103u8, 84u8, 179u8, 96u8];
             #[inline]
@@ -12267,34 +11694,30 @@ function fheRotl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheRotlReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheRotlReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheRotlReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheRotr(bytes32,bytes32,bytes1)` and selector `0xc021329e`.
-```solidity
-function fheRotr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheRotr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheRotrCall {
@@ -12305,8 +11728,7 @@ function fheRotr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (
         #[allow(missing_docs)]
         pub scalarByte: alloy::sol_types::private::FixedBytes<1>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheRotr(bytes32,bytes32,bytes1)`](fheRotrCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -12324,6 +11746,7 @@ function fheRotr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -12337,9 +11760,7 @@ function fheRotr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -12367,14 +11788,13 @@ function fheRotr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -12403,14 +11823,10 @@ function fheRotr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<1>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheRotr(bytes32,bytes32,bytes1)";
             const SELECTOR: [u8; 4] = [192u8, 33u8, 50u8, 158u8];
             #[inline]
@@ -12443,34 +11859,30 @@ function fheRotr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheRotrReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheRotrReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheRotrReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheShl(bytes32,bytes32,bytes1)` and selector `0xccc480a1`.
-```solidity
-function fheShl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheShl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheShlCall {
@@ -12481,8 +11893,7 @@ function fheShl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         #[allow(missing_docs)]
         pub scalarByte: alloy::sol_types::private::FixedBytes<1>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheShl(bytes32,bytes32,bytes1)`](fheShlCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -12500,6 +11911,7 @@ function fheShl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -12513,9 +11925,7 @@ function fheShl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -12543,14 +11953,13 @@ function fheShl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -12579,14 +11988,10 @@ function fheShl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<1>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheShl(bytes32,bytes32,bytes1)";
             const SELECTOR: [u8; 4] = [204u8, 196u8, 128u8, 161u8];
             #[inline]
@@ -12619,34 +12024,30 @@ function fheShl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheShlReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheShlReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheShlReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheShr(bytes32,bytes32,bytes1)` and selector `0x91f98ffe`.
-```solidity
-function fheShr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheShr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheShrCall {
@@ -12657,8 +12058,7 @@ function fheShr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         #[allow(missing_docs)]
         pub scalarByte: alloy::sol_types::private::FixedBytes<1>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheShr(bytes32,bytes32,bytes1)`](fheShrCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -12676,6 +12076,7 @@ function fheShr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -12689,9 +12090,7 @@ function fheShr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -12719,14 +12118,13 @@ function fheShr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -12755,14 +12153,10 @@ function fheShr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<1>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheShr(bytes32,bytes32,bytes1)";
             const SELECTOR: [u8; 4] = [145u8, 249u8, 143u8, 254u8];
             #[inline]
@@ -12795,34 +12189,30 @@ function fheShr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheShrReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheShrReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheShrReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheSub(bytes32,bytes32,bytes1)` and selector `0x182b6d98`.
-```solidity
-function fheSub(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheSub(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheSubCall {
@@ -12833,8 +12223,7 @@ function fheSub(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         #[allow(missing_docs)]
         pub scalarByte: alloy::sol_types::private::FixedBytes<1>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheSub(bytes32,bytes32,bytes1)`](fheSubCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -12852,6 +12241,7 @@ function fheSub(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -12865,9 +12255,7 @@ function fheSub(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -12895,14 +12283,13 @@ function fheSub(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -12931,14 +12318,10 @@ function fheSub(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<1>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheSub(bytes32,bytes32,bytes1)";
             const SELECTOR: [u8; 4] = [24u8, 43u8, 109u8, 152u8];
             #[inline]
@@ -12971,46 +12354,39 @@ function fheSub(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheSubReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheSubReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheSubReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheSum(bytes32[],uint8)` and selector `0x04a8d199`.
-```solidity
-function fheSum(bytes32[] memory values, FheType resultType) external returns (bytes32 result);
-```*/
+    ```solidity
+    function fheSum(bytes32[] memory values, FheType resultType) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheSumCall {
         #[allow(missing_docs)]
-        pub values: alloy::sol_types::private::Vec<
-            alloy::sol_types::private::FixedBytes<32>,
-        >,
+        pub values: alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
         #[allow(missing_docs)]
         pub resultType: <FheType as alloy::sol_types::SolType>::RustType,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheSum(bytes32[],uint8)`](fheSumCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -13028,24 +12404,19 @@ function fheSum(bytes32[] memory values, FheType resultType) external returns (b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
-                alloy::sol_types::sol_data::Array<
-                    alloy::sol_types::sol_data::FixedBytes<32>,
-                >,
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::FixedBytes<32>>,
                 FheType,
             );
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::Vec<
-                    alloy::sol_types::private::FixedBytes<32>,
-                >,
+                alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
                 <FheType as alloy::sol_types::SolType>::RustType,
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -13072,14 +12443,13 @@ function fheSum(bytes32[] memory values, FheType resultType) external returns (b
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -13104,19 +12474,13 @@ function fheSum(bytes32[] memory values, FheType resultType) external returns (b
         #[automatically_derived]
         impl alloy_sol_types::SolCall for fheSumCall {
             type Parameters<'a> = (
-                alloy::sol_types::sol_data::Array<
-                    alloy::sol_types::sol_data::FixedBytes<32>,
-                >,
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::FixedBytes<32>>,
                 FheType,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fheSum(bytes32[],uint8)";
             const SELECTOR: [u8; 4] = [4u8, 168u8, 209u8, 153u8];
             #[inline]
@@ -13144,39 +12508,34 @@ function fheSum(bytes32[] memory values, FheType resultType) external returns (b
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: fheSumReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: fheSumReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: fheSumReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getACLAddress()` and selector `0xf6859bdc`.
-```solidity
-function getACLAddress() external view returns (address);
-```*/
+    ```solidity
+    function getACLAddress() external view returns (address);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getACLAddressCall;
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getACLAddress()`](getACLAddressCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -13194,14 +12553,13 @@ function getACLAddress() external view returns (address);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -13225,14 +12583,13 @@ function getACLAddress() external view returns (address);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -13257,14 +12614,10 @@ function getACLAddress() external view returns (address);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getACLAddressCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::Address;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getACLAddress()";
             const SELECTOR: [u8; 4] = [246u8, 133u8, 155u8, 220u8];
             #[inline]
@@ -13287,39 +12640,34 @@ function getACLAddress() external view returns (address);
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: getACLAddressReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: getACLAddressReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: getACLAddressReturn = r.into();
+                    r._0
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getHCULimitAddress()` and selector `0xe0786972`.
-```solidity
-function getHCULimitAddress() external view returns (address);
-```*/
+    ```solidity
+    function getHCULimitAddress() external view returns (address);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getHCULimitAddressCall;
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getHCULimitAddress()`](getHCULimitAddressCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -13337,14 +12685,13 @@ function getHCULimitAddress() external view returns (address);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -13353,16 +12700,14 @@ function getHCULimitAddress() external view returns (address);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getHCULimitAddressCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getHCULimitAddressCall> for UnderlyingRustTuple<'_> {
                 fn from(value: getHCULimitAddressCall) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getHCULimitAddressCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getHCULimitAddressCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self
                 }
@@ -13370,14 +12715,13 @@ function getHCULimitAddress() external view returns (address);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -13386,16 +12730,14 @@ function getHCULimitAddress() external view returns (address);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getHCULimitAddressReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getHCULimitAddressReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: getHCULimitAddressReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getHCULimitAddressReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getHCULimitAddressReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -13404,14 +12746,10 @@ function getHCULimitAddress() external view returns (address);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getHCULimitAddressCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::Address;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getHCULimitAddress()";
             const SELECTOR: [u8; 4] = [224u8, 120u8, 105u8, 114u8];
             #[inline]
@@ -13434,39 +12772,34 @@ function getHCULimitAddress() external view returns (address);
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: getHCULimitAddressReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: getHCULimitAddressReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: getHCULimitAddressReturn = r.into();
+                    r._0
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getHandleVersion()` and selector `0x7a297f4b`.
-```solidity
-function getHandleVersion() external pure returns (uint8);
-```*/
+    ```solidity
+    function getHandleVersion() external pure returns (uint8);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getHandleVersionCall;
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getHandleVersion()`](getHandleVersionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -13484,14 +12817,13 @@ function getHandleVersion() external pure returns (uint8);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -13500,16 +12832,14 @@ function getHandleVersion() external pure returns (uint8);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getHandleVersionCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getHandleVersionCall> for UnderlyingRustTuple<'_> {
                 fn from(value: getHandleVersionCall) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getHandleVersionCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getHandleVersionCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self
                 }
@@ -13517,14 +12847,13 @@ function getHandleVersion() external pure returns (uint8);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<8>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (u8,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -13533,16 +12862,14 @@ function getHandleVersion() external pure returns (uint8);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getHandleVersionReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getHandleVersionReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: getHandleVersionReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getHandleVersionReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getHandleVersionReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -13551,14 +12878,10 @@ function getHandleVersion() external pure returns (uint8);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getHandleVersionCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = u8;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<8>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getHandleVersion()";
             const SELECTOR: [u8; 4] = [122u8, 41u8, 127u8, 75u8];
             #[inline]
@@ -13574,46 +12897,41 @@ function getHandleVersion() external pure returns (uint8);
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        8,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
+                    <alloy::sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
                 )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: getHandleVersionReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: getHandleVersionReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: getHandleVersionReturn = r.into();
+                    r._0
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getInputVerifierAddress()` and selector `0xa8c7c2c1`.
-```solidity
-function getInputVerifierAddress() external view returns (address);
-```*/
+    ```solidity
+    function getInputVerifierAddress() external view returns (address);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getInputVerifierAddressCall;
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getInputVerifierAddress()`](getInputVerifierAddressCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -13631,14 +12949,13 @@ function getInputVerifierAddress() external view returns (address);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -13647,16 +12964,14 @@ function getInputVerifierAddress() external view returns (address);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getInputVerifierAddressCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getInputVerifierAddressCall> for UnderlyingRustTuple<'_> {
                 fn from(value: getInputVerifierAddressCall) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getInputVerifierAddressCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getInputVerifierAddressCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self
                 }
@@ -13664,14 +12979,13 @@ function getInputVerifierAddress() external view returns (address);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -13680,16 +12994,14 @@ function getInputVerifierAddress() external view returns (address);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getInputVerifierAddressReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getInputVerifierAddressReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: getInputVerifierAddressReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getInputVerifierAddressReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getInputVerifierAddressReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -13698,14 +13010,10 @@ function getInputVerifierAddress() external view returns (address);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getInputVerifierAddressCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::Address;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getInputVerifierAddress()";
             const SELECTOR: [u8; 4] = [168u8, 199u8, 194u8, 193u8];
             #[inline]
@@ -13728,39 +13036,34 @@ function getInputVerifierAddress() external view returns (address);
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: getInputVerifierAddressReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: getInputVerifierAddressReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: getInputVerifierAddressReturn = r.into();
+                    r._0
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getVersion()` and selector `0x0d8e6e2c`.
-```solidity
-function getVersion() external pure returns (string memory);
-```*/
+    ```solidity
+    function getVersion() external pure returns (string memory);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getVersionCall;
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getVersion()`](getVersionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -13778,14 +13081,13 @@ function getVersion() external pure returns (string memory);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -13809,14 +13111,13 @@ function getVersion() external pure returns (string memory);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::String,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -13841,14 +13142,10 @@ function getVersion() external pure returns (string memory);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getVersionCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::String;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::String,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getVersion()";
             const SELECTOR: [u8; 4] = [13u8, 142u8, 110u8, 44u8];
             #[inline]
@@ -13863,42 +13160,34 @@ function getVersion() external pure returns (string memory);
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
+                (<alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(ret),)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: getVersionReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: getVersionReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: getVersionReturn = r.into();
+                    r._0
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `initializeFromEmptyProxy()` and selector `0x39f73810`.
-```solidity
-function initializeFromEmptyProxy() external;
-```*/
+    ```solidity
+    function initializeFromEmptyProxy() external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct initializeFromEmptyProxyCall;
@@ -13916,14 +13205,13 @@ function initializeFromEmptyProxy() external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -13932,16 +13220,14 @@ function initializeFromEmptyProxy() external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<initializeFromEmptyProxyCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<initializeFromEmptyProxyCall> for UnderlyingRustTuple<'_> {
                 fn from(value: initializeFromEmptyProxyCall) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for initializeFromEmptyProxyCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for initializeFromEmptyProxyCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self
                 }
@@ -13949,14 +13235,13 @@ function initializeFromEmptyProxy() external;
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -13965,16 +13250,14 @@ function initializeFromEmptyProxy() external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<initializeFromEmptyProxyReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<initializeFromEmptyProxyReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: initializeFromEmptyProxyReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for initializeFromEmptyProxyReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for initializeFromEmptyProxyReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -13983,23 +13266,18 @@ function initializeFromEmptyProxy() external;
         impl initializeFromEmptyProxyReturn {
             fn _tokenize(
                 &self,
-            ) -> <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
+            ) -> <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::ReturnToken<'_>
+            {
                 ()
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for initializeFromEmptyProxyCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = initializeFromEmptyProxyReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "initializeFromEmptyProxy()";
             const SELECTOR: [u8; 4] = [57u8, 247u8, 56u8, 16u8];
             #[inline]
@@ -14018,33 +13296,27 @@ function initializeFromEmptyProxy() external;
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `proxiableUUID()` and selector `0x52d1902d`.
-```solidity
-function proxiableUUID() external view returns (bytes32);
-```*/
+    ```solidity
+    function proxiableUUID() external view returns (bytes32);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct proxiableUUIDCall;
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`proxiableUUID()`](proxiableUUIDCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -14062,14 +13334,13 @@ function proxiableUUID() external view returns (bytes32);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -14093,14 +13364,13 @@ function proxiableUUID() external view returns (bytes32);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -14125,14 +13395,10 @@ function proxiableUUID() external view returns (bytes32);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for proxiableUUIDCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "proxiableUUID()";
             const SELECTOR: [u8; 4] = [82u8, 209u8, 144u8, 45u8];
             #[inline]
@@ -14155,34 +13421,30 @@ function proxiableUUID() external view returns (bytes32);
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: proxiableUUIDReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: proxiableUUIDReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: proxiableUUIDReturn = r.into();
+                    r._0
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `reinitializeV4()` and selector `0x123abb28`.
-```solidity
-function reinitializeV4() external;
-```*/
+    ```solidity
+    function reinitializeV4() external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct reinitializeV4Call;
@@ -14200,14 +13462,13 @@ function reinitializeV4() external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -14231,14 +13492,13 @@ function reinitializeV4() external;
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -14247,16 +13507,14 @@ function reinitializeV4() external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<reinitializeV4Return>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<reinitializeV4Return> for UnderlyingRustTuple<'_> {
                 fn from(value: reinitializeV4Return) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for reinitializeV4Return {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for reinitializeV4Return {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -14272,14 +13530,10 @@ function reinitializeV4() external;
         #[automatically_derived]
         impl alloy_sol_types::SolCall for reinitializeV4Call {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = reinitializeV4Return;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "reinitializeV4()";
             const SELECTOR: [u8; 4] = [18u8, 58u8, 187u8, 40u8];
             #[inline]
@@ -14298,28 +13552,23 @@ function reinitializeV4() external;
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `trivialEncrypt(uint256,uint8)` and selector `0x9cd07acb`.
-```solidity
-function trivialEncrypt(uint256 pt, FheType toType) external returns (bytes32 result);
-```*/
+    ```solidity
+    function trivialEncrypt(uint256 pt, FheType toType) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct trivialEncryptCall {
@@ -14328,8 +13577,7 @@ function trivialEncrypt(uint256 pt, FheType toType) external returns (bytes32 re
         #[allow(missing_docs)]
         pub toType: <FheType as alloy::sol_types::SolType>::RustType,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`trivialEncrypt(uint256,uint8)`](trivialEncryptCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -14347,10 +13595,8 @@ function trivialEncrypt(uint256 pt, FheType toType) external returns (bytes32 re
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (
-                alloy::sol_types::sol_data::Uint<256>,
-                FheType,
-            );
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>, FheType);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
                 alloy::sol_types::private::primitives::aliases::U256,
@@ -14358,9 +13604,7 @@ function trivialEncrypt(uint256 pt, FheType toType) external returns (bytes32 re
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -14387,14 +13631,13 @@ function trivialEncrypt(uint256 pt, FheType toType) external returns (bytes32 re
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -14403,16 +13646,14 @@ function trivialEncrypt(uint256 pt, FheType toType) external returns (bytes32 re
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<trivialEncryptReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<trivialEncryptReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: trivialEncryptReturn) -> Self {
                     (value.result,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for trivialEncryptReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for trivialEncryptReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { result: tuple.0 }
                 }
@@ -14421,14 +13662,10 @@ function trivialEncrypt(uint256 pt, FheType toType) external returns (bytes32 re
         #[automatically_derived]
         impl alloy_sol_types::SolCall for trivialEncryptCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>, FheType);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "trivialEncrypt(uint256,uint8)";
             const SELECTOR: [u8; 4] = [156u8, 208u8, 122u8, 203u8];
             #[inline]
@@ -14440,9 +13677,9 @@ function trivialEncrypt(uint256 pt, FheType toType) external returns (bytes32 re
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.pt),
+                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.pt,
+                    ),
                     <FheType as alloy_sol_types::SolType>::tokenize(&self.toType),
                 )
             }
@@ -14456,34 +13693,30 @@ function trivialEncrypt(uint256 pt, FheType toType) external returns (bytes32 re
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: trivialEncryptReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: trivialEncryptReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: trivialEncryptReturn = r.into();
+                    r.result
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `upgradeToAndCall(address,bytes)` and selector `0x4f1ef286`.
-```solidity
-function upgradeToAndCall(address newImplementation, bytes memory data) external payable;
-```*/
+    ```solidity
+    function upgradeToAndCall(address newImplementation, bytes memory data) external payable;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct upgradeToAndCallCall {
@@ -14506,6 +13739,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Bytes,
@@ -14517,9 +13751,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -14528,16 +13760,14 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<upgradeToAndCallCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<upgradeToAndCallCall> for UnderlyingRustTuple<'_> {
                 fn from(value: upgradeToAndCallCall) -> Self {
                     (value.newImplementation, value.data)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for upgradeToAndCallCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for upgradeToAndCallCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         newImplementation: tuple.0,
@@ -14548,14 +13778,13 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -14564,16 +13793,14 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<upgradeToAndCallReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<upgradeToAndCallReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: upgradeToAndCallReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for upgradeToAndCallReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for upgradeToAndCallReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -14592,14 +13819,10 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Bytes,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = upgradeToAndCallReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "upgradeToAndCall(address,bytes)";
             const SELECTOR: [u8; 4] = [79u8, 30u8, 242u8, 134u8];
             #[inline]
@@ -14625,28 +13848,23 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `verifyInput(bytes32,address,bytes,uint8)` and selector `0x08bf832a`.
-```solidity
-function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inputProof, FheType inputType) external returns (bytes32 result);
-```*/
+    ```solidity
+    function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inputProof, FheType inputType) external returns (bytes32 result);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct verifyInputCall {
@@ -14659,8 +13877,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
         #[allow(missing_docs)]
         pub inputType: <FheType as alloy::sol_types::SolType>::RustType,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`verifyInput(bytes32,address,bytes,uint8)`](verifyInputCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -14678,6 +13895,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
@@ -14693,9 +13911,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -14729,14 +13945,13 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -14766,14 +13981,10 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                 alloy::sol_types::sol_data::Bytes,
                 FheType,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "verifyInput(bytes32,address,bytes,uint8)";
             const SELECTOR: [u8; 4] = [8u8, 191u8, 131u8, 42u8];
             #[inline]
@@ -14807,31 +14018,27 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: verifyInputReturn = r.into();
                         r.result
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: verifyInputReturn = r.into();
-                        r.result
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: verifyInputReturn = r.into();
+                    r.result
+                })
             }
         }
     };
     ///Container for all the [`FHEVMExecutor`](self) function calls.
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive()]
+    #[derive(Clone, serde::Serialize, serde::Deserialize)]
     pub enum FHEVMExecutorCalls {
         #[allow(missing_docs)]
         UPGRADE_INTERFACE_VERSION(UPGRADE_INTERFACE_VERSIONCall),
@@ -14912,7 +14119,6 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
         #[allow(missing_docs)]
         verifyInput(verifyInputCall),
     }
-    #[automatically_derived]
     impl FHEVMExecutorCalls {
         /// All the selectors of this enum.
         ///
@@ -14961,6 +14167,108 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
             [246u8, 133u8, 155u8, 220u8],
             [247u8, 127u8, 63u8, 29u8],
         ];
+        /// The names of the variants in the same order as `SELECTORS`.
+        pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(fheMin),
+            ::core::stringify!(fheSum),
+            ::core::stringify!(verifyInput),
+            ::core::stringify!(getVersion),
+            ::core::stringify!(fheAdd),
+            ::core::stringify!(reinitializeV4),
+            ::core::stringify!(fheGe),
+            ::core::stringify!(fheSub),
+            ::core::stringify!(cast),
+            ::core::stringify!(fheMax),
+            ::core::stringify!(initializeFromEmptyProxy),
+            ::core::stringify!(fheRandBounded),
+            ::core::stringify!(upgradeToAndCall),
+            ::core::stringify!(proxiableUUID),
+            ::core::stringify!(fheMul),
+            ::core::stringify!(fheDiv),
+            ::core::stringify!(fheBitOr),
+            ::core::stringify!(fheRotl),
+            ::core::stringify!(fheLt),
+            ::core::stringify!(fheLe),
+            ::core::stringify!(fheIfThenElse),
+            ::core::stringify!(getHandleVersion),
+            ::core::stringify!(fheGt),
+            ::core::stringify!(fheBitXor),
+            ::core::stringify!(fheShr),
+            ::core::stringify!(trivialEncrypt),
+            ::core::stringify!(getInputVerifierAddress),
+            ::core::stringify!(UPGRADE_INTERFACE_VERSION),
+            ::core::stringify!(fheRotr),
+            ::core::stringify!(fheShl),
+            ::core::stringify!(fheRem),
+            ::core::stringify!(fheNeg),
+            ::core::stringify!(fheRand),
+            ::core::stringify!(fheNe),
+            ::core::stringify!(fheBitAnd),
+            ::core::stringify!(getHCULimitAddress),
+            ::core::stringify!(fheNot),
+            ::core::stringify!(getACLAddress),
+            ::core::stringify!(fheEq),
+        ];
+        /// The signatures in the same order as `SELECTORS`.
+        pub const SIGNATURES: &'static [&'static str] = &[
+            <fheMinCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheSumCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <verifyInputCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getVersionCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheAddCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <reinitializeV4Call as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheGeCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheSubCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <castCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheMaxCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheRandBoundedCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <upgradeToAndCallCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <proxiableUUIDCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheMulCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheDivCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheBitOrCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheRotlCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheLtCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheLeCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheIfThenElseCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getHandleVersionCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheGtCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheBitXorCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheShrCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <trivialEncryptCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getInputVerifierAddressCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <UPGRADE_INTERFACE_VERSIONCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheRotrCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheShlCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheRemCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheNegCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheRandCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheNeCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheBitAndCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getHCULimitAddressCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheNotCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getACLAddressCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <fheEqCall as alloy_sol_types::SolCall>::SIGNATURE,
+        ];
+        /// Returns the signature for the given selector, if known.
+        #[inline]
+        pub fn signature_by_selector(
+            selector: [u8; 4usize],
+        ) -> ::core::option::Option<&'static str> {
+            match Self::SELECTORS.binary_search(&selector) {
+                ::core::result::Result::Ok(idx) => {
+                    ::core::option::Option::Some(Self::SIGNATURES[idx])
+                }
+                ::core::result::Result::Err(_) => ::core::option::Option::None,
+            }
+        }
+        /// Returns the enum variant name for the given selector, if known.
+        #[inline]
+        pub fn name_by_selector(selector: [u8; 4usize]) -> ::core::option::Option<&'static str> {
+            let sig = Self::signature_by_selector(selector)?;
+            sig.split_once('(').map(|(name, _)| name)
+        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for FHEVMExecutorCalls {
@@ -14975,20 +14283,14 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                 }
                 Self::cast(_) => <castCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::fheAdd(_) => <fheAddCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::fheBitAnd(_) => {
-                    <fheBitAndCall as alloy_sol_types::SolCall>::SELECTOR
-                }
+                Self::fheBitAnd(_) => <fheBitAndCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::fheBitOr(_) => <fheBitOrCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::fheBitXor(_) => {
-                    <fheBitXorCall as alloy_sol_types::SolCall>::SELECTOR
-                }
+                Self::fheBitXor(_) => <fheBitXorCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::fheDiv(_) => <fheDivCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::fheEq(_) => <fheEqCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::fheGe(_) => <fheGeCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::fheGt(_) => <fheGtCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::fheIfThenElse(_) => {
-                    <fheIfThenElseCall as alloy_sol_types::SolCall>::SELECTOR
-                }
+                Self::fheIfThenElse(_) => <fheIfThenElseCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::fheLe(_) => <fheLeCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::fheLt(_) => <fheLtCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::fheMax(_) => <fheMaxCall as alloy_sol_types::SolCall>::SELECTOR,
@@ -15008,9 +14310,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                 Self::fheShr(_) => <fheShrCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::fheSub(_) => <fheSubCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::fheSum(_) => <fheSumCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::getACLAddress(_) => {
-                    <getACLAddressCall as alloy_sol_types::SolCall>::SELECTOR
-                }
+                Self::getACLAddress(_) => <getACLAddressCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::getHCULimitAddress(_) => {
                     <getHCULimitAddressCall as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -15020,15 +14320,11 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                 Self::getInputVerifierAddress(_) => {
                     <getInputVerifierAddressCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::getVersion(_) => {
-                    <getVersionCall as alloy_sol_types::SolCall>::SELECTOR
-                }
+                Self::getVersion(_) => <getVersionCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::initializeFromEmptyProxy(_) => {
                     <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::proxiableUUID(_) => {
-                    <proxiableUUIDCall as alloy_sol_types::SolCall>::SELECTOR
-                }
+                Self::proxiableUUID(_) => <proxiableUUIDCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::reinitializeV4(_) => {
                     <reinitializeV4Call as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -15038,9 +14334,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                 Self::upgradeToAndCall(_) => {
                     <upgradeToAndCallCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::verifyInput(_) => {
-                    <verifyInputCall as alloy_sol_types::SolCall>::SELECTOR
-                }
+                Self::verifyInput(_) => <verifyInputCall as alloy_sol_types::SolCall>::SELECTOR,
             }
         }
         #[inline]
@@ -15053,86 +14347,59 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(
-            selector: [u8; 4],
-            data: &[u8],
-        ) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<FHEVMExecutorCalls>] = &[
+        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls>] = &[
                 {
-                    fn fheMin(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheMin(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheMinCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheMin)
                     }
                     fheMin
                 },
                 {
-                    fn fheSum(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheSum(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheSumCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheSum)
                     }
                     fheSum
                 },
                 {
-                    fn verifyInput(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <verifyInputCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn verifyInput(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <verifyInputCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::verifyInput)
                     }
                     verifyInput
                 },
                 {
-                    fn getVersion(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn getVersion(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::getVersion)
                     }
                     getVersion
                 },
                 {
-                    fn fheAdd(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheAdd(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheAddCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheAdd)
                     }
                     fheAdd
                 },
                 {
-                    fn reinitializeV4(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <reinitializeV4Call as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn reinitializeV4(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <reinitializeV4Call as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::reinitializeV4)
                     }
                     reinitializeV4
                 },
                 {
-                    fn fheGe(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheGe(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheGeCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheGe)
                     }
                     fheGe
                 },
                 {
-                    fn fheSub(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheSub(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheSubCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheSub)
                     }
@@ -15146,9 +14413,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     cast
                 },
                 {
-                    fn fheMax(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheMax(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheMaxCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheMax)
                     }
@@ -15159,19 +14424,15 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(FHEVMExecutorCalls::initializeFromEmptyProxy)
+                            data,
+                        )
+                        .map(FHEVMExecutorCalls::initializeFromEmptyProxy)
                     }
                     initializeFromEmptyProxy
                 },
                 {
-                    fn fheRandBounded(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheRandBoundedCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn fheRandBounded(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheRandBoundedCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheRandBounded)
                     }
                     fheRandBounded
@@ -15180,85 +14441,63 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     fn upgradeToAndCall(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                        <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::upgradeToAndCall)
                     }
                     upgradeToAndCall
                 },
                 {
-                    fn proxiableUUID(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn proxiableUUID(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::proxiableUUID)
                     }
                     proxiableUUID
                 },
                 {
-                    fn fheMul(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheMul(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheMulCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheMul)
                     }
                     fheMul
                 },
                 {
-                    fn fheDiv(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheDiv(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheDivCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheDiv)
                     }
                     fheDiv
                 },
                 {
-                    fn fheBitOr(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheBitOr(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheBitOrCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheBitOr)
                     }
                     fheBitOr
                 },
                 {
-                    fn fheRotl(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheRotl(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheRotlCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheRotl)
                     }
                     fheRotl
                 },
                 {
-                    fn fheLt(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheLt(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheLtCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheLt)
                     }
                     fheLt
                 },
                 {
-                    fn fheLe(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheLe(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheLeCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheLe)
                     }
                     fheLe
                 },
                 {
-                    fn fheIfThenElse(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheIfThenElseCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn fheIfThenElse(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheIfThenElseCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheIfThenElse)
                     }
                     fheIfThenElse
@@ -15267,47 +14506,35 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     fn getHandleVersion(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <getHandleVersionCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                        <getHandleVersionCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::getHandleVersion)
                     }
                     getHandleVersion
                 },
                 {
-                    fn fheGt(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheGt(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheGtCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheGt)
                     }
                     fheGt
                 },
                 {
-                    fn fheBitXor(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheBitXor(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheBitXorCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheBitXor)
                     }
                     fheBitXor
                 },
                 {
-                    fn fheShr(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheShr(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheShrCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheShr)
                     }
                     fheShr
                 },
                 {
-                    fn trivialEncrypt(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <trivialEncryptCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn trivialEncrypt(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <trivialEncryptCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::trivialEncrypt)
                     }
                     trivialEncrypt
@@ -15317,9 +14544,9 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <getInputVerifierAddressCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(FHEVMExecutorCalls::getInputVerifierAddress)
+                            data,
+                        )
+                        .map(FHEVMExecutorCalls::getInputVerifierAddress)
                     }
                     getInputVerifierAddress
                 },
@@ -15328,70 +14555,56 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <UPGRADE_INTERFACE_VERSIONCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(FHEVMExecutorCalls::UPGRADE_INTERFACE_VERSION)
+                            data,
+                        )
+                        .map(FHEVMExecutorCalls::UPGRADE_INTERFACE_VERSION)
                     }
                     UPGRADE_INTERFACE_VERSION
                 },
                 {
-                    fn fheRotr(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheRotr(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheRotrCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheRotr)
                     }
                     fheRotr
                 },
                 {
-                    fn fheShl(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheShl(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheShlCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheShl)
                     }
                     fheShl
                 },
                 {
-                    fn fheRem(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheRem(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheRemCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheRem)
                     }
                     fheRem
                 },
                 {
-                    fn fheNeg(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheNeg(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheNegCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheNeg)
                     }
                     fheNeg
                 },
                 {
-                    fn fheRand(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheRand(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheRandCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheRand)
                     }
                     fheRand
                 },
                 {
-                    fn fheNe(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheNe(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheNeCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheNe)
                     }
                     fheNe
                 },
                 {
-                    fn fheBitAnd(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheBitAnd(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheBitAndCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheBitAnd)
                     }
@@ -15401,37 +14614,27 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     fn getHCULimitAddress(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <getHCULimitAddressCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                        <getHCULimitAddressCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::getHCULimitAddress)
                     }
                     getHCULimitAddress
                 },
                 {
-                    fn fheNot(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheNot(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheNotCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheNot)
                     }
                     fheNot
                 },
                 {
-                    fn getACLAddress(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <getACLAddressCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn getACLAddress(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <getACLAddressCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::getACLAddress)
                     }
                     getACLAddress
                 },
                 {
-                    fn fheEq(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheEq(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheEqCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(FHEVMExecutorCalls::fheEq)
                     }
@@ -15439,12 +14642,10 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_SHIMS[idx](data)
         }
@@ -15456,111 +14657,76 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<FHEVMExecutorCalls>] = &[
+            )
+                -> alloy_sol_types::Result<FHEVMExecutorCalls>] = &[
                 {
-                    fn fheMin(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheMinCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn fheMin(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheMinCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::fheMin)
                     }
                     fheMin
                 },
                 {
-                    fn fheSum(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheSumCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn fheSum(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheSumCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::fheSum)
                     }
                     fheSum
                 },
                 {
-                    fn verifyInput(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <verifyInputCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn verifyInput(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <verifyInputCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::verifyInput)
                     }
                     verifyInput
                 },
                 {
-                    fn getVersion(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn getVersion(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::getVersion)
                     }
                     getVersion
                 },
                 {
-                    fn fheAdd(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheAddCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn fheAdd(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheAddCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::fheAdd)
                     }
                     fheAdd
                 },
                 {
-                    fn reinitializeV4(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn reinitializeV4(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <reinitializeV4Call as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(FHEVMExecutorCalls::reinitializeV4)
+                            data,
+                        )
+                        .map(FHEVMExecutorCalls::reinitializeV4)
                     }
                     reinitializeV4
                 },
                 {
-                    fn fheGe(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheGeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn fheGe(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheGeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::fheGe)
                     }
                     fheGe
                 },
                 {
-                    fn fheSub(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheSubCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn fheSub(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheSubCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::fheSub)
                     }
                     fheSub
                 },
                 {
                     fn cast(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <castCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                        <castCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::cast)
                     }
                     cast
                 },
                 {
-                    fn fheMax(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheMaxCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn fheMax(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheMaxCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::fheMax)
                     }
                     fheMax
@@ -15577,13 +14743,11 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     initializeFromEmptyProxy
                 },
                 {
-                    fn fheRandBounded(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheRandBounded(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheRandBoundedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(FHEVMExecutorCalls::fheRandBounded)
+                            data,
+                        )
+                        .map(FHEVMExecutorCalls::fheRandBounded)
                     }
                     fheRandBounded
                 },
@@ -15592,97 +14756,69 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(FHEVMExecutorCalls::upgradeToAndCall)
+                            data,
+                        )
+                        .map(FHEVMExecutorCalls::upgradeToAndCall)
                     }
                     upgradeToAndCall
                 },
                 {
-                    fn proxiableUUID(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn proxiableUUID(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(FHEVMExecutorCalls::proxiableUUID)
+                            data,
+                        )
+                        .map(FHEVMExecutorCalls::proxiableUUID)
                     }
                     proxiableUUID
                 },
                 {
-                    fn fheMul(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheMulCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn fheMul(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheMulCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::fheMul)
                     }
                     fheMul
                 },
                 {
-                    fn fheDiv(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheDivCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn fheDiv(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheDivCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::fheDiv)
                     }
                     fheDiv
                 },
                 {
-                    fn fheBitOr(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheBitOrCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn fheBitOr(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheBitOrCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::fheBitOr)
                     }
                     fheBitOr
                 },
                 {
-                    fn fheRotl(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheRotlCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn fheRotl(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheRotlCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::fheRotl)
                     }
                     fheRotl
                 },
                 {
-                    fn fheLt(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheLtCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn fheLt(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheLtCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::fheLt)
                     }
                     fheLt
                 },
                 {
-                    fn fheLe(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheLeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn fheLe(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheLeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::fheLe)
                     }
                     fheLe
                 },
                 {
-                    fn fheIfThenElse(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn fheIfThenElse(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <fheIfThenElseCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(FHEVMExecutorCalls::fheIfThenElse)
+                            data,
+                        )
+                        .map(FHEVMExecutorCalls::fheIfThenElse)
                     }
                     fheIfThenElse
                 },
@@ -15691,53 +14827,39 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <getHandleVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(FHEVMExecutorCalls::getHandleVersion)
+                            data,
+                        )
+                        .map(FHEVMExecutorCalls::getHandleVersion)
                     }
                     getHandleVersion
                 },
                 {
-                    fn fheGt(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheGtCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn fheGt(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheGtCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::fheGt)
                     }
                     fheGt
                 },
                 {
-                    fn fheBitXor(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheBitXorCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn fheBitXor(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheBitXorCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::fheBitXor)
                     }
                     fheBitXor
                 },
                 {
-                    fn fheShr(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheShrCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn fheShr(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheShrCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::fheShr)
                     }
                     fheShr
                 },
                 {
-                    fn trivialEncrypt(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn trivialEncrypt(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <trivialEncryptCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(FHEVMExecutorCalls::trivialEncrypt)
+                            data,
+                        )
+                        .map(FHEVMExecutorCalls::trivialEncrypt)
                     }
                     trivialEncrypt
                 },
@@ -15764,78 +14886,50 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     UPGRADE_INTERFACE_VERSION
                 },
                 {
-                    fn fheRotr(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheRotrCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn fheRotr(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheRotrCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::fheRotr)
                     }
                     fheRotr
                 },
                 {
-                    fn fheShl(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheShlCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn fheShl(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheShlCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::fheShl)
                     }
                     fheShl
                 },
                 {
-                    fn fheRem(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheRemCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn fheRem(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheRemCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::fheRem)
                     }
                     fheRem
                 },
                 {
-                    fn fheNeg(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheNegCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn fheNeg(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheNegCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::fheNeg)
                     }
                     fheNeg
                 },
                 {
-                    fn fheRand(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheRandCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn fheRand(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheRandCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::fheRand)
                     }
                     fheRand
                 },
                 {
-                    fn fheNe(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheNeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn fheNe(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheNeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::fheNe)
                     }
                     fheNe
                 },
                 {
-                    fn fheBitAnd(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheBitAndCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn fheBitAnd(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheBitAndCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::fheBitAnd)
                     }
                     fheBitAnd
@@ -15852,46 +14946,34 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     getHCULimitAddress
                 },
                 {
-                    fn fheNot(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheNotCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn fheNot(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheNotCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::fheNot)
                     }
                     fheNot
                 },
                 {
-                    fn getACLAddress(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                    fn getACLAddress(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
                         <getACLAddressCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(FHEVMExecutorCalls::getACLAddress)
+                            data,
+                        )
+                        .map(FHEVMExecutorCalls::getACLAddress)
                     }
                     getACLAddress
                 },
                 {
-                    fn fheEq(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
-                        <fheEqCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn fheEq(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorCalls> {
+                        <fheEqCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorCalls::fheEq)
                     }
                     fheEq
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -15931,9 +15013,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     <fheGtCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::fheIfThenElse(inner) => {
-                    <fheIfThenElseCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <fheIfThenElseCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::fheLe(inner) => {
                     <fheLeCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
@@ -15963,9 +15043,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     <fheRandCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::fheRandBounded(inner) => {
-                    <fheRandBoundedCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <fheRandBoundedCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::fheRem(inner) => {
                     <fheRemCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
@@ -15989,19 +15067,13 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     <fheSumCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::getACLAddress(inner) => {
-                    <getACLAddressCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <getACLAddressCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::getHCULimitAddress(inner) => {
-                    <getHCULimitAddressCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <getHCULimitAddressCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::getHandleVersion(inner) => {
-                    <getHandleVersionCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <getHandleVersionCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::getInputVerifierAddress(inner) => {
                     <getInputVerifierAddressCall as alloy_sol_types::SolCall>::abi_encoded_size(
@@ -16017,29 +15089,19 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     )
                 }
                 Self::proxiableUUID(inner) => {
-                    <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::reinitializeV4(inner) => {
-                    <reinitializeV4Call as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <reinitializeV4Call as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::trivialEncrypt(inner) => {
-                    <trivialEncryptCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <trivialEncryptCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::upgradeToAndCall(inner) => {
-                    <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::verifyInput(inner) => {
-                    <verifyInputCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <verifyInputCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
             }
         }
@@ -16048,8 +15110,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
             match self {
                 Self::UPGRADE_INTERFACE_VERSION(inner) => {
                     <UPGRADE_INTERFACE_VERSIONCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::cast(inner) => {
@@ -16059,22 +15120,13 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     <fheAddCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::fheBitAnd(inner) => {
-                    <fheBitAndCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <fheBitAndCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::fheBitOr(inner) => {
-                    <fheBitOrCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <fheBitOrCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::fheBitXor(inner) => {
-                    <fheBitXorCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <fheBitXorCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::fheDiv(inner) => {
                     <fheDivCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
@@ -16089,10 +15141,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     <fheGtCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::fheIfThenElse(inner) => {
-                    <fheIfThenElseCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <fheIfThenElseCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::fheLe(inner) => {
                     <fheLeCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
@@ -16122,10 +15171,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     <fheRandCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::fheRandBounded(inner) => {
-                    <fheRandBoundedCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <fheRandBoundedCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::fheRem(inner) => {
                     <fheRemCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
@@ -16149,77 +15195,47 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     <fheSumCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::getACLAddress(inner) => {
-                    <getACLAddressCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <getACLAddressCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::getHCULimitAddress(inner) => {
-                    <getHCULimitAddressCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <getHCULimitAddressCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::getHandleVersion(inner) => {
-                    <getHandleVersionCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <getHandleVersionCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::getInputVerifierAddress(inner) => {
                     <getInputVerifierAddressCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::getVersion(inner) => {
-                    <getVersionCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <getVersionCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::initializeFromEmptyProxy(inner) => {
                     <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::proxiableUUID(inner) => {
-                    <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::reinitializeV4(inner) => {
-                    <reinitializeV4Call as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <reinitializeV4Call as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::trivialEncrypt(inner) => {
-                    <trivialEncryptCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <trivialEncryptCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::upgradeToAndCall(inner) => {
-                    <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::verifyInput(inner) => {
-                    <verifyInputCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <verifyInputCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
             }
         }
     }
     ///Container for all the [`FHEVMExecutor`](self) custom errors.
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Debug, PartialEq, Eq, Hash)]
+    #[derive(Clone, serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq, Hash)]
     pub enum FHEVMExecutorErrors {
         #[allow(missing_docs)]
         ACLNotAllowed(ACLNotAllowed),
@@ -16266,7 +15282,6 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
         #[allow(missing_docs)]
         UpperBoundAboveMaxTypeValue(UpperBoundAboveMaxTypeValue),
     }
-    #[automatically_derived]
     impl FHEVMExecutorErrors {
         /// All the selectors of this enum.
         ///
@@ -16298,6 +15313,74 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
             [238u8, 175u8, 102u8, 154u8],
             [249u8, 46u8, 232u8, 169u8],
         ];
+        /// The names of the variants in the same order as `SELECTORS`.
+        pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(IncompatibleTypes),
+            ::core::stringify!(NotHostOwner),
+            ::core::stringify!(DivisionByZero),
+            ::core::stringify!(NotPowerOfTwo),
+            ::core::stringify!(ERC1967InvalidImplementation),
+            ::core::stringify!(SecondOperandIsNotScalar),
+            ::core::stringify!(IsNotScalar),
+            ::core::stringify!(NotInitializingFromEmptyProxy),
+            ::core::stringify!(AddressEmptyCode),
+            ::core::stringify!(ACLNotAllowed),
+            ::core::stringify!(UUPSUnsupportedProxiableUUID),
+            ::core::stringify!(InvalidByteLength),
+            ::core::stringify!(ERC1967NonPayable),
+            ::core::stringify!(InvalidType),
+            ::core::stringify!(UnsupportedType),
+            ::core::stringify!(UpperBoundAboveMaxTypeValue),
+            ::core::stringify!(FailedCall),
+            ::core::stringify!(NotInitializing),
+            ::core::stringify!(ScalarByteIsNotBoolean),
+            ::core::stringify!(UUPSUnauthorizedCallContext),
+            ::core::stringify!(FHECollectionSizeInvalid),
+            ::core::stringify!(InvalidInitialization),
+        ];
+        /// The signatures in the same order as `SELECTORS`.
+        pub const SIGNATURES: &'static [&'static str] = &[
+            <IncompatibleTypes as alloy_sol_types::SolError>::SIGNATURE,
+            <NotHostOwner as alloy_sol_types::SolError>::SIGNATURE,
+            <DivisionByZero as alloy_sol_types::SolError>::SIGNATURE,
+            <NotPowerOfTwo as alloy_sol_types::SolError>::SIGNATURE,
+            <ERC1967InvalidImplementation as alloy_sol_types::SolError>::SIGNATURE,
+            <SecondOperandIsNotScalar as alloy_sol_types::SolError>::SIGNATURE,
+            <IsNotScalar as alloy_sol_types::SolError>::SIGNATURE,
+            <NotInitializingFromEmptyProxy as alloy_sol_types::SolError>::SIGNATURE,
+            <AddressEmptyCode as alloy_sol_types::SolError>::SIGNATURE,
+            <ACLNotAllowed as alloy_sol_types::SolError>::SIGNATURE,
+            <UUPSUnsupportedProxiableUUID as alloy_sol_types::SolError>::SIGNATURE,
+            <InvalidByteLength as alloy_sol_types::SolError>::SIGNATURE,
+            <ERC1967NonPayable as alloy_sol_types::SolError>::SIGNATURE,
+            <InvalidType as alloy_sol_types::SolError>::SIGNATURE,
+            <UnsupportedType as alloy_sol_types::SolError>::SIGNATURE,
+            <UpperBoundAboveMaxTypeValue as alloy_sol_types::SolError>::SIGNATURE,
+            <FailedCall as alloy_sol_types::SolError>::SIGNATURE,
+            <NotInitializing as alloy_sol_types::SolError>::SIGNATURE,
+            <ScalarByteIsNotBoolean as alloy_sol_types::SolError>::SIGNATURE,
+            <UUPSUnauthorizedCallContext as alloy_sol_types::SolError>::SIGNATURE,
+            <FHECollectionSizeInvalid as alloy_sol_types::SolError>::SIGNATURE,
+            <InvalidInitialization as alloy_sol_types::SolError>::SIGNATURE,
+        ];
+        /// Returns the signature for the given selector, if known.
+        #[inline]
+        pub fn signature_by_selector(
+            selector: [u8; 4usize],
+        ) -> ::core::option::Option<&'static str> {
+            match Self::SELECTORS.binary_search(&selector) {
+                ::core::result::Result::Ok(idx) => {
+                    ::core::option::Option::Some(Self::SIGNATURES[idx])
+                }
+                ::core::result::Result::Err(_) => ::core::option::Option::None,
+            }
+        }
+        /// Returns the enum variant name for the given selector, if known.
+        #[inline]
+        pub fn name_by_selector(selector: [u8; 4usize]) -> ::core::option::Option<&'static str> {
+            let sig = Self::signature_by_selector(selector)?;
+            sig.split_once('(').map(|(name, _)| name)
+        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for FHEVMExecutorErrors {
@@ -16307,15 +15390,11 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
-                Self::ACLNotAllowed(_) => {
-                    <ACLNotAllowed as alloy_sol_types::SolError>::SELECTOR
-                }
+                Self::ACLNotAllowed(_) => <ACLNotAllowed as alloy_sol_types::SolError>::SELECTOR,
                 Self::AddressEmptyCode(_) => {
                     <AddressEmptyCode as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::DivisionByZero(_) => {
-                    <DivisionByZero as alloy_sol_types::SolError>::SELECTOR
-                }
+                Self::DivisionByZero(_) => <DivisionByZero as alloy_sol_types::SolError>::SELECTOR,
                 Self::ERC1967InvalidImplementation(_) => {
                     <ERC1967InvalidImplementation as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -16325,9 +15404,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                 Self::FHECollectionSizeInvalid(_) => {
                     <FHECollectionSizeInvalid as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::FailedCall(_) => {
-                    <FailedCall as alloy_sol_types::SolError>::SELECTOR
-                }
+                Self::FailedCall(_) => <FailedCall as alloy_sol_types::SolError>::SELECTOR,
                 Self::IncompatibleTypes(_) => {
                     <IncompatibleTypes as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -16337,24 +15414,16 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                 Self::InvalidInitialization(_) => {
                     <InvalidInitialization as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::InvalidType(_) => {
-                    <InvalidType as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::IsNotScalar(_) => {
-                    <IsNotScalar as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::NotHostOwner(_) => {
-                    <NotHostOwner as alloy_sol_types::SolError>::SELECTOR
-                }
+                Self::InvalidType(_) => <InvalidType as alloy_sol_types::SolError>::SELECTOR,
+                Self::IsNotScalar(_) => <IsNotScalar as alloy_sol_types::SolError>::SELECTOR,
+                Self::NotHostOwner(_) => <NotHostOwner as alloy_sol_types::SolError>::SELECTOR,
                 Self::NotInitializing(_) => {
                     <NotInitializing as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::NotInitializingFromEmptyProxy(_) => {
                     <NotInitializingFromEmptyProxy as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::NotPowerOfTwo(_) => {
-                    <NotPowerOfTwo as alloy_sol_types::SolError>::SELECTOR
-                }
+                Self::NotPowerOfTwo(_) => <NotPowerOfTwo as alloy_sol_types::SolError>::SELECTOR,
                 Self::ScalarByteIsNotBoolean(_) => {
                     <ScalarByteIsNotBoolean as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -16385,51 +15454,34 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(
-            selector: [u8; 4],
-            data: &[u8],
-        ) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<FHEVMExecutorErrors>] = &[
+        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<FHEVMExecutorErrors>] = &[
                 {
                     fn IncompatibleTypes(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
-                        <IncompatibleTypes as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <IncompatibleTypes as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(FHEVMExecutorErrors::IncompatibleTypes)
                     }
                     IncompatibleTypes
                 },
                 {
-                    fn NotHostOwner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
+                    fn NotHostOwner(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
                         <NotHostOwner as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(FHEVMExecutorErrors::NotHostOwner)
                     }
                     NotHostOwner
                 },
                 {
-                    fn DivisionByZero(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
-                        <DivisionByZero as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                    fn DivisionByZero(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
+                        <DivisionByZero as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(FHEVMExecutorErrors::DivisionByZero)
                     }
                     DivisionByZero
                 },
                 {
-                    fn NotPowerOfTwo(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
-                        <NotPowerOfTwo as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                    fn NotPowerOfTwo(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
+                        <NotPowerOfTwo as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(FHEVMExecutorErrors::NotPowerOfTwo)
                     }
                     NotPowerOfTwo
@@ -16439,9 +15491,9 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
                         <ERC1967InvalidImplementation as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(FHEVMExecutorErrors::ERC1967InvalidImplementation)
+                            data,
+                        )
+                        .map(FHEVMExecutorErrors::ERC1967InvalidImplementation)
                     }
                     ERC1967InvalidImplementation
                 },
@@ -16450,16 +15502,14 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
                         <SecondOperandIsNotScalar as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(FHEVMExecutorErrors::SecondOperandIsNotScalar)
+                            data,
+                        )
+                        .map(FHEVMExecutorErrors::SecondOperandIsNotScalar)
                     }
                     SecondOperandIsNotScalar
                 },
                 {
-                    fn IsNotScalar(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
+                    fn IsNotScalar(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
                         <IsNotScalar as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(FHEVMExecutorErrors::IsNotScalar)
                     }
@@ -16480,20 +15530,14 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     fn AddressEmptyCode(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
-                        <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(FHEVMExecutorErrors::AddressEmptyCode)
                     }
                     AddressEmptyCode
                 },
                 {
-                    fn ACLNotAllowed(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
-                        <ACLNotAllowed as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                    fn ACLNotAllowed(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
+                        <ACLNotAllowed as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(FHEVMExecutorErrors::ACLNotAllowed)
                     }
                     ACLNotAllowed
@@ -16503,9 +15547,9 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
                         <UUPSUnsupportedProxiableUUID as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(FHEVMExecutorErrors::UUPSUnsupportedProxiableUUID)
+                            data,
+                        )
+                        .map(FHEVMExecutorErrors::UUPSUnsupportedProxiableUUID)
                     }
                     UUPSUnsupportedProxiableUUID
                 },
@@ -16513,9 +15557,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     fn InvalidByteLength(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
-                        <InvalidByteLength as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <InvalidByteLength as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(FHEVMExecutorErrors::InvalidByteLength)
                     }
                     InvalidByteLength
@@ -16524,17 +15566,13 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     fn ERC1967NonPayable(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
-                        <ERC1967NonPayable as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <ERC1967NonPayable as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(FHEVMExecutorErrors::ERC1967NonPayable)
                     }
                     ERC1967NonPayable
                 },
                 {
-                    fn InvalidType(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
+                    fn InvalidType(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
                         <InvalidType as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(FHEVMExecutorErrors::InvalidType)
                     }
@@ -16544,9 +15582,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     fn UnsupportedType(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
-                        <UnsupportedType as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <UnsupportedType as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(FHEVMExecutorErrors::UnsupportedType)
                     }
                     UnsupportedType
@@ -16556,16 +15592,14 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
                         <UpperBoundAboveMaxTypeValue as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(FHEVMExecutorErrors::UpperBoundAboveMaxTypeValue)
+                            data,
+                        )
+                        .map(FHEVMExecutorErrors::UpperBoundAboveMaxTypeValue)
                     }
                     UpperBoundAboveMaxTypeValue
                 },
                 {
-                    fn FailedCall(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
+                    fn FailedCall(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
                         <FailedCall as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(FHEVMExecutorErrors::FailedCall)
                     }
@@ -16575,9 +15609,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     fn NotInitializing(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
-                        <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(FHEVMExecutorErrors::NotInitializing)
                     }
                     NotInitializing
@@ -16586,9 +15618,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     fn ScalarByteIsNotBoolean(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
-                        <ScalarByteIsNotBoolean as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <ScalarByteIsNotBoolean as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(FHEVMExecutorErrors::ScalarByteIsNotBoolean)
                     }
                     ScalarByteIsNotBoolean
@@ -16598,9 +15628,9 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
                         <UUPSUnauthorizedCallContext as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(FHEVMExecutorErrors::UUPSUnauthorizedCallContext)
+                            data,
+                        )
+                        .map(FHEVMExecutorErrors::UUPSUnauthorizedCallContext)
                     }
                     UUPSUnauthorizedCallContext
                 },
@@ -16609,9 +15639,9 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
                         <FHECollectionSizeInvalid as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(FHEVMExecutorErrors::FHECollectionSizeInvalid)
+                            data,
+                        )
+                        .map(FHEVMExecutorErrors::FHECollectionSizeInvalid)
                     }
                     FHECollectionSizeInvalid
                 },
@@ -16619,21 +15649,17 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     fn InvalidInitialization(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
-                        <InvalidInitialization as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <InvalidInitialization as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(FHEVMExecutorErrors::InvalidInitialization)
                     }
                     InvalidInitialization
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_SHIMS[idx](data)
         }
@@ -16645,47 +15671,36 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<FHEVMExecutorErrors>] = &[
+            )
+                -> alloy_sol_types::Result<FHEVMExecutorErrors>] = &[
                 {
                     fn IncompatibleTypes(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
                         <IncompatibleTypes as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(FHEVMExecutorErrors::IncompatibleTypes)
+                            data,
+                        )
+                        .map(FHEVMExecutorErrors::IncompatibleTypes)
                     }
                     IncompatibleTypes
                 },
                 {
-                    fn NotHostOwner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
-                        <NotHostOwner as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn NotHostOwner(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
+                        <NotHostOwner as alloy_sol_types::SolError>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorErrors::NotHostOwner)
                     }
                     NotHostOwner
                 },
                 {
-                    fn DivisionByZero(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
-                        <DivisionByZero as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn DivisionByZero(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
+                        <DivisionByZero as alloy_sol_types::SolError>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorErrors::DivisionByZero)
                     }
                     DivisionByZero
                 },
                 {
-                    fn NotPowerOfTwo(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
-                        <NotPowerOfTwo as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn NotPowerOfTwo(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
+                        <NotPowerOfTwo as alloy_sol_types::SolError>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorErrors::NotPowerOfTwo)
                     }
                     NotPowerOfTwo
@@ -16713,12 +15728,8 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     SecondOperandIsNotScalar
                 },
                 {
-                    fn IsNotScalar(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
-                        <IsNotScalar as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn IsNotScalar(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
+                        <IsNotScalar as alloy_sol_types::SolError>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorErrors::IsNotScalar)
                     }
                     IsNotScalar
@@ -16739,19 +15750,15 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
                         <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(FHEVMExecutorErrors::AddressEmptyCode)
+                            data,
+                        )
+                        .map(FHEVMExecutorErrors::AddressEmptyCode)
                     }
                     AddressEmptyCode
                 },
                 {
-                    fn ACLNotAllowed(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
-                        <ACLNotAllowed as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn ACLNotAllowed(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
+                        <ACLNotAllowed as alloy_sol_types::SolError>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorErrors::ACLNotAllowed)
                     }
                     ACLNotAllowed
@@ -16772,9 +15779,9 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
                         <InvalidByteLength as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(FHEVMExecutorErrors::InvalidByteLength)
+                            data,
+                        )
+                        .map(FHEVMExecutorErrors::InvalidByteLength)
                     }
                     InvalidByteLength
                 },
@@ -16783,19 +15790,15 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
                         <ERC1967NonPayable as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(FHEVMExecutorErrors::ERC1967NonPayable)
+                            data,
+                        )
+                        .map(FHEVMExecutorErrors::ERC1967NonPayable)
                     }
                     ERC1967NonPayable
                 },
                 {
-                    fn InvalidType(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
-                        <InvalidType as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn InvalidType(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
+                        <InvalidType as alloy_sol_types::SolError>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorErrors::InvalidType)
                     }
                     InvalidType
@@ -16805,9 +15808,9 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
                         <UnsupportedType as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(FHEVMExecutorErrors::UnsupportedType)
+                            data,
+                        )
+                        .map(FHEVMExecutorErrors::UnsupportedType)
                     }
                     UnsupportedType
                 },
@@ -16823,12 +15826,8 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     UpperBoundAboveMaxTypeValue
                 },
                 {
-                    fn FailedCall(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
-                        <FailedCall as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn FailedCall(data: &[u8]) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
+                        <FailedCall as alloy_sol_types::SolError>::abi_decode_raw_validate(data)
                             .map(FHEVMExecutorErrors::FailedCall)
                     }
                     FailedCall
@@ -16838,9 +15837,9 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
                         <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(FHEVMExecutorErrors::NotInitializing)
+                            data,
+                        )
+                        .map(FHEVMExecutorErrors::NotInitializing)
                     }
                     NotInitializing
                 },
@@ -16890,12 +15889,10 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -16906,14 +15903,10 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     <ACLNotAllowed as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::AddressEmptyCode(inner) => {
-                    <AddressEmptyCode as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <AddressEmptyCode as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::DivisionByZero(inner) => {
-                    <DivisionByZero as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <DivisionByZero as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::ERC1967InvalidImplementation(inner) => {
                     <ERC1967InvalidImplementation as alloy_sol_types::SolError>::abi_encoded_size(
@@ -16921,32 +15914,22 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     )
                 }
                 Self::ERC1967NonPayable(inner) => {
-                    <ERC1967NonPayable as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <ERC1967NonPayable as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::FHECollectionSizeInvalid(inner) => {
-                    <FHECollectionSizeInvalid as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <FHECollectionSizeInvalid as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::FailedCall(inner) => {
                     <FailedCall as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::IncompatibleTypes(inner) => {
-                    <IncompatibleTypes as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <IncompatibleTypes as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::InvalidByteLength(inner) => {
-                    <InvalidByteLength as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <InvalidByteLength as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::InvalidInitialization(inner) => {
-                    <InvalidInitialization as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <InvalidInitialization as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::InvalidType(inner) => {
                     <InvalidType as alloy_sol_types::SolError>::abi_encoded_size(inner)
@@ -16958,9 +15941,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     <NotHostOwner as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::NotInitializing(inner) => {
-                    <NotInitializing as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <NotInitializing as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::NotInitializingFromEmptyProxy(inner) => {
                     <NotInitializingFromEmptyProxy as alloy_sol_types::SolError>::abi_encoded_size(
@@ -16971,14 +15952,10 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     <NotPowerOfTwo as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::ScalarByteIsNotBoolean(inner) => {
-                    <ScalarByteIsNotBoolean as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <ScalarByteIsNotBoolean as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::SecondOperandIsNotScalar(inner) => {
-                    <SecondOperandIsNotScalar as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <SecondOperandIsNotScalar as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::UUPSUnauthorizedCallContext(inner) => {
                     <UUPSUnauthorizedCallContext as alloy_sol_types::SolError>::abi_encoded_size(
@@ -16991,9 +15968,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     )
                 }
                 Self::UnsupportedType(inner) => {
-                    <UnsupportedType as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <UnsupportedType as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::UpperBoundAboveMaxTypeValue(inner) => {
                     <UpperBoundAboveMaxTypeValue as alloy_sol_types::SolError>::abi_encoded_size(
@@ -17006,140 +15981,92 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
                 Self::ACLNotAllowed(inner) => {
-                    <ACLNotAllowed as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <ACLNotAllowed as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::AddressEmptyCode(inner) => {
-                    <AddressEmptyCode as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <AddressEmptyCode as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::DivisionByZero(inner) => {
-                    <DivisionByZero as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <DivisionByZero as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::ERC1967InvalidImplementation(inner) => {
                     <ERC1967InvalidImplementation as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::ERC1967NonPayable(inner) => {
-                    <ERC1967NonPayable as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <ERC1967NonPayable as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::FHECollectionSizeInvalid(inner) => {
                     <FHECollectionSizeInvalid as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::FailedCall(inner) => {
                     <FailedCall as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::IncompatibleTypes(inner) => {
-                    <IncompatibleTypes as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <IncompatibleTypes as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::InvalidByteLength(inner) => {
-                    <InvalidByteLength as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <InvalidByteLength as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::InvalidInitialization(inner) => {
-                    <InvalidInitialization as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <InvalidInitialization as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::InvalidType(inner) => {
-                    <InvalidType as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <InvalidType as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::IsNotScalar(inner) => {
-                    <IsNotScalar as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <IsNotScalar as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::NotHostOwner(inner) => {
-                    <NotHostOwner as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <NotHostOwner as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::NotInitializing(inner) => {
-                    <NotInitializing as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <NotInitializing as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::NotInitializingFromEmptyProxy(inner) => {
                     <NotInitializingFromEmptyProxy as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::NotPowerOfTwo(inner) => {
-                    <NotPowerOfTwo as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <NotPowerOfTwo as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::ScalarByteIsNotBoolean(inner) => {
                     <ScalarByteIsNotBoolean as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::SecondOperandIsNotScalar(inner) => {
                     <SecondOperandIsNotScalar as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::UUPSUnauthorizedCallContext(inner) => {
                     <UUPSUnauthorizedCallContext as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::UUPSUnsupportedProxiableUUID(inner) => {
                     <UUPSUnsupportedProxiableUUID as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::UnsupportedType(inner) => {
-                    <UnsupportedType as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <UnsupportedType as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::UpperBoundAboveMaxTypeValue(inner) => {
                     <UpperBoundAboveMaxTypeValue as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
             }
         }
     }
     ///Container for all the [`FHEVMExecutor`](self) events.
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Debug, PartialEq, Eq, Hash)]
+    #[derive(Clone, serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq, Hash)]
     pub enum FHEVMExecutorEvents {
         #[allow(missing_docs)]
         Cast(Cast),
@@ -17204,7 +16131,6 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
         #[allow(missing_docs)]
         VerifyInput(VerifyInput),
     }
-    #[automatically_derived]
     impl FHEVMExecutorEvents {
         /// All the selectors of this enum.
         ///
@@ -17214,162 +16140,247 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                6u8, 60u8, 205u8, 27u8, 186u8, 69u8, 21u8, 29u8, 145u8, 246u8, 164u8,
-                24u8, 6u8, 80u8, 71u8, 163u8, 208u8, 72u8, 208u8, 88u8, 169u8, 34u8,
-                83u8, 87u8, 71u8, 187u8, 43u8, 87u8, 90u8, 1u8, 210u8, 54u8,
+                6u8, 60u8, 205u8, 27u8, 186u8, 69u8, 21u8, 29u8, 145u8, 246u8, 164u8, 24u8, 6u8,
+                80u8, 71u8, 163u8, 208u8, 72u8, 208u8, 88u8, 169u8, 34u8, 83u8, 87u8, 71u8, 187u8,
+                43u8, 87u8, 90u8, 1u8, 210u8, 54u8,
             ],
             [
-                12u8, 138u8, 202u8, 96u8, 23u8, 0u8, 51u8, 38u8, 5u8, 30u8, 25u8, 145u8,
-                62u8, 240u8, 38u8, 49u8, 242u8, 75u8, 128u8, 17u8, 37u8, 225u8, 250u8,
-                138u8, 29u8, 129u8, 46u8, 134u8, 131u8, 25u8, 253u8, 166u8,
+                12u8, 138u8, 202u8, 96u8, 23u8, 0u8, 51u8, 38u8, 5u8, 30u8, 25u8, 145u8, 62u8,
+                240u8, 38u8, 49u8, 242u8, 75u8, 128u8, 17u8, 37u8, 225u8, 250u8, 138u8, 29u8,
+                129u8, 46u8, 134u8, 131u8, 25u8, 253u8, 166u8,
             ],
             [
-                13u8, 72u8, 59u8, 16u8, 13u8, 140u8, 115u8, 178u8, 8u8, 152u8, 78u8,
-                198u8, 151u8, 202u8, 163u8, 9u8, 21u8, 33u8, 238u8, 85u8, 37u8, 206u8,
-                105u8, 237u8, 207u8, 151u8, 215u8, 227u8, 149u8, 211u8, 208u8, 89u8,
+                13u8, 72u8, 59u8, 16u8, 13u8, 140u8, 115u8, 178u8, 8u8, 152u8, 78u8, 198u8, 151u8,
+                202u8, 163u8, 9u8, 21u8, 33u8, 238u8, 85u8, 37u8, 206u8, 105u8, 237u8, 207u8,
+                151u8, 215u8, 227u8, 149u8, 211u8, 208u8, 89u8,
             ],
             [
-                14u8, 105u8, 28u8, 208u8, 191u8, 140u8, 78u8, 147u8, 8u8, 228u8, 206u8,
-                209u8, 187u8, 156u8, 150u8, 65u8, 23u8, 220u8, 92u8, 91u8, 185u8, 185u8,
-                171u8, 91u8, 223u8, 235u8, 242u8, 201u8, 177u8, 58u8, 137u8, 124u8,
+                14u8, 105u8, 28u8, 208u8, 191u8, 140u8, 78u8, 147u8, 8u8, 228u8, 206u8, 209u8,
+                187u8, 156u8, 150u8, 65u8, 23u8, 220u8, 92u8, 91u8, 185u8, 185u8, 171u8, 91u8,
+                223u8, 235u8, 242u8, 201u8, 177u8, 58u8, 137u8, 124u8,
             ],
             [
-                33u8, 83u8, 70u8, 164u8, 249u8, 249u8, 117u8, 230u8, 213u8, 72u8, 78u8,
-                41u8, 11u8, 212u8, 229u8, 60u8, 161u8, 68u8, 83u8, 169u8, 210u8, 130u8,
-                235u8, 211u8, 204u8, 237u8, 178u8, 160u8, 241u8, 113u8, 117u8, 61u8,
+                33u8, 83u8, 70u8, 164u8, 249u8, 249u8, 117u8, 230u8, 213u8, 72u8, 78u8, 41u8, 11u8,
+                212u8, 229u8, 60u8, 161u8, 68u8, 83u8, 169u8, 210u8, 130u8, 235u8, 211u8, 204u8,
+                237u8, 178u8, 160u8, 241u8, 113u8, 117u8, 61u8,
             ],
             [
-                49u8, 204u8, 174u8, 106u8, 47u8, 142u8, 60u8, 237u8, 22u8, 146u8, 247u8,
-                124u8, 143u8, 102u8, 129u8, 51u8, 228u8, 175u8, 218u8, 170u8, 53u8,
-                175u8, 232u8, 68u8, 255u8, 70u8, 89u8, 166u8, 194u8, 126u8, 98u8, 127u8,
+                49u8, 204u8, 174u8, 106u8, 47u8, 142u8, 60u8, 237u8, 22u8, 146u8, 247u8, 124u8,
+                143u8, 102u8, 129u8, 51u8, 228u8, 175u8, 218u8, 170u8, 53u8, 175u8, 232u8, 68u8,
+                255u8, 70u8, 89u8, 166u8, 194u8, 126u8, 98u8, 127u8,
             ],
             [
-                50u8, 66u8, 32u8, 191u8, 201u8, 203u8, 21u8, 139u8, 73u8, 41u8, 145u8,
-                192u8, 60u8, 48u8, 156u8, 216u8, 110u8, 83u8, 69u8, 202u8, 196u8, 90u8,
-                172u8, 174u8, 32u8, 146u8, 221u8, 171u8, 227u8, 31u8, 163u8, 216u8,
+                50u8, 66u8, 32u8, 191u8, 201u8, 203u8, 21u8, 139u8, 73u8, 41u8, 145u8, 192u8, 60u8,
+                48u8, 156u8, 216u8, 110u8, 83u8, 69u8, 202u8, 196u8, 90u8, 172u8, 174u8, 32u8,
+                146u8, 221u8, 171u8, 227u8, 31u8, 163u8, 216u8,
             ],
             [
-                56u8, 195u8, 166u8, 60u8, 66u8, 48u8, 222u8, 91u8, 116u8, 31u8, 73u8,
-                79u8, 251u8, 84u8, 227u8, 8u8, 113u8, 4u8, 3u8, 2u8, 121u8, 188u8, 123u8,
-                204u8, 238u8, 138u8, 217u8, 173u8, 49u8, 113u8, 43u8, 33u8,
+                56u8, 195u8, 166u8, 60u8, 66u8, 48u8, 222u8, 91u8, 116u8, 31u8, 73u8, 79u8, 251u8,
+                84u8, 227u8, 8u8, 113u8, 4u8, 3u8, 2u8, 121u8, 188u8, 123u8, 204u8, 238u8, 138u8,
+                217u8, 173u8, 49u8, 113u8, 43u8, 33u8,
             ],
             [
-                59u8, 171u8, 46u8, 224u8, 226u8, 249u8, 15u8, 70u8, 144u8, 198u8, 168u8,
-                123u8, 246u8, 60u8, 241u8, 166u8, 182u8, 38u8, 8u8, 110u8, 149u8, 242u8,
-                49u8, 134u8, 11u8, 21u8, 41u8, 102u8, 232u8, 218u8, 187u8, 247u8,
+                59u8, 171u8, 46u8, 224u8, 226u8, 249u8, 15u8, 70u8, 144u8, 198u8, 168u8, 123u8,
+                246u8, 60u8, 241u8, 166u8, 182u8, 38u8, 8u8, 110u8, 149u8, 242u8, 49u8, 134u8,
+                11u8, 21u8, 41u8, 102u8, 232u8, 218u8, 187u8, 247u8,
             ],
             [
-                77u8, 50u8, 40u8, 75u8, 211u8, 25u8, 62u8, 202u8, 164u8, 78u8, 28u8,
-                236u8, 163u8, 47u8, 65u8, 197u8, 214u8, 195u8, 40u8, 3u8, 169u8, 46u8,
-                7u8, 150u8, 125u8, 211u8, 238u8, 66u8, 41u8, 114u8, 21u8, 130u8,
+                77u8, 50u8, 40u8, 75u8, 211u8, 25u8, 62u8, 202u8, 164u8, 78u8, 28u8, 236u8, 163u8,
+                47u8, 65u8, 197u8, 214u8, 195u8, 40u8, 3u8, 169u8, 46u8, 7u8, 150u8, 125u8, 211u8,
+                238u8, 66u8, 41u8, 114u8, 21u8, 130u8,
             ],
             [
-                82u8, 34u8, 217u8, 107u8, 131u8, 103u8, 39u8, 161u8, 214u8, 254u8, 30u8,
-                233u8, 174u8, 242u8, 127u8, 155u8, 181u8, 7u8, 189u8, 65u8, 121u8, 77u8,
-                239u8, 163u8, 118u8, 255u8, 108u8, 100u8, 138u8, 175u8, 143u8, 241u8,
+                82u8, 34u8, 217u8, 107u8, 131u8, 103u8, 39u8, 161u8, 214u8, 254u8, 30u8, 233u8,
+                174u8, 242u8, 127u8, 155u8, 181u8, 7u8, 189u8, 65u8, 121u8, 77u8, 239u8, 163u8,
+                118u8, 255u8, 108u8, 100u8, 138u8, 175u8, 143u8, 241u8,
             ],
             [
-                85u8, 175u8, 244u8, 204u8, 122u8, 61u8, 22u8, 12u8, 131u8, 241u8, 241u8,
-                91u8, 129u8, 128u8, 17u8, 237u8, 232u8, 65u8, 160u8, 180u8, 89u8, 127u8,
-                177u8, 77u8, 205u8, 54u8, 3u8, 223u8, 58u8, 17u8, 229u8, 224u8,
+                85u8, 175u8, 244u8, 204u8, 122u8, 61u8, 22u8, 12u8, 131u8, 241u8, 241u8, 91u8,
+                129u8, 128u8, 17u8, 237u8, 232u8, 65u8, 160u8, 180u8, 89u8, 127u8, 177u8, 77u8,
+                205u8, 54u8, 3u8, 223u8, 58u8, 17u8, 229u8, 224u8,
             ],
             [
-                86u8, 223u8, 39u8, 155u8, 191u8, 176u8, 61u8, 158u8, 208u8, 151u8, 187u8,
-                226u8, 242u8, 141u8, 82u8, 12u8, 160u8, 193u8, 22u8, 18u8, 6u8, 50u8,
-                121u8, 38u8, 233u8, 134u8, 100u8, 215u8, 13u8, 44u8, 36u8, 196u8,
+                86u8, 223u8, 39u8, 155u8, 191u8, 176u8, 61u8, 158u8, 208u8, 151u8, 187u8, 226u8,
+                242u8, 141u8, 82u8, 12u8, 160u8, 193u8, 22u8, 18u8, 6u8, 50u8, 121u8, 38u8, 233u8,
+                134u8, 100u8, 215u8, 13u8, 44u8, 36u8, 196u8,
             ],
             [
-                96u8, 190u8, 157u8, 97u8, 170u8, 216u8, 73u8, 250u8, 204u8, 40u8, 195u8,
-                139u8, 4u8, 140u8, 181u8, 196u8, 190u8, 52u8, 32u8, 184u8, 250u8, 34u8,
-                51u8, 224u8, 140u8, 250u8, 6u8, 190u8, 27u8, 109u8, 28u8, 62u8,
+                96u8, 190u8, 157u8, 97u8, 170u8, 216u8, 73u8, 250u8, 204u8, 40u8, 195u8, 139u8,
+                4u8, 140u8, 181u8, 196u8, 190u8, 52u8, 32u8, 184u8, 250u8, 34u8, 51u8, 224u8,
+                140u8, 250u8, 6u8, 190u8, 27u8, 109u8, 28u8, 62u8,
             ],
             [
-                105u8, 96u8, 193u8, 232u8, 143u8, 97u8, 195u8, 82u8, 219u8, 163u8, 77u8,
-                27u8, 191u8, 103u8, 83u8, 227u8, 2u8, 121u8, 82u8, 100u8, 213u8, 216u8,
-                174u8, 130u8, 247u8, 152u8, 60u8, 112u8, 4u8, 101u8, 30u8, 93u8,
+                105u8, 96u8, 193u8, 232u8, 143u8, 97u8, 195u8, 82u8, 219u8, 163u8, 77u8, 27u8,
+                191u8, 103u8, 83u8, 227u8, 2u8, 121u8, 82u8, 100u8, 213u8, 216u8, 174u8, 130u8,
+                247u8, 152u8, 60u8, 112u8, 4u8, 101u8, 30u8, 93u8,
             ],
             [
-                140u8, 102u8, 77u8, 60u8, 60u8, 165u8, 131u8, 252u8, 88u8, 3u8, 184u8,
-                169u8, 28u8, 73u8, 100u8, 75u8, 189u8, 149u8, 80u8, 191u8, 168u8, 121u8,
-                103u8, 199u8, 58u8, 209u8, 222u8, 131u8, 2u8, 119u8, 104u8, 192u8,
+                140u8, 102u8, 77u8, 60u8, 60u8, 165u8, 131u8, 252u8, 88u8, 3u8, 184u8, 169u8, 28u8,
+                73u8, 100u8, 75u8, 189u8, 149u8, 80u8, 191u8, 168u8, 121u8, 103u8, 199u8, 58u8,
+                209u8, 222u8, 131u8, 2u8, 119u8, 104u8, 192u8,
             ],
             [
-                179u8, 213u8, 198u8, 100u8, 236u8, 134u8, 87u8, 88u8, 24u8, 232u8, 215u8,
-                95u8, 242u8, 92u8, 95u8, 134u8, 114u8, 80u8, 223u8, 137u8, 84u8, 8u8,
-                133u8, 73u8, 196u8, 28u8, 132u8, 140u8, 209u8, 14u8, 118u8, 203u8,
+                179u8, 213u8, 198u8, 100u8, 236u8, 134u8, 87u8, 88u8, 24u8, 232u8, 215u8, 95u8,
+                242u8, 92u8, 95u8, 134u8, 114u8, 80u8, 223u8, 137u8, 84u8, 8u8, 133u8, 73u8, 196u8,
+                28u8, 132u8, 140u8, 209u8, 14u8, 118u8, 203u8,
             ],
             [
-                188u8, 124u8, 215u8, 90u8, 32u8, 238u8, 39u8, 253u8, 154u8, 222u8, 186u8,
-                179u8, 32u8, 65u8, 247u8, 85u8, 33u8, 77u8, 188u8, 107u8, 255u8, 169u8,
-                12u8, 192u8, 34u8, 91u8, 57u8, 218u8, 46u8, 92u8, 45u8, 59u8,
+                188u8, 124u8, 215u8, 90u8, 32u8, 238u8, 39u8, 253u8, 154u8, 222u8, 186u8, 179u8,
+                32u8, 65u8, 247u8, 85u8, 33u8, 77u8, 188u8, 107u8, 255u8, 169u8, 12u8, 192u8, 34u8,
+                91u8, 57u8, 218u8, 46u8, 92u8, 45u8, 59u8,
             ],
             [
-                193u8, 29u8, 98u8, 177u8, 60u8, 54u8, 10u8, 131u8, 8u8, 36u8, 135u8, 6u8,
-                75u8, 225u8, 236u8, 8u8, 120u8, 178u8, 240u8, 190u8, 79u8, 1u8, 43u8,
-                245u8, 159u8, 137u8, 225u8, 40u8, 6u8, 61u8, 71u8, 255u8,
+                193u8, 29u8, 98u8, 177u8, 60u8, 54u8, 10u8, 131u8, 8u8, 36u8, 135u8, 6u8, 75u8,
+                225u8, 236u8, 8u8, 120u8, 178u8, 240u8, 190u8, 79u8, 1u8, 43u8, 245u8, 159u8,
+                137u8, 225u8, 40u8, 6u8, 61u8, 71u8, 255u8,
             ],
             [
-                193u8, 72u8, 103u8, 89u8, 5u8, 208u8, 122u8, 213u8, 73u8, 111u8, 142u8,
-                244u8, 216u8, 25u8, 92u8, 144u8, 117u8, 3u8, 243u8, 236u8, 18u8, 253u8,
-                16u8, 237u8, 95u8, 33u8, 36u8, 10u8, 188u8, 105u8, 54u8, 52u8,
+                193u8, 72u8, 103u8, 89u8, 5u8, 208u8, 122u8, 213u8, 73u8, 111u8, 142u8, 244u8,
+                216u8, 25u8, 92u8, 144u8, 117u8, 3u8, 243u8, 236u8, 18u8, 253u8, 16u8, 237u8, 95u8,
+                33u8, 36u8, 10u8, 188u8, 105u8, 54u8, 52u8,
             ],
             [
-                199u8, 245u8, 5u8, 178u8, 243u8, 113u8, 174u8, 33u8, 117u8, 238u8, 73u8,
-                19u8, 244u8, 73u8, 158u8, 31u8, 38u8, 51u8, 167u8, 181u8, 147u8, 99u8,
-                33u8, 238u8, 209u8, 205u8, 174u8, 182u8, 17u8, 81u8, 129u8, 210u8,
+                199u8, 245u8, 5u8, 178u8, 243u8, 113u8, 174u8, 33u8, 117u8, 238u8, 73u8, 19u8,
+                244u8, 73u8, 158u8, 31u8, 38u8, 51u8, 167u8, 181u8, 147u8, 99u8, 33u8, 238u8,
+                209u8, 205u8, 174u8, 182u8, 17u8, 81u8, 129u8, 210u8,
             ],
             [
-                201u8, 255u8, 143u8, 13u8, 24u8, 163u8, 247u8, 102u8, 206u8, 93u8, 227u8,
-                222u8, 33u8, 96u8, 118u8, 5u8, 1u8, 64u8, 228u8, 252u8, 38u8, 82u8,
-                245u8, 224u8, 231u8, 69u8, 246u8, 252u8, 131u8, 108u8, 218u8, 139u8,
+                201u8, 255u8, 143u8, 13u8, 24u8, 163u8, 247u8, 102u8, 206u8, 93u8, 227u8, 222u8,
+                33u8, 96u8, 118u8, 5u8, 1u8, 64u8, 228u8, 252u8, 38u8, 82u8, 245u8, 224u8, 231u8,
+                69u8, 246u8, 252u8, 131u8, 108u8, 218u8, 139u8,
             ],
             [
-                219u8, 144u8, 80u8, 214u8, 82u8, 64u8, 67u8, 22u8, 33u8, 214u8, 29u8,
-                111u8, 148u8, 185u8, 112u8, 230u8, 63u8, 83u8, 166u8, 122u8, 87u8, 102u8,
-                97u8, 78u8, 230u8, 229u8, 197u8, 187u8, 212u8, 28u8, 142u8, 46u8,
+                219u8, 144u8, 80u8, 214u8, 82u8, 64u8, 67u8, 22u8, 33u8, 214u8, 29u8, 111u8, 148u8,
+                185u8, 112u8, 230u8, 63u8, 83u8, 166u8, 122u8, 87u8, 102u8, 97u8, 78u8, 230u8,
+                229u8, 197u8, 187u8, 212u8, 28u8, 142u8, 46u8,
             ],
             [
-                220u8, 55u8, 13u8, 179u8, 53u8, 137u8, 231u8, 51u8, 113u8, 220u8, 62u8,
-                228u8, 44u8, 120u8, 156u8, 0u8, 61u8, 51u8, 110u8, 239u8, 203u8, 124u8,
-                63u8, 86u8, 254u8, 15u8, 81u8, 174u8, 91u8, 29u8, 151u8, 2u8,
+                220u8, 55u8, 13u8, 179u8, 53u8, 137u8, 231u8, 51u8, 113u8, 220u8, 62u8, 228u8,
+                44u8, 120u8, 156u8, 0u8, 61u8, 51u8, 110u8, 239u8, 203u8, 124u8, 63u8, 86u8, 254u8,
+                15u8, 81u8, 174u8, 91u8, 29u8, 151u8, 2u8,
             ],
             [
-                222u8, 242u8, 231u8, 4u8, 160u8, 119u8, 40u8, 74u8, 7u8, 243u8, 208u8,
-                180u8, 54u8, 219u8, 136u8, 245u8, 217u8, 129u8, 182u8, 159u8, 88u8,
-                171u8, 124u8, 26u8, 230u8, 35u8, 37u8, 39u8, 24u8, 166u8, 222u8, 1u8,
+                222u8, 242u8, 231u8, 4u8, 160u8, 119u8, 40u8, 74u8, 7u8, 243u8, 208u8, 180u8, 54u8,
+                219u8, 136u8, 245u8, 217u8, 129u8, 182u8, 159u8, 88u8, 171u8, 124u8, 26u8, 230u8,
+                35u8, 37u8, 39u8, 24u8, 166u8, 222u8, 1u8,
             ],
             [
-                228u8, 36u8, 134u8, 176u8, 204u8, 219u8, 239u8, 129u8, 162u8, 7u8, 92u8,
-                72u8, 200u8, 229u8, 21u8, 192u8, 121u8, 174u8, 167u8, 60u8, 139u8, 130u8,
-                66u8, 153u8, 151u8, 199u8, 42u8, 47u8, 225u8, 191u8, 79u8, 239u8,
+                228u8, 36u8, 134u8, 176u8, 204u8, 219u8, 239u8, 129u8, 162u8, 7u8, 92u8, 72u8,
+                200u8, 229u8, 21u8, 192u8, 121u8, 174u8, 167u8, 60u8, 139u8, 130u8, 66u8, 153u8,
+                151u8, 199u8, 42u8, 47u8, 225u8, 191u8, 79u8, 239u8,
             ],
             [
-                232u8, 66u8, 130u8, 170u8, 235u8, 204u8, 166u8, 152u8, 68u8, 62u8, 57u8,
-                162u8, 169u8, 72u8, 163u8, 69u8, 208u8, 210u8, 235u8, 198u8, 84u8, 175u8,
-                92u8, 182u8, 87u8, 162u8, 215u8, 232u8, 5u8, 59u8, 246u8, 203u8,
+                232u8, 66u8, 130u8, 170u8, 235u8, 204u8, 166u8, 152u8, 68u8, 62u8, 57u8, 162u8,
+                169u8, 72u8, 163u8, 69u8, 208u8, 210u8, 235u8, 198u8, 84u8, 175u8, 92u8, 182u8,
+                87u8, 162u8, 215u8, 232u8, 5u8, 59u8, 246u8, 203u8,
             ],
             [
-                235u8, 14u8, 79u8, 141u8, 199u8, 64u8, 88u8, 25u8, 77u8, 6u8, 2u8, 66u8,
-                95u8, 230u8, 2u8, 249u8, 85u8, 194u8, 34u8, 32u8, 15u8, 127u8, 16u8,
-                198u8, 254u8, 103u8, 153u8, 47u8, 123u8, 36u8, 199u8, 233u8,
+                235u8, 14u8, 79u8, 141u8, 199u8, 64u8, 88u8, 25u8, 77u8, 6u8, 2u8, 66u8, 95u8,
+                230u8, 2u8, 249u8, 85u8, 194u8, 34u8, 32u8, 15u8, 127u8, 16u8, 198u8, 254u8, 103u8,
+                153u8, 47u8, 123u8, 36u8, 199u8, 233u8,
             ],
             [
-                235u8, 109u8, 55u8, 189u8, 39u8, 26u8, 190u8, 19u8, 149u8, 178u8, 29u8,
-                109u8, 120u8, 243u8, 72u8, 125u8, 101u8, 132u8, 134u8, 40u8, 114u8,
-                194u8, 159u8, 253u8, 63u8, 144u8, 115u8, 110u8, 233u8, 155u8, 115u8,
-                147u8,
+                235u8, 109u8, 55u8, 189u8, 39u8, 26u8, 190u8, 19u8, 149u8, 178u8, 29u8, 109u8,
+                120u8, 243u8, 72u8, 125u8, 101u8, 132u8, 134u8, 40u8, 114u8, 194u8, 159u8, 253u8,
+                63u8, 144u8, 115u8, 110u8, 233u8, 155u8, 115u8, 147u8,
             ],
             [
-                237u8, 249u8, 61u8, 181u8, 214u8, 195u8, 10u8, 23u8, 27u8, 184u8, 91u8,
-                154u8, 73u8, 222u8, 188u8, 243u8, 219u8, 167u8, 115u8, 26u8, 108u8, 62u8,
-                83u8, 150u8, 94u8, 202u8, 146u8, 199u8, 174u8, 133u8, 128u8, 141u8,
+                237u8, 249u8, 61u8, 181u8, 214u8, 195u8, 10u8, 23u8, 27u8, 184u8, 91u8, 154u8,
+                73u8, 222u8, 188u8, 243u8, 219u8, 167u8, 115u8, 26u8, 108u8, 62u8, 83u8, 150u8,
+                94u8, 202u8, 146u8, 199u8, 174u8, 133u8, 128u8, 141u8,
             ],
             [
-                253u8, 124u8, 146u8, 8u8, 249u8, 86u8, 191u8, 12u8, 106u8, 183u8, 106u8,
-                102u8, 127u8, 4u8, 54u8, 18u8, 69u8, 173u8, 62u8, 10u8, 45u8, 14u8,
-                255u8, 146u8, 235u8, 130u8, 122u8, 207u8, 204u8, 166u8, 142u8, 169u8,
+                253u8, 124u8, 146u8, 8u8, 249u8, 86u8, 191u8, 12u8, 106u8, 183u8, 106u8, 102u8,
+                127u8, 4u8, 54u8, 18u8, 69u8, 173u8, 62u8, 10u8, 45u8, 14u8, 255u8, 146u8, 235u8,
+                130u8, 122u8, 207u8, 204u8, 166u8, 142u8, 169u8,
             ],
         ];
+        /// The names of the variants in the same order as `SELECTORS`.
+        pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(TrivialEncrypt),
+            ::core::stringify!(FheRand),
+            ::core::stringify!(FheLt),
+            ::core::stringify!(FheRem),
+            ::core::stringify!(FheMul),
+            ::core::stringify!(Cast),
+            ::core::stringify!(FheShr),
+            ::core::stringify!(FheGe),
+            ::core::stringify!(FheDiv),
+            ::core::stringify!(FheBitXor),
+            ::core::stringify!(FheRandBounded),
+            ::core::stringify!(FheNot),
+            ::core::stringify!(FheBitOr),
+            ::core::stringify!(FheIfThenElse),
+            ::core::stringify!(FheNe),
+            ::core::stringify!(FheNeg),
+            ::core::stringify!(FheEq),
+            ::core::stringify!(Upgraded),
+            ::core::stringify!(FheMin),
+            ::core::stringify!(FheRotr),
+            ::core::stringify!(Initialized),
+            ::core::stringify!(FheGt),
+            ::core::stringify!(FheAdd),
+            ::core::stringify!(VerifyInput),
+            ::core::stringify!(FheLe),
+            ::core::stringify!(FheBitAnd),
+            ::core::stringify!(FheShl),
+            ::core::stringify!(FheRotl),
+            ::core::stringify!(FheSub),
+            ::core::stringify!(FheSum),
+            ::core::stringify!(FheMax),
+        ];
+        /// The signatures in the same order as `SELECTORS`.
+        pub const SIGNATURES: &'static [&'static str] = &[
+            <TrivialEncrypt as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheRand as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheLt as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheRem as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheMul as alloy_sol_types::SolEvent>::SIGNATURE,
+            <Cast as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheShr as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheGe as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheDiv as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheBitXor as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheRandBounded as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheNot as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheBitOr as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheIfThenElse as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheNe as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheNeg as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheEq as alloy_sol_types::SolEvent>::SIGNATURE,
+            <Upgraded as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheMin as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheRotr as alloy_sol_types::SolEvent>::SIGNATURE,
+            <Initialized as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheGt as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheAdd as alloy_sol_types::SolEvent>::SIGNATURE,
+            <VerifyInput as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheLe as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheBitAnd as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheShl as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheRotl as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheSub as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheSum as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheMax as alloy_sol_types::SolEvent>::SIGNATURE,
+        ];
+        /// Returns the signature for the given selector, if known.
+        #[inline]
+        pub fn signature_by_selector(
+            selector: [u8; 32usize],
+        ) -> ::core::option::Option<&'static str> {
+            match Self::SELECTORS.binary_search(&selector) {
+                ::core::result::Result::Ok(idx) => {
+                    ::core::option::Option::Some(Self::SIGNATURES[idx])
+                }
+                ::core::result::Result::Err(_) => ::core::option::Option::None,
+            }
+        }
+        /// Returns the enum variant name for the given selector, if known.
+        #[inline]
+        pub fn name_by_selector(selector: [u8; 32usize]) -> ::core::option::Option<&'static str> {
+            let sig = Self::signature_by_selector(selector)?;
+            sig.split_once('(').map(|(name, _)| name)
+        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for FHEVMExecutorEvents {
@@ -17389,10 +16400,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                         .map(Self::FheAdd)
                 }
                 Some(<FheBitAnd as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <FheBitAnd as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                    <FheBitAnd as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::FheBitAnd)
                 }
                 Some(<FheBitOr as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
@@ -17400,10 +16408,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                         .map(Self::FheBitOr)
                 }
                 Some(<FheBitXor as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <FheBitXor as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                    <FheBitXor as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::FheBitXor)
                 }
                 Some(<FheDiv as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
@@ -17423,10 +16428,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                         .map(Self::FheGt)
                 }
                 Some(<FheIfThenElse as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <FheIfThenElse as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                    <FheIfThenElse as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::FheIfThenElse)
                 }
                 Some(<FheLe as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
@@ -17466,10 +16468,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                         .map(Self::FheRand)
                 }
                 Some(<FheRandBounded as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <FheRandBounded as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                    <FheRandBounded as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::FheRandBounded)
                 }
                 Some(<FheRem as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
@@ -17501,17 +16500,11 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                         .map(Self::FheSum)
                 }
                 Some(<Initialized as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <Initialized as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                    <Initialized as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::Initialized)
                 }
                 Some(<TrivialEncrypt as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <TrivialEncrypt as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                    <TrivialEncrypt as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::TrivialEncrypt)
                 }
                 Some(<Upgraded as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
@@ -17519,23 +16512,18 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                         .map(Self::Upgraded)
                 }
                 Some(<VerifyInput as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <VerifyInput as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                    <VerifyInput as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::VerifyInput)
                 }
-                _ => {
-                    alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
-                        name: <Self as alloy_sol_types::SolEventInterface>::NAME,
-                        log: alloy_sol_types::private::Box::new(
-                            alloy_sol_types::private::LogData::new_unchecked(
-                                topics.to_vec(),
-                                data.to_vec().into(),
-                            ),
+                _ => alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
+                    name: <Self as alloy_sol_types::SolEventInterface>::NAME,
+                    log: alloy_sol_types::private::Box::new(
+                        alloy_sol_types::private::LogData::new_unchecked(
+                            topics.to_vec(),
+                            data.to_vec().into(),
                         ),
-                    })
-                }
+                    ),
+                }),
             }
         }
     }
@@ -17543,96 +16531,44 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
     impl alloy_sol_types::private::IntoLogData for FHEVMExecutorEvents {
         fn to_log_data(&self) -> alloy_sol_types::private::LogData {
             match self {
-                Self::Cast(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheAdd(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheBitAnd(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheBitOr(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheBitXor(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheDiv(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheEq(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheGe(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheGt(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
+                Self::Cast(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheAdd(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheBitAnd(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheBitOr(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheBitXor(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheDiv(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheEq(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheGe(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheGt(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
                 Self::FheIfThenElse(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::FheLe(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheLt(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheMax(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheMin(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheMul(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheNe(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheNeg(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheNot(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheRand(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
+                Self::FheLe(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheLt(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheMax(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheMin(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheMul(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheNe(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheNeg(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheNot(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheRand(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
                 Self::FheRandBounded(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::FheRem(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheRotl(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheRotr(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheShl(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheShr(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheSub(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::FheSum(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
+                Self::FheRem(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheRotl(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheRotr(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheShl(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheShr(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheSub(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::FheSum(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
                 Self::Initialized(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::TrivialEncrypt(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::Upgraded(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
+                Self::Upgraded(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
                 Self::VerifyInput(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
@@ -17640,12 +16576,8 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
         }
         fn into_log_data(self) -> alloy_sol_types::private::LogData {
             match self {
-                Self::Cast(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheAdd(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
+                Self::Cast(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheAdd(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
                 Self::FheBitAnd(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
@@ -17655,72 +16587,32 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                 Self::FheBitXor(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
-                Self::FheDiv(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheEq(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheGe(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheGt(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
+                Self::FheDiv(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheEq(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheGe(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheGt(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
                 Self::FheIfThenElse(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
-                Self::FheLe(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheLt(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheMax(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheMin(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheMul(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheNe(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheNeg(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheNot(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheRand(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
+                Self::FheLe(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheLt(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheMax(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheMin(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheMul(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheNe(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheNeg(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheNot(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheRand(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
                 Self::FheRandBounded(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
-                Self::FheRem(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheRotl(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheRotr(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheShl(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheShr(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheSub(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::FheSum(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
+                Self::FheRem(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheRotl(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheRotr(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheShl(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheShr(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheSub(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::FheSum(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
                 Self::Initialized(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
@@ -17739,56 +16631,54 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`FHEVMExecutor`](self) contract instance.
 
-See the [wrapper's documentation](`FHEVMExecutorInstance`) for more details.*/
+    See the [wrapper's documentation](`FHEVMExecutorInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
         address: alloy_sol_types::private::Address,
-        provider: P,
+        __provider: P,
     ) -> FHEVMExecutorInstance<P, N> {
-        FHEVMExecutorInstance::<P, N>::new(address, provider)
+        FHEVMExecutorInstance::<P, N>::new(address, __provider)
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+    Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<FHEVMExecutorInstance<P, N>>,
-    > {
-        FHEVMExecutorInstance::<P, N>::deploy(provider)
+    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
+        __provider: P,
+    ) -> impl ::core::future::Future<Output = alloy_contract::Result<FHEVMExecutorInstance<P, N>>>
+    {
+        FHEVMExecutorInstance::<P, N>::deploy(__provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+    and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        FHEVMExecutorInstance::<P, N>::deploy_builder(provider)
+    >(
+        __provider: P,
+    ) -> alloy_contract::RawCallBuilder<P, N> {
+        FHEVMExecutorInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`FHEVMExecutor`](self) instance.
 
-Contains type-safe methods for interacting with an on-chain instance of the
-[`FHEVMExecutor`](self) contract located at a given `address`, using a given
-provider `P`.
+    Contains type-safe methods for interacting with an on-chain instance of the
+    [`FHEVMExecutor`](self) contract located at a given `address`, using a given
+    provider `P`.
 
-If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-be used to deploy a new instance of the contract.
+    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+    be used to deploy a new instance of the contract.
 
-See the [module-level documentation](self) for all the available methods.*/
+    See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct FHEVMExecutorInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -17799,51 +16689,46 @@ See the [module-level documentation](self) for all the available methods.*/
     impl<P, N> ::core::fmt::Debug for FHEVMExecutorInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("FHEVMExecutorInstance").field(&self.address).finish()
+            f.debug_tuple("FHEVMExecutorInstance")
+                .field(&self.address)
+                .finish()
         }
     }
     /// Instantiation and getters/setters.
-    #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > FHEVMExecutorInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        FHEVMExecutorInstance<P, N>
+    {
         /**Creates a new wrapper around an on-chain [`FHEVMExecutor`](self) contract instance.
 
-See the [wrapper's documentation](`FHEVMExecutorInstance`) for more details.*/
+        See the [wrapper's documentation](`FHEVMExecutorInstance`) for more details.*/
         #[inline]
-        pub const fn new(
-            address: alloy_sol_types::private::Address,
-            provider: P,
-        ) -> Self {
+        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
             Self {
                 address,
-                provider,
+                provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+        Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
-        pub async fn deploy(
-            provider: P,
-        ) -> alloy_contract::Result<FHEVMExecutorInstance<P, N>> {
-            let call_builder = Self::deploy_builder(provider);
+        pub async fn deploy(__provider: P) -> alloy_contract::Result<FHEVMExecutorInstance<P, N>> {
+            let call_builder = Self::deploy_builder(__provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+        and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
-        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
-                provider,
+                __provider,
                 ::core::clone::Clone::clone(&BYTECODE),
             )
         }
@@ -17880,11 +16765,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Function calls.
-    #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > FHEVMExecutorInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        FHEVMExecutorInstance<P, N>
+    {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -17916,7 +16799,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             rhs: alloy::sol_types::private::FixedBytes<32>,
             scalarByte: alloy::sol_types::private::FixedBytes<1>,
         ) -> alloy_contract::SolCallBuilder<&P, fheAddCall, N> {
-            self.call_builder(&fheAddCall { lhs, rhs, scalarByte })
+            self.call_builder(&fheAddCall {
+                lhs,
+                rhs,
+                scalarByte,
+            })
         }
         ///Creates a new call builder for the [`fheBitAnd`] function.
         pub fn fheBitAnd(
@@ -17925,13 +16812,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             rhs: alloy::sol_types::private::FixedBytes<32>,
             scalarByte: alloy::sol_types::private::FixedBytes<1>,
         ) -> alloy_contract::SolCallBuilder<&P, fheBitAndCall, N> {
-            self.call_builder(
-                &fheBitAndCall {
-                    lhs,
-                    rhs,
-                    scalarByte,
-                },
-            )
+            self.call_builder(&fheBitAndCall {
+                lhs,
+                rhs,
+                scalarByte,
+            })
         }
         ///Creates a new call builder for the [`fheBitOr`] function.
         pub fn fheBitOr(
@@ -17940,13 +16825,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             rhs: alloy::sol_types::private::FixedBytes<32>,
             scalarByte: alloy::sol_types::private::FixedBytes<1>,
         ) -> alloy_contract::SolCallBuilder<&P, fheBitOrCall, N> {
-            self.call_builder(
-                &fheBitOrCall {
-                    lhs,
-                    rhs,
-                    scalarByte,
-                },
-            )
+            self.call_builder(&fheBitOrCall {
+                lhs,
+                rhs,
+                scalarByte,
+            })
         }
         ///Creates a new call builder for the [`fheBitXor`] function.
         pub fn fheBitXor(
@@ -17955,13 +16838,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             rhs: alloy::sol_types::private::FixedBytes<32>,
             scalarByte: alloy::sol_types::private::FixedBytes<1>,
         ) -> alloy_contract::SolCallBuilder<&P, fheBitXorCall, N> {
-            self.call_builder(
-                &fheBitXorCall {
-                    lhs,
-                    rhs,
-                    scalarByte,
-                },
-            )
+            self.call_builder(&fheBitXorCall {
+                lhs,
+                rhs,
+                scalarByte,
+            })
         }
         ///Creates a new call builder for the [`fheDiv`] function.
         pub fn fheDiv(
@@ -17970,7 +16851,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             rhs: alloy::sol_types::private::FixedBytes<32>,
             scalarByte: alloy::sol_types::private::FixedBytes<1>,
         ) -> alloy_contract::SolCallBuilder<&P, fheDivCall, N> {
-            self.call_builder(&fheDivCall { lhs, rhs, scalarByte })
+            self.call_builder(&fheDivCall {
+                lhs,
+                rhs,
+                scalarByte,
+            })
         }
         ///Creates a new call builder for the [`fheEq`] function.
         pub fn fheEq(
@@ -17979,7 +16864,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             rhs: alloy::sol_types::private::FixedBytes<32>,
             scalarByte: alloy::sol_types::private::FixedBytes<1>,
         ) -> alloy_contract::SolCallBuilder<&P, fheEqCall, N> {
-            self.call_builder(&fheEqCall { lhs, rhs, scalarByte })
+            self.call_builder(&fheEqCall {
+                lhs,
+                rhs,
+                scalarByte,
+            })
         }
         ///Creates a new call builder for the [`fheGe`] function.
         pub fn fheGe(
@@ -17988,7 +16877,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             rhs: alloy::sol_types::private::FixedBytes<32>,
             scalarByte: alloy::sol_types::private::FixedBytes<1>,
         ) -> alloy_contract::SolCallBuilder<&P, fheGeCall, N> {
-            self.call_builder(&fheGeCall { lhs, rhs, scalarByte })
+            self.call_builder(&fheGeCall {
+                lhs,
+                rhs,
+                scalarByte,
+            })
         }
         ///Creates a new call builder for the [`fheGt`] function.
         pub fn fheGt(
@@ -17997,7 +16890,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             rhs: alloy::sol_types::private::FixedBytes<32>,
             scalarByte: alloy::sol_types::private::FixedBytes<1>,
         ) -> alloy_contract::SolCallBuilder<&P, fheGtCall, N> {
-            self.call_builder(&fheGtCall { lhs, rhs, scalarByte })
+            self.call_builder(&fheGtCall {
+                lhs,
+                rhs,
+                scalarByte,
+            })
         }
         ///Creates a new call builder for the [`fheIfThenElse`] function.
         pub fn fheIfThenElse(
@@ -18006,13 +16903,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             ifTrue: alloy::sol_types::private::FixedBytes<32>,
             ifFalse: alloy::sol_types::private::FixedBytes<32>,
         ) -> alloy_contract::SolCallBuilder<&P, fheIfThenElseCall, N> {
-            self.call_builder(
-                &fheIfThenElseCall {
-                    control,
-                    ifTrue,
-                    ifFalse,
-                },
-            )
+            self.call_builder(&fheIfThenElseCall {
+                control,
+                ifTrue,
+                ifFalse,
+            })
         }
         ///Creates a new call builder for the [`fheLe`] function.
         pub fn fheLe(
@@ -18021,7 +16916,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             rhs: alloy::sol_types::private::FixedBytes<32>,
             scalarByte: alloy::sol_types::private::FixedBytes<1>,
         ) -> alloy_contract::SolCallBuilder<&P, fheLeCall, N> {
-            self.call_builder(&fheLeCall { lhs, rhs, scalarByte })
+            self.call_builder(&fheLeCall {
+                lhs,
+                rhs,
+                scalarByte,
+            })
         }
         ///Creates a new call builder for the [`fheLt`] function.
         pub fn fheLt(
@@ -18030,7 +16929,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             rhs: alloy::sol_types::private::FixedBytes<32>,
             scalarByte: alloy::sol_types::private::FixedBytes<1>,
         ) -> alloy_contract::SolCallBuilder<&P, fheLtCall, N> {
-            self.call_builder(&fheLtCall { lhs, rhs, scalarByte })
+            self.call_builder(&fheLtCall {
+                lhs,
+                rhs,
+                scalarByte,
+            })
         }
         ///Creates a new call builder for the [`fheMax`] function.
         pub fn fheMax(
@@ -18039,7 +16942,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             rhs: alloy::sol_types::private::FixedBytes<32>,
             scalarByte: alloy::sol_types::private::FixedBytes<1>,
         ) -> alloy_contract::SolCallBuilder<&P, fheMaxCall, N> {
-            self.call_builder(&fheMaxCall { lhs, rhs, scalarByte })
+            self.call_builder(&fheMaxCall {
+                lhs,
+                rhs,
+                scalarByte,
+            })
         }
         ///Creates a new call builder for the [`fheMin`] function.
         pub fn fheMin(
@@ -18048,7 +16955,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             rhs: alloy::sol_types::private::FixedBytes<32>,
             scalarByte: alloy::sol_types::private::FixedBytes<1>,
         ) -> alloy_contract::SolCallBuilder<&P, fheMinCall, N> {
-            self.call_builder(&fheMinCall { lhs, rhs, scalarByte })
+            self.call_builder(&fheMinCall {
+                lhs,
+                rhs,
+                scalarByte,
+            })
         }
         ///Creates a new call builder for the [`fheMul`] function.
         pub fn fheMul(
@@ -18057,7 +16968,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             rhs: alloy::sol_types::private::FixedBytes<32>,
             scalarByte: alloy::sol_types::private::FixedBytes<1>,
         ) -> alloy_contract::SolCallBuilder<&P, fheMulCall, N> {
-            self.call_builder(&fheMulCall { lhs, rhs, scalarByte })
+            self.call_builder(&fheMulCall {
+                lhs,
+                rhs,
+                scalarByte,
+            })
         }
         ///Creates a new call builder for the [`fheNe`] function.
         pub fn fheNe(
@@ -18066,7 +16981,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             rhs: alloy::sol_types::private::FixedBytes<32>,
             scalarByte: alloy::sol_types::private::FixedBytes<1>,
         ) -> alloy_contract::SolCallBuilder<&P, fheNeCall, N> {
-            self.call_builder(&fheNeCall { lhs, rhs, scalarByte })
+            self.call_builder(&fheNeCall {
+                lhs,
+                rhs,
+                scalarByte,
+            })
         }
         ///Creates a new call builder for the [`fheNeg`] function.
         pub fn fheNeg(
@@ -18095,12 +17014,10 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             upperBound: alloy::sol_types::private::primitives::aliases::U256,
             randType: <FheType as alloy::sol_types::SolType>::RustType,
         ) -> alloy_contract::SolCallBuilder<&P, fheRandBoundedCall, N> {
-            self.call_builder(
-                &fheRandBoundedCall {
-                    upperBound,
-                    randType,
-                },
-            )
+            self.call_builder(&fheRandBoundedCall {
+                upperBound,
+                randType,
+            })
         }
         ///Creates a new call builder for the [`fheRem`] function.
         pub fn fheRem(
@@ -18109,7 +17026,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             rhs: alloy::sol_types::private::FixedBytes<32>,
             scalarByte: alloy::sol_types::private::FixedBytes<1>,
         ) -> alloy_contract::SolCallBuilder<&P, fheRemCall, N> {
-            self.call_builder(&fheRemCall { lhs, rhs, scalarByte })
+            self.call_builder(&fheRemCall {
+                lhs,
+                rhs,
+                scalarByte,
+            })
         }
         ///Creates a new call builder for the [`fheRotl`] function.
         pub fn fheRotl(
@@ -18118,13 +17039,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             rhs: alloy::sol_types::private::FixedBytes<32>,
             scalarByte: alloy::sol_types::private::FixedBytes<1>,
         ) -> alloy_contract::SolCallBuilder<&P, fheRotlCall, N> {
-            self.call_builder(
-                &fheRotlCall {
-                    lhs,
-                    rhs,
-                    scalarByte,
-                },
-            )
+            self.call_builder(&fheRotlCall {
+                lhs,
+                rhs,
+                scalarByte,
+            })
         }
         ///Creates a new call builder for the [`fheRotr`] function.
         pub fn fheRotr(
@@ -18133,13 +17052,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             rhs: alloy::sol_types::private::FixedBytes<32>,
             scalarByte: alloy::sol_types::private::FixedBytes<1>,
         ) -> alloy_contract::SolCallBuilder<&P, fheRotrCall, N> {
-            self.call_builder(
-                &fheRotrCall {
-                    lhs,
-                    rhs,
-                    scalarByte,
-                },
-            )
+            self.call_builder(&fheRotrCall {
+                lhs,
+                rhs,
+                scalarByte,
+            })
         }
         ///Creates a new call builder for the [`fheShl`] function.
         pub fn fheShl(
@@ -18148,7 +17065,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             rhs: alloy::sol_types::private::FixedBytes<32>,
             scalarByte: alloy::sol_types::private::FixedBytes<1>,
         ) -> alloy_contract::SolCallBuilder<&P, fheShlCall, N> {
-            self.call_builder(&fheShlCall { lhs, rhs, scalarByte })
+            self.call_builder(&fheShlCall {
+                lhs,
+                rhs,
+                scalarByte,
+            })
         }
         ///Creates a new call builder for the [`fheShr`] function.
         pub fn fheShr(
@@ -18157,7 +17078,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             rhs: alloy::sol_types::private::FixedBytes<32>,
             scalarByte: alloy::sol_types::private::FixedBytes<1>,
         ) -> alloy_contract::SolCallBuilder<&P, fheShrCall, N> {
-            self.call_builder(&fheShrCall { lhs, rhs, scalarByte })
+            self.call_builder(&fheShrCall {
+                lhs,
+                rhs,
+                scalarByte,
+            })
         }
         ///Creates a new call builder for the [`fheSub`] function.
         pub fn fheSub(
@@ -18166,22 +17091,22 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             rhs: alloy::sol_types::private::FixedBytes<32>,
             scalarByte: alloy::sol_types::private::FixedBytes<1>,
         ) -> alloy_contract::SolCallBuilder<&P, fheSubCall, N> {
-            self.call_builder(&fheSubCall { lhs, rhs, scalarByte })
+            self.call_builder(&fheSubCall {
+                lhs,
+                rhs,
+                scalarByte,
+            })
         }
         ///Creates a new call builder for the [`fheSum`] function.
         pub fn fheSum(
             &self,
-            values: alloy::sol_types::private::Vec<
-                alloy::sol_types::private::FixedBytes<32>,
-            >,
+            values: alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
             resultType: <FheType as alloy::sol_types::SolType>::RustType,
         ) -> alloy_contract::SolCallBuilder<&P, fheSumCall, N> {
             self.call_builder(&fheSumCall { values, resultType })
         }
         ///Creates a new call builder for the [`getACLAddress`] function.
-        pub fn getACLAddress(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, getACLAddressCall, N> {
+        pub fn getACLAddress(&self) -> alloy_contract::SolCallBuilder<&P, getACLAddressCall, N> {
             self.call_builder(&getACLAddressCall)
         }
         ///Creates a new call builder for the [`getHCULimitAddress`] function.
@@ -18203,9 +17128,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             self.call_builder(&getInputVerifierAddressCall)
         }
         ///Creates a new call builder for the [`getVersion`] function.
-        pub fn getVersion(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, getVersionCall, N> {
+        pub fn getVersion(&self) -> alloy_contract::SolCallBuilder<&P, getVersionCall, N> {
             self.call_builder(&getVersionCall)
         }
         ///Creates a new call builder for the [`initializeFromEmptyProxy`] function.
@@ -18215,15 +17138,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             self.call_builder(&initializeFromEmptyProxyCall)
         }
         ///Creates a new call builder for the [`proxiableUUID`] function.
-        pub fn proxiableUUID(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, proxiableUUIDCall, N> {
+        pub fn proxiableUUID(&self) -> alloy_contract::SolCallBuilder<&P, proxiableUUIDCall, N> {
             self.call_builder(&proxiableUUIDCall)
         }
         ///Creates a new call builder for the [`reinitializeV4`] function.
-        pub fn reinitializeV4(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, reinitializeV4Call, N> {
+        pub fn reinitializeV4(&self) -> alloy_contract::SolCallBuilder<&P, reinitializeV4Call, N> {
             self.call_builder(&reinitializeV4Call)
         }
         ///Creates a new call builder for the [`trivialEncrypt`] function.
@@ -18240,12 +17159,10 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             newImplementation: alloy::sol_types::private::Address,
             data: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, upgradeToAndCallCall, N> {
-            self.call_builder(
-                &upgradeToAndCallCall {
-                    newImplementation,
-                    data,
-                },
-            )
+            self.call_builder(&upgradeToAndCallCall {
+                newImplementation,
+                data,
+            })
         }
         ///Creates a new call builder for the [`verifyInput`] function.
         pub fn verifyInput(
@@ -18255,22 +17172,18 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             inputProof: alloy::sol_types::private::Bytes,
             inputType: <FheType as alloy::sol_types::SolType>::RustType,
         ) -> alloy_contract::SolCallBuilder<&P, verifyInputCall, N> {
-            self.call_builder(
-                &verifyInputCall {
-                    inputHandle,
-                    userAddress,
-                    inputProof,
-                    inputType,
-                },
-            )
+            self.call_builder(&verifyInputCall {
+                inputHandle,
+                userAddress,
+                inputProof,
+                inputType,
+            })
         }
     }
     /// Event filters.
-    #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > FHEVMExecutorInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        FHEVMExecutorInstance<P, N>
+    {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
@@ -18317,9 +17230,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             self.event_filter::<FheGt>()
         }
         ///Creates a new event filter for the [`FheIfThenElse`] event.
-        pub fn FheIfThenElse_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, FheIfThenElse, N> {
+        pub fn FheIfThenElse_filter(&self) -> alloy_contract::Event<&P, FheIfThenElse, N> {
             self.event_filter::<FheIfThenElse>()
         }
         ///Creates a new event filter for the [`FheLe`] event.
@@ -18359,9 +17270,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             self.event_filter::<FheRand>()
         }
         ///Creates a new event filter for the [`FheRandBounded`] event.
-        pub fn FheRandBounded_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, FheRandBounded, N> {
+        pub fn FheRandBounded_filter(&self) -> alloy_contract::Event<&P, FheRandBounded, N> {
             self.event_filter::<FheRandBounded>()
         }
         ///Creates a new event filter for the [`FheRem`] event.
@@ -18397,9 +17306,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             self.event_filter::<Initialized>()
         }
         ///Creates a new event filter for the [`TrivialEncrypt`] event.
-        pub fn TrivialEncrypt_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, TrivialEncrypt, N> {
+        pub fn TrivialEncrypt_filter(&self) -> alloy_contract::Event<&P, TrivialEncrypt, N> {
             self.event_filter::<TrivialEncrypt>()
         }
         ///Creates a new event filter for the [`Upgraded`] event.

@@ -197,12 +197,11 @@ pub mod ACLEvents {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"`\x80`@R_\x80\xFD",
     );
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `Allowed(address,address,bytes32)` and selector `0xe2e1decee6e05ee246cd7c7f1337d25cdfd41dcbdcf8c57b61630be56cc7366a`.
-```solidity
-event Allowed(address indexed caller, address indexed account, bytes32 handle);
-```*/
+    ```solidity
+    event Allowed(address indexed caller, address indexed account, bytes32 handle);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -229,20 +228,19 @@ event Allowed(address indexed caller, address indexed account, bytes32 handle);
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for Allowed {
             type DataTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "Allowed(address,address,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                226u8, 225u8, 222u8, 206u8, 230u8, 224u8, 94u8, 226u8, 70u8, 205u8,
-                124u8, 127u8, 19u8, 55u8, 210u8, 92u8, 223u8, 212u8, 29u8, 203u8, 220u8,
-                248u8, 197u8, 123u8, 97u8, 99u8, 11u8, 229u8, 108u8, 199u8, 54u8, 106u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    226u8, 225u8, 222u8, 206u8, 230u8, 224u8, 94u8, 226u8, 70u8, 205u8, 124u8,
+                    127u8, 19u8, 55u8, 210u8, 92u8, 223u8, 212u8, 29u8, 203u8, 220u8, 248u8, 197u8,
+                    123u8, 97u8, 99u8, 11u8, 229u8, 108u8, 199u8, 54u8, 106u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -261,13 +259,11 @@ event Allowed(address indexed caller, address indexed account, bytes32 handle);
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -281,7 +277,11 @@ event Allowed(address indexed caller, address indexed account, bytes32 handle);
             }
             #[inline]
             fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(), self.caller.clone(), self.account.clone())
+                (
+                    Self::SIGNATURE_HASH.into(),
+                    self.caller.clone(),
+                    self.account.clone(),
+                )
             }
             #[inline]
             fn encode_topics_raw(
@@ -291,9 +291,7 @@ event Allowed(address indexed caller, address indexed account, bytes32 handle);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -320,12 +318,11 @@ event Allowed(address indexed caller, address indexed account, bytes32 handle);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `AllowedForDecryption(address,bytes32[])` and selector `0xd913ac93a959116526793ef772233273d5249597d33cddfdc34f29920541fd0a`.
-```solidity
-event AllowedForDecryption(address indexed caller, bytes32[] handlesList);
-```*/
+    ```solidity
+    event AllowedForDecryption(address indexed caller, bytes32[] handlesList);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -337,9 +334,7 @@ event AllowedForDecryption(address indexed caller, bytes32[] handlesList);
         #[allow(missing_docs)]
         pub caller: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
-        pub handlesList: alloy::sol_types::private::Vec<
-            alloy::sol_types::private::FixedBytes<32>,
-        >,
+        pub handlesList: alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
     }
     #[allow(
         non_camel_case_types,
@@ -351,24 +346,20 @@ event AllowedForDecryption(address indexed caller, bytes32[] handlesList);
         use alloy::sol_types as alloy_sol_types;
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for AllowedForDecryption {
-            type DataTuple<'a> = (
-                alloy::sol_types::sol_data::Array<
-                    alloy::sol_types::sol_data::FixedBytes<32>,
-                >,
-            );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataTuple<'a> =
+                (alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::FixedBytes<32>>,);
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "AllowedForDecryption(address,bytes32[])";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                217u8, 19u8, 172u8, 147u8, 169u8, 89u8, 17u8, 101u8, 38u8, 121u8, 62u8,
-                247u8, 114u8, 35u8, 50u8, 115u8, 213u8, 36u8, 149u8, 151u8, 211u8, 60u8,
-                221u8, 253u8, 195u8, 79u8, 41u8, 146u8, 5u8, 65u8, 253u8, 10u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    217u8, 19u8, 172u8, 147u8, 169u8, 89u8, 17u8, 101u8, 38u8, 121u8, 62u8, 247u8,
+                    114u8, 35u8, 50u8, 115u8, 213u8, 36u8, 149u8, 151u8, 211u8, 60u8, 221u8, 253u8,
+                    195u8, 79u8, 41u8, 146u8, 5u8, 65u8, 253u8, 10u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -386,23 +377,21 @@ event AllowedForDecryption(address indexed caller, bytes32[] handlesList);
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Array<
-                        alloy::sol_types::sol_data::FixedBytes<32>,
-                    > as alloy_sol_types::SolType>::tokenize(&self.handlesList),
-                )
+                (<alloy::sol_types::sol_data::Array<
+                    alloy::sol_types::sol_data::FixedBytes<32>,
+                > as alloy_sol_types::SolType>::tokenize(
+                    &self.handlesList
+                ),)
             }
             #[inline]
             fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
@@ -416,9 +405,7 @@ event AllowedForDecryption(address indexed caller, bytes32[] handlesList);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.caller,
                 );
@@ -442,12 +429,11 @@ event AllowedForDecryption(address indexed caller, bytes32[] handlesList);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `BlockedAccount(address)` and selector `0x8632489584ac3cfc9b78cc6c2197c31ca9e3821bfa5ca5c9af28917b92db24d9`.
-```solidity
-event BlockedAccount(address indexed account);
-```*/
+    ```solidity
+    event BlockedAccount(address indexed account);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -470,19 +456,18 @@ event BlockedAccount(address indexed account);
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for BlockedAccount {
             type DataTuple<'a> = ();
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "BlockedAccount(address)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                134u8, 50u8, 72u8, 149u8, 132u8, 172u8, 60u8, 252u8, 155u8, 120u8, 204u8,
-                108u8, 33u8, 151u8, 195u8, 28u8, 169u8, 227u8, 130u8, 27u8, 250u8, 92u8,
-                165u8, 201u8, 175u8, 40u8, 145u8, 123u8, 146u8, 219u8, 36u8, 217u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    134u8, 50u8, 72u8, 149u8, 132u8, 172u8, 60u8, 252u8, 155u8, 120u8, 204u8,
+                    108u8, 33u8, 151u8, 195u8, 28u8, 169u8, 227u8, 130u8, 27u8, 250u8, 92u8, 165u8,
+                    201u8, 175u8, 40u8, 145u8, 123u8, 146u8, 219u8, 36u8, 217u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -497,13 +482,11 @@ event BlockedAccount(address indexed account);
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -523,9 +506,7 @@ event BlockedAccount(address indexed account);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.account,
                 );
@@ -549,12 +530,11 @@ event BlockedAccount(address indexed account);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `DelegatedForUserDecryption(address,address,address,uint64,uint64,uint64)` and selector `0x527b025d7ff06689c1ab9d32dfd7881c964cce72ce8ac5b2fe1d3be8cfda5bfc`.
-```solidity
-event DelegatedForUserDecryption(address indexed delegator, address indexed delegate, address contractAddress, uint64 delegationCounter, uint64 oldExpirationDate, uint64 newExpirationDate);
-```*/
+    ```solidity
+    event DelegatedForUserDecryption(address indexed delegator, address indexed delegate, address contractAddress, uint64 delegationCounter, uint64 oldExpirationDate, uint64 newExpirationDate);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -592,20 +572,20 @@ event DelegatedForUserDecryption(address indexed delegator, address indexed dele
                 alloy::sol_types::sol_data::Uint<64>,
                 alloy::sol_types::sol_data::Uint<64>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Address,
             );
-            const SIGNATURE: &'static str = "DelegatedForUserDecryption(address,address,address,uint64,uint64,uint64)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                82u8, 123u8, 2u8, 93u8, 127u8, 240u8, 102u8, 137u8, 193u8, 171u8, 157u8,
-                50u8, 223u8, 215u8, 136u8, 28u8, 150u8, 76u8, 206u8, 114u8, 206u8, 138u8,
-                197u8, 178u8, 254u8, 29u8, 59u8, 232u8, 207u8, 218u8, 91u8, 252u8,
-            ]);
+            const SIGNATURE: &'static str =
+                "DelegatedForUserDecryption(address,address,address,uint64,uint64,uint64)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    82u8, 123u8, 2u8, 93u8, 127u8, 240u8, 102u8, 137u8, 193u8, 171u8, 157u8, 50u8,
+                    223u8, 215u8, 136u8, 28u8, 150u8, 76u8, 206u8, 114u8, 206u8, 138u8, 197u8,
+                    178u8, 254u8, 29u8, 59u8, 232u8, 207u8, 218u8, 91u8, 252u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -627,13 +607,11 @@ event DelegatedForUserDecryption(address indexed delegator, address indexed dele
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -643,15 +621,15 @@ event DelegatedForUserDecryption(address indexed delegator, address indexed dele
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.contractAddress,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        64,
-                    > as alloy_sol_types::SolType>::tokenize(&self.delegationCounter),
-                    <alloy::sol_types::sol_data::Uint<
-                        64,
-                    > as alloy_sol_types::SolType>::tokenize(&self.oldExpirationDate),
-                    <alloy::sol_types::sol_data::Uint<
-                        64,
-                    > as alloy_sol_types::SolType>::tokenize(&self.newExpirationDate),
+                    <alloy::sol_types::sol_data::Uint<64> as alloy_sol_types::SolType>::tokenize(
+                        &self.delegationCounter,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<64> as alloy_sol_types::SolType>::tokenize(
+                        &self.oldExpirationDate,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<64> as alloy_sol_types::SolType>::tokenize(
+                        &self.newExpirationDate,
+                    ),
                 )
             }
             #[inline]
@@ -670,9 +648,7 @@ event DelegatedForUserDecryption(address indexed delegator, address indexed dele
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.delegator,
                 );
@@ -694,19 +670,16 @@ event DelegatedForUserDecryption(address indexed delegator, address indexed dele
         #[automatically_derived]
         impl From<&DelegatedForUserDecryption> for alloy_sol_types::private::LogData {
             #[inline]
-            fn from(
-                this: &DelegatedForUserDecryption,
-            ) -> alloy_sol_types::private::LogData {
+            fn from(this: &DelegatedForUserDecryption) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `RevokedDelegationForUserDecryption(address,address,address,uint64,uint64)` and selector `0x7aca80b6b7928b9038f186e3d9922a0fc5d52c398fbf144725c142c52a5277e4`.
-```solidity
-event RevokedDelegationForUserDecryption(address indexed delegator, address indexed delegate, address contractAddress, uint64 delegationCounter, uint64 oldExpirationDate);
-```*/
+    ```solidity
+    event RevokedDelegationForUserDecryption(address indexed delegator, address indexed delegate, address contractAddress, uint64 delegationCounter, uint64 oldExpirationDate);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -741,20 +714,20 @@ event RevokedDelegationForUserDecryption(address indexed delegator, address inde
                 alloy::sol_types::sol_data::Uint<64>,
                 alloy::sol_types::sol_data::Uint<64>,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Address,
             );
-            const SIGNATURE: &'static str = "RevokedDelegationForUserDecryption(address,address,address,uint64,uint64)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                122u8, 202u8, 128u8, 182u8, 183u8, 146u8, 139u8, 144u8, 56u8, 241u8,
-                134u8, 227u8, 217u8, 146u8, 42u8, 15u8, 197u8, 213u8, 44u8, 57u8, 143u8,
-                191u8, 20u8, 71u8, 37u8, 193u8, 66u8, 197u8, 42u8, 82u8, 119u8, 228u8,
-            ]);
+            const SIGNATURE: &'static str =
+                "RevokedDelegationForUserDecryption(address,address,address,uint64,uint64)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    122u8, 202u8, 128u8, 182u8, 183u8, 146u8, 139u8, 144u8, 56u8, 241u8, 134u8,
+                    227u8, 217u8, 146u8, 42u8, 15u8, 197u8, 213u8, 44u8, 57u8, 143u8, 191u8, 20u8,
+                    71u8, 37u8, 193u8, 66u8, 197u8, 42u8, 82u8, 119u8, 228u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -775,13 +748,11 @@ event RevokedDelegationForUserDecryption(address indexed delegator, address inde
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -791,12 +762,12 @@ event RevokedDelegationForUserDecryption(address indexed delegator, address inde
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.contractAddress,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        64,
-                    > as alloy_sol_types::SolType>::tokenize(&self.delegationCounter),
-                    <alloy::sol_types::sol_data::Uint<
-                        64,
-                    > as alloy_sol_types::SolType>::tokenize(&self.oldExpirationDate),
+                    <alloy::sol_types::sol_data::Uint<64> as alloy_sol_types::SolType>::tokenize(
+                        &self.delegationCounter,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<64> as alloy_sol_types::SolType>::tokenize(
+                        &self.oldExpirationDate,
+                    ),
                 )
             }
             #[inline]
@@ -815,9 +786,7 @@ event RevokedDelegationForUserDecryption(address indexed delegator, address inde
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.delegator,
                 );
@@ -828,8 +797,7 @@ event RevokedDelegationForUserDecryption(address indexed delegator, address inde
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData
-        for RevokedDelegationForUserDecryption {
+        impl alloy_sol_types::private::IntoLogData for RevokedDelegationForUserDecryption {
             fn to_log_data(&self) -> alloy_sol_types::private::LogData {
                 From::from(self)
             }
@@ -838,8 +806,7 @@ event RevokedDelegationForUserDecryption(address indexed delegator, address inde
             }
         }
         #[automatically_derived]
-        impl From<&RevokedDelegationForUserDecryption>
-        for alloy_sol_types::private::LogData {
+        impl From<&RevokedDelegationForUserDecryption> for alloy_sol_types::private::LogData {
             #[inline]
             fn from(
                 this: &RevokedDelegationForUserDecryption,
@@ -848,12 +815,11 @@ event RevokedDelegationForUserDecryption(address indexed delegator, address inde
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `UnblockedAccount(address)` and selector `0xa885a62df16bfeabc96ed9b845b30dd4038f039ca1679490125c314222355e3f`.
-```solidity
-event UnblockedAccount(address indexed account);
-```*/
+    ```solidity
+    event UnblockedAccount(address indexed account);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -876,19 +842,18 @@ event UnblockedAccount(address indexed account);
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for UnblockedAccount {
             type DataTuple<'a> = ();
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "UnblockedAccount(address)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                168u8, 133u8, 166u8, 45u8, 241u8, 107u8, 254u8, 171u8, 201u8, 110u8,
-                217u8, 184u8, 69u8, 179u8, 13u8, 212u8, 3u8, 143u8, 3u8, 156u8, 161u8,
-                103u8, 148u8, 144u8, 18u8, 92u8, 49u8, 66u8, 34u8, 53u8, 94u8, 63u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    168u8, 133u8, 166u8, 45u8, 241u8, 107u8, 254u8, 171u8, 201u8, 110u8, 217u8,
+                    184u8, 69u8, 179u8, 13u8, 212u8, 3u8, 143u8, 3u8, 156u8, 161u8, 103u8, 148u8,
+                    144u8, 18u8, 92u8, 49u8, 66u8, 34u8, 53u8, 94u8, 63u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -903,13 +868,11 @@ event UnblockedAccount(address indexed account);
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -929,9 +892,7 @@ event UnblockedAccount(address indexed account);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.account,
                 );
@@ -956,8 +917,7 @@ event UnblockedAccount(address indexed account);
         }
     };
     ///Container for all the [`ACLEvents`](self) events.
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Debug, PartialEq, Eq, Hash)]
+    #[derive(Clone, serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq, Hash)]
     pub enum ACLEventsEvents {
         #[allow(missing_docs)]
         Allowed(Allowed),
@@ -972,7 +932,6 @@ event UnblockedAccount(address indexed account);
         #[allow(missing_docs)]
         UnblockedAccount(UnblockedAccount),
     }
-    #[automatically_derived]
     impl ACLEventsEvents {
         /// All the selectors of this enum.
         ///
@@ -982,36 +941,72 @@ event UnblockedAccount(address indexed account);
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                82u8, 123u8, 2u8, 93u8, 127u8, 240u8, 102u8, 137u8, 193u8, 171u8, 157u8,
-                50u8, 223u8, 215u8, 136u8, 28u8, 150u8, 76u8, 206u8, 114u8, 206u8, 138u8,
-                197u8, 178u8, 254u8, 29u8, 59u8, 232u8, 207u8, 218u8, 91u8, 252u8,
+                82u8, 123u8, 2u8, 93u8, 127u8, 240u8, 102u8, 137u8, 193u8, 171u8, 157u8, 50u8,
+                223u8, 215u8, 136u8, 28u8, 150u8, 76u8, 206u8, 114u8, 206u8, 138u8, 197u8, 178u8,
+                254u8, 29u8, 59u8, 232u8, 207u8, 218u8, 91u8, 252u8,
             ],
             [
-                122u8, 202u8, 128u8, 182u8, 183u8, 146u8, 139u8, 144u8, 56u8, 241u8,
-                134u8, 227u8, 217u8, 146u8, 42u8, 15u8, 197u8, 213u8, 44u8, 57u8, 143u8,
-                191u8, 20u8, 71u8, 37u8, 193u8, 66u8, 197u8, 42u8, 82u8, 119u8, 228u8,
+                122u8, 202u8, 128u8, 182u8, 183u8, 146u8, 139u8, 144u8, 56u8, 241u8, 134u8, 227u8,
+                217u8, 146u8, 42u8, 15u8, 197u8, 213u8, 44u8, 57u8, 143u8, 191u8, 20u8, 71u8, 37u8,
+                193u8, 66u8, 197u8, 42u8, 82u8, 119u8, 228u8,
             ],
             [
-                134u8, 50u8, 72u8, 149u8, 132u8, 172u8, 60u8, 252u8, 155u8, 120u8, 204u8,
-                108u8, 33u8, 151u8, 195u8, 28u8, 169u8, 227u8, 130u8, 27u8, 250u8, 92u8,
-                165u8, 201u8, 175u8, 40u8, 145u8, 123u8, 146u8, 219u8, 36u8, 217u8,
+                134u8, 50u8, 72u8, 149u8, 132u8, 172u8, 60u8, 252u8, 155u8, 120u8, 204u8, 108u8,
+                33u8, 151u8, 195u8, 28u8, 169u8, 227u8, 130u8, 27u8, 250u8, 92u8, 165u8, 201u8,
+                175u8, 40u8, 145u8, 123u8, 146u8, 219u8, 36u8, 217u8,
             ],
             [
-                168u8, 133u8, 166u8, 45u8, 241u8, 107u8, 254u8, 171u8, 201u8, 110u8,
-                217u8, 184u8, 69u8, 179u8, 13u8, 212u8, 3u8, 143u8, 3u8, 156u8, 161u8,
-                103u8, 148u8, 144u8, 18u8, 92u8, 49u8, 66u8, 34u8, 53u8, 94u8, 63u8,
+                168u8, 133u8, 166u8, 45u8, 241u8, 107u8, 254u8, 171u8, 201u8, 110u8, 217u8, 184u8,
+                69u8, 179u8, 13u8, 212u8, 3u8, 143u8, 3u8, 156u8, 161u8, 103u8, 148u8, 144u8, 18u8,
+                92u8, 49u8, 66u8, 34u8, 53u8, 94u8, 63u8,
             ],
             [
-                217u8, 19u8, 172u8, 147u8, 169u8, 89u8, 17u8, 101u8, 38u8, 121u8, 62u8,
-                247u8, 114u8, 35u8, 50u8, 115u8, 213u8, 36u8, 149u8, 151u8, 211u8, 60u8,
-                221u8, 253u8, 195u8, 79u8, 41u8, 146u8, 5u8, 65u8, 253u8, 10u8,
+                217u8, 19u8, 172u8, 147u8, 169u8, 89u8, 17u8, 101u8, 38u8, 121u8, 62u8, 247u8,
+                114u8, 35u8, 50u8, 115u8, 213u8, 36u8, 149u8, 151u8, 211u8, 60u8, 221u8, 253u8,
+                195u8, 79u8, 41u8, 146u8, 5u8, 65u8, 253u8, 10u8,
             ],
             [
-                226u8, 225u8, 222u8, 206u8, 230u8, 224u8, 94u8, 226u8, 70u8, 205u8,
-                124u8, 127u8, 19u8, 55u8, 210u8, 92u8, 223u8, 212u8, 29u8, 203u8, 220u8,
-                248u8, 197u8, 123u8, 97u8, 99u8, 11u8, 229u8, 108u8, 199u8, 54u8, 106u8,
+                226u8, 225u8, 222u8, 206u8, 230u8, 224u8, 94u8, 226u8, 70u8, 205u8, 124u8, 127u8,
+                19u8, 55u8, 210u8, 92u8, 223u8, 212u8, 29u8, 203u8, 220u8, 248u8, 197u8, 123u8,
+                97u8, 99u8, 11u8, 229u8, 108u8, 199u8, 54u8, 106u8,
             ],
         ];
+        /// The names of the variants in the same order as `SELECTORS`.
+        pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(DelegatedForUserDecryption),
+            ::core::stringify!(RevokedDelegationForUserDecryption),
+            ::core::stringify!(BlockedAccount),
+            ::core::stringify!(UnblockedAccount),
+            ::core::stringify!(AllowedForDecryption),
+            ::core::stringify!(Allowed),
+        ];
+        /// The signatures in the same order as `SELECTORS`.
+        pub const SIGNATURES: &'static [&'static str] = &[
+            <DelegatedForUserDecryption as alloy_sol_types::SolEvent>::SIGNATURE,
+            <RevokedDelegationForUserDecryption as alloy_sol_types::SolEvent>::SIGNATURE,
+            <BlockedAccount as alloy_sol_types::SolEvent>::SIGNATURE,
+            <UnblockedAccount as alloy_sol_types::SolEvent>::SIGNATURE,
+            <AllowedForDecryption as alloy_sol_types::SolEvent>::SIGNATURE,
+            <Allowed as alloy_sol_types::SolEvent>::SIGNATURE,
+        ];
+        /// Returns the signature for the given selector, if known.
+        #[inline]
+        pub fn signature_by_selector(
+            selector: [u8; 32usize],
+        ) -> ::core::option::Option<&'static str> {
+            match Self::SELECTORS.binary_search(&selector) {
+                ::core::result::Result::Ok(idx) => {
+                    ::core::option::Option::Some(Self::SIGNATURES[idx])
+                }
+                ::core::result::Result::Err(_) => ::core::option::Option::None,
+            }
+        }
+        /// Returns the enum variant name for the given selector, if known.
+        #[inline]
+        pub fn name_by_selector(selector: [u8; 32usize]) -> ::core::option::Option<&'static str> {
+            let sig = Self::signature_by_selector(selector)?;
+            sig.split_once('(').map(|(name, _)| name)
+        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for ACLEventsEvents {
@@ -1085,9 +1080,7 @@ event UnblockedAccount(address indexed account);
     impl alloy_sol_types::private::IntoLogData for ACLEventsEvents {
         fn to_log_data(&self) -> alloy_sol_types::private::LogData {
             match self {
-                Self::Allowed(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
+                Self::Allowed(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
                 Self::AllowedForDecryption(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
@@ -1107,9 +1100,7 @@ event UnblockedAccount(address indexed account);
         }
         fn into_log_data(self) -> alloy_sol_types::private::LogData {
             match self {
-                Self::Allowed(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
+                Self::Allowed(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
                 Self::AllowedForDecryption(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
@@ -1131,56 +1122,53 @@ event UnblockedAccount(address indexed account);
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`ACLEvents`](self) contract instance.
 
-See the [wrapper's documentation](`ACLEventsInstance`) for more details.*/
+    See the [wrapper's documentation](`ACLEventsInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
         address: alloy_sol_types::private::Address,
-        provider: P,
+        __provider: P,
     ) -> ACLEventsInstance<P, N> {
-        ACLEventsInstance::<P, N>::new(address, provider)
+        ACLEventsInstance::<P, N>::new(address, __provider)
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+    Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<ACLEventsInstance<P, N>>,
-    > {
-        ACLEventsInstance::<P, N>::deploy(provider)
+    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
+        __provider: P,
+    ) -> impl ::core::future::Future<Output = alloy_contract::Result<ACLEventsInstance<P, N>>> {
+        ACLEventsInstance::<P, N>::deploy(__provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+    and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        ACLEventsInstance::<P, N>::deploy_builder(provider)
+    >(
+        __provider: P,
+    ) -> alloy_contract::RawCallBuilder<P, N> {
+        ACLEventsInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`ACLEvents`](self) instance.
 
-Contains type-safe methods for interacting with an on-chain instance of the
-[`ACLEvents`](self) contract located at a given `address`, using a given
-provider `P`.
+    Contains type-safe methods for interacting with an on-chain instance of the
+    [`ACLEvents`](self) contract located at a given `address`, using a given
+    provider `P`.
 
-If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-be used to deploy a new instance of the contract.
+    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+    be used to deploy a new instance of the contract.
 
-See the [module-level documentation](self) for all the available methods.*/
+    See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct ACLEventsInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -1191,51 +1179,46 @@ See the [module-level documentation](self) for all the available methods.*/
     impl<P, N> ::core::fmt::Debug for ACLEventsInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("ACLEventsInstance").field(&self.address).finish()
+            f.debug_tuple("ACLEventsInstance")
+                .field(&self.address)
+                .finish()
         }
     }
     /// Instantiation and getters/setters.
-    #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > ACLEventsInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        ACLEventsInstance<P, N>
+    {
         /**Creates a new wrapper around an on-chain [`ACLEvents`](self) contract instance.
 
-See the [wrapper's documentation](`ACLEventsInstance`) for more details.*/
+        See the [wrapper's documentation](`ACLEventsInstance`) for more details.*/
         #[inline]
-        pub const fn new(
-            address: alloy_sol_types::private::Address,
-            provider: P,
-        ) -> Self {
+        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
             Self {
                 address,
-                provider,
+                provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+        Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
-        pub async fn deploy(
-            provider: P,
-        ) -> alloy_contract::Result<ACLEventsInstance<P, N>> {
-            let call_builder = Self::deploy_builder(provider);
+        pub async fn deploy(__provider: P) -> alloy_contract::Result<ACLEventsInstance<P, N>> {
+            let call_builder = Self::deploy_builder(__provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+        and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
-        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
-                provider,
+                __provider,
                 ::core::clone::Clone::clone(&BYTECODE),
             )
         }
@@ -1272,11 +1255,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Function calls.
-    #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > ACLEventsInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        ACLEventsInstance<P, N>
+    {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -1289,11 +1270,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Event filters.
-    #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > ACLEventsInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        ACLEventsInstance<P, N>
+    {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
@@ -1314,9 +1293,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             self.event_filter::<AllowedForDecryption>()
         }
         ///Creates a new event filter for the [`BlockedAccount`] event.
-        pub fn BlockedAccount_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, BlockedAccount, N> {
+        pub fn BlockedAccount_filter(&self) -> alloy_contract::Event<&P, BlockedAccount, N> {
             self.event_filter::<BlockedAccount>()
         }
         ///Creates a new event filter for the [`DelegatedForUserDecryption`] event.
@@ -1332,9 +1309,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             self.event_filter::<RevokedDelegationForUserDecryption>()
         }
         ///Creates a new event filter for the [`UnblockedAccount`] event.
-        pub fn UnblockedAccount_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, UnblockedAccount, N> {
+        pub fn UnblockedAccount_filter(&self) -> alloy_contract::Event<&P, UnblockedAccount, N> {
             self.event_filter::<UnblockedAccount>()
         }
     }

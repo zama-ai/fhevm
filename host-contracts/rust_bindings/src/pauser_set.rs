@@ -214,12 +214,11 @@ pub mod PauserSet {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"`\x80`@R4\x80\x15a\0\x0FW_\x80\xFD[P`\x046\x10a\0UW_5`\xE0\x1C\x80c\r\x8En,\x14a\0YW\x80cF\xFB\xF6\x8E\x14a\0wW\x80c\\\x1D\x80+\x14a\0\xA7W\x80ck,\x0FU\x14a\0\xC3W\x80c\x82\xDC\x1E\xC4\x14a\0\xDFW[_\x80\xFD[a\0aa\0\xFBV[`@Qa\0n\x91\x90a\x0C\xCBV[`@Q\x80\x91\x03\x90\xF3[a\0\x91`\x04\x806\x03\x81\x01\x90a\0\x8C\x91\x90a\rIV[a\x01vV[`@Qa\0\x9E\x91\x90a\r\x8EV[`@Q\x80\x91\x03\x90\xF3[a\0\xC1`\x04\x806\x03\x81\x01\x90a\0\xBC\x91\x90a\r\xA7V[a\x01\xC7V[\0[a\0\xDD`\x04\x806\x03\x81\x01\x90a\0\xD8\x91\x90a\rIV[a\x05LV[\0[a\0\xF9`\x04\x806\x03\x81\x01\x90a\0\xF4\x91\x90a\rIV[a\x07\xB8V[\0[```@Q\x80`@\x01`@R\x80`\t\x81R` \x01\x7FPauserSet\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81RPa\x01<_a\n&V[a\x01F`\x01a\n&V[a\x01O_a\n&V[`@Q` \x01a\x01b\x94\x93\x92\x91\x90a\x0E\xB3V[`@Q` \x81\x83\x03\x03\x81R\x90`@R\x90P\x90V[_\x80_\x83s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81R` \x01\x90\x81R` \x01_ _\x90T\x90a\x01\0\n\x90\x04`\xFF\x16\x90P\x91\x90PV[sP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x02$W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x02H\x91\x90a\x0F%V[s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x163s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14a\x02\xB7W3`@Q\x7F!\xBF\xDA\x10\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01a\x02\xAE\x91\x90a\x0F_V[`@Q\x80\x91\x03\x90\xFD[_s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x82s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14\x80a\x03\x1CWP_s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14[\x15a\x03SW`@Q\x7F5U\xAE\xD1\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_\x80\x83s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81R` \x01\x90\x81R` \x01_ _\x90T\x90a\x01\0\n\x90\x04`\xFF\x16a\x03\xDDW\x81`@Q\x7F9F1\t\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01a\x03\xD4\x91\x90a\x0F_V[`@Q\x80\x91\x03\x90\xFD[_\x80\x82s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81R` \x01\x90\x81R` \x01_ _\x90T\x90a\x01\0\n\x90\x04`\xFF\x16\x15a\x04hW\x80`@Q\x7F^3\xC96\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01a\x04_\x91\x90a\x0F_V[`@Q\x80\x91\x03\x90\xFD[_\x80_\x84s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81R` \x01\x90\x81R` \x01_ _a\x01\0\n\x81T\x81`\xFF\x02\x19\x16\x90\x83\x15\x15\x02\x17\x90UP`\x01_\x80\x83s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81R` \x01\x90\x81R` \x01_ _a\x01\0\n\x81T\x81`\xFF\x02\x19\x16\x90\x83\x15\x15\x02\x17\x90UP\x7F;\x13$\x1D\0\xFE\xD4%!\xA8\x81\xFA\x11W%G\xB2\xF6\x95\x93\r[\xDC\xDA\x93\xC0{(x\x1B\x04\x1E\x82\x82`@Qa\x05@\x92\x91\x90a\x0FxV[`@Q\x80\x91\x03\x90\xA1PPV[sP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x05\xA9W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x05\xCD\x91\x90a\x0F%V[s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x163s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14a\x06<W3`@Q\x7F!\xBF\xDA\x10\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01a\x063\x91\x90a\x0F_V[`@Q\x80\x91\x03\x90\xFD[_s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x03a\x06\xA1W`@Q\x7F5U\xAE\xD1\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_\x80\x82s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81R` \x01\x90\x81R` \x01_ _\x90T\x90a\x01\0\n\x90\x04`\xFF\x16a\x07+W\x80`@Q\x7F9F1\t\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01a\x07\"\x91\x90a\x0F_V[`@Q\x80\x91\x03\x90\xFD[_\x80_\x83s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81R` \x01\x90\x81R` \x01_ _a\x01\0\n\x81T\x81`\xFF\x02\x19\x16\x90\x83\x15\x15\x02\x17\x90UP\x7F\xFA\xAAX\xDAb\x11t\xB2\xA6\t(\xF9w\nnO\xF8\xB6\xADY\xA1\xAB[\xC3\xCC\x9A/\xE7\xB5)@\xAB\x81`@Qa\x07\xAD\x91\x90a\x0F_V[`@Q\x80\x91\x03\x90\xA1PV[sP\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x08\x15W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x089\x91\x90a\x0F%V[s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x163s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14a\x08\xA8W3`@Q\x7F!\xBF\xDA\x10\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01a\x08\x9F\x91\x90a\x0F_V[`@Q\x80\x91\x03\x90\xFD[_s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x03a\t\rW`@Q\x7F5U\xAE\xD1\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_\x80\x82s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81R` \x01\x90\x81R` \x01_ _\x90T\x90a\x01\0\n\x90\x04`\xFF\x16\x15a\t\x98W\x80`@Q\x7F^3\xC96\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01a\t\x8F\x91\x90a\x0F_V[`@Q\x80\x91\x03\x90\xFD[`\x01_\x80\x83s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81R` \x01\x90\x81R` \x01_ _a\x01\0\n\x81T\x81`\xFF\x02\x19\x16\x90\x83\x15\x15\x02\x17\x90UP\x7F\x0E\xBB\xF2\x13\xA7\xF4b/ 6?\x95d\xDB\x9A\xDE\x03y\x85!o\\Y\x02{\x98\xD2^\xBA\x9F?@\x81`@Qa\n\x1B\x91\x90a\x0F_V[`@Q\x80\x91\x03\x90\xA1PV[``_`\x01a\n4\x84a\n\xF0V[\x01\x90P_\x81g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x11\x15a\nRWa\nQa\x0F\x9FV[[`@Q\x90\x80\x82R\x80`\x1F\x01`\x1F\x19\x16` \x01\x82\x01`@R\x80\x15a\n\x84W\x81` \x01`\x01\x82\x02\x806\x837\x80\x82\x01\x91PP\x90P[P\x90P_\x82` \x01\x82\x01\x90P[`\x01\x15a\n\xE5W\x80\x80`\x01\x90\x03\x91PP\x7F0123456789abcdef\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0`\n\x86\x06\x1A\x81S`\n\x85\x81a\n\xDAWa\n\xD9a\x0F\xCCV[[\x04\x94P_\x85\x03a\n\x91W[\x81\x93PPPP\x91\x90PV[_\x80_\x90Pz\x18O\x03\xE9?\xF9\xF4\xDA\xA7\x97\xEDn8\xEDd\xBFj\x1F\x01\0\0\0\0\0\0\0\0\x83\x10a\x0BLWz\x18O\x03\xE9?\xF9\xF4\xDA\xA7\x97\xEDn8\xEDd\xBFj\x1F\x01\0\0\0\0\0\0\0\0\x83\x81a\x0BBWa\x0BAa\x0F\xCCV[[\x04\x92P`@\x81\x01\x90P[m\x04\xEE-mA[\x85\xAC\xEF\x81\0\0\0\0\x83\x10a\x0B\x89Wm\x04\xEE-mA[\x85\xAC\xEF\x81\0\0\0\0\x83\x81a\x0B\x7FWa\x0B~a\x0F\xCCV[[\x04\x92P` \x81\x01\x90P[f#\x86\xF2o\xC1\0\0\x83\x10a\x0B\xB8Wf#\x86\xF2o\xC1\0\0\x83\x81a\x0B\xAEWa\x0B\xADa\x0F\xCCV[[\x04\x92P`\x10\x81\x01\x90P[c\x05\xF5\xE1\0\x83\x10a\x0B\xE1Wc\x05\xF5\xE1\0\x83\x81a\x0B\xD7Wa\x0B\xD6a\x0F\xCCV[[\x04\x92P`\x08\x81\x01\x90P[a'\x10\x83\x10a\x0C\x06Wa'\x10\x83\x81a\x0B\xFCWa\x0B\xFBa\x0F\xCCV[[\x04\x92P`\x04\x81\x01\x90P[`d\x83\x10a\x0C)W`d\x83\x81a\x0C\x1FWa\x0C\x1Ea\x0F\xCCV[[\x04\x92P`\x02\x81\x01\x90P[`\n\x83\x10a\x0C8W`\x01\x81\x01\x90P[\x80\x91PP\x91\x90PV[_\x81Q\x90P\x91\x90PV[_\x82\x82R` \x82\x01\x90P\x92\x91PPV[_[\x83\x81\x10\x15a\x0CxW\x80\x82\x01Q\x81\x84\x01R` \x81\x01\x90Pa\x0C]V[_\x84\x84\x01RPPPPV[_`\x1F\x19`\x1F\x83\x01\x16\x90P\x91\x90PV[_a\x0C\x9D\x82a\x0CAV[a\x0C\xA7\x81\x85a\x0CKV[\x93Pa\x0C\xB7\x81\x85` \x86\x01a\x0C[V[a\x0C\xC0\x81a\x0C\x83V[\x84\x01\x91PP\x92\x91PPV[_` \x82\x01\x90P\x81\x81\x03_\x83\x01Ra\x0C\xE3\x81\x84a\x0C\x93V[\x90P\x92\x91PPV[_\x80\xFD[_s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x82\x16\x90P\x91\x90PV[_a\r\x18\x82a\x0C\xEFV[\x90P\x91\x90PV[a\r(\x81a\r\x0EV[\x81\x14a\r2W_\x80\xFD[PV[_\x815\x90Pa\rC\x81a\r\x1FV[\x92\x91PPV[_` \x82\x84\x03\x12\x15a\r^Wa\r]a\x0C\xEBV[[_a\rk\x84\x82\x85\x01a\r5V[\x91PP\x92\x91PPV[_\x81\x15\x15\x90P\x91\x90PV[a\r\x88\x81a\rtV[\x82RPPV[_` \x82\x01\x90Pa\r\xA1_\x83\x01\x84a\r\x7FV[\x92\x91PPV[_\x80`@\x83\x85\x03\x12\x15a\r\xBDWa\r\xBCa\x0C\xEBV[[_a\r\xCA\x85\x82\x86\x01a\r5V[\x92PP` a\r\xDB\x85\x82\x86\x01a\r5V[\x91PP\x92P\x92\x90PV[_\x81\x90P\x92\x91PPV[_a\r\xF9\x82a\x0CAV[a\x0E\x03\x81\x85a\r\xE5V[\x93Pa\x0E\x13\x81\x85` \x86\x01a\x0C[V[\x80\x84\x01\x91PP\x92\x91PPV[\x7F v\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0_\x82\x01RPV[_a\x0ES`\x02\x83a\r\xE5V[\x91Pa\x0E^\x82a\x0E\x1FV[`\x02\x82\x01\x90P\x91\x90PV[\x7F.\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0_\x82\x01RPV[_a\x0E\x9D`\x01\x83a\r\xE5V[\x91Pa\x0E\xA8\x82a\x0EiV[`\x01\x82\x01\x90P\x91\x90PV[_a\x0E\xBE\x82\x87a\r\xEFV[\x91Pa\x0E\xC9\x82a\x0EGV[\x91Pa\x0E\xD5\x82\x86a\r\xEFV[\x91Pa\x0E\xE0\x82a\x0E\x91V[\x91Pa\x0E\xEC\x82\x85a\r\xEFV[\x91Pa\x0E\xF7\x82a\x0E\x91V[\x91Pa\x0F\x03\x82\x84a\r\xEFV[\x91P\x81\x90P\x95\x94PPPPPV[_\x81Q\x90Pa\x0F\x1F\x81a\r\x1FV[\x92\x91PPV[_` \x82\x84\x03\x12\x15a\x0F:Wa\x0F9a\x0C\xEBV[[_a\x0FG\x84\x82\x85\x01a\x0F\x11V[\x91PP\x92\x91PPV[a\x0FY\x81a\r\x0EV[\x82RPPV[_` \x82\x01\x90Pa\x0Fr_\x83\x01\x84a\x0FPV[\x92\x91PPV[_`@\x82\x01\x90Pa\x0F\x8B_\x83\x01\x85a\x0FPV[a\x0F\x98` \x83\x01\x84a\x0FPV[\x93\x92PPPV[\x7FNH{q\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0_R`A`\x04R`$_\xFD[\x7FNH{q\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0_R`\x12`\x04R`$_\xFD",
     );
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `AccountAlreadyPauser(address)` and selector `0x5e33c936`.
-```solidity
-error AccountAlreadyPauser(address account);
-```*/
+    ```solidity
+    error AccountAlreadyPauser(address account);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct AccountAlreadyPauser {
@@ -235,14 +234,13 @@ error AccountAlreadyPauser(address account);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -266,9 +264,7 @@ error AccountAlreadyPauser(address account);
         #[automatically_derived]
         impl alloy_sol_types::SolError for AccountAlreadyPauser {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "AccountAlreadyPauser(address)";
             const SELECTOR: [u8; 4] = [94u8, 51u8, 201u8, 54u8];
             #[inline]
@@ -287,19 +283,18 @@ error AccountAlreadyPauser(address account);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `AccountNotPauser(address)` and selector `0x39463109`.
-```solidity
-error AccountNotPauser(address account);
-```*/
+    ```solidity
+    error AccountNotPauser(address account);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct AccountNotPauser {
@@ -315,14 +310,13 @@ error AccountNotPauser(address account);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -346,9 +340,7 @@ error AccountNotPauser(address account);
         #[automatically_derived]
         impl alloy_sol_types::SolError for AccountNotPauser {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "AccountNotPauser(address)";
             const SELECTOR: [u8; 4] = [57u8, 70u8, 49u8, 9u8];
             #[inline]
@@ -367,19 +359,18 @@ error AccountNotPauser(address account);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidNullPauser()` and selector `0x3555aed1`.
-```solidity
-error InvalidNullPauser();
-```*/
+    ```solidity
+    error InvalidNullPauser();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct InvalidNullPauser;
@@ -392,14 +383,13 @@ error InvalidNullPauser();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -423,9 +413,7 @@ error InvalidNullPauser();
         #[automatically_derived]
         impl alloy_sol_types::SolError for InvalidNullPauser {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "InvalidNullPauser()";
             const SELECTOR: [u8; 4] = [53u8, 85u8, 174u8, 209u8];
             #[inline]
@@ -440,19 +428,18 @@ error InvalidNullPauser();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotHostOwner(address)` and selector `0x21bfda10`.
-```solidity
-error NotHostOwner(address sender);
-```*/
+    ```solidity
+    error NotHostOwner(address sender);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct NotHostOwner {
@@ -468,14 +455,13 @@ error NotHostOwner(address sender);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -499,9 +485,7 @@ error NotHostOwner(address sender);
         #[automatically_derived]
         impl alloy_sol_types::SolError for NotHostOwner {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "NotHostOwner(address)";
             const SELECTOR: [u8; 4] = [33u8, 191u8, 218u8, 16u8];
             #[inline]
@@ -520,19 +504,18 @@ error NotHostOwner(address sender);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `AddPauser(address)` and selector `0x0ebbf213a7f4622f20363f9564db9ade037985216f5c59027b98d25eba9f3f40`.
-```solidity
-event AddPauser(address account);
-```*/
+    ```solidity
+    event AddPauser(address account);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -555,16 +538,15 @@ event AddPauser(address account);
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for AddPauser {
             type DataTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "AddPauser(address)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                14u8, 187u8, 242u8, 19u8, 167u8, 244u8, 98u8, 47u8, 32u8, 54u8, 63u8,
-                149u8, 100u8, 219u8, 154u8, 222u8, 3u8, 121u8, 133u8, 33u8, 111u8, 92u8,
-                89u8, 2u8, 123u8, 152u8, 210u8, 94u8, 186u8, 159u8, 63u8, 64u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    14u8, 187u8, 242u8, 19u8, 167u8, 244u8, 98u8, 47u8, 32u8, 54u8, 63u8, 149u8,
+                    100u8, 219u8, 154u8, 222u8, 3u8, 121u8, 133u8, 33u8, 111u8, 92u8, 89u8, 2u8,
+                    123u8, 152u8, 210u8, 94u8, 186u8, 159u8, 63u8, 64u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -579,13 +561,11 @@ event AddPauser(address account);
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -609,9 +589,7 @@ event AddPauser(address account);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 Ok(())
             }
         }
@@ -632,12 +610,11 @@ event AddPauser(address account);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `RemovePauser(address)` and selector `0xfaaa58da621174b2a60928f9770a6e4ff8b6ad59a1ab5bc3cc9a2fe7b52940ab`.
-```solidity
-event RemovePauser(address account);
-```*/
+    ```solidity
+    event RemovePauser(address account);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -660,16 +637,15 @@ event RemovePauser(address account);
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for RemovePauser {
             type DataTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "RemovePauser(address)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                250u8, 170u8, 88u8, 218u8, 98u8, 17u8, 116u8, 178u8, 166u8, 9u8, 40u8,
-                249u8, 119u8, 10u8, 110u8, 79u8, 248u8, 182u8, 173u8, 89u8, 161u8, 171u8,
-                91u8, 195u8, 204u8, 154u8, 47u8, 231u8, 181u8, 41u8, 64u8, 171u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    250u8, 170u8, 88u8, 218u8, 98u8, 17u8, 116u8, 178u8, 166u8, 9u8, 40u8, 249u8,
+                    119u8, 10u8, 110u8, 79u8, 248u8, 182u8, 173u8, 89u8, 161u8, 171u8, 91u8, 195u8,
+                    204u8, 154u8, 47u8, 231u8, 181u8, 41u8, 64u8, 171u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -684,13 +660,11 @@ event RemovePauser(address account);
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -714,9 +688,7 @@ event RemovePauser(address account);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 Ok(())
             }
         }
@@ -737,12 +709,11 @@ event RemovePauser(address account);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `SwapPauser(address,address)` and selector `0x3b13241d00fed42521a881fa11572547b2f695930d5bdcda93c07b28781b041e`.
-```solidity
-event SwapPauser(address oldAccount, address newAccount);
-```*/
+    ```solidity
+    event SwapPauser(address oldAccount, address newAccount);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -770,16 +741,15 @@ event SwapPauser(address oldAccount, address newAccount);
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Address,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "SwapPauser(address,address)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                59u8, 19u8, 36u8, 29u8, 0u8, 254u8, 212u8, 37u8, 33u8, 168u8, 129u8,
-                250u8, 17u8, 87u8, 37u8, 71u8, 178u8, 246u8, 149u8, 147u8, 13u8, 91u8,
-                220u8, 218u8, 147u8, 192u8, 123u8, 40u8, 120u8, 27u8, 4u8, 30u8,
-            ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    59u8, 19u8, 36u8, 29u8, 0u8, 254u8, 212u8, 37u8, 33u8, 168u8, 129u8, 250u8,
+                    17u8, 87u8, 37u8, 71u8, 178u8, 246u8, 149u8, 147u8, 13u8, 91u8, 220u8, 218u8,
+                    147u8, 192u8, 123u8, 40u8, 120u8, 27u8, 4u8, 30u8,
+                ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -797,13 +767,11 @@ event SwapPauser(address oldAccount, address newAccount);
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
@@ -830,9 +798,7 @@ event SwapPauser(address oldAccount, address newAccount);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 Ok(())
             }
         }
@@ -853,12 +819,11 @@ event SwapPauser(address oldAccount, address newAccount);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `addPauser(address)` and selector `0x82dc1ec4`.
-```solidity
-function addPauser(address account) external;
-```*/
+    ```solidity
+    function addPauser(address account) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct addPauserCall {
@@ -879,14 +844,13 @@ function addPauser(address account) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -910,14 +874,13 @@ function addPauser(address account) external;
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -940,23 +903,17 @@ function addPauser(address account) external;
             }
         }
         impl addPauserReturn {
-            fn _tokenize(
-                &self,
-            ) -> <addPauserCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+            fn _tokenize(&self) -> <addPauserCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 ()
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for addPauserCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = addPauserReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "addPauser(address)";
             const SELECTOR: [u8; 4] = [130u8, 220u8, 30u8, 196u8];
             #[inline]
@@ -979,33 +936,27 @@ function addPauser(address account) external;
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getVersion()` and selector `0x0d8e6e2c`.
-```solidity
-function getVersion() external pure returns (string memory);
-```*/
+    ```solidity
+    function getVersion() external pure returns (string memory);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getVersionCall;
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getVersion()`](getVersionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -1023,14 +974,13 @@ function getVersion() external pure returns (string memory);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1054,14 +1004,13 @@ function getVersion() external pure returns (string memory);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::String,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1086,14 +1035,10 @@ function getVersion() external pure returns (string memory);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getVersionCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::String;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::String,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getVersion()";
             const SELECTOR: [u8; 4] = [13u8, 142u8, 110u8, 44u8];
             #[inline]
@@ -1108,50 +1053,41 @@ function getVersion() external pure returns (string memory);
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
+                (<alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(ret),)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: getVersionReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: getVersionReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: getVersionReturn = r.into();
+                    r._0
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `isPauser(address)` and selector `0x46fbf68e`.
-```solidity
-function isPauser(address account) external view returns (bool);
-```*/
+    ```solidity
+    function isPauser(address account) external view returns (bool);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isPauserCall {
         #[allow(missing_docs)]
         pub account: alloy::sol_types::private::Address,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`isPauser(address)`](isPauserCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -1169,14 +1105,13 @@ function isPauser(address account) external view returns (bool);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1200,14 +1135,13 @@ function isPauser(address account) external view returns (bool);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (bool,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1232,14 +1166,10 @@ function isPauser(address account) external view returns (bool);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for isPauserCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = bool;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "isPauser(address)";
             const SELECTOR: [u8; 4] = [70u8, 251u8, 246u8, 142u8];
             #[inline]
@@ -1258,42 +1188,34 @@ function isPauser(address account) external view returns (bool);
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
+                (<alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(ret),)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: isPauserReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: isPauserReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: isPauserReturn = r.into();
+                    r._0
+                })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `removePauser(address)` and selector `0x6b2c0f55`.
-```solidity
-function removePauser(address account) external;
-```*/
+    ```solidity
+    function removePauser(address account) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct removePauserCall {
@@ -1314,14 +1236,13 @@ function removePauser(address account) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1345,14 +1266,13 @@ function removePauser(address account) external;
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1375,23 +1295,17 @@ function removePauser(address account) external;
             }
         }
         impl removePauserReturn {
-            fn _tokenize(
-                &self,
-            ) -> <removePauserCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+            fn _tokenize(&self) -> <removePauserCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 ()
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for removePauserCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = removePauserReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "removePauser(address)";
             const SELECTOR: [u8; 4] = [107u8, 44u8, 15u8, 85u8];
             #[inline]
@@ -1414,28 +1328,23 @@ function removePauser(address account) external;
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `swapPauser(address,address)` and selector `0x5c1d802b`.
-```solidity
-function swapPauser(address oldAccount, address newAccount) external;
-```*/
+    ```solidity
+    function swapPauser(address oldAccount, address newAccount) external;
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct swapPauserCall {
@@ -1458,6 +1367,7 @@ function swapPauser(address oldAccount, address newAccount) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Address,
@@ -1469,9 +1379,7 @@ function swapPauser(address oldAccount, address newAccount) external;
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1498,14 +1406,13 @@ function swapPauser(address oldAccount, address newAccount) external;
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1528,9 +1435,7 @@ function swapPauser(address oldAccount, address newAccount) external;
             }
         }
         impl swapPauserReturn {
-            fn _tokenize(
-                &self,
-            ) -> <swapPauserCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+            fn _tokenize(&self) -> <swapPauserCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 ()
             }
         }
@@ -1540,14 +1445,10 @@ function swapPauser(address oldAccount, address newAccount) external;
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             type Return = swapPauserReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "swapPauser(address,address)";
             const SELECTOR: [u8; 4] = [92u8, 29u8, 128u8, 43u8];
             #[inline]
@@ -1573,25 +1474,20 @@ function swapPauser(address oldAccount, address newAccount) external;
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
     ///Container for all the [`PauserSet`](self) function calls.
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive()]
+    #[derive(Clone, serde::Serialize, serde::Deserialize)]
     pub enum PauserSetCalls {
         #[allow(missing_docs)]
         addPauser(addPauserCall),
@@ -1604,7 +1500,6 @@ function swapPauser(address oldAccount, address newAccount) external;
         #[allow(missing_docs)]
         swapPauser(swapPauserCall),
     }
-    #[automatically_derived]
     impl PauserSetCalls {
         /// All the selectors of this enum.
         ///
@@ -1619,6 +1514,40 @@ function swapPauser(address oldAccount, address newAccount) external;
             [107u8, 44u8, 15u8, 85u8],
             [130u8, 220u8, 30u8, 196u8],
         ];
+        /// The names of the variants in the same order as `SELECTORS`.
+        pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(getVersion),
+            ::core::stringify!(isPauser),
+            ::core::stringify!(swapPauser),
+            ::core::stringify!(removePauser),
+            ::core::stringify!(addPauser),
+        ];
+        /// The signatures in the same order as `SELECTORS`.
+        pub const SIGNATURES: &'static [&'static str] = &[
+            <getVersionCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <isPauserCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <swapPauserCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <removePauserCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <addPauserCall as alloy_sol_types::SolCall>::SIGNATURE,
+        ];
+        /// Returns the signature for the given selector, if known.
+        #[inline]
+        pub fn signature_by_selector(
+            selector: [u8; 4usize],
+        ) -> ::core::option::Option<&'static str> {
+            match Self::SELECTORS.binary_search(&selector) {
+                ::core::result::Result::Ok(idx) => {
+                    ::core::option::Option::Some(Self::SIGNATURES[idx])
+                }
+                ::core::result::Result::Err(_) => ::core::option::Option::None,
+            }
+        }
+        /// Returns the enum variant name for the given selector, if known.
+        #[inline]
+        pub fn name_by_selector(selector: [u8; 4usize]) -> ::core::option::Option<&'static str> {
+            let sig = Self::signature_by_selector(selector)?;
+            sig.split_once('(').map(|(name, _)| name)
+        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for PauserSetCalls {
@@ -1628,19 +1557,11 @@ function swapPauser(address oldAccount, address newAccount) external;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
-                Self::addPauser(_) => {
-                    <addPauserCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::getVersion(_) => {
-                    <getVersionCall as alloy_sol_types::SolCall>::SELECTOR
-                }
+                Self::addPauser(_) => <addPauserCall as alloy_sol_types::SolCall>::SELECTOR,
+                Self::getVersion(_) => <getVersionCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::isPauser(_) => <isPauserCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::removePauser(_) => {
-                    <removePauserCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::swapPauser(_) => {
-                    <swapPauserCall as alloy_sol_types::SolCall>::SELECTOR
-                }
+                Self::removePauser(_) => <removePauserCall as alloy_sol_types::SolCall>::SELECTOR,
+                Self::swapPauser(_) => <swapPauserCall as alloy_sol_types::SolCall>::SELECTOR,
             }
         }
         #[inline]
@@ -1653,20 +1574,11 @@ function swapPauser(address oldAccount, address newAccount) external;
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(
-            selector: [u8; 4],
-            data: &[u8],
-        ) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<PauserSetCalls>] = &[
+        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<PauserSetCalls>] = &[
                 {
-                    fn getVersion(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<PauserSetCalls> {
-                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn getVersion(data: &[u8]) -> alloy_sol_types::Result<PauserSetCalls> {
+                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(PauserSetCalls::getVersion)
                     }
                     getVersion
@@ -1679,31 +1591,21 @@ function swapPauser(address oldAccount, address newAccount) external;
                     isPauser
                 },
                 {
-                    fn swapPauser(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<PauserSetCalls> {
-                        <swapPauserCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn swapPauser(data: &[u8]) -> alloy_sol_types::Result<PauserSetCalls> {
+                        <swapPauserCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(PauserSetCalls::swapPauser)
                     }
                     swapPauser
                 },
                 {
-                    fn removePauser(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<PauserSetCalls> {
-                        <removePauserCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn removePauser(data: &[u8]) -> alloy_sol_types::Result<PauserSetCalls> {
+                        <removePauserCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(PauserSetCalls::removePauser)
                     }
                     removePauser
                 },
                 {
-                    fn addPauser(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<PauserSetCalls> {
+                    fn addPauser(data: &[u8]) -> alloy_sol_types::Result<PauserSetCalls> {
                         <addPauserCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(PauserSetCalls::addPauser)
                     }
@@ -1711,12 +1613,10 @@ function swapPauser(address oldAccount, address newAccount) external;
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_SHIMS[idx](data)
         }
@@ -1728,68 +1628,51 @@ function swapPauser(address oldAccount, address newAccount) external;
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<PauserSetCalls>] = &[
+            )
+                -> alloy_sol_types::Result<PauserSetCalls>] = &[
                 {
-                    fn getVersion(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<PauserSetCalls> {
-                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn getVersion(data: &[u8]) -> alloy_sol_types::Result<PauserSetCalls> {
+                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(PauserSetCalls::getVersion)
                     }
                     getVersion
                 },
                 {
                     fn isPauser(data: &[u8]) -> alloy_sol_types::Result<PauserSetCalls> {
-                        <isPauserCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                        <isPauserCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(PauserSetCalls::isPauser)
                     }
                     isPauser
                 },
                 {
-                    fn swapPauser(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<PauserSetCalls> {
-                        <swapPauserCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn swapPauser(data: &[u8]) -> alloy_sol_types::Result<PauserSetCalls> {
+                        <swapPauserCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(PauserSetCalls::swapPauser)
                     }
                     swapPauser
                 },
                 {
-                    fn removePauser(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<PauserSetCalls> {
+                    fn removePauser(data: &[u8]) -> alloy_sol_types::Result<PauserSetCalls> {
                         <removePauserCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(PauserSetCalls::removePauser)
+                            data,
+                        )
+                        .map(PauserSetCalls::removePauser)
                     }
                     removePauser
                 },
                 {
-                    fn addPauser(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<PauserSetCalls> {
-                        <addPauserCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn addPauser(data: &[u8]) -> alloy_sol_types::Result<PauserSetCalls> {
+                        <addPauserCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(PauserSetCalls::addPauser)
                     }
                     addPauser
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -1806,9 +1689,7 @@ function swapPauser(address oldAccount, address newAccount) external;
                     <isPauserCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::removePauser(inner) => {
-                    <removePauserCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <removePauserCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::swapPauser(inner) => {
                     <swapPauserCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
@@ -1819,41 +1700,25 @@ function swapPauser(address oldAccount, address newAccount) external;
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
                 Self::addPauser(inner) => {
-                    <addPauserCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <addPauserCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::getVersion(inner) => {
-                    <getVersionCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <getVersionCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::isPauser(inner) => {
-                    <isPauserCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <isPauserCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::removePauser(inner) => {
-                    <removePauserCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <removePauserCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::swapPauser(inner) => {
-                    <swapPauserCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <swapPauserCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
             }
         }
     }
     ///Container for all the [`PauserSet`](self) custom errors.
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Debug, PartialEq, Eq, Hash)]
+    #[derive(Clone, serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq, Hash)]
     pub enum PauserSetErrors {
         #[allow(missing_docs)]
         AccountAlreadyPauser(AccountAlreadyPauser),
@@ -1864,7 +1729,6 @@ function swapPauser(address oldAccount, address newAccount) external;
         #[allow(missing_docs)]
         NotHostOwner(NotHostOwner),
     }
-    #[automatically_derived]
     impl PauserSetErrors {
         /// All the selectors of this enum.
         ///
@@ -1878,6 +1742,38 @@ function swapPauser(address oldAccount, address newAccount) external;
             [57u8, 70u8, 49u8, 9u8],
             [94u8, 51u8, 201u8, 54u8],
         ];
+        /// The names of the variants in the same order as `SELECTORS`.
+        pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(NotHostOwner),
+            ::core::stringify!(InvalidNullPauser),
+            ::core::stringify!(AccountNotPauser),
+            ::core::stringify!(AccountAlreadyPauser),
+        ];
+        /// The signatures in the same order as `SELECTORS`.
+        pub const SIGNATURES: &'static [&'static str] = &[
+            <NotHostOwner as alloy_sol_types::SolError>::SIGNATURE,
+            <InvalidNullPauser as alloy_sol_types::SolError>::SIGNATURE,
+            <AccountNotPauser as alloy_sol_types::SolError>::SIGNATURE,
+            <AccountAlreadyPauser as alloy_sol_types::SolError>::SIGNATURE,
+        ];
+        /// Returns the signature for the given selector, if known.
+        #[inline]
+        pub fn signature_by_selector(
+            selector: [u8; 4usize],
+        ) -> ::core::option::Option<&'static str> {
+            match Self::SELECTORS.binary_search(&selector) {
+                ::core::result::Result::Ok(idx) => {
+                    ::core::option::Option::Some(Self::SIGNATURES[idx])
+                }
+                ::core::result::Result::Err(_) => ::core::option::Option::None,
+            }
+        }
+        /// Returns the enum variant name for the given selector, if known.
+        #[inline]
+        pub fn name_by_selector(selector: [u8; 4usize]) -> ::core::option::Option<&'static str> {
+            let sig = Self::signature_by_selector(selector)?;
+            sig.split_once('(').map(|(name, _)| name)
+        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for PauserSetErrors {
@@ -1896,9 +1792,7 @@ function swapPauser(address oldAccount, address newAccount) external;
                 Self::InvalidNullPauser(_) => {
                     <InvalidNullPauser as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::NotHostOwner(_) => {
-                    <NotHostOwner as alloy_sol_types::SolError>::SELECTOR
-                }
+                Self::NotHostOwner(_) => <NotHostOwner as alloy_sol_types::SolError>::SELECTOR,
             }
         }
         #[inline]
@@ -1911,40 +1805,25 @@ function swapPauser(address oldAccount, address newAccount) external;
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(
-            selector: [u8; 4],
-            data: &[u8],
-        ) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<PauserSetErrors>] = &[
+        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<PauserSetErrors>] = &[
                 {
-                    fn NotHostOwner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<PauserSetErrors> {
+                    fn NotHostOwner(data: &[u8]) -> alloy_sol_types::Result<PauserSetErrors> {
                         <NotHostOwner as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(PauserSetErrors::NotHostOwner)
                     }
                     NotHostOwner
                 },
                 {
-                    fn InvalidNullPauser(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<PauserSetErrors> {
-                        <InvalidNullPauser as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                    fn InvalidNullPauser(data: &[u8]) -> alloy_sol_types::Result<PauserSetErrors> {
+                        <InvalidNullPauser as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(PauserSetErrors::InvalidNullPauser)
                     }
                     InvalidNullPauser
                 },
                 {
-                    fn AccountNotPauser(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<PauserSetErrors> {
-                        <AccountNotPauser as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                    fn AccountNotPauser(data: &[u8]) -> alloy_sol_types::Result<PauserSetErrors> {
+                        <AccountNotPauser as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(PauserSetErrors::AccountNotPauser)
                     }
                     AccountNotPauser
@@ -1953,21 +1832,17 @@ function swapPauser(address oldAccount, address newAccount) external;
                     fn AccountAlreadyPauser(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<PauserSetErrors> {
-                        <AccountAlreadyPauser as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <AccountAlreadyPauser as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(PauserSetErrors::AccountAlreadyPauser)
                     }
                     AccountAlreadyPauser
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_SHIMS[idx](data)
         }
@@ -1979,37 +1854,30 @@ function swapPauser(address oldAccount, address newAccount) external;
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<PauserSetErrors>] = &[
+            )
+                -> alloy_sol_types::Result<PauserSetErrors>] = &[
                 {
-                    fn NotHostOwner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<PauserSetErrors> {
-                        <NotHostOwner as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn NotHostOwner(data: &[u8]) -> alloy_sol_types::Result<PauserSetErrors> {
+                        <NotHostOwner as alloy_sol_types::SolError>::abi_decode_raw_validate(data)
                             .map(PauserSetErrors::NotHostOwner)
                     }
                     NotHostOwner
                 },
                 {
-                    fn InvalidNullPauser(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<PauserSetErrors> {
+                    fn InvalidNullPauser(data: &[u8]) -> alloy_sol_types::Result<PauserSetErrors> {
                         <InvalidNullPauser as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(PauserSetErrors::InvalidNullPauser)
+                            data,
+                        )
+                        .map(PauserSetErrors::InvalidNullPauser)
                     }
                     InvalidNullPauser
                 },
                 {
-                    fn AccountNotPauser(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<PauserSetErrors> {
+                    fn AccountNotPauser(data: &[u8]) -> alloy_sol_types::Result<PauserSetErrors> {
                         <AccountNotPauser as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(PauserSetErrors::AccountNotPauser)
+                            data,
+                        )
+                        .map(PauserSetErrors::AccountNotPauser)
                     }
                     AccountNotPauser
                 },
@@ -2026,12 +1894,10 @@ function swapPauser(address oldAccount, address newAccount) external;
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -2039,19 +1905,13 @@ function swapPauser(address oldAccount, address newAccount) external;
         fn abi_encoded_size(&self) -> usize {
             match self {
                 Self::AccountAlreadyPauser(inner) => {
-                    <AccountAlreadyPauser as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <AccountAlreadyPauser as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::AccountNotPauser(inner) => {
-                    <AccountNotPauser as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <AccountNotPauser as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::InvalidNullPauser(inner) => {
-                    <InvalidNullPauser as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <InvalidNullPauser as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::NotHostOwner(inner) => {
                     <NotHostOwner as alloy_sol_types::SolError>::abi_encoded_size(inner)
@@ -2062,35 +1922,22 @@ function swapPauser(address oldAccount, address newAccount) external;
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
                 Self::AccountAlreadyPauser(inner) => {
-                    <AccountAlreadyPauser as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <AccountAlreadyPauser as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::AccountNotPauser(inner) => {
-                    <AccountNotPauser as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <AccountNotPauser as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::InvalidNullPauser(inner) => {
-                    <InvalidNullPauser as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <InvalidNullPauser as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::NotHostOwner(inner) => {
-                    <NotHostOwner as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <NotHostOwner as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
             }
         }
     }
     ///Container for all the [`PauserSet`](self) events.
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Debug, PartialEq, Eq, Hash)]
+    #[derive(Clone, serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq, Hash)]
     pub enum PauserSetEvents {
         #[allow(missing_docs)]
         AddPauser(AddPauser),
@@ -2099,7 +1946,6 @@ function swapPauser(address oldAccount, address newAccount) external;
         #[allow(missing_docs)]
         SwapPauser(SwapPauser),
     }
-    #[automatically_derived]
     impl PauserSetEvents {
         /// All the selectors of this enum.
         ///
@@ -2109,21 +1955,51 @@ function swapPauser(address oldAccount, address newAccount) external;
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                14u8, 187u8, 242u8, 19u8, 167u8, 244u8, 98u8, 47u8, 32u8, 54u8, 63u8,
-                149u8, 100u8, 219u8, 154u8, 222u8, 3u8, 121u8, 133u8, 33u8, 111u8, 92u8,
-                89u8, 2u8, 123u8, 152u8, 210u8, 94u8, 186u8, 159u8, 63u8, 64u8,
+                14u8, 187u8, 242u8, 19u8, 167u8, 244u8, 98u8, 47u8, 32u8, 54u8, 63u8, 149u8, 100u8,
+                219u8, 154u8, 222u8, 3u8, 121u8, 133u8, 33u8, 111u8, 92u8, 89u8, 2u8, 123u8, 152u8,
+                210u8, 94u8, 186u8, 159u8, 63u8, 64u8,
             ],
             [
-                59u8, 19u8, 36u8, 29u8, 0u8, 254u8, 212u8, 37u8, 33u8, 168u8, 129u8,
-                250u8, 17u8, 87u8, 37u8, 71u8, 178u8, 246u8, 149u8, 147u8, 13u8, 91u8,
-                220u8, 218u8, 147u8, 192u8, 123u8, 40u8, 120u8, 27u8, 4u8, 30u8,
+                59u8, 19u8, 36u8, 29u8, 0u8, 254u8, 212u8, 37u8, 33u8, 168u8, 129u8, 250u8, 17u8,
+                87u8, 37u8, 71u8, 178u8, 246u8, 149u8, 147u8, 13u8, 91u8, 220u8, 218u8, 147u8,
+                192u8, 123u8, 40u8, 120u8, 27u8, 4u8, 30u8,
             ],
             [
-                250u8, 170u8, 88u8, 218u8, 98u8, 17u8, 116u8, 178u8, 166u8, 9u8, 40u8,
-                249u8, 119u8, 10u8, 110u8, 79u8, 248u8, 182u8, 173u8, 89u8, 161u8, 171u8,
-                91u8, 195u8, 204u8, 154u8, 47u8, 231u8, 181u8, 41u8, 64u8, 171u8,
+                250u8, 170u8, 88u8, 218u8, 98u8, 17u8, 116u8, 178u8, 166u8, 9u8, 40u8, 249u8,
+                119u8, 10u8, 110u8, 79u8, 248u8, 182u8, 173u8, 89u8, 161u8, 171u8, 91u8, 195u8,
+                204u8, 154u8, 47u8, 231u8, 181u8, 41u8, 64u8, 171u8,
             ],
         ];
+        /// The names of the variants in the same order as `SELECTORS`.
+        pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(AddPauser),
+            ::core::stringify!(SwapPauser),
+            ::core::stringify!(RemovePauser),
+        ];
+        /// The signatures in the same order as `SELECTORS`.
+        pub const SIGNATURES: &'static [&'static str] = &[
+            <AddPauser as alloy_sol_types::SolEvent>::SIGNATURE,
+            <SwapPauser as alloy_sol_types::SolEvent>::SIGNATURE,
+            <RemovePauser as alloy_sol_types::SolEvent>::SIGNATURE,
+        ];
+        /// Returns the signature for the given selector, if known.
+        #[inline]
+        pub fn signature_by_selector(
+            selector: [u8; 32usize],
+        ) -> ::core::option::Option<&'static str> {
+            match Self::SELECTORS.binary_search(&selector) {
+                ::core::result::Result::Ok(idx) => {
+                    ::core::option::Option::Some(Self::SIGNATURES[idx])
+                }
+                ::core::result::Result::Err(_) => ::core::option::Option::None,
+            }
+        }
+        /// Returns the enum variant name for the given selector, if known.
+        #[inline]
+        pub fn name_by_selector(selector: [u8; 32usize]) -> ::core::option::Option<&'static str> {
+            let sig = Self::signature_by_selector(selector)?;
+            sig.split_once('(').map(|(name, _)| name)
+        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for PauserSetEvents {
@@ -2135,37 +2011,26 @@ function swapPauser(address oldAccount, address newAccount) external;
         ) -> alloy_sol_types::Result<Self> {
             match topics.first().copied() {
                 Some(<AddPauser as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <AddPauser as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                    <AddPauser as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::AddPauser)
                 }
                 Some(<RemovePauser as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <RemovePauser as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                    <RemovePauser as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::RemovePauser)
                 }
                 Some(<SwapPauser as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <SwapPauser as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                    <SwapPauser as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::SwapPauser)
                 }
-                _ => {
-                    alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
-                        name: <Self as alloy_sol_types::SolEventInterface>::NAME,
-                        log: alloy_sol_types::private::Box::new(
-                            alloy_sol_types::private::LogData::new_unchecked(
-                                topics.to_vec(),
-                                data.to_vec().into(),
-                            ),
+                _ => alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
+                    name: <Self as alloy_sol_types::SolEventInterface>::NAME,
+                    log: alloy_sol_types::private::Box::new(
+                        alloy_sol_types::private::LogData::new_unchecked(
+                            topics.to_vec(),
+                            data.to_vec().into(),
                         ),
-                    })
-                }
+                    ),
+                }),
             }
         }
     }
@@ -2173,9 +2038,7 @@ function swapPauser(address oldAccount, address newAccount) external;
     impl alloy_sol_types::private::IntoLogData for PauserSetEvents {
         fn to_log_data(&self) -> alloy_sol_types::private::LogData {
             match self {
-                Self::AddPauser(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
+                Self::AddPauser(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
                 Self::RemovePauser(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
@@ -2201,56 +2064,53 @@ function swapPauser(address oldAccount, address newAccount) external;
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`PauserSet`](self) contract instance.
 
-See the [wrapper's documentation](`PauserSetInstance`) for more details.*/
+    See the [wrapper's documentation](`PauserSetInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
         address: alloy_sol_types::private::Address,
-        provider: P,
+        __provider: P,
     ) -> PauserSetInstance<P, N> {
-        PauserSetInstance::<P, N>::new(address, provider)
+        PauserSetInstance::<P, N>::new(address, __provider)
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+    Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<PauserSetInstance<P, N>>,
-    > {
-        PauserSetInstance::<P, N>::deploy(provider)
+    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
+        __provider: P,
+    ) -> impl ::core::future::Future<Output = alloy_contract::Result<PauserSetInstance<P, N>>> {
+        PauserSetInstance::<P, N>::deploy(__provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+    and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        PauserSetInstance::<P, N>::deploy_builder(provider)
+    >(
+        __provider: P,
+    ) -> alloy_contract::RawCallBuilder<P, N> {
+        PauserSetInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`PauserSet`](self) instance.
 
-Contains type-safe methods for interacting with an on-chain instance of the
-[`PauserSet`](self) contract located at a given `address`, using a given
-provider `P`.
+    Contains type-safe methods for interacting with an on-chain instance of the
+    [`PauserSet`](self) contract located at a given `address`, using a given
+    provider `P`.
 
-If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-be used to deploy a new instance of the contract.
+    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+    be used to deploy a new instance of the contract.
 
-See the [module-level documentation](self) for all the available methods.*/
+    See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct PauserSetInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -2261,51 +2121,46 @@ See the [module-level documentation](self) for all the available methods.*/
     impl<P, N> ::core::fmt::Debug for PauserSetInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("PauserSetInstance").field(&self.address).finish()
+            f.debug_tuple("PauserSetInstance")
+                .field(&self.address)
+                .finish()
         }
     }
     /// Instantiation and getters/setters.
-    #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > PauserSetInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        PauserSetInstance<P, N>
+    {
         /**Creates a new wrapper around an on-chain [`PauserSet`](self) contract instance.
 
-See the [wrapper's documentation](`PauserSetInstance`) for more details.*/
+        See the [wrapper's documentation](`PauserSetInstance`) for more details.*/
         #[inline]
-        pub const fn new(
-            address: alloy_sol_types::private::Address,
-            provider: P,
-        ) -> Self {
+        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
             Self {
                 address,
-                provider,
+                provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+        Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
-        pub async fn deploy(
-            provider: P,
-        ) -> alloy_contract::Result<PauserSetInstance<P, N>> {
-            let call_builder = Self::deploy_builder(provider);
+        pub async fn deploy(__provider: P) -> alloy_contract::Result<PauserSetInstance<P, N>> {
+            let call_builder = Self::deploy_builder(__provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+        and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
-        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
-                provider,
+                __provider,
                 ::core::clone::Clone::clone(&BYTECODE),
             )
         }
@@ -2342,11 +2197,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Function calls.
-    #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > PauserSetInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        PauserSetInstance<P, N>
+    {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -2365,9 +2218,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             self.call_builder(&addPauserCall { account })
         }
         ///Creates a new call builder for the [`getVersion`] function.
-        pub fn getVersion(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, getVersionCall, N> {
+        pub fn getVersion(&self) -> alloy_contract::SolCallBuilder<&P, getVersionCall, N> {
             self.call_builder(&getVersionCall)
         }
         ///Creates a new call builder for the [`isPauser`] function.
@@ -2390,20 +2241,16 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             oldAccount: alloy::sol_types::private::Address,
             newAccount: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, swapPauserCall, N> {
-            self.call_builder(
-                &swapPauserCall {
-                    oldAccount,
-                    newAccount,
-                },
-            )
+            self.call_builder(&swapPauserCall {
+                oldAccount,
+                newAccount,
+            })
         }
     }
     /// Event filters.
-    #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > PauserSetInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        PauserSetInstance<P, N>
+    {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
