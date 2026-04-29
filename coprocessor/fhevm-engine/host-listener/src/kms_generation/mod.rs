@@ -254,11 +254,7 @@ async fn download_and_store_key_activation<
                 .map(|bytes| extract_server_key_without_ns(bytes))
                 .transpose()?;
             Ok(set_ready_key_activation(
-                tx,
-                activation,
-                server_key,
-                sks_key,
-                public_key,
+                tx, activation, server_key, sks_key, public_key,
             )
             .await?)
         }

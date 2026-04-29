@@ -275,7 +275,9 @@ async fn execute_verify_proof_routine(
     {
         let started_at = SystemTime::now();
         let request_id: i64 = row.zk_proof_id;
-        let input: Vec<u8> = row.input.ok_or(ExecutionError::NullInput(row.zk_proof_id))?;
+        let input: Vec<u8> = row
+            .input
+            .ok_or(ExecutionError::NullInput(row.zk_proof_id))?;
         let host_chain_id_raw: i64 = row.chain_id;
         let host_chain_id = ChainId::try_from(host_chain_id_raw)
             .map_err(|_| ExecutionError::UnknownChainId(host_chain_id_raw))?;
@@ -370,7 +372,8 @@ async fn execute_verify_proof_routine(
                 WHERE zk_proof_id = $3",
                 handles_bytes,
                 verified,
-                request_id)
+                request_id
+            )
             .execute(&mut *txn)
             .await?;
 
@@ -380,9 +383,12 @@ async fn execute_verify_proof_routine(
         .await?;
 
         // Notify
-        sqlx::query!("SELECT pg_notify($1, '')", conf.notify_database_channel.clone())
-            .execute(&mut *txn)
-            .await?;
+        sqlx::query!(
+            "SELECT pg_notify($1, '')",
+            conf.notify_database_channel.clone()
+        )
+        .execute(&mut *txn)
+        .await?;
 
         txn.commit().await?;
 

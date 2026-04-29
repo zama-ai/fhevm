@@ -480,10 +480,7 @@ pub async fn set_ready_key_activation(
     public_key: Option<Vec<u8>>,
 ) -> anyhow::Result<()> {
     let sns_pk_oid = if let Some(sns_pk) = sns_pk {
-        Some(
-            write_large_object_in_chunks_tx(tx, &sns_pk, CHUNK_SIZE)
-                .await?,
-        )
+        Some(write_large_object_in_chunks_tx(tx, &sns_pk, CHUNK_SIZE).await?)
     } else {
         None
     };

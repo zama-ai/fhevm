@@ -100,9 +100,7 @@ pub async fn fetch_client_key(
     pool: &PgPool,
     key_id_gw: &DbKeyId,
 ) -> anyhow::Result<Option<tfhe::ClientKey>> {
-    let keys = sqlx::query!(
-        "SELECT cks_key FROM keys WHERE key_id_gw = $1",
-        key_id_gw)
+    let keys = sqlx::query!("SELECT cks_key FROM keys WHERE key_id_gw = $1", key_id_gw)
         .fetch_optional(pool)
         .await?;
 
