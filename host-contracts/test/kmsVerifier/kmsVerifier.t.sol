@@ -373,7 +373,10 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
 
         // Rotate again to a single-signer context with threshold=1 (now current)
         vm.prank(owner);
-        protocolConfig.defineNewKmsContext(_makeKmsNodesFromSigners(_makeSingleSignerList(signer3)), _defaultThresholds());
+        protocolConfig.defineNewKmsContext(
+            _makeKmsNodesFromSigners(_makeSingleSignerList(signer3)),
+            _defaultThresholds()
+        );
         assertEq(protocolConfig.getPublicDecryptionThreshold(), 1);
 
         // Verify against historical context with only 1 signature — must fail (threshold=2)

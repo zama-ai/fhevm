@@ -1153,7 +1153,10 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         _expectMigrationRevert(
             fixture,
-            abi.encodeWithSelector(KMSGeneration.InvalidMigrationConsensusState.selector, fixture.state.activePrepKeygenId)
+            abi.encodeWithSelector(
+                KMSGeneration.InvalidMigrationConsensusState.selector,
+                fixture.state.activePrepKeygenId
+            )
         );
     }
 
@@ -1238,30 +1241,21 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         MigrationFixture memory fixture = _deployMigrationFixture();
         fixture.state.keyCounter++;
 
-        _expectMigrationRevert(
-            fixture,
-            abi.encodeWithSelector(KMSGeneration.InvalidMigrationCounterState.selector)
-        );
+        _expectMigrationRevert(fixture, abi.encodeWithSelector(KMSGeneration.InvalidMigrationCounterState.selector));
     }
 
     function test_migrationRejectsCrsCounterAheadOfImportedState() public {
         MigrationFixture memory fixture = _deployMigrationFixture();
         fixture.state.crsCounter++;
 
-        _expectMigrationRevert(
-            fixture,
-            abi.encodeWithSelector(KMSGeneration.InvalidMigrationCounterState.selector)
-        );
+        _expectMigrationRevert(fixture, abi.encodeWithSelector(KMSGeneration.InvalidMigrationCounterState.selector));
     }
 
     function test_migrationRejectsPrepCounterAheadOfImportedState() public {
         MigrationFixture memory fixture = _deployMigrationFixture();
         fixture.state.prepKeygenCounter++;
 
-        _expectMigrationRevert(
-            fixture,
-            abi.encodeWithSelector(KMSGeneration.InvalidMigrationCounterState.selector)
-        );
+        _expectMigrationRevert(fixture, abi.encodeWithSelector(KMSGeneration.InvalidMigrationCounterState.selector));
     }
 
     // -----------------------------------------------------------------------
@@ -1312,10 +1306,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         // 4th response should be silently ignored (no ActivateKey event, no revert)
         vm.recordLogs();
         _doKeygenResponse(prepKeygenId, keyId, kmsPk3, kmsTxSender3);
-        _assertNoEventEmitted(
-            IKMSGeneration.ActivateKey.selector,
-            "4th keygen response should not emit ActivateKey"
-        );
+        _assertNoEventEmitted(IKMSGeneration.ActivateKey.selector, "4th keygen response should not emit ActivateKey");
     }
 
     function test_postConsensusCrsgenResponseIgnored() public {
@@ -1334,10 +1325,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         // 4th response should be silently ignored (no ActivateCrs event, no revert)
         vm.recordLogs();
         _doCrsgenResponse(crsId, kmsPk3, kmsTxSender3);
-        _assertNoEventEmitted(
-            IKMSGeneration.ActivateCrs.selector,
-            "4th crsgen response should not emit ActivateCrs"
-        );
+        _assertNoEventEmitted(IKMSGeneration.ActivateCrs.selector, "4th crsgen response should not emit ActivateCrs");
     }
 
     function test_fullKeygenCycleMultiSigner() public {
