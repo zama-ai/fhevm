@@ -3,6 +3,7 @@ use std::time::Duration;
 use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
+use fhevm_engine_common::database::resolve_database_url_from_option;
 use fhevm_engine_common::{metrics_server, telemetry, utils::DatabaseURL};
 use gw_listener::gw_listener::GatewayListener;
 use gw_listener::http_server::HttpServer;
@@ -153,7 +154,7 @@ async fn main() -> anyhow::Result<()> {
     let cancel_token = CancellationToken::new();
 
     let config = ConfigSettings {
-        database_url: conf.database_url.clone().unwrap_or_default(),
+        database_url: resolve_database_url_from_option(conf.database_url.clone())?,
         database_pool_size: conf.database_pool_size,
         verify_proof_req_db_channel: conf.verify_proof_req_database_channel,
         gw_url: conf.gw_url,

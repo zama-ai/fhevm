@@ -1,0 +1,6 @@
+{
+  "type": "module",
+  "types": "../../../_types/core/actions/base/index.d.ts",
+  "module": "../../../_esm/core/actions/base/index.js",
+  "main": "../../../_cjs/core/actions/base/index.js"
+}

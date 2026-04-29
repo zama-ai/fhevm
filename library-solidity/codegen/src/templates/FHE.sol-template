@@ -99,6 +99,71 @@ library FHE {
     //$$ -----------------------------------------------------------------------
 
     /**
+     * @dev Evaluates sum(euint8[] values) and returns the result.
+     */
+    function sum(euint8[] memory values) internal returns (euint8) {
+        bytes32[] memory handles = new bytes32[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            euint8 v = values[i];
+            if (!isInitialized(v)) v = asEuint8(0);
+            handles[i] = euint8.unwrap(v);
+        }
+        return euint8.wrap(Impl.sum(handles, FheType.Uint8));
+    }
+
+    /**
+     * @dev Evaluates sum(euint16[] values) and returns the result.
+     */
+    function sum(euint16[] memory values) internal returns (euint16) {
+        bytes32[] memory handles = new bytes32[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            euint16 v = values[i];
+            if (!isInitialized(v)) v = asEuint16(0);
+            handles[i] = euint16.unwrap(v);
+        }
+        return euint16.wrap(Impl.sum(handles, FheType.Uint16));
+    }
+
+    /**
+     * @dev Evaluates sum(euint32[] values) and returns the result.
+     */
+    function sum(euint32[] memory values) internal returns (euint32) {
+        bytes32[] memory handles = new bytes32[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            euint32 v = values[i];
+            if (!isInitialized(v)) v = asEuint32(0);
+            handles[i] = euint32.unwrap(v);
+        }
+        return euint32.wrap(Impl.sum(handles, FheType.Uint32));
+    }
+
+    /**
+     * @dev Evaluates sum(euint64[] values) and returns the result.
+     */
+    function sum(euint64[] memory values) internal returns (euint64) {
+        bytes32[] memory handles = new bytes32[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            euint64 v = values[i];
+            if (!isInitialized(v)) v = asEuint64(0);
+            handles[i] = euint64.unwrap(v);
+        }
+        return euint64.wrap(Impl.sum(handles, FheType.Uint64));
+    }
+
+    /**
+     * @dev Evaluates sum(euint128[] values) and returns the result.
+     */
+    function sum(euint128[] memory values) internal returns (euint128) {
+        bytes32[] memory handles = new bytes32[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            euint128 v = values[i];
+            if (!isInitialized(v)) v = asEuint128(0);
+            handles[i] = euint128.unwrap(v);
+        }
+        return euint128.wrap(Impl.sum(handles, FheType.Uint128));
+    }
+
+    /**
      * @dev This function cleans the transient storage for the ACL (accounts) and the InputVerifier
      *      (input proofs).
      *      This could be useful for integration with Account Abstraction when bundling several

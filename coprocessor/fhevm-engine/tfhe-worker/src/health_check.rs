@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use fhevm_engine_common::database::connect_options_for_database_url;
 use fhevm_engine_common::healthz_server::{
     default_get_version, HealthCheckService, HealthStatus, Version,
 };
@@ -44,14 +45,22 @@ impl HealthCheckService for HealthCheck {
         if self.database_heartbeat.is_recent(&CONNECTED_TICK_FRESHNESS) {
             status.set_custom_check("database", true, true);
         } else {
-            let pool = sqlx::postgres::PgPoolOptions::new()
-                .acquire_timeout(Duration::from_secs(5))
-                .max_connections(1)
-                .connect(self.database_url.as_str());
-            if let Ok(pool) = pool.await {
-                status.set_db_connected(&pool).await;
-            } else {
-                status.set_custom_check("database", false, true);
+            match connect_options_for_database_url(&self.database_url).await {
+                Ok(connect_options) => {
+                    let pool = sqlx::postgres::PgPoolOptions::new()
+                        .acquire_timeout(Duration::from_secs(5))
+                        .max_connections(1)
+                        .connect_with(connect_options)
+                        .await;
+                    if let Ok(pool) = pool {
+                        status.set_db_connected(&pool).await;
+                    } else {
+                        status.set_custom_check("database", false, true);
+                    }
+                }
+                Err(_) => {
+                    status.set_custom_check("database", false, true);
+                }
             }
         };
         status

@@ -15,6 +15,10 @@ import {protocolConfigAdd} from "../addresses/FHEVMHostAddresses.sol";
  *          signature verification functions.
  * @dev     The contract uses EIP712UpgradeableCrossChain for cryptographic operations and is deployed using an UUPS proxy.
  */
+/// @dev This contract was migrated from Ownable2StepUpgradeable to ACLOwnable.
+/// Deployed proxies retain residual `_owner` and `_pendingOwner` values in the
+/// Ownable2StepUpgradeable EIP-7201 storage namespace. These slots are unused
+/// by ACLOwnable and have no effect on contract behavior.
 /// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, ACLOwnable {
     /// @notice Returned if the recovered KMS signer is not a valid KMS signer.
@@ -95,7 +99,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
     IProtocolConfig private constant PROTOCOL_CONFIG = IProtocolConfig(protocolConfigAdd);
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.KMSVerifier")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant KMSVerifierStorageLocation =
+    bytes32 private constant KMS_VERIFIER_STORAGE_LOCATION =
         0x7e81a744be86773af8644dd7304fa1dc9350ccabf16cfcaa614ddb78b4ce8900;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -122,7 +126,10 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
 
     /**
      * @notice                  Verifies multiple signatures for a given handlesList and a given decryptedResult.
-     * @dev                     Calls verifySignaturesDigest internally.
+     * @dev                     Calls _verifySignaturesDigestForContext internally.
+     *                           This function is a stateless oracle: it performs no state changes and will return
+     *                           true for the same inputs on every call. Replay protection (e.g., marking a request
+     *                           as fulfilled) is entirely the caller's responsibility.
      * @param handlesList       The list of handles, which where requested to be decrypted.
      * @param decryptedResult   A bytes array representing the abi-encoding of all requested decrypted values.
      * @param decryptionProof   Decryption proof containing KMS signatures and extra data.

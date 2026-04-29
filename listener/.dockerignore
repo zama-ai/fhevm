@@ -1,0 +1,11 @@
+# Exclude everything
+*
+
+# Allow only what cargo needs to build
+!Cargo.toml
+!Cargo.lock
+!crates/listener_core/
+!crates/shared/
+!crates/shared/broker/
+!crates/consumer/
+!crates/test-support/

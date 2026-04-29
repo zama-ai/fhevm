@@ -1,29 +1,35 @@
-{{- if .Values.hostListener.enabled -}}
+{{- range $i, $chain := .Values.chains }}
+{{- if (($chain.hostListener).enabled) }}
+{{- $useLegacyName := $chain.hostListener.useLegacyName | default false -}}
+{{- $deploymentName := ternary (printf "%s-host-listener" $.Release.Name) (printf "%s-host-listener-%s" $.Release.Name $chain.name) $useLegacyName -}}
+{{- $appLabel := ternary "coprocessor-host-listener" (printf "coprocessor-host-listener-%s" $chain.name) $useLegacyName -}}
+{{- $serviceName := coalesce $chain.hostListener.serviceName $.Values.hostListenerShared.args.serviceName (printf "host-listener-%s" $chain.name) -}}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    app: coprocessor-host-listener
-    app.kubernetes.io/name: {{ include "hostListenerName" . }}
-  name: {{ include "hostListenerName" . }}
+    app: {{ $appLabel }}
+    app.kubernetes.io/name: {{ $deploymentName }}
+  name: {{ $deploymentName }}
 spec:
-  replicas: {{ .Values.hostListener.replicas }}
+  replicas: {{ $.Values.hostListenerShared.replicas }}
   selector:
     matchLabels:
-      app: coprocessor-host-listener
-  {{- if .Values.hostListener.updateStrategy }}
+      app: {{ $appLabel }}
+  {{- if $.Values.hostListenerShared.updateStrategy }}
   strategy:
-    {{- toYaml .Values.hostListener.updateStrategy | nindent 4 }}
+    {{- toYaml $.Values.hostListenerShared.updateStrategy | nindent 4 }}
   {{- end }}
   template:
     metadata:
       labels:
-        app: coprocessor-host-listener
-        app.kubernetes.io/name: {{ include "hostListenerName" . }}
-        {{- with .Values.podLabels }}
+        app: {{ $appLabel }}
+        app.kubernetes.io/name: {{ $deploymentName }}
+        {{- with $.Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- with .Values.podAnnotations }}
+      {{- with $.Values.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -31,83 +37,88 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
-      {{- with .Values.hostListener.nodeSelector }}
+      {{- with $.Values.hostListenerShared.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.hostListener.affinity }}
+      {{- with $.Values.hostListenerShared.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.hostListener.tolerations }}
+      {{- with $.Values.hostListenerShared.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if .Values.hostListener.serviceAccountName }}
-      serviceAccountName: {{ .Values.hostListener.serviceAccountName }}
+      {{- if $.Values.hostListenerShared.serviceAccountName }}
+      serviceAccountName: {{ $.Values.hostListenerShared.serviceAccountName }}
       {{- end }}
       containers:
         - name: coprocessor-host-listener
-          image: {{ .Values.hostListener.image.name }}:{{ .Values.hostListener.image.tag }}
+          image: {{ $.Values.hostListenerShared.image.name }}:{{ $.Values.hostListenerShared.image.tag }}
           command: ["host_listener"]
           args:
             - --database-url=$(DATABASE_URL)
             - --url=$(ETHEREUM_RPC_URL)
             - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
             - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
-            - --health-port={{ .Values.hostListener.ports.healthcheck }}
-            - --dependent-ops-max-per-chain={{ int .Values.commonConfig.dependentOpsMaxPerChain }}
-            - --log-level={{ .Values.hostListener.args.logLevel }}
-            - --initial-block-time={{ .Values.hostListener.args.initialBlockTime }}
-            - --reorg-maximum-duration-in-blocks={{ .Values.hostListener.args.reorgMaximumDurationInBlocks }}
-            - --service-name={{ .Values.hostListener.args.serviceName }}
-            - --catchup-finalization-in-blocks={{ .Values.hostListener.args.catchupFinalizationInBlocks }}
+            - --health-port={{ $.Values.hostListenerShared.ports.healthcheck }}
+            - --dependent-ops-max-per-chain={{ int $.Values.commonConfig.dependentOpsMaxPerChain }}
+            - --log-level={{ $.Values.hostListenerShared.args.logLevel }}
+            - --initial-block-time={{ $.Values.hostListenerShared.args.initialBlockTime }}
+            - --reorg-maximum-duration-in-blocks={{ $.Values.hostListenerShared.args.reorgMaximumDurationInBlocks }}
+            - --service-name={{ $serviceName }}
+            - --catchup-finalization-in-blocks={{ $.Values.hostListenerShared.args.catchupFinalizationInBlocks }}
             - --coprocessor-api-key=$(TENANT_API_KEY)
-            {{- with .Values.hostListener.extraArgs }}
+            {{- with $.Values.hostListenerShared.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with $chain.hostListener.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
-            - name: DATABASE_URL
-              value: {{ .Values.commonConfig.databaseUrl | quote }}
-            - name: ETHEREUM_RPC_URL
-              value: {{ .Values.commonConfig.hostChainWsUrl | quote }}
+{{- include "coprocessorDatabaseEnv" $ | nindent 12 }}
+            {{- include "coprocessor.renderChainEnvValue" (dict "name" "ETHEREUM_RPC_URL" "value" $chain.wsUrl "valueFrom" $chain.wsUrlValueFrom "fieldName" "wsUrl" "chainName" $chain.name) | nindent 12 }}
             - name: ACL_CONTRACT_ADDRESS
-              value: {{ required "commonConfig.aclContractAddress is required" .Values.commonConfig.aclContractAddress | quote }}
+              value: {{ required (printf "chains entry %q: aclContractAddress is required" $chain.name) $chain.aclContractAddress | quote }}
             - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
-              value: {{ required "commonConfig.fhevmExecutorContractAddress is required" .Values.commonConfig.fhevmExecutorContractAddress | quote }}
-          {{- if default .Values.commonConfig.tracing.enabled .Values.hostListener.tracing.enabled }}
+              value: {{ required (printf "chains entry %q: fhevmExecutorContractAddress is required" $chain.name) $chain.fhevmExecutorContractAddress | quote }}
+          {{- if default $.Values.commonConfig.tracing.enabled $.Values.hostListenerShared.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: {{ .Values.commonConfig.tracing.endpoint | quote }}
+              value: {{ $.Values.commonConfig.tracing.endpoint | quote }}
             - name: OTEL_SERVICE_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
           {{- end }}
-          {{- with .Values.commonConfig.env }}
+          {{- with $.Values.commonConfig.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.hostListener.env }}
+          {{- with $.Values.hostListenerShared.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $chain.hostListener.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
           ports:
-            {{- range $portName, $portValue := .Values.hostListener.ports }}
+            {{- range $portName, $portValue := $.Values.hostListenerShared.ports }}
             - name: {{ $portName }}
               containerPort: {{ $portValue }}
               protocol: TCP
             {{- end }}
           resources:
             requests:
-              cpu: {{ .Values.hostListener.resources.requests.cpu | default "100m" }}
-              memory: {{ .Values.hostListener.resources.requests.memory | default "256Mi" }}
+              cpu: {{ $.Values.hostListenerShared.resources.requests.cpu | default "100m" }}
+              memory: {{ $.Values.hostListenerShared.resources.requests.memory | default "256Mi" }}
             limits:
-              cpu: {{ .Values.hostListener.resources.limits.cpu | default "500m" }}
-              memory: {{ .Values.hostListener.resources.limits.memory | default "512Mi" }}
-          {{- if and .Values.hostListener.probes .Values.hostListener.probes.liveness.enabled }}
+              cpu: {{ $.Values.hostListenerShared.resources.limits.cpu | default "500m" }}
+              memory: {{ $.Values.hostListenerShared.resources.limits.memory | default "512Mi" }}
+          {{- if and $.Values.hostListenerShared.probes $.Values.hostListenerShared.probes.liveness.enabled }}
           livenessProbe:
-            {{- toYaml (omit .Values.hostListener.probes.liveness "enabled") | nindent 12 }}
+            {{- toYaml (omit $.Values.hostListenerShared.probes.liveness "enabled") | nindent 12 }}
           {{- end }}
-          {{- if and .Values.hostListener.probes .Values.hostListener.probes.readiness.enabled }}
+          {{- if and $.Values.hostListenerShared.probes $.Values.hostListenerShared.probes.readiness.enabled }}
           readinessProbe:
-            {{- toYaml (omit .Values.hostListener.probes.readiness "enabled") | nindent 12 }}
+            {{- toYaml (omit $.Values.hostListenerShared.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
-{{- end -}}
+{{- end }}
+{{- end }}

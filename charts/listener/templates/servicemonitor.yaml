@@ -1,0 +1,60 @@
+{{- if and .Values.listeners .Values.metrics.enabled .Values.metrics.serviceMonitor.enabled }}
+{{- range $listener := .Values.listeners }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "listener.instanceName" (dict "root" $ "listener" $listener) }}
+  {{- with $.Values.metrics.serviceMonitor.namespace }}
+  namespace: {{ . }}
+  {{- end }}
+  labels:
+    {{- include "listener.instanceLabels" (dict "root" $ "listener" $listener) | nindent 4 }}
+    {{- with $.Values.metrics.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with $.Values.metrics.serviceMonitor.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "listener.instanceSelectorLabels" (dict "root" $ "listener" $listener) | nindent 6 }}
+  endpoints:
+    - port: metrics
+      path: {{ $.Values.metrics.path }}
+      interval: {{ $.Values.metrics.serviceMonitor.interval }}
+      scrapeTimeout: {{ $.Values.metrics.serviceMonitor.scrapeTimeout }}
+{{- end }}
+{{- end }}
+
+{{/* ── eRPC ServiceMonitor ─────────────────────────────────────── */}}
+{{- if and .Values.erpc.enabled .Values.metrics.enabled .Values.erpc.serviceMonitor.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "listener.erpcName" . }}
+  {{- with .Values.erpc.serviceMonitor.namespace }}
+  namespace: {{ . }}
+  {{- end }}
+  labels:
+    {{- include "listener.erpcLabels" . | nindent 4 }}
+    {{- with .Values.erpc.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.erpc.serviceMonitor.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "listener.erpcSelectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: metrics
+      path: {{ .Values.erpc.serviceMonitor.path | default "/metrics" }}
+      interval: {{ .Values.erpc.serviceMonitor.interval | default "30s" }}
+      scrapeTimeout: {{ .Values.erpc.serviceMonitor.scrapeTimeout | default "10s" }}
+{{- end }}

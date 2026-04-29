@@ -21,6 +21,20 @@ commonConfig:
   # Can use $(VAR_NAME) syntax to reference variables from commonConfig.env
   databaseUrl: "postgresql://postgres:postgres@postgresql:5432/coprocessor"
 
+  # Database authentication mode
+  database:
+    # `password` uses databaseUrl as-is (credentials embedded or via env).
+    # `iam` keeps databaseUrl passwordless and resolves short-lived IAM tokens
+    # at runtime using the pod's AWS identity.
+    authMode: password
+    iam:
+      # Optional when authMode=iam. If unset, the AWS SDK resolves the region
+      # from the environment (e.g. AWS_REGION set by IRSA). Set this only when
+      # connecting to a database in a different region.
+      region: ""
+      # Required when authMode=iam. The runtime enforces verify-full TLS.
+      sslRootCertPath: ""
+
   # Host chain configuration
   hostChainWsUrl: "ws://ethereum-node:8546"
   hostChainHttpUrl: "http://ethereum-node:8545"
@@ -86,6 +100,9 @@ config:
       key: coprocessor.hex
 
   # Database connection configuration
+  # Bootstrap of the literal-password Secret is gated by
+  # commonConfig.database.authMode (only created when set to "password").
+  # Runtime auth and IAM settings live under commonConfig.database.
   database:
     secret:
       name: coprocessor-db-url
@@ -157,16 +174,19 @@ dbMigration:
   tolerations:
 
 # -----------------------------------------------------------------------------
-# Host Listener
+# Host Listener Shared
 # -----------------------------------------------------------------------------
-# Processes blockchain events from the host chain via WebSocket
-hostListener:
-  enabled: false
-  # nameOverride: override the default resource name for this component.
-  # If unset, resources are named <release-name>-<component> (e.g. my-release-tfhe-worker).
-  # Useful when deploying multiple coprocessor instances in the same namespace.
-  nameOverride:
-
+# Processes blockchain events from the host chain via WebSocket.
+# Shared/default configuration for every chain entry that enables
+# hostListener. This block is the primary source for image, replicas,
+# resources, ports, probes, tracing, scheduling, and structured args.
+# Per-chain hostListener config does not deep-override this block; it only:
+#   - enables the listener for that chain
+#   - provides required chain-specific RPC/contracts via the parent chain entry
+#   - appends env and extraArgs
+#   - may override serviceName
+#   - may claim the unsuffixed legacy resource name via useLegacyName
+hostListenerShared:
   image:
     name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/host-listener
     tag: v0.11.0
@@ -183,17 +203,17 @@ hostListener:
 
   # Command line arguments for the host listener.
   # The following are injected automatically by the template:
-  #   --database-url, --url, --acl-contract-address, --tfhe-contract-address (from commonConfig)
+  #   --database-url, --url, --acl-contract-address, --tfhe-contract-address (from chains entry)
   #   --health-port (from ports.healthcheck)
   #   --dependent-ops-max-per-chain (from commonConfig.dependentOpsMaxPerChain)
+  #   --service-name=host-listener-<chain.name> (auto-derived from chains entry)
   #   --coprocessor-api-key=$(TENANT_API_KEY)
   # Use extraArgs to pass flags not covered by the fields below.
   args:
     logLevel: INFO
-    initialBlockTime: 12        # switches to real block time when data is available
+    initialBlockTime: 12             # switches to real block time when data is available
     reorgMaximumDurationInBlocks: 50
-    # New in v0.10
-    serviceName: host-listener
+    serviceName:                     # optional global override; per-chain hostListener.serviceName takes precedence
     catchupFinalizationInBlocks: 20  # continuous catchup will wait for block "finalization"
 
   # Additional args appended after all template-injected and structured args.
@@ -267,16 +287,19 @@ hostListener:
       maxUnavailable: 0
 
 # -----------------------------------------------------------------------------
-# Host Listener Poller
+# Host Listener Poller Shared
 # -----------------------------------------------------------------------------
 # Processes blockchain events from the host chain via HTTP polling
-hostListenerPoller:
-  enabled: false
-  # nameOverride: override the default resource name for this component.
-  # If unset, resources are named <release-name>-<component> (e.g. my-release-tfhe-worker).
-  # Useful when deploying multiple coprocessor instances in the same namespace.
-  nameOverride:
-
+# Shared/default configuration for every chain entry that enables
+# hostListenerPoller. This block is the primary source for image, replicas,
+# resources, ports, probes, tracing, scheduling, and structured args.
+# Per-chain hostListenerPoller config does not deep-override this block; it only:
+#   - enables the listener for that chain
+#   - provides required chain-specific RPC/contracts via the parent chain entry
+#   - appends env and extraArgs
+#   - may override serviceName
+#   - may claim the unsuffixed legacy resource name via useLegacyName
+hostListenerPollerShared:
   image:
     name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/host-listener
     tag: v0.11.0
@@ -293,19 +316,20 @@ hostListenerPoller:
 
   # Command line arguments for the host listener poller.
   # The following are injected automatically by the template:
-  #   --database-url, --url, --acl-contract-address, --tfhe-contract-address (from commonConfig)
+  #   --database-url, --url, --acl-contract-address, --tfhe-contract-address (from chains entry)
   #   --health-port (from ports.healthcheck), --metrics-addr (from ports.metrics)
   #   --dependent-ops-max-per-chain (from commonConfig.dependentOpsMaxPerChain)
+  #   --service-name=host-listener-poller-<chain.name> (auto-derived from chains entry)
   #   --coprocessor-api-key=$(TENANT_API_KEY)
   # Use extraArgs to pass flags not covered by the fields below.
   args:
     logLevel: INFO
-    serviceName: host-listener-poller
+    serviceName:                    # optional global override; per-chain hostListenerPoller.serviceName takes precedence
     finalityLag: 3
-    batchSize: 100              # maximum number of blocks to process per iteration
-    pollIntervalMs: 6000        # sleep between iterations (half block time ~6s for Ethereum)
-    retryIntervalMs: 1000       # backoff between retry attempts for RPC/DB failures
-    maxHttpRetries: 45          # maximum HTTP/RPC retry attempts before failing an operation
+    batchSize: 100                  # maximum number of blocks to process per iteration
+    pollIntervalMs: 6000            # sleep between iterations (half block time ~6s for Ethereum)
+    retryIntervalMs: 1000           # backoff between retry attempts for RPC/DB failures
+    maxHttpRetries: 45              # maximum HTTP/RPC retry attempts before failing an operation
     rpcComputeUnitsPerSecond: 1000  # rate limiting budget for RPC calls during block catchup
 
   # Additional args appended after all template-injected and structured args.
@@ -374,16 +398,19 @@ hostListenerPoller:
       maxUnavailable: 0
 
 # -----------------------------------------------------------------------------
-# Host Listener Catchup Only
+# Host Listener Catchup Only Shared
 # -----------------------------------------------------------------------------
 # Host listener variant that runs only the catchup loop without real-time subscription.
-hostListenerCatchupOnly:
-  enabled: false
-  # nameOverride: override the default resource name for this component.
-  # If unset, resources are named <release-name>-<component> (e.g. my-release-tfhe-worker).
-  # Useful when deploying multiple coprocessor instances in the same namespace.
-  nameOverride:
-
+# Shared/default configuration for every chain entry that enables
+# hostListenerCatchupOnly. This block is the primary source for image, replicas,
+# resources, ports, probes, tracing, scheduling, and structured args.
+# Per-chain hostListenerCatchupOnly config does not deep-override this block; it only:
+#   - enables the listener for that chain
+#   - provides required chain-specific RPC/contracts via the parent chain entry
+#   - appends env and extraArgs
+#   - may override serviceName
+#   - may claim the unsuffixed legacy resource name via useLegacyName
+hostListenerCatchupOnlyShared:
   image:
     name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/host-listener
     tag: v0.11.0
@@ -401,9 +428,10 @@ hostListenerCatchupOnly:
   # Command line arguments for the host listener catchup only mode.
   # NOTE: onlyCatchupLoop requires endAtBlock to be set.
   # The following are injected automatically by the template:
-  #   --database-url, --url, --acl-contract-address, --tfhe-contract-address (from commonConfig)
+  #   --database-url, --url, --acl-contract-address, --tfhe-contract-address (from chains entry)
   #   --health-port (from ports.healthcheck)
   #   --dependent-ops-max-per-chain (from commonConfig.dependentOpsMaxPerChain)
+  #   --service-name=host-listener-catchup-only-<chain.name> (auto-derived from chains entry)
   #   --coprocessor-api-key=$(TENANT_API_KEY)
   # Use extraArgs to pass flags not covered by the fields below.
   args:
@@ -411,7 +439,7 @@ hostListenerCatchupOnly:
     initialBlockTime: 12
     dependenceCacheSize: 128
     reorgMaximumDurationInBlocks: 50
-    serviceName: host-listener-catchup-only
+    serviceName:                # optional global override; per-chain hostListenerCatchupOnly.serviceName takes precedence
     catchupFinalizationInBlocks: 20
     # Catchup-only specific parameters
     onlyCatchupLoop: true       # run only the catchup loop, not real-time subscription
@@ -482,6 +510,63 @@ hostListenerCatchupOnly:
     rollingUpdate:
       maxSurge: 1
       maxUnavailable: 0
+
+# -----------------------------------------------------------------------------
+# Chains
+# -----------------------------------------------------------------------------
+# Each entry deploys up to three host listener variants for a given chain.
+# The top-level hostListenerShared / hostListenerPollerShared / hostListenerCatchupOnlyShared
+# blocks define shared settings used by every enabled chain for that listener
+# type. Chain entries do not deep-merge or override arbitrary top-level fields.
+#
+# What each chain entry provides:
+#   - required chain-specific connection values (wsUrl or wsUrlValueFrom,
+#     httpUrl or httpUrlValueFrom, and contracts)
+#   - enabled toggles per listener type
+#   - additive env and extraArgs
+#   - optional serviceName override
+#   - optional useLegacyName flag to keep the unsuffixed legacy Kubernetes name
+#
+# Resource naming:
+#   - By default, resources are named <release>-host-listener-<name>,
+#     <release>-host-listener-poller-<name>, etc.
+#   - Set useLegacyName: true on exactly one chain per listener type to keep the
+#     unsuffixed legacy name (<release>-host-listener, etc.) during migration.
+#
+# Example:
+# chains:
+#   - name: ethereum
+#     wsUrl: "ws://eth-node:8546"       # required by hostListener + hostListenerCatchupOnly unless wsUrlValueFrom is set
+#     # wsUrlValueFrom:                 # secret/config-backed alternative to wsUrl
+#     #   secretKeyRef:
+#     #     name: rpc
+#     #     key: ethereum-rpc-ws-url
+#     httpUrl: "http://eth-node:8545"   # required by hostListenerPoller unless httpUrlValueFrom is set
+#     # httpUrlValueFrom:
+#     #   secretKeyRef:
+#     #     name: rpc
+#     #     key: ethereum-rpc-url
+#     aclContractAddress: "0x..."
+#     fhevmExecutorContractAddress: "0x..."
+#     hostListener:
+#       enabled: true
+#       useLegacyName: false  # set true on exactly one chain to keep the unsuffixed legacy resource names
+#       serviceName:          # optional per-chain override for --service-name
+#       extraArgs: []         # appended after top-level hostListenerShared.extraArgs
+#       env: []               # appended after top-level hostListenerShared.env
+#     hostListenerPoller:
+#       enabled: true
+#       useLegacyName: false
+#       serviceName:
+#       extraArgs: []         # appended after top-level hostListenerPollerShared.extraArgs
+#       env: []               # appended after top-level hostListenerPollerShared.env
+#     hostListenerCatchupOnly:
+#       enabled: true
+#       useLegacyName: false
+#       serviceName:
+#       extraArgs: []         # appended after top-level hostListenerCatchupOnlyShared.extraArgs
+#       env: []               # appended after top-level hostListenerCatchupOnlyShared.env
+chains: []
 
 # -----------------------------------------------------------------------------
 # Gateway Listener
@@ -617,22 +702,22 @@ tfheWorker:
   # Use extraArgs to pass flags not covered by the fields below.
   args:
     logLevel: INFO
-    serviceName: tfhe-worker    # service name in OTLP traces
+    serviceName: tfhe-worker       # service name in OTLP traces
     runBgWorker: true
     workerPollingIntervalMs: 10000
-    workItemsBatchSize: 100     # scheduling changed
+    workItemsBatchSize: 100        # scheduling changed
     dependenceChainsPerBatch: 100  # deprecated, to be removed in a future release
     keyCacheSize: 32
-    coprocessorFheThreads: 64   # scheduling changed
-    tokioThreads: 16            # scheduling changed
+    coprocessorFheThreads: 64      # scheduling changed
+    tokioThreads: 16               # scheduling changed
     pgPoolMaxConnections: 10
-    generateFheKeys: false      # unsafe - for testing only, keep false in production
-    dcidTtlSec: 30              # time-to-live (seconds) for dependence chain locks
-    disableDcidLocking: false   # WARNING: may cause multiple workers to process the same DCID concurrently
-    dcidTimesliceSec: 90        # time slice (seconds) for processing a single dependence chain; locks released if exceeded
-    processedDcidTtlSec: 172800  # time-to-live (seconds) for processed dependence chains (default 48h)
-    dcidCleanupIntervalSec: 3600  # interval (seconds) for cleaning up expired DCID locks
-    dcidMaxNoProgressCycles: 2  # worker cycles without progress before releasing
+    generateFheKeys: false         # unsafe - for testing only, keep false in production
+    dcidTtlSec: 30                 # time-to-live (seconds) for dependence chain locks
+    disableDcidLocking: false      # WARNING: may cause multiple workers to process the same DCID concurrently
+    dcidTimesliceSec: 90           # time slice (seconds) for processing a single dependence chain; locks released if exceeded
+    processedDcidTtlSec: 172800    # time-to-live (seconds) for processed dependence chains (default 48h)
+    dcidCleanupIntervalSec: 3600   # interval (seconds) for cleaning up expired DCID locks
+    dcidMaxNoProgressCycles: 2     # worker cycles without progress before releasing
 
   # Additional args appended after all template-injected and structured args.
   extraArgs: []

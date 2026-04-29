@@ -1,0 +1,6 @@
+{
+  "type": "module",
+  "types": "../../../_types/core/actions/encrypt/index.d.ts",
+  "module": "../../../_esm/core/actions/encrypt/index.js",
+  "main": "../../../_cjs/core/actions/encrypt/index.js"
+}

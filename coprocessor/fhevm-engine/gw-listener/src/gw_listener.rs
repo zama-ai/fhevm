@@ -4,9 +4,12 @@ use alloy::eips::BlockId;
 use alloy::rpc::types::Filter;
 use alloy::sol_types::SolEventInterface;
 use alloy::{network::Ethereum, primitives::Address, providers::Provider, rpc::types::Log};
-use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::utils::to_hex;
+use fhevm_engine_common::{
+    chain_id::ChainId,
+    database::{connect_options_for_database_url, connect_pool_with_options},
+};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres, Row};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
@@ -58,10 +61,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             self.input_verification_address = %self.input_verification_address,
             "Starting Gateway Listener",
         );
-        let db_pool = PgPoolOptions::new()
-            .max_connections(self.conf.database_pool_size)
-            .connect(self.conf.database_url.as_str())
-            .await?;
+        let (db_pool, _pool_refresh_handle) = connect_pool_with_options(
+            &self.conf.database_url,
+            PgPoolOptions::new().max_connections(self.conf.database_pool_size),
+            Some(&self.cancel_token),
+        )
+        .await?;
 
         let get_logs_handle = {
             let s = self.clone();
@@ -543,10 +548,16 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         let mut blockchain_connected = false;
         let mut error_details = Vec::new();
 
-        let db_pool_result = PgPoolOptions::new()
-            .max_connections(self.conf.database_pool_size)
-            .connect(self.conf.database_url.as_str())
-            .await;
+        // Check database connection
+        let db_pool_result = match connect_options_for_database_url(&self.conf.database_url).await {
+            Ok(connect_options) => {
+                PgPoolOptions::new()
+                    .max_connections(self.conf.database_pool_size)
+                    .connect_with(connect_options)
+                    .await
+            }
+            Err(err) => Err(sqlx::Error::Configuration(Box::new(err))),
+        };
 
         match db_pool_result {
             Ok(pool) => match sqlx::query("SELECT 1").execute(&pool).await {

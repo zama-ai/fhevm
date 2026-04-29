@@ -180,9 +180,14 @@ export const requiresLegacyKmsCoreConfig = (state: Pick<CompatState, "versions">
 export const requiresLegacyRelayerUrl = (state: Pick<CompatState, "versions">) =>
   versionLt(state.versions.env.TEST_SUITE_VERSION ?? "", [0, 11, 0]);
 
+/** Detects when the coprocessor schema supports DB state revert checks. */
+export const supportsCoprocessorDbStateRevert = (state: Pick<CompatState, "versions">) =>
+  !versionLt(state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION ?? "", [0, 12, 0], { unparsed: "modern" }) ||
+  sameCompatBase(state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION ?? "", [0, 12, 0]);
+
 /** Detects when contract tasks still expect the legacy internal PauserSet flag name. */
 const requiresLegacyPauserTaskFlag = (version: string) =>
-  versionLt(version, [0, 12, 0], { unparsed: "modern" });
+  versionLt(version, [0, 13, 0], { unparsed: "modern" });
 
 type BundleIncompatibility = { severity: "error"; code: string; message: string };
 

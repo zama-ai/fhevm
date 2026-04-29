@@ -73,8 +73,7 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
-            - name: DATABASE_URL
-              value: {{ .Values.commonConfig.databaseUrl | quote }}
+{{- include "coprocessorDatabaseEnv" . | nindent 12 }}
             - name: GATEWAY_URL
               value: {{ .Values.commonConfig.gatewayUrl | quote }}
             - name: INPUT_VERIFICATION_ADDRESS

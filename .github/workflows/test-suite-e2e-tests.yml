@@ -9,7 +9,7 @@ on:
       - labeled
       - unlabeled
   workflow_dispatch:
-    inputs: &workflow_inputs
+    inputs: &shared_inputs
       orchestrated:
         description: "Run from the orchestrated image-validation path."
         default: false
@@ -82,8 +82,16 @@ on:
         description: "Relayer version"
         default: ""
         type: string
+      compat-test:
+        description: "Compat-test JSON path or stem under test-suite/fhevm/compat-tests"
+        default: ""
+        type: string
+      rollout-step:
+        description: "Compat rollout step index to render locally before boot"
+        default: ""
+        type: string
       lock-artifact-name:
-        description: "Uploaded lock artifact name used to freeze the baseline bundle"
+        description: "Uploaded lock artifact name used to freeze the resolved bundle"
         default: ""
         type: string
       kms-core-version:
@@ -94,6 +102,10 @@ on:
         description: "Deployment scenario (e.g. two-of-two, two-of-two-multi-chain)"
         default: "two-of-two"
         type: string
+      test-profile:
+        description: "Named test profile to run instead of the default standard suite"
+        default: "standard"
+        type: string
   workflow_call:
     secrets:
       GHCR_READ_TOKEN:
@@ -102,26 +114,26 @@ on:
         required: true
       CGR_PASSWORD:
         required: true
-    inputs: *workflow_inputs
+    inputs: *shared_inputs
 
 permissions: {}
 
 # Cancel stale PR runs on new pushes while keeping manual dispatches independent.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
+  group: ${{ github.workflow }}-${{ inputs.rollout-step != '' && format('compat-{0}-{1}-{2}', github.event_name == 'pull_request' && github.event.pull_request.number || github.ref, inputs.compat-test || 'default', inputs.rollout-step) || github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref != 'refs/heads/main' }}
 
 jobs:
   fhevm-e2e-test:
     # Run on manual/reusable invocations. For direct PRs, require the `e2e` label.
-    if: ${{ github.event_name != 'pull_request' || inputs.orchestrated || (github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'mergify/merge-queue/') && contains(github.event.pull_request.labels.*.name, 'e2e')) }}
+    if: ${{ github.event_name != 'pull_request' || inputs.orchestrated || inputs.compat-test != '' || (github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'mergify/merge-queue/') && contains(github.event.pull_request.labels.*.name, 'e2e')) }}
     permissions:
       contents: 'read' # Required to checkout repository code
       id-token: 'write' # Required for OIDC authentication
       packages: 'read' # Required to read GitHub packages/container registry
     env:
       GH_TOKEN: ${{ github.token }}
-      BUILD: ${{ inputs.orchestrated && 'false' || github.event_name == 'pull_request' && 'true' || inputs.build && 'true' || 'false' }}
+      BUILD: ${{ inputs.compat-test != '' && 'false' || inputs.orchestrated && 'false' || github.event_name == 'pull_request' && 'true' || inputs.build && 'true' || 'false' }}
       COPROCESSOR_DB_MIGRATION_VERSION: ${{ inputs.coprocessor-db-migration-version }}
       COPROCESSOR_HOST_LISTENER_VERSION: ${{ inputs.coprocessor-host-listener-version }}
       COPROCESSOR_GW_LISTENER_VERSION: ${{ inputs.coprocessor-gw-listener-version }}
@@ -140,6 +152,7 @@ jobs:
       RELAYER_VERSION: ${{ inputs.relayer-version }}
       CORE_VERSION: ${{ inputs.kms-core-version }}
       SCENARIO: ${{ inputs.scenario || 'two-of-two' }}
+      TEST_PROFILE: ${{ inputs.test-profile || 'standard' }}
     runs-on: large_ubuntu_32
     steps:
       - name: Checkout code
@@ -181,26 +194,29 @@ jobs:
           sudo apt-get install -y gh
 
       - name: Typecheck CLI
+        if: ${{ inputs.compat-test == '' }}
         working-directory: test-suite/fhevm
         run: bun run check
 
       - name: Unit test CLI
+        if: ${{ inputs.compat-test == '' }}
         working-directory: test-suite/fhevm
         run: bun test src
 
       - name: Compat smoke
+        if: ${{ inputs.compat-test == '' }}
         working-directory: test-suite/fhevm
         run: bun run compat-smoke
 
       - name: Download frozen baseline lock
-        if: ${{ inputs.lock-artifact-name != '' }}
+        if: ${{ inputs.compat-test == '' && inputs.lock-artifact-name != '' }}
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
           name: ${{ inputs.lock-artifact-name }}
           path: ${{ runner.temp }}/baseline-lock
 
       - name: Resolve frozen lock path
-        if: ${{ inputs.lock-artifact-name != '' }}
+        if: ${{ inputs.compat-test == '' && inputs.lock-artifact-name != '' }}
         run: |
           set -euo pipefail
           lock_file="$(find "${RUNNER_TEMP}/baseline-lock" -maxdepth 1 -name '*.json' -print -quit)"
@@ -210,8 +226,49 @@ jobs:
           fi
           echo "LOCK_FILE=$lock_file" >> "$GITHUB_ENV"
 
+      - name: Render compat rollout step
+        if: ${{ inputs.compat-test != '' }}
+        working-directory: test-suite/fhevm
+        env:
+          COMPAT_TEST_INPUT: ${{ inputs.compat-test }}
+          ROLLOUT_STEP_INPUT: ${{ inputs.rollout-step }}
+        run: |
+          set -euo pipefail
+          resolve_test() {
+            local value="$1"
+            local workspace_value="${GITHUB_WORKSPACE}/${value}"
+            local compat_dir="${GITHUB_WORKSPACE}/test-suite/fhevm/compat-tests"
+            if [ -f "$value" ]; then
+              realpath "$value"
+              return
+            fi
+            if [ -f "$workspace_value" ]; then
+              realpath "$workspace_value"
+              return
+            fi
+            if [ -f "${compat_dir}/${value}.json" ]; then
+              realpath "${compat_dir}/${value}.json"
+              return
+            fi
+            if [ -f "${compat_dir}/${value}" ]; then
+              realpath "${compat_dir}/${value}"
+              return
+            fi
+            echo "Could not resolve compat-test: $value" >&2
+            exit 1
+          }
+          compat_test="$(resolve_test "$COMPAT_TEST_INPUT")"
+          lock_file="${RUNNER_TEMP}/compat-step.lock.json"
+          ./fhevm-cli rollout --compat-test "$compat_test" --step "${ROLLOUT_STEP_INPUT:-0}" --out "$lock_file"
+          echo "LOCK_FILE=$lock_file" >> "$GITHUB_ENV"
+
+      - name: Resolve compat local overrides
+        if: ${{ inputs.compat-test != '' }}
+        run: |
+          echo "COMPAT_OVERRIDES=test-suite" >> "$GITHUB_ENV"
+
       - name: Resolve latest-main lock once
-        if: ${{ inputs.lock-artifact-name == '' && !inputs.orchestrated }}
+        if: ${{ inputs.compat-test == '' && inputs.lock-artifact-name == '' && !inputs.orchestrated }}
         working-directory: test-suite/fhevm
         run: |
           lock_file="$(./fhevm-cli resolve --target latest-main | tail -n1)"
@@ -233,6 +290,12 @@ jobs:
           if [ "$BUILD" = "true" ]; then
             args+=(--build)
           fi
+          if [ -n "${COMPAT_OVERRIDES:-}" ]; then
+            IFS=',' read -r -a override_groups <<< "$COMPAT_OVERRIDES"
+            for group in "${override_groups[@]}"; do
+              [ -n "$group" ] && args+=(--override "$group")
+            done
+          fi
           ./fhevm-cli up "${args[@]}" --dry-run
 
       - name: Boot fhevm Stack
@@ -247,19 +310,28 @@ jobs:
           if [ "$BUILD" = "true" ]; then
             args+=(--build)
           fi
+          if [ -n "${COMPAT_OVERRIDES:-}" ]; then
+            IFS=',' read -r -a override_groups <<< "$COMPAT_OVERRIDES"
+            for group in "${override_groups[@]}"; do
+              [ -n "$group" ] && args+=(--override "$group")
+            done
+          fi
           ./fhevm-cli up "${args[@]}"
 
-      - name: Standard e2e suite
+      - name: Selected e2e suite
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli test standard
+          ./fhevm-cli test "$TEST_PROFILE"
 
       - name: Host listener poller test
+        if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' }}
         working-directory: test-suite/fhevm
         run: |
+          trap 'docker start coprocessor-host-listener >/dev/null 2>&1 || true' EXIT
           docker stop coprocessor-host-listener
           ./fhevm-cli test erc20
           docker start coprocessor-host-listener
+          trap - EXIT
 
       - name: Show logs
         working-directory: test-suite/fhevm
