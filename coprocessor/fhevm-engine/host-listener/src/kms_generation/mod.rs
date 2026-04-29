@@ -129,7 +129,11 @@ pub async fn insert_kms_generation_events_tx(
                 .await?;
             }
             _ => {
-                warn!(log = ?log, "Unsupported KMSGeneration event type, skipping");
+                warn!(
+                    ?log,
+                    ?event,
+                    "Unsupported KMSGeneration event type, skipping"
+                );
             }
         }
     }
