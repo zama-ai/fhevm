@@ -380,6 +380,10 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _upgradeMigrationProxy(fixture.migrateProxy, fixture.kmsGenImpl, fixture.state);
     }
 
+    function _assumeNotCurrentKmsTxSender(address caller) internal view {
+        vm.assume(!protocolConfig.isKmsTxSenderForContext(protocolConfig.getCurrentKmsContextId(), caller));
+    }
+
     // -----------------------------------------------------------------------
     // Init tests
     // -----------------------------------------------------------------------
@@ -636,43 +640,48 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     // Access control
     // -----------------------------------------------------------------------
 
-    function test_revertKeygenNotOwner() public {
-        vm.prank(address(0x999));
-        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
+    function testFuzz_revertKeygenNotOwner(address caller) public {
+        vm.assume(caller != owner);
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, caller));
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
     }
 
-    function test_revertCrsgenNotOwner() public {
-        vm.prank(address(0x999));
-        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
+    function testFuzz_revertCrsgenNotOwner(address caller) public {
+        vm.assume(caller != owner);
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, caller));
         kmsGeneration.crsgenRequest(4096, IKMSGeneration.ParamsType.Default);
     }
 
-    function test_revertPrepKeygenResponseNotTxSender() public {
+    function testFuzz_revertPrepKeygenResponseNotTxSender(address caller) public {
+        _assumeNotCurrentKmsTxSender(caller);
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
 
-        vm.prank(address(0x999));
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.NotKmsTxSender.selector, address(0x999)));
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.NotKmsTxSender.selector, caller));
         kmsGeneration.prepKeygenResponse(PREP_KEYGEN_COUNTER_BASE + 1, hex"");
     }
 
-    function test_revertKeygenResponseNotTxSender() public {
+    function testFuzz_revertKeygenResponseNotTxSender(address caller) public {
+        _assumeNotCurrentKmsTxSender(caller);
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
 
         IKMSGeneration.KeyDigest[] memory digests = _mockKeyDigests();
-        vm.prank(address(0x999));
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.NotKmsTxSender.selector, address(0x999)));
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.NotKmsTxSender.selector, caller));
         kmsGeneration.keygenResponse(KEY_COUNTER_BASE + 1, digests, hex"");
     }
 
-    function test_revertCrsgenResponseNotTxSender() public {
+    function testFuzz_revertCrsgenResponseNotTxSender(address caller) public {
+        _assumeNotCurrentKmsTxSender(caller);
         vm.prank(owner);
         kmsGeneration.crsgenRequest(4096, IKMSGeneration.ParamsType.Default);
 
-        vm.prank(address(0x999));
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.NotKmsTxSender.selector, address(0x999)));
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.NotKmsTxSender.selector, caller));
         kmsGeneration.crsgenResponse(CRS_COUNTER_BASE + 1, hex"deadbeef", hex"");
     }
 
@@ -737,25 +746,25 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     // Invalid request ID
     // -----------------------------------------------------------------------
 
-    function test_revertPrepKeygenNotRequested() public {
+    function testFuzz_revertPrepKeygenNotRequested(uint256 prepKeygenId) public {
         vm.prank(kmsTxSender0);
         vm.expectRevert(
-            abi.encodeWithSelector(IKMSGeneration.PrepKeygenNotRequested.selector, PREP_KEYGEN_COUNTER_BASE + 99)
+            abi.encodeWithSelector(IKMSGeneration.PrepKeygenNotRequested.selector, prepKeygenId)
         );
-        kmsGeneration.prepKeygenResponse(PREP_KEYGEN_COUNTER_BASE + 99, hex"");
+        kmsGeneration.prepKeygenResponse(prepKeygenId, hex"");
     }
 
-    function test_revertKeygenNotRequested() public {
+    function testFuzz_revertKeygenNotRequested(uint256 keyId) public {
         IKMSGeneration.KeyDigest[] memory d = _mockKeyDigests();
         vm.prank(kmsTxSender0);
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeygenNotRequested.selector, KEY_COUNTER_BASE + 99));
-        kmsGeneration.keygenResponse(KEY_COUNTER_BASE + 99, d, hex"");
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeygenNotRequested.selector, keyId));
+        kmsGeneration.keygenResponse(keyId, d, hex"");
     }
 
-    function test_revertCrsgenNotRequested() public {
+    function testFuzz_revertCrsgenNotRequested(uint256 crsId) public {
         vm.prank(kmsTxSender0);
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CrsgenNotRequested.selector, CRS_COUNTER_BASE + 99));
-        kmsGeneration.crsgenResponse(CRS_COUNTER_BASE + 99, hex"deadbeef", hex"");
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CrsgenNotRequested.selector, crsId));
+        kmsGeneration.crsgenResponse(crsId, hex"deadbeef", hex"");
     }
 
     function test_revertKmsSignerDoesNotMatchTxSender() public {
@@ -881,12 +890,10 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         assertTrue(kmsGeneration.isRequestDone(crsId));
     }
 
-    function test_revertAbortKeygenInvalidId() public {
+    function testFuzz_revertAbortKeygenInvalidId(uint256 prepKeygenId) public {
         vm.prank(owner);
-        vm.expectRevert(
-            abi.encodeWithSelector(IKMSGeneration.AbortKeygenInvalidId.selector, PREP_KEYGEN_COUNTER_BASE + 99)
-        );
-        kmsGeneration.abortKeygen(PREP_KEYGEN_COUNTER_BASE + 99);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.AbortKeygenInvalidId.selector, prepKeygenId));
+        kmsGeneration.abortKeygen(prepKeygenId);
     }
 
     function test_revertAbortKeygenAlreadyDone() public {
@@ -896,10 +903,10 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         kmsGeneration.abortKeygen(prepKeygenId);
     }
 
-    function test_revertAbortCrsgenInvalidId() public {
+    function testFuzz_revertAbortCrsgenInvalidId(uint256 crsId) public {
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.AbortCrsgenInvalidId.selector, CRS_COUNTER_BASE + 99));
-        kmsGeneration.abortCrsgen(CRS_COUNTER_BASE + 99);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.AbortCrsgenInvalidId.selector, crsId));
+        kmsGeneration.abortCrsgen(crsId);
     }
 
     function test_revertAbortCrsgenAlreadyDone() public {
@@ -909,15 +916,17 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         kmsGeneration.abortCrsgen(crsId);
     }
 
-    function test_abortKeygenNotOwner() public {
-        vm.prank(address(0x999));
-        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
+    function testFuzz_abortKeygenNotOwner(address caller) public {
+        vm.assume(caller != owner);
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, caller));
         kmsGeneration.abortKeygen(PREP_KEYGEN_COUNTER_BASE + 1);
     }
 
-    function test_abortCrsgenNotOwner() public {
-        vm.prank(address(0x999));
-        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
+    function testFuzz_abortCrsgenNotOwner(address caller) public {
+        vm.assume(caller != owner);
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, caller));
         kmsGeneration.abortCrsgen(CRS_COUNTER_BASE + 1);
     }
 
@@ -996,28 +1005,24 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     // Nonexistent ID view reverts (never started)
     // -----------------------------------------------------------------------
 
-    function test_revertGetKeyParamsTypeNonexistent() public {
-        uint256 fakeKeyId = KEY_COUNTER_BASE + 99;
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeyNotGenerated.selector, fakeKeyId));
-        kmsGeneration.getKeyParamsType(fakeKeyId);
+    function testFuzz_revertGetKeyParamsTypeNonexistent(uint256 keyId) public {
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeyNotGenerated.selector, keyId));
+        kmsGeneration.getKeyParamsType(keyId);
     }
 
-    function test_revertGetKeyMaterialsNonexistent() public {
-        uint256 fakeKeyId = KEY_COUNTER_BASE + 99;
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeyNotGenerated.selector, fakeKeyId));
-        kmsGeneration.getKeyMaterials(fakeKeyId);
+    function testFuzz_revertGetKeyMaterialsNonexistent(uint256 keyId) public {
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeyNotGenerated.selector, keyId));
+        kmsGeneration.getKeyMaterials(keyId);
     }
 
-    function test_revertGetCrsParamsTypeNonexistent() public {
-        uint256 fakeCrsId = CRS_COUNTER_BASE + 99;
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CrsNotGenerated.selector, fakeCrsId));
-        kmsGeneration.getCrsParamsType(fakeCrsId);
+    function testFuzz_revertGetCrsParamsTypeNonexistent(uint256 crsId) public {
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CrsNotGenerated.selector, crsId));
+        kmsGeneration.getCrsParamsType(crsId);
     }
 
-    function test_revertGetCrsMaterialsNonexistent() public {
-        uint256 fakeCrsId = CRS_COUNTER_BASE + 99;
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CrsNotGenerated.selector, fakeCrsId));
-        kmsGeneration.getCrsMaterials(fakeCrsId);
+    function testFuzz_revertGetCrsMaterialsNonexistent(uint256 crsId) public {
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CrsNotGenerated.selector, crsId));
+        kmsGeneration.getCrsMaterials(crsId);
     }
 
     // -----------------------------------------------------------------------
@@ -1196,9 +1201,9 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         assertEq(recorded.length, 3);
     }
 
-    function test_migrationRejectsUnknownConsensusTxSender() public {
+    function testFuzz_migrationRejectsUnknownConsensusTxSender(address unknownTxSender) public {
         MigrationFixture memory fixture = _deployMigrationFixture();
-        address unknownTxSender = address(0xBEEF);
+        vm.assume(!protocolConfig.isKmsTxSenderForContext(fixture.state.contextId, unknownTxSender));
         fixture.state.keyConsensusTxSenders[0] = unknownTxSender;
 
         _expectMigrationRevert(
