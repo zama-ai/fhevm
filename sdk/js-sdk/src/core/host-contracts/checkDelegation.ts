@@ -4,7 +4,7 @@ import type { ChecksummedAddress } from '../types/primitives.js';
 import type { HandleContractPair } from '../types/other-p.js';
 import { AclUserDecryptionError } from '../errors/AclError.js';
 import { isHandleDelegatedForUserDecryption } from './isHandleDelegatedForUserDecryption-p.js';
-import { WILDCARD_CONTRACT } from './constants.js';
+import { WILDCARD_DELEGATION_ADDRESS } from './constants.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -47,13 +47,13 @@ export async function checkDelegation(context: Context, parameters: Parameters):
   }
 
   // 2. Verify rule: delegate !== WILDCARD_CONTRACT
-  if (delegate.toLowerCase() === WILDCARD_CONTRACT.toLowerCase()) {
+  if (delegate.toLowerCase() === WILDCARD_DELEGATION_ADDRESS.toLowerCase()) {
     throw new AclUserDecryptionError({
       contractAddress: address,
       message: `delegate cannot be equal to wildcard contract address`,
     });
   }
-  if (delegator.toLowerCase() === WILDCARD_CONTRACT.toLowerCase()) {
+  if (delegator.toLowerCase() === WILDCARD_DELEGATION_ADDRESS.toLowerCase()) {
     throw new AclUserDecryptionError({
       contractAddress: address,
       message: `delegator cannot be equal to wildcard contract address`,
