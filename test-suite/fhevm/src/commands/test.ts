@@ -834,7 +834,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         const faultyInstanceIndex = parseDriftInstanceIndex(process.env.FAULTY_INSTANCE_INDEX ?? "1");
         const driftInjectTimeoutSeconds = parsePositiveInteger(process.env.DRIFT_INJECT_TIMEOUT_SECONDS ?? "180", "DRIFT_INJECT_TIMEOUT_SECONDS");
         const driftInjectPollIntervalSeconds = parsePositiveInteger(process.env.DRIFT_INJECT_POLL_INTERVAL_SECONDS ?? "2", "DRIFT_INJECT_POLL_INTERVAL_SECONDS");
-        const driftAlertTimeoutSeconds = parsePositiveInteger(process.env.DRIFT_ALERT_TIMEOUT_SECONDS ?? "180", "DRIFT_ALERT_TIMEOUT_SECONDS");
+        const driftAlertTimeoutSeconds = parsePositiveInteger(process.env.DRIFT_ALERT_TIMEOUT_SECONDS ?? "360", "DRIFT_ALERT_TIMEOUT_SECONDS");
         const driftAlertPollIntervalSeconds = parsePositiveInteger(process.env.DRIFT_ALERT_POLL_INTERVAL_SECONDS ?? "2", "DRIFT_ALERT_POLL_INTERVAL_SECONDS");
         const grepPattern = process.env.GREP_PATTERN ?? "test add 42 to uint64 input and decrypt";
         const injector = injectCiphertextDrift({
@@ -887,7 +887,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           "DRIFT_INJECT_POLL_INTERVAL_SECONDS",
         );
         const driftAlertTimeoutSeconds = parsePositiveInteger(
-          process.env.DRIFT_ALERT_TIMEOUT_SECONDS ?? "180",
+          process.env.DRIFT_ALERT_TIMEOUT_SECONDS ?? "360",
           "DRIFT_ALERT_TIMEOUT_SECONDS",
         );
         const driftAlertPollIntervalSeconds = parsePositiveInteger(

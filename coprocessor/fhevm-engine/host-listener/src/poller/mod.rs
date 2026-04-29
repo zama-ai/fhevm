@@ -15,8 +15,10 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::database::connect_pool_with_options;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
+use sqlx::postgres::PgPoolOptions;
 
 use crate::cmd::block_history::BlockSummary;
 use crate::database::ingest::{ingest_block_logs, BlockLogs, IngestOptions};
@@ -153,8 +155,16 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         }
     });
 
+    // Drift-revert: must run before any DB state reads so we don't read
+    // pre-revert state.
+    let (drift_revert_pool, _pool_refresh_handle) = connect_pool_with_options(
+        &config.database_url,
+        PgPoolOptions::new().max_connections(1),
+        Some(&cancel_token),
+    )
+    .await?;
     fhevm_engine_common::drift_revert::init(
-        db.pool.read().await.clone(),
+        drift_revert_pool,
         cancel_token.clone(),
         None,
     )

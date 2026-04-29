@@ -17,10 +17,12 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use fhevm_engine_common::database::connect_pool_with_options;
 use fhevm_engine_common::drift_revert;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::types::BlockchainProvider;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
+use sqlx::postgres::PgPoolOptions;
 
 use crate::database::ingest::{
     ingest_block_logs, update_finalized_blocks, BlockLogs, IngestOptions,
@@ -1075,12 +1077,13 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
 
     // Drift-revert: must run before any DB state reads so we don't read
     // pre-revert state.
-    drift_revert::init(
-        db.pool.read().await.clone(),
-        cancel_token.clone(),
-        None,
+    let (drift_revert_pool, _pool_refresh_handle) = connect_pool_with_options(
+        &args.database_url,
+        PgPoolOptions::new().max_connections(1),
+        Some(&cancel_token),
     )
     .await?;
+    drift_revert::init(drift_revert_pool, cancel_token.clone(), None).await?;
 
     if args.dependent_ops_max_per_chain == 0 {
         let promoted = db.promote_all_dep_chains_to_fast_priority().await?;
