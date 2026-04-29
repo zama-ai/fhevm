@@ -11,7 +11,7 @@ use tokio::time::sleep;
 use tracing::{error, info, warn};
 
 use primitives::event::{BlockFlow, BlockPayload, IndexedLog, TransactionPayload};
-use primitives::routing::consumer_new_event_routing;
+use primitives::routing::{consumer_catchup_event_routing, consumer_new_event_routing};
 
 use crate::blockchain::evm::evm_block_fetcher::FetchedBlock;
 use crate::config::PublishConfig;
@@ -389,8 +389,6 @@ pub async fn publish_block_events(
     event_publisher: &Publisher,
     publish_config: &PublishConfig,
 ) -> Result<(), PublisherError> {
-    let publish_retry_delay = Duration::from_secs(publish_config.publish_retry_secs);
-
     // 1. Fetch filters — propagate DB errors to caller for handler-level retry.
     let filters = repositories
         .filters
@@ -415,107 +413,194 @@ pub async fn publish_block_events(
     let payloads = filter_index.build_block_payloads(fetched_block, chain_id, flow)?;
 
     // 4. For each consumer: verify queue exists, then publish.
-    //    When publish_stale=true: retry queue existence until queue appears (bounded by queue-not-found retries).
-    //    When publish_stale=false: bounded retry via publish_no_stale_retries, then skip consumer.
-    //    Broker errors (connection/publish failures) propagate immediately — the handler framework retries.
+    //    Per-consumer retry/stale semantics live in `publish_payload_to_consumer`.
     for (consumer_id, payload) in &payloads {
         let routing_key = consumer_new_event_routing(consumer_id.clone());
-        let topic = Topic::new(&routing_key);
-        let mut queue_not_found_attempts: u32 = 0;
-
-        loop {
-            // Check queue existence (prevents AMQP silent drops).
-            let queue_exists = match broker.exists(&topic).await {
-                Ok(exists) => exists,
-                Err(e) => {
-                    error!(
-                        consumer_id = %consumer_id,
-                        block_number = payload.block_number,
-                        error = %e,
-                        "Failed to check queue existence, propagating error"
-                    );
-                    return Err(PublisherError::BrokerError {
-                        message: format!(
-                            "Queue existence check failed for consumer {consumer_id}, block {}: {e}",
-                            payload.block_number
-                        ),
-                    });
-                }
-            };
-
-            if !queue_exists {
-                queue_not_found_attempts += 1;
-                if !publish_config.publish_stale
-                    && queue_not_found_attempts >= publish_config.publish_no_stale_retries
-                {
-                    error!(
-                        consumer_id = %consumer_id,
-                        block_number = payload.block_number,
-                        routing_key = %routing_key,
-                        attempts = queue_not_found_attempts,
-                        "Consumer queue not found after max retries, skipping consumer"
-                    );
-                    break; // Skip this consumer — move to next.
-                }
-                if publish_config.publish_stale {
-                    error!(
-                        consumer_id = %consumer_id,
-                        block_number = payload.block_number,
-                        routing_key = %routing_key,
-                        attempt = queue_not_found_attempts,
-                        "Consumer queue not found, retrying indefinitely (publish_stale=true)"
-                    );
-                } else {
-                    error!(
-                        consumer_id = %consumer_id,
-                        block_number = payload.block_number,
-                        routing_key = %routing_key,
-                        attempt = queue_not_found_attempts,
-                        max_attempts = publish_config.publish_no_stale_retries,
-                        "Consumer queue not found, retrying"
-                    );
-                }
-                sleep(publish_retry_delay).await;
-                continue;
-            }
-
-            // Publish.
-            match event_publisher.publish(&routing_key, payload).await {
-                Ok(()) => {
-                    info!(
-                        consumer_id = %consumer_id,
-                        block_number = payload.block_number,
-                        tx_count = payload.transactions.len(),
-                        routing_key = %routing_key,
-                        "Published block event to consumer"
-                    );
-                    break; // Success — move to next consumer.
-                }
-                Err(e) => {
-                    metrics::counter!(
-                        "listener_publish_errors_total",
-                        "chain_id" => chain_id.to_string()
-                    )
-                    .increment(1);
-
-                    error!(
-                        consumer_id = %consumer_id,
-                        block_number = payload.block_number,
-                        error = %e,
-                        "Publish failed, propagating error for handler retry"
-                    );
-                    return Err(PublisherError::BrokerError {
-                        message: format!(
-                            "Publish failed for consumer {consumer_id}, block {}: {e}",
-                            payload.block_number
-                        ),
-                    });
-                }
-            }
-        }
+        publish_payload_to_consumer(
+            broker,
+            event_publisher,
+            publish_config,
+            consumer_id,
+            &routing_key,
+            payload,
+            chain_id,
+        )
+        .await?;
     }
 
     Ok(())
+}
+
+/// Catchup variant of [`publish_block_events`]: publishes one block's events
+/// to a single consumer on the `catchup-event` queue.
+///
+/// Same error pattern, retry/queue-existence semantics, and `publish_config`
+/// knobs as the live path. Used by the catchup handler when replaying
+/// historical blocks for a single consumer in response to a `CatchupPayload`.
+///
+/// Returns `Ok(())` when the consumer has no filters on this chain (no-op),
+/// matching the live path's behavior for an empty filter set.
+pub async fn publish_catchup_block_events(
+    repositories: &Repositories,
+    fetched_block: &FetchedBlock,
+    chain_id: u64,
+    consumer_id: &str,
+    broker: &Broker,
+    event_publisher: &Publisher,
+    publish_config: &PublishConfig,
+) -> Result<(), PublisherError> {
+    // 1. Fetch this consumer's filters on this chain.
+    let filters = repositories
+        .filters
+        .get_filters_by_consumer_id(consumer_id)
+        .await
+        .map_err(|e| {
+            error!(error = %e, consumer_id, "Failed to fetch filters for catchup");
+            PublisherError::FilterFetchError {
+                message: e.to_string(),
+            }
+        })?;
+
+    if filters.is_empty() {
+        return Ok(());
+    }
+
+    // 2. Build a narrowly-scoped index + payload (same helpers as the live path).
+    let filter_index = FilterIndex::from_filters(filters);
+    let payloads =
+        filter_index.build_block_payloads(fetched_block, chain_id, BlockFlow::Catchup)?;
+
+    // 3. Publish the target consumer's payload (if any) to catchup-event.
+    //    With single-consumer filters indexed, payloads contains 0 or 1 entry.
+    if let Some((_, payload)) = payloads.into_iter().find(|(cid, _)| cid == consumer_id) {
+        let routing_key = consumer_catchup_event_routing(consumer_id.to_string());
+        publish_payload_to_consumer(
+            broker,
+            event_publisher,
+            publish_config,
+            consumer_id,
+            &routing_key,
+            &payload,
+            chain_id,
+        )
+        .await?;
+    }
+
+    Ok(())
+}
+
+/// Publish one BlockPayload to one consumer's queue with the canonical
+/// queue-existence + retry semantics shared by the live and catchup paths:
+///
+/// - Verify the consumer's queue exists (prevents AMQP silent drops).
+/// - When `publish_stale=true`: retry queue existence indefinitely.
+/// - When `publish_stale=false`: bounded retry via `publish_no_stale_retries`,
+///   then skip this consumer (returns `Ok(())`).
+/// - Broker errors (connection / publish) propagate immediately so the
+///   surrounding handler framework can retry the entire block.
+async fn publish_payload_to_consumer(
+    broker: &Broker,
+    event_publisher: &Publisher,
+    publish_config: &PublishConfig,
+    consumer_id: &str,
+    routing_key: &str,
+    payload: &BlockPayload,
+    chain_id: u64,
+) -> Result<(), PublisherError> {
+    let publish_retry_delay = Duration::from_secs(publish_config.publish_retry_secs);
+    let topic = Topic::new(routing_key);
+    let mut queue_not_found_attempts: u32 = 0;
+
+    loop {
+        // Check queue existence (prevents AMQP silent drops).
+        let queue_exists = match broker.exists(&topic).await {
+            Ok(exists) => exists,
+            Err(e) => {
+                error!(
+                    consumer_id = %consumer_id,
+                    block_number = payload.block_number,
+                    error = %e,
+                    "Failed to check queue existence, propagating error"
+                );
+                return Err(PublisherError::BrokerError {
+                    message: format!(
+                        "Queue existence check failed for consumer {consumer_id}, block {}: {e}",
+                        payload.block_number
+                    ),
+                });
+            }
+        };
+
+        if !queue_exists {
+            queue_not_found_attempts += 1;
+            if !publish_config.publish_stale
+                && queue_not_found_attempts >= publish_config.publish_no_stale_retries
+            {
+                error!(
+                    consumer_id = %consumer_id,
+                    block_number = payload.block_number,
+                    routing_key = %routing_key,
+                    attempts = queue_not_found_attempts,
+                    "Consumer queue not found after max retries, skipping consumer"
+                );
+                return Ok(()); // Skip this consumer.
+            }
+            if publish_config.publish_stale {
+                error!(
+                    consumer_id = %consumer_id,
+                    block_number = payload.block_number,
+                    routing_key = %routing_key,
+                    attempt = queue_not_found_attempts,
+                    "Consumer queue not found, retrying indefinitely (publish_stale=true)"
+                );
+            } else {
+                error!(
+                    consumer_id = %consumer_id,
+                    block_number = payload.block_number,
+                    routing_key = %routing_key,
+                    attempt = queue_not_found_attempts,
+                    max_attempts = publish_config.publish_no_stale_retries,
+                    "Consumer queue not found, retrying"
+                );
+            }
+            sleep(publish_retry_delay).await;
+            continue;
+        }
+
+        // Publish.
+        match event_publisher.publish(routing_key, payload).await {
+            Ok(()) => {
+                info!(
+                    consumer_id = %consumer_id,
+                    block_number = payload.block_number,
+                    tx_count = payload.transactions.len(),
+                    routing_key = %routing_key,
+                    "Published block event to consumer"
+                );
+                return Ok(());
+            }
+            Err(e) => {
+                metrics::counter!(
+                    "listener_publish_errors_total",
+                    "chain_id" => chain_id.to_string()
+                )
+                .increment(1);
+
+                error!(
+                    consumer_id = %consumer_id,
+                    block_number = payload.block_number,
+                    error = %e,
+                    "Publish failed, propagating error for handler retry"
+                );
+                return Err(PublisherError::BrokerError {
+                    message: format!(
+                        "Publish failed for consumer {consumer_id}, block {}: {e}",
+                        payload.block_number
+                    ),
+                });
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -891,6 +976,33 @@ mod tests {
         let log_addrs: HashSet<Address> = consumer_txs[0].logs.iter().map(|l| l.address).collect();
         assert!(log_addrs.contains(&addr(ADDR_3)));
         assert!(log_addrs.contains(&addr(ADDR_4)));
+    }
+
+    #[test]
+    fn single_consumer_index_matches_only_that_consumer() {
+        // Catchup contract: feeding only one consumer's filters into FilterIndex
+        // must produce match results that contain *only* that consumer, regardless
+        // of the transaction set.
+        let filters = vec![
+            make_filter("only_consumer", Some(ADDR_1), None, None),
+            make_filter("only_consumer", None, None, Some(ADDR_3)),
+        ];
+        let index = FilterIndex::from_filters(filters);
+
+        assert_eq!(index.consumers.len(), 1);
+        assert!(index.consumers.contains("only_consumer"));
+
+        let txs = vec![
+            make_tx(ADDR_1, ADDR_2, &[(ADDR_3, 0), (ADDR_4, 1)]),
+            make_tx(ADDR_5, ADDR_2, &[(ADDR_3, 2)]),
+        ];
+        let results = index.match_and_filter_transactions(&txs);
+
+        // Exactly one consumer entry, regardless of how many txs match.
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, "only_consumer");
+        // Both txs match (one via from, one via log); logs include all matched addresses.
+        assert_eq!(results[0].1.len(), 2);
     }
 
     #[test]

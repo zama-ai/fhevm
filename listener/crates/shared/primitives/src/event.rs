@@ -134,7 +134,7 @@ pub enum BlockFlow {
     Live,
     /// Block republished during a reorg backtrack.
     Reorged,
-    /// Historical catch-up / replay (reserved for future use).
+    /// Historical catch-up / replay published on the `catchup-event` queue.
     Catchup,
 }
 
