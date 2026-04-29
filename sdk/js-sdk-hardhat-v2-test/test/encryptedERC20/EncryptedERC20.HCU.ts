@@ -9,7 +9,7 @@ import type {
 import { ethers } from 'hardhat';
 
 import type { EncryptedERC20 } from '../../typechain-types';
-import { createInstances } from '../instance';
+import { createInstances, hcuLimitAddress, deployerPrivateKey } from '../instance';
 import { isLiveNetwork } from '../network';
 import type { Signers } from '../signers';
 import { getSigners, initSigners } from '../signers';
@@ -123,7 +123,6 @@ describe('EncryptedERC20:HCU', function () {
     this.contractAddress = await contract.getAddress();
     this.erc20 = contract;
     this.instances = await createInstances(this.signers);
-    const hcuLimitAddress = process.env.HCU_LIMIT_CONTRACT_ADDRESS;
     this.hcuLimit = hcuLimitAddress
       ? (new ethers.Contract(hcuLimitAddress, HCU_LIMIT_ABI, ethers.provider) as unknown as HcuLimitContract)
       : null;
@@ -231,7 +230,7 @@ describe('EncryptedERC20:HCU', function () {
     }
 
     before(async function () {
-      const deployerKey = process.env.DEPLOYER_PRIVATE_KEY;
+      const deployerKey = deployerPrivateKey;
       if (deployerKey) {
         this.deployer = new ethers.Wallet(deployerKey, ethers.provider);
       }

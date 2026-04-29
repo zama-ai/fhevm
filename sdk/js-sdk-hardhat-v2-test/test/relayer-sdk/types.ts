@@ -142,7 +142,7 @@ type RelayerPublicDecryptOptionsType = Prettify<
 type ClearValueType = bigint | boolean | `0x${string}`;
 type ClearValues = Readonly<Record<`0x${string}`, ClearValueType>>;
 
-type PublicDecryptResults = Readonly<{
+export type PublicDecryptResults = Readonly<{
   clearValues: ClearValues;
   abiEncodedClearValues: `0x${string}`;
   decryptionProof: `0x${string}`;

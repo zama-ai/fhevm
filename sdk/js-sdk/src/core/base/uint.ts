@@ -444,6 +444,36 @@ export function normalizeUintForType<T extends UintTypeName>(value: Uint, typeNa
   }
 }
 
+const UINT_TYPE_NAMES = [
+  'uint8',
+  'uint16',
+  'uint32',
+  'uint64',
+  'uint128',
+  'uint160',
+  'uint256',
+] as const satisfies readonly UintTypeName[];
+
+export function isUintTypeName(value: unknown): value is UintTypeName {
+  return typeof value === 'string' && (UINT_TYPE_NAMES as readonly string[]).includes(value);
+}
+
+export function assertIsUintTypeName(
+  value: unknown,
+  options: { subject?: string } & ErrorMetadataParams = {},
+): asserts value is UintTypeName {
+  if (!isUintTypeName(value)) {
+    throw new InvalidTypeError(
+      {
+        subject: options.subject,
+        type: typeof value,
+        expectedType: UINT_TYPE_NAMES,
+      },
+      options,
+    );
+  }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // asUintXX
 ////////////////////////////////////////////////////////////////////////////////

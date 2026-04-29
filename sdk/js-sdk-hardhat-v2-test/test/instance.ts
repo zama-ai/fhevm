@@ -46,9 +46,28 @@ const coprocessorDefaults: Record<string, string> = {
   mainnet: '0xD82385dADa1ae3E969447f20A3164F6213100e75',
   localhost: '0xe3a9105a3a932253A70F126eb1E3b589C643dD24',
 };
+
 const coprocessorAddress = requireEnv(
   process.env.FHEVM_EXECUTOR_CONTRACT_ADDRESS || coprocessorDefaults[network.name],
   'FHEVM_EXECUTOR_CONTRACT_ADDRESS'
+);
+
+const hcuLimitDefaults: Record<string, string> = {
+  localhost: '0x233ff88A48c172d29F675403e6A8e302b0F032D9',
+};
+
+const hcuLimitAddress = requireEnv(
+  process.env.HCU_LIMIT_CONTRACT_ADDRESS || hcuLimitDefaults[network.name],
+  'HCU_LIMIT_CONTRACT_ADDRESS'
+);
+
+const deployerPkDefaults: Record<string, string> = {
+  localhost: '0x7697c90f7863e6057fbe25674464e14b57f2c670b1a8ee0f60fb87eb9b615c4d',
+};
+
+const deployerPrivateKey = requireEnv(
+  process.env.DEPLOYER_PRIVATE_KEY || deployerPkDefaults[network.name],
+  'DEPLOYER_PRIVATE_KEY'
 );
 
 const inputAdd = process.env.INPUT_VERIFIER_CONTRACT_ADDRESS || defaults?.inputVerifierContractAddress;
@@ -102,4 +121,4 @@ export const createInstance = async () => {
 };
 
 // Export coprocessor config addresses for smoke tests
-export { aclAddress, coprocessorAddress, kmsVerifierAddress };
+export { aclAddress, coprocessorAddress, kmsVerifierAddress, hcuLimitAddress, deployerPrivateKey };

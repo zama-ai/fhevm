@@ -2,7 +2,7 @@ import type { RelayerInputProofOptions } from '../../types/relayer.js';
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { WithEncrypt } from '../../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
-import type { BytesHex, TypedValueLike } from '../../types/primitives.js';
+import type { BytesHex } from '../../types/primitives.js';
 import type { EncryptedValue } from '../../types/encryptedTypes.js';
 import { addressToChecksummedAddress, assertIsAddress } from '../../base/address.js';
 import { createTypedValue } from '../../base/typedValue.js';
@@ -11,7 +11,7 @@ import { encrypt as encrypt_ } from '../../coprocessor/encrypt.js';
 ////////////////////////////////////////////////////////////////////////////////
 
 export type EncryptValuesParameters = {
-  readonly values: readonly TypedValueLike[];
+  readonly values: ReadonlyArray<{ readonly type: string; readonly value: boolean | bigint | number | string }>;
   readonly contractAddress: string;
   readonly userAddress: string;
   readonly options?: RelayerInputProofOptions | undefined;

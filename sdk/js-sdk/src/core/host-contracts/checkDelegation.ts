@@ -4,6 +4,7 @@ import type { ChecksummedAddress } from '../types/primitives.js';
 import type { HandleContractPair } from '../types/other-p.js';
 import { AclUserDecryptionError } from '../errors/AclError.js';
 import { isHandleDelegatedForUserDecryption } from './isHandleDelegatedForUserDecryption-p.js';
+import { WILDCARD_CONTRACT } from './constants.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -45,7 +46,21 @@ export async function checkDelegation(context: Context, parameters: Parameters):
     });
   }
 
-  // 2. Verify rules: delegator !== contractAddress & delegate !== contractAddress
+  // 2. Verify rule: delegate !== WILDCARD_CONTRACT
+  if (delegate.toLowerCase() === WILDCARD_CONTRACT.toLowerCase()) {
+    throw new AclUserDecryptionError({
+      contractAddress: address,
+      message: `delegate cannot be equal to wildcard contract address`,
+    });
+  }
+  if (delegator.toLowerCase() === WILDCARD_CONTRACT.toLowerCase()) {
+    throw new AclUserDecryptionError({
+      contractAddress: address,
+      message: `delegator cannot be equal to wildcard contract address`,
+    });
+  }
+
+  // 3. Verify rules: delegator !== contractAddress & delegate !== contractAddress
   for (const pair of handleContractPairs) {
     if (delegator.toLowerCase() === pair.contractAddress.toLowerCase()) {
       throw new AclUserDecryptionError({
@@ -61,7 +76,7 @@ export async function checkDelegation(context: Context, parameters: Parameters):
     }
   }
 
-  // 3. Collect all unique (contractAddress, handle) pairs to avoid duplicate RPC calls
+  // 4. Collect all unique (contractAddress, handle) pairs to avoid duplicate RPC calls
   const allChecks: HandleContractPair[] = [];
   const seenKeys = new Set<string>();
 
@@ -81,7 +96,7 @@ export async function checkDelegation(context: Context, parameters: Parameters):
     throw new Error('checkDelegation: no delegation checks to perform (unexpected empty dedup result)');
   }
 
-  // 4. Single batched RPC call for all unique checks
+  // 5. Single batched RPC call for all unique checks
   const allResults = await isHandleDelegatedForUserDecryption(context, {
     address,
     delegator,
@@ -89,7 +104,7 @@ export async function checkDelegation(context: Context, parameters: Parameters):
     pairs: allChecks,
   });
 
-  // 5. Build result map for lookup
+  // 6. Build result map for lookup
   const resultMap = new Map<string, boolean>();
   for (const [i, check] of allChecks.entries()) {
     const result = allResults[i];
@@ -101,7 +116,7 @@ export async function checkDelegation(context: Context, parameters: Parameters):
     resultMap.set(key, result);
   }
 
-  // 6. Verify delegation for each requested pair
+  // 7. Verify delegation for each requested pair
   for (const pair of handleContractPairs) {
     const key = getKey(pair.contractAddress, pair.handle.bytes32Hex);
     if (resultMap.get(key) !== true) {

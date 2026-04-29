@@ -1,10 +1,11 @@
+import type { Signer } from 'ethers';
 import {
   RelayerInputProofProgressArgs,
   RelayerPublicDecryptProgressArgs,
   RelayerUserDecryptProgressArgs,
 } from '@fhevm/sdk/core/types/relayer';
 import { createKmsDelegatedUserDecryptEip712, createKmsUserDecryptEip712 } from '@fhevm/sdk/actions/chain';
-import { createFhevmClient, hasFhevmRuntimeConfig, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
+import { hasFhevmRuntimeConfig, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { createFhevmCleartextClient } from '@fhevm/sdk/ethers/cleartext';
 import {
   FhevmConfigType,
@@ -174,6 +175,73 @@ class FhevmInstanceImpl implements FhevmInstance {
 
   constructor(fullClient: FhevmClient) {
     this.#fullClient = fullClient;
+  }
+
+  async userDecryptSingleHandle(
+    handle: string,
+    contractAddress: string,
+    signer: Signer,
+    privateKey: string,
+    publicKey: string,
+    startTimestamp?: number
+  ): Promise<bigint | number | boolean | string> {
+    const durationDays = 10; // Relayer-sdk expects numbers from now on
+
+    const signerAddress = await signer.getAddress();
+    const transportKeypair = await this.#fullClient.parseTransportKeypair({ privateKey, publicKey });
+    const signedPermit = await this.#fullClient.signDecryptionPermit({
+      contractAddresses: [contractAddress],
+      durationDays,
+      startTimestamp: startTimestamp === undefined ? Math.floor(Date.now() / 1000) : startTimestamp,
+      transportKeypair,
+      signer,
+      signerAddress,
+    });
+    const res = await this.#fullClient.decryptValue({
+      contractAddress,
+      transportKeypair,
+      signedPermit,
+      encryptedValue: handle,
+    });
+    return res.value;
+  }
+
+  async delegatedUserDecryptSingleHandle(
+    handle: string,
+    contractAddress: string,
+    delegatorAddress: string,
+    delegateAddress: string,
+    signer: Signer,
+    delegatePrivateKey: string,
+    delegatePublicKey: string,
+    startTimestamp?: number
+  ): Promise<bigint | number | boolean | string> {
+    const durationDays = 10; // Relayer-sdk expects numbers from now on
+
+    const signerAddress = await signer.getAddress();
+    if (signerAddress.toLowerCase() !== delegateAddress.toLowerCase()) {
+      throw new Error('Unexpected signer address');
+    }
+    const transportKeypair = await this.#fullClient.parseTransportKeypair({
+      privateKey: delegatePrivateKey,
+      publicKey: delegatePublicKey,
+    });
+    const signedPermit = await this.#fullClient.signDecryptionPermit({
+      contractAddresses: [contractAddress],
+      durationDays,
+      startTimestamp: startTimestamp === undefined ? Math.floor(Date.now() / 1000) : startTimestamp,
+      transportKeypair,
+      signer,
+      signerAddress,
+      delegatorAddress,
+    });
+    const res = await this.#fullClient.decryptValue({
+      encryptedValue: handle,
+      contractAddress,
+      transportKeypair,
+      signedPermit,
+    });
+    return res.value;
   }
 
   static async create(config: FhevmInstanceConfig): Promise<FhevmInstance> {
@@ -348,7 +416,7 @@ class FhevmInstanceImpl implements FhevmInstance {
     });
 
     const signedPermit = (await this.#fullClient.parseSignedDecryptionPermit({
-      serialized: {
+      serializedPermit: {
         eip712,
         signature,
         signerAddress: userAddress,
@@ -404,7 +472,7 @@ class FhevmInstanceImpl implements FhevmInstance {
     });
 
     const signedPermit = (await this.#fullClient.parseSignedDecryptionPermit({
-      serialized: {
+      serializedPermit: {
         eip712,
         signature,
         signerAddress: delegateAddress,
@@ -415,7 +483,7 @@ class FhevmInstanceImpl implements FhevmInstance {
     const res = await this.#fullClient.decryptValuesFromPairs({
       pairs: handleContractPairs.map((h) => ({ encryptedValue: h.handle, contractAddress: h.contractAddress })),
       transportKeypair,
-      signedPermit: signedPermit as never,
+      signedPermit,
       options: options ? { ...options, auth: toSdkAuth(options.auth) } : undefined,
     });
 

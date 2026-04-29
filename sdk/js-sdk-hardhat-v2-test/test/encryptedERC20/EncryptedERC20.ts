@@ -6,7 +6,7 @@ import { getSigners, initSigners } from '../signers';
 import { userDecryptSingleHandle } from '../utils';
 import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
 
-describe('BBB EncryptedERC20', function () {
+describe('EncryptedERC20', function () {
   before(async function () {
     await initSigners(2);
     this.signers = await getSigners();
@@ -268,8 +268,8 @@ describe('BBB EncryptedERC20', function () {
         );
         expect.fail('Expected an error to be thrown - Bob should not be able to user decrypt Alice balance');
       } catch (error) {
-        expect((error as { message: string }).message).to.equal(
-          `User address ${this.signers.bob.address} is not authorized to user decrypt handle ${balanceHandleAlice}!`
+        expect((error as { message: string }).message).to.contain(
+          `User ${this.signers.bob.address} is not authorized to decrypt handle ${balanceHandleAlice}!`
         );
       }
     });

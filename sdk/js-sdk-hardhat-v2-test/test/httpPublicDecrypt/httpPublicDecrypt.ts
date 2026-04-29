@@ -4,7 +4,7 @@ import { ethers } from 'hardhat';
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 
-describe('BBB HTTPPublicDecrypt', function () {
+describe('HTTPPublicDecrypt', function () {
   before(async function () {
     await initSigners(2);
     this.signers = await getSigners();

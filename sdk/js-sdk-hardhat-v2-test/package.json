@@ -7,9 +7,9 @@
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
     "prettier:write": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
     "tsc": "tsc --noEmit -p tsconfig.hardhat.json",
-    "compile": "hardhat compile --network hardhat --tsconfig tsconfig.hardhat.json",
+    "compile": "hardhat compile --network localhost --tsconfig tsconfig.hardhat.json",
     "example": "hardhat run scripts/example.ts --network hardhat --tsconfig tsconfig.hardhat.json",
-    "test": "hardhat test --tsconfig tsconfig.hardhat.json"
+    "test": "hardhat test --network localhost --tsconfig tsconfig.hardhat.json"
   },
   "dependencies": {
     "@fhevm/solidity": "*",

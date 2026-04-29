@@ -64,6 +64,16 @@ contract SmartWalletWithDelegation is E2ECoprocessorConfig {
         FHE.delegateUserDecryption(delegate, delegateContractAddress, expirationTimestamp);
     }
 
+    /// @notice Get the expiry date of the delegation to a (delegate, contractAddress) pair.
+    /// @param delegate The address to revoke delegation from.
+    /// @param delegateContractAddress The contract address for which to revoke delegation.
+    function getDelegatedUserDecryptionExpirationDate(
+        address delegate,
+        address delegateContractAddress
+    ) external view returns (uint64) {
+        return FHE.getDelegatedUserDecryptionExpirationDate(address(this), delegate, delegateContractAddress);
+    }
+
     /// @notice Revoke a previously granted delegation.
     /// @param delegate The address to revoke delegation from.
     /// @param delegateContractAddress The contract address for which to revoke delegation.

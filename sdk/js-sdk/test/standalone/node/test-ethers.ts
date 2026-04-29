@@ -1,5 +1,3 @@
-import type { TypedValue } from '@fhevm/sdk/types';
-import { createTypedValue } from '@fhevm/sdk/base';
 import { createFhevmDecryptClient, createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
 import type { ethers } from 'ethers';
@@ -13,7 +11,7 @@ setFhevmRuntimeConfig({
   },
 });
 
-const tv: TypedValue = createTypedValue({ type: 'uint8', value: 123n });
+const tv = { type: 'uint8', value: 123n };
 
 console.log(`--- createFhevmEncryptClient() with chain ${config.chainName}`);
 

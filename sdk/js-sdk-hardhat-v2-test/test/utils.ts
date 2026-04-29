@@ -5,7 +5,7 @@ import { ALL_OPERATORS_PRICES } from '@fhevm/solidity/lib-js/operatorsPrices';
 // import { toBufferBE } from 'bigint-buffer';
 // import { ContractMethodArgs, Log, TransactionReceipt, Typed } from 'ethers';
 // import { Signer } from 'ethers';
-//import { ethers, network } from 'hardhat';
+import { network } from 'hardhat';
 import { ethers } from 'hardhat';
 import type { TransactionReceipt, Log, Signer } from 'ethers';
 // import hre from 'hardhat';
@@ -23,36 +23,49 @@ import { coprocessorAddress } from './instance';
 //   }
 // }
 
-// export const waitForBlock = (blockNumber: bigint | number) => {
-//   if (network.name === 'hardhat') {
-//     return new Promise((resolve, reject) => {
-//       const intervalId = setInterval(async () => {
-//         try {
-//           const currentBlock = await ethers.provider.getBlockNumber();
-//           if (BigInt(currentBlock) >= blockNumber) {
-//             clearInterval(intervalId);
-//             resolve(currentBlock);
-//           }
-//         } catch (error) {
-//           clearInterval(intervalId);
-//           reject(error);
-//         }
-//       }, 50); // Check every 50 milliseconds
-//     });
-//   } else {
-//     return new Promise((resolve, reject) => {
-//       const waitBlock = async (currentBlock: number) => {
-//         if (blockNumber <= BigInt(currentBlock)) {
-//           await ethers.provider.off('block', waitBlock);
-//           resolve(blockNumber);
-//         }
-//       };
-//       ethers.provider.on('block', waitBlock).catch((err) => {
-//         reject(err);
-//       });
-//     });
-//   }
-// };
+export const waitForBlock = (blockNumber: bigint | number) => {
+  if (network.name === 'localhost') {
+    // External node (anvil / hardhat-node) won't progress on its own when idle.
+    // Force-mine until the target block is reached.
+    return (async () => {
+      const target = BigInt(blockNumber);
+      let current = BigInt(await ethers.provider.getBlockNumber());
+      while (current < target) {
+        await ethers.provider.send('evm_mine', []);
+        current = BigInt(await ethers.provider.getBlockNumber());
+      }
+      return current;
+    })();
+  }
+  if (network.name === 'hardhat') {
+    return new Promise((resolve, reject) => {
+      const intervalId = setInterval(async () => {
+        try {
+          const currentBlock = await ethers.provider.getBlockNumber();
+          if (BigInt(currentBlock) >= blockNumber) {
+            clearInterval(intervalId);
+            resolve(currentBlock);
+          }
+        } catch (error) {
+          clearInterval(intervalId);
+          reject(error);
+        }
+      }, 50); // Check every 50 milliseconds
+    });
+  } else {
+    return new Promise((resolve, reject) => {
+      const waitBlock = async (currentBlock: number) => {
+        if (blockNumber <= BigInt(currentBlock)) {
+          await ethers.provider.off('block', waitBlock);
+          resolve(blockNumber);
+        }
+      };
+      ethers.provider.on('block', waitBlock).catch((err) => {
+        reject(err);
+      });
+    });
+  }
+};
 
 export const waitForBalance = async (address: string): Promise<void> => {
   return new Promise((resolve, reject) => {
@@ -130,15 +143,27 @@ export const userDecryptSingleHandle = async (
   instance: any,
   signer: Signer,
   privateKey: string,
-  publicKey: string
+  publicKey: string,
+  startTimestamp?: number
 ): Promise<bigint | boolean | string> => {
+  if (typeof instance.userDecryptSingleHandle === 'function') {
+    return await instance.userDecryptSingleHandle(
+      handle,
+      contractAddress,
+      signer,
+      privateKey,
+      publicKey,
+      startTimestamp
+    );
+  }
+
   const HandleContractPairs = [
     {
       handle: handle,
       contractAddress: contractAddress,
     },
   ];
-  const startTimeStamp = Math.floor(Date.now() / 1000);
+  const startTimeStamp = startTimestamp === undefined ? Math.floor(Date.now() / 1000) : startTimestamp;
   const durationDays = 10; // Relayer-sdk expects numbers from now on
   const contractAddresses = [contractAddress];
 
@@ -182,8 +207,22 @@ export const delegatedUserDecryptSingleHandle = async (
   delegateAddress: string,
   signer: Signer,
   delegatePrivateKey: string,
-  delegatePublicKey: string
+  delegatePublicKey: string,
+  startTimestamp?: number
 ): Promise<bigint | boolean | string> => {
+  if (typeof instance.userDecryptSingleHandle === 'function') {
+    return await instance.delegatedUserDecryptSingleHandle(
+      handle,
+      contractAddress,
+      delegatorAddress,
+      delegateAddress,
+      signer,
+      delegatePrivateKey,
+      delegatePublicKey,
+      startTimestamp
+    );
+  }
+
   const handleContractPairs = [
     {
       handle,
