@@ -540,25 +540,6 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     }
 
     /**
-     * @notice See {IKMSGeneration-hasPendingKeyManagementRequest}.
-     */
-    function hasPendingKeyManagementRequest() external view virtual returns (bool) {
-        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
-
-        uint256 lastKeyId = $.keyCounter;
-        if (lastKeyId != KEY_COUNTER_BASE && !$.isRequestDone[lastKeyId]) {
-            return true;
-        }
-
-        uint256 lastCrsId = $.crsCounter;
-        if (lastCrsId != CRS_COUNTER_BASE && !$.isRequestDone[lastCrsId]) {
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
      * @notice See {IKMSGeneration-getKeyParamsType}.
      */
     function getKeyParamsType(uint256 keyId) external view virtual returns (ParamsType) {
@@ -607,6 +588,30 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     function getActiveCrsId() external view virtual returns (uint256) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
         return $.activeCrsId;
+    }
+
+    /**
+     * @notice See {IKMSGeneration-getKeyCounter}.
+     */
+    function getKeyCounter() external view virtual returns (uint256) {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+        return $.keyCounter;
+    }
+
+    /**
+     * @notice See {IKMSGeneration-getCrsCounter}.
+     */
+    function getCrsCounter() external view virtual returns (uint256) {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+        return $.crsCounter;
+    }
+
+    /**
+     * @notice See {IKMSGeneration-isRequestDone}.
+     */
+    function isRequestDone(uint256 requestId) external view virtual returns (bool) {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+        return $.isRequestDone[requestId];
     }
 
     /**

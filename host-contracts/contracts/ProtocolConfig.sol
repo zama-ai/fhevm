@@ -2,10 +2,8 @@
 pragma solidity ^0.8.24;
 
 import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
-import {IKMSGeneration} from "./interfaces/IKMSGeneration.sol";
 import {KmsNode} from "./shared/Structs.sol";
 import {KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
-import {kmsGenerationAdd} from "../addresses/FHEVMHostAddresses.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
@@ -27,9 +25,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
     /// @dev Shared between `initializeFromEmptyProxy` and `initializeFromMigration`.
     uint64 private constant REINITIALIZER_VERSION = 2;
-
-    /// @notice Canonical KMSGeneration proxy used for the in-flight guard.
-    IKMSGeneration private constant KMS_GENERATION = IKMSGeneration(kmsGenerationAdd);
 
     // -----------------------------------------------------------------------------------------
     // ERC-7201 namespaced storage
@@ -133,11 +128,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         KmsNode[] calldata kmsNodes,
         KmsThresholds calldata thresholds
     ) external virtual onlyACLOwner {
-        // Block context creation if the canonical KMSGeneration proxy has a key management request in flight.
-        if (KMS_GENERATION.hasPendingKeyManagementRequest()) {
-            revert KeyManagementRequestInFlight();
-        }
-
         _defineKmsContext(kmsNodes, thresholds);
     }
 

@@ -285,9 +285,13 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
         keyId = KEY_COUNTER_BASE + 1;
+        assertEq(kmsGeneration.getKeyCounter(), keyId);
+        assertFalse(kmsGeneration.isRequestDone(keyId));
 
         _doPrepKeygenResponse(prepKeygenId, kmsPk0, kmsTxSender0);
+        assertFalse(kmsGeneration.isRequestDone(keyId));
         _doKeygenResponse(prepKeygenId, keyId, kmsPk0, kmsTxSender0);
+        assertTrue(kmsGeneration.isRequestDone(keyId));
     }
 
     /// @dev Run a full CRS cycle
@@ -296,7 +300,10 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         kmsGeneration.crsgenRequest(4096, IKMSGeneration.ParamsType.Default);
 
         crsId = CRS_COUNTER_BASE + 1;
+        assertEq(kmsGeneration.getCrsCounter(), crsId);
+        assertFalse(kmsGeneration.isRequestDone(crsId));
         _doCrsgenResponse(crsId, kmsPk0, kmsTxSender0);
+        assertTrue(kmsGeneration.isRequestDone(crsId));
     }
 
     function _defaultMigrationState(
@@ -382,7 +389,8 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         assertEq(kmsGeneration.getVersion(), "KMSGeneration v0.1.0");
         assertEq(kmsGeneration.getActiveKeyId(), 0);
         assertEq(kmsGeneration.getActiveCrsId(), 0);
-        assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
+        assertEq(kmsGeneration.getKeyCounter(), KEY_COUNTER_BASE);
+        assertEq(kmsGeneration.getCrsCounter(), CRS_COUNTER_BASE);
     }
 
     function test_revertDoubleInitFromEmptyProxy() public {
@@ -426,7 +434,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         (, uint256 keyId) = _runFullKeygenCycle();
         assertEq(kmsGeneration.getActiveKeyId(), keyId);
         assertEq(uint256(kmsGeneration.getKeyParamsType(keyId)), uint256(IKMSGeneration.ParamsType.Default));
-        assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
     }
 
     function test_keygenMaterials() public {
@@ -461,7 +468,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         uint256 crsId = _runFullCrsCycle();
         assertEq(kmsGeneration.getActiveCrsId(), crsId);
         assertEq(uint256(kmsGeneration.getCrsParamsType(crsId)), uint256(IKMSGeneration.ParamsType.Default));
-        assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
     }
 
     function test_emitKeygenLifecycleEvents() public {
@@ -518,22 +524,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         assertEq(urls.length, 1);
         assertEq(urls[0], "https://s0.example.com");
         assertEq(crsDigest, hex"deadbeef");
-    }
-
-    // -----------------------------------------------------------------------
-    // hasPendingKeyManagementRequest
-    // -----------------------------------------------------------------------
-
-    function test_pendingKeyManagementRequest() public {
-        vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
-        assertTrue(kmsGeneration.hasPendingKeyManagementRequest());
-    }
-
-    function test_pendingCrsRequest() public {
-        vm.prank(owner);
-        kmsGeneration.crsgenRequest(4096, IKMSGeneration.ParamsType.Default);
-        assertTrue(kmsGeneration.hasPendingKeyManagementRequest());
     }
 
     // -----------------------------------------------------------------------
@@ -794,15 +784,16 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     function test_abortKeygen() public {
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
-        assertTrue(kmsGeneration.hasPendingKeyManagementRequest());
 
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
+        uint256 keyId = KEY_COUNTER_BASE + 1;
         vm.expectEmit(true, true, true, true, address(kmsGeneration));
         emit IKMSGeneration.AbortKeygen(prepKeygenId);
         vm.prank(owner);
         kmsGeneration.abortKeygen(prepKeygenId);
 
-        assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
+        assertTrue(kmsGeneration.isRequestDone(prepKeygenId));
+        assertTrue(kmsGeneration.isRequestDone(keyId));
     }
 
     function test_abortKeygenAfterPrepConsensus() public {
@@ -810,15 +801,17 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
 
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
+        uint256 keyId = KEY_COUNTER_BASE + 1;
         _doPrepKeygenResponse(prepKeygenId, kmsPk0, kmsTxSender0);
-        assertTrue(kmsGeneration.hasPendingKeyManagementRequest());
+        assertFalse(kmsGeneration.isRequestDone(keyId));
 
         vm.expectEmit(true, true, true, true, address(kmsGeneration));
         emit IKMSGeneration.AbortKeygen(prepKeygenId);
         vm.prank(owner);
         kmsGeneration.abortKeygen(prepKeygenId);
 
-        assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
+        assertTrue(kmsGeneration.isRequestDone(prepKeygenId));
+        assertTrue(kmsGeneration.isRequestDone(keyId));
 
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Test);
@@ -827,15 +820,15 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     function test_abortCrsgen() public {
         vm.prank(owner);
         kmsGeneration.crsgenRequest(4096, IKMSGeneration.ParamsType.Default);
-        assertTrue(kmsGeneration.hasPendingKeyManagementRequest());
 
         uint256 crsId = CRS_COUNTER_BASE + 1;
+        assertFalse(kmsGeneration.isRequestDone(crsId));
         vm.expectEmit(true, true, true, true, address(kmsGeneration));
         emit IKMSGeneration.AbortCrsgen(crsId);
         vm.prank(owner);
         kmsGeneration.abortCrsgen(crsId);
 
-        assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
+        assertTrue(kmsGeneration.isRequestDone(crsId));
     }
 
     function test_revertAbortKeygenInvalidId() public {
@@ -897,7 +890,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         assertEq(kmsGeneration.getActiveKeyId(), keyId);
         assertEq(uint256(kmsGeneration.getKeyParamsType(keyId)), uint256(IKMSGeneration.ParamsType.Test));
-        assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
     }
 
     function test_revertGetAbortedKeyViews() public {
@@ -933,7 +925,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         assertEq(kmsGeneration.getActiveCrsId(), crsId);
         assertEq(uint256(kmsGeneration.getCrsParamsType(crsId)), uint256(IKMSGeneration.ParamsType.Test));
-        assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
     }
 
     function test_revertGetAbortedCrsViews() public {
@@ -1009,7 +1000,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         assertEq(kmsGeneration.getVersion(), "KMSGeneration v0.1.0");
         assertEq(kmsGeneration.getActiveKeyId(), 0);
         assertEq(kmsGeneration.getActiveCrsId(), 0);
-        assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
 
         // Deploy the V2 implementation and upgrade
         address v2Impl = address(new KMSGenerationUpgradedExample());
@@ -1023,7 +1013,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         // Verify state is preserved
         assertEq(kmsGeneration.getActiveKeyId(), 0);
         assertEq(kmsGeneration.getActiveCrsId(), 0);
-        assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
     }
 
     // -----------------------------------------------------------------------
@@ -1035,7 +1024,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         assertEq(migrated.getVersion(), "KMSGeneration v0.1.0");
         assertEq(migrated.getActiveKeyId(), KEY_COUNTER_BASE + 1);
         assertEq(migrated.getActiveCrsId(), CRS_COUNTER_BASE + 1);
-        assertFalse(migrated.hasPendingKeyManagementRequest());
 
         // Verify material lookups work post-migration
         (string[] memory keyUrls, IKMSGeneration.KeyDigest[] memory migratedDigests) = migrated.getKeyMaterials(
@@ -1357,6 +1345,5 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _doKeygenResponse(prepKeygenId, keyId, kmsPk2, kmsTxSender2);
 
         assertEq(kmsGeneration.getActiveKeyId(), keyId);
-        assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
     }
 }
