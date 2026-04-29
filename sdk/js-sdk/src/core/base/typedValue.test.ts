@@ -83,8 +83,12 @@ describe('createTypedValue', () => {
 
     // Valid: bigint via uint160 is converted to a 0x address string
     const bigintAddr = BigInt(addr);
-    expect(createTypedValue({ type: 'uint160' as unknown as 'address', value: bigintAddr as unknown as string }).type).toBe('address');
-    expect(createTypedValue({ type: 'uint160' as unknown as 'address', value: bigintAddr as unknown as string }).value).toBe(addr);
+    expect(
+      createTypedValue({ type: 'uint160' as unknown as 'address', value: bigintAddr as unknown as string }).type,
+    ).toBe('address');
+    expect(
+      createTypedValue({ type: 'uint160' as unknown as 'address', value: bigintAddr as unknown as string }).value,
+    ).toBe(addr);
 
     // Throws: missing 0x prefix
     expect(() => createTypedValue({ type: 'address', value: 'aaaabbbbccccddddeeeeffffaaaabbbbccccdddd' })).toThrow();
@@ -188,7 +192,12 @@ describe('createTypedValueArray', () => {
 
     // Throws: any invalid element propagates the error
     expect(() => createTypedValueArray([{ type: 'uint8', value: 256 }])).toThrow();
-    expect(() => createTypedValueArray([{ type: 'uint8', value: 42 }, { type: 'uint8', value: 256 }])).toThrow();
+    expect(() =>
+      createTypedValueArray([
+        { type: 'uint8', value: 42 },
+        { type: 'uint8', value: 256 },
+      ]),
+    ).toThrow();
   });
 });
 
@@ -215,12 +224,16 @@ describe('typedValueToBytes32Hex', () => {
     );
 
     // address: right-aligned, left-padded with 12 zero bytes
-    expect(typedValueToBytes32Hex(createTypedValue({ type: 'address', value: '0xaaaabbbbccccddddeeeeffffaaaabbbbccccdddd' }))).toBe(
-      '0x000000000000000000000000aaaabbbbccccddddeeeeffffaaaabbbbccccdddd',
-    );
+    expect(
+      typedValueToBytes32Hex(
+        createTypedValue({ type: 'address', value: '0xaaaabbbbccccddddeeeeffffaaaabbbbccccdddd' }),
+      ),
+    ).toBe('0x000000000000000000000000aaaabbbbccccddddeeeeffffaaaabbbbccccdddd');
 
     // Throws: not a TypedValue
-    expect(() => typedValueToBytes32Hex({ type: 'uint8', value: 42 } as unknown as ReturnType<typeof createTypedValue>)).toThrow();
+    expect(() =>
+      typedValueToBytes32Hex({ type: 'uint8', value: 42 } as unknown as ReturnType<typeof createTypedValue>),
+    ).toThrow();
   });
 });
 
@@ -258,12 +271,7 @@ describe('TypedValueArrayBuilder', () => {
 
   it('addBool / addUint8 / addUint16 / addUint32', () => {
     // Valid: uint8/16/32 normalize to number
-    const arr = new TypedValueArrayBuilder()
-      .addBool(true)
-      .addUint8(42)
-      .addUint16(1000)
-      .addUint32(100_000)
-      .build();
+    const arr = new TypedValueArrayBuilder().addBool(true).addUint8(42).addUint16(1000).addUint32(100_000).build();
     expect(arr[0]!.type).toBe('bool');
     expect(arr[0]!.value).toBe(true);
     expect(arr[1]!.value).toBe(42);
@@ -307,7 +315,11 @@ describe('TypedValueArrayBuilder', () => {
     expect(v).toBe(existing);
 
     // Throws: plain object is not a TypedValue
-    expect(() => new TypedValueArrayBuilder().addTypedValue({ type: 'uint8', value: 7 } as unknown as ReturnType<typeof createTypedValue>)).toThrow();
+    expect(() =>
+      new TypedValueArrayBuilder().addTypedValue({ type: 'uint8', value: 7 } as unknown as ReturnType<
+        typeof createTypedValue
+      >),
+    ).toThrow();
 
     // Throws: TypedValue with mismatched type
     const uint16 = createTypedValue({ type: 'uint16', value: 1000 });
