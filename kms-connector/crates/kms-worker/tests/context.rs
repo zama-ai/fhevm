@@ -13,7 +13,8 @@ use connector_utils::tests::{
     },
     rand::{rand_digest, rand_sns_ct},
     setup::{
-        DbInstance, TESTING_KMS_CONTEXT, TestInstanceBuilder, init_host_chains_acl_contracts_mock,
+        DbInstance, TESTING_KMS_CONTEXT, TestInstanceBuilder, erc1271_magic_response,
+        init_host_chains_acl_contracts_mock,
     },
 };
 use kms_worker::core::Config;
@@ -64,13 +65,20 @@ async fn test_decryption_context_not_found(
     info!("Gateway mock started!");
 
     // Mocking Host chain ACL to ALLOW decryption.
-    // Per attempt: Public → 1 bool; Legacy user → 2 bools; V2 → 1 U256 (invalidation) + 1 bool.
+    // Per attempt: Public → 1 bool; Legacy user → 2 bools;
+    // V2 → 1 `isValidSignature` (RFC-012) + 1 U256 (invalidation) + 1 bool (ownership).
     let acl_responses = match event_type {
         TestEventType::PublicDecryption => {
             vec![true.abi_encode(); MAX_DECRYPTION_ATTEMPTS as usize]
         }
         TestEventType::UserDecryptionV2 => (0..MAX_DECRYPTION_ATTEMPTS)
-            .flat_map(|_| vec![U256::ZERO.abi_encode(), true.abi_encode()])
+            .flat_map(|_| {
+                vec![
+                    erc1271_magic_response(),
+                    U256::ZERO.abi_encode(),
+                    true.abi_encode(),
+                ]
+            })
             .collect(),
         TestEventType::UserDecryption => {
             vec![true.abi_encode(); 2 * MAX_DECRYPTION_ATTEMPTS as usize]
@@ -169,10 +177,15 @@ async fn test_decryption_context_invalid(#[case] event_type: TestEventType) -> a
     info!("Gateway mock started!");
 
     // Mocking Host chain ACL to ALLOW decryption (1 attempt only, irrecoverable error).
-    // Per attempt: Public → 1 bool; Legacy user → 2 bools; V2 → 1 U256 (invalidation) + 1 bool.
+    // Per attempt: Public → 1 bool; Legacy user → 2 bools;
+    // V2 → 1 `isValidSignature` (RFC-012) + 1 U256 (invalidation) + 1 bool (ownership).
     let acl_responses = match event_type {
         TestEventType::PublicDecryption => vec![true.abi_encode()],
-        TestEventType::UserDecryptionV2 => vec![U256::ZERO.abi_encode(), true.abi_encode()],
+        TestEventType::UserDecryptionV2 => vec![
+            erc1271_magic_response(),
+            U256::ZERO.abi_encode(),
+            true.abi_encode(),
+        ],
         TestEventType::UserDecryption => vec![true.abi_encode(); 2],
         _ => vec![],
     };
