@@ -250,7 +250,7 @@ pub(crate) async fn activate_ready_key_activations(
                 AND e.key_id = $3
                 AND e.key_content_public IS NOT NULL
                 AND e.key_content_sks_key IS NOT NULL
-            ON CONFLICT (chain_id, block_hash, key_id) DO UPDATE
+            ON CONFLICT (chain_id, block_hash, key_id_gw) DO UPDATE
             SET pks_key   = EXCLUDED.pks_key,
                 sks_key   = EXCLUDED.sks_key,
                 sns_pk    = COALESCE(EXCLUDED.sns_pk, keys.sns_pk),
