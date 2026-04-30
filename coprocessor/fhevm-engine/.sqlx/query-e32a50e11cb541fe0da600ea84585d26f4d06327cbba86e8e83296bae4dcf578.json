@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*)\n        FROM (\n            SELECT 1\n            FROM verify_proofs\n            WHERE verified IS NULL\n            ORDER BY zk_proof_id ASC\n            FOR UPDATE SKIP LOCKED\n        ) AS unlocked_rows;\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "e32a50e11cb541fe0da600ea84585d26f4d06327cbba86e8e83296bae4dcf578"
+}

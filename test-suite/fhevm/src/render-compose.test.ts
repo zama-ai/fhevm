@@ -173,6 +173,10 @@ describe("render-compose", () => {
       expect(doc.services["host-sc-chain-b-deploy"]?.build).toBeTruthy();
       expect(doc.services["host-sc-chain-b-add-pausers"]?.image).toContain(":fhevm-local");
       expect(doc.services["host-sc-chain-b-add-pausers"]?.build).toBeTruthy();
+      expect(doc.services["host-sc-chain-b-trigger-keygen"]?.image).toContain(":fhevm-local");
+      expect(doc.services["host-sc-chain-b-trigger-keygen"]?.build).toBeTruthy();
+      expect(doc.services["host-sc-chain-b-trigger-crsgen"]?.image).toContain(":fhevm-local");
+      expect(doc.services["host-sc-chain-b-trigger-crsgen"]?.build).toBeTruthy();
     });
   });
 
