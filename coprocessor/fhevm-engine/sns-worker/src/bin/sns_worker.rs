@@ -1,5 +1,6 @@
 use sns_worker::{Config, DBConfig, HealthCheckConfig, S3Config, S3RetryPolicy, SNSMetricsConfig};
 
+use fhevm_engine_common::database::resolve_database_url_from_option;
 use fhevm_engine_common::telemetry;
 use tokio::signal::unix;
 use tokio_util::sync::CancellationToken;
@@ -14,12 +15,12 @@ fn handle_sigint(token: CancellationToken) {
     });
 }
 
-fn construct_config() -> Config {
+fn construct_config() -> Result<Config, fhevm_engine_common::database::DatabaseConnectionError> {
     let args: utils::daemon_cli::Args = utils::daemon_cli::parse_args();
 
-    let db_url = args.database_url.clone().unwrap_or_default();
+    let db_url = resolve_database_url_from_option(args.database_url.clone())?;
 
-    Config {
+    Ok(Config {
         service_name: args.service_name,
         metrics: SNSMetricsConfig {
             addr: args.metrics_addr,
@@ -57,12 +58,15 @@ fn construct_config() -> Config {
         enable_compression: args.enable_compression,
         schedule_policy: args.schedule_policy,
         pg_auto_explain_with_min_duration: args.pg_auto_explain_with_min_duration,
-    }
+    })
 }
 
 #[tokio::main]
 async fn main() {
-    let config: Config = construct_config();
+    let config: Config = construct_config().unwrap_or_else(|err| {
+        error!(error = %err, "Invalid database configuration");
+        std::process::exit(1);
+    });
     let parent = CancellationToken::new();
 
     let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(

@@ -108,6 +108,12 @@ Options:
 
 For more details on configuration, please check [Coprocessor Configuration](docs/getting_started/fhevm/coprocessor/configuration.md)
 
+For AWS RDS/PostgreSQL IAM authentication, keep `DATABASE_URL` passwordless, for example
+`postgresql://coprocessor@my-db.cluster-xyz.eu-west-2.rds.amazonaws.com:5432/coprocessor`,
+and set `DATABASE_IAM_AUTH_ENABLED=true`. `DATABASE_IAM_REGION` and
+`DATABASE_SSL_ROOT_CERT_PATH` should also be set so the runtime can sign tokens for the correct
+region and enforce `verify-full` TLS with the expected CA bundle.
+
 ##### host-listener
 
 ```bash

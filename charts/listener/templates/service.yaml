@@ -1,0 +1,49 @@
+{{/* ── Per-listener metrics Service ──────────────────────────────── */}}
+{{- if and .Values.listeners .Values.metrics.enabled }}
+{{- range $listener := .Values.listeners }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "listener.instanceName" (dict "root" $ "listener" $listener) }}
+  labels:
+    {{- include "listener.instanceLabels" (dict "root" $ "listener" $listener) | nindent 4 }}
+  {{- with $.Values.metrics.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ $.Values.metrics.service.type | default "ClusterIP" }}
+  selector:
+    {{- include "listener.instanceSelectorLabels" (dict "root" $ "listener" $listener) | nindent 4 }}
+  ports:
+    - name: metrics
+      port: {{ include "listener.metricsPort" (dict "root" $ "listener" $listener) }}
+      targetPort: metrics
+      protocol: TCP
+{{- end }}
+{{- end }}
+
+{{/* ── eRPC Service ───────────────────────────────────────────────── */}}
+{{- if .Values.erpc.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "listener.erpcName" . }}
+  labels:
+    {{- include "listener.erpcLabels" . | nindent 4 }}
+spec:
+  type: {{ .Values.erpc.service.type | default "ClusterIP" }}
+  selector:
+    {{- include "listener.erpcSelectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.erpc.service.httpPort }}
+      targetPort: http
+      protocol: TCP
+    - name: metrics
+      port: {{ .Values.erpc.service.metricsPort }}
+      targetPort: metrics
+      protocol: TCP
+{{- end }}

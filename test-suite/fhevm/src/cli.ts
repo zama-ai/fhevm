@@ -4,6 +4,7 @@
 import { defineCommand, renderUsage, runCommand } from "citty";
 
 import { formatCliError, PreflightError } from "./errors";
+import { printRolloutMatrix, rollout, rolloutStep } from "./commands/rollout";
 import { listTestProfiles, test } from "./commands/test";
 import { resolveBundle } from "./resolve/bundle-store";
 import { STEP_NAMES } from "./types";
@@ -255,6 +256,35 @@ const root = defineCommand({
         }
         const { lockPath } = await resolveBundle(parsed, process.env);
         console.log(lockPath);
+      },
+    }),
+    rollout: defineCommand({
+      meta: { name: "rollout", description: "Generate cumulative mixed-version rollout lock files from a compat-test definition." },
+      args: {
+        "compat-test": { type: "string", description: "Compat-test JSON path." },
+        out: { type: "string", description: "Output directory for generated lock files, or file path when --step is set." },
+        step: { type: "string", description: "Render only one rollout step index instead of the full directory." },
+        matrix: { type: "boolean", description: "Print the rollout matrix JSON instead of writing lock files." },
+      },
+      async run({ args }) {
+        const compatTest = asString(args["compat-test"]) ?? "";
+        if (asBool(args.matrix)) {
+          if (args.out !== undefined || args.step !== undefined) {
+            throw new PreflightError("rollout --matrix only supports --compat-test");
+          }
+          await printRolloutMatrix({ compatTest });
+          return;
+        }
+        const step = asString(args.step);
+        if (step !== undefined) {
+          await rolloutStep({
+            compatTest,
+            out: asString(args.out) ?? "",
+            step: Number(step),
+          });
+          return;
+        }
+        await rollout({ compatTest, out: asString(args.out) ?? "" });
       },
     }),
     test: defineCommand({

@@ -15,7 +15,7 @@ use daggy::{
 use fhevm_engine_common::common::FheOperation;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::perform_fhe_operation;
-use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
+use fhevm_engine_common::types::{get_ct_type, Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::HeartBeat;
 use std::collections::HashMap;
 use tfhe::ReRandomizationContext;
@@ -458,8 +458,22 @@ fn try_execute_node(
         RERAND_LATENCY_BATCH_HISTOGRAM.observe(elapsed.as_secs_f64());
     }
     let opcode = node.opcode;
+    let output_type = get_ct_type(&node.result_handle).map_err(|e| {
+        error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle), error = ?e },
+               "Invalid result handle: cannot read type byte");
+        telemetry::set_current_span_error(&e);
+        SchedulerError::SchedulerError
+    })?;
+
     let result = std::panic::catch_unwind(|| {
-        run_computation(opcode, cts, node_index, gpu_idx, transaction_id)
+        run_computation(
+            opcode,
+            cts,
+            node_index,
+            gpu_idx,
+            transaction_id,
+            output_type,
+        )
     });
     match result {
         Err(e) => {
@@ -485,6 +499,7 @@ fn run_computation(
     graph_node_index: usize,
     gpu_idx: usize,
     transaction_id: &Handle,
+    output_type: i16,
 ) -> (usize, OpResult) {
     let txn_id_short = telemetry::short_hex_id(transaction_id);
     let op = FheOperation::try_from(operation);
@@ -532,7 +547,7 @@ fn run_computation(
                 tracing::Span::current().record("input_type", inputs[0].type_name());
             }
 
-            let result = perform_fhe_operation(operation as i16, &inputs, gpu_idx);
+            let result = perform_fhe_operation(operation as i16, &inputs, gpu_idx, output_type);
 
             match result {
                 Ok(result) => {

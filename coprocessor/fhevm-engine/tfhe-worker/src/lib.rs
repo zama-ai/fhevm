@@ -1,4 +1,5 @@
 use ::tracing::{error, info};
+use fhevm_engine_common::database::resolve_database_url_from_option;
 use fhevm_engine_common::keys::{FhevmKeys, SerializedFhevmKeys};
 use fhevm_engine_common::{healthz_server, metrics_server, telemetry};
 use tokio_util::sync::CancellationToken;
@@ -64,7 +65,7 @@ pub async fn async_main(
     let cancel_token = CancellationToken::new();
     info!(target: "async_main", args = ?args, "Starting runtime with args");
 
-    let database_url = args.database_url.clone().unwrap_or_default();
+    let database_url = resolve_database_url_from_option(args.database_url.clone())?;
     let health_check = health_check::HealthCheck::new(database_url);
 
     let mut set = JoinSet::new();

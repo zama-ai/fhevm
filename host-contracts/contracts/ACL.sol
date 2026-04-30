@@ -156,7 +156,7 @@ contract ACL is
     uint256 private constant PATCH_VERSION = 0;
 
     /// @notice FHEVMExecutor address.
-    address private constant fhevmExecutorAddress = fhevmExecutorAdd;
+    address private constant FHEVM_EXECUTOR_ADDRESS = fhevmExecutorAdd;
 
     /// @notice PauserSet contract.
     IPauserSet private constant PAUSER_SET = IPauserSet(pauserSetAdd);
@@ -167,14 +167,14 @@ contract ACL is
      *      Pass as `contractAddress` in `delegateForUserDecryption` / `revokeDelegationForUserDecryption` to grant or
      *      revoke blanket delegation. This is a high-trust grant: SDKs should warn users explicitly.
      */
-    address public constant WILDCARD_CONTRACT = address(type(uint160).max);
+    address public constant WILDCARD_DELEGATION_ADDRESS = address(type(uint160).max);
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
     uint64 private constant REINITIALIZER_VERSION = 5;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.ACL")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant ACLStorageLocation = 0xa688f31953c2015baaf8c0a488ee1ee22eb0e05273cc1fd31ea4cbee42febc00;
+    bytes32 private constant ACL_STORAGE_LOCATION = 0xa688f31953c2015baaf8c0a488ee1ee22eb0e05273cc1fd31ea4cbee42febc00;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -251,7 +251,7 @@ contract ACL is
      * @param account Address of the account.
      */
     function allowTransient(bytes32 handle, address account) public virtual whenNotPaused {
-        if (msg.sender != fhevmExecutorAddress) {
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) {
             if (isAccountDenied(msg.sender)) {
                 revert SenderDenied(msg.sender);
             }
@@ -275,7 +275,7 @@ contract ACL is
      * @notice Delegates an account the access to handles for user decryption, for instance, in the context of account
      * abstraction for issuing user decryption requests from a smart contract account.
      * @param delegate The address of the account that receives the delegation.
-     * @param contractAddress The contract address to delegate access to, or `WILDCARD_CONTRACT` for delegation across
+     * @param contractAddress The contract address to delegate access to, or `WILDCARD_DELEGATION_ADDRESS` for delegation across
      *        all contracts (until expiry). Mixing wildcard with per-contract delegations is allowed and can be useful,
      *        for example when different expiries are desired, although it is often unnecessary.
      * @param expirationDate The UNIX timestamp when the user decryption delegation expires.
@@ -301,7 +301,7 @@ contract ACL is
         if (delegate == msg.sender) {
             revert SenderCannotBeDelegate(delegate);
         }
-        if (delegate == WILDCARD_CONTRACT) {
+        if (delegate == WILDCARD_DELEGATION_ADDRESS) {
             revert DelegateCannotBeWildcard(delegate);
         }
         if (delegate == contractAddress) {
@@ -427,10 +427,10 @@ contract ACL is
 
     /**
      * @notice Getter function for the FHEVMExecutor contract address.
-     * @return fhevmExecutorAddress Address of the FHEVMExecutor.
+     * @return FHEVM_EXECUTOR_ADDRESS Address of the FHEVMExecutor.
      */
     function getFHEVMExecutorAddress() public view virtual returns (address) {
-        return fhevmExecutorAddress;
+        return FHEVM_EXECUTOR_ADDRESS;
     }
 
     /**
@@ -466,7 +466,7 @@ contract ACL is
      * @notice Returns whether an account is delegated to access the handle for user decryption.
      * @dev Succeeds when the delegator and `contractAddress` are both persistently allowed on the handle, and either
      *      a non-expired delegation exists for `(delegator, delegate, contractAddress)` or for
-     *      `(delegator, delegate, WILDCARD_CONTRACT)`. Wildcard does not bypass `allow`; it only avoids per-contract
+     *      `(delegator, delegate, WILDCARD_DELEGATION_ADDRESS)`. Wildcard does not bypass `allow`; it only avoids per-contract
      *      delegation entries.
      * @param delegator The address of the account that delegates access to its handles.
      * @param delegate The address of the account that receives the delegation.
@@ -485,7 +485,7 @@ contract ACL is
             return false;
         }
         return
-            _isUserDecryptionDelegationActive($, delegator, delegate, WILDCARD_CONTRACT) ||
+            _isUserDecryptionDelegationActive($, delegator, delegate, WILDCARD_DELEGATION_ADDRESS) ||
             _isUserDecryptionDelegationActive($, delegator, delegate, contractAddress);
     }
 
@@ -590,7 +590,7 @@ contract ACL is
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
 
     /// @dev Looks up `userDecryptionDelegations[delegator][delegate][contractAddress]`.
-    /// @param contractAddress App contract from the decryption request, or `WILDCARD_CONTRACT` for the wildcard row.
+    /// @param contractAddress App contract from the decryption request, or `WILDCARD_DELEGATION_ADDRESS` for the wildcard row.
     function _isUserDecryptionDelegationActive(
         ACLStorage storage $,
         address delegator,
@@ -605,7 +605,7 @@ contract ACL is
      */
     function _getACLStorage() internal pure returns (ACLStorage storage $) {
         assembly {
-            $.slot := ACLStorageLocation
+            $.slot := ACL_STORAGE_LOCATION
         }
     }
 }

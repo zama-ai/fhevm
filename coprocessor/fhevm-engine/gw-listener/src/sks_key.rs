@@ -19,6 +19,7 @@ pub fn extract_server_key_without_ns(sns_key: &[u8]) -> anyhow::Result<Vec<u8>> 
         noise_squashing_key,
         noise_squashing_compression_key,
         re_randomization_keyswitching_key,
+        _oprf_key,
         tag,
     ) = server_key.into_raw_parts();
 
@@ -40,6 +41,7 @@ pub fn extract_server_key_without_ns(sns_key: &[u8]) -> anyhow::Result<Vec<u8>> 
         None,                              // noise squashing key excluded
         None,                              // noise squashing compression key excluded
         re_randomization_keyswitching_key, // rerandomisation keyswitching key excluded
+        None,                              // oprf key excluded
         tag,
     )))
 }

@@ -1,21 +1,27 @@
-{{- if .Values.hostListenerCatchupOnly.enabled }}
+{{- range $i, $chain := .Values.chains }}
+{{- if (($chain.hostListenerCatchupOnly).enabled) }}
+{{- $useLegacyName := $chain.hostListenerCatchupOnly.useLegacyName | default false -}}
+{{- $deploymentName := ternary (printf "%s-host-listener-catchup-only" $.Release.Name | trunc 63 | trimSuffix "-") (printf "%s-host-listener-catchup-only-%s" $.Release.Name $chain.name | trunc 63 | trimSuffix "-") $useLegacyName -}}
+{{- $appLabel := ternary "coprocessor-host-listener-catchup-only" (printf "coprocessor-host-listener-catchup-only-%s" $chain.name) $useLegacyName -}}
+---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
-    app: coprocessor-host-listener-catchup-only
-    app.kubernetes.io/name: {{ include "hostListenerCatchupOnlyName" . }}
-  name: {{ include "hostListenerCatchupOnlyName" . }}
+    app: {{ $appLabel }}
+    app.kubernetes.io/name: {{ $deploymentName }}
+  name: {{ $deploymentName }}
 spec:
   ports:
     - name: metrics
-      port: {{ .Values.hostListenerCatchupOnly.ports.metrics }}
+      port: {{ $.Values.hostListenerCatchupOnlyShared.ports.metrics }}
       targetPort: metrics
     - name: healthcheck
-      port: {{ .Values.hostListenerCatchupOnly.ports.healthcheck }}
+      port: {{ $.Values.hostListenerCatchupOnlyShared.ports.healthcheck }}
       targetPort: healthcheck
   selector:
-    app: coprocessor-host-listener-catchup-only
-    app.kubernetes.io/name: {{ include "hostListenerCatchupOnlyName" . }}
+    app: {{ $appLabel }}
+    app.kubernetes.io/name: {{ $deploymentName }}
   type: ClusterIP
+{{- end }}
 {{- end }}
