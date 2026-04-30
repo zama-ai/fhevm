@@ -91,6 +91,7 @@ pub(crate) struct DriftDetector {
     local_node_id: String,
     drift_no_consensus_timeout: Duration,
     drift_post_consensus_grace: Duration,
+    auto_revert_enabled: bool,
     deferred_drift_detected: u64,
     deferred_consensus_timeout: u64,
     deferred_missing_submission: u64,
@@ -102,6 +103,7 @@ impl DriftDetector {
         expected_senders: Vec<Address>,
         drift_no_consensus_timeout: Duration,
         drift_post_consensus_grace: Duration,
+        auto_revert_enabled: bool,
     ) -> Self {
         Self {
             current_expected_senders: expected_senders,
@@ -109,6 +111,7 @@ impl DriftDetector {
             local_node_id: std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".to_owned()),
             drift_no_consensus_timeout,
             drift_post_consensus_grace,
+            auto_revert_enabled,
             deferred_drift_detected: 0,
             deferred_consensus_timeout: 0,
             deferred_missing_submission: 0,
@@ -338,6 +341,15 @@ impl DriftDetector {
                 "Drift detected: local digest does not match consensus"
             );
             self.deferred_drift_detected += 1;
+
+            if self.auto_revert_enabled {
+                fhevm_engine_common::drift_revert::on_drift_detected(
+                    db_pool,
+                    handle.as_slice(),
+                    chain_id_from_handle(handle),
+                )
+                .await;
+            }
         }
 
         let Some(state) = self.open_handles.get_mut(&handle) else {
@@ -690,10 +702,12 @@ mod tests {
         let digest_b = FixedBytes::from([0x66; 32]);
         let digest_128 = FixedBytes::from([0x77; 32]);
         let base = Instant::now();
+        let auto_revert_enabled = false;
         let mut detector = DriftDetector::new(
             vec![sender_a, sender_b, sender_c],
             Duration::from_secs(50),
             Duration::from_secs(10),
+            auto_revert_enabled,
         );
 
         detector.set_replaying(true);
@@ -821,7 +835,23 @@ mod tests {
     }
 
     fn detector() -> DriftDetector {
-        DriftDetector::new(senders(), Duration::from_secs(5), Duration::from_secs(2))
+        let auto_revert_enabled = false;
+        DriftDetector::new(
+            senders(),
+            Duration::from_secs(5),
+            Duration::from_secs(2),
+            auto_revert_enabled,
+        )
+    }
+
+    fn detector_with_auto_revert() -> DriftDetector {
+        let auto_revert_enabled = true;
+        DriftDetector::new(
+            senders(),
+            Duration::from_secs(5),
+            Duration::from_secs(2),
+            auto_revert_enabled,
+        )
     }
 
     fn make_consensus_state(
@@ -1568,6 +1598,135 @@ mod tests {
             .unwrap();
 
         assert_eq!(detector.deferred_drift_detected, 1);
+    }
+
+    // Set up host_chains + transactions + computations so that
+    // `on_drift_detected`'s block lookup succeeds for a compute-output handle
+    // at the given chain id and block. Returns the constructed handle bytes.
+    async fn setup_computation_for_recovery(
+        pool: &Pool<Postgres>,
+        chain_id: i64,
+        block_number: i64,
+    ) -> [u8; 32] {
+        // Compute-output handle (byte 21 = 0xff) carrying chain_id.
+        let mut handle = [0xAA; 32];
+        handle[21] = 0xff;
+        handle[22..30].copy_from_slice(&(chain_id as u64).to_be_bytes());
+
+        sqlx::query(
+            "INSERT INTO host_chains (chain_id, name, acl_contract_address) \
+             VALUES ($1, 'test', '0x1')",
+        )
+        .bind(chain_id)
+        .execute(pool)
+        .await
+        .unwrap();
+        let txn_id: Vec<u8> = vec![0xBB; 32];
+        sqlx::query("INSERT INTO transactions (id, chain_id, block_number) VALUES ($1, $2, $3)")
+            .bind(&txn_id)
+            .bind(chain_id)
+            .bind(block_number)
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO computations (output_handle, dependencies, fhe_operation, is_scalar, \
+             transaction_id, host_chain_id, block_number) \
+             VALUES ($1, ARRAY[]::bytea[], 1, false, $2, $3, $4)",
+        )
+        .bind(handle.as_slice())
+        .bind(&txn_id)
+        .bind(chain_id)
+        .bind(block_number)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        handle
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn consensus_mismatch_creates_revert_signal() {
+        let (pool, _inst) = setup_db().await;
+
+        let chain_id: i64 = 12345;
+        let block: i64 = 42;
+        let handle = setup_computation_for_recovery(&pool, chain_id, block).await;
+
+        let local_ct = [0xBB; 32];
+        let local_ct128 = [0xCC; 32];
+        let consensus_ct_mismatch = [0xFF; 32];
+
+        insert_ciphertext_digest(
+            &pool,
+            chain_id,
+            [0u8; 32],
+            &handle,
+            &local_ct,
+            &local_ct128,
+            0,
+        )
+        .await
+        .unwrap();
+
+        let mut detector = detector_with_auto_revert();
+        detector
+            .handle_consensus(
+                make_consensus_event(
+                    FixedBytes::from(handle),
+                    FixedBytes::from(consensus_ct_mismatch),
+                    FixedBytes::from(local_ct128),
+                    senders(),
+                ),
+                context(10),
+                &pool,
+            )
+            .await
+            .unwrap();
+
+        let signal = fhevm_engine_common::drift_revert::latest_signal(&pool)
+            .await
+            .unwrap()
+            .expect("consensus mismatch should create a revert signal");
+        assert_eq!(signal.host_chain_id, chain_id);
+        assert_eq!(signal.offending_host_block_number, block);
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn consensus_match_does_not_create_revert_signal() {
+        let (pool, _inst) = setup_db().await;
+
+        let handle = setup_computation_for_recovery(&pool, 12345, 42).await;
+        let local_ct = [0xBB; 32];
+        let local_ct128 = [0xCC; 32];
+        insert_ciphertext_digest(&pool, 12345, [0u8; 32], &handle, &local_ct, &local_ct128, 0)
+            .await
+            .unwrap();
+
+        let mut detector = detector_with_auto_revert();
+        detector
+            .handle_consensus(
+                make_consensus_event(
+                    FixedBytes::from(handle),
+                    FixedBytes::from(local_ct),
+                    FixedBytes::from(local_ct128),
+                    senders(),
+                ),
+                context(10),
+                &pool,
+            )
+            .await
+            .unwrap();
+
+        let signal = fhevm_engine_common::drift_revert::latest_signal(&pool)
+            .await
+            .unwrap();
+        assert!(
+            signal.is_none(),
+            "matching consensus should not create a revert signal"
+        );
     }
 
     #[tokio::test]

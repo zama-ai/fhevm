@@ -202,7 +202,8 @@ async fn verify_proof_request_inserted_into_db() -> anyhow::Result<()> {
         aws_s3_client.clone(),
     );
 
-    let run_handle = tokio::spawn(async move { gw_listener.run().await });
+    let db_pool = env.db_pool.clone();
+    let run_handle = tokio::spawn(async move { gw_listener.run(db_pool).await });
 
     let contract_address = PrivateKeySigner::random().address();
     let user_address = PrivateKeySigner::random().address();
@@ -484,7 +485,8 @@ async fn keygen_ok_simple() -> anyhow::Result<()> {
         aws_s3_client.clone(),
     );
 
-    let listener = tokio::spawn(async move { gw_listener.run().await });
+    let db_pool = env.db_pool.clone();
+    let listener = tokio::spawn(async move { gw_listener.run(db_pool).await });
 
     assert!(has_not_public_key(&env.db_pool.clone(), key_id).await?);
     assert!(has_not_server_key(&env.db_pool.clone(), key_id).await?);
@@ -585,7 +587,8 @@ async fn keygen_ok_catchup_gen(positive: bool) -> anyhow::Result<()> {
         provider.clone(),
         aws_s3_client.clone(),
     );
-    let listener = tokio::spawn(async move { gw_listener.run().await });
+    let db_pool = env.db_pool.clone();
+    let listener = tokio::spawn(async move { gw_listener.run(db_pool).await });
 
     assert!(has_public_key(&env.db_pool.clone(), key_id).await?);
     assert!(has_server_key(&env.db_pool.clone(), key_id).await?);
@@ -633,7 +636,8 @@ async fn keygen_compromised_key() -> anyhow::Result<()> {
         aws_s3_client.clone(),
     );
 
-    let result = tokio::spawn(async move { gw_listener.run().await });
+    let db_pool = env.db_pool.clone();
+    let result = tokio::spawn(async move { gw_listener.run(db_pool).await });
 
     assert!(has_not_public_key(&env.db_pool.clone(), key_id).await?);
     assert!(has_not_server_key(&env.db_pool.clone(), key_id).await?);
@@ -693,7 +697,8 @@ async fn keygen_bad_key_or_bucket() -> anyhow::Result<()> {
         aws_s3_client.clone(),
     );
 
-    let listener = tokio::spawn(async move { gw_listener.run().await });
+    let db_pool = env.db_pool.clone();
+    let listener = tokio::spawn(async move { gw_listener.run(db_pool).await });
 
     assert!(has_not_public_key(&env.db_pool.clone(), key_id).await?);
     assert!(has_not_server_key(&env.db_pool.clone(), key_id).await?);
@@ -751,7 +756,8 @@ async fn keygen_only_public_or_server_key() -> anyhow::Result<()> {
         aws_s3_client.clone(),
     );
 
-    let listener = tokio::spawn(async move { gw_listener.run().await });
+    let db_pool = env.db_pool.clone();
+    let listener = tokio::spawn(async move { gw_listener.run(db_pool).await });
 
     assert!(has_not_public_key(&env.db_pool.clone(), key_id).await?);
     assert!(has_not_server_key(&env.db_pool.clone(), key_id).await?);
