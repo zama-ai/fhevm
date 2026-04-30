@@ -305,11 +305,11 @@ where
         let digest = compute_user_decrypt_digest(payload, &domain);
 
         // Signature verification, invalidation, and per-handle ACL checks are all independent
-        // host-chain reads against the same `userAddress`. Fire them concurrently so the
-        // smart-account happy path is faster. `try_join!` short-circuits on the first error, so a
-        // forged request still terminates as soon as `verify_signature` rejects — at the cost of
-        // having issued the in-flight ACL reads.
+        // host-chain reads. Fire them concurrently so the smart-account happy path is faster.
+        // `biased;` polls branches in order so tests can deterministically craft the mock-queue
+        // order.
         tokio::try_join!(
+            biased;
             async {
                 verify_signature(
                     acl_contract.provider(),
@@ -328,6 +328,7 @@ where
             ),
             try_join_all(request.handles.iter().map(|handle_entry| async move {
                 tokio::try_join!(
+                    biased;
                     self.inner_ownership_check_for_user_decryption_v2(
                         acl_contract,
                         handle_entry,
@@ -456,7 +457,7 @@ where
         let contract_allowed_call = acl_contract.isAllowed(handle, contract_address);
 
         let (user_allowed, contract_allowed) =
-            tokio::try_join!(user_allowed_call.call(), contract_allowed_call.call())
+            tokio::try_join!(biased; user_allowed_call.call(), contract_allowed_call.call())
                 .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
 
         if !user_allowed {
@@ -1116,10 +1117,8 @@ mod tests {
     // Allowed contracts check (direct ownership always passes → 2 RPCs)
     //
     // Two `isAllowed` calls are made concurrently via `tokio::try_join!`. The Asserter
-    // serves responses in FIFO order, but poll ordering between the two futures is not
-    // guaranteed. The test design is robust to either ordering: ownership and contracts
-    // failures are both Recoverable, so swapping which future receives which response
-    // doesn't change the expected outcome.
+    // serves responses in FIFO order, and poll ordering between the two futures is
+    // guaranteed by the `biased` annotation.
     // -------------------------------------------------------------------------
     #[rstest]
     #[case::transport_error(None, ExpectedOutcome::Recoverable)]

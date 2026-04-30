@@ -99,7 +99,8 @@ async fn test_processing_request(
     //                        signature can't ecrecover to userAddress so the call always fires)
     //                        + 1 U256 (`decryptionSignatureInvalidatedBefore`) + 1 `isAllowed`
     //                        (direct ownership path, empty `allowedContracts`). All three fire
-    //                        concurrently via `try_join!`, consumed FIFO in poll order.
+    //                        concurrently via `try_join!`, consumed FIFO in poll order thanks
+    //                        to the `biased` annotation.
     let acl_responses = match event_type {
         TestEventType::PublicDecryption => vec![true.abi_encode()],
         TestEventType::UserDecryptionV2 => vec![
