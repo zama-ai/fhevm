@@ -11,7 +11,7 @@ import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUU
 import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
 import {KMS_CONTEXT_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
-import {kmsGenerationAdd, protocolConfigAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
+import {protocolConfigAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 
 contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     ProtocolConfig internal protocolConfig;
@@ -64,15 +64,6 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         });
         (ProtocolConfig pc, ) = _deployProtocolConfig(owner, _makeNodes(4), thresholds);
         protocolConfig = pc;
-        _etchKmsGenerationNotPending();
-    }
-
-    function _etchKmsGenerationPending() internal {
-        vm.etch(kmsGenerationAdd, address(new MockKMSGenerationPending()).code);
-    }
-
-    function _etchKmsGenerationNotPending() internal {
-        vm.etch(kmsGenerationAdd, address(new MockKMSGenerationNotPending()).code);
     }
 
     function _setupMigration(uint256 migratedContextId) internal {
@@ -400,20 +391,6 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     }
 
     // -----------------------------------------------------------------------
-    // In-flight guard tests
-    // -----------------------------------------------------------------------
-
-    function test_revertDefineContextWhenRequestInFlight() public {
-        _setupDefault();
-        _etchKmsGenerationPending();
-
-        KmsNode[] memory newNodes = _makeNodes(1, 4);
-        vm.prank(owner);
-        vm.expectRevert(IProtocolConfig.KeyManagementRequestInFlight.selector);
-        protocolConfig.defineNewKmsContext(newNodes, _defaultThresholds());
-    }
-
-    // -----------------------------------------------------------------------
     // Migration initializer
     // -----------------------------------------------------------------------
 
@@ -608,17 +585,5 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.2.0");
         // State preserved across upgrade.
         assertTrue(protocolConfig.isValidKmsContext(protocolConfig.getCurrentKmsContextId()));
-    }
-}
-
-contract MockKMSGenerationPending {
-    function hasPendingKeyManagementRequest() external pure returns (bool) {
-        return true;
-    }
-}
-
-contract MockKMSGenerationNotPending {
-    function hasPendingKeyManagementRequest() external pure returns (bool) {
-        return false;
     }
 }

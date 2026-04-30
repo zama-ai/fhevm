@@ -6,6 +6,9 @@ import { ethers, upgrades } from 'hardhat';
 import { ACL, ACLUpgradedExample, ProtocolConfig } from '../../types';
 import { getSigners, initSigners } from '../signers';
 
+const KEY_COUNTER_BASE = BigInt(4) << BigInt(248);
+const CRS_COUNTER_BASE = BigInt(5) << BigInt(248);
+
 async function deployEmptyProxy(factory: any) {
   return upgrades.deployProxy(factory, { initializer: 'initialize', kind: 'uups' });
 }
@@ -105,7 +108,8 @@ describe('Upgrades', function () {
     const expectInitialState = async (c: any) => {
       expect(await c.getActiveKeyId()).to.equal(0n);
       expect(await c.getActiveCrsId()).to.equal(0n);
-      expect(await c.hasPendingKeyManagementRequest()).to.equal(false);
+      expect(await c.getKeyCounter()).to.equal(KEY_COUNTER_BASE);
+      expect(await c.getCrsCounter()).to.equal(CRS_COUNTER_BASE);
     };
     await expectInitialState(kg);
     const kg2 = await upgrades.upgradeProxy(kg, factoryUpgraded);

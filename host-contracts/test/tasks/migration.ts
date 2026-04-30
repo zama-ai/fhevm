@@ -213,7 +213,9 @@ describe('Migration deploy tasks', function () {
       expect(await kmsGeneration.getActiveCrsId()).to.equal(activeCrsId);
 
       // No pending requests after migration (all migrated items are marked done).
-      expect(await kmsGeneration.hasPendingKeyManagementRequest()).to.be.false;
+      expect(await kmsGeneration.isRequestDone(activePrepKeygenId)).to.equal(true);
+      expect(await kmsGeneration.isRequestDone(activeKeyId)).to.equal(true);
+      expect(await kmsGeneration.isRequestDone(activeCrsId)).to.equal(true);
 
       // Consensus tx senders should be registered for each migrated request.
       const keyTxSenders = await kmsGeneration.getConsensusTxSenders(activeKeyId);

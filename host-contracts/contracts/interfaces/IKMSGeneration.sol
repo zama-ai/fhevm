@@ -295,12 +295,6 @@ interface IKMSGeneration {
     function abortCrsgen(uint256 crsId) external;
 
     /**
-     * @notice Whether there is a pending (unfinished) key management request.
-     * @return True if a request is pending.
-     */
-    function hasPendingKeyManagementRequest() external view returns (bool);
-
-    /**
      * @notice Get the parameters type used for the key generation.
      * @param keyId The ID of the key.
      * @return The parameters type used for the key generation.
@@ -325,6 +319,29 @@ interface IKMSGeneration {
      * @return The current ID of the active CRS.
      */
     function getActiveCrsId() external view returns (uint256);
+
+    /**
+     * @notice Get the current key request counter.
+     * @dev Request IDs are type-tagged in the high byte.
+     * @return The current key request counter.
+     */
+    function getKeyCounter() external view returns (uint256);
+
+    /**
+     * @notice Get the current CRS request counter.
+     * @dev Request IDs are type-tagged in the high byte.
+     * @return The current CRS request counter.
+     */
+    function getCrsCounter() external view returns (uint256);
+
+    /**
+     * @notice Check whether a request has reached a terminal done state.
+     * @dev `requestId` may be a prep-keygen, keygen, or CRS request ID; all share the same
+     *      type-tagged request-ID space.
+     * @param requestId The ID of the request.
+     * @return Whether the request is done.
+     */
+    function isRequestDone(uint256 requestId) external view returns (bool);
 
     /**
      * @notice Get the KMS transaction sender addresses that propagated valid signatures for a request.

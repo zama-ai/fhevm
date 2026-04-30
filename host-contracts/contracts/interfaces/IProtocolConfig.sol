@@ -80,9 +80,6 @@ interface IProtocolConfig {
     /// @param kmsContextId The current context ID.
     error CurrentKmsContextCannotBeDestroyed(uint256 kmsContextId);
 
-    /// @notice A key management request is currently in flight on KMSGeneration.
-    error KeyManagementRequestInFlight();
-
     // -----------------------------------------------------------------------------------------
     // State-changing functions
     // -----------------------------------------------------------------------------------------
