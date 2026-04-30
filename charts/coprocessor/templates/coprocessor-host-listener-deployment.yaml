@@ -3,7 +3,9 @@
 {{- $useLegacyName := $chain.hostListener.useLegacyName | default false -}}
 {{- $deploymentName := ternary (printf "%s-host-listener" $.Release.Name) (printf "%s-host-listener-%s" $.Release.Name $chain.name) $useLegacyName -}}
 {{- $appLabel := ternary "coprocessor-host-listener" (printf "coprocessor-host-listener-%s" $chain.name) $useLegacyName -}}
-{{- $serviceName := coalesce $chain.hostListener.serviceName $.Values.hostListenerShared.args.serviceName (printf "host-listener-%s" $chain.name) -}}
+{{- $args := default (dict) $.Values.hostListenerShared.args -}}
+{{- $disabled := default (list) $.Values.hostListenerShared.disabledArgs -}}
+{{- $serviceName := coalesce $chain.hostListener.serviceName (get $args "serviceName") -}}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -27,6 +29,9 @@ spec:
         app: {{ $appLabel }}
         app.kubernetes.io/name: {{ $deploymentName }}
         {{- with $.Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with $.Values.hostListenerShared.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       {{- with $.Values.podAnnotations }}
@@ -57,18 +62,29 @@ spec:
           image: {{ $.Values.hostListenerShared.image.name }}:{{ $.Values.hostListenerShared.image.tag }}
           command: ["host_listener"]
           args:
+            {{- if not (has "database-url" $disabled) }}
             - --database-url=$(DATABASE_URL)
+            {{- end }}
+            {{- if not (has "url" $disabled) }}
             - --url=$(ETHEREUM_RPC_URL)
+            {{- end }}
+            {{- if not (has "acl-contract-address" $disabled) }}
             - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
+            {{- end }}
+            {{- if not (has "tfhe-contract-address" $disabled) }}
             - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+            {{- end }}
+            {{- if not (has "health-port" $disabled) }}
             - --health-port={{ $.Values.hostListenerShared.ports.healthcheck }}
-            - --dependent-ops-max-per-chain={{ int $.Values.commonConfig.dependentOpsMaxPerChain }}
-            - --log-level={{ $.Values.hostListenerShared.args.logLevel }}
-            - --initial-block-time={{ $.Values.hostListenerShared.args.initialBlockTime }}
-            - --reorg-maximum-duration-in-blocks={{ $.Values.hostListenerShared.args.reorgMaximumDurationInBlocks }}
+            {{- end }}
+            {{- if and $serviceName (not (has "service-name" $disabled)) }}
             - --service-name={{ $serviceName }}
-            - --catchup-finalization-in-blocks={{ $.Values.hostListenerShared.args.catchupFinalizationInBlocks }}
+            {{- end }}
+            {{- with $.Values.commonConfig.tenantApiKey }}
+            {{- if and (or .value .valueFrom) (not (has "coprocessor-api-key" $disabled)) }}
             - --coprocessor-api-key=$(TENANT_API_KEY)
+            {{- end }}
+            {{- end }}
             {{- with $.Values.hostListenerShared.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -76,19 +92,108 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
-{{- include "coprocessorDatabaseEnv" $ | nindent 12 }}
-            {{- include "coprocessor.renderChainEnvValue" (dict "name" "ETHEREUM_RPC_URL" "value" $chain.wsUrl "valueFrom" $chain.wsUrlValueFrom "fieldName" "wsUrl" "chainName" $chain.name) | nindent 12 }}
+            {{- with $.Values.commonConfig.databaseUser }}
+            - name: DATABASE_USER
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with $.Values.commonConfig.databaseEndpoint }}
+            - name: DATABASE_ENDPOINT
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if eq (include "coprocessorDatabaseAuthMode" $) "password" }}
+            {{- with $.Values.commonConfig.databasePassword }}
+            - name: DATABASE_PASSWORD
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with $.Values.commonConfig.databaseUrl }}
+            - name: DATABASE_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if eq (include "coprocessorDatabaseAuthMode" $) "iam" }}
+            - name: DATABASE_IAM_AUTH_ENABLED
+              value: "true"
+            {{- with $.Values.commonConfig.databaseIamRegion }}
+            - name: DATABASE_IAM_REGION
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with $.Values.commonConfig.databaseSslRootCertPath }}
+            - name: DATABASE_SSL_ROOT_CERT_PATH
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with $.Values.commonConfig.tenantApiKey }}
+            - name: TENANT_API_KEY
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if or $chain.wsUrl $chain.wsUrlValueFrom }}
+            - name: ETHEREUM_RPC_URL
+              {{- if $chain.wsUrl }}
+              value: {{ $chain.wsUrl | quote }}
+              {{- else if $chain.wsUrlValueFrom }}
+              valueFrom:
+                {{- toYaml $chain.wsUrlValueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if or $chain.aclContractAddress $chain.aclContractAddressValueFrom }}
             - name: ACL_CONTRACT_ADDRESS
-              value: {{ required (printf "chains entry %q: aclContractAddress is required" $chain.name) $chain.aclContractAddress | quote }}
+              {{- if $chain.aclContractAddress }}
+              value: {{ $chain.aclContractAddress | quote }}
+              {{- else if $chain.aclContractAddressValueFrom }}
+              valueFrom:
+                {{- toYaml $chain.aclContractAddressValueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if or $chain.fhevmExecutorContractAddress $chain.fhevmExecutorContractAddressValueFrom }}
             - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
-              value: {{ required (printf "chains entry %q: fhevmExecutorContractAddress is required" $chain.name) $chain.fhevmExecutorContractAddress | quote }}
+              {{- if $chain.fhevmExecutorContractAddress }}
+              value: {{ $chain.fhevmExecutorContractAddress | quote }}
+              {{- else if $chain.fhevmExecutorContractAddressValueFrom }}
+              valueFrom:
+                {{- toYaml $chain.fhevmExecutorContractAddressValueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
           {{- if default $.Values.commonConfig.tracing.enabled $.Values.hostListenerShared.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ $.Values.commonConfig.tracing.endpoint | quote }}
             - name: OTEL_SERVICE_NAME
+              {{- if $.Values.hostListenerShared.tracing.service }}
+              value: {{ $.Values.hostListenerShared.tracing.service | quote }}
+              {{- else }}
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+              {{- end }}
           {{- end }}
           {{- with $.Values.commonConfig.env }}
             {{- toYaml . | nindent 12 }}
