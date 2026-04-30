@@ -256,20 +256,27 @@ abstract contract HostContractsDeployerTestUtils is Test {
         return IProtocolConfig.KmsThresholds({publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1});
     }
 
-    function _makeTestNode(address signer, uint256 nodeId) internal pure returns (KmsNode memory) {
-        return
-            KmsNode({
-                txSenderAddress: address(uint160(0xA000 + nodeId)),
-                signerAddress: signer,
-                ipAddress: "127.0.0.1",
-                storageUrl: "https://storage.example.com"
-            });
+    function _computeSignature(uint256 privateKey, bytes32 digest) internal pure returns (bytes memory signature) {
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
+        return abi.encodePacked(r, s, v);
     }
 
-    function _makeTestNodes(address[] memory signers) internal pure returns (KmsNode[] memory nodes) {
-        nodes = new KmsNode[](signers.length);
+    function _makeKmsNodes(uint256 count) internal pure returns (KmsNode[] memory nodes) {
+        nodes = new KmsNode[](count);
+        for (uint256 i = 0; i < count; i++) {
+            nodes[i] = KmsNode({
+                txSenderAddress: address(uint160(0xA1 + i)),
+                signerAddress: vm.addr((i + 1) * 0x100),
+                ipAddress: string.concat("127.0.0.", vm.toString(i + 1)),
+                storageUrl: string.concat("https://s", vm.toString(i), ".example.com")
+            });
+        }
+    }
+
+    function _makeKmsNodesFromSigners(address[] memory signers) internal pure returns (KmsNode[] memory nodes) {
+        nodes = _makeKmsNodes(signers.length);
         for (uint256 i = 0; i < signers.length; i++) {
-            nodes[i] = _makeTestNode(signers[i], i + 1);
+            nodes[i].signerAddress = signers[i];
         }
     }
 }

@@ -13,6 +13,7 @@ import {
 } from '../../tasks/utils/kmsGenerationMigrationEnv';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import type { KMSGeneration, ProtocolConfig } from '../../types';
+import { deployEmptyProxy } from '../utils/deploymentHelpers';
 
 const HOST_ENV_FILE = path.join(__dirname, '../../addresses/.env.host');
 
@@ -27,9 +28,7 @@ const CRS_COUNTER_BASE = BigInt(5) << BigInt(248);
  */
 async function deployFreshEmptyProxy(deployer: Wallet): Promise<string> {
   const factory = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  const proxy = await upgrades.deployProxy(factory, { initializer: 'initialize', kind: 'uups' });
-  await proxy.waitForDeployment();
-  return proxy.getAddress();
+  return deployEmptyProxy(factory);
 }
 
 /**
@@ -45,12 +44,10 @@ async function deployLegacyKMSVerifier(deployer: Wallet, targetContextId: bigint
   }
 
   const proxyAddress = await deployFreshEmptyProxy(deployer);
-  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
   const legacyImplementation = await ethers.getContractFactory(
     'test/migration-only-previous-contracts/KMSVerifier.sol:KMSVerifier',
     deployer,
   );
-  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
 
   const numNodes = +getRequiredEnvVar('NUM_KMS_NODES');
   const signerAddresses = Array.from({ length: numNodes }, (_, idx) => getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`));
@@ -58,7 +55,7 @@ async function deployLegacyKMSVerifier(deployer: Wallet, targetContextId: bigint
   const verifyingContractSource = getRequiredEnvVar('DECRYPTION_ADDRESS');
   const chainIDSource = +getRequiredEnvVar('CHAIN_ID_GATEWAY');
 
-  const legacyVerifier = await upgrades.upgradeProxy(proxy, legacyImplementation, {
+  const legacyVerifier = await upgrades.upgradeProxy(proxyAddress, legacyImplementation, {
     call: {
       fn: 'initializeFromEmptyProxy',
       args: [verifyingContractSource, chainIDSource, signerAddresses, threshold],

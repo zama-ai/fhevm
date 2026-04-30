@@ -89,8 +89,6 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
 
         adapter = new DelegationLibraryAdapter();
 
-        address[] memory kmsSigners = new address[](1);
-        kmsSigners[0] = address(0x1111);
         address[] memory inputSigners = new address[](1);
         inputSigners[0] = address(0x2222);
 
@@ -100,7 +98,7 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
             GATEWAY_SOURCE,
             GATEWAY_SOURCE,
             GATEWAY_CHAIN_ID,
-            _makeTestNodes(kmsSigners),
+            _makeKmsNodes(1),
             _defaultThresholds(),
             inputSigners,
             1
