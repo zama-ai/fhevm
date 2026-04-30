@@ -160,7 +160,7 @@ pub(crate) async fn cancel_orphaned_key_activations(
         SET status = 'cancelled'
         FROM host_chain_blocks_valid AS b
         WHERE
-            e.status = 'pending'
+            e.status IN ('pending', 'ready')
             AND e.chain_id = b.chain_id
             AND e.block_hash = b.block_hash
             AND b.block_status = 'orphaned'
@@ -183,7 +183,7 @@ pub(crate) async fn cancel_orphaned_crs_activations(
         SET status = 'cancelled'
         FROM host_chain_blocks_valid AS b
         WHERE
-            e.status = 'pending'
+            e.status IN ('pending', 'ready')
             AND e.chain_id = b.chain_id
             AND e.block_hash = b.block_hash
             AND b.block_status = 'orphaned'
