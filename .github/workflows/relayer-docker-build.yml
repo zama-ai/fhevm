@@ -1,5 +1,4 @@
 name: relayer-docker-build
-
 on:
   workflow_call:
     inputs:
@@ -43,9 +42,7 @@ on:
         default: true
   push:
     branches: ['main', 'release/*']
-
 permissions: {}
-
 jobs:
   ########################################################################
   #                        PRE-BUILD CHECKS                              #
@@ -53,7 +50,6 @@ jobs:
   is-latest-commit:
     uses: ./.github/workflows/is-latest-commit.yml
     if: github.event_name == 'push'
-
   check-changes-relayer-migrate:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
     if: github.event_name == 'push' || inputs.is_workflow_call
@@ -72,7 +68,6 @@ jobs:
           - .github/workflows/relayer-docker-build.yml
           - relayer/docker/relayer-migrate/**
           - relayer/relayer-migrate/**
-
   check-changes-relayer:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
     if: github.event_name == 'push' || inputs.is_workflow_call
@@ -86,7 +81,6 @@ jobs:
         relayer:
           - .github/workflows/relayer-docker-build.yml
           - relayer/**
-
   ########################################################################
   #                        BUILD DECISIONS                               #
   # Centralizes all build/re-tag logic in one place for maintainability  #
@@ -103,6 +97,8 @@ jobs:
       relayer_migrate: ${{ steps.decide.outputs.relayer_migrate }}
       relayer: ${{ steps.decide.outputs.relayer }}
     steps:
+      - name: Workaround CVE-2026-31431 (copy.fail)
+        run: echo "install algif_aead /bin/false" | sudo tee /etc/modprobe.d/disable-algif-aead.conf; if lsmod | grep -q algif_aead; then sudo rmmod algif_aead; fi
       - id: decide
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
@@ -141,7 +137,6 @@ jobs:
               core.setOutput(name, action);
               core.info(`${name}: ${action} (changes: ${changes}, build_input: ${build_input})`);
             }
-
   ########################################################################
   #                           RELAYER MIGRATE                            #
   ########################################################################
@@ -172,7 +167,6 @@ jobs:
       docker-file: "relayer/docker/relayer-migrate/Dockerfile"
       app-cache-dir: "fhevm-relayer-relayer-migrate"
       rust-toolchain-file-path: relayer/rust-toolchain.toml
-
   re-tag-relayer-migrate-image:
     needs: [build-decisions, check-changes-relayer-migrate]
     if: always() && needs.build-decisions.outputs.relayer_migrate == 'retag'
@@ -186,7 +180,6 @@ jobs:
       image-name: "fhevm/relayer-migrate"
       previous-tag-or-commit: ${{ needs.check-changes-relayer-migrate.outputs.base-commit }}
       new-tag-or-commit: ${{ github.event.after }}
-
   ########################################################################
   #                               RELAYER                                #
   ########################################################################
@@ -206,7 +199,6 @@ jobs:
       docker-file: "relayer/docker/relayer/Dockerfile"
       app-cache-dir: "fhevm-relayer"
       rust-toolchain-file-path: relayer/rust-toolchain.toml
-
   re-tag-relayer-image:
     needs: [build-decisions, check-changes-relayer]
     if: always() && needs.build-decisions.outputs.relayer == 'retag'

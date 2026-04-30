@@ -1,14 +1,10 @@
 name: coprocessor-cargo-test
-
 on:
   pull_request:
-
 permissions: {}
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-
 jobs:
   check-changes:
     name: coprocessor-cargo-test/check-changes
@@ -20,10 +16,12 @@ jobs:
     outputs:
       changes-rust-files: ${{ steps.filter.outputs.rust-files }}
     steps:
+      - name: Workaround CVE-2026-31431 (copy.fail)
+        run: echo "install algif_aead /bin/false" | sudo tee /etc/modprobe.d/disable-algif-aead.conf; if lsmod | grep -q algif_aead; then sudo rmmod algif_aead; fi
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: 'false'
-      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         id: filter
         with:
           filters: |
@@ -82,84 +80,72 @@ jobs:
             needs_foundry: false
             runner: ubuntu-latest
     steps:
-    - name: Checkout code
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      with:
-        persist-credentials: 'false'
-        lfs: true
-
-    - name: Checkout LFS objects
-      run: git lfs checkout
-
-    - name: Setup Rust toolchain file
-      run: cp coprocessor/fhevm-engine/rust-toolchain.toml .
-
-    - name: Setup Rust
-      uses: dsherret/rust-toolchain-file@3551321aa44dd44a0393eb3b6bdfbc5d25ecf621 # v1
-
-    - name: Install cargo-llvm-cov
-      uses: taiki-e/install-action@a37010ded18ff788be4440302bd6830b1ae50d8b # v2.68.25
-      with:
-        tool: cargo-llvm-cov
-
-    - name: Install cargo dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y protobuf-compiler mold clang
-    - name: Install foundry
-      if: ${{ matrix.needs_foundry }}
-      uses: foundry-rs/foundry-toolchain@de808b1eea699e761c404bda44ba8f21aba30b2c
-
-    - name: Cache cargo
-      uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-coverage-${{ matrix.service }}-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: ${{ runner.os }}-cargo-coverage-${{ matrix.service }}-
-
-    - name: Use Node.js
-      uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
-      with:
-        node-version: 20.x
-
-    - name: Start localstack
-      if: ${{ matrix.needs_localstack }}
-      run: docker run --rm -d -p 4566:4566 --name localstack localstack/localstack:4.14.0
-
-    - name: Run tests with coverage
-      env:
-        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/coprocessor
-        SQLX_OFFLINE: 'true'
-        TEST_GLOBAL_LOCALSTACK: ${{ matrix.needs_localstack && '1' || '0' }}
-        TEST_PACKAGE: ${{ matrix.package }}
-        IS_MERGE_QUEUE: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') && '1' || '0' }}
-      run: |
-        # Merge queue: leave unset so supported_types() defaults to full matrix.
-        # PR CI: run only small types (bool through 64-bit) for faster feedback.
-        if [ "$IS_MERGE_QUEUE" != "1" ]; then
-          export TFHE_WORKER_EVENT_TYPE_MATRIX=local
-        fi
-        cargo llvm-cov clean --workspace --profile coverage
-        cargo llvm-cov test -p "$TEST_PACKAGE" --profile coverage
-      working-directory: coprocessor/fhevm-engine
-
-    - name: Export LCOV coverage data
-      if: ${{ !cancelled() }}
-      run: cargo llvm-cov report --lcov --profile coverage --output-path /tmp/lcov.info || true
-      working-directory: coprocessor/fhevm-engine
-
-    - name: Upload coverage artifact
-      if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
-      with:
-        name: lcov-${{ matrix.service }}
-        path: /tmp/lcov.info
-        retention-days: 1
-        if-no-files-found: ignore
-
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+          lfs: true
+      - name: Checkout LFS objects
+        run: git lfs checkout
+      - name: Setup Rust toolchain file
+        run: cp coprocessor/fhevm-engine/rust-toolchain.toml .
+      - name: Setup Rust
+        uses: dsherret/rust-toolchain-file@3551321aa44dd44a0393eb3b6bdfbc5d25ecf621 # v1
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@a37010ded18ff788be4440302bd6830b1ae50d8b # v2.68.25
+        with:
+          tool: cargo-llvm-cov
+      - name: Install cargo dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler mold clang
+      - name: Install foundry
+        if: ${{ matrix.needs_foundry }}
+        uses: foundry-rs/foundry-toolchain@de808b1eea699e761c404bda44ba8f21aba30b2c
+      - name: Cache cargo
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-coverage-${{ matrix.service }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-coverage-${{ matrix.service }}-
+      - name: Use Node.js
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        with:
+          node-version: 20.x
+      - name: Start localstack
+        if: ${{ matrix.needs_localstack }}
+        run: docker run --rm -d -p 4566:4566 --name localstack localstack/localstack:4.14.0
+      - name: Run tests with coverage
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/coprocessor
+          SQLX_OFFLINE: 'true'
+          TEST_GLOBAL_LOCALSTACK: ${{ matrix.needs_localstack && '1' || '0' }}
+          TEST_PACKAGE: ${{ matrix.package }}
+          IS_MERGE_QUEUE: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') && '1' || '0' }}
+        run: |
+          # Merge queue: leave unset so supported_types() defaults to full matrix.
+          # PR CI: run only small types (bool through 64-bit) for faster feedback.
+          if [ "$IS_MERGE_QUEUE" != "1" ]; then
+            export TFHE_WORKER_EVENT_TYPE_MATRIX=local
+          fi
+          cargo llvm-cov clean --workspace --profile coverage
+          cargo llvm-cov test -p "$TEST_PACKAGE" --profile coverage
+        working-directory: coprocessor/fhevm-engine
+      - name: Export LCOV coverage data
+        if: ${{ !cancelled() }}
+        run: cargo llvm-cov report --lcov --profile coverage --output-path /tmp/lcov.info || true
+        working-directory: coprocessor/fhevm-engine
+      - name: Upload coverage artifact
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: lcov-${{ matrix.service }}
+          path: /tmp/lcov.info
+          retention-days: 1
+          if-no-files-found: ignore
   coverage-report:
     name: coprocessor-cargo-test/coverage-report
     needs: [check-changes, cargo-tests]
@@ -169,96 +155,90 @@ jobs:
       pull-requests: 'write' # Required to post coverage comment on PR
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout code
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      with:
-        persist-credentials: 'false'
-
-    - name: Install lcov
-      run: sudo apt-get update && sudo apt-get install -y lcov
-
-    - name: Download all coverage artifacts
-      uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
-      with:
-        pattern: lcov-*
-        path: /tmp/coverage
-
-    - name: Merge LCOV files
-      run: |
-        LCOV_FILES=$(find /tmp/coverage -name 'lcov.info' -size +0c)
-        if [ -z "$LCOV_FILES" ]; then
-          echo "No coverage data found"
-          exit 0
-        fi
-        LCOV_ARGS=()
-        for f in $LCOV_FILES; do
-          LCOV_ARGS+=(-a "$f")
-        done
-        lcov "${LCOV_ARGS[@]}" -o /tmp/lcov.info
-
-    - name: Generate coverage summary
-      if: ${{ !cancelled() }}
-      run: |
-        {
-          echo '## Coverage: coprocessor/fhevm-engine'
-          if [ -f /tmp/lcov.info ]; then
-            echo '```'
-            lcov --summary /tmp/lcov.info 2>&1 || true
-            echo '```'
+      - name: Workaround CVE-2026-31431 (copy.fail)
+        run: echo "install algif_aead /bin/false" | sudo tee /etc/modprobe.d/disable-algif-aead.conf; if lsmod | grep -q algif_aead; then sudo rmmod algif_aead; fi
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+      - name: Install lcov
+        run: sudo apt-get update && sudo apt-get install -y lcov
+      - name: Download all coverage artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          pattern: lcov-*
+          path: /tmp/coverage
+      - name: Merge LCOV files
+        run: |
+          LCOV_FILES=$(find /tmp/coverage -name 'lcov.info' -size +0c)
+          if [ -z "$LCOV_FILES" ]; then
+            echo "No coverage data found"
+            exit 0
+          fi
+          LCOV_ARGS=()
+          for f in $LCOV_FILES; do
+            LCOV_ARGS+=(-a "$f")
+          done
+          lcov "${LCOV_ARGS[@]}" -o /tmp/lcov.info
+      - name: Generate coverage summary
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            echo '## Coverage: coprocessor/fhevm-engine'
+            if [ -f /tmp/lcov.info ]; then
+              echo '```'
+              lcov --summary /tmp/lcov.info 2>&1 || true
+              echo '```'
+            else
+              echo '*No coverage data available (tests may have failed before producing profiling data).*'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Diff coverage of changed lines
+        if: ${{ !cancelled() }}
+        id: diff-cov
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ ! -f /tmp/lcov.info ]; then
+            echo "diff_pct=N/A" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          pip install --quiet diff-cover
+          git fetch --unshallow origin
+          git fetch origin "${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+          diff-cover /tmp/lcov.info \
+            --compare-branch="origin/${BASE_REF}" \
+            --diff-range-notation='...' \
+            --format "json:/tmp/diff-cover.json,markdown:/tmp/diff-cover-report.md" \
+            --fail-under 0 || true
+          if [ -f /tmp/diff-cover.json ]; then
+            DIFF_PCT=$(python3 -c "import json; d=json.load(open('/tmp/diff-cover.json')); n=d.get('total_num_lines',0); print('N/A') if n==0 else print(f\"{d['total_percent_covered']:.1f}%\")" 2>/dev/null || echo "N/A")
           else
-            echo '*No coverage data available (tests may have failed before producing profiling data).*'
+            DIFF_PCT="N/A"
           fi
-        } >> "$GITHUB_STEP_SUMMARY"
-
-    - name: Diff coverage of changed lines
-      if: ${{ !cancelled() }}
-      id: diff-cov
-      env:
-        BASE_REF: ${{ github.base_ref }}
-      run: |
-        if [ ! -f /tmp/lcov.info ]; then
-          echo "diff_pct=N/A" >> "$GITHUB_OUTPUT"
-          exit 0
-        fi
-        pip install --quiet diff-cover
-        git fetch --unshallow origin
-        git fetch origin "${BASE_REF}:refs/remotes/origin/${BASE_REF}"
-        diff-cover /tmp/lcov.info \
-          --compare-branch="origin/${BASE_REF}" \
-          --diff-range-notation='...' \
-          --format "json:/tmp/diff-cover.json,markdown:/tmp/diff-cover-report.md" \
-          --fail-under 0 || true
-        if [ -f /tmp/diff-cover.json ]; then
-          DIFF_PCT=$(python3 -c "import json; d=json.load(open('/tmp/diff-cover.json')); n=d.get('total_num_lines',0); print('N/A') if n==0 else print(f\"{d['total_percent_covered']:.1f}%\")" 2>/dev/null || echo "N/A")
-        else
-          DIFF_PCT="N/A"
-        fi
-        echo "diff_pct=${DIFF_PCT}" >> "$GITHUB_OUTPUT"
-
-    - name: Build diff coverage comment
-      if: ${{ !cancelled() }}
-      env:
-        DIFF_PCT: ${{ steps.diff-cov.outputs.diff_pct }}
-      run: |
-        {
-          echo '### Coprocessor Changed Lines Coverage'
-          echo "Coverage of added/modified lines in \`coprocessor\`: **${DIFF_PCT}**"
-          echo ''
-          if [ -f /tmp/diff-cover-report.md ]; then
-            echo '<details><summary>Per-file breakdown</summary>'
+          echo "diff_pct=${DIFF_PCT}" >> "$GITHUB_OUTPUT"
+      - name: Build diff coverage comment
+        if: ${{ !cancelled() }}
+        env:
+          DIFF_PCT: ${{ steps.diff-cov.outputs.diff_pct }}
+        run: |
+          {
+            echo '### Coprocessor Changed Lines Coverage'
+            echo "Coverage of added/modified lines in \`coprocessor\`: **${DIFF_PCT}**"
             echo ''
-            cat /tmp/diff-cover-report.md
-            echo ''
-            echo '</details>'
-          fi
-        } | tee -a "$GITHUB_STEP_SUMMARY" > /tmp/coverage-comment.md
-
-    - name: Post coverage comment on PR
-      if: ${{ !cancelled() && github.event.pull_request.head.repo.full_name == github.repository && steps.diff-cov.outputs.diff_pct != 'N/A' }}
-      uses: marocchino/sticky-pull-request-comment@773744901bac0e8cbb5a0dc842800d45e9b2b405 # v2.9.4
-      with:
-        path: /tmp/coverage-comment.md
-
+            if [ -f /tmp/diff-cover-report.md ]; then
+              echo '<details><summary>Per-file breakdown</summary>'
+              echo ''
+              cat /tmp/diff-cover-report.md
+              echo ''
+              echo '</details>'
+            fi
+          } | tee -a "$GITHUB_STEP_SUMMARY" > /tmp/coverage-comment.md
+      - name: Post coverage comment on PR
+        if: ${{ !cancelled() && github.event.pull_request.head.repo.full_name == github.repository && steps.diff-cov.outputs.diff_pct != 'N/A' }}
+        uses: marocchino/sticky-pull-request-comment@773744901bac0e8cbb5a0dc842800d45e9b2b405 # v2.9.4
+        with:
+          path: /tmp/coverage-comment.md
   cargo-tests-status:
     name: coprocessor-cargo-test/cargo-tests (bpr)
     needs: [check-changes, cargo-tests, coverage-report]
@@ -269,15 +249,17 @@ jobs:
       CARGO_TESTS_RESULT: ${{ needs.cargo-tests.result }}
       COVERAGE_RESULT: ${{ needs.coverage-report.result }}
     steps:
-    - name: Check results
-      run: |
-        if [ "$CHECK_CHANGES_RESULT" = "failure" ] || \
-           [ "$CHECK_CHANGES_RESULT" = "cancelled" ] || \
-           [ "$CARGO_TESTS_RESULT" = "failure" ] || \
-           [ "$CARGO_TESTS_RESULT" = "cancelled" ] || \
-           [ "$COVERAGE_RESULT" = "failure" ] || \
-           [ "$COVERAGE_RESULT" = "cancelled" ]; then
-          echo "One or more jobs failed or were cancelled"
-          exit 1
-        fi
-        echo "All jobs passed or were skipped"
+      - name: Workaround CVE-2026-31431 (copy.fail)
+        run: echo "install algif_aead /bin/false" | sudo tee /etc/modprobe.d/disable-algif-aead.conf; if lsmod | grep -q algif_aead; then sudo rmmod algif_aead; fi
+      - name: Check results
+        run: |
+          if [ "$CHECK_CHANGES_RESULT" = "failure" ] || \
+             [ "$CHECK_CHANGES_RESULT" = "cancelled" ] || \
+             [ "$CARGO_TESTS_RESULT" = "failure" ] || \
+             [ "$CARGO_TESTS_RESULT" = "cancelled" ] || \
+             [ "$COVERAGE_RESULT" = "failure" ] || \
+             [ "$COVERAGE_RESULT" = "cancelled" ]; then
+            echo "One or more jobs failed or were cancelled"
+            exit 1
+          fi
+          echo "All jobs passed or were skipped"

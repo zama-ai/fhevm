@@ -11,11 +11,9 @@
 #
 name: codeql
 permissions: {} # No permissions needed at workflow level
-
 on:
   schedule:
     - cron: '30 5 * * 1-5'
-
 jobs:
   analyze:
     name: codeql/analyze-${{ matrix.language }}
@@ -30,7 +28,6 @@ jobs:
       packages: read # Required to fetch internal or private CodeQL packs
       actions: read # Required for workflows in private repositories
       contents: read # Required to checkout repository code
-
     strategy:
       fail-fast: false
       matrix:
@@ -43,27 +40,29 @@ jobs:
             build-mode: none
           - language: rust
             build-mode: none
-        # CodeQL supports the following values keywords for 'language': 'actions', 'c-cpp', 'csharp', 'go', 'java-kotlin', 'javascript-typescript', 'python', 'ruby', 'rust', 'swift'
-        # Use `c-cpp` to analyze code written in C, C++ or both
-        # Use 'java-kotlin' to analyze code written in Java, Kotlin or both
-        # Use 'javascript-typescript' to analyze code written in JavaScript, TypeScript or both
-        # To learn more about changing the languages that are analyzed or customizing the build mode for your analysis,
-        # see https://docs.github.com/en/code-security/code-scanning/creating-an-advanced-setup-for-code-scanning/customizing-your-advanced-setup-for-code-scanning.
-        # If you are analyzing a compiled language, you can modify the 'build-mode' for that language to customize how
-        # your codebase is analyzed, see https://docs.github.com/en/code-security/code-scanning/creating-an-advanced-setup-for-code-scanning/codeql-code-scanning-for-compiled-languages
+            # CodeQL supports the following values keywords for 'language': 'actions', 'c-cpp', 'csharp', 'go', 'java-kotlin', 'javascript-typescript', 'python', 'ruby', 'rust', 'swift'
+            # Use `c-cpp` to analyze code written in C, C++ or both
+            # Use 'java-kotlin' to analyze code written in Java, Kotlin or both
+            # Use 'javascript-typescript' to analyze code written in JavaScript, TypeScript or both
+            # To learn more about changing the languages that are analyzed or customizing the build mode for your analysis,
+            # see https://docs.github.com/en/code-security/code-scanning/creating-an-advanced-setup-for-code-scanning/customizing-your-advanced-setup-for-code-scanning.
+            # If you are analyzing a compiled language, you can modify the 'build-mode' for that language to customize how
+            # your codebase is analyzed, see https://docs.github.com/en/code-security/code-scanning/creating-an-advanced-setup-for-code-scanning/codeql-code-scanning-for-compiled-languages
     steps:
+      - name: Workaround CVE-2026-31431 (copy.fail)
+        run: echo "install algif_aead /bin/false" | sudo tee /etc/modprobe.d/disable-algif-aead.conf; if lsmod | grep -q algif_aead; then sudo rmmod algif_aead; fi
       - name: Checkout repository
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           persist-credentials: false
-      # Add any setup steps before running the `github/codeql-action/init` action.
-      # This includes steps like installing compilers or runtimes (`actions/setup-node`
-      # or others). This is typically only required for manual builds.
-      # - name: Setup runtime (example)
-      #   uses: actions/setup-example@v1
-
       # Initializes the CodeQL tools for scanning.
       - name: Initialize CodeQL
+        # Add any setup steps before running the `github/codeql-action/init` action.
+        # This includes steps like installing compilers or runtimes (`actions/setup-node`
+        # or others). This is typically only required for manual builds.
+        # - name: Setup runtime (example)
+        #   uses: actions/setup-example@v1
+
         uses: github/codeql-action/init@3c3833e0f8c1c83d449a7478aa59c036a9165498 # v3.29.11
         with:
           languages: ${{ matrix.language }}
@@ -71,11 +70,10 @@ jobs:
           # If you wish to specify custom queries, you can do so here or in a config file.
           # By default, queries listed here will override any specified in a config file.
           # Prefix the list here with "+" to use these queries and those in the config file.
-
-          # For more details on CodeQL's query packs, refer to: https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors/configuring-code-scanning#using-queries-in-ql-packs
-          # queries: security-extended,security-and-quality
-
       - name: Perform CodeQL Analysis
+        # For more details on CodeQL's query packs, refer to: https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors/configuring-code-scanning#using-queries-in-ql-packs
+        # queries: security-extended,security-and-quality
+
         uses: github/codeql-action/analyze@3c3833e0f8c1c83d449a7478aa59c036a9165498 # v3.29.11
         with:
           category: '/language:${{matrix.language}}'

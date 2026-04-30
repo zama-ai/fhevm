@@ -1,5 +1,4 @@
 name: host-contracts-docker-build
-
 on:
   workflow_call:
     inputs:
@@ -31,14 +30,11 @@ on:
   workflow_dispatch:
   push:
     branches: ['main', 'release/*']
-
 permissions: {}
-
 jobs:
   is-latest-commit:
     uses: ./.github/workflows/is-latest-commit.yml
     if: github.event_name == 'push'
-
   check-changes:
     if: github.event_name == 'push' || inputs.is_workflow_call
     uses: ./.github/workflows/check-changes-for-docker-build.yml
@@ -56,7 +52,6 @@ jobs:
         host-contracts:
           - .github/workflows/host-contracts-docker-build.yml
           - host-contracts/**
-
   build:
     needs: [is-latest-commit, check-changes]
     concurrency:
@@ -91,7 +86,6 @@ jobs:
       image-name: "fhevm/host-contracts"
       docker-file: "./host-contracts/Dockerfile"
       app-cache-dir: "fhevm-host-contracts"
-
   re-tag-image:
     needs: [is-latest-commit, check-changes]
     if: |

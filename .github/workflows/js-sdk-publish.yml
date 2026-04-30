@@ -1,5 +1,4 @@
 name: js-sdk-publish
-
 on:
   workflow_dispatch:
     inputs:
@@ -7,10 +6,8 @@ on:
         description: "Set to true for release tagging"
         required: false
         default: false
-
 # No permissions at the workflow level — each job declares only what it needs.
 permissions: {}
-
 jobs:
   publish:
     name: js-sdk-publish/publish
@@ -22,6 +19,8 @@ jobs:
       contents: "read" # Required to checkout repository code
       id-token: "write" # Required for OIDC / npm provenance attestation
     steps:
+      - name: Workaround CVE-2026-31431 (copy.fail)
+        run: echo "install algif_aead /bin/false" | sudo tee /etc/modprobe.d/disable-algif-aead.conf; if lsmod | grep -q algif_aead; then sudo rmmod algif_aead; fi
       # -----------------------------------------------------------------------
       # 1. Checkout
       #    Pinned to a full commit SHA (not a mutable tag) to prevent supply
@@ -32,7 +31,6 @@ jobs:
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: "false"
-
       # -----------------------------------------------------------------------
       # 2. Node.js setup
       #    The SDK requires Node >=22.0 (declared in package.json "engines").
@@ -43,7 +41,6 @@ jobs:
         uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         with:
           node-version: 22.x
-
       # -----------------------------------------------------------------------
       # 3. Upgrade npm
       #    The bundled npm in Node 22 may not support provenance publishing.
@@ -52,7 +49,6 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Update npm
         run: npm install -g npm@11.7.0
-
       # -----------------------------------------------------------------------
       # 4. Install dependencies
       #    npm ci is strict and deterministic: it installs exactly what is in
@@ -63,7 +59,6 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Install dependencies
         run: npm ci
-
       # -----------------------------------------------------------------------
       # 5. Build
       #    The top-level "build" script orchestrates all sub-builds:
@@ -77,7 +72,6 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Build package (CJS + ESM + types)
         run: npm run build:cjs && npm run build:esm && npm run build:types
-
       # -----------------------------------------------------------------------
       # 6. Pack inspection
       #    "npm pack --dry-run" lists every file that would be included in the
@@ -88,7 +82,6 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Inspect pack contents
         run: cd src && npm pack --dry-run
-
       # -----------------------------------------------------------------------
       # 7a. Prerelease publish
       #     Runs when release != 'true' (the default).
@@ -112,7 +105,6 @@ jobs:
           tag: alpha
           provenance: true
           access: public
-
       # -----------------------------------------------------------------------
       # 7b. Release publish
       #     Runs only when release == 'true'.

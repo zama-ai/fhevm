@@ -1,5 +1,4 @@
 name: test-suite-e2e-operators-tests
-
 # Github does not support more than 10 inputs for workflow_dispatch:
 # https://docs.github.com/en/actions/reference/events-that-trigger-workflows#providing-inputs
 # Core, relayer and test-suite follow the latest-main defaults unless explicitly pinned
@@ -39,14 +38,11 @@ on:
         required: false
         default: ""
         type: string
-
 permissions: {}
-
 # Allow to run multiple instances of the same workflow in parallel when triggered manually 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-
 jobs:
   setup-instance:
     name: test-suite-e2e-operators-tests/setup-instance
@@ -56,6 +52,8 @@ jobs:
     outputs:
       runner-name: ${{ steps.start-remote-instance.outputs.label }}
     steps:
+      - name: Workaround CVE-2026-31431 (copy.fail)
+        run: echo "install algif_aead /bin/false" | sudo tee /etc/modprobe.d/disable-algif-aead.conf; if lsmod | grep -q algif_aead; then sudo rmmod algif_aead; fi
       - name: Start remote instance
         id: start-remote-instance
         uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
@@ -66,7 +64,6 @@ jobs:
           job-secret: ${{ secrets.JOB_SECRET }}
           backend: aws
           profile: bench
-
   operators-e2e-test:
     name: test-suite-e2e-operators-tests/operators-e2e-test
     if: ${{ github.event_name == 'workflow_dispatch' }}
@@ -101,45 +98,36 @@ jobs:
         with:
           persist-credentials: 'false'
           fetch-depth: 0
-
       - name: Setup Docker
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
-
       - name: Install unzip
         run: |
           sudo apt-get update
           sudo apt-get install -y unzip
-
       - name: Install GitHub CLI
         run: |
           sudo apt-get update
           sudo apt-get install -y gh
-
       - name: Setup Bun
         uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
-
       - name: Install foundry
         uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
-
       - name: Login to GitHub Container Registry
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_READ_TOKEN }}
-
       - name: Login to Chainguard Registry
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           registry: cgr.dev
           username: ${{ secrets.CGR_USERNAME }}
           password: ${{ secrets.CGR_PASSWORD }}
-
       - name: Install CLI deps
         working-directory: test-suite/fhevm
         run: |
           bun install --frozen-lockfile
-
       - name: Deploy fhevm Stack
         working-directory: test-suite/fhevm
         run: |
@@ -151,7 +139,6 @@ jobs:
             args+=(--scenario "$SCENARIO")
           fi
           ./fhevm-cli deploy "${args[@]}"
-
       - name: Validate targeted grep
         if: ${{ inputs.grep != '' }}
         run: |
@@ -161,25 +148,21 @@ jobs:
               exit 1
               ;;
           esac
-
       - name: All operators tests
         if: ${{ !inputs.grep }}
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test operators --parallel
-
       - name: Targeted operators grep
         if: ${{ inputs.grep != '' }}
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test operators --parallel --grep "$GREP"
-
       - name: Random operators tests
         if: ${{ !inputs.grep }}
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test random
-
       - name: Show logs
         working-directory: test-suite/fhevm
         if: failure()
@@ -209,21 +192,21 @@ jobs:
           snapshot_logs "Coprocessor 2 - Transaction Sender (filtered)" coprocessor1-transaction-sender "Selected 0 rows to process"
           snapshot_logs "Coprocessor 2 - ZKProof Worker" coprocessor1-zkproof-worker
           snapshot_logs "Coprocessor 2 - TFHE Worker" coprocessor1-tfhe-worker
-
       - name: Cleanup
         working-directory: test-suite/fhevm
         if: always()
         run: |
           ./fhevm-cli clean
-
   teardown-instance:
     name: test-suite-e2e-operators-tests/teardown
     if: ${{ always() && needs.setup-instance.result == 'success' }}
-    needs: [ setup-instance, operators-e2e-test]
+    needs: [setup-instance, operators-e2e-test]
     runs-on: ubuntu-latest
     permissions:
       contents: 'read' # Required to checkout repository code
     steps:
+      - name: Workaround CVE-2026-31431 (copy.fail)
+        run: echo "install algif_aead /bin/false" | sudo tee /etc/modprobe.d/disable-algif-aead.conf; if lsmod | grep -q algif_aead; then sudo rmmod algif_aead; fi
       - name: Stop remote instance
         id: stop-instance
         uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac

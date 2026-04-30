@@ -3,11 +3,8 @@ name: unverified_prs
 on:
   schedule:
     - cron: '30 1 * * *'
-
 permissions: {}
-
 # zizmor: ignore[concurrency-limits] only GitHub can trigger this workflow
-
 jobs:
   stale:
     name: unverified_prs/stale
@@ -16,6 +13,8 @@ jobs:
       issues: read # Needed to fetch all issues
       pull-requests: write # Needed to write message and close the PR
     steps:
+      - name: Workaround CVE-2026-31431 (copy.fail)
+        run: echo "install algif_aead /bin/false" | sudo tee /etc/modprobe.d/disable-algif-aead.conf; if lsmod | grep -q algif_aead; then sudo rmmod algif_aead; fi
       - uses: actions/stale@5f858e3efba33a5ca4407a664cc011ad407f2008 # v10.1.0
         with:
           stale-pr-message: 'This PR is unverified and has been open for 2 days, it will now be closed. If you want to contribute please sign the CLA as indicated by the bot.'

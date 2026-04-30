@@ -1,13 +1,10 @@
 name: host-contracts-slither-analysis
-
 # The SARIF output is temporarily disabled.
 on:
   pull_request:
     branches:
       - main
-
 permissions: {}
-
 jobs:
   check-changes:
     name: host-contracts-slither-analysis/check-changes
@@ -19,10 +16,12 @@ jobs:
     outputs:
       changes-host-contracts: ${{ steps.filter.outputs.host-contracts }}
     steps:
+      - name: Workaround CVE-2026-31431 (copy.fail)
+        run: echo "install algif_aead /bin/false" | sudo tee /etc/modprobe.d/disable-algif-aead.conf; if lsmod | grep -q algif_aead; then sudo rmmod algif_aead; fi
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: 'false'
-      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         id: filter
         with:
           filters: |
@@ -41,6 +40,8 @@ jobs:
       checks: 'write' # Required to create GitHub checks for test results
       security-events: 'write' # Required to write security events for SAST results
     steps:
+      - name: Workaround CVE-2026-31431 (copy.fail)
+        run: echo "install algif_aead /bin/false" | sudo tee /etc/modprobe.d/disable-algif-aead.conf; if lsmod | grep -q algif_aead; then sudo rmmod algif_aead; fi
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -59,7 +60,7 @@ jobs:
           # sarif: results.sarif
           fail-on: none
           target: "./host-contracts/"
-      # - name: Upload SARIF file
-      #   uses: github/codeql-action/upload-sarif@6bb031afdd8eb862ea3fc1848194185e076637e5 # v3.28.11
-      #  with:
-      #    sarif_file: results.sarif
+    # - name: Upload SARIF file
+    #   uses: github/codeql-action/upload-sarif@6bb031afdd8eb862ea3fc1848194185e076637e5 # v3.28.11
+    #  with:
+    #    sarif_file: results.sarif

@@ -1,5 +1,4 @@
 name: listener-docker-build
-
 on:
   workflow_call:
     inputs:
@@ -31,14 +30,11 @@ on:
   workflow_dispatch:
   push:
     branches: ['main', 'release/*']
-
 permissions: {}
-
 jobs:
   is-latest-commit:
     uses: ./.github/workflows/is-latest-commit.yml
     if: github.event_name == 'push'
-
   check-changes:
     if: github.event_name == 'push' || inputs.is_workflow_call
     uses: ./.github/workflows/check-changes-for-docker-build.yml
@@ -60,7 +56,6 @@ jobs:
           - listener/Cargo.lock
           - listener/crates/**
           - listener/rust-toolchain.toml
-
   build:
     needs: [is-latest-commit, check-changes]
     concurrency:
@@ -97,7 +92,6 @@ jobs:
       docker-file: "listener/Dockerfile.ci"
       app-cache-dir: "fhevm-listener"
       rust-toolchain-file-path: listener/rust-toolchain.toml
-
   re-tag-image:
     needs: [is-latest-commit, check-changes]
     if: |

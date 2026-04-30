@@ -1,5 +1,4 @@
 name: golden-container-images-docker-build-rust
-
 on:
   workflow_dispatch:
     inputs:
@@ -18,13 +17,10 @@ on:
         default: "stable"
         required: false
         type: string
-
 permissions: {}
-
 concurrency:
   group: golden-rust-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-
 jobs:
   build:
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3

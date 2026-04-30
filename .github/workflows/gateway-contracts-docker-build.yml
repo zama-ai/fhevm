@@ -1,5 +1,4 @@
 name: gateway-contracts-docker-build
-
 on:
   workflow_call:
     inputs:
@@ -31,14 +30,11 @@ on:
   workflow_dispatch:
   push:
     branches: ['main', 'release/*']
-
 permissions: {}
-
 jobs:
   is-latest-commit:
     uses: ./.github/workflows/is-latest-commit.yml
     if: github.event_name == 'push'
-
   check-changes:
     if: github.event_name == 'push' || inputs.is_workflow_call
     uses: ./.github/workflows/check-changes-for-docker-build.yml
@@ -56,7 +52,6 @@ jobs:
         gw-contracts:
           - .github/workflows/gateway-contracts-docker-build.yml
           - gateway-contracts/**
-
   build:
     needs: [is-latest-commit, check-changes]
     concurrency:
@@ -89,7 +84,6 @@ jobs:
       image-name: "fhevm/gateway-contracts"
       docker-file: "./gateway-contracts/Dockerfile"
       app-cache-dir: "fhevm-gateway-contracts"
-
   re-tag-image:
     needs: [is-latest-commit, check-changes]
     if: |

@@ -1,8 +1,6 @@
 # Run all fhevm coprocessor benchmarks on a GPU instance on Hyperstack and return parsed results to Slab CI bot.
 name: coprocessor-benchmark-gpu
-
 permissions: {}
-
 on:
   workflow_dispatch:
     inputs:
@@ -59,7 +57,6 @@ on:
           - "THROUGHPUT"
           - "LATENCY"
         default: "ALL"
-
 env:
   CARGO_TERM_COLOR: always
   RESULTS_FILENAME: parsed_benchmark_results_${{ github.sha }}.json
@@ -68,7 +65,6 @@ env:
   RUST_MIN_STACK: "8388608"
   CHECKOUT_TOKEN: ${{ secrets.REPO_CHECKOUT_TOKEN || secrets.GITHUB_TOKEN }}
   PROFILE: ${{ inputs.profile }}
-
 jobs:
   parse-inputs:
     name: coprocessor-benchmark-gpu/parse-inputs
@@ -79,16 +75,16 @@ jobs:
       profile: ${{ steps.parse_profile.outputs.profile }}
       hardware_name: ${{ steps.parse_hardware_name.outputs.name }}
     steps:
+      - name: Workaround CVE-2026-31431 (copy.fail)
+        run: echo "install algif_aead /bin/false" | sudo tee /etc/modprobe.d/disable-algif-aead.conf; if lsmod | grep -q algif_aead; then sudo rmmod algif_aead; fi
       - name: Parse profile
         id: parse_profile
         run: |
           echo "profile=$(echo "${PROFILE}" | sed 's|\(.*\)[[:space:]](.*)|\1|')" >> "${GITHUB_OUTPUT}"
-
       - name: Parse hardware name
         id: parse_hardware_name
         run: |
           echo "name=$(echo "${PROFILE}" | sed 's|.*[[:space:]](\(.*\))|\1|')" >> "${GITHUB_OUTPUT}"
-
   setup-instance:
     name: coprocessor-benchmark-gpu/setup-instance
     needs: parse-inputs
@@ -98,6 +94,8 @@ jobs:
     outputs:
       runner-name: ${{ steps.start-remote-instance.outputs.label }}
     steps:
+      - name: Workaround CVE-2026-31431 (copy.fail)
+        run: echo "install algif_aead /bin/false" | sudo tee /etc/modprobe.d/disable-algif-aead.conf; if lsmod | grep -q algif_aead; then sudo rmmod algif_aead; fi
       - name: Start remote instance
         id: start-remote-instance
         uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
@@ -108,13 +106,12 @@ jobs:
           job-secret: ${{ secrets.JOB_SECRET }}
           backend: hyperstack
           profile: ${{ needs.parse-inputs.outputs.profile }}
-
   benchmark:
     name: coprocessor-benchmark-gpu/benchmark-gpu (bpr)
-    needs: [ parse-inputs, setup-instance ]
+    needs: [parse-inputs, setup-instance]
     runs-on: ${{ needs.setup-instance.outputs.runner-name }}
     continue-on-error: true
-    timeout-minutes: 720  # 12 hours
+    timeout-minutes: 720 # 12 hours
     permissions:
       contents: 'read' # Required to checkout repository code
       packages: 'read' # Required to read GitHub packages/container registry
@@ -132,7 +129,6 @@ jobs:
       CC: "/usr/bin/gcc-${{ matrix.gcc }}"
       CXX: "/usr/bin/g++-${{ matrix.gcc }}"
       CUDAHOSTCXX: "/usr/bin/g++-${{ matrix.gcc }}"
-
     steps:
       - name: Install git LFS
         run: |
@@ -144,29 +140,24 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y git-lfs
           git lfs install
-
       - name: Checkout fhevm-backend
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
         with:
           persist-credentials: 'false'
           fetch-depth: 0
           lfs: true
-
       - name: Checkout LFS objects
         run: git lfs checkout
-
       - name: Setup Hyperstack dependencies
         uses: ./.github/actions/gpu_setup
         with:
           cuda-version: ${{ matrix.cuda }}
           github-instance: ${{ env.SECRETS_AVAILABLE == 'false' }}
-
       - name: Export CUDA variables
         shell: bash
         run: |
           echo "PATH=$PATH:${CUDA_PATH}/bin" >> "${GITHUB_PATH}"
           echo "LD_LIBRARY_PATH=${CUDA_PATH}/lib64:${LD_LIBRARY_PATH}" >> "${GITHUB_ENV}"
-
       - name: Get benchmark details
         run: |
           {
@@ -174,12 +165,10 @@ jobs:
             echo "COMMIT_DATE=$(git --no-pager show -s --format=%cd --date=iso8601-strict "${GITHUB_SHA}")";
             echo "COMMIT_HASH=$(git rev-parse HEAD)";
           } >> "${GITHUB_ENV}"
-
       - name: Install rust
         uses: dtolnay/rust-toolchain@888c2e1ea69ab0d4330cbf0af1ecc7b68f368cc1
         with:
           toolchain: nightly
-
       - name: Install cargo dependencies
         run: |
           sudo apt-get update
@@ -189,10 +178,8 @@ jobs:
           newgrp docker
           sudo setfacl --modify user:"$USER":rw /var/run/docker.sock
           cargo +stable install sqlx-cli --version 0.7.2 --no-default-features --features postgres --locked
-
       - name: Install foundry
         uses: foundry-rs/foundry-toolchain@de808b1eea699e761c404bda44ba8f21aba30b2c
-
       - name: Cache cargo
         uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
         with:
@@ -202,30 +189,25 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
-
       - name: Login to GitHub Container Registry
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Login to Chainguard Registry
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           registry: cgr.dev
           username: ${{ secrets.CGR_USERNAME }}
           password: ${{ secrets.CGR_PASSWORD }}
-
       - name: Init database
         run: make init_db
         working-directory: coprocessor/fhevm-engine/tfhe-worker
-
       - name: Use Node.js
         uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
         with:
           node-version: 20.x
-
       - name: Build contracts
         env:
           HARDHAT_NETWORK: hardhat
@@ -233,7 +215,6 @@ jobs:
           cp ./host-contracts/.env.example ./host-contracts/.env
           npm --workspace=host-contracts ci --include=optional
           cd host-contracts && npm run deploy:emptyProxies && npx hardhat compile
-
       - name: Run benchmarks on GPU
         run: |
           BENCHMARK_BATCH_SIZE="${BATCH_SIZE}" FHEVM_DF_SCHEDULE="${SCHEDULING_POLICY}" BENCHMARK_TYPE="${BENCHMARK_TYPE}" OPTIMIZATION_TARGET="${OPTIMIZATION_TARGET}" make -e "benchmark_${BENCHMARKS}_gpu"
@@ -244,7 +225,6 @@ jobs:
           BENCHMARKS: ${{ inputs.benchmarks }}
           BENCHMARK_TYPE: ${{ inputs.benchmark_type }}
           OPTIMIZATION_TARGET: ${{ inputs.optimization_target }}
-
       - name: Parse results
         run: |
           python3 ./ci/benchmark_parser.py coprocessor/fhevm-engine/target/criterion "${RESULTS_FILENAME}" \
@@ -268,13 +248,11 @@ jobs:
           BATCH_SIZE: ${{ inputs.batch_size }}
           SCHEDULING_POLICY: ${{ inputs.scheduling_policy }}
           OPTIMIZATION_TARGET: ${{ inputs.optimization_target }}
-
       - name: Upload parsed results artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ github.sha }}_${{ inputs.benchmarks }}_${{ needs.parse-inputs.outputs.profile }}
           path: ${{ env.RESULTS_FILENAME }}
-
       - name: Checkout Slab repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -282,7 +260,6 @@ jobs:
           path: slab
           persist-credentials: 'false'
           token: ${{ secrets.REPO_CHECKOUT_TOKEN }}
-
       - name: Send data to Slab
         shell: bash
         run: |
@@ -292,15 +269,16 @@ jobs:
           JOB_SECRET: ${{ secrets.JOB_SECRET }}
           RESULTS_FILENAME: ${{ env.RESULTS_FILENAME }}
           SLAB_URL: ${{ secrets.SLAB_URL }}
-
   teardown-instance:
     name: coprocessor-benchmark-gpu/teardown
     if: ${{ always() && needs.setup-instance.result == 'success' }}
-    needs: [ setup-instance, benchmark ]
+    needs: [setup-instance, benchmark]
     runs-on: ubuntu-latest
     permissions:
       contents: 'read' # Required to checkout repository code
     steps:
+      - name: Workaround CVE-2026-31431 (copy.fail)
+        run: echo "install algif_aead /bin/false" | sudo tee /etc/modprobe.d/disable-algif-aead.conf; if lsmod | grep -q algif_aead; then sudo rmmod algif_aead; fi
       - name: Stop remote instance
         id: stop-instance
         uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac

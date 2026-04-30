@@ -1,5 +1,4 @@
 name: test-suite-compatibility-matrix
-
 on:
   pull_request:
     # Include label events so applying or removing `rollout` reevaluates the
@@ -16,13 +15,10 @@ on:
         description: "Compat-test JSON path or stem from test-suite/fhevm/compat-tests"
         default: "v0.12-to-main"
         type: string
-
 permissions: {}
-
 concurrency:
   group: test-suite-compatibility-matrix-${{ github.ref }}-${{ inputs.compat-test || 'v0.12-to-main' }}-${{ github.run_id }}
   cancel-in-progress: true
-
 jobs:
   prepare_rollout:
     name: prepare-rollout
@@ -40,24 +36,22 @@ jobs:
       matrix: ${{ steps.prepare.outputs.matrix }}
       scenario: ${{ steps.prepare.outputs.scenario }}
     steps:
+      - name: Workaround CVE-2026-31431 (copy.fail)
+        run: echo "install algif_aead /bin/false" | sudo tee /etc/modprobe.d/disable-algif-aead.conf; if lsmod | grep -q algif_aead; then sudo rmmod algif_aead; fi
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: 'false'
           fetch-depth: 0
-
       - name: Setup Bun
         uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
-
       - name: Install GitHub CLI
         run: |
           sudo apt-get update
           sudo apt-get install -y gh
-
       - name: Install CLI deps
         working-directory: test-suite/fhevm
         run: bun install --frozen-lockfile
-
       - id: prepare
         name: Resolve compat-test and generate rollout matrix
         working-directory: test-suite/fhevm
@@ -99,7 +93,6 @@ jobs:
             echo "$matrix"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
-
   compatibility-e2e:
     name: compatibility-${{ matrix.name }}
     needs: [prepare_rollout]

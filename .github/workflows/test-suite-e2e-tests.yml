@@ -1,5 +1,4 @@
 name: test-suite-e2e-tests
-
 on:
   pull_request:
     types:
@@ -115,14 +114,11 @@ on:
       CGR_PASSWORD:
         required: true
     inputs: *shared_inputs
-
 permissions: {}
-
 # Cancel stale PR runs on new pushes while keeping manual dispatches independent.
 concurrency:
   group: ${{ github.workflow }}-${{ inputs.rollout-step != '' && format('compat-{0}-{1}-{2}', github.event_name == 'pull_request' && github.event.pull_request.number || github.ref, inputs.compat-test || 'default', inputs.rollout-step) || github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref != 'refs/heads/main' }}
-
 jobs:
   fhevm-e2e-test:
     # Run on manual/reusable invocations. For direct PRs, require the `e2e` label.
@@ -156,66 +152,56 @@ jobs:
       TEST_PROFILE: ${{ inputs.test-profile || 'standard' }}
     runs-on: large_ubuntu_32
     steps:
+      - name: Workaround CVE-2026-31431 (copy.fail)
+        run: echo "install algif_aead /bin/false" | sudo tee /etc/modprobe.d/disable-algif-aead.conf; if lsmod | grep -q algif_aead; then sudo rmmod algif_aead; fi
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: 'false'
           fetch-depth: 0
-
       - name: Setup Docker
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
-
       - name: Setup Bun
         uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
-
       - name: Install foundry
         uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
-
       - name: Login to GitHub Container Registry
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_READ_TOKEN }}
-
       - name: Login to Chainguard Registry
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           registry: cgr.dev
           username: ${{ secrets.CGR_USERNAME }}
           password: ${{ secrets.CGR_PASSWORD }}
-
       - name: Install CLI deps
         working-directory: test-suite/fhevm
         run: bun install --frozen-lockfile
-
       - name: Install GitHub CLI
         run: |
           sudo apt-get update
           sudo apt-get install -y gh
-
       - name: Typecheck CLI
         if: ${{ inputs.compat-test == '' }}
         working-directory: test-suite/fhevm
         run: bun run check
-
       - name: Unit test CLI
         if: ${{ inputs.compat-test == '' }}
         working-directory: test-suite/fhevm
         run: bun test src
-
       - name: Compat smoke
         if: ${{ inputs.compat-test == '' }}
         working-directory: test-suite/fhevm
         run: bun run compat-smoke
-
       - name: Download frozen baseline lock
         if: ${{ inputs.compat-test == '' && inputs.lock-artifact-name != '' }}
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
           name: ${{ inputs.lock-artifact-name }}
           path: ${{ runner.temp }}/baseline-lock
-
       - name: Resolve frozen lock path
         if: ${{ inputs.compat-test == '' && inputs.lock-artifact-name != '' }}
         run: |
@@ -226,7 +212,6 @@ jobs:
             exit 1
           fi
           echo "LOCK_FILE=$lock_file" >> "$GITHUB_ENV"
-
       - name: Render compat rollout step
         if: ${{ inputs.compat-test != '' }}
         working-directory: test-suite/fhevm
@@ -262,18 +247,15 @@ jobs:
           lock_file="${RUNNER_TEMP}/compat-step.lock.json"
           ./fhevm-cli rollout --compat-test "$compat_test" --step "${ROLLOUT_STEP_INPUT:-0}" --out "$lock_file"
           echo "LOCK_FILE=$lock_file" >> "$GITHUB_ENV"
-
       - name: Resolve compat local overrides
         if: ${{ inputs.compat-test != '' }}
         run: |
           echo "COMPAT_OVERRIDES=test-suite" >> "$GITHUB_ENV"
-
       - name: Require frozen baseline lock for orchestrated runs
         if: ${{ inputs.compat-test == '' && inputs.orchestrated && inputs.lock-artifact-name == '' && github.event_name != 'workflow_dispatch' }}
         run: |
           echo "Orchestrated e2e requires a frozen baseline lock artifact" >&2
           exit 1
-
       - name: Resolve latest-main lock once
         if: ${{ inputs.compat-test == '' && inputs.lock-artifact-name == '' && !inputs.orchestrated }}
         working-directory: test-suite/fhevm
@@ -284,7 +266,6 @@ jobs:
             exit 1
           fi
           echo "LOCK_FILE=$lock_file" >> "$GITHUB_ENV"
-
       - name: Resolve orchestrated manual baseline lock once
         if: ${{ inputs.compat-test == '' && inputs.lock-artifact-name == '' && inputs.orchestrated && github.event_name == 'workflow_dispatch' }}
         working-directory: test-suite/fhevm
@@ -295,7 +276,6 @@ jobs:
             exit 1
           fi
           echo "LOCK_FILE=$lock_file" >> "$GITHUB_ENV"
-
       - name: Resolve stack plan and display effective component versions
         working-directory: test-suite/fhevm
         run: |
@@ -318,7 +298,6 @@ jobs:
             done
           fi
           ./fhevm-cli up "${args[@]}" --dry-run
-
       - name: Boot fhevm Stack
         working-directory: test-suite/fhevm
         run: |
@@ -341,12 +320,10 @@ jobs:
             done
           fi
           ./fhevm-cli up "${args[@]}"
-
       - name: Selected e2e suite
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test "$TEST_PROFILE"
-
       - name: Host listener poller test
         if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' }}
         working-directory: test-suite/fhevm
@@ -356,7 +333,6 @@ jobs:
           ./fhevm-cli test erc20
           docker start coprocessor-host-listener
           trap - EXIT
-
       - name: Show logs
         working-directory: test-suite/fhevm
         if: always()
@@ -386,7 +362,6 @@ jobs:
             snapshot_logs "${label} - ZKProof Worker" "${prefix}-zkproof-worker"
             snapshot_logs "${label} - TFHE Worker" "${prefix}-tfhe-worker"
           done
-
       - name: Cleanup
         working-directory: test-suite/fhevm
         if: always()

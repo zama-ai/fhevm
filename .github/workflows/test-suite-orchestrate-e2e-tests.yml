@@ -1,18 +1,14 @@
 name: test-suite-orchestrate-e2e-tests
-
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
     branches:
       - main
       - release/*
-
 permissions: {}
-
 concurrency:
   group: test-suite-orchestrate-e2e-tests-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-
 jobs:
   resolve-baseline:
     name: resolve-baseline
@@ -26,18 +22,17 @@ jobs:
     outputs:
       lock-artifact-name: ${{ steps.resolve-baseline.outputs.lock-artifact-name }}
     steps:
+      - name: Workaround CVE-2026-31431 (copy.fail)
+        run: echo "install algif_aead /bin/false" | sudo tee /etc/modprobe.d/disable-algif-aead.conf; if lsmod | grep -q algif_aead; then sudo rmmod algif_aead; fi
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: 'false'
-
       - name: Setup Bun
         uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
-
       - name: Install CLI deps
         working-directory: test-suite/fhevm
         run: bun install --frozen-lockfile
-
       - id: resolve-baseline
         name: Resolve base-sha baseline lock
         working-directory: test-suite/fhevm
@@ -47,13 +42,11 @@ jobs:
           artifact_name="fhevm-base-lock-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           echo "lock-path=$lock_path" >> "$GITHUB_OUTPUT"
           echo "lock-artifact-name=$artifact_name" >> "$GITHUB_OUTPUT"
-
       - name: Upload baseline lock
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
           name: ${{ steps.resolve-baseline.outputs.lock-artifact-name }}
           path: ${{ steps.resolve-baseline.outputs.lock-path }}
-
   coprocessor-docker-build:
     if: *build-trigger-condition
     uses: ./.github/workflows/coprocessor-docker-build.yml
@@ -96,7 +89,6 @@ jobs:
     uses: ./.github/workflows/test-suite-docker-build.yml
     permissions: *docker_permissions
     secrets: *docker_secrets
-
   create-e2e-tests-input:
     name: create-e2e-tests-input
     needs:
@@ -132,6 +124,8 @@ jobs:
       relayer-version: ${{ steps.create-e2e-tests-input.outputs.relayer-version }}
       test-suite-version: ${{ steps.create-e2e-tests-input.outputs.test-suite-version }}
     steps:
+      - name: Workaround CVE-2026-31431 (copy.fail)
+        run: echo "install algif_aead /bin/false" | sudo tee /etc/modprobe.d/disable-algif-aead.conf; if lsmod | grep -q algif_aead; then sudo rmmod algif_aead; fi
       - id: create-e2e-tests-input
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v0.8.0
         with:
@@ -171,12 +165,10 @@ jobs:
                 throw new Error(`Required repo-owned build output failed: ${job}.${resultKey}=${result}`);
               }
             }
-
   run-e2e-tests:
     needs: [create-e2e-tests-input]
     if: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'e2e orchestrate test') }}
-    uses:
-      ./.github/workflows/test-suite-e2e-tests.yml
+    uses: ./.github/workflows/test-suite-e2e-tests.yml
     permissions:
       contents: 'read' # Required to checkout repository code
       id-token: 'write' # Required for OIDC authentication
