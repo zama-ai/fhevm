@@ -19,9 +19,13 @@ use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
 
 use crate::cmd::block_history::BlockSummary;
-use crate::database::ingest::{ingest_block_logs, BlockLogs, IngestOptions};
+use crate::database::ingest::{
+    ingest_block_logs, update_finalized_blocks_aux, BlockLogs, IngestOptions,
+};
 use crate::database::tfhe_event_propagate::Database;
 use crate::health_check::HealthCheck;
+use crate::kms_generation::aws_s3::AwsS3Client;
+use crate::kms_generation::process_kms_generation_activations;
 use crate::poller::http_client::HttpChainClient;
 use crate::poller::metrics::{
     inc_blocks_processed, inc_db_errors, inc_rpc_errors,
@@ -107,6 +111,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         &config.url,
         acl_address,
         tfhe_address,
+        kms_generation_address,
         config.retry_interval,
         config.max_http_retries,
         config.rpc_compute_units_per_second,
@@ -135,6 +140,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         config.dependence_cache_size,
     )
     .await?;
+    let aws_s3_client = AwsS3Client {};
     if config.dependent_ops_max_per_chain == 0 {
         let promoted = db.promote_all_dep_chains_to_fast_priority().await?;
         if promoted > 0 {
@@ -214,6 +220,20 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         blockchain_timeout_tick.update();
 
         let safe_tip = latest.saturating_sub(config.finality_lag);
+        let client_ref = &client;
+        update_finalized_blocks_aux(
+            &mut db,
+            latest,
+            config.finality_lag,
+            |block_number| async move {
+                client_ref
+                    .header_for_block(block_number)
+                    .await
+                    .map(|header| header.hash)
+            },
+        )
+        .await;
+
         if safe_tip <= last_caught_up_block {
             info!(
                 chain_id = %chain_id,
@@ -311,6 +331,18 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                     break;
                 }
             }
+            let db_pool = db.pool.read().await.clone();
+            tokio::spawn(async move {
+                if let Err(err) =
+                    process_kms_generation_activations(db_pool, aws_s3_client)
+                        .await
+                {
+                    error!(
+                        error = %err,
+                        "Error processing KMSGeneration activations"
+                    );
+                }
+            });
         }
 
         let new_anchor = last_caught_up_block + processed_blocks;

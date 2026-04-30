@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::future::Future;
 
 use alloy::primitives::Address;
 use alloy::rpc::types::Log;
@@ -8,7 +9,7 @@ use fhevm_engine_common::types::Handle;
 use sqlx::types::time::{OffsetDateTime, PrimitiveDateTime};
 use tracing::{error, info};
 
-use crate::cmd::block_history::BlockSummary;
+use crate::cmd::block_history::{BlockHash, BlockSummary};
 use crate::cmd::InfiniteLogIter;
 use crate::contracts::{AclContract, KMSGeneration, TfheContract};
 use crate::database::dependence_chains::dependence_chains;
@@ -357,6 +358,30 @@ pub async fn update_finalized_blocks(
     last_block_number: u64,
     finality_lag: u64,
 ) {
+    let log_iter = &*log_iter;
+    update_finalized_blocks_aux(
+        db,
+        last_block_number,
+        finality_lag,
+        |block_number| async move {
+            log_iter
+                .get_block_by_number(block_number)
+                .await
+                .map(|block| block.header.hash)
+        },
+    )
+    .await;
+}
+
+pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
+    db: &mut Database,
+    last_block_number: u64,
+    finality_lag: u64,
+    mut get_block_hash_by_number: GetBlockHash,
+) where
+    GetBlockHash: FnMut(u64) -> GetBlockHashFuture,
+    GetBlockHashFuture: Future<Output = anyhow::Result<BlockHash>>,
+{
     info!(last_block_number, finality_lag, "Updating finalized blocks");
     let mut tx = match db.new_transaction().await {
         Ok(tx) => tx,
@@ -368,7 +393,7 @@ pub async fn update_finalized_blocks(
             return;
         }
     };
-    let last_finalized_block = last_block_number - finality_lag;
+    let last_finalized_block = last_block_number.saturating_sub(finality_lag);
     let blocks_number = match Database::get_finalized_blocks_number(
         &mut tx,
         last_finalized_block as i64,
@@ -387,9 +412,9 @@ pub async fn update_finalized_blocks(
     };
     info!(?blocks_number, "Finalizing blocks");
     for block_number in blocks_number {
-        let block =
-            match log_iter.get_block_by_number(block_number as u64).await {
-                Ok(block) => block,
+        let block_hash =
+            match get_block_hash_by_number(block_number as u64).await {
+                Ok(block_hash) => block_hash,
                 Err(err) => {
                     error!(
                         block_number,
@@ -400,11 +425,7 @@ pub async fn update_finalized_blocks(
                 }
             };
         if let Err(err) = db
-            .update_block_as_finalized(
-                &mut tx,
-                block_number,
-                &block.header.hash,
-            )
+            .update_block_as_finalized(&mut tx, block_number, &block_hash)
             .await
         {
             error!(block_number, ?err, "Failed to update block as finalized");
