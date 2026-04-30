@@ -1,9 +1,15 @@
 {{- if .Values.hostContractConfigMap.enabled -}}
 {{- $cm := .Values.hostContractConfigMap -}}
-{{- $reserved := list -}}
-{{- if $cm.aclAddress }}{{- $reserved = append $reserved "acl.address" }}{{- end -}}
-{{- if $cm.fhevmExecutorAddress }}{{- $reserved = append $reserved "fhevm_executor.address" }}{{- end -}}
-{{- if $cm.inputVerifierAddress }}{{- $reserved = append $reserved "input_verifier.address" }}{{- end -}}
+{{- $allowed := list "" "devnet" "testnet" "mainnet" -}}
+{{- $network := default "" $cm.network -}}
+{{- if not (has $network $allowed) -}}
+{{- fail (printf "hostContractConfigMap.network must be one of: devnet, testnet, mainnet (or empty); got %q" $network) -}}
+{{- end -}}
+{{- $preset := dict -}}
+{{- if $network -}}
+{{- $preset = .Files.Get (printf "configs/host-%s.yaml" $network) | fromYaml -}}
+{{- end -}}
+{{- $merged := mergeOverwrite (deepCopy $preset) ($cm.addresses | default dict) -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -12,18 +18,7 @@ metadata:
   labels:
     app.kubernetes.io/name: {{ $cm.name }}
 data:
-  {{- with $cm.aclAddress }}
-  acl.address: {{ . | quote }}
-  {{- end }}
-  {{- with $cm.fhevmExecutorAddress }}
-  fhevm_executor.address: {{ . | quote }}
-  {{- end }}
-  {{- with $cm.inputVerifierAddress }}
-  input_verifier.address: {{ . | quote }}
-  {{- end }}
-  {{- range $k, $v := $cm.extraAddresses }}
-  {{- if not (has $k $reserved) }}
+  {{- range $k, $v := $merged }}
   {{ $k }}: {{ $v | quote }}
-  {{- end }}
   {{- end }}
 {{- end -}}

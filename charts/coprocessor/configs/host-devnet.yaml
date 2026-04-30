@@ -1,0 +1,8 @@
+contracts.version: "v0.12.0-0"
+acl.address: "0xBCA6F8De823a399Dc431930FD5EE550Bf1C0013e"
+decryption_oracle.address: "0x6aff1990AB3840dA2a1bE098598046826860629d"
+fhevm_executor.address: "0x5cc8c5A366E733d4f1e677B2A9C08Bc2ea49b302"
+hcu_limit.address: "0xb8E70273De41498aAF047fd73ae1F3025D8709f8"
+input_verifier.address: "0x6B32f47E39B0F8bE8bEAD5B8990F62E3e28ac08d"
+kms_verifier.address: "0x3F3819BeBE4bD0EFEf8078Df6f9B574ADa80CCA4"
+pauser_set.address: "0x55dC1C42c23483df54fcfDbB5FCDbFaBa743CA56"

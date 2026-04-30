@@ -93,65 +93,48 @@ podLabels: {}
 # Optional ConfigMap rendering host chain contract addresses. Downstream
 # components (dbMigration, hostListener, hostListenerPoller,
 # hostListenerCatchupOnly) reference its keys via configMapKeyRef.
-# Only keys whose values are set are rendered.
 hostContractConfigMap:
   enabled: false
 
   # Resource name. Downstream components reference this via configMapKeyRef.name.
   name: eth-sc-addresses
 
-  # Host chain ACL contract address. Rendered under key `acl.address`.
-  aclAddress: ""
+  # Selects a bundled preset from configs/host-<network>.yaml.
+  # Allowed values: "" (no preset), "devnet", "testnet", "mainnet".
+  # An unrecognized value fails the render.
+  network: ""
 
-  # Host chain FHEVM executor contract address.
-  # Rendered under key `fhevm_executor.address`.
-  fhevmExecutorAddress: ""
-
-  # Host chain input verifier contract address.
-  # Rendered under key `input_verifier.address`.
-  inputVerifierAddress: ""
-
-  # Free-form additional `key: value` pairs merged into ConfigMap.data.
-  # Keys are used as-is — preserve any dot notation downstream consumers
-  # expect. On key collision with a well-known address above, the
-  # well-known field wins (the colliding extraAddresses entry is skipped).
+  # Operator overrides, deep-merged on top of the preset. Keys are used
+  # as-is. Operator entries win on key collision with the preset.
   # Example:
-  #   extraAddresses:
-  #     decryption_oracle.address: "0xabc..."
-  extraAddresses: {}
+  #   addresses:
+  #     acl.address: "0xabc..."             # override preset
+  #     custom_thing.address: "0xdef..."    # add bespoke key
+  addresses: {}
 
 # -----------------------------------------------------------------------------
 # Gateway Contract ConfigMap
 # -----------------------------------------------------------------------------
 # Optional ConfigMap rendering gateway chain contract addresses. Downstream
 # components (gwListener, txSender) reference its keys via configMapKeyRef.
-# Only keys whose values are set are rendered.
 gatewayContractConfigMap:
   enabled: false
 
   # Resource name. Downstream components reference this via configMapKeyRef.name.
   name: gw-sc-addresses
 
-  # Rendered under key `input_verification.address`.
-  inputVerificationAddress: ""
+  # Selects a bundled preset from configs/gateway-<network>.yaml.
+  # Allowed values: "" (no preset), "devnet", "testnet", "mainnet".
+  # An unrecognized value fails the render.
+  network: ""
 
-  # Rendered under key `kms_generation.address`.
-  kmsGenerationAddress: ""
-
-  # Rendered under key `gateway_config.address`.
-  gatewayConfigAddress: ""
-
-  # Rendered under key `ciphertext_commits.address`.
-  ciphertextCommitsAddress: ""
-
-  # Free-form additional `key: value` pairs merged into ConfigMap.data.
-  # Keys are used as-is — preserve any dot notation downstream consumers
-  # expect. On key collision with a well-known address above, the
-  # well-known field wins (the colliding extraAddresses entry is skipped).
+  # Operator overrides, deep-merged on top of the preset. Keys are used
+  # as-is. Operator entries win on key collision with the preset.
   # Example:
-  #   extraAddresses:
-  #     decryption.address: "0xabc..."
-  extraAddresses: {}
+  #   addresses:
+  #     kms_generation.address: "0xabc..."  # override preset
+  #     custom_thing.address: "0xdef..."    # add bespoke key
+  addresses: {}
 
 # -----------------------------------------------------------------------------
 # Database Migration
