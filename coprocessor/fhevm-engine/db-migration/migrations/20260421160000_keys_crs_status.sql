@@ -28,7 +28,7 @@ END $$;
 -- Guarantees idempotency of live ingest / catchup replays: the same
 -- (chain_id, block_hash, key_id) cannot be inserted twice.
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_keys_chain_block_id_gw
-    ON keys (chain_id, block_hash, key_id);
+    ON keys (chain_id, block_hash, key_id_gw);
 
 ALTER TABLE crs DROP CONSTRAINT IF EXISTS unique_crs_id;
 
