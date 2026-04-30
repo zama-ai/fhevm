@@ -920,4 +920,3 @@ async fn keygen_bad_key_or_bucket() -> anyhow::Result<()> {
     assert!(has_server_key(&env.db_pool, key_id).await?);
     Ok(())
 }
-
