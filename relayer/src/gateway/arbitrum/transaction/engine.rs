@@ -5,7 +5,8 @@ use alloy::{
     primitives::{Address, Bytes, U256},
     providers::{
         fillers::{
-            BlobGasFiller, ChainIdFiller, GasFiller, JoinFill, NonceFiller, TxFiller, WalletFiller,
+            BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, TxFiller,
+            WalletFiller,
         },
         Identity, Network, Provider, ProviderBuilder, RootProvider,
     },
@@ -89,6 +90,15 @@ pub type CustomFillers = JoinFill<
     WalletFiller<EthereumWallet>,
 >;
 
+pub type ReadOnlyProvider = FillProvider<
+    JoinFill<
+        Identity,
+        JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
+    >,
+    RootProvider,
+    Ethereum,
+>;
+
 #[derive(Debug, Clone)]
 pub struct TransactionEngine<F, P, N = AnyNetwork>
 where
@@ -97,6 +107,7 @@ where
     P: Provider<N>,
 {
     pub provider: Arc<NonceManagedProvider<F, P, N>>,
+    pub read_provider: Arc<ReadOnlyProvider>,
     pub signer: Arc<dyn SignerCombined>,
     pub nonce_manager: Arc<NonceManagerNonOptimistic>,
     // No need for Arc in this case, since the tx manager is shared by arc at the top level application.
@@ -150,15 +161,20 @@ impl
 
         let signer_address = <dyn SignerCombined as alloy::signers::Signer>::address(&*signer);
 
-        let rpc_url = Url::parse(&blockchain_rpc_config.http_url)
-            .map_err(|e| GatewayTxnError::InvalidAddress(format!("Invalid URL: {e}")))?;
+        let write_rpc_url = Url::parse(&blockchain_rpc_config.http_url)
+            .map_err(|e| GatewayTxnError::InvalidAddress(format!("Invalid write URL: {e}")))?;
+        let read_rpc_url = Url::parse(&blockchain_rpc_config.read_http_url)
+            .map_err(|e| GatewayTxnError::InvalidAddress(format!("Invalid read URL: {e}")))?;
 
         let provider = ProviderBuilder::new()
             .network::<Ethereum>()
             .filler(GasFiller)
             .filler(ChainIdFiller::new(Some(chain_id)))
             .filler(WalletFiller::new(wallet))
-            .connect_http(rpc_url.clone());
+            .connect_http(write_rpc_url);
+        let read_provider = ProviderBuilder::new()
+            .network::<Ethereum>()
+            .connect_http(read_rpc_url);
 
         let nonce_manager = Arc::new(NonceManagerNonOptimistic::new());
         let managed_provider =
@@ -166,6 +182,7 @@ impl
 
         Ok(Self {
             provider: Arc::new(managed_provider),
+            read_provider: Arc::new(read_provider),
             signer,
             nonce_manager,
             rpc_semaphore: Arc::new(Semaphore::new(tx_engine_config.max_concurrency as usize)),
@@ -276,7 +293,7 @@ impl
                 }
             };
 
-            let res = self.provider.inner.estimate_gas(request.clone()).await;
+            let res = self.read_provider.estimate_gas(request.clone()).await;
             // TODO, find a way to drop semaphore right after the call.
             // drop(permit);
 
