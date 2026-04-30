@@ -1,9 +1,13 @@
 name: js-sdk-tests
 
 on:
+  pull_request:
+    branches:
+      - devex/js-sdk # triggers on PRs targeting devex/js-sdk branch
+      - main # triggers on PRs targeting main branch
   push:
     branches:
-      - devex/js-sdk # triggers on every push to your branch
+      - devex/js-sdk # triggers on every push to devex/js-sdk branch
   workflow_dispatch:
     inputs:
       release:
