@@ -9,6 +9,7 @@ use tracing::{debug, error, info, warn};
 use broker::{Broker, Publisher};
 
 use primitives::event::{BlockFlow, CatchupPayload, ReorgBacktrackEvent};
+use primitives::routing;
 
 use super::publisher::{self, PublisherError};
 use crate::config::{BlockStartConfig, BlockchainConfig, PublishConfig};
@@ -108,6 +109,7 @@ pub struct EvmListener {
     loop_delay_ms: u64,
     finality_depth: u64,
     max_exponential_backoff_ms: u64,
+    catchup_max_range: u64,
 }
 
 impl EvmListener {
@@ -138,6 +140,7 @@ impl EvmListener {
             loop_delay_ms: blockchain_settings.strategy.loop_delay_ms,
             finality_depth: blockchain_settings.finality_depth,
             max_exponential_backoff_ms: blockchain_settings.strategy.max_exponential_backoff_ms,
+            catchup_max_range: blockchain_settings.catchup.catchup_max_range,
         }
     }
 
@@ -931,34 +934,35 @@ impl EvmListener {
         Ok(())
     }
 
-    /// Replay a historical block range for a single consumer.
-    ///
-    /// Catchup primitive: given a [`CatchupPayload`], fetch blocks
-    /// `[block_start, block_end]` in parallel and publish them in order on
-    /// the `catchup-event` queue for `consumer_id`.
+    /// Catchup orchestrator: take an arbitrarily-large user-facing
+    /// [`CatchupPayload`], clamp it to the current chain head, and fan it out
+    /// into bounded sub-payloads on the `range-catchup` queue. Each
+    /// sub-payload triggers one [`Self::run_range_catchup`] invocation
+    /// downstream.
     ///
     /// # Behavior
-    /// - Clamps `block_end` to the current chain height (`eth_blockNumber`).
-    /// - If `block_start` is above chain height → no-op `Ok(())`. The user
-    ///   asked for blocks that don't exist yet; catchup is a bounded one-shot,
-    ///   **not** a continuous tail. The caller can re-issue the request later.
-    /// - No DB writes, no parent-hash validation, no reorg handling. Catchup
-    ///   is designed for replay of blocks the user knows are historical
-    ///   (typically below finality).
-    /// - **Upper bound is the raw chain head (no finality margin).** Catchups
-    ///   *within* the unfinalized window are permitted: the caller takes the
-    ///   reorg risk on those blocks. The live cursor remains the source of
-    ///   truth for the canonical view; catchup is purely for replay/recovery.
-    /// - No advisory lock by design. Catchup is idempotent (at-least-once
-    ///   delivery, downstream consumer dedupes by block_number + block_hash).
-    ///   Two pods replaying the same range in parallel is wasteful but not
-    ///   incorrect.
+    /// - Fetches the current chain height once (the only RPC call here).
+    /// - If `block_start > chain_height` → no-op `Ok(())`. Catchup is a
+    ///   bounded one-shot — the user asked for blocks that don't exist yet.
+    ///   The caller can re-issue the request later.
+    /// - Otherwise, clamps `block_end` down to `chain_height` and splits
+    ///   `[block_start, effective_end]` into chunks of `catchup_max_range`
+    ///   blocks (configured via `catchup.catchup_max_range`).
+    /// - Publishes one [`CatchupPayload`] per chunk on
+    ///   [`routing::RANGE_CATCHUP`] via the chain-namespaced publisher.
     ///
-    /// # Parallelism
-    /// Mirrors the live cursor exactly — same [`AsyncSlotBuffer`] +
-    /// [`fetch_blocks_in_parallel`] producer + sequential consumer pattern.
-    /// The producer fills slots out-of-order; the consumer publishes in order.
-    pub async fn run_range_catchup(
+    /// # At-least-once
+    /// On publish failure mid-fan-out, returns the broker error so the broker
+    /// retries the entire orchestrator message. Already-published sub-ranges
+    /// will be re-published on retry; downstream consumers dedupe by
+    /// (block_number, block_hash). The user explicitly opted out of advisory
+    /// locking on the catchup path.
+    ///
+    /// # Upper bound
+    /// **Raw chain head, no finality margin.** Catchups *within* the
+    /// unfinalized window are permitted: the caller takes the reorg risk on
+    /// those blocks. The live cursor remains authoritative for canonical state.
+    pub async fn dispatch_catchup_range(
         &self,
         payload: CatchupPayload,
     ) -> Result<(), EvmListenerError> {
@@ -968,15 +972,12 @@ impl EvmListener {
         )
         .increment(1);
 
-        // Step 1 — chain height.
         let chain_height = self
             .provider
             .get_block_number()
             .await
             .map_err(|e| EvmListenerError::ChainHeightError { source: e })?;
 
-        // Step 2 — start above head: skip turn (the requested range doesn't
-        // exist yet on chain). Bounded one-shot — no auto re-publish.
         if payload.block_start > chain_height {
             metrics::counter!(
                 "listener_catchup_skipped_above_head_total",
@@ -988,14 +989,70 @@ impl EvmListener {
                 block_start = payload.block_start,
                 block_end = payload.block_end,
                 chain_height,
-                "Catchup skipped: block_start above chain height"
+                "Catchup orchestrator: block_start above chain height, skipping"
             );
             return Ok(());
         }
 
-        // Step 2b — clamp end down to head if the user asked beyond it.
-        let range_end = std::cmp::min(payload.block_end, chain_height);
+        let effective_end = std::cmp::min(payload.block_end, chain_height);
+        let chunks =
+            split_catchup_range(payload.block_start, effective_end, self.catchup_max_range);
+
+        for (start, end) in &chunks {
+            let sub = CatchupPayload {
+                consumer_id: payload.consumer_id.clone(),
+                block_start: *start,
+                block_end: *end,
+            };
+            self.event_publisher
+                .publish(routing::RANGE_CATCHUP, &sub)
+                .await
+                .map_err(|e| EvmListenerError::BrokerPublishError {
+                    message: format!(
+                        "Failed to publish catchup sub-range [{}, {}]: {}",
+                        start, end, e
+                    ),
+                })?;
+        }
+
+        metrics::counter!(
+            "listener_catchup_subranges_total",
+            "chain_id" => self.chain_id.to_string()
+        )
+        .increment(chunks.len() as u64);
+
+        info!(
+            consumer_id = %payload.consumer_id,
+            range_start = payload.block_start,
+            range_end = effective_end,
+            sub_count = chunks.len(),
+            chain_height,
+            "Catchup orchestrator: published sub-ranges to range-catchup"
+        );
+
+        Ok(())
+    }
+
+    /// Fetch a single bounded sub-range and publish it in order on the
+    /// `catchup-event` queue for `consumer_id`.
+    ///
+    /// This is the **inner** catchup primitive — the worker behind the
+    /// `range-catchup` queue. The caller (typically [`Self::dispatch_catchup_range`])
+    /// is responsible for clamping `block_end` to chain head and chunking
+    /// arbitrarily-large requests into bounded sub-ranges of
+    /// `catchup.catchup_max_range` blocks. This function trusts that contract
+    /// and **does not re-check the chain head**.
+    ///
+    /// # Behavior
+    /// - Spawns the same parallel producer used by the live cursor
+    ///   ([`fetch_blocks_in_parallel`]) plus a sequential publish consumer
+    ///   ([`catchup_processing`]) over an [`AsyncSlotBuffer`].
+    /// - No DB writes, no parent-hash validation, no reorg handling — pure replay.
+    /// - No advisory lock. At-least-once: downstream dedupes by
+    ///   (block_number, block_hash).
+    pub async fn run_range_catchup(&self, payload: CatchupPayload) -> Result<(), EvmListenerError> {
         let range_start = payload.block_start;
+        let range_end = payload.block_end;
         let range_length = (range_end - range_start + 1) as usize;
 
         info!(
@@ -1003,7 +1060,6 @@ impl EvmListener {
             range_start,
             range_end,
             range_length,
-            chain_height,
             "Starting catchup range"
         );
 
@@ -1065,11 +1121,7 @@ impl EvmListener {
         //    (consumer is authoritative; if all slots were read, all blocks were published)
         match (catchup_outcome, fetcher_outcome) {
             (Ok(()), Ok(())) => {
-                info!(
-                    range_start,
-                    range_end,
-                    "Catchup range complete"
-                );
+                info!(range_start, range_end, "Catchup range complete");
                 Ok(())
             }
             (
@@ -1394,4 +1446,89 @@ async fn fetch_blocks_in_parallel(
     }
 
     Ok(())
+}
+
+/// Split inclusive range `[start, end]` into chunks of at most `max` blocks.
+///
+/// Returns inclusive `(start, end)` tuples in ascending order. Caller must
+/// ensure `start <= end` and `max > 0` (the orchestrator validates both
+/// upstream — the payload validator rejects inverted ranges and the config
+/// validator rejects `catchup_max_range == 0`).
+///
+/// Saturating arithmetic + early-exit on `chunk_end == u64::MAX` guarantee
+/// the loop terminates even on the pathological `[0, u64::MAX]` input.
+fn split_catchup_range(start: u64, end: u64, max: u64) -> Vec<(u64, u64)> {
+    debug_assert!(start <= end);
+    debug_assert!(max > 0);
+    let mut out = Vec::new();
+    let mut cursor = start;
+    loop {
+        let chunk_end = std::cmp::min(cursor.saturating_add(max - 1), end);
+        out.push((cursor, chunk_end));
+        if chunk_end >= end || chunk_end == u64::MAX {
+            break;
+        }
+        cursor = chunk_end + 1;
+    }
+    out
+}
+
+#[cfg(test)]
+mod split_catchup_range_tests {
+    use super::split_catchup_range;
+
+    #[test]
+    fn single_block_range() {
+        assert_eq!(split_catchup_range(1, 1, 1000), vec![(1, 1)]);
+    }
+
+    #[test]
+    fn exactly_one_chunk() {
+        assert_eq!(split_catchup_range(1, 1000, 1000), vec![(1, 1000)]);
+    }
+
+    #[test]
+    fn one_chunk_plus_one_block() {
+        assert_eq!(
+            split_catchup_range(1, 1001, 1000),
+            vec![(1, 1000), (1001, 1001)],
+        );
+    }
+
+    #[test]
+    fn typical_fan_out_1000_to_8000_with_max_1000() {
+        // 7001 blocks → 7 full chunks of 1000 plus 1 chunk of 1.
+        let chunks = split_catchup_range(1000, 8000, 1000);
+        assert_eq!(
+            chunks,
+            vec![
+                (1000, 1999),
+                (2000, 2999),
+                (3000, 3999),
+                (4000, 4999),
+                (5000, 5999),
+                (6000, 6999),
+                (7000, 7999),
+                (8000, 8000),
+            ],
+        );
+    }
+
+    #[test]
+    fn max_equals_one_produces_per_block_chunks() {
+        assert_eq!(
+            split_catchup_range(10, 12, 1),
+            vec![(10, 10), (11, 11), (12, 12)],
+        );
+    }
+
+    #[test]
+    fn near_u64_max_terminates_without_overflow() {
+        // Exercises both the `saturating_add(max - 1)` guard and the
+        // `chunk_end == u64::MAX` early-exit. start = u64::MAX - 5, end =
+        // u64::MAX, max = 1000 ⇒ exactly one chunk covering the tail.
+        let start = u64::MAX - 5;
+        let chunks = split_catchup_range(start, u64::MAX, 1000);
+        assert_eq!(chunks, vec![(start, u64::MAX)]);
+    }
 }

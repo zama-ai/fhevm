@@ -9,5 +9,6 @@ pub use cleaner::Cleaner;
 pub use evm_listener::{CursorResult, EvmListener, EvmListenerError};
 pub use filters::Filters;
 pub use workers::{
-    CatchupHandler, CleanerHandler, FetchHandler, ReorgHandler, UnwatchHandler, WatchHandler,
+    CatchupHandler, CleanerHandler, FetchHandler, RangeCatchupHandler, ReorgHandler,
+    UnwatchHandler, WatchHandler,
 };

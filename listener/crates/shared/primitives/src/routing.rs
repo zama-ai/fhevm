@@ -7,6 +7,7 @@ pub const CLEAN_BLOCKS: &str = "clean-blocks";
 pub const NEW_EVENT: &str = "new-event";
 // Catchup routing keys.
 pub const CATCHUP: &str = "catchup";
+pub const RANGE_CATCHUP: &str = "range-catchup";
 pub const CATCHUP_EVENT: &str = "catchup-event";
 
 pub fn consumer_new_event_routing(consumer_id: String) -> String {
