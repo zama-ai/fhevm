@@ -1,0 +1,29 @@
+{{- if .Values.hostContractConfigMap.enabled -}}
+{{- $cm := .Values.hostContractConfigMap -}}
+{{- $reserved := list -}}
+{{- if $cm.aclAddress }}{{- $reserved = append $reserved "acl.address" }}{{- end -}}
+{{- if $cm.fhevmExecutorAddress }}{{- $reserved = append $reserved "fhevm_executor.address" }}{{- end -}}
+{{- if $cm.inputVerifierAddress }}{{- $reserved = append $reserved "input_verifier.address" }}{{- end -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $cm.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ $cm.name }}
+data:
+  {{- with $cm.aclAddress }}
+  acl.address: {{ . | quote }}
+  {{- end }}
+  {{- with $cm.fhevmExecutorAddress }}
+  fhevm_executor.address: {{ . | quote }}
+  {{- end }}
+  {{- with $cm.inputVerifierAddress }}
+  input_verifier.address: {{ . | quote }}
+  {{- end }}
+  {{- range $k, $v := $cm.extraAddresses }}
+  {{- if not (has $k $reserved) }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}
+  {{- end }}
+{{- end -}}

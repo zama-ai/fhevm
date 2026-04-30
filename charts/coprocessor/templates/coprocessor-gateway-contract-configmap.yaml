@@ -1,0 +1,33 @@
+{{- if .Values.gatewayContractConfigMap.enabled -}}
+{{- $cm := .Values.gatewayContractConfigMap -}}
+{{- $reserved := list -}}
+{{- if $cm.inputVerificationAddress }}{{- $reserved = append $reserved "input_verification.address" }}{{- end -}}
+{{- if $cm.kmsGenerationAddress }}{{- $reserved = append $reserved "kms_generation.address" }}{{- end -}}
+{{- if $cm.gatewayConfigAddress }}{{- $reserved = append $reserved "gateway_config.address" }}{{- end -}}
+{{- if $cm.ciphertextCommitsAddress }}{{- $reserved = append $reserved "ciphertext_commits.address" }}{{- end -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $cm.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ $cm.name }}
+data:
+  {{- with $cm.inputVerificationAddress }}
+  input_verification.address: {{ . | quote }}
+  {{- end }}
+  {{- with $cm.kmsGenerationAddress }}
+  kms_generation.address: {{ . | quote }}
+  {{- end }}
+  {{- with $cm.gatewayConfigAddress }}
+  gateway_config.address: {{ . | quote }}
+  {{- end }}
+  {{- with $cm.ciphertextCommitsAddress }}
+  ciphertext_commits.address: {{ . | quote }}
+  {{- end }}
+  {{- range $k, $v := $cm.extraAddresses }}
+  {{- if not (has $k $reserved) }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}
+  {{- end }}
+{{- end -}}

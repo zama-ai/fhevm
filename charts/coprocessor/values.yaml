@@ -88,6 +88,72 @@ podAnnotations: {}
 podLabels: {}
 
 # -----------------------------------------------------------------------------
+# Host Contract ConfigMap
+# -----------------------------------------------------------------------------
+# Optional ConfigMap rendering host chain contract addresses. Downstream
+# components (dbMigration, hostListener, hostListenerPoller,
+# hostListenerCatchupOnly) reference its keys via configMapKeyRef.
+# Only keys whose values are set are rendered.
+hostContractConfigMap:
+  enabled: false
+
+  # Resource name. Downstream components reference this via configMapKeyRef.name.
+  name: eth-sc-addresses
+
+  # Host chain ACL contract address. Rendered under key `acl.address`.
+  aclAddress: ""
+
+  # Host chain FHEVM executor contract address.
+  # Rendered under key `fhevm_executor.address`.
+  fhevmExecutorAddress: ""
+
+  # Host chain input verifier contract address.
+  # Rendered under key `input_verifier.address`.
+  inputVerifierAddress: ""
+
+  # Free-form additional `key: value` pairs merged into ConfigMap.data.
+  # Keys are used as-is — preserve any dot notation downstream consumers
+  # expect. On key collision with a well-known address above, the
+  # well-known field wins (the colliding extraAddresses entry is skipped).
+  # Example:
+  #   extraAddresses:
+  #     decryption_oracle.address: "0xabc..."
+  extraAddresses: {}
+
+# -----------------------------------------------------------------------------
+# Gateway Contract ConfigMap
+# -----------------------------------------------------------------------------
+# Optional ConfigMap rendering gateway chain contract addresses. Downstream
+# components (gwListener, txSender) reference its keys via configMapKeyRef.
+# Only keys whose values are set are rendered.
+gatewayContractConfigMap:
+  enabled: false
+
+  # Resource name. Downstream components reference this via configMapKeyRef.name.
+  name: gw-sc-addresses
+
+  # Rendered under key `input_verification.address`.
+  inputVerificationAddress: ""
+
+  # Rendered under key `kms_generation.address`.
+  kmsGenerationAddress: ""
+
+  # Rendered under key `gateway_config.address`.
+  gatewayConfigAddress: ""
+
+  # Rendered under key `ciphertext_commits.address`.
+  ciphertextCommitsAddress: ""
+
+  # Free-form additional `key: value` pairs merged into ConfigMap.data.
+  # Keys are used as-is — preserve any dot notation downstream consumers
+  # expect. On key collision with a well-known address above, the
+  # well-known field wins (the colliding extraAddresses entry is skipped).
+  # Example:
+  #   extraAddresses:
+  #     decryption.address: "0xabc..."
+  extraAddresses: {}
+
+# -----------------------------------------------------------------------------
 # Database Migration
 # -----------------------------------------------------------------------------
 # Sets up the database schema and initial data
