@@ -20,8 +20,8 @@ tx-sender.path = "crates/tx-sender"
 connector-utils.path = "crates/utils"
 fhevm_gateway_bindings = { path = "../gateway-contracts/rust_bindings", default-features = false }
 fhevm_host_bindings = { path = "../host-contracts/rust_bindings", default-features = false }
-kms-grpc = { git = "https://github.com/zama-ai/kms.git", rev = "2654d1ef7c13add52b890649ed50fb1ede25e522", default-features = true }
-bc2wrap = { git = "https://github.com/zama-ai/kms.git", rev = "2654d1ef7c13add52b890649ed50fb1ede25e522", default-features = true }
+kms-grpc = { git = "https://github.com/zama-ai/kms.git", rev = "94b71faa208703c6d9e00387cf827649816b7998", default-features = true }
+bc2wrap = { git = "https://github.com/zama-ai/kms.git", rev = "94b71faa208703c6d9e00387cf827649816b7998", default-features = true }
 tfhe = "=1.6.1"
 
 #####################################################################
