@@ -200,14 +200,22 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         chain_id = %config.chain_id,
         "Host listener consumer graceful stop"
     );
-    match consumer_result {
-        Ok(Ok(())) => info!("Consumer task completed successfully"),
-        Ok(Err(err)) => error!(error = %err, "Consumer task failed with error"),
-        Err(err) => error!(error = %err, "Consumer task panicked"),
-    }
     client.cancel();
     health_check_cancel_token.cancel();
-    Ok(())
+    match consumer_result {
+        Ok(Ok(())) => {
+            info!("Consumer task completed successfully");
+            Ok(())
+        }
+        Ok(Err(err)) => {
+            error!(error = %err, "Consumer broker error");
+            anyhow::bail!("Consumer broker error: {}", err)
+        }
+        Err(err) => {
+            error!(error = %err, "Consumer spawn error");
+            anyhow::bail!("Consumer spawn error: {}", err)
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
