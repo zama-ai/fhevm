@@ -1,6 +1,6 @@
 //! RFC-012 EIP-712 signature verification for unified user-decryption requests.
 //!
-//! Implements the `ecrecover` → ERC-1271 fallback specified in RFC12.
+//! Implements the `ecrecover` → ERC-1271 fallback specified in RFC-012.
 //! The EIP-712 typed-data struct is the unified `UserDecryptRequestVerification` from RFC-016
 //! we declare both it and `IERC1271` inline because the unified struct is intentionally
 //! absent from `Decryption.sol` (signature verification is off-chain) and `IERC1271` is not
