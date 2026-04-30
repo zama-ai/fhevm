@@ -59,6 +59,7 @@ const completeState = (): State => ({
     "discover",
     "regenerate",
     "validate",
+    "listener-core",
     "coprocessor",
     "kms-connector",
     "bootstrap",
@@ -76,8 +77,11 @@ describe("resumeRepairStep", () => {
       "kms-core",
       "host-node",
       "gateway-node",
+      "listener-redis",
+      "listener-publisher-for-anvil",
       "coprocessor-host-listener",
       "coprocessor-host-listener-poller",
+      "coprocessor-host-listener-consumer",
       "coprocessor-gw-listener",
       "coprocessor-tfhe-worker",
       "coprocessor-zkproof-worker",
@@ -99,8 +103,11 @@ describe("resumeRepairStep", () => {
       "kms-core",
       "host-node",
       "gateway-node",
+      "listener-redis",
+      "listener-publisher-for-anvil",
       "coprocessor-host-listener",
       "coprocessor-host-listener-poller",
+      "coprocessor-host-listener-consumer",
       "coprocessor-gw-listener",
       "coprocessor-tfhe-worker",
       "coprocessor-zkproof-worker",
@@ -116,6 +123,41 @@ describe("resumeRepairStep", () => {
     expect(resumeRepairStep(completeState(), running)).toBeUndefined();
   });
 
+  test("does not expect host-listener consumer on legacy supported bundles", () => {
+    const state = completeState();
+    state.target = "latest-supported";
+    state.versions = {
+      ...state.versions,
+      target: "latest-supported",
+      lockName: "latest-supported.json",
+      env: {
+        ...state.versions.env,
+        COPROCESSOR_HOST_LISTENER_VERSION: "v0.11.0",
+      },
+    };
+    const running = [
+      "fhevm-minio",
+      "coprocessor-and-kms-db",
+      "kms-core",
+      "host-node",
+      "gateway-node",
+      "coprocessor-host-listener",
+      "coprocessor-host-listener-poller",
+      "coprocessor-gw-listener",
+      "coprocessor-tfhe-worker",
+      "coprocessor-zkproof-worker",
+      "coprocessor-sns-worker",
+      "coprocessor-transaction-sender",
+      "kms-connector-gw-listener",
+      "kms-connector-kms-worker",
+      "kms-connector-tx-sender",
+      "fhevm-relayer-db",
+      "fhevm-relayer",
+      "fhevm-test-suite-e2e-debug",
+    ];
+    expect(resumeRepairStep(state, running)).toBeUndefined();
+  });
+
   test("repairs multi-instance stacks when a secondary coprocessor service is missing", () => {
     const state = completeState();
     state.scenario.topology = { count: 2, threshold: 2 };
@@ -129,8 +171,11 @@ describe("resumeRepairStep", () => {
       "kms-core",
       "host-node",
       "gateway-node",
+      "listener-redis",
+      "listener-publisher-for-anvil",
       "coprocessor-host-listener",
       "coprocessor-host-listener-poller",
+      "coprocessor-host-listener-consumer",
       "coprocessor-gw-listener",
       "coprocessor-tfhe-worker",
       "coprocessor-zkproof-worker",
@@ -172,8 +217,11 @@ describe("resumeRepairStep", () => {
       "host-node",
       "host-node-chain-b",
       "gateway-node",
+      "listener-redis",
+      "listener-publisher-for-anvil",
       "coprocessor-host-listener",
       "coprocessor-host-listener-poller",
+      "coprocessor-host-listener-consumer",
       "coprocessor-gw-listener",
       "coprocessor-tfhe-worker",
       "coprocessor-zkproof-worker",
@@ -200,6 +248,7 @@ describe("resumeRepairStep", () => {
       ["gateway-node", { status: "running" }],
       ["coprocessor-host-listener", { status: "running" }],
       ["coprocessor-host-listener-poller", { status: "running" }],
+      ["coprocessor-host-listener-consumer", { status: "running" }],
       ["coprocessor-gw-listener", { status: "running" }],
       ["coprocessor-tfhe-worker", { status: "running", health: "unhealthy" }],
       ["coprocessor-zkproof-worker", { status: "running" }],

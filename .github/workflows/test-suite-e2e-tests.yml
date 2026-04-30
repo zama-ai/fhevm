@@ -347,6 +347,14 @@ jobs:
         run: |
           ./fhevm-cli test "$TEST_PROFILE"
 
+      - name: Host listener consumer only selected e2e suite
+        working-directory: test-suite/fhevm
+        run: |
+          trap 'docker start coprocessor-host-listener coprocessor-host-listener-poller>/dev/null 2>&1 || true' EXIT
+          docker stop coprocessor-host-listener coprocessor-host-listener-poller
+          ./fhevm-cli test "$TEST_PROFILE"
+          trap - EXIT
+
       - name: Host listener poller test
         if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' }}
         working-directory: test-suite/fhevm
@@ -373,6 +381,8 @@ jobs:
             fi
             echo "::endgroup::"
           }
+          snapshot_logs "Listener Publisher" listener-publisher-for-anvil
+          snapshot_logs "Listener Redis" listener-redis
           snapshot_logs "Relayer Logs" fhevm-relayer
           # Iterate over all running coprocessor instances (primary is "coprocessor-",
           # additional instances are "coprocessorN-" where N>=1).

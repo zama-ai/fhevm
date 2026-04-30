@@ -5,6 +5,7 @@
 # - Configuration setup
 # - Database migration
 # - Host listener (blockchain event processing)
+# - Host listener consumer (listener-core broker event processing)
 # - Gateway listener (gateway event processing)
 # - TFHE worker (FHE computation)
 # - ZK proof worker (zero-knowledge proof generation)
@@ -54,8 +55,9 @@ commonConfig:
 
   # Optional tenant API key. Accepts `value` or `valueFrom`
   # (secretKeyRef/configMapKeyRef). Injected as TENANT_API_KEY for dbMigration,
-  # host listeners, and v0.11 snsWorker; host listeners also render
-  # --coprocessor-api-key and v0.11 snsWorker renders --tenant-api-key.
+  # host listener RPC/poller/catchup variants, and v0.11 snsWorker; those host
+  # listener variants also render --coprocessor-api-key and v0.11 snsWorker
+  # renders --tenant-api-key.
   tenantApiKey: {}
 
   # Gateway chain configuration. Consumed by gwListener and txSender.
@@ -384,6 +386,117 @@ hostListenerPollerShared:
       maxUnavailable: 0
 
 # -----------------------------------------------------------------------------
+# Host Listener Consumer Shared
+# -----------------------------------------------------------------------------
+# Processes host-chain events delivered by listener-core through a message broker.
+# Shared/default configuration for every chain entry that enables
+# hostListenerConsumer. This block is the primary source for image, replicas,
+# resources, ports, probes, tracing, scheduling, and structured args.
+# Per-chain hostListenerConsumer config does not deep-override this block; it only:
+#   - enables the consumer for that chain
+#   - provides required chain-specific contracts and chainId via the parent chain entry
+#   - appends env and extraArgs
+#   - may override serviceName
+#   - may claim the unsuffixed legacy resource name via useLegacyName
+hostListenerConsumerShared:
+  image:
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/host-listener
+    tag: v0.11.0
+
+  replicas: 1
+
+  # Component-specific configuration
+  config:
+    # Listener-core broker URL. Rendered as LISTENER_BROKER_URL and referenced
+    # by the built-in --url arg when set. Accepts `value` or `valueFrom`
+    # (secretKeyRef/configMapKeyRef). Leave unset to inject nothing.
+    brokerUrl: {}
+
+  # Additional environment variables.
+  env: []
+
+  # Structured args. serviceName is the only modeled key; per-chain
+  # chains[].hostListenerConsumer.serviceName takes precedence when set.
+  args:
+    # serviceName: host-listener-consumer
+
+  # Suppress any template-injected arg above. Values are kebab-case flag names
+  # (no leading `--`).
+  disabledArgs: []
+
+  # Additional raw CLI flags, appended after template-injected args.
+  # Full host_listener_consumer CLI:
+  #   built-in via template: --database-url, --url (alias: --broker-url),
+  #     --acl-contract-address, --tfhe-contract-address, --chain-id,
+  #     --health-port, --metrics-addr, --service-name
+  #   shared flags:
+  #     --database-retry-interval=1000
+  #     --log-level=INFO
+  #     --dependence-cache-size=10000
+  #     --dependence-by-connexity
+  #     --dependence-cross-block
+  #     --dependent-ops-max-per-chain=0
+  extraArgs: []
+
+  # Service ports configuration
+  ports:
+    metrics: 9100
+    healthcheck: 8080
+
+  serviceMonitor:
+    enabled: false
+
+  # serviceAccountName: existing SA for workload identity (e.g. IRSA). Unset = namespace default.
+  serviceAccountName:
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Health check probes
+  probes:
+    liveness:
+      enabled: false
+      httpGet:
+        path: /liveness
+        port: healthcheck
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: false
+      httpGet:
+        path: /healthz
+        port: healthcheck
+      initialDelaySeconds: 5
+      periodSeconds: 10
+
+  # Distributed tracing (inherits from commonConfig but can be overridden)
+  tracing:
+    enabled: false
+    # Stable logical service name for OTEL traces. If empty, OTEL_SERVICE_NAME
+    # falls back to the pod name (metadata.name), which fragments traces across
+    # pod replicas and rollouts. Set a stable string per environment.
+    service: ""
+
+  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
+  podLabels: {}
+
+  # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
+  nodeSelector:
+  affinity:
+  tolerations:
+
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+# -----------------------------------------------------------------------------
 # Host Listener Catchup Only Shared
 # -----------------------------------------------------------------------------
 # Host listener variant that runs only the catchup loop without real-time subscription.
@@ -500,14 +613,16 @@ hostListenerCatchupOnlyShared:
 # -----------------------------------------------------------------------------
 # Chains
 # -----------------------------------------------------------------------------
-# Each entry deploys up to three host listener variants for a given chain.
-# The top-level hostListenerShared / hostListenerPollerShared / hostListenerCatchupOnlyShared
+# Each entry deploys up to four host listener variants for a given chain.
+# The top-level hostListenerShared / hostListenerPollerShared /
+# hostListenerConsumerShared / hostListenerCatchupOnlyShared
 # blocks define shared settings used by every enabled chain for that listener
 # type. Chain entries do not deep-merge or override arbitrary top-level fields.
 #
 # What each chain entry provides:
 #   - required chain-specific connection values (wsUrl or wsUrlValueFrom,
 #     httpUrl or httpUrlValueFrom, and contracts as literal values or valueFrom refs)
+#   - chainId, required by hostListenerConsumer
 #   - enabled toggles per listener type
 #   - additive env and extraArgs
 #   - optional serviceName override
@@ -515,13 +630,15 @@ hostListenerCatchupOnlyShared:
 #
 # Resource naming:
 #   - By default, resources are named <release>-host-listener-<name>,
-#     <release>-host-listener-poller-<name>, etc.
+#     <release>-host-listener-poller-<name>,
+#     <release>-host-listener-consumer-<name>, etc.
 #   - Set useLegacyName: true on exactly one chain per listener type to keep the
 #     unsuffixed legacy name (<release>-host-listener, etc.) during migration.
 #
 # Example:
 # chains:
 #   - name: ethereum
+#     chainId: "1"                     # required by hostListenerConsumer
 #     wsUrl: "ws://eth-node:8546"       # required by hostListener + hostListenerCatchupOnly unless wsUrlValueFrom is set
 #     # wsUrlValueFrom:                 # secret/config-backed alternative to wsUrl
 #     #   secretKeyRef:
@@ -554,6 +671,12 @@ hostListenerCatchupOnlyShared:
 #       serviceName:
 #       extraArgs: []         # appended after top-level hostListenerPollerShared.extraArgs
 #       env: []               # appended after top-level hostListenerPollerShared.env
+#     hostListenerConsumer:
+#       enabled: true
+#       useLegacyName: true
+#       serviceName:
+#       extraArgs: []         # appended after top-level hostListenerConsumerShared.extraArgs
+#       env: []               # appended after top-level hostListenerConsumerShared.env
 #     hostListenerCatchupOnly:
 #       enabled: true
 #       useLegacyName: true

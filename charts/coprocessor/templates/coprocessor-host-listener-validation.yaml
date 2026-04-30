@@ -7,4 +7,5 @@ claim the same unsuffixed legacy resource name.
 {{- include "coprocessor.failIfDeprecatedTopLevelListenerKeysPresent" . }}
 {{- include "coprocessor.failIfMultipleLegacyNameClaims" (dict "root" . "componentKey" "hostListener") }}
 {{- include "coprocessor.failIfMultipleLegacyNameClaims" (dict "root" . "componentKey" "hostListenerPoller") }}
+{{- include "coprocessor.failIfMultipleLegacyNameClaims" (dict "root" . "componentKey" "hostListenerConsumer") }}
 {{- include "coprocessor.failIfMultipleLegacyNameClaims" (dict "root" . "componentKey" "hostListenerCatchupOnly") }}

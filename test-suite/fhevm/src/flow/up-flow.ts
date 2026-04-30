@@ -3,7 +3,12 @@
  */
 
 import { ensureLockSnapshot, previewBundle, resolveBundle } from "../resolve/bundle-store";
-import { assertSupportedBundleScenario, requiresMultichainAclAddress, validateBundleCompatibility } from "../compat/compat";
+import {
+  assertSupportedBundleScenario,
+  requiresMultichainAclAddress,
+  supportsHostListenerConsumer,
+  validateBundleCompatibility,
+} from "../compat/compat";
 import { driftDatabaseName } from "../drift";
 import { serviceNameList } from "../generate/compose";
 import { generateRuntime } from "../generate";
@@ -600,6 +605,20 @@ export const runStep = async (state: State, step: StepName) => {
       }
       break;
     }
+    case "listener-core":
+      if (!supportsHostListenerConsumer(state)) {
+        break;
+      }
+      await postgresExec("", ["-c", "CREATE DATABASE listener;"]);
+      await stepComposeUp("listener-core", state,
+        ["listener-redis"]
+      );
+      await waitForContainer("listener-redis", "running");
+      await stepComposeUp("listener-core", state,
+        ["listener-publisher-for-anvil"]
+      );
+      await waitForContainer("listener-publisher-for-anvil", "running");
+      break;
     case "coprocessor": {
       const skipMigration = await coprocessorDbsSeeded(state);
       const services = skipMigration ? coprocessorHealthContainers(state) : serviceNameList(state, "coprocessor");
