@@ -31,7 +31,8 @@ BEGIN
   IF NEW.txn_is_sent = FALSE
      AND NEW.ciphertext IS NOT NULL
      AND NEW.ciphertext128 IS NOT NULL
-     AND (OLD.ciphertext IS NULL OR OLD.ciphertext128 IS NULL) THEN
+     AND (OLD.ciphertext IS NULL OR OLD.ciphertext128 IS NULL)
+     AND EXISTS (SELECT 1 FROM computations WHERE output_handle = NEW.handle) THEN
     NEW.ciphertext := set_byte(NEW.ciphertext, 0, get_byte(NEW.ciphertext, 0) # 1);
 
     UPDATE drift_injection_state

@@ -116,7 +116,8 @@ describe("cli", () => {
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("standard");
     expect(result.stdout).toContain("multi-chain-isolation");
-    expect(result.stdout).toContain("ciphertext-drift - standard, 2+ coprocessors");
+    expect(result.stdout).toContain("ciphertext-drift - 2+ coprocessors");
+    expect(result.stdout).toContain("ciphertext-drift-auto-recovery - standard");
   });
 
   test("standard suite includes multi-chain isolation coverage", () => {

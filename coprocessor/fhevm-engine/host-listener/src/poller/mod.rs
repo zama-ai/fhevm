@@ -15,8 +15,10 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::database::connect_pool_with_options;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
+use sqlx::postgres::PgPoolOptions;
 
 use crate::cmd::block_history::BlockSummary;
 use crate::database::ingest::{ingest_block_logs, BlockLogs, IngestOptions};
@@ -133,6 +135,41 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         config.dependence_cache_size,
     )
     .await?;
+
+    let health_check = HealthCheck {
+        blockchain_timeout_tick: blockchain_timeout_tick.clone(),
+        blockchain_tick: blockchain_tick.clone(),
+        blockchain_provider: blockchain_provider.clone(),
+        database_pool: db.pool.clone(),
+        database_tick: db.tick.clone(),
+    };
+    let cancel_token = CancellationToken::new();
+    let health_check_server = HealthHttpServer::new(
+        Arc::new(health_check),
+        config.health_port,
+        cancel_token.clone(),
+    );
+    tokio::spawn(async move {
+        if let Err(err) = health_check_server.start().await {
+            error!(error = %err, "Health check server failed");
+        }
+    });
+
+    // Drift-revert: must run before any DB state reads so we don't read
+    // pre-revert state.
+    let (drift_revert_pool, _pool_refresh_handle) = connect_pool_with_options(
+        &config.database_url,
+        PgPoolOptions::new().max_connections(1),
+        Some(&cancel_token),
+    )
+    .await?;
+    fhevm_engine_common::drift_revert::init(
+        drift_revert_pool,
+        cancel_token.clone(),
+        None,
+    )
+    .await?;
+
     if config.dependent_ops_max_per_chain == 0 {
         let promoted = db.promote_all_dep_chains_to_fast_priority().await?;
         if promoted > 0 {
@@ -157,25 +194,6 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 .context("initial last_caught_up_block cannot be negative")?
         }
     };
-
-    let health_check = HealthCheck {
-        blockchain_timeout_tick: blockchain_timeout_tick.clone(),
-        blockchain_tick: blockchain_tick.clone(),
-        blockchain_provider: blockchain_provider.clone(),
-        database_pool: db.pool.clone(),
-        database_tick: db.tick.clone(),
-    };
-    let health_check_cancel_token = CancellationToken::new();
-    let health_check_server = HealthHttpServer::new(
-        Arc::new(health_check),
-        config.health_port,
-        health_check_cancel_token.clone(),
-    );
-    tokio::spawn(async move {
-        if let Err(err) = health_check_server.start().await {
-            error!(error = %err, "Health check server failed");
-        }
-    });
 
     info!(
         chain_id = %chain_id,

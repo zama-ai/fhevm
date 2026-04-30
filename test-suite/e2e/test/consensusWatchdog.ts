@@ -38,6 +38,7 @@ interface PendingProof {
 
 interface CiphertextPollResult {
   pendingHandles: Map<string, PendingHandle>;
+  resolvedHandles: Set<string>;
   resolvedHandleDelta: number;
   divergences: string[];
   divergenceKeys: Set<string>;
@@ -45,6 +46,7 @@ interface CiphertextPollResult {
 
 interface ProofPollResult {
   pendingProofs: Map<string, PendingProof>;
+  resolvedProofs: Set<string>;
   resolvedProofDelta: number;
   divergences: string[];
   divergenceKeys: Set<string>;
@@ -56,6 +58,10 @@ export class ConsensusWatchdog {
   private inputVerification: ethers.Contract | null;
   private pendingHandles = new Map<string, PendingHandle>();
   private pendingProofs = new Map<string, PendingProof>();
+  // Handles/proofs that already reached consensus. Late submissions for these
+  // must be ignored, since the contract only emits one consensus event per handle.
+  private resolvedHandles = new Set<string>();
+  private resolvedProofs = new Set<string>();
   private resolvedHandleCount = 0;
   private resolvedProofCount = 0;
   private divergences: string[] = [];
@@ -115,6 +121,7 @@ export class ConsensusWatchdog {
           ? this.pollInputVerificationEvents(fromBlock, toBlock)
           : Promise.resolve<ProofPollResult>({
               pendingProofs: this.clonePendingProofs(),
+              resolvedProofs: new Set(this.resolvedProofs),
               resolvedProofDelta: 0,
               divergences: [],
               divergenceKeys: new Set(this.divergenceKeys),
@@ -123,6 +130,8 @@ export class ConsensusWatchdog {
 
       this.pendingHandles = ciphertextResult.pendingHandles;
       this.pendingProofs = proofResult.pendingProofs;
+      this.resolvedHandles = ciphertextResult.resolvedHandles;
+      this.resolvedProofs = proofResult.resolvedProofs;
       this.resolvedHandleCount += ciphertextResult.resolvedHandleDelta;
       this.resolvedProofCount += proofResult.resolvedProofDelta;
       this.divergences.push(...ciphertextResult.divergences, ...proofResult.divergences);
@@ -149,6 +158,7 @@ export class ConsensusWatchdog {
     ]);
 
     const pendingHandles = this.clonePendingHandles();
+    const resolvedHandles = new Set(this.resolvedHandles);
     const divergences: string[] = [];
     const divergenceKeys = new Set(this.divergenceKeys);
     let resolvedHandleDelta = 0;
@@ -160,6 +170,8 @@ export class ConsensusWatchdog {
       const ciphertextDigest = log.args[2] as string;
       const snsCiphertextDigest = log.args[3] as string;
       const coprocessor = log.args[4] as string;
+
+      if (resolvedHandles.has(ctHandle)) continue;
 
       if (!pendingHandles.has(ctHandle)) {
         pendingHandles.set(ctHandle, {
@@ -178,12 +190,13 @@ export class ConsensusWatchdog {
     for (const event of consensuses) {
       const log = event as ethers.EventLog;
       const ctHandle = log.args[0] as string;
+      resolvedHandles.add(ctHandle);
       if (pendingHandles.delete(ctHandle)) {
         resolvedHandleDelta++;
       }
     }
 
-    return { pendingHandles, resolvedHandleDelta, divergences, divergenceKeys };
+    return { pendingHandles, resolvedHandles, resolvedHandleDelta, divergences, divergenceKeys };
   }
 
   private async pollInputVerificationEvents(fromBlock: number, toBlock: number): Promise<ProofPollResult> {
@@ -201,6 +214,7 @@ export class ConsensusWatchdog {
     ]);
 
     const pendingProofs = this.clonePendingProofs();
+    const resolvedProofs = new Set(this.resolvedProofs);
     const divergences: string[] = [];
     const divergenceKeys = new Set(this.divergenceKeys);
     let resolvedProofDelta = 0;
@@ -210,6 +224,8 @@ export class ConsensusWatchdog {
       const zkProofId = String(log.args[0]);
       const ctHandles = log.args[1] as string[];
       const coprocessor = log.args[3] as string;
+
+      if (resolvedProofs.has(zkProofId)) continue;
 
       if (!pendingProofs.has(zkProofId)) {
         pendingProofs.set(zkProofId, {
@@ -227,12 +243,13 @@ export class ConsensusWatchdog {
     for (const event of consensuses) {
       const log = event as ethers.EventLog;
       const zkProofId = String(log.args[0]);
+      resolvedProofs.add(zkProofId);
       if (pendingProofs.delete(zkProofId)) {
         resolvedProofDelta++;
       }
     }
 
-    return { pendingProofs, resolvedProofDelta, divergences, divergenceKeys };
+    return { pendingProofs, resolvedProofs, resolvedProofDelta, divergences, divergenceKeys };
   }
 
   private checkCiphertextDivergence(
