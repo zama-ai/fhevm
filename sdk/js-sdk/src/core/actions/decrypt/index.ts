@@ -45,3 +45,5 @@ export {
   type CanDecryptValueReturnType,
   canDecryptValue,
 } from './canDecryptValue.js';
+
+export { type TransportKeypair } from '../../kms/TransportKeypair-p.js';
