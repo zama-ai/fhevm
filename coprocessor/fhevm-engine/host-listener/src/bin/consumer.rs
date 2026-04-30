@@ -127,6 +127,3 @@ async fn main() -> anyhow::Result<()> {
 
     run_consumer(config).await
 }
-
-// cargo run --bin  host_listener_consumer -- --url "amqp://user:pass@localhost:5672" --acl-contract-address 0xca2e8f1f656cd25c01f05d0b243ab1ecd4a8ffb6 --tfhe-contract-address 0xd82385dada1ae3e969447f20a3164f6213100e75 --database-url postgresql://postgres:postgres@localhost:5432/coprocessor --chain-id 1
-// cargo run --bin  host_listener_consumer -- --url "amqp://user:pass@localhost:5672" --acl-contract-address 0xf0ffdc93b7e186bc2f8cb3daa75d86d1930a433d --tfhe-contract-address 0x92c920834ec8941d2c77d188936e1f7a6f49c127 --database-url postgresql://postgres:postgres@localhost:5432/coprocessor --chain-id 11155111
