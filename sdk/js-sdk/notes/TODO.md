@@ -43,6 +43,44 @@
 - rename RelayerPublicDecryptOptions etc. does not match the API names
 - MAX_INPUT_INDEX = 254 (see https://github.com/zama-ai/fhevm/blob/main/coprocessor/fhevm-engine/zkproof-worker/src/verifier.rs#L40)
 - do not export private types like: SignDecryptionPermitContext
+- missing type FhevmClient in exports
+- missing TransportKeypair export (generateTransportKeypair)
+- Fix peerDependency issue: test-suite/e2e: conflict with ethers, see:
+
+```ts
+type FhevmClient = ReturnType<typeof createFhevmClient>;
+type CreateFhevmClientParameters = Parameters<typeof createFhevmClient>[0];
+type FhevmClientProvider = CreateFhevmClientParameters['provider'];
+```
+
+- Verify async race conditions issues, following init-p.ts encrypt module init bug:
+
+```ts
+let resolvedTfheModuleConfig: ResolvedTfheModuleConfig | undefined = undefined;
+let resolvingTfheModuleConfigPromise: Promise<ResolvedTfheModuleConfig> | undefined;
+
+/**
+ * @internal
+ * Returns the existing resolved config, or resolves it from the runtime config.
+ */
+async function _getOrResolveTfheModuleConfig(runtime: FhevmRuntime): Promise<ResolvedTfheModuleConfig> {
+  if (resolvedTfheModuleConfig !== undefined) {
+    return resolvedTfheModuleConfig;
+  }
+
+  resolvingTfheModuleConfigPromise ??= _resolveTfheModuleConfig(runtime.config)
+    .then((cfg) => {
+      resolvedTfheModuleConfig = cfg;
+      return cfg;
+    })
+    .catch((error: unknown) => {
+      resolvingTfheModuleConfigPromise = undefined;
+      throw error;
+    });
+
+  return resolvingTfheModuleConfigPromise;
+}
+```
 
 ```ts
     function checkSignatures(

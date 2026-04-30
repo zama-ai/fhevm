@@ -146,3 +146,10 @@ INPUT_VERIFIER=0x36772142b74871f255CbD7A3e89B401d3e45825f
 # cast compute-address 0x8B8f5091f8b9817EF69cFC1E8B2f721BafF60DF4 --nonce 6
 HCU_LIMIT=0x233ff88A48c172d29F675403e6A8e302b0F032D9
 ```
+
+# fhevm-cli
+
+`./fhevm-cli up --help`
+`./fhevm-cli up --override test-suite` : use local test suite
+`./fhevm-cli upgrade test-suite`: rebuild test suite
+`./fhevm-cli test --grep BBB`

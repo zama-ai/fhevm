@@ -1,15 +1,15 @@
-import { assert, expect } from 'chai';
-import { ethers } from 'hardhat';
+import { assert, expect } from "chai";
+import { ethers } from "hardhat";
 
-import { createInstances } from '../instance';
-import { getSigners, initSigners } from '../signers';
+import { createInstances } from "../instance";
+import { getSigners, initSigners } from "../signers";
 
-describe('HTTPPublicDecrypt', function () {
+describe("HTTPPublicDecrypt", function () {
   before(async function () {
     await initSigners(2);
     this.signers = await getSigners();
     this.instances = await createInstances(this.signers);
-    const contractFactory = await ethers.getContractFactory('HTTPPublicDecrypt');
+    const contractFactory = await ethers.getContractFactory("HTTPPublicDecrypt");
 
     this.contract = await contractFactory.connect(this.signers.alice).deploy();
     await this.contract.waitForDeployment();
@@ -17,7 +17,7 @@ describe('HTTPPublicDecrypt', function () {
     this.instances = await createInstances(this.signers);
   });
 
-  it('test HTTPPublicDecrypt ebool', async function () {
+  it("test HTTPPublicDecrypt ebool", async function () {
     const handleBool = await this.contract.xBool();
     const res = await this.instances.alice.publicDecrypt([handleBool]);
     const expectedRes = {
@@ -26,7 +26,7 @@ describe('HTTPPublicDecrypt', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('test HTTPPublicDecrypt mixed', async function () {
+  it("test HTTPPublicDecrypt mixed", async function () {
     const handleBool = await this.contract.xBool();
     const handle32 = await this.contract.xUint32();
     const handleAddress = await this.contract.xAddress();
@@ -34,23 +34,23 @@ describe('HTTPPublicDecrypt', function () {
     const expectedRes = {
       [handleBool]: true,
       [handle32]: 242n,
-      [handleAddress]: '0xfC4382C084fCA3f4fB07c3BCDA906C01797595a8',
+      [handleAddress]: "0xfC4382C084fCA3f4fB07c3BCDA906C01797595a8",
     };
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  describe('negative-acl', function () {
-    it('should reject when handle is not publicly decryptable', async function () {
-      const factory = await ethers.getContractFactory('UserDecrypt');
+  describe("negative-acl", function () {
+    it("should reject when handle is not publicly decryptable", async function () {
+      const factory = await ethers.getContractFactory("UserDecrypt");
       const contract = await factory.connect(this.signers.alice).deploy();
       await contract.waitForDeployment();
       const handle = await contract.xUint8();
 
       try {
         await this.instances.alice.publicDecrypt([handle]);
-        expect.fail('Expected an error - handle is not publicly decryptable');
+        expect.fail("Expected an error - handle is not publicly decryptable");
       } catch (error) {
-        expect(error.message).to.include('not allowed for public decryption');
+        expect((error as { message: string }).message).to.include("not allowed for public decryption");
       }
     });
   });

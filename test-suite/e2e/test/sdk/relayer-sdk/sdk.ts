@@ -1,0 +1,253 @@
+import type { FhevmInstance } from "@zama-fhe/relayer-sdk/node";
+import { createInstance } from "@zama-fhe/relayer-sdk/node";
+import type { Signer } from "ethers";
+
+import type { Auth, ClearValueType, ClearValues, EncryptedInputResult, SdkInstance, TypedValue } from "../types";
+
+export class RelayerSdk implements SdkInstance {
+  #instance: FhevmInstance;
+
+  constructor(instance: FhevmInstance) {
+    this.#instance = instance;
+  }
+
+  static async create(parameters: {
+    readonly verifyingContractAddressDecryption: string;
+    readonly verifyingContractAddressInputVerification: string;
+    readonly kmsContractAddress: string;
+    readonly inputVerifierContractAddress: string;
+    readonly aclContractAddress: string;
+    readonly relayerUrl: string;
+    readonly rpcUrl: string;
+    readonly gatewayChainId: number;
+    readonly chainId: number;
+    readonly auth?: Auth;
+  }): Promise<SdkInstance> {
+    const {
+      verifyingContractAddressDecryption,
+      verifyingContractAddressInputVerification,
+      kmsContractAddress,
+      inputVerifierContractAddress,
+      aclContractAddress,
+      relayerUrl,
+      rpcUrl,
+      gatewayChainId,
+      chainId,
+      auth,
+    } = parameters;
+    const instance = await createInstance({
+      verifyingContractAddressDecryption,
+      verifyingContractAddressInputVerification,
+      kmsContractAddress,
+      inputVerifierContractAddress,
+      aclContractAddress,
+      network: rpcUrl,
+      relayerUrl,
+      gatewayChainId,
+      chainId,
+      ...(auth ? { auth } : {}),
+    });
+    return new RelayerSdk(instance);
+  }
+
+  get supportsWildcard(): boolean {
+    return false;
+  }
+
+  async generateKeypair(): Promise<{ publicKey: string; privateKey: string }> {
+    const pair = this.#instance.generateKeypair();
+    return Promise.resolve(pair);
+  }
+
+  async encryptTypedValues(parameters: {
+    readonly values: readonly TypedValue[];
+    readonly contractAddress: string;
+    readonly userAddress: string;
+  }): Promise<EncryptedInputResult> {
+    const input = this.#instance.createEncryptedInput(parameters.contractAddress, parameters.userAddress);
+
+    for (const typedValue of parameters.values) {
+      switch (typedValue.type) {
+        case "bool":
+          input.addBool(typedValue.value);
+          break;
+        case "uint8":
+          input.add8(typedValue.value);
+          break;
+        case "uint16":
+          input.add16(typedValue.value);
+          break;
+        case "uint32":
+          input.add32(typedValue.value);
+          break;
+        case "uint64":
+          input.add64(typedValue.value);
+          break;
+        case "uint128":
+          input.add128(typedValue.value);
+          break;
+        case "uint256":
+          input.add256(typedValue.value);
+          break;
+        case "address":
+          input.addAddress(typedValue.value);
+          break;
+      }
+    }
+
+    return await input.encrypt();
+  }
+
+  async encryptUint64(parameters: {
+    readonly value: number | bigint;
+    readonly contractAddress: string;
+    readonly userAddress: string;
+  }): Promise<EncryptedInputResult> {
+    return await this.encryptTypedValues({
+      values: [{ type: "uint64", value: parameters.value }],
+      contractAddress: parameters.contractAddress,
+      userAddress: parameters.userAddress,
+    });
+  }
+
+  async userDecryptSingleHandle(parameters: {
+    readonly handle: string;
+    readonly contractAddress: string;
+    readonly signer: Signer & { readonly address: string };
+    readonly transportKeypair?: { readonly privateKey: string; readonly publicKey: string } | undefined;
+  }): Promise<ClearValueType> {
+    const { handle, contractAddress, signer } = parameters;
+
+    const transportKeypair = parameters.transportKeypair ?? (await this.generateKeypair());
+
+    const result = await this.userDecrypt({
+      transportKeypair,
+      handleContractPairs: [
+        {
+          handle: handle,
+          contractAddress: contractAddress,
+        },
+      ],
+      durationDays: 10,
+      startTimestamp: Math.floor(Date.now() / 1000),
+      signer,
+      contractAddress,
+    });
+
+    const decryptedValue = result[handle as `0x${string}`];
+    return decryptedValue;
+  }
+
+  async delegatedUserDecryptSingleHandle(parameters: {
+    readonly handle: string;
+    readonly contractAddress: string;
+    readonly delegatorAddress: string;
+    readonly signer: Signer & { readonly address: string };
+    readonly delegateTransportKeypair?: { readonly privateKey: string; readonly publicKey: string } | undefined;
+  }): Promise<ClearValueType> {
+    const { handle, contractAddress, delegatorAddress, signer } = parameters;
+    const delegateTransportKeypair = parameters.delegateTransportKeypair ?? (await this.generateKeypair());
+    const handleContractPairs = [
+      {
+        handle,
+        contractAddress,
+      },
+    ];
+    const startTimeStamp = Math.floor(Date.now() / 1000);
+    const durationDays = 10;
+    const contractAddresses = [contractAddress];
+
+    // Build the extraData field
+    const extraData = await this.#instance.getExtraData();
+
+    // The `delegate` creates a EIP712 with the `delegator` address
+    const eip712 = this.#instance.createDelegatedUserDecryptEIP712(
+      delegateTransportKeypair.publicKey,
+      contractAddresses,
+      delegatorAddress,
+      startTimeStamp,
+      durationDays,
+      extraData,
+    );
+
+    // Update the signing to match the new primaryType
+    const delegateSignature = await signer.signTypedData(
+      eip712.domain,
+      {
+        DelegatedUserDecryptRequestVerification: [...eip712.types.DelegatedUserDecryptRequestVerification],
+      },
+      eip712.message,
+    );
+
+    const result = await this.#instance.delegatedUserDecrypt(
+      handleContractPairs,
+      delegateTransportKeypair.privateKey,
+      delegateTransportKeypair.publicKey,
+      delegateSignature.replace("0x", ""),
+      contractAddresses,
+      delegatorAddress,
+      signer.address,
+      startTimeStamp,
+      durationDays,
+      extraData,
+    );
+
+    return result[handle as `0x${string}`];
+  }
+
+  async publicDecrypt(handles: readonly string[]): Promise<{
+    clearValues: ClearValues;
+    abiEncodedClearValues: `0x${string}`;
+    decryptionProof: `0x${string}`;
+  }> {
+    const res = await this.#instance.publicDecrypt(handles as `0x${string}`[]);
+    return res;
+  }
+
+  async userDecrypt(parameters: {
+    readonly signer: Signer & { readonly address: string };
+    readonly contractAddress: string;
+    readonly startTimestamp: number;
+    readonly durationDays: number;
+    readonly handleContractPairs: Array<{
+      handle: string | Uint8Array<ArrayBufferLike>;
+      contractAddress: string;
+    }>;
+    readonly transportKeypair?:
+      | {
+          readonly publicKey: string;
+          readonly privateKey: string;
+        }
+      | undefined;
+  }): Promise<ClearValues> {
+    const { signer, contractAddress, handleContractPairs, startTimestamp, durationDays, transportKeypair } = parameters;
+
+    const { publicKey, privateKey } = transportKeypair ?? this.#instance.generateKeypair();
+    const contractAddresses = [contractAddress];
+
+    // Build the extraData field
+    const extraData = await this.#instance.getExtraData();
+
+    const eip712 = this.#instance.createEIP712(publicKey, contractAddresses, startTimestamp, durationDays, extraData);
+
+    const signature = await signer.signTypedData(
+      eip712.domain,
+      {
+        UserDecryptRequestVerification: [...eip712.types.UserDecryptRequestVerification],
+      },
+      eip712.message,
+    );
+
+    return await this.#instance.userDecrypt(
+      handleContractPairs,
+      privateKey,
+      publicKey,
+      signature.replace("0x", ""),
+      contractAddresses,
+      signer.address,
+      startTimestamp,
+      durationDays,
+      extraData,
+    );
+  }
+}

@@ -1,12 +1,12 @@
-import { expect } from 'chai';
-import { ethers } from 'hardhat';
+import { expect } from "chai";
+import { ethers } from "hardhat";
 
-import { createInstances } from '../instance';
-import { getSigners, initSigners } from '../signers';
+import { createInstances } from "../instance";
+import { getSigners, initSigners } from "../signers";
 
-const ENFORCED_PAUSE_SELECTOR = '0xd93c0665';
+const ENFORCED_PAUSE_SELECTOR = "0xd93c0665";
 
-describe('Paused host', function () {
+describe("Paused host", function () {
   before(async function () {
     await initSigners(2);
     this.signers = await getSigners();
@@ -14,16 +14,18 @@ describe('Paused host', function () {
   });
 
   // The following test case should cover the ACL.allow method call.
-  it('test paused host user input (allow)', async function () {
+  it("test paused host user input (allow)", async function () {
     // Initialize TestInput contract.
-    const testInputContractFactory = await ethers.getContractFactory('TestInput');
+    const testInputContractFactory = await ethers.getContractFactory("TestInput");
     const testInputContract = await testInputContractFactory.connect(this.signers.alice).deploy();
     const testInputContractAddress = await testInputContract.getAddress();
     await testInputContract.waitForDeployment();
 
-    const inputAlice = this.instances.alice.createEncryptedInput(testInputContractAddress, this.signers.alice.address);
-    inputAlice.add64(18446744073709550042n);
-    const encryptedAmount = await inputAlice.encrypt();
+    const encryptedAmount = await this.instances.alice.encryptUint64({
+      value: 18446744073709550042n,
+      contractAddress: testInputContractAddress,
+      userAddress: this.signers.alice.address,
+    });
 
     // The requestUint64NonTrivial call should fail because it calls to ACL.allow() which should be paused.
     await expect(
@@ -32,9 +34,9 @@ describe('Paused host', function () {
   });
 
   // The following test case should cover the ACL.allowForDecryption method call.
-  it('test paused host HTTP public decrypt (allow for decryption)', async function () {
+  it("test paused host HTTP public decrypt (allow for decryption)", async function () {
     // Initialize HTTPPublicDecrypt contract.
-    const httpPublicDecryptContractFactory = await ethers.getContractFactory('HTTPPublicDecrypt');
+    const httpPublicDecryptContractFactory = await ethers.getContractFactory("HTTPPublicDecrypt");
 
     // The HTTPPublicDecrypt contract deployment should fail because its constructor
     // makes a call to ACL.allowForDecryption() which should be paused.
@@ -44,16 +46,24 @@ describe('Paused host', function () {
   });
 
   // The following test case should cover the ACL.allowTransient method call.
-  it('test paused host operators (allow transient)', async function () {
-    const fhevmTestSuite1ContractFactory = await ethers.getContractFactory('FHEVMTestSuite1');
+  it("test paused host operators (allow transient)", async function () {
+    const fhevmTestSuite1ContractFactory = await ethers.getContractFactory("FHEVMTestSuite1");
     const fhevmTestSuite1Contract = await fhevmTestSuite1ContractFactory.connect(this.signers.alice).deploy();
     const fhevmTestSuite1ContractAddress = await fhevmTestSuite1Contract.getAddress();
     await fhevmTestSuite1Contract.waitForDeployment();
 
-    const input = this.instances.alice.createEncryptedInput(fhevmTestSuite1ContractAddress, this.signers.alice.address);
-    input.add32(1488611147n);
-    input.add64(1488611147n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instances.alice.encryptTypedValues({
+      contractAddress: fhevmTestSuite1ContractAddress,
+      userAddress: this.signers.alice.address,
+      values: [
+        { type: "uint32", value: 1488611147n },
+        { type: "uint64", value: 1488611147n },
+      ],
+    });
+    // const input = this.instances.alice.createEncryptedInput(fhevmTestSuite1ContractAddress, this.signers.alice.address);
+    // input.add32(1488611147n);
+    // input.add64(1488611147n);
+    // const encryptedAmount = await input.encrypt();
 
     // The sub_euint32_euint64 call should fail because it calls to ACL.allowTransient() which should be paused.
     await expect(

@@ -109,21 +109,20 @@ export async function initTkmsModule(runtime: FhevmRuntime): Promise<void> {
 
   ownerUid = runtime.uid;
 
-  if (cachedTkmsModulePromise !== undefined) {
-    return cachedTkmsModulePromise;
+  // Cache the TKMS initialization promise once and keep it cached even if it
+  // rejects.
+  //
+  // Retry is not supported:
+  // -----------------------
+  // The underlying KMS/WASM bindings
+  // keep module-level state that cannot be reset reliably after a partial
+  // initialization failure; later callers should observe the original error
+  // instead of retrying against half-initialized state.
+  if (cachedTkmsModulePromise === undefined) {
+    // resolve is sync
+    const cfg = _getOrResolveTkmsModuleConfig(runtime);
+    cachedTkmsModulePromise = _initTkmsModule(cfg);
   }
-
-  // Use existing config if already set, otherwise resolve from runtime
-  const cfg = _getOrResolveTkmsModuleConfig(runtime);
-
-  cachedTkmsModulePromise = _initTkmsModule(cfg);
-
-  // This is purely theoretical. Retry is not yet possible since the `_initTkmsModule`
-  // does not support retry (see kms lib internal global variables).
-  cachedTkmsModulePromise.catch(() => {
-    // Clear cache on failure so retry is possible
-    cachedTkmsModulePromise = undefined;
-  });
 
   return cachedTkmsModulePromise;
 }

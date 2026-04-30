@@ -1,4 +1,4 @@
-ARG NODE_VERSION=20.19.1-alpine3.21
+ARG NODE_VERSION=22.22.2-alpine3.22
 ARG RELAYER_SDK_VERSION=""
 
 # --- Builder Stage ---
@@ -25,6 +25,8 @@ RUN addgroup -g 10001 fhevm && \
 COPY package.json package-lock.json ./
 COPY library-solidity/package.json ./library-solidity/package.json
 COPY test-suite/e2e/package.json ./test-suite/e2e/
+COPY sdk/js-sdk/package.json ./sdk/js-sdk/
+COPY sdk/js-sdk/src/package.json ./sdk/js-sdk/src/
 
 # Install dependencies
 RUN npm ci && \
@@ -36,6 +38,7 @@ RUN npm ci && \
 # Copy sources after deps are cached
 COPY library-solidity ./library-solidity
 COPY test-suite/e2e ./test-suite/e2e
+COPY sdk/js-sdk ./sdk/js-sdk
 
 WORKDIR /app/test-suite/e2e
 

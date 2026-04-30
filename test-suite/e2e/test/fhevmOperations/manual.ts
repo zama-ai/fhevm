@@ -1,15 +1,14 @@
-import { assert } from 'chai';
-import { ethers } from 'hardhat';
+import { assert } from "chai";
+import { ethers } from "hardhat";
 
-import type { FHEVMManualTestSuite } from '../../types/contracts/operations/FHEVMManualTestSuite';
-import { createInstance } from '../instance';
-import { getSigner } from '../signers';
-import { bigIntToBytes256 } from '../utils';
+import type { FHEVMManualTestSuite } from "../../types/contracts/operations/FHEVMManualTestSuite";
+import { createInstance } from "../instance";
+import { getSigner } from "../signers";
 
 async function deployFHEVMManualTestFixture(): Promise<FHEVMManualTestSuite> {
   const admin = await getSigner(119);
 
-  const contractFactory = await ethers.getContractFactory('FHEVMManualTestSuite');
+  const contractFactory = await ethers.getContractFactory("FHEVMManualTestSuite");
   const contract = await contractFactory.connect(admin).deploy();
   await contract.waitForDeployment();
 
@@ -21,10 +20,10 @@ const OVERSIZED_SHIFT_64 = 70n;
 const REDUCED_SHIFT_64 = 6n;
 const SHIFT_ROTATE_VALUE_64 = 0x123456789abcdef0n;
 const addr = (value: string) => ethers.getAddress(value);
-const ADDR_A = addr('0x8ba1f109551bd432803012645ac136ddd64dba72');
-const ADDR_B = addr('0x8881f109551bd432803012645ac136ddd64dba72');
-const ADDR_C = addr('0x9ba1f109551bd432803012645ac136ddd64dba72');
-const ADDR_D = addr('0x9aa1f109551bd432803012645ac136ddd64dba72');
+const ADDR_A = addr("0x8ba1f109551bd432803012645ac136ddd64dba72");
+const ADDR_B = addr("0x8881f109551bd432803012645ac136ddd64dba72");
+const ADDR_C = addr("0x9ba1f109551bd432803012645ac136ddd64dba72");
+const ADDR_D = addr("0x9aa1f109551bd432803012645ac136ddd64dba72");
 
 function rotl64(value: bigint, shift: bigint): bigint {
   const normalized = shift % 64n;
@@ -44,10 +43,10 @@ async function decrypt64Result(
   await (await txPromise).wait();
   const handle = await contract.resEuint64();
   const res = await instance.publicDecrypt([handle]);
-  return res.clearValues[handle] as bigint;
+  return res.clearValues[handle as `0x${string}`] as bigint;
 }
 
-describe('FHEVM manual operations', function () {
+describe("FHEVM manual operations", function () {
   beforeEach(async function () {
     this.signer = await getSigner(119);
 
@@ -60,8 +59,8 @@ describe('FHEVM manual operations', function () {
 
   // Keep this regression isolated so operators CI can target only the
   // oversized-index path without pulling the whole manual suite.
-  describe('FHEVM oversized shift and rotate indexes', function () {
-    it('shr(euint64, uint8) applies modulo semantics for indexes > bit width', async function () {
+  describe("FHEVM oversized shift and rotate indexes", function () {
+    it("shr(euint64, uint8) applies modulo semantics for indexes > bit width", async function () {
       const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
       input.add64(SHIFT_ROTATE_VALUE_64);
       const encryptedAmount = await input.encrypt();
@@ -77,7 +76,7 @@ describe('FHEVM manual operations', function () {
       assert.equal(res, SHIFT_ROTATE_VALUE_64 >> REDUCED_SHIFT_64);
     });
 
-    it('shr(euint64, euint8) applies modulo semantics for indexes > bit width', async function () {
+    it("shr(euint64, euint8) applies modulo semantics for indexes > bit width", async function () {
       const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
       input.add64(SHIFT_ROTATE_VALUE_64);
       input.add8(OVERSIZED_SHIFT_64);
@@ -94,7 +93,7 @@ describe('FHEVM manual operations', function () {
       assert.equal(res, SHIFT_ROTATE_VALUE_64 >> REDUCED_SHIFT_64);
     });
 
-    it('shl(euint64, uint8) applies modulo semantics for indexes > bit width', async function () {
+    it("shl(euint64, uint8) applies modulo semantics for indexes > bit width", async function () {
       const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
       input.add64(SHIFT_ROTATE_VALUE_64);
       const encryptedAmount = await input.encrypt();
@@ -110,7 +109,7 @@ describe('FHEVM manual operations', function () {
       assert.equal(res, (SHIFT_ROTATE_VALUE_64 << REDUCED_SHIFT_64) & UINT64_MASK);
     });
 
-    it('shl(euint64, euint8) applies modulo semantics for indexes > bit width', async function () {
+    it("shl(euint64, euint8) applies modulo semantics for indexes > bit width", async function () {
       const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
       input.add64(SHIFT_ROTATE_VALUE_64);
       input.add8(OVERSIZED_SHIFT_64);
@@ -127,7 +126,7 @@ describe('FHEVM manual operations', function () {
       assert.equal(res, (SHIFT_ROTATE_VALUE_64 << REDUCED_SHIFT_64) & UINT64_MASK);
     });
 
-    it('rotl(euint64, uint8) applies modulo semantics for indexes > bit width', async function () {
+    it("rotl(euint64, uint8) applies modulo semantics for indexes > bit width", async function () {
       const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
       input.add64(SHIFT_ROTATE_VALUE_64);
       const encryptedAmount = await input.encrypt();
@@ -143,7 +142,7 @@ describe('FHEVM manual operations', function () {
       assert.equal(res, rotl64(SHIFT_ROTATE_VALUE_64, REDUCED_SHIFT_64));
     });
 
-    it('rotr(euint64, uint8) applies modulo semantics for indexes > bit width', async function () {
+    it("rotr(euint64, uint8) applies modulo semantics for indexes > bit width", async function () {
       const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
       input.add64(SHIFT_ROTATE_VALUE_64);
       const encryptedAmount = await input.encrypt();
@@ -159,7 +158,7 @@ describe('FHEVM manual operations', function () {
       assert.equal(res, rotr64(SHIFT_ROTATE_VALUE_64, REDUCED_SHIFT_64));
     });
 
-    it('rotr(euint64, euint8) applies modulo semantics for indexes > bit width', async function () {
+    it("rotr(euint64, euint8) applies modulo semantics for indexes > bit width", async function () {
       const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
       input.add64(SHIFT_ROTATE_VALUE_64);
       input.add8(OVERSIZED_SHIFT_64);
@@ -176,7 +175,7 @@ describe('FHEVM manual operations', function () {
       assert.equal(res, rotr64(SHIFT_ROTATE_VALUE_64, REDUCED_SHIFT_64));
     });
 
-    it('rotl(euint64, euint8) applies modulo semantics for indexes > bit width', async function () {
+    it("rotl(euint64, euint8) applies modulo semantics for indexes > bit width", async function () {
       const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
       input.add64(SHIFT_ROTATE_VALUE_64);
       input.add8(OVERSIZED_SHIFT_64);
@@ -194,7 +193,7 @@ describe('FHEVM manual operations', function () {
     });
   });
 
-  it('Select works returning if false', async function () {
+  it("Select works returning if false", async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addBool(false);
     input.add32(3);
@@ -215,7 +214,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('Select works returning if true', async function () {
+  it("Select works returning if true", async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addBool(true);
     input.add32(3);
@@ -236,7 +235,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('Select ebool', async function () {
+  it("Select ebool", async function () {
     const tx = await this.contract.test_select_ebool(true, false, true);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -251,7 +250,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('Select works for eaddress returning if false', async function () {
+  it("Select works for eaddress returning if false", async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addBool(false);
     input.addAddress(ADDR_A);
@@ -272,7 +271,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('Select works for eaddress returning if true', async function () {
+  it("Select works for eaddress returning if true", async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addBool(true);
     input.addAddress(ADDR_A);
@@ -293,7 +292,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool eq ebool', async function () {
+  it("ebool eq ebool", async function () {
     const tx = await this.contract.eqEbool(true, true);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -316,7 +315,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool eq ebool - ScalarL', async function () {
+  it("ebool eq ebool - ScalarL", async function () {
     const tx = await this.contract.eqEboolScalarL(true, true);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -339,7 +338,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool eq ebool - ScalarR', async function () {
+  it("ebool eq ebool - ScalarR", async function () {
     const tx = await this.contract.eqEboolScalarL(false, false);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -362,7 +361,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool ne ebool', async function () {
+  it("ebool ne ebool", async function () {
     const tx = await this.contract.neEbool(true, true);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -385,7 +384,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool ne ebool - ScalarL', async function () {
+  it("ebool ne ebool - ScalarL", async function () {
     const tx = await this.contract.neEboolScalarL(true, true);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -408,7 +407,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool ne ebool - ScalarR', async function () {
+  it("ebool ne ebool - ScalarR", async function () {
     const tx = await this.contract.neEboolScalarL(false, false);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -431,7 +430,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('eaddress eq eaddress,eaddress true', async function () {
+  it("eaddress eq eaddress,eaddress true", async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addAddress(ADDR_A);
     input.addAddress(ADDR_A);
@@ -450,7 +449,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('eaddress eq eaddress,eaddress false', async function () {
+  it("eaddress eq eaddress,eaddress false", async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addAddress(ADDR_A);
     input.addAddress(ADDR_C);
@@ -469,7 +468,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('eaddress eq scalar eaddress,address true', async function () {
+  it("eaddress eq scalar eaddress,address true", async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addAddress(ADDR_A);
     const b = ADDR_A;
@@ -484,7 +483,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('eaddress eq scalar eaddress,address false', async function () {
+  it("eaddress eq scalar eaddress,address false", async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addAddress(ADDR_A);
     const b = ADDR_D;
@@ -499,7 +498,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('eaddress eq scalar address,eaddress true', async function () {
+  it("eaddress eq scalar address,eaddress true", async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addAddress(ADDR_A);
     const b = ADDR_A;
@@ -514,7 +513,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('eaddress eq scalar address,eaddress false', async function () {
+  it("eaddress eq scalar address,eaddress false", async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addAddress(ADDR_A);
     const b = ADDR_D;
@@ -529,7 +528,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('eaddress ne eaddress,eaddress false', async function () {
+  it("eaddress ne eaddress,eaddress false", async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addAddress(ADDR_A);
     input.addAddress(ADDR_A);
@@ -548,7 +547,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('eaddress ne eaddress,eaddress true', async function () {
+  it("eaddress ne eaddress,eaddress true", async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addAddress(ADDR_A);
     input.addAddress(ADDR_C);
@@ -567,7 +566,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('eaddress ne scalar eaddress,address false', async function () {
+  it("eaddress ne scalar eaddress,address false", async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addAddress(ADDR_A);
     const b = ADDR_A;
@@ -582,7 +581,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('eaddress ne scalar eaddress,address true', async function () {
+  it("eaddress ne scalar eaddress,address true", async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addAddress(ADDR_A);
     const b = ADDR_D;
@@ -597,7 +596,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('eaddress ne scalar address,eaddress false', async function () {
+  it("eaddress ne scalar address,eaddress false", async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addAddress(ADDR_A);
     const b = ADDR_A;
@@ -612,7 +611,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('eaddress ne scalar address,eaddress true', async function () {
+  it("eaddress ne scalar address,eaddress true", async function () {
     const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
     input.addAddress(ADDR_A);
     const b = ADDR_D;
@@ -627,7 +626,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool to euint8 casting works with true', async function () {
+  it("ebool to euint8 casting works with true", async function () {
     const tx = await this.contract.test_ebool_to_euint8_cast(true);
     await tx.wait();
     const handle = await this.contract.resEuint8();
@@ -638,7 +637,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool to euint8 casting works with false', async function () {
+  it("ebool to euint8 casting works with false", async function () {
     const tx = await this.contract.test_ebool_to_euint8_cast(false);
     await tx.wait();
     const handle = await this.contract.resEuint8();
@@ -649,7 +648,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool to euint16 casting works with true', async function () {
+  it("ebool to euint16 casting works with true", async function () {
     const tx = await this.contract.test_ebool_to_euint16_cast(true);
     await tx.wait();
     const handle = await this.contract.resEuint16();
@@ -660,7 +659,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool to euint16 casting works with false', async function () {
+  it("ebool to euint16 casting works with false", async function () {
     const tx = await this.contract.test_ebool_to_euint16_cast(false);
     await tx.wait();
     const handle = await this.contract.resEuint16();
@@ -671,7 +670,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool to euint32 casting works with true', async function () {
+  it("ebool to euint32 casting works with true", async function () {
     const tx = await this.contract.test_ebool_to_euint32_cast(true);
     await tx.wait();
     const handle = await this.contract.resEuint32();
@@ -682,7 +681,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool to euint32 casting works with false', async function () {
+  it("ebool to euint32 casting works with false", async function () {
     const tx = await this.contract.test_ebool_to_euint32_cast(false);
     await tx.wait();
     const handle = await this.contract.resEuint32();
@@ -693,7 +692,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool to euint64 casting works with true', async function () {
+  it("ebool to euint64 casting works with true", async function () {
     const tx = await this.contract.test_ebool_to_euint64_cast(true);
     await tx.wait();
     const handle = await this.contract.resEuint64();
@@ -704,7 +703,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool to euint64 casting works with false', async function () {
+  it("ebool to euint64 casting works with false", async function () {
     const tx = await this.contract.test_ebool_to_euint64_cast(false);
     await tx.wait();
     const handle = await this.contract.resEuint64();
@@ -715,7 +714,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool to euint128 casting works with true', async function () {
+  it("ebool to euint128 casting works with true", async function () {
     const tx = await this.contract.test_ebool_to_euint128_cast(true);
     await tx.wait();
     const handle = await this.contract.resEuint128();
@@ -726,7 +725,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool to euint128 casting works with false', async function () {
+  it("ebool to euint128 casting works with false", async function () {
     const tx = await this.contract.test_ebool_to_euint128_cast(false);
     await tx.wait();
     const handle = await this.contract.resEuint128();
@@ -737,7 +736,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool to euint256 casting works with true', async function () {
+  it("ebool to euint256 casting works with true", async function () {
     const tx = await this.contract.test_ebool_to_euint256_cast(true);
     await tx.wait();
     const handle = await this.contract.resEuint256();
@@ -748,7 +747,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool to euint256 casting works with false', async function () {
+  it("ebool to euint256 casting works with false", async function () {
     const tx = await this.contract.test_ebool_to_euint256_cast(false);
     await tx.wait();
     const handle = await this.contract.resEuint256();
@@ -759,7 +758,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('euint128 to euint8 casting works', async function () {
+  it("euint128 to euint8 casting works", async function () {
     const tx = await this.contract.test_euint128_to_euint8_cast(7668756464674969496544n);
     await tx.wait();
     const handle = await this.contract.resEuint8();
@@ -770,7 +769,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool not for false is true', async function () {
+  it("ebool not for false is true", async function () {
     const tx = await this.contract.test_ebool_not(false);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -781,7 +780,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool not for true is false', async function () {
+  it("ebool not for true is false", async function () {
     const tx = await this.contract.test_ebool_not(true);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -792,7 +791,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool and', async function () {
+  it("ebool and", async function () {
     const tx = await this.contract.test_ebool_and(false, false);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -819,7 +818,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool or', async function () {
+  it("ebool or", async function () {
     const tx = await this.contract.test_ebool_or(false, false);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -846,7 +845,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool xor', async function () {
+  it("ebool xor", async function () {
     const tx = await this.contract.test_ebool_xor(false, false);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -873,7 +872,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool xor scalarL', async function () {
+  it("ebool xor scalarL", async function () {
     const tx = await this.contract.test_ebool_xor_scalarL(false, false);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -900,7 +899,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool xor scalarR', async function () {
+  it("ebool xor scalarR", async function () {
     const tx = await this.contract.test_ebool_xor_scalarR(false, false);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -927,7 +926,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool or scalarL', async function () {
+  it("ebool or scalarL", async function () {
     const tx = await this.contract.test_ebool_or_scalarL(false, false);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -954,7 +953,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool or scalarR', async function () {
+  it("ebool or scalarR", async function () {
     const tx = await this.contract.test_ebool_or_scalarR(false, false);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -981,7 +980,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool and scalarL', async function () {
+  it("ebool and scalarL", async function () {
     const tx = await this.contract.test_ebool_and_scalarL(false, false);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -1008,7 +1007,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool and scalarR', async function () {
+  it("ebool and scalarR", async function () {
     const tx = await this.contract.test_ebool_and_scalarR(false, false);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -1035,7 +1034,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool ne ebool', async function () {
+  it("ebool ne ebool", async function () {
     const tx = await this.contract.neEbool(true, true);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -1058,7 +1057,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool ne ebool - ScalarL', async function () {
+  it("ebool ne ebool - ScalarL", async function () {
     const tx = await this.contract.neEboolScalarL(true, true);
     await tx.wait();
     const handle = await this.contract.resEbool();
@@ -1081,7 +1080,7 @@ describe('FHEVM manual operations', function () {
     assert.deepEqual(res.clearValues, expectedRes);
   });
 
-  it('ebool ne ebool - ScalarR', async function () {
+  it("ebool ne ebool - ScalarR", async function () {
     const tx = await this.contract.neEboolScalarL(false, false);
     await tx.wait();
     const handle = await this.contract.resEbool();
