@@ -316,7 +316,6 @@ async fn download_key_activation<A: AwsS3Interface + Clone + 'static>(
         download_key_from_s3(&s3_client, &activation.storage_urls, key_path, 0)
             .await
     else {
-        ACTIVATE_KEY_FAIL_COUNTER.inc();
         return Err(anyhow!(
             "Failed to download key {:?}, key_type {:?}, urls {:?}",
             key_id,

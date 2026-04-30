@@ -560,7 +560,7 @@ pub async fn mark_key_activation_error(
     if let Err(err) = sqlx::query!(
         r#"
         UPDATE kms_key_activation_events
-        SET last_error = $1, last_updated_at = NOW()
+        SET last_error = $1, last_updated_at = NOW(), retry_count = COALESCE(retry_count, 0) + 1
         WHERE chain_id = $2 AND block_hash = $3 AND key_id = $4
         "#,
         error_msg,
@@ -584,7 +584,7 @@ pub async fn mark_crs_activation_error(
     if let Err(err) = sqlx::query!(
         r#"
         UPDATE kms_crs_activation_events
-        SET last_error = $1, last_updated_at = NOW()
+        SET last_error = $1, last_updated_at = NOW(), retry_count = COALESCE(retry_count, 0) + 1
         WHERE chain_id = $2 AND block_hash = $3 AND crs_id = $4
         "#,
         error_msg,
