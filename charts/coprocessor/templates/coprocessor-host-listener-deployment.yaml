@@ -61,6 +61,7 @@ spec:
             - --url=$(ETHEREUM_RPC_URL)
             - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
             - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+            - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
             - --health-port={{ $.Values.hostListenerShared.ports.healthcheck }}
             - --dependent-ops-max-per-chain={{ int $.Values.commonConfig.dependentOpsMaxPerChain }}
             - --log-level={{ $.Values.hostListenerShared.args.logLevel }}
@@ -82,10 +83,8 @@ spec:
               value: {{ required (printf "chains entry %q: aclContractAddress is required" $chain.name) $chain.aclContractAddress | quote }}
             - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
               value: {{ required (printf "chains entry %q: fhevmExecutorContractAddress is required" $chain.name) $chain.fhevmExecutorContractAddress | quote }}
-            {{- if .Values.commonConfig.kmsGenerationContractAddress }}
             - name: KMS_GENERATION_ADDRESS
-              value: {{ .Values.commonConfig.kmsGenerationContractAddress | quote }}
-            {{- end }}
+              value: {{ required "commonConfig.kmsGenerationContractAddress is required when hostListener is enabled" $.Values.commonConfig.kmsGenerationContractAddress | quote }}
           {{- if default $.Values.commonConfig.tracing.enabled $.Values.hostListenerShared.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ $.Values.commonConfig.tracing.endpoint | quote }}
