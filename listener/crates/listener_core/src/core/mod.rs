@@ -8,4 +8,6 @@ pub mod workers;
 pub use cleaner::Cleaner;
 pub use evm_listener::{CursorResult, EvmListener, EvmListenerError};
 pub use filters::Filters;
-pub use workers::{CleanerHandler, FetchHandler, ReorgHandler, UnwatchHandler, WatchHandler};
+pub use workers::{
+    CatchupHandler, CleanerHandler, FetchHandler, ReorgHandler, UnwatchHandler, WatchHandler,
+};

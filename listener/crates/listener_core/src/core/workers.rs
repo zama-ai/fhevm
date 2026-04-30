@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use broker::{AckDecision, Handler, HandlerError, Message, Publisher};
 use tracing::{error, info, warn};
 
-use primitives::event::{FilterCommand, ReorgBacktrackEvent};
+use primitives::event::{CatchupPayload, FilterCommand, ReorgBacktrackEvent};
 use primitives::routing;
 use primitives::utils::checksum_optional_address;
 
@@ -399,5 +399,68 @@ impl Handler for UnwatchHandler {
             .await
             .map(|_| AckDecision::Ack)
             .map_err(classify_filter)
+    }
+}
+
+// ── CatchupHandler ──────────────────────────────────────────────────────
+
+/// Handler for the `catchup` consumer.
+///
+/// Deserializes `msg.payload` into [`CatchupPayload`], validates it (which
+/// trims `consumer_id` and enforces the inclusive range cap
+/// `CATCHUP_MAX_RANGE`), then calls [`EvmListener::run_range_catchup`].
+///
+/// Deserialization or validation failures are dead-lettered immediately —
+/// they are deterministic and will never succeed on retry. Replay errors
+/// route through the same [`classify`] path as the live cursor so that
+/// infrastructure failures (RPC, broker, slot buffer) are transient and trip
+/// the circuit breaker, while invariant violations are permanent.
+///
+/// One-shot: no continuation publish (catchup is bounded per message; the
+/// producer chunks if the requested range exceeds `CATCHUP_MAX_RANGE`). No
+/// advisory lock (catchup is idempotent at the downstream consumer level).
+#[derive(Clone)]
+pub struct CatchupHandler {
+    listener: Arc<EvmListener>,
+}
+
+impl CatchupHandler {
+    pub fn new(listener: Arc<EvmListener>) -> Self {
+        Self { listener }
+    }
+}
+
+#[async_trait]
+impl Handler for CatchupHandler {
+    async fn call(&self, msg: &Message) -> Result<AckDecision, HandlerError> {
+        let mut payload: CatchupPayload = match serde_json::from_slice(&msg.payload) {
+            Ok(p) => p,
+            Err(err) => {
+                error!(
+                    %err,
+                    msg_id = %msg.metadata.id,
+                    topic = %msg.metadata.topic,
+                    payload_len = msg.payload.len(),
+                    "Dead-lettering CatchupPayload: deserialization failed",
+                );
+                return Ok(AckDecision::Dead);
+            }
+        };
+
+        if let Err(err) = payload.validate() {
+            error!(
+                %err,
+                msg_id = %msg.metadata.id,
+                topic = %msg.metadata.topic,
+                "Dead-lettering CatchupPayload: validation failed",
+            );
+            return Ok(AckDecision::Dead);
+        }
+
+        self.listener
+            .run_range_catchup(payload)
+            .await
+            .map(|_| AckDecision::Ack)
+            .map_err(|e| classify(e, self.listener.chain_id()))
     }
 }

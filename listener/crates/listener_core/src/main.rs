@@ -10,8 +10,8 @@ use listener_core::blockchain::evm::sem_evm_rpc_provider::SemEvmRpcProvider;
 use listener_core::config::BrokerType;
 use listener_core::config::config::Settings;
 use listener_core::core::{
-    Cleaner, CleanerHandler, EvmListener, FetchHandler, Filters, ReorgHandler, UnwatchHandler,
-    WatchHandler,
+    CatchupHandler, Cleaner, CleanerHandler, EvmListener, FetchHandler, Filters, ReorgHandler,
+    UnwatchHandler, WatchHandler,
 };
 use listener_core::logging;
 use listener_core::store::repositories::Repositories;
@@ -343,6 +343,27 @@ async fn main() {
         }
     };
 
+    let catchup_consumer = match broker
+        .consumer(&Topic::new(routing::CATCHUP).with_namespace(chain_id))
+        .group(routing::CATCHUP)
+        .prefetch(settings.blockchain.catchup.prefetch)
+        .max_retries(5)
+        .redis_claim_min_idle(settings.blockchain.catchup.claim_min_idle_secs)
+        .redis_claim_interval(1)
+        .redis_block_ms(200)
+        .circuit_breaker(
+            settings.broker.circuit_breaker_threshold,
+            Duration::from_secs(settings.broker.circuit_breaker_cooldown_secs),
+        )
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to build catchup consumer: {}", e);
+            process::exit(1);
+        }
+    };
+
     // ── Define handlers ─────────────────────────────────────────────────
     let flow_lock = FlowLock::new(Arc::clone(&arc_pg_client), configured_chain_id);
     let fetch_handler = FetchHandler::new(
@@ -364,6 +385,8 @@ async fn main() {
         &settings.blockchain.cleaner,
     ));
     let cleaner_handler = CleanerHandler::new(Arc::clone(&cleaner));
+
+    let catchup_handler = CatchupHandler::new(Arc::clone(&evm_listener));
 
     // ── Ensure AMQP queues/bindings exist before checking depth ────────
     // Without this, AMQP silently drops the seed message because no queue
@@ -429,6 +452,12 @@ async fn main() {
     // ── Ensure cleaner topology and seed (always, not gated by automatic_startup) ──
     if let Err(e) = cleaner_consumer.ensure_topology().await {
         error!(error = %e, "Failed to set up cleaner consumer topology");
+        process::exit(1);
+    }
+
+    // ── Ensure catchup topology (no seed — catchup messages come from external producers) ──
+    if let Err(e) = catchup_consumer.ensure_topology().await {
+        error!(error = %e, "Failed to set up catchup consumer topology");
         process::exit(1);
     }
 
@@ -538,6 +567,7 @@ async fn main() {
         r = watch_consumer.run(watch_handler) => ("Watch", r),
         r = unwatch_consumer.run(unwatch_handler) => ("Unwatch", r),
         r = cleaner_consumer.run(cleaner_handler) => ("Cleaner", r),
+        r = catchup_consumer.run(catchup_handler) => ("Catchup", r),
 
         // TEST CONSUMER: TO REMOVE.
         // r = test_consumer_lib.run(consumer_lib_handler_test) => ("test copro lib consumer", r),
