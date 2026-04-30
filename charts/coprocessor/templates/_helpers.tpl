@@ -13,6 +13,11 @@
 {{- default $hostListenerPollerNameDefault .Values.hostListenerPollerShared.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "hostListenerConsumerName" -}}
+{{- $hostListenerConsumerNameDefault := printf "%s-%s" .Release.Name "host-listener-consumer" }}
+{{- default $hostListenerConsumerNameDefault .Values.hostListenerConsumerShared.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
 {{- define "hostListenerCatchupOnlyName" -}}
 {{- $hostListenerCatchupOnlyNameDefault := printf "%s-%s" .Release.Name "host-listener-catchup-only" }}
 {{- default $hostListenerCatchupOnlyNameDefault .Values.hostListenerCatchupOnlyShared.nameOverride | trunc 63 | trimSuffix "-" -}}
@@ -26,11 +31,14 @@
 {{- if hasKey .Values "hostListenerPoller" -}}
   {{- $deprecatedKeys = append $deprecatedKeys "hostListenerPoller" -}}
 {{- end -}}
+{{- if hasKey .Values "hostListenerConsumer" -}}
+  {{- $deprecatedKeys = append $deprecatedKeys "hostListenerConsumer" -}}
+{{- end -}}
 {{- if hasKey .Values "hostListenerCatchupOnly" -}}
   {{- $deprecatedKeys = append $deprecatedKeys "hostListenerCatchupOnly" -}}
 {{- end -}}
 {{- if gt (len $deprecatedKeys) 0 -}}
-{{- fail (printf "deprecated top-level listener keys are no longer supported: %s. Use hostListenerShared / hostListenerPollerShared / hostListenerCatchupOnlyShared plus .Values.chains instead" (join ", " $deprecatedKeys)) -}}
+{{- fail (printf "deprecated top-level listener keys are no longer supported: %s. Use hostListenerShared / hostListenerPollerShared / hostListenerConsumerShared / hostListenerCatchupOnlyShared plus .Values.chains instead" (join ", " $deprecatedKeys)) -}}
 {{- end -}}
 {{- end -}}
 
@@ -74,4 +82,3 @@
 {{- end -}}
 {{- $authMode -}}
 {{- end -}}
-
