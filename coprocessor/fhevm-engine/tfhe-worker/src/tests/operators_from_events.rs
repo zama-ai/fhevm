@@ -7,7 +7,7 @@ use host_listener::database::tfhe_event_propagate::Handle;
 
 use crate::tests::event_helpers::{
     allow_handle, as_scalar_uint, insert_event, insert_trivial_encrypt, next_handle,
-    setup_event_harness, to_ty, zero_address, EventHarness,
+    next_handle_with_type, setup_event_harness, to_ty, zero_address, EventHarness,
 };
 use crate::tests::test_cases::{
     generate_binary_test_cases, generate_panic_binary_test_cases, generate_unary_test_cases,
@@ -873,8 +873,8 @@ async fn test_fhe_sum_events() -> Result<(), Box<dyn std::error::Error>> {
 
     for &fhe_type in &types {
         let tx_id = next_handle();
-        let handle_a = next_handle();
-        let handle_b = next_handle();
+        let handle_a = next_handle_with_type(fhe_type);
+        let handle_b = next_handle_with_type(fhe_type);
         let output = next_handle();
 
         let mut tx = listener_db.new_transaction().await?;
@@ -945,7 +945,7 @@ async fn test_fhe_is_in_events() -> Result<(), Box<dyn std::error::Error>> {
     for &fhe_type in &types {
         for &(value, expected) in test_values {
             let tx_id = next_handle();
-            let value_handle = next_handle();
+            let value_handle = next_handle_with_type(fhe_type);
             let output = next_handle();
 
             let mut tx = listener_db.new_transaction().await?;
@@ -963,7 +963,7 @@ async fn test_fhe_is_in_events() -> Result<(), Box<dyn std::error::Error>> {
 
             let mut set_handles: Vec<Handle> = Vec::new();
             for &v in &set_plaintext {
-                let sh = next_handle();
+                let sh = next_handle_with_type(fhe_type);
                 insert_trivial_encrypt(&listener_db, &mut tx, tx_id, v, fhe_type, sh, true).await?;
                 allow_handle(&listener_db, &mut tx, &sh).await?;
                 set_handles.push(sh);
