@@ -29,6 +29,7 @@ interface IDecryption {
     error ContractAddressesMaxLengthExceeded(uint256 maxLength, uint256 actualLength);
     error ContractNotInContractAddresses(address contractAddress, address[] contractAddresses);
     error CtHandleChainIdDiffersFromContractChainId(bytes32 ctHandle, uint256 chainId, uint256 contractChainId);
+    error DecryptionContextMismatch(uint256 decryptionId, uint256 requestContextId, uint256 responseContextId);
     error DecryptionNotRequested(uint256 decryptionId);
     error DelegatorAddressInContractAddresses(address delegatorAddress, address[] contractAddresses);
     error DifferentKeyIdsNotAllowed(SnsCiphertextMaterial firstSnsCtMaterial, SnsCiphertextMaterial invalidSnsCtMaterial);
@@ -775,6 +776,27 @@ interface IDecryption {
       },
       {
         "name": "contractChainId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "DecryptionContextMismatch",
+    "inputs": [
+      {
+        "name": "decryptionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "requestContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "responseContextId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -2541,6 +2563,110 @@ error CtHandleChainIdDiffersFromContractChainId(bytes32 ctHandle, uint256 chainI
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.contractChainId),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `DecryptionContextMismatch(uint256,uint256,uint256)` and selector `0xabb5f486`.
+```solidity
+error DecryptionContextMismatch(uint256 decryptionId, uint256 requestContextId, uint256 responseContextId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct DecryptionContextMismatch {
+        #[allow(missing_docs)]
+        pub decryptionId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub requestContextId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub responseContextId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<DecryptionContextMismatch>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: DecryptionContextMismatch) -> Self {
+                (value.decryptionId, value.requestContextId, value.responseContextId)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for DecryptionContextMismatch {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    decryptionId: tuple.0,
+                    requestContextId: tuple.1,
+                    responseContextId: tuple.2,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for DecryptionContextMismatch {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "DecryptionContextMismatch(uint256,uint256,uint256)";
+            const SELECTOR: [u8; 4] = [171u8, 181u8, 244u8, 134u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.decryptionId),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.requestContextId),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.responseContextId),
                 )
             }
             #[inline]
@@ -7485,6 +7611,8 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             CtHandleChainIdDiffersFromContractChainId,
         ),
         #[allow(missing_docs)]
+        DecryptionContextMismatch(DecryptionContextMismatch),
+        #[allow(missing_docs)]
         DecryptionNotRequested(DecryptionNotRequested),
         #[allow(missing_docs)]
         DelegatorAddressInContractAddresses(DelegatorAddressInContractAddresses),
@@ -7537,6 +7665,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             [153u8, 236u8, 72u8, 217u8],
             [164u8, 195u8, 3u8, 145u8],
             [166u8, 166u8, 203u8, 33u8],
+            [171u8, 181u8, 244u8, 134u8],
             [175u8, 31u8, 4u8, 149u8],
             [195u8, 68u8, 106u8, 199u8],
             [207u8, 174u8, 146u8, 31u8],
@@ -7551,7 +7680,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
     impl alloy_sol_types::SolInterface for IDecryptionErrors {
         const NAME: &'static str = "IDecryptionErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 19usize;
+        const COUNT: usize = 20usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -7563,6 +7692,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::CtHandleChainIdDiffersFromContractChainId(_) => {
                     <CtHandleChainIdDiffersFromContractChainId as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::DecryptionContextMismatch(_) => {
+                    <DecryptionContextMismatch as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::DecryptionNotRequested(_) => {
                     <DecryptionNotRequested as alloy_sol_types::SolError>::SELECTOR
@@ -7753,6 +7885,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                             .map(IDecryptionErrors::EmptyCtHandleContractPairs)
                     }
                     EmptyCtHandleContractPairs
+                },
+                {
+                    fn DecryptionContextMismatch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <DecryptionContextMismatch as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IDecryptionErrors::DecryptionContextMismatch)
+                    }
+                    DecryptionContextMismatch
                 },
                 {
                     fn ContractAddressesMaxLengthExceeded(
@@ -7986,6 +8129,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     EmptyCtHandleContractPairs
                 },
                 {
+                    fn DecryptionContextMismatch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <DecryptionContextMismatch as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IDecryptionErrors::DecryptionContextMismatch)
+                    }
+                    DecryptionContextMismatch
+                },
+                {
                     fn ContractAddressesMaxLengthExceeded(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IDecryptionErrors> {
@@ -8102,6 +8256,11 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                         inner,
                     )
                 }
+                Self::DecryptionContextMismatch(inner) => {
+                    <DecryptionContextMismatch as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::DecryptionNotRequested(inner) => {
                     <DecryptionNotRequested as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -8201,6 +8360,12 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::CtHandleChainIdDiffersFromContractChainId(inner) => {
                     <CtHandleChainIdDiffersFromContractChainId as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::DecryptionContextMismatch(inner) => {
+                    <DecryptionContextMismatch as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
