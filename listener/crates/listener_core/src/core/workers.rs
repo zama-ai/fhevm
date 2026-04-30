@@ -404,20 +404,22 @@ impl Handler for UnwatchHandler {
 
 // ── CatchupHandler ──────────────────────────────────────────────────────
 
-/// Handler for the `catchup` consumer.
+/// Handler for the `catchup` consumer (the **orchestrator**).
 ///
-/// Deserializes `msg.payload` into [`CatchupPayload`], validates it (trims
-/// `consumer_id`, enforces `block_start <= block_end`), then calls
-/// [`EvmListener::run_range_catchup`].
+/// Thin wrapper over [`EvmListener::dispatch_catchup_range`]: deserializes
+/// `msg.payload` into [`CatchupPayload`], validates it (trims `consumer_id`,
+/// enforces `block_start <= block_end`), then delegates the entire
+/// "fetch chain head + skip-above-head + clamp + split + publish sub-ranges"
+/// pipeline to the listener.
 ///
 /// Deserialization or validation failures are dead-lettered immediately —
-/// they are deterministic and will never succeed on retry. Replay errors
-/// route through the same [`classify`] path as the live cursor so that
-/// infrastructure failures (RPC, broker, slot buffer) are transient and trip
-/// the circuit breaker, while invariant violations are permanent.
+/// they are deterministic and will never succeed on retry. Orchestrator
+/// errors (RPC head fetch, broker publish) route through the same
+/// [`classify`] path as the live cursor: infrastructure failures are
+/// transient (broker retries the orchestrator message → re-fans-out, downstream
+/// dedupes), invariant violations are permanent.
 ///
-/// One-shot per message: no continuation publish. No advisory lock (catchup
-/// is idempotent at the downstream consumer level).
+/// No advisory lock by design.
 #[derive(Clone)]
 pub struct CatchupHandler {
     listener: Arc<EvmListener>,
@@ -452,6 +454,63 @@ impl Handler for CatchupHandler {
                 msg_id = %msg.metadata.id,
                 topic = %msg.metadata.topic,
                 "Dead-lettering CatchupPayload: validation failed",
+            );
+            return Ok(AckDecision::Dead);
+        }
+
+        self.listener
+            .dispatch_catchup_range(payload)
+            .await
+            .map(|_| AckDecision::Ack)
+            .map_err(|e| classify(e, self.listener.chain_id()))
+    }
+}
+
+// ── RangeCatchupHandler ─────────────────────────────────────────────────
+
+/// Handler for the `range-catchup` consumer (the **fetcher**).
+///
+/// Consumes bounded sub-payloads produced by [`CatchupHandler`] and runs
+/// [`EvmListener::run_range_catchup`] for each: parallel fetch +
+/// in-order publish on `{consumer_id}.catchup-event`.
+///
+/// Defensively re-validates the payload — sub-payloads cross the broker
+/// boundary, and the broker is the trust boundary. Errors classified through
+/// the same [`classify`] path as the live cursor.
+#[derive(Clone)]
+pub struct RangeCatchupHandler {
+    listener: Arc<EvmListener>,
+}
+
+impl RangeCatchupHandler {
+    pub fn new(listener: Arc<EvmListener>) -> Self {
+        Self { listener }
+    }
+}
+
+#[async_trait]
+impl Handler for RangeCatchupHandler {
+    async fn call(&self, msg: &Message) -> Result<AckDecision, HandlerError> {
+        let mut payload: CatchupPayload = match serde_json::from_slice(&msg.payload) {
+            Ok(p) => p,
+            Err(err) => {
+                error!(
+                    %err,
+                    msg_id = %msg.metadata.id,
+                    topic = %msg.metadata.topic,
+                    payload_len = msg.payload.len(),
+                    "Dead-lettering range-catchup CatchupPayload: deserialization failed",
+                );
+                return Ok(AckDecision::Dead);
+            }
+        };
+
+        if let Err(err) = payload.validate() {
+            error!(
+                %err,
+                msg_id = %msg.metadata.id,
+                topic = %msg.metadata.topic,
+                "Dead-lettering range-catchup CatchupPayload: validation failed",
             );
             return Ok(AckDecision::Dead);
         }

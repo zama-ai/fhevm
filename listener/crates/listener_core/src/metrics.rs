@@ -3,6 +3,7 @@
 //! This module provides:
 //! - [`describe_metrics()`]: registers Prometheus HELP strings for all listener metrics
 //! - [`init_gauges()`]: initializes gauge values to zero for Grafana discoverability
+//! - [`init_counters()`]: initializes gauge counters to zero for Grafana discoverability
 //! - [`error_kind_label()`]: maps [`EvmListenerError`] variants to static label strings
 
 use crate::core::evm_listener::EvmListenerError;
@@ -63,17 +64,22 @@ pub fn describe_metrics() {
     describe_counter!(
         "listener_catchup_iterations_total",
         Unit::Count,
-        "Total catchup messages handled (one per CatchupPayload received)"
+        "Total CatchupPayloads received on the principal `catchup` queue (orchestrator invocations)"
     );
     describe_counter!(
         "listener_catchup_skipped_above_head_total",
         Unit::Count,
-        "Catchup messages skipped because block_start was above the current chain head"
+        "Catchup orchestrator skips: block_start was above the current chain head"
+    );
+    describe_counter!(
+        "listener_catchup_subranges_total",
+        Unit::Count,
+        "Total sub-ranges fanned out by the catchup orchestrator onto `range-catchup`"
     );
     describe_histogram!(
         "listener_catchup_range_duration_seconds",
         Unit::Seconds,
-        "Wall-clock time to fetch and publish an entire catchup range"
+        "Wall-clock time to fetch and publish a single catchup sub-range (one `range-catchup` message)"
     );
 
     // ── Error classification ────────────────────────────────────────────
@@ -181,6 +187,23 @@ pub fn init_counters(chain_id: u64) {
         )
         .increment(0);
     }
+
+    // Catchup counters — single `chain_id` label.
+    metrics::counter!(
+        "listener_catchup_iterations_total",
+        "chain_id" => chain_id_str.clone()
+    )
+    .increment(0);
+    metrics::counter!(
+        "listener_catchup_skipped_above_head_total",
+        "chain_id" => chain_id_str.clone()
+    )
+    .increment(0);
+    metrics::counter!(
+        "listener_catchup_subranges_total",
+        "chain_id" => chain_id_str
+    )
+    .increment(0);
 }
 
 /// Map an [`EvmListenerError`] variant to a static label string for the `error_kind` label.

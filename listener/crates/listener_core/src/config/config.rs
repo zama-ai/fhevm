@@ -335,6 +335,9 @@ pub struct CatchupConfig {
 
     #[serde(default = "default_catchup_max_range")]
     pub catchup_max_range: u64,
+
+    #[serde(default = "default_catchup_range_prefetch")]
+    pub range_prefetch: usize,
 }
 
 fn default_catchup_prefetch() -> usize {
@@ -346,6 +349,9 @@ fn default_catchup_claim_min_idle_secs() -> u64 {
 fn default_catchup_max_range() -> u64 {
     1000
 }
+fn default_catchup_range_prefetch() -> usize {
+    1
+}
 
 impl Default for CatchupConfig {
     fn default() -> Self {
@@ -353,6 +359,7 @@ impl Default for CatchupConfig {
             prefetch: default_catchup_prefetch(),
             claim_min_idle_secs: default_catchup_claim_min_idle_secs(),
             catchup_max_range: default_catchup_max_range(),
+            range_prefetch: default_catchup_range_prefetch(),
         }
     }
 }
@@ -372,6 +379,11 @@ impl CatchupConfig {
         if self.catchup_max_range == 0 {
             return Err(ConfigError::Validation(
                 "catchup.catchup_max_range must be > 0".to_string(),
+            ));
+        }
+        if self.range_prefetch == 0 {
+            return Err(ConfigError::Validation(
+                "catchup.range_prefetch must be > 0".to_string(),
             ));
         }
         Ok(())
@@ -1194,6 +1206,7 @@ mod tests {
         assert_eq!(config.prefetch, 5);
         assert_eq!(config.claim_min_idle_secs, 3600);
         assert_eq!(config.catchup_max_range, 1000);
+        assert_eq!(config.range_prefetch, 1);
     }
 
     #[test]
@@ -1207,6 +1220,7 @@ mod tests {
             prefetch: 0,
             claim_min_idle_secs: 3600,
             catchup_max_range: 1000,
+            range_prefetch: 1,
         };
         let result = config.validate();
         assert!(result.is_err());
@@ -1219,6 +1233,7 @@ mod tests {
             prefetch: 5,
             claim_min_idle_secs: 0,
             catchup_max_range: 1000,
+            range_prefetch: 1,
         };
         let result = config.validate();
         assert!(result.is_err());
@@ -1236,10 +1251,29 @@ mod tests {
             prefetch: 5,
             claim_min_idle_secs: 3600,
             catchup_max_range: 0,
+            range_prefetch: 1,
         };
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("catchup_max_range"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("catchup_max_range")
+        );
+    }
+
+    #[test]
+    fn test_catchup_rejects_zero_range_prefetch() {
+        let config = CatchupConfig {
+            prefetch: 5,
+            claim_min_idle_secs: 3600,
+            catchup_max_range: 1000,
+            range_prefetch: 0,
+        };
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("range_prefetch"));
     }
 
     #[test]
@@ -1256,6 +1290,7 @@ mod tests {
                 prefetch: 0,
                 claim_min_idle_secs: 3600,
                 catchup_max_range: 1000,
+                range_prefetch: 1,
             },
         };
         let result = config.validate();
