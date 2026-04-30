@@ -447,8 +447,10 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
 
     function testFuzz_VerificationFailsForInvalidContextWithV1ExtraData(uint256 invalidCtx) public {
         vm.assume(invalidCtx != kmsVerifier.getCurrentKmsContextId());
-        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) =
-            _buildSingleSignerProof(privateKeySigner0, abi.encodePacked(uint8(0x01), invalidCtx));
+        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) = _buildSingleSignerProof(
+            privateKeySigner0,
+            abi.encodePacked(uint8(0x01), invalidCtx)
+        );
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidCtx));
         kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
     }

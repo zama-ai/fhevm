@@ -748,9 +748,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     function testFuzz_revertPrepKeygenNotRequested(uint256 prepKeygenId) public {
         vm.prank(kmsTxSender0);
-        vm.expectRevert(
-            abi.encodeWithSelector(IKMSGeneration.PrepKeygenNotRequested.selector, prepKeygenId)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.PrepKeygenNotRequested.selector, prepKeygenId));
         kmsGeneration.prepKeygenResponse(prepKeygenId, hex"");
     }
 
