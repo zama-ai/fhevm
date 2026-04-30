@@ -9,7 +9,11 @@ license.workspace = true
 alloy = { workspace = true }
 aws-config = { workspace = true }
 aws-sdk-kms = { workspace = true }
-aws-sdk-s3 = "1.103.0" # not in workspace
+aws-sdk-s3 = { version = "1.103.0", default-features = false, features = [
+    "rt-tokio",
+    "default-https-client",
+    "sigv4a",
+] } # not in workspace
 alloy-primitives = { workspace = true }
 anyhow = { workspace = true }
 bigdecimal = { workspace = true }
