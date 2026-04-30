@@ -8,7 +8,7 @@ use tracing::{debug, error, info, warn};
 
 use broker::{Broker, Publisher};
 
-use primitives::event::{BlockFlow, ReorgBacktrackEvent};
+use primitives::event::{BlockFlow, CatchupPayload, ReorgBacktrackEvent};
 
 use super::publisher::{self, PublisherError};
 use crate::config::{BlockStartConfig, BlockchainConfig, PublishConfig};
@@ -930,6 +930,170 @@ impl EvmListener {
 
         Ok(())
     }
+
+    /// Replay a historical block range for a single consumer.
+    ///
+    /// Catchup primitive: given a [`CatchupPayload`], fetch blocks
+    /// `[block_start, block_end]` in parallel and publish them in order on
+    /// the `catchup-event` queue for `consumer_id`.
+    ///
+    /// # Behavior
+    /// - Clamps `block_end` to the current chain height (`eth_blockNumber`).
+    /// - If `block_start` is above chain height → no-op `Ok(())`. The user
+    ///   asked for blocks that don't exist yet; catchup is a bounded one-shot,
+    ///   **not** a continuous tail. The caller can re-issue the request later.
+    /// - No DB writes, no parent-hash validation, no reorg handling. Catchup
+    ///   is designed for replay of blocks the user knows are historical
+    ///   (typically below finality).
+    /// - **Upper bound is the raw chain head (no finality margin).** Catchups
+    ///   *within* the unfinalized window are permitted: the caller takes the
+    ///   reorg risk on those blocks. The live cursor remains the source of
+    ///   truth for the canonical view; catchup is purely for replay/recovery.
+    /// - No advisory lock by design. Catchup is idempotent (at-least-once
+    ///   delivery, downstream consumer dedupes by block_number + block_hash).
+    ///   Two pods replaying the same range in parallel is wasteful but not
+    ///   incorrect.
+    ///
+    /// # Parallelism
+    /// Mirrors the live cursor exactly — same [`AsyncSlotBuffer`] +
+    /// [`fetch_blocks_in_parallel`] producer + sequential consumer pattern.
+    /// The producer fills slots out-of-order; the consumer publishes in order.
+    pub async fn run_range_catchup(
+        &self,
+        payload: CatchupPayload,
+    ) -> Result<(), EvmListenerError> {
+        metrics::counter!(
+            "listener_catchup_iterations_total",
+            "chain_id" => self.chain_id.to_string()
+        )
+        .increment(1);
+
+        // Step 1 — chain height.
+        let chain_height = self
+            .provider
+            .get_block_number()
+            .await
+            .map_err(|e| EvmListenerError::ChainHeightError { source: e })?;
+
+        // Step 2 — start above head: skip turn (the requested range doesn't
+        // exist yet on chain). Bounded one-shot — no auto re-publish.
+        if payload.block_start > chain_height {
+            metrics::counter!(
+                "listener_catchup_skipped_above_head_total",
+                "chain_id" => self.chain_id.to_string()
+            )
+            .increment(1);
+            info!(
+                consumer_id = %payload.consumer_id,
+                block_start = payload.block_start,
+                block_end = payload.block_end,
+                chain_height,
+                "Catchup skipped: block_start above chain height"
+            );
+            return Ok(());
+        }
+
+        // Step 2b — clamp end down to head if the user asked beyond it.
+        let range_end = std::cmp::min(payload.block_end, chain_height);
+        let range_start = payload.block_start;
+        let range_length = (range_end - range_start + 1) as usize;
+
+        info!(
+            consumer_id = %payload.consumer_id,
+            range_start,
+            range_end,
+            range_length,
+            chain_height,
+            "Starting catchup range"
+        );
+
+        // Step 3 — shared producer/consumer state.
+        let range_start_time = Instant::now();
+        let buffer = AsyncSlotBuffer::<FetchedBlock>::new(range_length);
+        let cancel_token = CancellationToken::new();
+
+        // Step 4 — spawn the same producer used by the live cursor: pure fetch,
+        // no DB or hash work — perfectly reusable.
+        let fetcher_handle = tokio::spawn(fetch_blocks_in_parallel(
+            self.clone(),
+            buffer.clone(),
+            cancel_token.clone(),
+            range_start,
+            range_length,
+        ));
+
+        // Step 5 — spawn the catchup consumer (in-order publish, no DB, no hashing).
+        let catchup_handle = tokio::spawn(catchup_processing(
+            self.clone(),
+            buffer,
+            cancel_token.clone(),
+            range_start,
+            range_length,
+            payload.consumer_id.clone(),
+        ));
+
+        // Step 6 — join, classify like fetch_blocks_and_run_cursor.
+        let (catchup_join, fetcher_join) = tokio::join!(catchup_handle, fetcher_handle);
+
+        metrics::histogram!(
+            "listener_catchup_range_duration_seconds",
+            "chain_id" => self.chain_id.to_string()
+        )
+        .record(range_start_time.elapsed().as_secs_f64());
+
+        let catchup_outcome = catchup_join.map_err(|join_err| {
+            cancel_token.cancel();
+            error!(error = %join_err, "Catchup consumer task panicked — this is a critical bug");
+            EvmListenerError::InvariantViolation {
+                message: format!("Catchup consumer panicked: {}", join_err),
+            }
+        })?;
+
+        let fetcher_outcome = fetcher_join.map_err(|join_err| {
+            cancel_token.cancel();
+            error!(error = %join_err, "Catchup fetcher task panicked — this is a critical bug");
+            EvmListenerError::InvariantViolation {
+                message: format!("Catchup fetcher panicked: {}", join_err),
+            }
+        })?;
+
+        // Same priority logic as the live path, simplified (no reorg branch):
+        //  - both Ok → success
+        //  - consumer cancelled by fetcher → return fetcher's root cause
+        //  - consumer real error → return it
+        //  - consumer Ok, fetcher Err → unexpected, log and treat as success
+        //    (consumer is authoritative; if all slots were read, all blocks were published)
+        match (catchup_outcome, fetcher_outcome) {
+            (Ok(()), Ok(())) => {
+                info!(
+                    range_start,
+                    range_end,
+                    "Catchup range complete"
+                );
+                Ok(())
+            }
+            (
+                Err(EvmListenerError::CouldNotFetchBlock {
+                    source: BlockFetchError::Cancelled,
+                }),
+                Err(fetcher_err),
+            ) => {
+                error!(error = %fetcher_err, "Catchup fetcher error caused consumer cancellation");
+                Err(fetcher_err)
+            }
+            (Err(consumer_err), _) => {
+                error!(error = %consumer_err, "Catchup consumer error during iteration");
+                Err(consumer_err)
+            }
+            (Ok(()), Err(fetcher_err)) => {
+                warn!(
+                    error = %fetcher_err,
+                    "Catchup fetcher errored despite consumer succeeding — unexpected"
+                );
+                Ok(())
+            }
+        }
+    }
 }
 
 /// Sequential block validator and DB inserter (the "consumer" in the producer-consumer pattern).
@@ -1064,6 +1228,79 @@ async fn cursor_processing(
     }
 
     Ok(CursorResult::Complete)
+}
+
+/// Sequential publisher for the catchup pipeline (the "consumer" sibling of
+/// [`cursor_processing`], stripped down for replay).
+///
+/// Reads blocks from the [`AsyncSlotBuffer`] in order (slot 0, 1, 2, …) and
+/// publishes each one to `{consumer_id}.catchup-event` via
+/// [`publisher::publish_catchup_block_events`]. **No** parent-hash validation,
+/// **no** DB writes, **no** reorg branch — this is pure replay.
+///
+/// On publish failure, cancels the producer (no point fetching more blocks if
+/// we can't deliver them) and propagates the error so the handler can retry
+/// the entire range.
+///
+/// # Cancellation Safety
+/// `buffer.get()` is cancel-safe; the `tokio::select! { biased; … }` checks
+/// the cancel token first to avoid processing stale data after cancellation.
+async fn catchup_processing(
+    listener: EvmListener,
+    buffer: AsyncSlotBuffer<FetchedBlock>,
+    cancel_token: CancellationToken,
+    range_start: u64,
+    range_length: usize,
+    consumer_id: String,
+) -> Result<(), EvmListenerError> {
+    let chain_id_u64 = listener.repositories.chain_id() as u64;
+
+    for i in 0..range_length {
+        let block_number = range_start + i as u64;
+
+        let fetched_block = tokio::select! {
+            biased;
+            _ = cancel_token.cancelled() => {
+                return Err(EvmListenerError::CouldNotFetchBlock {
+                    source: BlockFetchError::Cancelled,
+                });
+            }
+            block_opt = buffer.get(i) => {
+                block_opt.ok_or(EvmListenerError::SlotBufferError {
+                    source: BufferError::IndexOutOfBounds,
+                })?
+            }
+        };
+
+        // Publish to {consumer_id}.catchup-event. Errors stop the producer too.
+        // BlockFlow::Catchup is hardcoded inside publish_catchup_block_events.
+        publisher::publish_catchup_block_events(
+            &listener.repositories,
+            &fetched_block,
+            chain_id_u64,
+            &consumer_id,
+            &listener.broker,
+            &listener.event_publisher,
+            &listener.publish_config,
+        )
+        .await
+        .map_err(|source| {
+            cancel_token.cancel();
+            EvmListenerError::PayloadBuildError { source }
+        })?;
+
+        info!(
+            consumer_id = %consumer_id,
+            block_number = block_number,
+            block_hash = %fetched_block.block.header.hash,
+            tx_count = fetched_block.transaction_count(),
+            slot = i + 1,
+            total = range_length,
+            "Catchup block published"
+        );
+    }
+
+    Ok(())
 }
 
 /// Parallel block fetcher (the "producer" in the producer-consumer pattern).

@@ -59,6 +59,23 @@ pub fn describe_metrics() {
         "Failures during event publishing to broker"
     );
 
+    // ── Catchup ─────────────────────────────────────────────────────────
+    describe_counter!(
+        "listener_catchup_iterations_total",
+        Unit::Count,
+        "Total catchup messages handled (one per CatchupPayload received)"
+    );
+    describe_counter!(
+        "listener_catchup_skipped_above_head_total",
+        Unit::Count,
+        "Catchup messages skipped because block_start was above the current chain head"
+    );
+    describe_histogram!(
+        "listener_catchup_range_duration_seconds",
+        Unit::Seconds,
+        "Wall-clock time to fetch and publish an entire catchup range"
+    );
+
     // ── Error classification ────────────────────────────────────────────
     describe_counter!(
         "listener_transient_errors_total",
