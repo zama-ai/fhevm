@@ -156,6 +156,11 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     bytes8 private constant COMPUTATION_DOMAIN_SEPARATOR = "FHE_comp";
     bytes8 private constant SEED_DOMAIN_SEPARATOR = "FHE_seed";
 
+    /// Maximum set size for narrow types (Uint8/Uint16/Uint32) in collection operations.
+    /// Wide types (Uint64 and above) use a smaller limit because each element costs more HCU.
+    uint256 private constant FHE_COLLECTION_NARROW_MAX_SIZE = 100;
+    uint256 private constant FHE_COLLECTION_WIDE_MAX_SIZE = 60;
+
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEVMExecutor")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant FHEVM_EXECUTOR_STORAGE_LOCATION =
         0x4613e1771f6b755d243e536fb5a23c5b15e2826575fee921e8fe7a22a760c800;
@@ -674,7 +679,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint128));
         if ((1 << uint8(resultType)) & supportedTypes == 0) revert UnsupportedType();
 
-        uint256 maxSize = (resultType == FheType.Uint64 || resultType == FheType.Uint128) ? 60 : 100;
+        uint256 maxSize = (resultType == FheType.Uint64 || resultType == FheType.Uint128)
+            ? FHE_COLLECTION_WIDE_MAX_SIZE
+            : FHE_COLLECTION_NARROW_MAX_SIZE;
         if (values.length > maxSize) revert FHECollectionSizeInvalid(values.length, maxSize);
 
         result = _naryOp(Operators.fheSum, values, resultType);
@@ -707,8 +714,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             valueType == FheType.Uint128 ||
             valueType == FheType.Uint160 ||
             valueType == FheType.Uint256)
-            ? 60
-            : 100;
+            ? FHE_COLLECTION_WIDE_MAX_SIZE
+            : FHE_COLLECTION_NARROW_MAX_SIZE;
         if (values.length > maxSize) revert FHECollectionSizeInvalid(values.length, maxSize);
         if (_typeOf(value) != valueType) revert IncompatibleTypes();
 
