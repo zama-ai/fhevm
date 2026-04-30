@@ -59,19 +59,19 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))('Decrypt client — u
     expect(typeof client.decryptValue).toBe('function');
     expect(typeof client.decryptValues).toBe('function');
     expect(typeof client.decryptValuesFromPairs).toBe('function');
-    expect(typeof client.generateTransportKeypair).toBe('function');
+    expect(typeof client.generateTransportKeyPair).toBe('function');
     expect(typeof client.signDecryptionPermit).toBe('function');
   });
 
-  it('should generate an e2e transport keypair', async () => {
+  it('should generate an e2e transport key pair', async () => {
     const client = createFhevmCleartextDecryptClient({
       chain: config.fhevmChain,
       publicClient: config.publicClient,
     });
     await client.ready;
 
-    const keypair = await client.generateTransportKeypair();
-    expect(keypair).toBeDefined();
+    const keyPair = await client.generateTransportKeyPair();
+    expect(keyPair).toBeDefined();
   });
 
   it('should sign a self decryption permit', async () => {
@@ -81,9 +81,9 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))('Decrypt client — u
     });
     await client.ready;
 
-    const keypair = await client.generateTransportKeypair();
+    const keyPair = await client.generateTransportKeyPair();
     const signedPermit = await client.signDecryptionPermit({
-      transportKeypair: keypair,
+      transportKeyPair: keyPair,
       contractAddresses: [config.fheTestAddress],
       durationDays: 1,
       startTimestamp: Math.floor(Date.now() / 1000),
@@ -133,9 +133,9 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))('Decrypt client — u
       });
       await client.ready;
 
-      const transportKeypair = await client.generateTransportKeypair();
+      const transportKeyPair = await client.generateTransportKeyPair();
       const signedPermit = await client.signDecryptionPermit({
-        transportKeypair,
+        transportKeyPair: transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationDays: 1,
         startTimestamp: Math.floor(Date.now() / 1000),
@@ -147,7 +147,7 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))('Decrypt client — u
         contractAddress: config.fheTestAddress as ChecksummedAddress,
         encryptedValue: handle,
         signedPermit,
-        transportKeypair,
+        transportKeyPair: transportKeyPair,
       });
 
       expect(typedValue.type).toBe(toFhevmHandle(handle).clearType);
@@ -207,9 +207,9 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))('Decrypt client — u
     });
     await client.ready;
 
-    const transportKeypair = await client.generateTransportKeypair();
+    const transportKeyPair = await client.generateTransportKeyPair();
     const signedPermit = await client.signDecryptionPermit({
-      transportKeypair,
+      transportKeyPair: transportKeyPair,
       contractAddresses: [config.fheTestAddress],
       durationDays: 1,
       startTimestamp: Math.floor(Date.now() / 1000),
@@ -223,7 +223,7 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))('Decrypt client — u
       encryptedValues,
       contractAddress: config.fheTestAddress as ChecksummedAddress,
       signedPermit,
-      transportKeypair,
+      transportKeyPair: transportKeyPair,
     });
 
     expect(typedValues).toHaveLength(entries.length);

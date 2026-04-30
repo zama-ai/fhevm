@@ -7,7 +7,7 @@ Before creating any clients, you must call `setFhevmRuntimeConfig()` once to con
 The simplest valid configuration:
 
 ```ts
-import { setFhevmRuntimeConfig } from "@fhevm/sdk/viem"; // or "@fhevm/sdk/ethers"
+import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem'; // or "@fhevm/sdk/ethers"
 
 setFhevmRuntimeConfig({});
 ```
@@ -25,12 +25,12 @@ setFhevmRuntimeConfig({
 });
 ```
 
-| Option | Type | Default | Description |
-| --- | --- | --- | --- |
-| `numberOfThreads` | `number` | All available cores | How many threads WASM uses for encryption |
-| `singleThread` | `boolean` | `false` | Force single-threaded mode (disables Web Workers) |
-| `locateFile` | `(file: string) => URL` | Auto-detect (see below) | Custom resolver for WASM file locations |
-| `logger` | `{ debug, error }` | `undefined` | Optional logger for SDK debug output |
+| Option            | Type                    | Default                 | Description                                       |
+| ----------------- | ----------------------- | ----------------------- | ------------------------------------------------- |
+| `numberOfThreads` | `number`                | All available cores     | How many threads WASM uses for encryption         |
+| `singleThread`    | `boolean`               | `false`                 | Force single-threaded mode (disables Web Workers) |
+| `locateFile`      | `(file: string) => URL` | Auto-detect (see below) | Custom resolver for WASM file locations           |
+| `logger`          | `{ debug, error }`      | `undefined`             | Optional logger for SDK debug output              |
 
 ### `numberOfThreads`
 
@@ -73,11 +73,11 @@ setFhevmRuntimeConfig({
 
 The SDK resolves these files:
 
-| File | Size | Module | Purpose |
-| --- | --- | --- | --- |
-| `tfhe_bg.v1.5.3.wasm` | ~5MB | Encryption (TFHE) | FHE encryption WASM binary |
-| `tfhe-worker.v1.5.3.mjs` | ~2KB | Encryption (TFHE) | Web Worker script for multi-threaded encryption |
-| `kms_lib_bg.wasm` | ~600KB | Decryption (TKMS) | KMS decryption WASM binary |
+| File                     | Size   | Module            | Purpose                                         |
+| ------------------------ | ------ | ----------------- | ----------------------------------------------- |
+| `tfhe_bg.v1.5.3.wasm`    | ~5MB   | Encryption (TFHE) | FHE encryption WASM binary                      |
+| `tfhe-worker.v1.5.3.mjs` | ~2KB   | Encryption (TFHE) | Web Worker script for multi-threaded encryption |
+| `kms_lib_bg.wasm`        | ~600KB | Decryption (TKMS) | KMS decryption WASM binary                      |
 
 **When you don't provide `locateFile`:**
 
@@ -91,8 +91,8 @@ Optional logger for debug and error output. Useful for diagnosing WASM initializ
 ```ts
 setFhevmRuntimeConfig({
   logger: {
-    debug: (message: string) => console.log("[fhevm]", message),
-    error: (message: string, cause: unknown) => console.error("[fhevm]", message, cause),
+    debug: (message: string) => console.log('[fhevm]', message),
+    error: (message: string, cause: unknown) => console.error('[fhevm]', message, cause),
   },
 });
 ```
@@ -150,17 +150,18 @@ if (!configured) {
 Node.js requires no special configuration. The SDK resolves WASM file paths automatically and uses `node:worker_threads` for multi-threading.
 
 ```ts
-import { setFhevmRuntimeConfig, createFhevmClient } from "@fhevm/sdk/ethers";
-import { sepolia } from "@fhevm/sdk/chains";
-import { ethers } from "ethers";
+import { setFhevmRuntimeConfig, createFhevmClient } from '@fhevm/sdk/ethers';
+import { sepolia } from '@fhevm/sdk/chains';
+import { ethers } from 'ethers';
 
 setFhevmRuntimeConfig({ numberOfThreads: 4 });
 
-const provider = new ethers.JsonRpcProvider("https://ethereum-sepolia-rpc.publicnode.com");
+const provider = new ethers.JsonRpcProvider('https://ethereum-sepolia-rpc.publicnode.com');
 const client = createFhevmClient({ chain: sepolia, provider });
 ```
 
 **Requirements:**
+
 - Node.js >= 22.0
 - Both ESM and CommonJS are supported (the SDK ships dual builds)
 - WASM base URL uses `__filename` in CJS and `import.meta.url` in ESM — handled automatically
@@ -211,10 +212,10 @@ module.exports = {
   async headers() {
     return [
       {
-        source: "/(.*)",
+        source: '/(.*)',
         headers: [
-          { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
-          { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
+          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+          { key: 'Cross-Origin-Embedder-Policy', value: 'require-corp' },
         ],
       },
     ];
@@ -225,9 +226,9 @@ module.exports = {
 Configure the runtime once at app startup (e.g., in a top-level layout or provider component):
 
 ```ts
-"use client";
+'use client';
 
-import { setFhevmRuntimeConfig } from "@fhevm/sdk/ethers";
+import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 
 let configured = false;
 if (!configured) {
@@ -248,8 +249,8 @@ Add COOP/COEP headers to `vite.config.ts`:
 export default defineConfig({
   server: {
     headers: {
-      "Cross-Origin-Opener-Policy": "same-origin",
-      "Cross-Origin-Embedder-Policy": "require-corp",
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
     },
   },
 });
@@ -258,7 +259,7 @@ export default defineConfig({
 Then configure the runtime in your app entry:
 
 ```ts
-import { setFhevmRuntimeConfig } from "@fhevm/sdk/viem";
+import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 
 setFhevmRuntimeConfig({
   numberOfThreads: navigator.hardwareConcurrency || 4,
@@ -287,7 +288,7 @@ Recommended extension configuration:
 ```ts
 setFhevmRuntimeConfig({
   singleThread: true, // safest for extensions
-  locateFile: (file) => new URL(`wasm/${file}`, chrome.runtime.getURL("/")),
+  locateFile: (file) => new URL(`wasm/${file}`, chrome.runtime.getURL('/')),
 });
 ```
 
@@ -296,7 +297,7 @@ If your extension page controls its own headers and needs faster encryption, you
 ```ts
 setFhevmRuntimeConfig({
   numberOfThreads: 4,
-  locateFile: (file) => new URL(`wasm/${file}`, chrome.runtime.getURL("/")),
+  locateFile: (file) => new URL(`wasm/${file}`, chrome.runtime.getURL('/')),
 });
 ```
 
@@ -306,13 +307,13 @@ setFhevmRuntimeConfig({
 
 WASM modules load **lazily** — not when you call `setFhevmRuntimeConfig()` or `createFhevmClient()`, but the first time you call an action that needs them:
 
-| First call to... | What loads | Size |
-| --- | --- | --- |
-| `encrypt()` | TFHE WASM + network public key | ~5MB WASM + ~50MB key download |
-| `decrypt()` | TKMS WASM | ~600KB |
-| `publicDecrypt()` | Nothing (HTTP only) | — |
-| `signDecryptionPermit()` | Nothing | — |
-| `generateE2eTransportKeypair()` | TKMS WASM | ~600KB |
+| First call to...                | What loads                     | Size                           |
+| ------------------------------- | ------------------------------ | ------------------------------ |
+| `encrypt()`                     | TFHE WASM + network public key | ~5MB WASM + ~50MB key download |
+| `decrypt()`                     | TKMS WASM                      | ~600KB                         |
+| `publicDecrypt()`               | Nothing (HTTP only)            | —                              |
+| `signDecryptionPermit()`        | Nothing                        | —                              |
+| `generateE2eTransportKeyPair()` | TKMS WASM                      | ~600KB                         |
 
 If you want to preload WASM at app startup (for example, behind a loading spinner), call:
 

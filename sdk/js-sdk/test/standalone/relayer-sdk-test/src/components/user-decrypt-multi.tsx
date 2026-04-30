@@ -166,7 +166,7 @@ export const UserDecryptMulti = ({ decryptType, config }: UserDecryptMultiProps)
 
             await nextTick()
 
-            const transportKeypair = await client.generateTransportKeypair()
+            const transportKeyPair = await client.generateTransportKeyPair()
             const startTimestamp = toUserDecryptTimestamp()
             const durationDays = 1
 
@@ -176,7 +176,7 @@ export const UserDecryptMulti = ({ decryptType, config }: UserDecryptMultiProps)
                 startTimestamp,
                 signerAddress: account.address,
                 signer: account,
-                transportKeypair,
+                transportKeyPair,
             })
 
             const start = performance.now()
@@ -194,7 +194,7 @@ export const UserDecryptMulti = ({ decryptType, config }: UserDecryptMultiProps)
             const decrypted: readonly TypedValue[] = await client.decryptValuesFromPairs({
                 pairs,
                 signedPermit,
-                transportKeypair,
+                transportKeyPair,
                 options: relayerOptions,
             })
 

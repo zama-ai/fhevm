@@ -284,7 +284,7 @@ export const UserDecryptMultiFreshHandles = ({ decryptType, config }: UserDecryp
             setDecryptState("pending")
             await nextTick()
 
-            const transportKeypair = await client.generateTransportKeypair()
+            const transportKeyPair = await client.generateTransportKeyPair()
             const startTimestamp = toUserDecryptTimestamp()
             const durationDays = 1
 
@@ -294,7 +294,7 @@ export const UserDecryptMultiFreshHandles = ({ decryptType, config }: UserDecryp
                 startTimestamp,
                 signerAddress: account.address,
                 signer: account,
-                transportKeypair,
+                transportKeyPair,
             })
 
             const start = performance.now()
@@ -302,7 +302,7 @@ export const UserDecryptMultiFreshHandles = ({ decryptType, config }: UserDecryp
             const decrypted: readonly TypedValue[] = await client.decryptValuesFromPairs({
                 pairs,
                 signedPermit,
-                transportKeypair,
+                transportKeyPair,
                 options: relayerOptions,
             })
 

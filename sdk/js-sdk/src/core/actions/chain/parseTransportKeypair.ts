@@ -1,20 +1,20 @@
 import type { Fhevm, OptionalNativeClient } from '../../types/coreFhevmClient.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
-import { toTransportKeypair, type TransportKeypair } from '../../kms/TransportKeypair-p.js';
+import { toTransportKeyPair, type TransportKeyPair } from '../../kms/TransportKeyPair-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type ParseTransportKeypairParameters = {
+export type ParseTransportKeyPairParameters = {
   readonly publicKey: string;
   readonly privateKey: string;
 };
 
-export type ParseTransportKeypairReturnType = TransportKeypair;
+export type ParseTransportKeyPairReturnType = TransportKeyPair;
 
-export async function parseTransportKeypair(
+export async function parseTransportKeyPair(
   fhevm: Fhevm<FhevmChain, FhevmRuntime, OptionalNativeClient>,
-  parameters: ParseTransportKeypairParameters,
-): Promise<ParseTransportKeypairReturnType> {
-  return toTransportKeypair(fhevm, parameters);
+  parameters: ParseTransportKeyPairParameters,
+): Promise<ParseTransportKeyPairReturnType> {
+  return toTransportKeyPair(fhevm, parameters);
 }

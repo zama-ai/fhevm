@@ -6,12 +6,12 @@
   "scripts": {
     "test:devnet:ethers": "export CHAIN=devnet && tsx test-ethers.ts",
     "test:devnet:viem": "export CHAIN=devnet && tsx test-viem.ts",
-    "test:testnet:ethers": "export CHAIN=testnet && tsx test-ethers.ts",
-    "test:testnet:viem": "export CHAIN=testnet && tsx test-viem.ts"
+    "test:testnet:ethers": "export CHAIN=sepolia && tsx test-ethers.ts",
+    "test:testnet:viem": "export CHAIN=sepolia && tsx test-viem.ts"
   },
   "type": "module",
   "dependencies": {
-    "@fhevm/sdk": "file:pack/fhevm-sdk-1.0.0-0.tgz"
+    "@fhevm/sdk": "file:pack/fhevm-sdk-1.0.0-alpha.4.tgz"
   },
   "devDependencies": {
     "ethers": "^6.15.0",

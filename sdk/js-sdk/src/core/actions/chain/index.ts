@@ -12,16 +12,16 @@ export {
 } from './fetchFheEncryptionKeyBytes.js';
 
 export {
-  type ParseTransportKeypairParameters,
-  type ParseTransportKeypairReturnType,
-  parseTransportKeypair,
-} from './parseTransportKeypair.js';
+  type ParseTransportKeyPairParameters,
+  type ParseTransportKeyPairReturnType,
+  parseTransportKeyPair,
+} from './parseTransportKeyPair.js';
 
 export {
-  type SerializeTransportKeypairParameters,
-  type SerializeTransportKeypairReturnType,
-  serializeTransportKeypair,
-} from './serializeTransportKeypair.js';
+  type SerializeTransportKeyPairParameters,
+  type SerializeTransportKeyPairReturnType,
+  serializeTransportKeyPair,
+} from './serializeTransportKeyPair.js';
 
 export {
   type CreateKmsDelegatedUserDecryptEip712Parameters,

@@ -4,10 +4,7 @@ export type {
   RelayerDelegatedUserDecryptProgressArgs,
 } from '../../types/relayer.js';
 
-export {
-  type GenerateTransportKeypairReturnType as GenerateE2eTransportKeypairReturnType,
-  generateTransportKeypair as generateE2eTransportKeypair,
-} from './generateTransportKeypair.js';
+export { type GenerateTransportKeyPairReturnType, generateTransportKeyPair } from './generateTransportKeyPair.js';
 
 export {
   type DecryptValuesFromPairsParameters,
@@ -46,4 +43,4 @@ export {
   canDecryptValue,
 } from './canDecryptValue.js';
 
-export { type TransportKeypair } from '../../kms/TransportKeypair-p.js';
+export { type TransportKeyPair } from '../../kms/TransportKeyPair-p.js';

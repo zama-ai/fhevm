@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmDecryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import { serializeTransportKeypair, parseTransportKeypair } from '@fhevm/sdk/actions/chain';
+import { serializeTransportKeyPair, parseTransportKeyPair } from '@fhevm/sdk/actions/chain';
 import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
 import { isCleartext } from '../setupCommon.js';
 
@@ -8,19 +8,19 @@ import { isCleartext } from '../setupCommon.js';
 //
 // Sepolia Testnet:
 // ----------------
-// npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.transportKeypair.test.ts
+// npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.transportKeyPair.test.ts
 //
 // Devnet:
 // -------
-// npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.transportKeypair.test.ts
+// npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.transportKeyPair.test.ts
 //
 // localhost fhevm:
 // ----------------
-// CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.transportKeypair.test.ts
+// CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.transportKeyPair.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-describe.runIf(!isCleartext(getViemTestConfig().chainName))('Decrypt client — e2e transport keypair', () => {
+describe.runIf(!isCleartext(getViemTestConfig().chainName))('Decrypt client — e2e transport key pair', () => {
   let config: FheTestViemConfig;
 
   beforeAll(() => {
@@ -33,7 +33,7 @@ describe.runIf(!isCleartext(getViemTestConfig().chainName))('Decrypt client — 
     });
   });
 
-  it('should generate an e2e transport keypair', async () => {
+  it('should generate an e2e transport key pair', async () => {
     const chain = config.fhevmChain;
     const client = createFhevmDecryptClient({
       chain,
@@ -41,11 +41,11 @@ describe.runIf(!isCleartext(getViemTestConfig().chainName))('Decrypt client — 
     });
     await client.ready;
 
-    const keypair = await client.generateTransportKeypair();
-    expect(keypair).toBeDefined();
+    const keyPair = await client.generateTransportKeyPair();
+    expect(keyPair).toBeDefined();
   });
 
-  it('should serialize a keypair to hex strings', async () => {
+  it('should serialize a key pair to hex strings', async () => {
     const chain = config.fhevmChain;
     const client = createFhevmDecryptClient({
       chain,
@@ -53,9 +53,9 @@ describe.runIf(!isCleartext(getViemTestConfig().chainName))('Decrypt client — 
     });
     await client.ready;
 
-    const keypair = await client.generateTransportKeypair();
-    const serialized = serializeTransportKeypair(client, {
-      transportKeypair: keypair,
+    const keyPair = await client.generateTransportKeyPair();
+    const serialized = serializeTransportKeyPair(client, {
+      transportKeyPair: keyPair,
     });
 
     expect(serialized).toBeDefined();
@@ -78,20 +78,20 @@ describe.runIf(!isCleartext(getViemTestConfig().chainName))('Decrypt client — 
     await client.ready;
 
     // Generate
-    const original = await client.generateTransportKeypair();
+    const original = await client.generateTransportKeyPair();
 
     // Serialize to hex
-    const serialized = serializeTransportKeypair(client, {
-      transportKeypair: original,
+    const serialized = serializeTransportKeyPair(client, {
+      transportKeyPair: original,
     });
 
     // Parse back from hex
-    const parsed = await parseTransportKeypair(client, serialized);
+    const parsed = await parseTransportKeyPair(client, serialized);
     expect(parsed).toBeDefined();
 
     // Serialize again and compare — should be identical
-    const reSerialized = serializeTransportKeypair(client, {
-      transportKeypair: parsed,
+    const reSerialized = serializeTransportKeyPair(client, {
+      transportKeyPair: parsed,
     });
     expect(reSerialized.publicKey).toBe(serialized.publicKey);
     expect(reSerialized.privateKey).toBe(serialized.privateKey);

@@ -1,10 +1,10 @@
 import type { Fhevm, FhevmBase, FhevmExtension, OptionalNativeClient } from '../../types/coreFhevmClient.js';
 import type { FhevmRuntime, WithDecrypt } from '../../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
-import type { GenerateTransportKeypairReturnType } from '../../actions/decrypt/generateTransportKeypair.js';
+import type { GenerateTransportKeyPairReturnType } from '../../actions/decrypt/generateTransportKeyPair.js';
 import type { DecryptModuleFactory } from '../../modules/decrypt/types.js';
 import { asFhevmClientWith, assertIsFhevmClientWith } from '../../runtime/CoreFhevm-p.js';
-import { generateTransportKeypair } from '../../kms/TransportKeypair-p.js';
+import { generateTransportKeyPair } from '../../kms/TransportKeyPair-p.js';
 import {
   decryptValue,
   type DecryptValueParameters,
@@ -30,7 +30,7 @@ export type DecryptActions = {
   readonly decryptValuesFromPairs: (
     parameters: DecryptValuesFromPairsParameters,
   ) => Promise<DecryptValuesFromPairsReturnType>;
-  readonly generateTransportKeypair: () => Promise<GenerateTransportKeypairReturnType>;
+  readonly generateTransportKeyPair: () => Promise<GenerateTransportKeyPairReturnType>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -42,7 +42,7 @@ function _decryptActions(fhevm: Fhevm<FhevmChain, WithDecrypt>): DecryptActions 
     decryptValue: (parameters) => decryptValue(fhevm, parameters),
     decryptValues: (parameters) => decryptValues(fhevm, parameters),
     decryptValuesFromPairs: (parameters) => decryptValuesFromPairs(fhevm, parameters),
-    generateTransportKeypair: () => generateTransportKeypair(fhevm),
+    generateTransportKeyPair: () => generateTransportKeyPair(fhevm),
   };
 }
 

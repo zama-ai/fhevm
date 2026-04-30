@@ -174,11 +174,11 @@ describe.runIf(isV2(getViemTestConfig().chainName) && !isCleartext(getViemTestCo
       });
       await client.ready;
 
-      const keypair = await client.generateTransportKeypair();
+      const keyPair = await client.generateTransportKeyPair();
 
       // Bob signs a delegated permit to decrypt Alice's handles
       const signedPermit = await client.signDecryptionPermit({
-        transportKeypair: keypair,
+        transportKeyPair: keyPair,
         contractAddresses: [config.fheTestAddress],
         durationDays: 1,
         startTimestamp: Math.floor(Date.now() / 1000),
@@ -233,9 +233,9 @@ describe.runIf(isV2(getViemTestConfig().chainName) && !isCleartext(getViemTestCo
         });
         await client.ready;
 
-        const transportKeypair = await client.generateTransportKeypair();
+        const transportKeyPair = await client.generateTransportKeyPair();
         const bobSignedPermit = await client.signDecryptionPermit({
-          transportKeypair,
+          transportKeyPair: transportKeyPair,
           contractAddresses: [config.fheTestAddress],
           durationDays: 1,
           startTimestamp: Math.floor(Date.now() / 1000),
@@ -248,7 +248,7 @@ describe.runIf(isV2(getViemTestConfig().chainName) && !isCleartext(getViemTestCo
           encryptedValue: aliceHandle.bytes32Hex,
           contractAddress: config.fheTestAddress as ChecksummedAddress,
           signedPermit: bobSignedPermit,
-          transportKeypair,
+          transportKeyPair: transportKeyPair,
         });
 
         expect(typedValue.type).toBe(aliceHandle.clearType);
@@ -307,9 +307,9 @@ describe.runIf(isV2(getViemTestConfig().chainName) && !isCleartext(getViemTestCo
       });
       await bobClient.ready;
 
-      const bobKeypair = await bobClient.generateTransportKeypair();
+      const bobKeyPair = await bobClient.generateTransportKeyPair();
       const bobSignedPermit = await bobClient.signDecryptionPermit({
-        transportKeypair: bobKeypair,
+        transportKeyPair: bobKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationDays: 1,
         startTimestamp: Math.floor(Date.now() / 1000),
@@ -324,7 +324,7 @@ describe.runIf(isV2(getViemTestConfig().chainName) && !isCleartext(getViemTestCo
         contractAddress: config.fheTestAddress as ChecksummedAddress,
         encryptedValues: aliceEncryptedValues,
         signedPermit: bobSignedPermit,
-        transportKeypair: bobKeypair,
+        transportKeyPair: bobKeyPair,
       });
 
       expect(bobDecryptedValues).toHaveLength(aliceEntries.length);

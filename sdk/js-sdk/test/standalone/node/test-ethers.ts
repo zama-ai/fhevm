@@ -1,6 +1,6 @@
 import type { ethers } from 'ethers';
 import type { FheTestEthersConfig } from './setup.js';
-import type { TransportKeypair } from '@fhevm/sdk/actions/decrypt';
+import type { TransportKeyPair } from '@fhevm/sdk/actions/decrypt';
 import { createFhevmDecryptClient, createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { getEthersTestConfig } from './setup.js';
 
@@ -64,9 +64,9 @@ const actual = await decryptClient.readPublicValue({
 
 console.log(`--- ReadPublicValue ${tv.type}: ${actual.value}`);
 
-const transportKeypair: TransportKeypair = await decryptClient.generateTransportKeypair();
+const transportKeyPair: TransportKeyPair = await decryptClient.generateTransportKeyPair();
 const signedPermit = await decryptClient.signDecryptionPermit({
-  transportKeypair: transportKeypair,
+  transportKeyPair: transportKeyPair,
   contractAddresses: [config.fheTestAddress],
   durationDays: 1,
   startTimestamp: Math.floor(Date.now() / 1000),
@@ -79,7 +79,7 @@ console.log('--- decryptValue()...');
 const decryptedValue = await decryptClient.decryptValue({
   encryptedValue: inputHandle,
   contractAddress: config.fheTestAddress,
-  transportKeypair: transportKeypair,
+  transportKeyPair: transportKeyPair,
   signedPermit: signedPermit,
 });
 

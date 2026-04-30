@@ -24,14 +24,14 @@ Requires **Node.js >= 22.0**.
 ### 1. Configure the runtime and create a client
 
 ```ts
-import { setFhevmRuntimeConfig, createFhevmClient } from "@fhevm/sdk/ethers";
+import { setFhevmRuntimeConfig, createFhevmClient } from '@fhevm/sdk/ethers';
 // or: from "@fhevm/sdk/viem"
-import { sepolia } from "@fhevm/sdk/chains";
-import { ethers } from "ethers";
+import { sepolia } from '@fhevm/sdk/chains';
+import { ethers } from 'ethers';
 
 setFhevmRuntimeConfig({ numberOfThreads: 4 });
 
-const provider = new ethers.JsonRpcProvider("https://ethereum-sepolia-rpc.publicnode.com");
+const provider = new ethers.JsonRpcProvider('https://ethereum-sepolia-rpc.publicnode.com');
 const client = createFhevmClient({ chain: sepolia, provider });
 ```
 
@@ -39,11 +39,11 @@ const client = createFhevmClient({ chain: sepolia, provider });
 
 ```ts
 const encrypted = await client.encrypt({
-  contractAddress: "0xYourContract...",
-  userAddress: "0xYourWallet...",
+  contractAddress: '0xYourContract...',
+  userAddress: '0xYourWallet...',
   values: [
-    { type: "uint32", value: 42 },
-    { type: "bool", value: true },
+    { type: 'uint32', value: 42 },
+    { type: 'bool', value: true },
   ],
 });
 
@@ -51,7 +51,7 @@ const encrypted = await client.encrypt({
 await contract.myFunction(
   encrypted.externalEncryptedValues[0], // externalEuint32
   encrypted.externalEncryptedValues[1], // externalEbool
-  encrypted.inputProof,                 // shared proof for all values
+  encrypted.inputProof, // shared proof for all values
 );
 ```
 
@@ -59,28 +59,26 @@ await contract.myFunction(
 
 ```ts
 // Generate a transport key pair (private key never leaves the browser)
-const e2eTransportKeypair = await client.generateE2eTransportKeypair();
+const e2eTransportKeyPair = await client.generateE2eTransportKeyPair();
 
 // Create and sign a decrypt permit in one step
 const signedPermit = await client.signDecryptionPermit({
-  contractAddresses: ["0xYourContract..."],
+  contractAddresses: ['0xYourContract...'],
   startTimestamp: Math.floor(Date.now() / 1000),
   durationDays: 7,
   signerAddress: await signer.getAddress(),
   signer,
-  e2eTransportKeypair,
+  e2eTransportKeyPair,
 });
 
 // Decrypt
 const results = await client.decrypt({
-  encryptedValues: [
-    { encryptedValue: encryptedBalance, contractAddress: "0xYourContract..." },
-  ],
-  e2eTransportKeypair,
+  encryptedValues: [{ encryptedValue: encryptedBalance, contractAddress: '0xYourContract...' }],
+  e2eTransportKeyPair,
   signedPermit,
 });
 
-results[0].value;   // 42 (number), 1000n (bigint), true (boolean), or "0xAbCd..." (address)
+results[0].value; // 42 (number), 1000n (bigint), true (boolean), or "0xAbCd..." (address)
 results[0].fheType; // "euint32", "euint64", "ebool", "eaddress", etc.
 ```
 
@@ -98,27 +96,27 @@ result.orderedClearValues[0].value; // the decrypted value
 
 Use the lightest client for your page to minimize WASM download size:
 
-| Client | Use case | WASM loaded |
-| --- | --- | --- |
-| `createFhevmClient()` | Encrypt and decrypt | TFHE (~5MB) + TKMS (~600KB) |
-| `createFhevmEncryptClient()` | Encrypt only | TFHE (~5MB) |
-| `createFhevmDecryptClient()` | Decrypt only | TKMS (~600KB) |
-| `createFhevmBaseClient()` | Extend manually | None |
+| Client                       | Use case            | WASM loaded                 |
+| ---------------------------- | ------------------- | --------------------------- |
+| `createFhevmClient()`        | Encrypt and decrypt | TFHE (~5MB) + TKMS (~600KB) |
+| `createFhevmEncryptClient()` | Encrypt only        | TFHE (~5MB)                 |
+| `createFhevmDecryptClient()` | Decrypt only        | TKMS (~600KB)               |
+| `createFhevmBaseClient()`    | Extend manually     | None                        |
 
 WASM modules load **lazily** on first use. Call `await client.init()` to preload eagerly.
 
 ## Import paths
 
-| Path | What it provides |
-| --- | --- |
-| `@fhevm/sdk/ethers` | Client factories and runtime config (ethers.js v6) |
-| `@fhevm/sdk/viem` | Client factories and runtime config (viem) |
-| `@fhevm/sdk/chains` | Chain definitions (`mainnet`, `sepolia`) |
-| `@fhevm/sdk/actions/base` | Base actions (standalone functions) |
-| `@fhevm/sdk/actions/encrypt` | Encrypt actions |
-| `@fhevm/sdk/actions/decrypt` | Decrypt actions |
-| `@fhevm/sdk/actions/chain` | Chain utility actions |
-| `@fhevm/sdk/actions/host` | Host contract read actions |
+| Path                         | What it provides                                   |
+| ---------------------------- | -------------------------------------------------- |
+| `@fhevm/sdk/ethers`          | Client factories and runtime config (ethers.js v6) |
+| `@fhevm/sdk/viem`            | Client factories and runtime config (viem)         |
+| `@fhevm/sdk/chains`          | Chain definitions (`mainnet`, `sepolia`)           |
+| `@fhevm/sdk/actions/base`    | Base actions (standalone functions)                |
+| `@fhevm/sdk/actions/encrypt` | Encrypt actions                                    |
+| `@fhevm/sdk/actions/decrypt` | Decrypt actions                                    |
+| `@fhevm/sdk/actions/chain`   | Chain utility actions                              |
+| `@fhevm/sdk/actions/host`    | Host contract read actions                         |
 
 ## Browser requirements
 
@@ -133,10 +131,10 @@ Without them, the SDK falls back to single-threaded mode automatically.
 
 ## Supported chains
 
-| Chain | ID | Status |
-| --- | --- | --- |
-| Ethereum mainnet | 1 | Production |
-| Ethereum Sepolia | 11155111 | Testnet |
+| Chain            | ID       | Status     |
+| ---------------- | -------- | ---------- |
+| Ethereum mainnet | 1        | Production |
+| Ethereum Sepolia | 11155111 | Testnet    |
 
 ## Documentation
 

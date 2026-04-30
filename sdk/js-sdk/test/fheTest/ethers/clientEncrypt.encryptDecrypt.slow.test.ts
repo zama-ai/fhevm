@@ -165,7 +165,7 @@ describe.runIf(!isCleartext(getEthersTestConfig().chainName))(
 
       // ┌─────────────────────────────────────────────────────────────────────┐
       // │  Phase 3: PRIVATE DECRYPT                                           │
-      // │  Decrypt via signed permit + e2e transport keypair                  │
+      // │  Decrypt via signed permit + e2e transport key pair                  │
       // └─────────────────────────────────────────────────────────────────────┘
       const decryptClient = createFhevmDecryptClient({
         chain: config.fhevmChain,
@@ -174,9 +174,9 @@ describe.runIf(!isCleartext(getEthersTestConfig().chainName))(
 
       await decryptClient.ready;
 
-      const transportKeypair = await decryptClient.generateTransportKeypair();
+      const transportKeyPair = await decryptClient.generateTransportKeyPair();
       const signedPermit = await decryptClient.signDecryptionPermit({
-        transportKeypair,
+        transportKeyPair: transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationDays: 1,
         startTimestamp: Math.floor(Date.now() / 1000),
@@ -192,7 +192,7 @@ describe.runIf(!isCleartext(getEthersTestConfig().chainName))(
         encryptedValues,
         contractAddress: config.fheTestAddress,
         signedPermit,
-        transportKeypair,
+        transportKeyPair: transportKeyPair,
       });
 
       for (let i = 0; i < encryptTestCases.length; i++) {

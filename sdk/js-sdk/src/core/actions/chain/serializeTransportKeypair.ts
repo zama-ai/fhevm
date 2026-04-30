@@ -3,24 +3,24 @@ import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { BytesHex } from '../../types/primitives.js';
 import {
-  serializeTransportKeypair as serializeTransportKeypair_,
-  type TransportKeypair,
-} from '../../kms/TransportKeypair-p.js';
+  serializeTransportKeyPair as serializeTransportKeyPair_,
+  type TransportKeyPair,
+} from '../../kms/TransportKeyPair-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type SerializeTransportKeypairParameters = {
-  readonly transportKeypair: TransportKeypair;
+export type SerializeTransportKeyPairParameters = {
+  readonly transportKeyPair: TransportKeyPair;
 };
 
-export type SerializeTransportKeypairReturnType = {
+export type SerializeTransportKeyPairReturnType = {
   publicKey: BytesHex;
   privateKey: BytesHex;
 };
 
-export function serializeTransportKeypair(
+export function serializeTransportKeyPair(
   _fhevm: Fhevm<FhevmChain, FhevmRuntime, OptionalNativeClient>,
-  parameters: SerializeTransportKeypairParameters,
-): SerializeTransportKeypairReturnType {
-  return serializeTransportKeypair_(parameters.transportKeypair);
+  parameters: SerializeTransportKeyPairParameters,
+): SerializeTransportKeyPairReturnType {
+  return serializeTransportKeyPair_(parameters.transportKeyPair);
 }

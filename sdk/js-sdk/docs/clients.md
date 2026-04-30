@@ -6,11 +6,11 @@ The SDK offers three client types so you only load the WASM modules you actually
 
 ## Which client should I use?
 
-| If you need to... | Use this | WASM loaded |
-| --- | --- | --- |
-| Encrypt **and** decrypt | `createFhevmClient()` | TFHE (~5MB) + TKMS (~600KB) |
-| Only encrypt (e.g., a form submission page) | `createFhevmEncryptClient()` | TFHE (~5MB) only |
-| Only decrypt (e.g., a results page) | `createFhevmDecryptClient()` | TKMS (~600KB) only |
+| If you need to...                           | Use this                     | WASM loaded                 |
+| ------------------------------------------- | ---------------------------- | --------------------------- |
+| Encrypt **and** decrypt                     | `createFhevmClient()`        | TFHE (~5MB) + TKMS (~600KB) |
+| Only encrypt (e.g., a form submission page) | `createFhevmEncryptClient()` | TFHE (~5MB) only            |
+| Only decrypt (e.g., a results page)         | `createFhevmDecryptClient()` | TKMS (~600KB) only          |
 
 **Why does this matter?** WASM modules are large. If your page only decrypts results, there's no reason to download the 5MB encryption module. Using the right client type makes your app load faster.
 
@@ -27,10 +27,10 @@ Use when your page needs both encryption and decryption.
 **With viem:**
 
 ```ts
-import { setFhevmRuntimeConfig, createFhevmClient } from "@fhevm/sdk/viem";
-import { sepolia } from "@fhevm/sdk/chains";
-import { createPublicClient, http } from "viem";
-import { sepolia as viemSepolia } from "viem/chains";
+import { setFhevmRuntimeConfig, createFhevmClient } from '@fhevm/sdk/viem';
+import { sepolia } from '@fhevm/sdk/chains';
+import { createPublicClient, http } from 'viem';
+import { sepolia as viemSepolia } from 'viem/chains';
 
 // Configure once at app startup
 setFhevmRuntimeConfig({ numberOfThreads: 4 });
@@ -38,7 +38,7 @@ setFhevmRuntimeConfig({ numberOfThreads: 4 });
 // Create your provider
 const provider = createPublicClient({
   chain: viemSepolia,
-  transport: http("https://ethereum-sepolia-rpc.publicnode.com"),
+  transport: http('https://ethereum-sepolia-rpc.publicnode.com'),
 });
 
 // Create the FHEVM client
@@ -48,13 +48,13 @@ const client = createFhevmClient({ chain: sepolia, provider });
 **With ethers.js:**
 
 ```ts
-import { setFhevmRuntimeConfig, createFhevmClient } from "@fhevm/sdk/ethers";
-import { sepolia } from "@fhevm/sdk/chains";
-import { ethers } from "ethers";
+import { setFhevmRuntimeConfig, createFhevmClient } from '@fhevm/sdk/ethers';
+import { sepolia } from '@fhevm/sdk/chains';
+import { ethers } from 'ethers';
 
 setFhevmRuntimeConfig({ numberOfThreads: 4 });
 
-const provider = new ethers.JsonRpcProvider("https://ethereum-sepolia-rpc.publicnode.com");
+const provider = new ethers.JsonRpcProvider('https://ethereum-sepolia-rpc.publicnode.com');
 const client = createFhevmClient({ chain: sepolia, provider });
 ```
 
@@ -108,41 +108,41 @@ Has all base, encrypt, and decrypt methods.
 
 ### Base methods (all client types)
 
-| Method | Sync/Async | What it does |
-| --- | --- | --- |
-| `publicDecrypt(params)` | async | Decrypt publicly readable encrypted values |
-| `signDecryptionPermit(params)` | async | Create and sign a decrypt permit in one step |
-| `parseE2eTransportKeypair(params)` | async | Restore a key pair from serialized bytes |
-| `serializeE2eTransportKeypair(params)` | sync | Serialize a key pair for storage |
-| `fetchFheEncryptionKeyBytes(params?)` | async | Fetch the network's public encryption key |
-| `init()` | async | Eagerly load WASM modules |
-| `ready` | Promise | Resolves when WASM modules are loaded |
+| Method                                 | Sync/Async | What it does                                 |
+| -------------------------------------- | ---------- | -------------------------------------------- |
+| `publicDecrypt(params)`                | async      | Decrypt publicly readable encrypted values   |
+| `signDecryptionPermit(params)`         | async      | Create and sign a decrypt permit in one step |
+| `parseE2eTransportKeyPair(params)`     | async      | Restore a key pair from serialized bytes     |
+| `serializeE2eTransportKeyPair(params)` | sync       | Serialize a key pair for storage             |
+| `fetchFheEncryptionKeyBytes(params?)`  | async      | Fetch the network's public encryption key    |
+| `init()`                               | async      | Eagerly load WASM modules                    |
+| `ready`                                | Promise    | Resolves when WASM modules are loaded        |
 
 ### Encrypt methods (`FhevmClient`, `FhevmEncryptClient`)
 
-| Method | Sync/Async | What it does |
-| --- | --- | --- |
-| `encrypt(params)` | async | Encrypt values and get encrypted handles + input proof |
+| Method            | Sync/Async | What it does                                           |
+| ----------------- | ---------- | ------------------------------------------------------ |
+| `encrypt(params)` | async      | Encrypt values and get encrypted handles + input proof |
 
 ### Decrypt methods (`FhevmClient`, `FhevmDecryptClient`)
 
-| Method | Sync/Async | What it does |
-| --- | --- | --- |
-| `decrypt(params)` | async | Decrypt private encrypted values with a signed permit |
-| `createUserDecryptEIP712(params)` | async | Build EIP-712 typed data for a decrypt permit (lower-level) |
-| `createDelegatedUserDecryptEIP712(params)` | async | Build EIP-712 typed data for a delegated decrypt permit (lower-level) |
-| `publicDecrypt(params)` | async | Decrypt publicly readable encrypted values |
-| `generateE2eTransportKeypair()` | async | Generate a new E2E transport key pair for decryption |
+| Method                                     | Sync/Async | What it does                                                          |
+| ------------------------------------------ | ---------- | --------------------------------------------------------------------- |
+| `decrypt(params)`                          | async      | Decrypt private encrypted values with a signed permit                 |
+| `createUserDecryptEIP712(params)`          | async      | Build EIP-712 typed data for a decrypt permit (lower-level)           |
+| `createDelegatedUserDecryptEIP712(params)` | async      | Build EIP-712 typed data for a delegated decrypt permit (lower-level) |
+| `publicDecrypt(params)`                    | async      | Decrypt publicly readable encrypted values                            |
+| `generateE2eTransportKeyPair()`            | async      | Generate a new E2E transport key pair for decryption                  |
 
 ## Client properties
 
 Every client exposes these read-only properties:
 
-| Property | Type | What it is |
-| --- | --- | --- |
-| `chain` | `FhevmChain` | The chain definition this client is bound to |
-| `runtime` | `FhevmRuntime` | The runtime with its loaded modules |
-| `uid` | `string` | A unique ID for this client instance |
+| Property  | Type           | What it is                                   |
+| --------- | -------------- | -------------------------------------------- |
+| `chain`   | `FhevmChain`   | The chain definition this client is bound to |
+| `runtime` | `FhevmRuntime` | The runtime with its loaded modules          |
+| `uid`     | `string`       | A unique ID for this client instance         |
 
 ## Standalone functions vs. client methods
 

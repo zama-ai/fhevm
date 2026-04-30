@@ -78,9 +78,9 @@ const actual = await decryptClient.readPublicValue({
 
 console.log(`--- ReadPublicValue ${tv.type}: ${actual.value}`);
 
-const transportKeypair = await decryptClient.generateTransportKeypair();
+const transportKeyPair = await decryptClient.generateTransportKeyPair();
 const signedPermit = await decryptClient.signDecryptionPermit({
-  transportKeypair: transportKeypair,
+  transportKeyPair: transportKeyPair,
   contractAddresses: [config.fheTestAddress],
   durationDays: 1,
   startTimestamp: Math.floor(Date.now() / 1000),
@@ -93,7 +93,7 @@ console.log('--- decrypt()...');
 const decryptedValue = await decryptClient.decryptValue({
   encryptedValue: inputHandle,
   contractAddress: config.fheTestAddress,
-  transportKeypair: transportKeypair,
+  transportKeyPair: transportKeyPair,
   signedPermit: signedPermit,
 });
 

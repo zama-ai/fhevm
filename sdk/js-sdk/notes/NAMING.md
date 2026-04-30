@@ -38,37 +38,36 @@ Use explicit union for documentation purpose
 // any Handle
 export type Handle<T extends FheType = FheType> = EncryptedValue<T>;
 // any InputHandle
-export type InputHandle<T extends FheType = FheType> =
-  ExternalEncryptedValue<T>;
+export type InputHandle<T extends FheType = FheType> = ExternalEncryptedValue<T>;
 ```
 
 ```ts
-export type Ebool = EncryptedValue<"ebool">;
-export type Euint8 = EncryptedValue<"euint8">;
-export type Euint16 = EncryptedValue<"euint16">;
-export type Euint32 = EncryptedValue<"euint32">;
-export type Euint64 = EncryptedValue<"euint64">;
-export type Euint128 = EncryptedValue<"euint128">;
-export type Euint256 = EncryptedValue<"euint256">;
-export type Eaddress = EncryptedValue<"eaddress">;
+export type Ebool = EncryptedValue<'ebool'>;
+export type Euint8 = EncryptedValue<'euint8'>;
+export type Euint16 = EncryptedValue<'euint16'>;
+export type Euint32 = EncryptedValue<'euint32'>;
+export type Euint64 = EncryptedValue<'euint64'>;
+export type Euint128 = EncryptedValue<'euint128'>;
+export type Euint256 = EncryptedValue<'euint256'>;
+export type Eaddress = EncryptedValue<'eaddress'>;
 
-export type ExternalEbool = ExternalEncryptedValue<"ebool">;
-export type ExternalEuint8 = ExternalEncryptedValue<"euint8">;
-export type ExternalEuint16 = ExternalEncryptedValue<"euint16">;
-export type ExternalEuint32 = ExternalEncryptedValue<"euint32">;
-export type ExternalEuint64 = ExternalEncryptedValue<"euint64">;
-export type ExternalEuint128 = ExternalEncryptedValue<"euint128">;
-export type ExternalEuint256 = ExternalEncryptedValue<"euint256">;
-export type ExternalEaddress = ExternalEncryptedValue<"eaddress">;
+export type ExternalEbool = ExternalEncryptedValue<'ebool'>;
+export type ExternalEuint8 = ExternalEncryptedValue<'euint8'>;
+export type ExternalEuint16 = ExternalEncryptedValue<'euint16'>;
+export type ExternalEuint32 = ExternalEncryptedValue<'euint32'>;
+export type ExternalEuint64 = ExternalEncryptedValue<'euint64'>;
+export type ExternalEuint128 = ExternalEncryptedValue<'euint128'>;
+export type ExternalEuint256 = ExternalEncryptedValue<'euint256'>;
+export type ExternalEaddress = ExternalEncryptedValue<'eaddress'>;
 
-export type ClearBool = ClearValue<"ebool">;
-export type ClearUint8 = ClearValue<"euint8">;
-export type ClearUint16 = ClearValue<"euint16">;
-export type ClearUint32 = ClearValue<"euint32">;
-export type ClearUint64 = ClearValue<"euint64">;
-export type ClearUint128 = ClearValue<"euint128">;
-export type ClearUint256 = ClearValue<"euint256">;
-export type ClearAddress = ClearValue<"eaddress">;
+export type ClearBool = ClearValue<'ebool'>;
+export type ClearUint8 = ClearValue<'euint8'>;
+export type ClearUint16 = ClearValue<'euint16'>;
+export type ClearUint32 = ClearValue<'euint32'>;
+export type ClearUint64 = ClearValue<'euint64'>;
+export type ClearUint128 = ClearValue<'euint128'>;
+export type ClearUint256 = ClearValue<'euint256'>;
+export type ClearAddress = ClearValue<'eaddress'>;
 ```
 
 ## Decrypt
@@ -83,13 +82,13 @@ export type DecryptParameters =
   | {
       readonly encryptedValues: EncryptedValueArray;
       readonly signedPermit: SignedSelfDecryptionPermit;
-      readonly e2eTransportKeypair: E2eTransportKeypair;
+      readonly e2eTransportKeyPair: E2eTransportKeyPair;
       readonly options?: RelayerUserDecryptOptions | undefined;
     }
   | {
       readonly encryptedValues: EncryptedValueArray;
       readonly signedPermit: SignedDelegatedDecryptionPermit;
-      readonly e2eTransportKeypair: E2eTransportKeypair;
+      readonly e2eTransportKeyPair: E2eTransportKeyPair;
       readonly options?: RelayerDelegatedUserDecryptOptions | undefined;
     };
 
@@ -117,8 +116,7 @@ export interface FhevmHandleBytes32Able {
   readonly bytes32: FhevmHandleBytes32;
 }
 
-export interface FhevmHandleBase
-  extends FhevmHandleBytes32HexAble, FhevmHandleBytes32Able {
+export interface FhevmHandleBase extends FhevmHandleBytes32HexAble, FhevmHandleBytes32Able {
   // Alternate representations
   readonly bytes32HexNo0x: FhevmHandleBytes32HexNo0x;
   readonly bytes32: FhevmHandleBytes32;
@@ -138,9 +136,7 @@ export interface FhevmHandleBase
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export interface FhevmHandleOfTypeBase<
-  T extends FheType,
-> extends FhevmHandleBase {
+export interface FhevmHandleOfTypeBase<T extends FheType> extends FhevmHandleBase {
   readonly fheTypeId: FheTypeToIdMap[T];
   readonly fheType: T;
 }
@@ -151,9 +147,7 @@ export type FhevmHandleOfType<T extends FheType = FheType> = {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export interface FhevmExternalHandleOfTypeBase<
-  T extends FheType,
-> extends FhevmHandleOfTypeBase<T> {
+export interface FhevmExternalHandleOfTypeBase<T extends FheType> extends FhevmHandleOfTypeBase<T> {
   readonly index: Uint8Number;
   readonly isComputed: false;
   readonly isExternal: true;
@@ -165,35 +159,31 @@ export type FhevmExternalHandleOfType<T extends FheType = FheType> = {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type FhevmHandleLike =
-  | Bytes32
-  | Bytes32Hex
-  | Bytes32HexAble
-  | FhevmHandle;
+export type FhevmHandleLike = Bytes32 | Bytes32Hex | Bytes32HexAble | FhevmHandle;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type Ebool = FhevmHandleOfType<"ebool">;
-export type Euint8 = FhevmHandleOfType<"euint8">;
-export type Euint16 = FhevmHandleOfType<"euint16">;
-export type Euint32 = FhevmHandleOfType<"euint32">;
-export type Euint64 = FhevmHandleOfType<"euint64">;
-export type Euint128 = FhevmHandleOfType<"euint128">;
-export type Euint256 = FhevmHandleOfType<"euint256">;
-export type Eaddress = FhevmHandleOfType<"eaddress">;
+export type Ebool = FhevmHandleOfType<'ebool'>;
+export type Euint8 = FhevmHandleOfType<'euint8'>;
+export type Euint16 = FhevmHandleOfType<'euint16'>;
+export type Euint32 = FhevmHandleOfType<'euint32'>;
+export type Euint64 = FhevmHandleOfType<'euint64'>;
+export type Euint128 = FhevmHandleOfType<'euint128'>;
+export type Euint256 = FhevmHandleOfType<'euint256'>;
+export type Eaddress = FhevmHandleOfType<'eaddress'>;
 
 export type FhevmHandle = FhevmHandleOfType;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type ExternalEbool = FhevmExternalHandleOfType<"ebool">;
-export type ExternalEuint8 = FhevmExternalHandleOfType<"euint8">;
-export type ExternalEuint16 = FhevmExternalHandleOfType<"euint16">;
-export type ExternalEuint32 = FhevmExternalHandleOfType<"euint32">;
-export type ExternalEuint64 = FhevmExternalHandleOfType<"euint64">;
-export type ExternalEuint128 = FhevmExternalHandleOfType<"euint128">;
-export type ExternalEuint256 = FhevmExternalHandleOfType<"euint256">;
-export type ExternalEaddress = FhevmExternalHandleOfType<"eaddress">;
+export type ExternalEbool = FhevmExternalHandleOfType<'ebool'>;
+export type ExternalEuint8 = FhevmExternalHandleOfType<'euint8'>;
+export type ExternalEuint16 = FhevmExternalHandleOfType<'euint16'>;
+export type ExternalEuint32 = FhevmExternalHandleOfType<'euint32'>;
+export type ExternalEuint64 = FhevmExternalHandleOfType<'euint64'>;
+export type ExternalEuint128 = FhevmExternalHandleOfType<'euint128'>;
+export type ExternalEuint256 = FhevmExternalHandleOfType<'euint256'>;
+export type ExternalEaddress = FhevmExternalHandleOfType<'eaddress'>;
 
 export type ExternalFhevmHandle = FhevmExternalHandleOfType;
 ```

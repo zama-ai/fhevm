@@ -5,7 +5,7 @@ import type {
   SignedDelegatedDecryptionPermit,
   SignedSelfDecryptionPermit,
 } from '../../types/signedDecryptionPermit.js';
-import type { TransportKeypair } from '../../kms/TransportKeypair-p.js';
+import type { TransportKeyPair } from '../../kms/TransportKeyPair-p.js';
 import type { EncryptedValueLike } from '../../types/encryptedTypes.js';
 import { canDecryptValuesFromPairs as canDecryptValuesFromPairs_ } from '../../host-contracts/canDecryptValuesFromPairs.js';
 import { addressToChecksummedAddress, assertIsAddress } from '../../base/address.js';
@@ -24,7 +24,7 @@ export type CanDecryptValueWithUserAddressParameters = CanDecryptValueParameters
 
 export type CanDecryptValueWithPermitParameters = CanDecryptValueParametersBase & {
   readonly signedPermit: SignedSelfDecryptionPermit | SignedDelegatedDecryptionPermit;
-  readonly transportKeypair?: TransportKeypair | undefined;
+  readonly transportKeyPair?: TransportKeyPair | undefined;
 };
 
 export type CanDecryptValueReturnType = {
@@ -54,9 +54,9 @@ export type CanDecryptValueReturnType = {
  * - the current time is within the permit validity window
  * - the permit is scoped to the requested `contractAddress`
  *
- * When both a `SignedDecryptionPermit` and an `transportKeypair` are provided,
+ * When both a `SignedDecryptionPermit` and an `transportKeyPair` are provided,
  * the function also checks that the permit is scoped to the corresponding
- * `transportKeypair.publicKey`.
+ * `transportKeyPair.publicKey`.
  *
  * A permit is scoped to:
  * - a user

@@ -159,7 +159,7 @@ describe.runIf(isV2(getViemTestConfig().chainName) && !isCleartext(getViemTestCo
 
       // ┌─────────────────────────────────────────────────────────────────────┐
       // │  Phase 3: PRIVATE DECRYPT                                           │
-      // │  Decrypt via signed permit + e2e transport keypair                  │
+      // │  Decrypt via signed permit + e2e transport key pair                  │
       // └─────────────────────────────────────────────────────────────────────┘
       const decryptClient = createFhevmDecryptClient({
         chain: config.fhevmChain,
@@ -168,9 +168,9 @@ describe.runIf(isV2(getViemTestConfig().chainName) && !isCleartext(getViemTestCo
 
       await decryptClient.ready;
 
-      const transportKeypair = await decryptClient.generateTransportKeypair();
+      const transportKeyPair = await decryptClient.generateTransportKeyPair();
       const signedPermit = await decryptClient.signDecryptionPermit({
-        transportKeypair,
+        transportKeyPair: transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationDays: 1,
         startTimestamp: Math.floor(Date.now() / 1000),
@@ -186,7 +186,7 @@ describe.runIf(isV2(getViemTestConfig().chainName) && !isCleartext(getViemTestCo
         encryptedValues,
         contractAddress: config.fheTestAddress,
         signedPermit,
-        transportKeypair,
+        transportKeyPair: transportKeyPair,
       });
 
       for (let i = 0; i < encryptTestCases.length; i++) {

@@ -61,7 +61,7 @@ describe.runIf(!isCleartext(getViemTestConfig().chainName))('createFhevmBaseClie
     expect(typeof client.readPublicValues).toBe('function');
     expect(typeof client.readPublicValuesWithSignatures).toBe('function');
     expect(typeof client.signDecryptionPermit).toBe('function');
-    expect(typeof client.parseTransportKeypair).toBe('function');
+    expect(typeof client.parseTransportKeyPair).toBe('function');
     expect(typeof client.fetchFheEncryptionKeyBytes).toBe('function');
   });
 

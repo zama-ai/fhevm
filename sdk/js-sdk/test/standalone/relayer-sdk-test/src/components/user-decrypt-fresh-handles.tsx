@@ -246,7 +246,7 @@ export const UserDecryptFreshHandles = ({ decryptType, config }: UserDecryptProp
 
             await nextTick()
 
-            const transportKeypair = await client.generateTransportKeypair()
+            const transportKeyPair = await client.generateTransportKeyPair()
             const startTimestamp = toUserDecryptTimestamp()
             const durationDays = 1
 
@@ -256,7 +256,7 @@ export const UserDecryptFreshHandles = ({ decryptType, config }: UserDecryptProp
                 startTimestamp,
                 signerAddress: account.address,
                 signer: account,
-                transportKeypair,
+                transportKeyPair,
             })
 
             const start = performance.now()
@@ -265,7 +265,7 @@ export const UserDecryptFreshHandles = ({ decryptType, config }: UserDecryptProp
                 encryptedValues: xValues,
                 contractAddress,
                 signedPermit,
-                transportKeypair,
+                transportKeyPair,
                 options: relayerOptions,
             })
 

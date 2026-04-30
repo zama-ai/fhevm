@@ -161,7 +161,7 @@ export const UserDecrypt = ({ decryptType, config }: UserDecryptProps) => {
 
             await nextTick()
 
-            const transportKeypair = await client.generateTransportKeypair()
+            const transportKeyPair = await client.generateTransportKeyPair()
             const startTimestamp = toUserDecryptTimestamp()
             const durationDays = 1
 
@@ -171,7 +171,7 @@ export const UserDecrypt = ({ decryptType, config }: UserDecryptProps) => {
                 startTimestamp,
                 signerAddress: account.address,
                 signer: account,
-                transportKeypair,
+                transportKeyPair,
             })
 
             const start = performance.now()
@@ -180,7 +180,7 @@ export const UserDecrypt = ({ decryptType, config }: UserDecryptProps) => {
                 encryptedValues: xValues,
                 contractAddress,
                 signedPermit,
-                transportKeypair,
+                transportKeyPair,
                 options: relayerOptions,
             })
 

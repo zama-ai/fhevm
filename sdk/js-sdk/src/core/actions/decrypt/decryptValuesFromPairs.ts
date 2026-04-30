@@ -4,7 +4,7 @@ import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { RelayerDelegatedUserDecryptOptions, RelayerUserDecryptOptions } from '../../types/relayer.js';
 import type { SignedDecryptionPermit } from '../../types/signedDecryptionPermit.js';
 import type { WithDecrypt } from '../../types/coreFhevmRuntime.js';
-import type { TransportKeypair } from '../../kms/TransportKeypair-p.js';
+import type { TransportKeyPair } from '../../kms/TransportKeyPair-p.js';
 import type { EncryptedValueLike } from '../../types/encryptedTypes.js';
 import { decryptValuesFromPairs as decryptValuesFromPairs_ } from '../../kms/decryptValuesFromPairs.js';
 import { addressToChecksummedAddress, assertIsAddress } from '../../base/address.js';
@@ -17,7 +17,7 @@ export type DecryptValuesFromPairsParameters = {
     readonly encryptedValue: EncryptedValueLike;
     readonly contractAddress: string;
   }>;
-  readonly transportKeypair: TransportKeypair;
+  readonly transportKeyPair: TransportKeyPair;
   readonly signedPermit: SignedDecryptionPermit;
   readonly options?: RelayerUserDecryptOptions | RelayerDelegatedUserDecryptOptions | undefined;
 };
