@@ -47,9 +47,6 @@ const TEST_KEY_ID: u64 = 16;
 const RETRY_EVENT_TO_DB: u64 = 3;
 const RETRY_DELAY: Duration = Duration::from_millis(100);
 const MATERIALIZER_ACTIVATION_STEPS: usize = 2;
-const SEEDED_PUBLIC_KEY: &[u8] = b"seed_public_key";
-const SEEDED_SERVER_KEY: &[u8] = b"seed_server_key";
-const SEEDED_CRS: &[u8] = b"seed_crs";
 const MATERIALIZED_KEY_BYTES: &[u8] = b"key_bytes";
 
 #[derive(Clone)]
@@ -203,35 +200,6 @@ async fn seed_test_rows(db_pool: &Pool<Postgres>) -> anyhow::Result<()> {
         .execute(db_pool)
         .await?;
 
-    sqlx::query(
-        "INSERT INTO keys (
-            key_id,
-            key_id_gw,
-            pks_key,
-            sks_key,
-            cks_key,
-            sns_pk,
-            chain_id,
-            block_hash
-        )
-        VALUES ($1, $2, $3, $4, NULL, NULL, NULL, NULL)",
-    )
-    .bind(key_id)
-    .bind(key_id)
-    .bind(SEEDED_PUBLIC_KEY)
-    .bind(SEEDED_SERVER_KEY)
-    .execute(db_pool)
-    .await?;
-
-    sqlx::query(
-        "INSERT INTO crs (crs_id, crs, chain_id, block_hash)
-         VALUES ($1, $2, NULL, NULL)",
-    )
-    .bind(key_id)
-    .bind(SEEDED_CRS)
-    .execute(db_pool)
-    .await?;
-
     Ok(())
 }
 
@@ -353,18 +321,6 @@ async fn has_crs_gen(
         }
     }
     Ok(false)
-}
-
-async fn read_key_row(
-    db_pool: &Pool<Postgres>,
-    key_id: U256,
-) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
-    let row =
-        sqlx::query("SELECT pks_key, sks_key FROM keys WHERE key_id_gw = $1")
-            .bind(key_id_to_database_bytes(key_id))
-            .fetch_one(db_pool)
-            .await?;
-    Ok((row.try_get("pks_key")?, row.try_get("sks_key")?))
 }
 
 #[derive(Clone, Default)]
@@ -859,72 +815,6 @@ async fn keygen_orphaned_activation_is_cancelled() -> anyhow::Result<()> {
 
 #[tokio::test]
 #[serial(db)]
-async fn keygen_missing_target_row_stays_ready_after_materialization(
-) -> anyhow::Result<()> {
-    let buckets = vec![
-        "test-bucket1",
-        "test-bucket2",
-        "test-bucket3",
-        "test-bucket4",
-    ];
-    let key_types = vec![KeyType::PublicKey, KeyType::ServerKey];
-    let key_id = U256::from(TEST_KEY_ID);
-    let key_id_bytes = key_id_to_database_bytes(key_id);
-
-    let env = TestEnvironment::new().await?;
-    let provider = ProviderBuilder::new()
-        .wallet(env.wallet.clone())
-        .connect_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
-        .await?;
-    let aws_s3_client =
-        AwsS3ClientMocked::new(&buckets, &key_types, key_id, false, false);
-    let kms_generation = KMSGenerationMock::deploy(&provider).await?;
-    let chain_id = ChainId::try_from(TEST_CHAIN_ID)?;
-
-    sqlx::query("DELETE FROM keys WHERE key_id_gw = $1")
-        .bind(key_id_bytes)
-        .execute(&env.db_pool)
-        .await?;
-
-    let receipt = provider
-        .send_transaction(kms_generation.keygen(1).into_transaction_request())
-        .await?
-        .get_receipt()
-        .await?;
-    assert!(receipt.status());
-    let block_hash = receipt.block_hash.expect("receipt has block hash");
-
-    let mut database = Database::new(&env.database_url, chain_id, 16).await?;
-    process_and_finalize_logs_at_block(
-        &provider,
-        &mut database,
-        *kms_generation.address(),
-        &aws_s3_client,
-        block_hash,
-        MATERIALIZER_ACTIVATION_STEPS,
-    )
-    .await?;
-
-    assert_eq!(
-        key_activation_status(&env.db_pool, chain_id, block_hash).await?,
-        Some("ready".to_owned()),
-    );
-    assert_eq!(
-        key_activation_last_error(&env.db_pool, chain_id, block_hash).await?,
-        None,
-    );
-
-    let key_row_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM keys WHERE key_id_gw = $1")
-            .bind(key_id_bytes)
-            .fetch_one(&env.db_pool)
-            .await?;
-    assert_eq!(key_row_count, 0);
-    Ok(())
-}
-
-#[tokio::test]
-#[serial(db)]
 async fn keygen_compromised_key_records_last_error() -> anyhow::Result<()> {
     let buckets = vec![
         "test-bucket1",
@@ -1031,79 +921,3 @@ async fn keygen_bad_key_or_bucket() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-#[serial(db)]
-async fn keygen_only_public_or_server_key_updates_partial_row(
-) -> anyhow::Result<()> {
-    let buckets = vec![
-        "test-bucket1",
-        "test-bucket2",
-        "test-bucket3",
-        "test-bucket4",
-    ];
-    let key_types = vec![KeyType::PublicKey, KeyType::ServerKey];
-    let key_id = U256::from(TEST_KEY_ID);
-
-    let env = TestEnvironment::new().await?;
-    let provider = ProviderBuilder::new()
-        .wallet(env.wallet.clone())
-        .connect_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
-        .await?;
-    let aws_s3_client =
-        AwsS3ClientMocked::new(&buckets, &key_types, key_id, false, false);
-    let kms_generation = KMSGenerationMock::deploy(&provider).await?;
-    let chain_id = ChainId::try_from(TEST_CHAIN_ID)?;
-    let mut database = Database::new(&env.database_url, chain_id, 16).await?;
-
-    assert!(has_not_public_key(&env.db_pool, key_id).await?);
-    assert!(has_not_server_key(&env.db_pool, key_id).await?);
-
-    let receipt = provider
-        .send_transaction(
-            kms_generation
-                .keygen_public_key()
-                .into_transaction_request(),
-        )
-        .await?
-        .get_receipt()
-        .await?;
-    assert!(receipt.status());
-    process_and_finalize_logs_at_block(
-        &provider,
-        &mut database,
-        *kms_generation.address(),
-        &aws_s3_client,
-        receipt.block_hash.expect("receipt has block hash"),
-        MATERIALIZER_ACTIVATION_STEPS,
-    )
-    .await?;
-
-    let (public_key, server_key) = read_key_row(&env.db_pool, key_id).await?;
-    assert_eq!(public_key, MATERIALIZED_KEY_BYTES);
-    assert_eq!(server_key, SEEDED_SERVER_KEY);
-
-    let receipt = provider
-        .send_transaction(
-            kms_generation
-                .keygen_server_key()
-                .into_transaction_request(),
-        )
-        .await?
-        .get_receipt()
-        .await?;
-    assert!(receipt.status());
-    process_and_finalize_logs_at_block(
-        &provider,
-        &mut database,
-        *kms_generation.address(),
-        &aws_s3_client,
-        receipt.block_hash.expect("receipt has block hash"),
-        MATERIALIZER_ACTIVATION_STEPS,
-    )
-    .await?;
-
-    let (public_key, server_key) = read_key_row(&env.db_pool, key_id).await?;
-    assert_eq!(public_key, MATERIALIZED_KEY_BYTES);
-    assert_eq!(server_key, MATERIALIZED_KEY_BYTES);
-    Ok(())
-}

@@ -210,6 +210,8 @@ pub(crate) async fn activate_ready_key_activations(
         WHERE
             e.status = 'ready'
             AND b.block_status = 'finalized'
+            AND e.key_content_public IS NOT NULL
+            AND e.key_content_sks_key IS NOT NULL
         FOR UPDATE OF e SKIP LOCKED
         "#
     )
@@ -234,17 +236,25 @@ pub(crate) async fn activate_ready_key_activations(
 
         let update_result = sqlx::query!(
             r#"
-            UPDATE keys AS k
-            SET
-                pks_key = COALESCE(e.key_content_public, k.pks_key),
-                sks_key = COALESCE(e.key_content_sks_key, k.sks_key),
-                sns_pk = COALESCE(e.key_content_sns_pk, k.sns_pk)
+            INSERT INTO keys (
+                chain_id, block_hash, key_id_gw, key_id,
+                pks_key, sks_key, sns_pk
+            )
+            SELECT
+                e.chain_id, e.block_hash, e.key_id, e.key_id,
+                e.key_content_public, e.key_content_sks_key, e.key_content_sns_pk
             FROM kms_key_activation_events AS e
             WHERE
                 e.chain_id = $1
                 AND e.block_hash = $2
-                AND k.key_id_gw = $3
-                AND e.key_id = k.key_id_gw
+                AND e.key_id = $3
+                AND e.key_content_public IS NOT NULL
+                AND e.key_content_sks_key IS NOT NULL
+            ON CONFLICT (chain_id, block_hash, key_id) DO UPDATE
+            SET pks_key   = EXCLUDED.pks_key,
+                sks_key   = EXCLUDED.sks_key,
+                sns_pk    = COALESCE(EXCLUDED.sns_pk, keys.sns_pk),
+                key_id_gw = EXCLUDED.key_id_gw
             "#,
             chain_id,
             &block_hash,
@@ -257,7 +267,7 @@ pub(crate) async fn activate_ready_key_activations(
                 chain_id,
                 block_hash = ?block_hash,
                 key_id = ?key_id,
-                "Failed to update keys table with activated key content for activation"
+                "Failed to upsert keys table with activated key content for activation"
             );
             continue;
         }
@@ -304,6 +314,7 @@ pub(crate) async fn activate_ready_crs_activations(
         WHERE
             e.status = 'ready'
             AND b.block_status = 'finalized'
+            AND e.crs_content IS NOT NULL
         FOR UPDATE OF e SKIP LOCKED
         "#
     )
@@ -322,14 +333,16 @@ pub(crate) async fn activate_ready_crs_activations(
 
         let update_result = sqlx::query!(
             r#"
-            UPDATE crs AS c
-            SET crs = COALESCE(e.crs_content, c.crs)
+            INSERT INTO crs (chain_id, block_hash, crs_id, crs)
+            SELECT e.chain_id, e.block_hash, e.crs_id, e.crs_content
             FROM kms_crs_activation_events AS e
             WHERE
                 e.chain_id = $1
                 AND e.block_hash = $2
-                AND c.crs_id = $3
-                AND e.crs_id = c.crs_id
+                AND e.crs_id = $3
+                AND e.crs_content IS NOT NULL
+            ON CONFLICT (chain_id, block_hash, crs_id) DO UPDATE
+            SET crs = EXCLUDED.crs
             "#,
             chain_id,
             &block_hash,
@@ -342,7 +355,7 @@ pub(crate) async fn activate_ready_crs_activations(
                 chain_id,
                 block_hash = ?block_hash,
                 crs_id = ?crs_id,
-                "Failed to update crs table with activated CRS content for activation"
+                "Failed to upsert crs table with activated CRS content for activation"
             );
             continue;
         }
