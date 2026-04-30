@@ -54,6 +54,7 @@ blockchain:
   catchup:
     prefetch: 5
     claim_min_idle_secs: 3600
+    catchup_max_range: 1000
 
 telemetry:
   enabled: true

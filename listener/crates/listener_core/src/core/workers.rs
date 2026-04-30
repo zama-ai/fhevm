@@ -406,9 +406,9 @@ impl Handler for UnwatchHandler {
 
 /// Handler for the `catchup` consumer.
 ///
-/// Deserializes `msg.payload` into [`CatchupPayload`], validates it (which
-/// trims `consumer_id` and enforces the inclusive range cap
-/// `CATCHUP_MAX_RANGE`), then calls [`EvmListener::run_range_catchup`].
+/// Deserializes `msg.payload` into [`CatchupPayload`], validates it (trims
+/// `consumer_id`, enforces `block_start <= block_end`), then calls
+/// [`EvmListener::run_range_catchup`].
 ///
 /// Deserialization or validation failures are dead-lettered immediately —
 /// they are deterministic and will never succeed on retry. Replay errors
@@ -416,9 +416,8 @@ impl Handler for UnwatchHandler {
 /// infrastructure failures (RPC, broker, slot buffer) are transient and trip
 /// the circuit breaker, while invariant violations are permanent.
 ///
-/// One-shot: no continuation publish (catchup is bounded per message; the
-/// producer chunks if the requested range exceeds `CATCHUP_MAX_RANGE`). No
-/// advisory lock (catchup is idempotent at the downstream consumer level).
+/// One-shot per message: no continuation publish. No advisory lock (catchup
+/// is idempotent at the downstream consumer level).
 #[derive(Clone)]
 pub struct CatchupHandler {
     listener: Arc<EvmListener>,

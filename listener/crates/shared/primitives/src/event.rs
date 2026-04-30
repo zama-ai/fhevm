@@ -53,13 +53,6 @@ impl FilterCommand {
     }
 }
 
-/// Maximum inclusive block range a single [`CatchupPayload`] may request.
-///
-/// Bounds the work a single catchup message produces so the consumer doesn't
-/// stall the queue or hold a lock for long. Catchups larger than this must be
-/// chunked by the producer into multiple `CatchupPayload`s.
-pub const CATCHUP_MAX_RANGE: u64 = 1000;
-
 /// Validation errors for [`CatchupPayload`].
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum CatchupPayloadValidationError {
@@ -67,8 +60,6 @@ pub enum CatchupPayloadValidationError {
     EmptyConsumerId,
     #[error("block_start must be <= block_end")]
     InvalidBlockRange,
-    #[error("range size {requested} exceeds CATCHUP_MAX_RANGE ({max})")]
-    RangeTooLarge { max: u64, requested: u64 },
 }
 
 /// Event payload for the `catchup` consumer.
@@ -94,14 +85,6 @@ impl CatchupPayload {
         }
         if self.block_start > self.block_end {
             return Err(CatchupPayloadValidationError::InvalidBlockRange);
-        }
-        // Safe: block_start <= block_end is enforced just above.
-        let span = self.block_end - self.block_start;
-        if span >= CATCHUP_MAX_RANGE {
-            return Err(CatchupPayloadValidationError::RangeTooLarge {
-                max: CATCHUP_MAX_RANGE,
-                requested: span.saturating_add(1),
-            });
         }
         Ok(())
     }
@@ -565,52 +548,6 @@ mod tests {
             block_end: 42,
         };
         p.validate().unwrap();
-    }
-
-    #[test]
-    fn catchup_payload_accepts_range_at_max_inclusive() {
-        // start=1, end=1000 → 1000 blocks, exactly at the cap → accepted.
-        let mut p = CatchupPayload {
-            consumer_id: "gateway".into(),
-            block_start: 1,
-            block_end: CATCHUP_MAX_RANGE, // 1 + 999 = 1000 blocks inclusive
-        };
-        p.validate().unwrap();
-    }
-
-    #[test]
-    fn catchup_payload_rejects_range_above_max() {
-        // start=1, end=1001 → 1001 blocks → rejected.
-        let mut p = CatchupPayload {
-            consumer_id: "gateway".into(),
-            block_start: 1,
-            block_end: CATCHUP_MAX_RANGE + 1,
-        };
-        assert_eq!(
-            p.validate().unwrap_err(),
-            CatchupPayloadValidationError::RangeTooLarge {
-                max: CATCHUP_MAX_RANGE,
-                requested: CATCHUP_MAX_RANGE + 1,
-            },
-        );
-    }
-
-    #[test]
-    fn catchup_payload_rejects_huge_range_without_overflow() {
-        // start=0, end=u64::MAX would overflow on a naive `+ 1` for the
-        // requested count; saturating_add must clamp at u64::MAX.
-        let mut p = CatchupPayload {
-            consumer_id: "gateway".into(),
-            block_start: 0,
-            block_end: u64::MAX,
-        };
-        assert_eq!(
-            p.validate().unwrap_err(),
-            CatchupPayloadValidationError::RangeTooLarge {
-                max: CATCHUP_MAX_RANGE,
-                requested: u64::MAX,
-            },
-        );
     }
 
     #[test]
