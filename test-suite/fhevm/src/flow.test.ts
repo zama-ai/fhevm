@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
+import { assertContractTaskStackRunning } from "./flow/contracts";
+import { validateDiscovery } from "./flow/discovery";
 import {
   displayedBundle,
   multiChainCoprocessorUpgradeTargets,
@@ -8,9 +10,8 @@ import {
   runtimeArtifactPaths,
   shouldShowResumeHint,
 } from "./flow/up-flow";
-import { assertContractTaskStackRunning } from "./flow/contracts";
 import { envPath, hostChainAddressesPath, kmsCoreConfigPath } from "./layout";
-import { OVERRIDE_GROUPS, type State } from "./types";
+import { type Discovery, OVERRIDE_GROUPS, type State } from "./types";
 
 const completeState = (): State => ({
   target: "latest-main",
@@ -66,6 +67,66 @@ const completeState = (): State => ({
     "test-suite",
   ],
   updatedAt: "2026-03-31T00:00:00.000Z",
+});
+
+const validDiscovery = (hostKeys: string[]): Discovery => ({
+  gateway: {
+    GATEWAY_CONFIG_ADDRESS: "0x1",
+    KMS_GENERATION_ADDRESS: "0x2",
+    DECRYPTION_ADDRESS: "0x3",
+    INPUT_VERIFICATION_ADDRESS: "0x4",
+    CIPHERTEXT_COMMITS_ADDRESS: "0x5",
+    MULTICHAIN_ACL_ADDRESS: "0x6",
+  },
+  hosts: Object.fromEntries(
+    hostKeys.map((key, index) => [
+      key,
+      {
+        ACL_CONTRACT_ADDRESS: "0x10",
+        FHEVM_EXECUTOR_CONTRACT_ADDRESS: "0x11",
+        KMS_VERIFIER_CONTRACT_ADDRESS: "0x12",
+        INPUT_VERIFIER_CONTRACT_ADDRESS: "0x13",
+        PAUSER_SET_CONTRACT_ADDRESS: "0x14",
+        PROTOCOL_CONFIG_CONTRACT_ADDRESS: "0x15",
+        ...(index === 0 ? { KMS_GENERATION_CONTRACT_ADDRESS: "0x16" } : {}),
+      },
+    ]),
+  ),
+  kmsSigner: "0x7",
+  fheKeyId: "a".repeat(64),
+  crsKeyId: "b".repeat(64),
+  endpoints: {
+    gateway: { http: "http://gateway-node:8546", ws: "ws://gateway-node:8546" },
+    hosts: Object.fromEntries(hostKeys.map((key) => [key, { http: `http://${key}:8545`, ws: `ws://${key}:8545` }])),
+    minioInternal: "http://minio:9000",
+    minioExternal: "http://localhost:9000",
+  },
+});
+
+describe("validateDiscovery", () => {
+  test("requires KMSGeneration on the canonical host", () => {
+    const state = completeState();
+    state.discovery = validDiscovery(["host"]);
+    delete state.discovery.hosts.host.KMS_GENERATION_CONTRACT_ADDRESS;
+
+    expect(() => validateDiscovery(state)).toThrow(
+      'Missing host discovery value KMS_GENERATION_CONTRACT_ADDRESS for chain "host"',
+    );
+  });
+
+  test("rejects KMSGeneration on non-canonical hosts", () => {
+    const state = completeState();
+    state.scenario.hostChains = [
+      { key: "chain-a", chainId: "12345", rpcPort: 8545 },
+      { key: "chain-b", chainId: "67890", rpcPort: 8547 },
+    ];
+    state.discovery = validDiscovery(["chain-a", "chain-b"]);
+    state.discovery.hosts["chain-b"].KMS_GENERATION_CONTRACT_ADDRESS = "0x17";
+
+    expect(() => validateDiscovery(state)).toThrow(
+      'Host discovery for non-canonical chain "chain-b" contains KMS_GENERATION_CONTRACT_ADDRESS',
+    );
+  });
 });
 
 describe("resumeRepairStep", () => {
@@ -222,7 +283,9 @@ describe("runtime helpers", () => {
   });
 
   test("contract tasks reject stopped stacks with persisted state", () => {
-    expect(() => assertContractTaskStackRunning(true, 0)).toThrow("Stack is stopped; run `fhevm-cli up --resume` first");
+    expect(() => assertContractTaskStackRunning(true, 0)).toThrow(
+      "Stack is stopped; run `fhevm-cli up --resume` first",
+    );
   });
 
   test("preflight includes custom host rpc ports", () => {

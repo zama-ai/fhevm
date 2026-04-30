@@ -35,7 +35,7 @@ services:
       - CHAIN_ID_GATEWAY=54321
       - RPC_URL=http://anvil-node:8545
     command:
-      - npx hardhat task:deployAllHostContracts
+      - npx hardhat task:deployAllHostContracts --with-kms-generation true
     volumes:
       - addresses-volume:/app/addresses
 
@@ -96,6 +96,8 @@ services:
       - npx hardhat task:triggerCrsgen --params-type 1 --max-bit-length 2048 --use-internal-proxy-address true
     depends_on:
       fhevm-sc-deploy:
+        condition: service_completed_successfully
+      trigger-keygen:
         condition: service_completed_successfully
     # Addresses volume is used at compile time (contracts import these addresses) and at runtime
     # (--use-internal-proxy-address true reads KMS_GENERATION_CONTRACT_ADDRESS from addresses/.env.host).

@@ -5,6 +5,7 @@ import { ethers, upgrades } from 'hardhat';
 import path from 'path';
 
 import type { KMSGeneration } from '../../types';
+import { deployEmptyProxy } from '../utils/deploymentHelpers';
 
 export const HOST_ENV_FILE = path.join(__dirname, '../../addresses/.env.host');
 
@@ -14,13 +15,6 @@ export function readHostAddress(key: string): string {
     throw new Error(`Missing ${key} in ${HOST_ENV_FILE}`);
   }
   return value;
-}
-
-export async function deployFreshEmptyProxy(deployer: Wallet): Promise<string> {
-  const factory = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  const proxy = await upgrades.deployProxy(factory, { initializer: 'initialize', kind: 'uups' });
-  await proxy.waitForDeployment();
-  return proxy.getAddress();
 }
 
 export function buildProtocolConfigNodes(): Array<{
@@ -88,7 +82,8 @@ export async function withPatchedMethods<T extends object, R>(
 }
 
 export async function deployFreshKMSGenerationProxy(deployer: Wallet): Promise<KMSGeneration> {
-  const proxyAddress = await deployFreshEmptyProxy(deployer);
+  const emptyProxyFactory = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const proxyAddress = await deployEmptyProxy(emptyProxyFactory);
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
   const newImplementation = await ethers.getContractFactory('KMSGeneration', deployer);
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);

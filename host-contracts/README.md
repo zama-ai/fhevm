@@ -158,6 +158,18 @@ against the canonical `ProtocolConfig` state during initialization.
 - `KMSVerifier.NewContextSet(uint256,address[],uint256)` -> `ProtocolConfig.NewKmsContext(uint256,KmsNode[],KmsThresholds)`
 - `KMSVerifier.KMSContextDestroyed(uint256)` -> `ProtocolConfig.KmsContextDestroyed(uint256)`
 
+## Host Deployment Role
+
+`task:deployAllHostContracts` requires an explicit `--with-kms-generation` value:
+
+```bash
+npx hardhat task:deployAllHostContracts --with-kms-generation true   # canonical host
+npx hardhat task:deployAllHostContracts --with-kms-generation false  # non-canonical host
+```
+
+`KMSGeneration` is deployed only on the canonical host chain. Non-canonical host chains
+deploy the common host contracts only.
+
 ## KMS Context Rotation Runbook (Canonical Host)
 
 `ProtocolConfig.defineNewKmsContext` has no on-chain guard against executing while a key

@@ -374,6 +374,11 @@ jobs:
             echo "::endgroup::"
           }
           snapshot_logs "Relayer Logs" fhevm-relayer
+          snapshot_logs "KMS Connector Gateway Listener" kms-connector-gw-listener
+          snapshot_logs "KMS Connector KMS Worker" kms-connector-kms-worker
+          snapshot_logs "KMS Connector Transaction Sender" kms-connector-tx-sender
+          snapshot_logs "Host KMS Keygen Trigger" host-sc-trigger-keygen
+          snapshot_logs "Host KMS CRS Trigger" host-sc-trigger-crsgen
           # Iterate over all running coprocessor instances (primary is "coprocessor-",
           # additional instances are "coprocessorN-" where N>=1).
           for container in $(docker ps --format '{{.Names}}' | grep -E '^coprocessor[0-9]*-gw-listener$' | sort); do

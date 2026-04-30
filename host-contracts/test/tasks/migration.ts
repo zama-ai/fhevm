@@ -18,14 +18,19 @@ import {
 } from '../../tasks/utils/kmsGenerationMigrationEnv';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import type { KMSGeneration, ProtocolConfig } from '../../types';
+import { deployEmptyProxy } from '../utils/deploymentHelpers';
 import {
   HOST_ENV_FILE,
   buildProtocolConfigNodes,
   buildProtocolConfigThresholds,
-  deployFreshEmptyProxy,
   readHostAddress,
   withPatchedMethods,
 } from './taskHelpers';
+
+async function deployEmptyUUPSProxy(deployer: Wallet): Promise<string> {
+  const factory = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  return deployEmptyProxy(factory);
+}
 
 /**
  * Deploy a legacy-style KMSVerifier proxy mock and advance it to the requested context id.
@@ -39,7 +44,7 @@ async function deployLegacyKMSVerifier(deployer: Wallet, targetContextId: bigint
     );
   }
 
-  const proxyAddress = await deployFreshEmptyProxy(deployer);
+  const proxyAddress = await deployEmptyUUPSProxy(deployer);
   const legacyImplementation = await ethers.getContractFactory(
     'test/migration-only-previous-contracts/KMSVerifier.sol:KMSVerifier',
     deployer,
@@ -112,7 +117,7 @@ describe('Migration deploy tasks', function () {
 
   describe('ProtocolConfig migration', function () {
     it('should deploy via initializeFromMigration and preserve the context id', async function () {
-      const proxyAddress = await deployFreshEmptyProxy(deployer);
+      const proxyAddress = await deployEmptyUUPSProxy(deployer);
       patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', proxyAddress);
 
       const migratedContextId = KMS_CONTEXT_COUNTER_BASE + BigInt(3);
@@ -162,7 +167,7 @@ describe('Migration deploy tasks', function () {
     const contextId = KMS_CONTEXT_COUNTER_BASE + BigInt(1);
 
     it('should deploy via initializeFromMigration and restore active state', async function () {
-      const proxyAddress = await deployFreshEmptyProxy(deployer);
+      const proxyAddress = await deployEmptyUUPSProxy(deployer);
       patchHostEnv('KMS_GENERATION_CONTRACT_ADDRESS', proxyAddress);
 
       const activeKeyId = KEY_COUNTER_BASE + BigInt(1);
@@ -224,7 +229,7 @@ describe('Migration deploy tasks', function () {
 
   describe('KMSVerifier deployment', function () {
     it('passes the standalone readiness check when ProtocolConfig is initialized', async function () {
-      const protocolConfigProxyAddress = await deployFreshEmptyProxy(deployer);
+      const protocolConfigProxyAddress = await deployEmptyUUPSProxy(deployer);
 
       patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', protocolConfigProxyAddress);
 
@@ -258,7 +263,7 @@ describe('Migration deploy tasks', function () {
     });
 
     it('rejects the standalone readiness check when ProtocolConfig is not initialized', async function () {
-      const protocolConfigProxyAddress = await deployFreshEmptyProxy(deployer);
+      const protocolConfigProxyAddress = await deployEmptyUUPSProxy(deployer);
 
       patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', protocolConfigProxyAddress);
 
@@ -278,8 +283,8 @@ describe('Migration deploy tasks', function () {
     });
 
     it('rejects deployment when ProtocolConfig is not initialized', async function () {
-      const protocolConfigProxyAddress = await deployFreshEmptyProxy(deployer);
-      const kmsVerifierProxyAddress = await deployFreshEmptyProxy(deployer);
+      const protocolConfigProxyAddress = await deployEmptyUUPSProxy(deployer);
+      const kmsVerifierProxyAddress = await deployEmptyUUPSProxy(deployer);
 
       patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', protocolConfigProxyAddress);
       patchHostEnv('KMS_VERIFIER_CONTRACT_ADDRESS', kmsVerifierProxyAddress);

@@ -1,22 +1,21 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
+import type { EncryptedERC20 } from '../../types/contracts';
 import { createInstance as createHardhatInstance } from '../instance';
 import { isLiveNetwork } from '../network';
 import { getSigners as getHardhatSigners, initSigners } from '../signers';
 import { userDecryptSingleHandle } from '../utils';
+import { deployChainFixture } from './multiChain.fixture';
 import {
   HOST_CHAINS,
+  createInstance,
+  evmRevert,
+  evmSnapshot,
   getProvider,
   getSigners,
   getWallet,
-  createInstance,
-  evmSnapshot,
-  evmRevert,
 } from './multiChainHelper';
-import { deployChainFixture } from './multiChain.fixture';
-
-import type { EncryptedERC20 } from '../../types/contracts';
 
 describe('Multi-Chain State Isolation', function () {
   this.timeout(300_000);
@@ -55,15 +54,18 @@ describe('Multi-Chain State Isolation', function () {
         /^0x[0-9a-fA-F]{40}$/,
       );
 
-      const canonicalCode = await getProvider(this.chains[0]).getCode(kmsGenAddress!);
-      expect(canonicalCode, 'KMSGeneration should be deployed on the canonical host').to.not.eq('0x');
+      const kmsGeneration = new ethers.Contract(
+        kmsGenAddress!,
+        ['function getVersion() view returns (string)'],
+        getProvider(this.chains[0]),
+      );
+      expect(await kmsGeneration.getVersion()).to.match(/^KMSGeneration v/);
 
       for (let i = 1; i < this.chains.length; i++) {
-        const extraCode = await getProvider(this.chains[i]).getCode(kmsGenAddress!);
         expect(
-          extraCode,
-          `KMSGeneration should not be deployed on non-canonical chain ${this.chains[i].rpcUrl}`,
-        ).to.eq('0x');
+          process.env[`HOST_CHAIN_${i}_KMS_GENERATION_CONTRACT_ADDRESS`],
+          `KMSGeneration address should not be exported for non-canonical chain ${this.chains[i].rpcUrl}`,
+        ).to.be.undefined;
       }
     });
 

@@ -15,8 +15,8 @@ import {
 } from "../layout";
 import type { Discovery, State } from "../types";
 import { predictedCrsId, predictedKeyId, readEnvFile } from "../utils/fs";
-import { run } from "../utils/process";
 import { exists } from "../utils/fs";
+import { run } from "../utils/process";
 import { hostChainsForState } from "./topology";
 
 /** Resolves the MinIO container IP used for host-reachable material URLs. */
@@ -49,7 +49,10 @@ export const defaultEndpoints = async () => {
   const ip = await minioIp();
   const hosts: Discovery["endpoints"]["hosts"] = {};
   return {
-    gateway: { http: `http://gateway-node:${DEFAULT_GATEWAY_RPC_PORT}`, ws: `ws://gateway-node:${DEFAULT_GATEWAY_RPC_PORT}` },
+    gateway: {
+      http: `http://gateway-node:${DEFAULT_GATEWAY_RPC_PORT}`,
+      ws: `ws://gateway-node:${DEFAULT_GATEWAY_RPC_PORT}`,
+    },
     hosts,
     minioInternal: MINIO_INTERNAL_URL,
     minioExternal: `http://${ip}:${MINIO_PORT}`,
@@ -92,13 +95,17 @@ export const discoverContracts = async (state: Pick<State, "scenario">) => {
   return {
     gateway: await readEnvFile(gatewayAddressesPath),
     hosts: Object.fromEntries(
-      await Promise.all(hostChains.map(async (chain) => [chain.key, await readEnvFile(hostChainAddressesPath(chain.key))] as const)),
+      await Promise.all(
+        hostChains.map(async (chain) => [chain.key, await readEnvFile(hostChainAddressesPath(chain.key))] as const),
+      ),
     ),
   };
 };
 
 /** Verifies that required discovery fields are present before rendering runtime artifacts. */
-export const validateDiscovery = (state: Pick<State, "target" | "versions" | "discovery" | "overrides" | "scenario">) => {
+export const validateDiscovery = (
+  state: Pick<State, "target" | "versions" | "discovery" | "overrides" | "scenario">,
+) => {
   const discovery = state.discovery;
   if (!discovery) {
     throw new PreflightError("Missing discovery state");
@@ -125,15 +132,24 @@ export const validateDiscovery = (state: Pick<State, "target" | "versions" | "di
       throw new PreflightError(`Missing gateway discovery value ${key}`);
     }
   }
-  for (const chain of hostChainsForState(state)) {
+  for (const [index, chain] of hostChainsForState(state).entries()) {
     const host = discovery.hosts[chain.key];
     if (!host) {
       throw new PreflightError(`Missing discovery for host chain "${chain.key}"`);
     }
-    for (const key of requiredHost) {
+    const requiredHostForChain = [
+      ...requiredHost,
+      ...(index === 0 && requiresKmsGenerationContractAddress(state) ? ["KMS_GENERATION_CONTRACT_ADDRESS"] : []),
+    ];
+    for (const key of requiredHostForChain) {
       if (!host[key]) {
         throw new PreflightError(`Missing host discovery value ${key} for chain "${chain.key}"`);
       }
+    }
+    if (index > 0 && host.KMS_GENERATION_CONTRACT_ADDRESS) {
+      throw new PreflightError(
+        `Host discovery for non-canonical chain "${chain.key}" contains KMS_GENERATION_CONTRACT_ADDRESS; this belongs on the canonical host only`,
+      );
     }
   }
 };

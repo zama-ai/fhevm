@@ -6,6 +6,22 @@ import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import type { KMSGeneration } from '../../types';
 import { deployFreshKMSGenerationProxy, readHostAddress, withPatchedMethods } from './taskHelpers';
 
+describe('task:deployAllHostContracts', function () {
+  it('requires the KMSGeneration deployment role to be explicit', async function () {
+    await expect(run('task:deployAllHostContracts')).to.be.rejectedWith(
+      'Missing or invalid required --with-kms-generation flag',
+    );
+  });
+});
+
+describe('task:deployEmptyUUPSProxies', function () {
+  it('requires the KMSGeneration deployment role to be explicit', async function () {
+    await expect(run('task:deployEmptyUUPSProxies')).to.be.rejectedWith(
+      'Missing or invalid required --with-kms-generation flag',
+    );
+  });
+});
+
 describe('task:assertNoPendingKeyManagementRequest', function () {
   const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(deployerPrivateKey).connect(ethers.provider);

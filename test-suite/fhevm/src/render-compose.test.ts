@@ -1,15 +1,15 @@
-import path from "node:path";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 import YAML from "yaml";
 
-import { composePath, envPath, TEMPLATE_COMPOSE_DIR } from "./layout";
 import { generateComposeOverrides, loadMergedComposeDoc } from "./generate/compose";
+import { TEMPLATE_COMPOSE_DIR, composePath, envPath } from "./layout";
 import { presetBundle } from "./resolve/target";
 import { parseCoprocessorScenario, resolveScenarioFile } from "./scenario/resolve";
 import { stackSpecForState } from "./stack-spec/stack-spec";
-import { withTempStateDir } from "./test-state";
 import { testDefaultScenario } from "./test-fixtures";
+import { withTempStateDir } from "./test-state";
 import type { State } from "./types";
 import { composeEnv } from "./utils/process";
 
@@ -190,7 +190,9 @@ describe("render-compose", () => {
         services: Record<string, { image?: string; build?: { context?: string; dockerfile?: string } }>;
       };
       expect(doc.services["relayer-db-migration"]?.image).toContain(":fhevm-local");
-      expect(doc.services["relayer-db-migration"]?.build?.dockerfile).toContain("relayer/docker/relayer-migrate/Dockerfile");
+      expect(doc.services["relayer-db-migration"]?.build?.dockerfile).toContain(
+        "relayer/docker/relayer-migrate/Dockerfile",
+      );
       expect(doc.services["relayer"]?.image).toContain(":fhevm-local");
       expect(doc.services["relayer"]?.build?.dockerfile).toContain("relayer/docker/relayer/Dockerfile");
     });
@@ -216,10 +218,7 @@ describe("render-compose", () => {
       const env = await composeEnv("host-sc");
       const hostAddressDir = (env as Record<string, string>).HOST_ADDRESS_DIR ?? "host";
       const template = YAML.parse(
-        await readFile(
-          path.join(TEMPLATE_COMPOSE_DIR, "host-sc-docker-compose.yml"),
-          "utf8",
-        ),
+        await readFile(path.join(TEMPLATE_COMPOSE_DIR, "host-sc-docker-compose.yml"), "utf8"),
       ) as { services: Record<string, { volumes?: string[] }> };
       const defaultMount = String(template.services["host-sc-deploy"]?.volumes?.[0] ?? "").replace(
         /\$\{HOST_ADDRESS_DIR:-host\}/g,
@@ -229,13 +228,11 @@ describe("render-compose", () => {
         services: Record<string, { volumes?: string[] }>;
       };
       expect(defaultMount).toContain("/addresses/chain-a:/app/addresses");
-      expect(extra.services["host-sc-chain-b-deploy"]?.volumes?.[0]).toContain(
-        "/addresses/chain-b:/app/addresses",
-      );
+      expect(extra.services["host-sc-chain-b-deploy"]?.volumes?.[0]).toContain("/addresses/chain-b:/app/addresses");
     });
   });
 
-  test("extra host-sc chain deploy service calls common-only task", async () => {
+  test("extra host-sc chain deploy service disables KMSGeneration", async () => {
     await withTempStateDir(async () => {
       await mkdir(path.dirname(envPath("host-sc")), { recursive: true });
       await writeFile(envPath("coprocessor"), "\n");
@@ -245,28 +242,26 @@ describe("render-compose", () => {
       await generateComposeOverrides(multiChainHostContractsState, stackSpecForState(multiChainHostContractsState));
 
       const extra = YAML.parse(await readFile(composePath("host-sc-chain-b"), "utf8")) as {
-        services: Record<string, { command?: string[] }>;
+        services: Record<string, { command?: string[]; environment?: Record<string, string> }>;
       };
 
-      const extraDeployCommand = extra.services["host-sc-chain-b-deploy"]?.command ?? [];
-      const extraCommandStr = extraDeployCommand.join(" ");
+      const extraDeployService = extra.services["host-sc-chain-b-deploy"];
+      const extraCommandStr = (extraDeployService?.command ?? []).join(" ");
 
-      expect(extraCommandStr).toContain("task:deployCommonHostContracts");
-      expect(extraCommandStr).not.toContain("task:deployCanonicalHostContracts");
-      expect(extraCommandStr).not.toContain("task:deployAllHostContracts");
+      expect(extraCommandStr).toContain("task:deployAllHostContracts");
+      expect(extraCommandStr).toContain("--with-kms-generation $${HOST_SC_WITH_KMS_GENERATION:-true}");
+      expect(extraDeployService?.environment).toMatchObject({ HOST_SC_WITH_KMS_GENERATION: "false" });
     });
   });
 
-  test("default host-sc deploy service still invokes all host contracts via alias", async () => {
+  test("default host-sc deploy service enables KMSGeneration by default", async () => {
     const template = YAML.parse(
-      await readFile(
-        path.join(TEMPLATE_COMPOSE_DIR, "host-sc-docker-compose.yml"),
-        "utf8",
-      ),
+      await readFile(path.join(TEMPLATE_COMPOSE_DIR, "host-sc-docker-compose.yml"), "utf8"),
     ) as { services: Record<string, { command?: string[] }> };
 
     const cmd = (template.services["host-sc-deploy"]?.command ?? []).join(" ");
     expect(cmd).toContain("task:deployAllHostContracts");
+    expect(cmd).toContain("--with-kms-generation $${HOST_SC_WITH_KMS_GENERATION:-true}");
   });
 
   test("merges instance env into list-form service environments without dropping KEY_ID", async () => {

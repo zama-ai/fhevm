@@ -377,6 +377,8 @@ export const waitForKmsConnector = async () => {
   await waitForContainer("kms-connector-gw-listener", "running");
   await waitForContainer("kms-connector-kms-worker", "running");
   await waitForContainer("kms-connector-tx-sender", "running");
+  await waitForLog("kms-connector-gw-listener", /Started Decryption polling from block/);
+  await waitForLog("kms-connector-gw-listener", /Started KMSGeneration polling from block/);
 };
 
 /** Waits for the e2e test-suite container to reach running state. */

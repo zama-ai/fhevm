@@ -5,9 +5,9 @@ services:
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/host-sc.env
     command:
-      - npx hardhat task:deployAllHostContracts
+      - npx hardhat task:deployAllHostContracts --with-kms-generation $${HOST_SC_WITH_KMS_GENERATION:-true}
     volumes:
-      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/${HOST_ADDRESS_DIR:-host}:/app/addresses  # workdir in host's Dockerfile is /app
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/${HOST_ADDRESS_DIR:-host}:/app/addresses # workdir in host's Dockerfile is /app
 
   host-sc-add-pausers:
     container_name: host-sc-add-pausers
@@ -22,7 +22,7 @@ services:
     # Addresses needs to be mounted even though we don't use them in the task because the PauserSet
     # contract is compiled, and it imports these addresses.
     volumes:
-      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/${HOST_ADDRESS_DIR:-host}:/app/addresses  # workdir in host's Dockerfile is /app
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/${HOST_ADDRESS_DIR:-host}:/app/addresses # workdir in host's Dockerfile is /app
 
   host-sc-trigger-keygen:
     container_name: host-sc-trigger-keygen

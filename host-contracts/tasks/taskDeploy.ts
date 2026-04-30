@@ -13,6 +13,27 @@ import { getRequiredEnvVar } from './utils/loadVariables';
 const ADDRESSES_DIR = path.join(__dirname, '../addresses');
 const HOST_ENV_FILE = path.join(ADDRESSES_DIR, '.env.host');
 const HOST_ADDRESSES_FILE = path.join(ADDRESSES_DIR, 'FHEVMHostAddresses.sol');
+const MISSING_WITH_KMS_GENERATION = '__missing_with_kms_generation__';
+const WITH_KMS_GENERATION_HELP = `Missing or invalid required --with-kms-generation flag.
+
+KMSGeneration is deployed only on the canonical host chain. Use:
+  --with-kms-generation true   when deploying the canonical host chain
+  --with-kms-generation false  when deploying a non-canonical host chain
+
+The no-flag behavior was removed in v0.13 to avoid accidentally deploying KMSGeneration on every host chain.`;
+const LEGACY_DEPLOY_ALL_HOST_CONTRACTS_WARNING = `task:deployLegacyAllHostContracts is deprecated and will be removed after the v0.13 rollout.
+It deploys KMSGeneration and is valid only for canonical-host deployments.
+Use task:deployAllHostContracts --with-kms-generation true instead.`;
+
+function parseWithKmsGeneration(value: unknown): boolean {
+  if (value === 'true') {
+    return true;
+  }
+  if (value === 'false') {
+    return false;
+  }
+  throw new Error(WITH_KMS_GENERATION_HELP);
+}
 
 function ensureAddressesDirectoryExists() {
   fs.mkdirSync(ADDRESSES_DIR, { recursive: true });
@@ -118,43 +139,45 @@ async function waitForUpgradeLanded(
 // All Host Contracts
 ////////////////////////////////////////////////////////////////////////////////
 
-task('task:deployCommonHostContracts').setAction(async function (_, hre) {
-  if (process.env.SOLIDITY_COVERAGE !== 'true') {
-    await hre.run('clean');
-  }
+task('task:deployAllHostContracts')
+  .addOptionalParam(
+    'withKmsGeneration',
+    'Whether to deploy canonical-host-only KMSGeneration. Required: true for canonical host, false for non-canonical host.',
+    MISSING_WITH_KMS_GENERATION,
+    types.string,
+  )
+  .setAction(async function ({ withKmsGeneration }, hre) {
+    const deployKmsGeneration = parseWithKmsGeneration(withKmsGeneration);
 
-  await hre.run('task:deployCommonEmptyUUPSProxies');
-  await hre.run('compile:specific', { contract: 'contracts/immutable' });
-  await hre.run('task:deployPauserSet');
+    if (process.env.SOLIDITY_COVERAGE !== 'true') {
+      await hre.run('clean');
+    }
 
-  // The deployEmptyUUPSProxies tasks may have updated the contracts' addresses in `addresses/*.sol`.
-  // Thus, we must re-compile the contracts with these new addresses, otherwise the old ones will be
-  // used.
-  await hre.run('compile:specific', { contract: 'contracts' });
+    await hre.run('task:deployEmptyUUPSProxies', { withKmsGeneration });
+    await hre.run('compile:specific', { contract: 'contracts/immutable' });
+    await hre.run('task:deployPauserSet');
 
-  await hre.run('task:deployACL');
-  await hre.run('task:deployFHEVMExecutor');
-  await hre.run('task:deployProtocolConfig');
-  await hre.run('task:deployKMSVerifier');
-  await hre.run('task:deployInputVerifier');
-  await hre.run('task:deployHCULimit');
+    // The deployEmptyUUPSProxies task may have updated the contracts' addresses in `addresses/*.sol`.
+    // Thus, we must re-compile the contracts with these new addresses, otherwise the old ones will be
+    // used.
+    await hre.run('compile:specific', { contract: 'contracts' });
 
-  console.log('Common host contracts deployment done!');
-});
+    await hre.run('task:deployACL');
+    await hre.run('task:deployFHEVMExecutor');
+    await hre.run('task:deployProtocolConfig');
+    if (deployKmsGeneration) {
+      await hre.run('task:deployKMSGeneration');
+    }
+    await hre.run('task:deployKMSVerifier');
+    await hre.run('task:deployInputVerifier');
+    await hre.run('task:deployHCULimit');
 
-task('task:deployCanonicalHostContracts').setAction(async function (_, hre) {
-  await hre.run('task:deployCanonicalEmptyUUPSProxies');
-  await hre.run('task:deployKMSGeneration');
+    console.log('Contract deployment done!');
+  });
 
-  console.log('Canonical host contracts deployment done!');
-});
-
-// Alias: keeps existing call sites working. Runs both as if the one chain were canonical.
-task('task:deployAllHostContracts').setAction(async function (_, hre) {
-  await hre.run('task:deployCommonHostContracts');
-  await hre.run('task:deployCanonicalHostContracts');
-
-  console.log('Contract deployment done!');
+task('task:deployLegacyAllHostContracts').setAction(async function (_, hre) {
+  console.warn(LEGACY_DEPLOY_ALL_HOST_CONTRACTS_WARNING);
+  await hre.run('task:deployAllHostContracts', { withKmsGeneration: 'true' });
 });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -187,61 +210,58 @@ async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUp
   return UUPSEmptyAddress;
 }
 
-task('task:deployCommonEmptyUUPSProxies').setAction(async function (
-  taskArguments: TaskArguments,
-  { ethers, upgrades, run },
-) {
-  // Compile the EmptyUUPS proxy contract for ACL
-  await run('compile:specific', { contract: 'contracts/emptyProxyACL' });
+task('task:deployEmptyUUPSProxies')
+  .addOptionalParam(
+    'withKmsGeneration',
+    'Whether to deploy the canonical-host-only KMSGeneration proxy. Required: true for canonical host, false for non-canonical host.',
+    MISSING_WITH_KMS_GENERATION,
+    types.string,
+  )
+  .setAction(async function ({ withKmsGeneration }, { ethers, upgrades, run }) {
+    const deployKmsGeneration = parseWithKmsGeneration(withKmsGeneration);
 
-  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
-  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+    // Compile the EmptyUUPS proxy contract for ACL
+    await run('compile:specific', { contract: 'contracts/emptyProxyACL' });
 
-  // Ensure the addresses directory exists
-  ensureAddressesDirectoryExists();
+    const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
 
-  // Set ACL Address
-  const aclAddress = await deployEmptyUUPSForACL(ethers, upgrades, deployer);
-  await run('task:setACLAddress', { address: aclAddress });
+    // Ensure the addresses directory exists
+    ensureAddressesDirectoryExists();
 
-  // Compile the EmptyUUPS proxy contract for other contracts
-  await run('compile:specific', { contract: 'contracts/emptyProxy' });
+    // Set ACL Address
+    const aclAddress = await deployEmptyUUPSForACL(ethers, upgrades, deployer);
+    await run('task:setACLAddress', { address: aclAddress });
 
-  // Set FHEVMExecutor Address
-  const fhevmExecutorAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setFHEVMExecutorAddress', { address: fhevmExecutorAddress });
+    // Compile the EmptyUUPS proxy contract for other contracts
+    await run('compile:specific', { contract: 'contracts/emptyProxy' });
 
-  // Set KMSVerifier Address
-  const kmsVerifierAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setKMSVerifierAddress', { address: kmsVerifierAddress });
+    // Set FHEVMExecutor Address
+    const fhevmExecutorAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run('task:setFHEVMExecutorAddress', { address: fhevmExecutorAddress });
 
-  // Set InputVerifier Address
-  const inputVerifierAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setInputVerifierAddress', { address: inputVerifierAddress });
+    // Set KMSVerifier Address
+    const kmsVerifierAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run('task:setKMSVerifierAddress', { address: kmsVerifierAddress });
 
-  // Set HCULimit Address
-  const HCULimitAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setHCULimitAddress', { address: HCULimitAddress });
+    // Set InputVerifier Address
+    const inputVerifierAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run('task:setInputVerifierAddress', { address: inputVerifierAddress });
 
-  // Set ProtocolConfig Address
-  const protocolConfigAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setProtocolConfigAddress', { address: protocolConfigAddress });
-});
+    // Set HCULimit Address
+    const HCULimitAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run('task:setHCULimitAddress', { address: HCULimitAddress });
 
-task('task:deployCanonicalEmptyUUPSProxies').setAction(async function (
-  taskArguments: TaskArguments,
-  { ethers, upgrades, run },
-) {
-  ensureAddressesDirectoryExists();
-  await run('compile:specific', { contract: 'contracts/emptyProxy' });
+    // Set ProtocolConfig Address
+    const protocolConfigAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run('task:setProtocolConfigAddress', { address: protocolConfigAddress });
 
-  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
-  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-
-  // Set KMSGeneration Address
-  const kmsGenerationAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setKMSGenerationAddress', { address: kmsGenerationAddress });
-});
+    if (deployKmsGeneration) {
+      // Set KMSGeneration Address
+      const kmsGenerationAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+      await run('task:setKMSGenerationAddress', { address: kmsGenerationAddress });
+    }
+  });
 
 task('task:ensureMigrationProxyAddresses').setAction(async function (_, { ethers, upgrades, run }) {
   ensureAddressesDirectoryExists();
@@ -271,12 +291,6 @@ task('task:ensureMigrationProxyAddresses').setAction(async function (_, { ethers
     const proxyAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
     await run(setterTask, { address: proxyAddress });
   }
-});
-
-// Alias: runs both variants. Kept so existing call sites continue working.
-task('task:deployEmptyUUPSProxies').setAction(async function (_, hre) {
-  await hre.run('task:deployCommonEmptyUUPSProxies');
-  await hre.run('task:deployCanonicalEmptyUUPSProxies');
 });
 
 ////////////////////////////////////////////////////////////////////////////////
