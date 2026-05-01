@@ -98,7 +98,7 @@ export function getBaseEnv(): FheTestBaseEnv {
   }
 
   const testDir = resolve(import.meta.dirname, '../..');
-  const chainName = resolveChainName();
+  const chainName: FheTestChainName = resolveChainName();
 
   // Load shared secrets
   const sharedEnv = parseEnvFile(resolve(testDir, '.env'));
@@ -127,17 +127,13 @@ export function getBaseEnv(): FheTestBaseEnv {
 
   const fheTestAddress = resolveFHETestAddress(chainName);
 
-  let fhevmChain: FhevmChain;
-  if (chainName === 'localhostFhevm') {
-    fhevmChain = localhostFhevm;
-  } else if (chainName === 'sepolia') {
-    fhevmChain = sepolia;
-  } else if (chainName === 'devnet') {
-    fhevmChain = devnet;
-  } else if (chainName === 'mainnet') {
-    fhevmChain = mainnet;
-  } else {
-    throw new Error(`Unsupported chain: "${chainName}". Expected "sepolia", "mainnet", "devnet" or "localhostFhevm".`);
+  const chainMap: Record<string, FhevmChain> = { localhostFhevm, sepolia, devnet, mainnet };
+  const fhevmChain = chainMap[chainName];
+  if (!fhevmChain) {
+    const valid = Object.keys(chainMap)
+      .map((k) => `"${k}"`)
+      .join(', ');
+    throw new Error(`Unsupported chain: "${chainName}". Expected one of ${valid}.`);
   }
 
   _baseEnv = {

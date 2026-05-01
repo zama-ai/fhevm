@@ -2,7 +2,7 @@ import type { FhevmChain } from '@fhevm/sdk/chains';
 import { ethers } from 'ethers';
 import { FHETestABI as FHETestABIv1 } from '../../fheTest/abi-v1.js';
 import { FHETestABI as FHETestABIv2 } from '../../fheTest/abi-v2.js';
-import { getBaseEnv, isV2, type FheTestChainName } from './setupCommon.js';
+import { getBaseEnv, isV2, type FheTestBaseEnv, type FheTestChainName } from './setupCommon.js';
 
 // Re-export for convenience
 export type { FheTestChainName } from './setupCommon.js';
@@ -35,7 +35,7 @@ export type FheTestEthersConfig = {
 // ---------------------------------------------------------------------------
 
 function buildConfig(): FheTestEthersConfig {
-  const env = getBaseEnv();
+  const env: FheTestBaseEnv = getBaseEnv();
 
   const provider = new ethers.JsonRpcProvider(env.rpcUrl);
   const wallet = ethers.HDNodeWallet.fromMnemonic(ethers.Mnemonic.fromPhrase(env.mnemonic));

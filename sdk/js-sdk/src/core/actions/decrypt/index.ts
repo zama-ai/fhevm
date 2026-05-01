@@ -44,3 +44,8 @@ export {
 } from './canDecryptValue.js';
 
 export { type TransportKeyPair } from '../../kms/TransportKeyPair-p.js';
+
+export {
+  type SignDecryptionPermitParameters,
+  type SignDecryptionPermitReturnType,
+} from '../base/signDecryptionPermit.js';

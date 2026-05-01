@@ -1,11 +1,16 @@
 import type { ethers } from 'ethers';
-import type { FheTestEthersConfig } from './setup.js';
-import type { TransportKeyPair } from '@fhevm/sdk/actions/decrypt';
+import type { FheTestEthersConfig } from './setup-ethers.js';
+import type {
+  TransportKeyPair,
+  SignDecryptionPermitReturnType,
+  DecryptValueReturnType,
+} from '@fhevm/sdk/actions/decrypt';
+import type { FhevmEncryptClient, FhevmDecryptClient, TypedValue, EncryptedValue } from '@fhevm/sdk/types';
 import { createFhevmDecryptClient, createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import { getEthersTestConfig } from './setup.js';
+import { getEthersTestConfig } from './setup-ethers.js';
+import type { EncryptValueReturnType } from '@fhevm/sdk/actions/encrypt';
 
-let config: FheTestEthersConfig;
-config = getEthersTestConfig();
+let config: FheTestEthersConfig = getEthersTestConfig();
 setFhevmRuntimeConfig({
   auth: {
     type: 'ApiKeyHeader',
@@ -17,7 +22,7 @@ const tv = { type: 'uint8', value: 123n };
 
 console.log(`--- createFhevmEncryptClient() with chain ${config.chainName}`);
 
-const client = createFhevmEncryptClient({
+const client: FhevmEncryptClient = createFhevmEncryptClient({
   chain: config.fhevmChain,
   provider: config.provider,
 });
@@ -25,13 +30,13 @@ await client.ready;
 
 console.log(`--- encryptValue() value 123 with client on chain ${config.chainName}...`);
 
-const result = await client.encryptValue({
+const result: EncryptValueReturnType = await client.encryptValue({
   contractAddress: config.fheTestAddress,
   userAddress: config.wallet.address,
   value: tv,
 });
 
-const inputHandle = result.encryptedValue;
+const inputHandle: EncryptedValue = result.encryptedValue;
 const makePublic = true;
 console.log(`--- Resulting handle: ${inputHandle}`);
 
@@ -48,7 +53,7 @@ if (receipt?.status !== 1) {
 
 console.log('--- Transaction succeeded');
 
-const decryptClient = createFhevmDecryptClient({
+const decryptClient: FhevmDecryptClient = createFhevmDecryptClient({
   chain: config.fhevmChain,
   provider: config.provider,
 });
@@ -58,14 +63,14 @@ await decryptClient.ready;
 // public decryption test
 console.log('--- readPublicValue()...');
 
-const actual = await decryptClient.readPublicValue({
+const actual: TypedValue = await decryptClient.readPublicValue({
   encryptedValue: result.encryptedValue,
 });
 
 console.log(`--- ReadPublicValue ${tv.type}: ${actual.value}`);
 
 const transportKeyPair: TransportKeyPair = await decryptClient.generateTransportKeyPair();
-const signedPermit = await decryptClient.signDecryptionPermit({
+const signedPermit: SignDecryptionPermitReturnType = await decryptClient.signDecryptionPermit({
   transportKeyPair: transportKeyPair,
   contractAddresses: [config.fheTestAddress],
   durationDays: 1,
@@ -76,7 +81,7 @@ const signedPermit = await decryptClient.signDecryptionPermit({
 
 console.log('--- decryptValue()...');
 
-const decryptedValue = await decryptClient.decryptValue({
+const decryptedValue: DecryptValueReturnType = await decryptClient.decryptValue({
   encryptedValue: inputHandle,
   contractAddress: config.fheTestAddress,
   transportKeyPair: transportKeyPair,
