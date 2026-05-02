@@ -1,3 +1,4 @@
+mod db_key_cache;
 mod dependence_chain;
 mod errors;
 mod event_helpers;

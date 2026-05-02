@@ -731,7 +731,7 @@ pub async fn write_atomic_u64_bench_params(
     display_name: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let db_key_cache = fhevm_engine_common::db_keys::DbKeyCache::new(100)?;
-    let key = db_key_cache.fetch_latest(pool).await?;
+    let key = db_key_cache.fetch_latest_from_pool(pool).await?;
     let params = key
         .cks
         .ok_or_else(|| std::io::Error::other("latest key is missing cks"))?
