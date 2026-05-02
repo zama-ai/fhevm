@@ -205,7 +205,7 @@ async fn execute_worker(
 
     let latest_key = Arc::new(
         db_key_cache
-            .fetch_latest(&pool)
+            .fetch_latest_from_pool(&pool)
             .await
             .map_err(|_| ExecutionError::DbError(sqlx::Error::RowNotFound))?,
     );

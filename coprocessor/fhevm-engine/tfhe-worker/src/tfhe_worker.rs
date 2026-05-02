@@ -113,7 +113,7 @@ async fn tfhe_worker_cycle(
 
     #[cfg(feature = "bench")]
     {
-        let _ = db_key_cache.fetch_latest(&pool).await?;
+        let _ = db_key_cache.fetch_latest_from_pool(&pool).await?;
     }
     let mut immediately_poll_more_work = false;
     let mut no_progress_cycles = 0;
