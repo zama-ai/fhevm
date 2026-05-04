@@ -1,5 +1,4 @@
 contracts.version: "v0.10.0"
-ciphertext_commits.address: "0xd82cF70FC102028cd01acB87D0E107780ae4F41F"
 decryption.address: "0x0f6024a97684f7d90ddb0fAAD79cB15F2C888D24"
 gateway_config.address: "0xDE537Be194777A56f8B19d14079E6a78249390ab"
 input_verification.address: "0xcB1bB072f38bdAF0F328CdEf1Fc6eDa1DF029287"
