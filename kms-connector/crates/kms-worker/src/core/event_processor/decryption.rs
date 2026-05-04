@@ -617,9 +617,6 @@ impl UserDecryptionExtraData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use user_decryption_signature::{
-        ERC1271_MAGIC_VALUE, compute_user_decrypt_digest, default_user_decrypt_domain,
-    };
     use alloy::{
         providers::{ProviderBuilder, mock::Asserter},
         signers::{SignerSync, local::PrivateKeySigner},
@@ -633,6 +630,9 @@ mod tests {
     };
     use fhevm_host_bindings::acl::ACL;
     use rstest::rstest;
+    use user_decryption_signature::{
+        ERC1271_MAGIC_VALUE, compute_user_decrypt_digest, default_user_decrypt_domain,
+    };
 
     enum ExpectedOutcome {
         Ok,
