@@ -34,42 +34,22 @@ async function waitForUpgradeLanded(
   throw new Error(`${contractLabel} upgrade did not land after 30s of polling`);
 }
 
-const MISSING_WITH_KMS_GENERATION = '__missing_with_kms_generation__';
-const WITH_KMS_GENERATION_HELP = `Missing or invalid required --with-kms-generation flag.
-
-KMSGeneration is deployed only on the canonical host chain. Use:
-  --with-kms-generation true   when deploying the canonical host chain
-  --with-kms-generation false  when deploying a non-canonical host chain
-
-The no-flag behavior was removed in v0.13 to avoid accidentally deploying KMSGeneration on every host chain.`;
 const LEGACY_DEPLOY_ALL_HOST_CONTRACTS_WARNING = `task:deployLegacyAllHostContracts is deprecated and will be removed after the v0.13 rollout.
 It deploys KMSGeneration and is valid only for canonical-host deployments.
 Use task:deployAllHostContracts --with-kms-generation true instead.`;
-
-function parseWithKmsGeneration(value: unknown): boolean {
-  if (value === 'true') {
-    return true;
-  }
-  if (value === 'false') {
-    return false;
-  }
-  throw new Error(WITH_KMS_GENERATION_HELP);
-}
 
 ////////////////////////////////////////////////////////////////////////////////
 // All Host Contracts
 ////////////////////////////////////////////////////////////////////////////////
 
 task('task:deployAllHostContracts')
-  .addOptionalParam(
+  .addParam(
     'withKmsGeneration',
     'Whether to deploy canonical-host-only KMSGeneration. Required: true for canonical host, false for non-canonical host.',
-    MISSING_WITH_KMS_GENERATION,
-    types.string,
+    undefined,
+    types.boolean,
   )
-  .setAction(async function ({ withKmsGeneration }, hre) {
-    const deployKmsGeneration = parseWithKmsGeneration(withKmsGeneration);
-
+  .setAction(async function ({ withKmsGeneration }: { withKmsGeneration: boolean }, hre) {
     if (process.env.SOLIDITY_COVERAGE !== 'true') {
       await hre.run('clean');
     }
@@ -86,7 +66,7 @@ task('task:deployAllHostContracts')
     await hre.run('task:deployACL');
     await hre.run('task:deployFHEVMExecutor');
     await hre.run('task:deployProtocolConfig');
-    if (deployKmsGeneration) {
+    if (withKmsGeneration) {
       await hre.run('task:deployKMSGeneration');
     }
     await hre.run('task:deployKMSVerifier');
@@ -99,7 +79,7 @@ task('task:deployAllHostContracts')
 
 task('task:deployLegacyAllHostContracts').setAction(async function (_, hre) {
   console.warn(LEGACY_DEPLOY_ALL_HOST_CONTRACTS_WARNING);
-  await hre.run('task:deployAllHostContracts', { withKmsGeneration: 'true' });
+  await hre.run('task:deployAllHostContracts', { withKmsGeneration: true });
 });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -133,15 +113,13 @@ async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUp
 }
 
 task('task:deployEmptyUUPSProxies')
-  .addOptionalParam(
+  .addParam(
     'withKmsGeneration',
     'Whether to deploy the canonical-host-only KMSGeneration proxy. Required: true for canonical host, false for non-canonical host.',
-    MISSING_WITH_KMS_GENERATION,
-    types.string,
+    undefined,
+    types.boolean,
   )
-  .setAction(async function ({ withKmsGeneration }, { ethers, upgrades, run }) {
-    const deployKmsGeneration = parseWithKmsGeneration(withKmsGeneration);
-
+  .setAction(async function ({ withKmsGeneration }: { withKmsGeneration: boolean }, { ethers, upgrades, run }) {
     // Compile the EmptyUUPS proxy contract for ACL
     await run('compile:specific', { contract: 'fhevmTemp/contracts/emptyProxyACL' });
     const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
@@ -171,7 +149,7 @@ task('task:deployEmptyUUPSProxies')
     const protocolConfigAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
     await run('task:setProtocolConfigAddress', { address: protocolConfigAddress });
 
-    if (deployKmsGeneration) {
+    if (withKmsGeneration) {
       const kmsGenerationAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
       await run('task:setKMSGenerationAddress', { address: kmsGenerationAddress });
     }
