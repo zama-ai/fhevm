@@ -8,6 +8,7 @@ import {
   requiresGatewayKmsGenerationAddress,
   requiresMultichainAclAddress,
   requiresModernHostAddressArtifacts,
+  supportsHostListenerConsumer,
   validateBundleCompatibility,
 } from "../compat/compat";
 import { driftDatabaseName } from "../drift";
