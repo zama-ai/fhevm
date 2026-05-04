@@ -103,9 +103,9 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     db.tick.update();
 
     info!("Consumer registering contracts");
-    client.register_contracts(&contracts).await.unwrap();
+    client.register_contracts(&contracts).await?;
     info!("Consumer ensure queue");
-    client.ensure_consumer().await.unwrap();
+    client.ensure_consumer().await?;
 
     let health_check = HealthCheck {
         blockchain_timeout_tick: blockchain_timeout_tick.clone(),
