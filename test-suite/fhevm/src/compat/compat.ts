@@ -33,7 +33,7 @@ export const COMPAT_MATRIX = {
   ],
   legacyShims: [
     { key: "COPROCESSOR_GW_LISTENER_VERSION", below: [0, 12, 0] as CompatSemver, profile: "legacy-gw-listener-no-drift-addresses", unparsed: "modern" as const },
-    { key: "COPROCESSOR_GW_LISTENER_VERSION", below: [0, 12, 0] as CompatSemver, profile: "legacy-gw-listener-kms-generation-address", unparsed: "modern" as const },
+    { key: "COPROCESSOR_GW_LISTENER_VERSION", below: [0, 13, 0] as CompatSemver, profile: "legacy-gw-listener-kms-generation-address", unparsed: "modern" as const },
     { key: "COPROCESSOR_HOST_LISTENER_VERSION", below: [0, 13, 0] as CompatSemver, profile: "legacy-host-listener-no-kms-generation-address", unparsed: "modern" as const },
     { key: "COPROCESSOR_HOST_LISTENER_VERSION", below: [0, 12, 0] as CompatSemver, profile: "legacy-coprocessor-api-keys", unparsed: "modern" as const },
     { key: "COPROCESSOR_TX_SENDER_VERSION", below: [0, 12, 0] as CompatSemver, profile: "legacy-tx-sender-gateway-flags", unparsed: "modern" as const },

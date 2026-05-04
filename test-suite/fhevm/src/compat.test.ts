@@ -79,6 +79,25 @@ describe("compat", () => {
     expect(policy.connectorEnv.KMS_CONNECTOR_CHAIN_ID).toBe("KMS_CONNECTOR_GATEWAY_CHAIN_ID");
   });
 
+  test("adds kms-generation-address for v0.12 gateway listener images", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-supported",
+        lockName: "latest-supported.json",
+        env: {
+          COPROCESSOR_GW_LISTENER_VERSION: "v0.12.1",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.coprocessorArgs["gw-listener"]).toContainEqual([
+      "--kms-generation-address",
+      { env: "KMS_GENERATION_ADDRESS" },
+    ]);
+  });
+
   test("drops kms-generation-address for old host listener images", () => {
     const policy = compatPolicyForState({
       versions: {
