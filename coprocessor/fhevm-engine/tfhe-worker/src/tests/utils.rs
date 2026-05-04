@@ -187,7 +187,7 @@ pub async fn latest_db_key(pool: &sqlx::PgPool) -> (DbKey, Crs) {
     let crc_cache = CrsCache::load(pool).await.expect("load crs cache");
     (
         db_key_cache
-            .fetch_latest(pool)
+            .fetch_latest_from_pool(pool)
             .await
             .expect("fetch latest db key"),
         crc_cache.get_latest().expect("fetch latest CRS").clone(),
