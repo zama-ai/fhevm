@@ -149,15 +149,25 @@ HCU_LIMIT=0x233ff88A48c172d29F675403e6A8e302b0F032D9
 
 # fhevm-cli
 
-```sh
-cd <root>/test-suite/e2e
 ```
+cd <root>/test-suite/e2e
 
-`./fhevm-cli up --help`
-`./fhevm-cli up --override test-suite` : use local test suite
-`./fhevm-cli upgrade test-suite`: rebuild test suite
-`./fhevm-cli test --grep BBB`
-`./fhevm-cli up --target latest-supported`
+./fhevm-cli up --help
+
+# Use local test suite
+./fhevm-cli up --override test-suite
+
+# Rebuild test suite
+./fhevm-cli upgrade test-suite
+
+# Run full test suite
+./fhevm-cli test standard
+
+# Run specific test
+./fhevm-cli test --grep BBB
+
+./fhevm-cli up --target latest-supported
+```
 
 ```json
 {
