@@ -3312,153 +3312,100 @@ pub fn perform_fhe_operation_impl(
                     input_types: vec![],
                 });
             }
+            // Empty set: trivially false without any PBS.
+            if input_operands.len() == 1 {
+                return Ok(SupportedFheCiphertexts::FheBool(
+                    FheBool::try_encrypt_trivial(false).expect("trivial encrypt bool"),
+                ));
+            }
+            let type_err = || FhevmError::UnsupportedFheTypes {
+                fhe_operation: format!("{:?}: set elements must match value type", fhe_operation),
+                input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+            };
             match &input_operands[0] {
                 SupportedFheCiphertexts::FheUint8(value) => {
-                    let result = input_operands[1..]
+                    let set = input_operands[1..]
                         .iter()
                         .map(|op| match op {
-                            SupportedFheCiphertexts::FheUint8(ct) => Ok(value.eq(ct)),
-                            _ => Err(FhevmError::UnsupportedFheTypes {
-                                fhe_operation: format!(
-                                    "{:?}: set elements must match value type",
-                                    fhe_operation
-                                ),
-                                input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-                            }),
+                            SupportedFheCiphertexts::FheUint8(ct) => Ok(ct.clone()),
+                            _ => Err(type_err()),
                         })
-                        .collect::<Result<Vec<FheBool>, _>>()?
-                        .into_iter()
-                        .reduce(|acc, eq| acc | eq)
-                        .unwrap_or(
-                            FheBool::try_encrypt_trivial(false).expect("trivial encrypt bool"),
-                        );
-                    Ok(SupportedFheCiphertexts::FheBool(result))
+                        .collect::<Result<Vec<FheUint8>, _>>()?;
+                    Ok(SupportedFheCiphertexts::FheBool(FheUint8::contains(
+                        &set, value,
+                    )))
                 }
                 SupportedFheCiphertexts::FheUint16(value) => {
-                    let result = input_operands[1..]
+                    let set = input_operands[1..]
                         .iter()
                         .map(|op| match op {
-                            SupportedFheCiphertexts::FheUint16(ct) => Ok(value.eq(ct)),
-                            _ => Err(FhevmError::UnsupportedFheTypes {
-                                fhe_operation: format!(
-                                    "{:?}: set elements must match value type",
-                                    fhe_operation
-                                ),
-                                input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-                            }),
+                            SupportedFheCiphertexts::FheUint16(ct) => Ok(ct.clone()),
+                            _ => Err(type_err()),
                         })
-                        .collect::<Result<Vec<FheBool>, _>>()?
-                        .into_iter()
-                        .reduce(|acc, eq| acc | eq)
-                        .unwrap_or(
-                            FheBool::try_encrypt_trivial(false).expect("trivial encrypt bool"),
-                        );
-                    Ok(SupportedFheCiphertexts::FheBool(result))
+                        .collect::<Result<Vec<FheUint16>, _>>()?;
+                    Ok(SupportedFheCiphertexts::FheBool(FheUint16::contains(
+                        &set, value,
+                    )))
                 }
                 SupportedFheCiphertexts::FheUint32(value) => {
-                    let result = input_operands[1..]
+                    let set = input_operands[1..]
                         .iter()
                         .map(|op| match op {
-                            SupportedFheCiphertexts::FheUint32(ct) => Ok(value.eq(ct)),
-                            _ => Err(FhevmError::UnsupportedFheTypes {
-                                fhe_operation: format!(
-                                    "{:?}: set elements must match value type",
-                                    fhe_operation
-                                ),
-                                input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-                            }),
+                            SupportedFheCiphertexts::FheUint32(ct) => Ok(ct.clone()),
+                            _ => Err(type_err()),
                         })
-                        .collect::<Result<Vec<FheBool>, _>>()?
-                        .into_iter()
-                        .reduce(|acc, eq| acc | eq)
-                        .unwrap_or(
-                            FheBool::try_encrypt_trivial(false).expect("trivial encrypt bool"),
-                        );
-                    Ok(SupportedFheCiphertexts::FheBool(result))
+                        .collect::<Result<Vec<FheUint32>, _>>()?;
+                    Ok(SupportedFheCiphertexts::FheBool(FheUint32::contains(
+                        &set, value,
+                    )))
                 }
                 SupportedFheCiphertexts::FheUint64(value) => {
-                    let result = input_operands[1..]
+                    let set = input_operands[1..]
                         .iter()
                         .map(|op| match op {
-                            SupportedFheCiphertexts::FheUint64(ct) => Ok(value.eq(ct)),
-                            _ => Err(FhevmError::UnsupportedFheTypes {
-                                fhe_operation: format!(
-                                    "{:?}: set elements must match value type",
-                                    fhe_operation
-                                ),
-                                input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-                            }),
+                            SupportedFheCiphertexts::FheUint64(ct) => Ok(ct.clone()),
+                            _ => Err(type_err()),
                         })
-                        .collect::<Result<Vec<FheBool>, _>>()?
-                        .into_iter()
-                        .reduce(|acc, eq| acc | eq)
-                        .unwrap_or(
-                            FheBool::try_encrypt_trivial(false).expect("trivial encrypt bool"),
-                        );
-                    Ok(SupportedFheCiphertexts::FheBool(result))
+                        .collect::<Result<Vec<FheUint64>, _>>()?;
+                    Ok(SupportedFheCiphertexts::FheBool(FheUint64::contains(
+                        &set, value,
+                    )))
                 }
                 SupportedFheCiphertexts::FheUint128(value) => {
-                    let result = input_operands[1..]
+                    let set = input_operands[1..]
                         .iter()
                         .map(|op| match op {
-                            SupportedFheCiphertexts::FheUint128(ct) => Ok(value.eq(ct)),
-                            _ => Err(FhevmError::UnsupportedFheTypes {
-                                fhe_operation: format!(
-                                    "{:?}: set elements must match value type",
-                                    fhe_operation
-                                ),
-                                input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-                            }),
+                            SupportedFheCiphertexts::FheUint128(ct) => Ok(ct.clone()),
+                            _ => Err(type_err()),
                         })
-                        .collect::<Result<Vec<FheBool>, _>>()?
-                        .into_iter()
-                        .reduce(|acc, eq| acc | eq)
-                        .unwrap_or(
-                            FheBool::try_encrypt_trivial(false).expect("trivial encrypt bool"),
-                        );
-                    Ok(SupportedFheCiphertexts::FheBool(result))
+                        .collect::<Result<Vec<FheUint128>, _>>()?;
+                    Ok(SupportedFheCiphertexts::FheBool(FheUint128::contains(
+                        &set, value,
+                    )))
                 }
                 SupportedFheCiphertexts::FheUint160(value) => {
-                    let result = input_operands[1..]
+                    let set = input_operands[1..]
                         .iter()
                         .map(|op| match op {
-                            SupportedFheCiphertexts::FheUint160(ct) => Ok(value.eq(ct)),
-                            _ => Err(FhevmError::UnsupportedFheTypes {
-                                fhe_operation: format!(
-                                    "{:?}: set elements must match value type",
-                                    fhe_operation
-                                ),
-                                input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-                            }),
+                            SupportedFheCiphertexts::FheUint160(ct) => Ok(ct.clone()),
+                            _ => Err(type_err()),
                         })
-                        .collect::<Result<Vec<FheBool>, _>>()?
-                        .into_iter()
-                        .reduce(|acc, eq| acc | eq)
-                        .unwrap_or(
-                            FheBool::try_encrypt_trivial(false).expect("trivial encrypt bool"),
-                        );
-                    Ok(SupportedFheCiphertexts::FheBool(result))
+                        .collect::<Result<Vec<FheUint160>, _>>()?;
+                    Ok(SupportedFheCiphertexts::FheBool(FheUint160::contains(
+                        &set, value,
+                    )))
                 }
                 SupportedFheCiphertexts::FheUint256(value) => {
-                    let result = input_operands[1..]
+                    let set = input_operands[1..]
                         .iter()
                         .map(|op| match op {
-                            SupportedFheCiphertexts::FheUint256(ct) => Ok(value.eq(ct)),
-                            _ => Err(FhevmError::UnsupportedFheTypes {
-                                fhe_operation: format!(
-                                    "{:?}: set elements must match value type",
-                                    fhe_operation
-                                ),
-                                input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-                            }),
+                            SupportedFheCiphertexts::FheUint256(ct) => Ok(ct.clone()),
+                            _ => Err(type_err()),
                         })
-                        .collect::<Result<Vec<FheBool>, _>>()?
-                        .into_iter()
-                        .reduce(|acc, eq| acc | eq)
-                        .unwrap_or(
-                            FheBool::try_encrypt_trivial(false).expect("trivial encrypt bool"),
-                        );
-                    Ok(SupportedFheCiphertexts::FheBool(result))
+                        .collect::<Result<Vec<FheUint256>, _>>()?;
+                    Ok(SupportedFheCiphertexts::FheBool(FheUint256::contains(
+                        &set, value,
+                    )))
                 }
                 _ => Err(FhevmError::UnsupportedFheTypes {
                     fhe_operation: format!("{:?}", fhe_operation),
