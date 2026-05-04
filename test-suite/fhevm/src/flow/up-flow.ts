@@ -578,7 +578,7 @@ export const runStep = async (state: State, step: StepName) => {
         "KMS_VERIFIER_CONTRACT_ADDRESS",
         "INPUT_VERIFIER_CONTRACT_ADDRESS",
         "HCU_LIMIT_CONTRACT_ADDRESS",
-        ...(requiresLegacyGatewayKmsGenerationAddress(state) ? [] : ["KMS_GENERATION_CONTRACT_ADDRESS"]),
+        ...(requiresLegacyGatewayKmsGenerationAddress(state) ? [] : ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", "KMS_GENERATION_CONTRACT_ADDRESS"]),
       ]);
       for (const chain of extraHostChains(state)) {
         const scKey = chain.sc;
@@ -591,7 +591,7 @@ export const runStep = async (state: State, step: StepName) => {
             "KMS_VERIFIER_CONTRACT_ADDRESS",
             "INPUT_VERIFIER_CONTRACT_ADDRESS",
             "HCU_LIMIT_CONTRACT_ADDRESS",
-            ...(requiresLegacyGatewayKmsGenerationAddress(state) ? [] : ["KMS_GENERATION_CONTRACT_ADDRESS"]),
+            ...(requiresLegacyGatewayKmsGenerationAddress(state) ? [] : ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", "KMS_GENERATION_CONTRACT_ADDRESS"]),
           ]);
         });
         await timed(`[multi-chain] ${scKey}-add-pausers`, async () => {
