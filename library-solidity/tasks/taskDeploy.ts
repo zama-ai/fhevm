@@ -192,28 +192,33 @@ task('task:deployFHEVMExecutor').setAction(async function (_taskArguments: TaskA
 // KMSVerifier
 ////////////////////////////////////////////////////////////////////////////////
 
-function buildKmsNodes() {
-  const numSigners = +getRequiredEnvVar('NUM_KMS_NODES');
-  const nodes = [];
-  for (let idx = 0; idx < numSigners; idx++) {
-    const signerAddress = getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`);
-    nodes.push({
-      txSenderAddress: signerAddress,
-      signerAddress,
-      ipAddress: '',
-      storageUrl: '',
-    });
+function buildKmsNodes(
+  useAddress: boolean,
+): { txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }[] {
+  const numNodes = +getRequiredEnvVar('NUM_KMS_NODES');
+  const nodes: { txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }[] = [];
+  for (let idx = 0; idx < numNodes; idx++) {
+    const txSenderAddress = getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`);
+    let signerAddress: string;
+    if (!useAddress) {
+      const privKeySigner = getRequiredEnvVar(`PRIVATE_KEY_KMS_SIGNER_${idx}`);
+      signerAddress = new Wallet(privKeySigner).address;
+    } else {
+      signerAddress = getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`);
+    }
+    const ipAddress = process.env[`KMS_NODE_IP_${idx}`] || '';
+    const storageUrl = getRequiredEnvVar(`KMS_NODE_STORAGE_URL_${idx}`);
+    nodes.push({ txSenderAddress, signerAddress, ipAddress, storageUrl });
   }
   return nodes;
 }
 
-function buildKmsThresholds() {
-  const threshold = +getRequiredEnvVar('KMS_THRESHOLD');
+export function buildKmsThresholds() {
   return {
-    publicDecryption: threshold,
-    userDecryption: threshold,
-    kmsGen: threshold,
-    mpc: threshold,
+    publicDecryption: +getRequiredEnvVar('PUBLIC_DECRYPTION_THRESHOLD'),
+    userDecryption: +getRequiredEnvVar('USER_DECRYPTION_THRESHOLD'),
+    kmsGen: +getRequiredEnvVar('KMS_GEN_THRESHOLD'),
+    mpc: +getRequiredEnvVar('MPC_THRESHOLD'),
   };
 }
 
@@ -241,27 +246,34 @@ task('task:deployKMSVerifier').setAction(async function (_taskArguments: TaskArg
 // ProtocolConfig
 ////////////////////////////////////////////////////////////////////////////////
 
-task('task:deployProtocolConfig').setAction(async function (_taskArguments: TaskArguments, hre) {
-  const { ethers, upgrades } = hre;
-  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
-  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  const newImplem = await ethers.getContractFactory('fhevmTemp/contracts/ProtocolConfig.sol:ProtocolConfig', deployer);
-  const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
-  const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
-  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+task('task:deployProtocolConfig')
+  .addOptionalParam(
+    'useAddress',
+    'Use addresses instead of private keys env variables for kms signers',
+    true,
+    types.boolean,
+  )
+  .setAction(async function (taskArguments: TaskArguments, hre) {
+    const { ethers, upgrades } = hre;
+    const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+    const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+    const newImplem = await ethers.getContractFactory('fhevmTemp/contracts/ProtocolConfig.sol:ProtocolConfig', deployer);
+    const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
+    const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+    const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
 
-  await upgrades.upgradeProxy(proxy, newImplem, {
-    call: {
-      fn: 'initializeFromEmptyProxy',
-      args: [buildKmsNodes(), buildKmsThresholds()],
-    },
+    await upgrades.upgradeProxy(proxy, newImplem, {
+      call: {
+        fn: 'initializeFromEmptyProxy',
+        args: [buildKmsNodes(taskArguments.useAddress), buildKmsThresholds()],
+      },
+    });
+    // upgrades.upgradeProxy can return before the upgradeToAndCall tx is mined on interval-mining
+    // networks. Wait until the new implementation is observable on-chain.
+    await waitForUpgradeLanded(hre, proxyAddress, 'ProtocolConfig');
+    console.info('ProtocolConfig code set successfully at address:', proxyAddress);
   });
-  // upgrades.upgradeProxy can return before the upgradeToAndCall tx is mined on interval-mining
-  // networks. Wait until the new implementation is observable on-chain.
-  await waitForUpgradeLanded(hre, proxyAddress, 'ProtocolConfig');
-  console.info('ProtocolConfig code set successfully at address:', proxyAddress);
-});
 
 ////////////////////////////////////////////////////////////////////////////////
 // KMSGeneration
