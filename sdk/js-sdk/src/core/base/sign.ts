@@ -16,12 +16,13 @@ export function sign({ hash, privateKey }: { readonly hash: BytesHex; readonly p
     throw new Error('Unexpected signature length');
   }
 
-  const recovery = sig[64];
+  // @noble/curves v2 'recovered' format: [recovery (1 byte)] || [r (32 bytes)] || [s (32 bytes)]
+  const recovery = sig[0];
   if (recovery !== 0 && recovery !== 1) {
     throw new Error('Unexpected signature recovery value');
   }
 
-  const signatureHex = `0x${bytesToHexNo0x(sig.subarray(0, 64))}${recovery === 0 ? '1b' : '1c'}` as BytesHex;
+  const signatureHex = `0x${bytesToHexNo0x(sig.subarray(1, 65))}${recovery === 0 ? '1b' : '1c'}` as BytesHex;
 
   if (signatureHex.length !== 2 + 130) {
     throw new Error('Unexpected signature length');
