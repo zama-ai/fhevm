@@ -100,7 +100,7 @@ on:
         type: string
       scenario:
         description: "Deployment scenario (e.g. two-of-three, two-of-three-multi-chain)"
-        default: "two-of-three"
+        default: "two-of-three-multi-chain"
         type: string
       test-profile:
         description: "Named test profile to run instead of the default standard suite"
@@ -152,7 +152,7 @@ jobs:
       RELAYER_VERSION: ${{ inputs.relayer-version }}
       CORE_VERSION: ${{ inputs.kms-core-version }}
       ORCHESTRATED: ${{ inputs.orchestrated && 'true' || 'false' }}
-      SCENARIO: ${{ inputs.scenario || 'two-of-three' }}
+      SCENARIO: ${{ inputs.scenario || 'two-of-three-multi-chain' }}
       TEST_PROFILE: ${{ inputs.test-profile || 'standard' }}
     runs-on: large_ubuntu_32
     steps:

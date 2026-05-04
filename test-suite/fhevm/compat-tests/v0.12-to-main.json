@@ -108,6 +108,6 @@
     "COPROCESSOR_SNS_WORKER": ["COPROCESSOR_SNS_WORKER_VERSION"]
   },
   "execution": {
-    "scenario": "two-of-two"
+    "scenario": "two-of-three-multi-chain"
   }
 }
