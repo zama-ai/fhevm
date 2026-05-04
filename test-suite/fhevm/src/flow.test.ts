@@ -30,6 +30,7 @@ const completeState = (): State => ({
       COPROCESSOR_TFHE_WORKER_VERSION: "02f6cc0",
       COPROCESSOR_ZKPROOF_WORKER_VERSION: "02f6cc0",
       COPROCESSOR_SNS_WORKER_VERSION: "02f6cc0",
+      LISTENER_CORE_VERSION: "02f6cc0",
       CONNECTOR_DB_MIGRATION_VERSION: "02f6cc0",
       CONNECTOR_GW_LISTENER_VERSION: "02f6cc0",
       CONNECTOR_KMS_WORKER_VERSION: "02f6cc0",
@@ -439,6 +440,7 @@ describe("runtime helpers", () => {
     state.overrides = OVERRIDE_GROUPS.map((group) => ({ group }));
     const bundle = displayedBundle(state.versions, state.overrides);
     expect(bundle.env.GATEWAY_VERSION).toBe("LOCAL BUILD");
+    expect(bundle.env.LISTENER_CORE_VERSION).toBe("LOCAL BUILD");
     expect(bundle.env.RELAYER_VERSION).toBe("LOCAL BUILD");
     expect(bundle.env.TEST_SUITE_VERSION).toBe("LOCAL BUILD");
     expect(bundle.env.CORE_VERSION).toBe("c57f52f");

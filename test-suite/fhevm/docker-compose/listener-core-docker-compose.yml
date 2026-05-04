@@ -42,7 +42,7 @@ services:
     # build:
     #   context: ../../../listener
     #   dockerfile: Dockerfile
-    image: ghcr.io/zama-ai/fhevm/listener/listener-core:${COPROCESSOR_HOST_LISTENER_VERSION}
+    image: ghcr.io/zama-ai/fhevm/listener/listener-core:${LISTENER_CORE_VERSION}
     container_name: listener-publisher-for-anvil
     profiles: [listener-publisher-for-anvil]
     depends_on:

@@ -46,6 +46,10 @@ on:
         description: "Coprocessor ZKProof Worker Image Version"
         default: ""
         type: string
+      listener-core-version:
+        description: "Listener Core Image Version"
+        default: ""
+        type: string
       gateway-version:
         description: "Gateway version"
         default: ""
@@ -141,6 +145,7 @@ jobs:
       COPROCESSOR_TFHE_WORKER_VERSION: ${{ inputs.coprocessor-tfhe-worker-version }}
       COPROCESSOR_SNS_WORKER_VERSION: ${{ inputs.coprocessor-sns-worker-version }}
       COPROCESSOR_ZKPROOF_WORKER_VERSION: ${{ inputs.coprocessor-zkproof-worker-version }}
+      LISTENER_CORE_VERSION: ${{ inputs.listener-core-version }}
       GATEWAY_VERSION: ${{ inputs.gateway-version }}
       HOST_VERSION: ${{ inputs.host-version }}
       CONNECTOR_DB_MIGRATION_VERSION: ${{ inputs.connector-db-migration-version }}
