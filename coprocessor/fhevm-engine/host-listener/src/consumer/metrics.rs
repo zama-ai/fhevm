@@ -8,7 +8,7 @@ pub(crate) static BLOCKS_PROCESSED: LazyLock<IntCounterVec> = LazyLock::new(
             "Number of blocks processed successfully by the host-listener consumer",
             &["chain_id"]
         )
-        .unwrap()
+        .expect("host_consumer_blocks_processed metric must register")
     },
 );
 
@@ -18,7 +18,7 @@ pub(crate) static DB_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| {
         "Number of database errors encountered by the host-listener consumer",
         &["chain_id"]
     )
-    .unwrap()
+    .expect("host_consumer_db_errors metric must register")
 });
 
 pub(crate) fn inc_blocks_processed(chain_id: &str, count: u64) {
