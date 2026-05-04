@@ -76,16 +76,6 @@ async function assertContractMatchesVersionPrefix(
   }
 }
 
-async function readView<T>(errorMessage: string, read: () => Promise<T>): Promise<T> {
-  try {
-    return await read();
-  } catch (err) {
-    const wrapped = new Error(`${errorMessage} (${formatError(err)})`) as Error & { cause?: unknown };
-    wrapped.cause = err;
-    throw wrapped;
-  }
-}
-
 // OZ upgrades' upgradeProxy can return before the upgradeToAndCall tx is mined on
 // interval-mining networks. Poll until the new implementation answers a
 // state-dependent view.
@@ -521,11 +511,17 @@ task('task:assertNoPendingKeyManagementRequest')
       ],
       hre.ethers.provider,
     );
-    const readKmsStatusView = <T>(viewLabel: string, read: () => Promise<T>) =>
-      readView(
-        `Failed reading ${viewLabel} from KMSGeneration at ${kmsGenAddress}. Re-check the configured address and confirm this KMSGeneration version exposes ${viewLabel}.`,
-        read,
-      );
+    const readKmsStatusView = async <T>(viewLabel: string, read: () => Promise<T>): Promise<T> => {
+      try {
+        return await read();
+      } catch (err) {
+        const wrapped = new Error(
+          `Failed reading ${viewLabel} from KMSGeneration at ${kmsGenAddress}. Re-check the configured address and confirm this KMSGeneration version exposes ${viewLabel}. (${formatError(err)})`,
+        ) as Error & { cause?: unknown };
+        wrapped.cause = err;
+        throw wrapped;
+      }
+    };
 
     const keyCounter = await readKmsStatusView('getKeyCounter()', () => kmsGen.getKeyCounter());
     const crsCounter = await readKmsStatusView('getCrsCounter()', () => kmsGen.getCrsCounter());
