@@ -1,7 +1,9 @@
 [package]
+authors = ["Zama"]
 name = "user-decryption-signature"
-version = "0.1.0"
+version = "0.14.0"
 edition = "2024"
+license = "BSD-3-Clause-Clear"
 
 [dependencies]
 fhevm_gateway_bindings = { path = "../../gateway-contracts/rust_bindings", default-features = false }

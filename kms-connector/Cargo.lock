@@ -7130,7 +7130,7 @@ checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 
 [[package]]
 name = "user-decryption-signature"
-version = "0.1.0"
+version = "0.14.0"
 dependencies = [
  "alloy",
  "fhevm_gateway_bindings",
