@@ -9,7 +9,6 @@ use tracing::{debug, error, info, warn};
 use broker::{Broker, Publisher};
 
 use primitives::event::{BlockFlow, CatchupPayload, ReorgBacktrackEvent};
-use primitives::routing;
 
 use super::publisher::{self, PublisherError};
 use crate::config::{BlockStartConfig, BlockchainConfig, PublishConfig};
@@ -935,28 +934,19 @@ impl EvmListener {
     }
 
     /// Catchup orchestrator: take an arbitrarily-large user-facing
-    /// [`CatchupPayload`], clamp it to the current chain head, and fan it out
-    /// into bounded sub-payloads on the `range-catchup` queue. Each
-    /// sub-payload triggers one [`Self::run_range_catchup`] invocation
-    /// downstream.
+    /// [`CatchupPayload`], clamp it to the current chain head, and **compute**
+    /// the bounded sub-payloads to publish on `range-catchup`. The handler
+    /// (the broker boundary) is responsible for actually publishing them.
     ///
     /// # Behavior
     /// - Fetches the current chain height once (the only RPC call here).
-    /// - If `block_start > chain_height` → no-op `Ok(())`. Catchup is a
-    ///   bounded one-shot — the user asked for blocks that don't exist yet.
-    ///   The caller can re-issue the request later.
+    /// - If `block_start > chain_height` → returns an empty `Vec` (skip).
+    ///   Catchup is a bounded one-shot — the user asked for blocks that don't
+    ///   exist yet. The caller can re-issue the request later.
     /// - Otherwise, clamps `block_end` down to `chain_height` and splits
     ///   `[block_start, effective_end]` into chunks of `catchup_max_range`
     ///   blocks (configured via `catchup.catchup_max_range`).
-    /// - Publishes one [`CatchupPayload`] per chunk on
-    ///   [`routing::RANGE_CATCHUP`] via the chain-namespaced publisher.
-    ///
-    /// # At-least-once
-    /// On publish failure mid-fan-out, returns the broker error so the broker
-    /// retries the entire orchestrator message. Already-published sub-ranges
-    /// will be re-published on retry; downstream consumers dedupe by
-    /// (block_number, block_hash). The user explicitly opted out of advisory
-    /// locking on the catchup path.
+    /// - Returns the chunks as ready-to-publish [`CatchupPayload`]s.
     ///
     /// # Upper bound
     /// **Raw chain head, no finality margin.** Catchups *within* the
@@ -965,7 +955,7 @@ impl EvmListener {
     pub async fn dispatch_catchup_range(
         &self,
         payload: CatchupPayload,
-    ) -> Result<(), EvmListenerError> {
+    ) -> Result<Vec<CatchupPayload>, EvmListenerError> {
         metrics::counter!(
             "listener_catchup_iterations_total",
             "chain_id" => self.chain_id.to_string()
@@ -991,35 +981,12 @@ impl EvmListener {
                 chain_height,
                 "Catchup orchestrator: block_start above chain height, skipping"
             );
-            return Ok(());
+            return Ok(Vec::new());
         }
 
         let effective_end = std::cmp::min(payload.block_end, chain_height);
         let chunks =
             split_catchup_range(payload.block_start, effective_end, self.catchup_max_range);
-
-        for (start, end) in &chunks {
-            let sub = CatchupPayload {
-                consumer_id: payload.consumer_id.clone(),
-                block_start: *start,
-                block_end: *end,
-            };
-            self.event_publisher
-                .publish(routing::RANGE_CATCHUP, &sub)
-                .await
-                .map_err(|e| EvmListenerError::BrokerPublishError {
-                    message: format!(
-                        "Failed to publish catchup sub-range [{}, {}]: {}",
-                        start, end, e
-                    ),
-                })?;
-        }
-
-        metrics::counter!(
-            "listener_catchup_subranges_total",
-            "chain_id" => self.chain_id.to_string()
-        )
-        .increment(chunks.len() as u64);
 
         info!(
             consumer_id = %payload.consumer_id,
@@ -1027,10 +994,17 @@ impl EvmListener {
             range_end = effective_end,
             sub_count = chunks.len(),
             chain_height,
-            "Catchup orchestrator: published sub-ranges to range-catchup"
+            "Catchup orchestrator: computed sub-ranges"
         );
 
-        Ok(())
+        Ok(chunks
+            .into_iter()
+            .map(|(start, end)| CatchupPayload {
+                consumer_id: payload.consumer_id.clone(),
+                block_start: start,
+                block_end: end,
+            })
+            .collect())
     }
 
     /// Fetch a single bounded sub-range and publish it in order on the
