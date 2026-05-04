@@ -379,6 +379,8 @@ jobs:
           snapshot_logs "KMS Connector Transaction Sender" kms-connector-tx-sender
           snapshot_logs "Host KMS Keygen Trigger" host-sc-trigger-keygen
           snapshot_logs "Host KMS CRS Trigger" host-sc-trigger-crsgen
+          snapshot_logs "KMS Core" kms-core
+          snapshot_logs "Host SC Deploy" host-sc-deploy
           # Iterate over all running coprocessor instances (primary is "coprocessor-",
           # additional instances are "coprocessorN-" where N>=1).
           for container in $(docker ps --format '{{.Names}}' | grep -E '^coprocessor[0-9]*-gw-listener$' | sort); do
