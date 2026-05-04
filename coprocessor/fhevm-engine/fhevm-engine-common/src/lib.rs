@@ -9,6 +9,7 @@ pub mod healthz_server;
 pub mod host_chains;
 pub mod keys;
 pub mod metrics_server;
+pub mod pg_advisory_locks;
 pub mod pg_pool;
 pub mod telemetry;
 pub mod tfhe_ops;

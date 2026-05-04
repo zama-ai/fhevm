@@ -139,12 +139,13 @@ async fn main() {
 
     metrics_server::spawn(args.metrics_addr.clone(), cancel_token.child_token());
 
-    drift_revert::init(service.pool(), cancel_token.clone(), None)
+    let drift_handle = drift_revert::init(service.pool(), cancel_token.clone(), None)
         .await
         .unwrap_or_else(|err| {
             error!(error = %err, "Drift-revert init failed");
             std::process::exit(1);
         });
+    drift_handle.register_writing_pool(service.pool());
 
     let service_task = async {
         info!("Starting worker...");

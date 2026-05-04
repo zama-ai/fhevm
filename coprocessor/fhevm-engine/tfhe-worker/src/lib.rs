@@ -93,13 +93,16 @@ pub async fn async_main(
         Ok(())
     });
 
+    // 2 connections: one detached for the shared presence advisory lock,
+    // one in the pool for the watcher's polling queries.
     let (drift_revert_pool, _pool_refresh_handle) = connect_pool_with_options(
         &database_url,
-        PgPoolOptions::new().max_connections(1),
+        PgPoolOptions::new().max_connections(2),
         Some(&cancel_token),
     )
     .await?;
-    drift_revert::init(drift_revert_pool, cancel_token.clone(), None).await?;
+    let drift_handle =
+        drift_revert::init(drift_revert_pool, cancel_token.clone(), None).await?;
 
     if args.run_bg_worker {
         let gpu_enabled = fhevm_engine_common::utils::log_backend();
@@ -108,6 +111,7 @@ pub async fn async_main(
         set.spawn(tfhe_worker::run_tfhe_worker(
             args.clone(),
             health_check.clone(),
+            drift_handle,
         ));
     }
 

@@ -354,7 +354,8 @@ async fn main() -> anyhow::Result<()> {
     let http_server_fut = tokio::spawn(async move { http_server.start().await });
     metrics_server::spawn(conf.metrics_addr.clone(), cancel_token.child_token());
 
-    drift_revert::init(db_pool.clone(), cancel_token.clone(), None).await?;
+    let drift_handle = drift_revert::init(db_pool.clone(), cancel_token.clone(), None).await?;
+    drift_handle.register_writing_pool(db_pool.clone());
 
     let transaction_sender_fut = tokio::spawn(async move { transaction_sender.run().await });
 

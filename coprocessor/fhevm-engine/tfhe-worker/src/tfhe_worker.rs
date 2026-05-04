@@ -65,6 +65,7 @@ lazy_static! {
 pub async fn run_tfhe_worker(
     args: crate::daemon_cli::Args,
     health_check: crate::health_check::HealthCheck,
+    drift_handle: fhevm_engine_common::drift_revert::DriftRevertHandle,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Determine worker ID to use for the lifetime of this process
     // In case of a failure in tfhe_worker_cycle, the same id must be reused to quickly unlock any held locks
@@ -72,7 +73,9 @@ pub async fn run_tfhe_worker(
     info!(target: "tfhe_worker", worker_id = %worker_id, "Starting tfhe-worker service");
     loop {
         // here we log the errors and make sure we retry
-        if let Err(cycle_error) = tfhe_worker_cycle(&args, worker_id, health_check.clone()).await {
+        if let Err(cycle_error) =
+            tfhe_worker_cycle(&args, worker_id, health_check.clone(), drift_handle.clone()).await
+        {
             WORKER_ERRORS_COUNTER.inc();
             error!(target: "tfhe_worker", { error = cycle_error }, "Error in background worker, retrying shortly");
         }
@@ -84,6 +87,7 @@ async fn tfhe_worker_cycle(
     args: &crate::daemon_cli::Args,
     worker_id: Uuid,
     health_check: crate::health_check::HealthCheck,
+    drift_handle: fhevm_engine_common::drift_revert::DriftRevertHandle,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let db_url = resolve_database_url_from_option(args.database_url.clone())?;
     let (pool, _pool_refresh_handle) = connect_pool_with_options(
@@ -92,6 +96,9 @@ async fn tfhe_worker_cycle(
         None,
     )
     .await?;
+    // Register this cycle's writing pool so the drift-revert watcher closes
+    // it before releasing the presence lock on signal detection.
+    drift_handle.register_writing_pool(pool.clone());
 
     let db_key_cache = DbKeyCache::new(args.key_cache_size)?;
     let mut listener = PgListener::connect_with(&pool).await?;

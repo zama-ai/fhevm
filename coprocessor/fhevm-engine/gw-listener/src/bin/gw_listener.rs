@@ -116,12 +116,6 @@ struct Conf {
     #[arg(long, default_value = "5m", value_parser = parse_duration, requires = "ciphertext_commits_address")]
     drift_post_consensus_grace: Duration,
 
-    /// How long to wait after detecting a pending drift-revert signal before
-    /// running the revert SQL. Gives other services time to see the signal and
-    /// re-exec before the DB state changes.
-    #[arg(long, default_value = "60s", value_parser = parse_duration)]
-    drift_auto_revert_grace_period: Duration,
-
     /// Enable automatic drift recovery. When false (default), the drift
     /// detector still runs and logs drift, but no revert signal is created
     /// and no automatic recovery kicks in. Opt-in while the feature rolls out.
@@ -138,6 +132,14 @@ struct Conf {
     /// Time window over which `--drift-auto-revert-max-recent-attempts` is counted.
     #[arg(long, default_value = "30m", value_parser = parse_duration)]
     drift_auto_revert_recent_attempts_window: Duration,
+
+    /// Maximum time the runner waits to acquire the exclusive advisory lock
+    /// before the revert SQL. The lock blocks until every service has dropped
+    /// its shared presence lock (i.e. drained writes + re-execed) — typically
+    /// a few seconds. A timeout indicates a stuck service and the signal is
+    /// marked Failed for operator intervention.
+    #[arg(long, default_value = "60s", value_parser = parse_duration)]
+    drift_auto_revert_lock_acquisition_timeout: Duration,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -215,7 +217,6 @@ async fn main() -> anyhow::Result<()> {
         gateway_config_address: conf.gateway_config_address,
         drift_no_consensus_timeout: conf.drift_no_consensus_timeout,
         drift_post_consensus_grace: conf.drift_post_consensus_grace,
-        drift_auto_revert_grace_period: conf.drift_auto_revert_grace_period,
         drift_auto_revert_enabled: conf.drift_auto_revert_enabled,
     };
 
@@ -252,16 +253,17 @@ async fn main() -> anyhow::Result<()> {
     .await?;
 
     // gw-listener is the revert runner — it runs the revert SQL if pending.
-    drift_revert::init(
+    let drift_handle = drift_revert::init(
         db_pool.clone(),
         cancel_token.clone(),
         Some(RevertRunnerConfig {
-            grace_period: config.drift_auto_revert_grace_period,
             max_recent_attempts: conf.drift_auto_revert_max_recent_attempts,
             recent_attempts_window: conf.drift_auto_revert_recent_attempts_window,
+            lock_acquisition_timeout: conf.drift_auto_revert_lock_acquisition_timeout,
         }),
     )
     .await?;
+    drift_handle.register_writing_pool(db_pool.clone());
 
     let gw_listener_fut = tokio::spawn(async move { gw_listener.run(db_pool).await });
 

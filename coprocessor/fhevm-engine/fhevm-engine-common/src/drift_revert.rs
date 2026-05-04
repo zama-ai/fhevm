@@ -7,13 +7,15 @@
 //!  * gw-listener runs the revert SQL,
 //!  * other services wait until it's done, then all proceed normally
 
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use prometheus::{register_int_counter_vec, IntCounterVec};
-use sqlx::{Pool, Postgres, Row};
+use sqlx::{PgConnection, Pool, Postgres, Row};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
+
+use crate::pg_advisory_locks::DRIFT_REVERT_LOCK_KEY;
 
 const REVERT_SQL_TEMPLATE: &str =
     include_str!("../../db-migration/db-scripts/revert_coprocessor_db_state.sql");
@@ -490,10 +492,8 @@ impl ReExec for ProcessReExec {
     }
 }
 
+#[derive(Clone)]
 pub struct RevertRunnerConfig {
-    /// How long to wait after detecting a pending signal at startup before
-    /// running the revert SQL. Gives other services time to also re-exec.
-    pub grace_period: Duration,
     /// Maximum number of successful reverts allowed for a host chain within
     /// `recent_attempts_window`. Once exceeded, the next signal is marked
     /// `Failed` with reason "too many recent attempts" instead of running
@@ -502,31 +502,75 @@ pub struct RevertRunnerConfig {
     pub max_recent_attempts: u32,
     /// Time window over which `max_recent_attempts` is counted.
     pub recent_attempts_window: Duration,
+    /// Maximum time the runner waits for `pg_advisory_lock(DRIFT_REVERT_LOCK_KEY)`
+    /// before giving up and marking the signal `Failed`. The lock blocks until
+    /// every service has released its shared lock — normally a few seconds.
+    /// A timeout here means a service is stuck (hung process, network partition
+    /// holding TCP open). Operator must investigate via `pg_locks` /
+    /// `pg_stat_activity`.
+    pub lock_acquisition_timeout: Duration,
 }
 
 /// Watch for a pending drift-revert signal during normal service operation.
-/// When a signal is detected → re-exec immediately. The re-execed process is
+/// When a signal is detected, close every registered writing pool, release
+/// the shared presence lock, and re-exec. The re-execed process is
 /// responsible for handling the revert (via `handle_pending_signal_on_startup`).
 ///
-/// Services run this alongside their main loop. Exits cleanly if the cancel
-/// token fires (e.g., SIGTERM). On success, this never returns (re-exec
-/// replaces the process).
+/// `handle` carries the registry of writing pools filled via
+/// [`DriftRevertHandle::register_writing_pool`]. The watcher closes each
+/// registered pool BEFORE dropping the presence lock so the runner cannot
+/// start the revert while this process still has uncommitted writes in
+/// flight on those pools.
+///
+/// This function is primarily intended for direct use in tests; production
+/// services should call [`init`] / [`init_with_reexec`] instead, which
+/// acquires the presence lock synchronously before spawning the watcher
+/// (avoiding a window where the service is operating without the lock).
+///
+/// Returns if the cancel token fires.
+/// On signal detection, this never returns (re-exec replaces the process).
 pub async fn run_signal_watcher(
     pool: &Pool<Postgres>,
     cancel_token: CancellationToken,
     re_exec_fn: &dyn ReExec,
+    handle: DriftRevertHandle,
+) -> anyhow::Result<()> {
+    let presence_conn = acquire_shared_presence_lock(pool).await?;
+    run_signal_watcher_with_presence(pool, cancel_token, re_exec_fn, presence_conn, handle).await
+}
+
+/// Internal: same as [`run_signal_watcher`] but with the presence connection
+/// already acquired.
+async fn run_signal_watcher_with_presence(
+    pool: &Pool<Postgres>,
+    cancel_token: CancellationToken,
+    re_exec_fn: &dyn ReExec,
+    presence_conn: PgConnection,
+    handle: DriftRevertHandle,
 ) -> anyhow::Result<()> {
     let signal = tokio::select! {
         _ = cancel_token.cancelled() => return Ok(()),
         r = wait_for_in_flight_signal(pool) => r?,
     };
 
+    let pools_to_close = handle.writing_pools();
+
     info!(
         signal_id = signal.id,
         host_chain_id = signal.host_chain_id,
         offending_host_block_number = signal.offending_host_block_number,
-        "Drift revert signal detected, re-execing"
+        registered_pool_count = pools_to_close.len(),
+        "Drift revert signal detected, draining in-flight writes and re-execing"
     );
+
+    // Close every registered writing pool, then drop the presence lock.
+    // `Pool::close().await` waits for in-flight queries on each pool to
+    // finish — only after that is it safe to drop the presence lock and let
+    // the runner acquire exclusive.
+    for p in pools_to_close {
+        p.close().await;
+    }
+    drop(presence_conn);
 
     // Never returns (exec replaces process, or exit on failure).
     re_exec_fn.re_exec();
@@ -535,10 +579,15 @@ pub async fn run_signal_watcher(
 }
 
 /// Called on service startup BEFORE the main loop begins. If a pending signal
-/// exists, handles it: the revert runner (gw-listener) waits a grace period
-/// then runs the revert SQL and marks it done; waiters (other services) block
-/// until the signal is done. Returns when it's safe for the service to
-/// proceed with normal operation.
+/// exists, handles it:
+///  - The revert runner (gw-listener) takes the exclusive
+///    `pg_advisory_lock(DRIFT_REVERT_LOCK_KEY)` (blocking until every service
+///    has released its shared presence lock), runs the revert SQL, and marks
+///    the signal Done.
+///  - Waiters (other services) block until the signal is Done.
+///
+/// On return, the caller (`init`) acquires the shared presence lock and
+/// starts the watcher; only then does normal operation begin.
 ///
 /// - `runner_cfg`: `Some` for the revert runner (gw-listener), `None` for all
 ///   other services (they just wait for the runner to finish).
@@ -603,7 +652,6 @@ async fn run_all_pending_as_runner(
     cfg: &RevertRunnerConfig,
     cancel_token: &CancellationToken,
 ) -> anyhow::Result<()> {
-    let mut waited_grace = false;
     while let Some(signal) = oldest_in_flight_signal(pool).await? {
         info!(
             signal_id = signal.id,
@@ -640,28 +688,52 @@ async fn run_all_pending_as_runner(
             return Err(anyhow::anyhow!(reason));
         }
 
-        // Grace period: give other services time to re-exec too.
-        // Only wait it once per process startup — if we're on the 2nd signal,
-        // services have already had time to re-exec during the first revert.
-        if matches!(signal.status, SignalStatus::Pending) {
-            if !waited_grace {
-                info!(grace_period = ?cfg.grace_period, "Waiting grace period before revert");
-                tokio::select! {
-                    _ = cancel_token.cancelled() => return Ok(()),
-                    _ = tokio::time::sleep(cfg.grace_period) => {}
+        // Take the exclusive advisory lock — blocks until every service has
+        // released its shared presence lock (i.e. drained writes + re-execed).
+        // Bounded by `lock_acquisition_timeout`: a stuck service that never
+        // releases must not block recovery indefinitely; mark Failed so the
+        // operator investigates.
+        //
+        // Release the exclusive lock by dropping it at the end of this fn.
+        let _runner_lock_conn = tokio::select! {
+            _ = cancel_token.cancelled() => return Ok(()),
+            result = acquire_exclusive_revert_lock(pool, cfg.lock_acquisition_timeout) => match result {
+                Ok(c) => c,
+                Err(e) => {
+                    let reason = format!(
+                        "failed to acquire exclusive revert lock within {:?}: {e} \
+                         — a service is likely holding the shared presence lock; \
+                         investigate via pg_locks / pg_stat_activity",
+                        cfg.lock_acquisition_timeout,
+                    );
+                    error!(
+                        signal_id = signal.id,
+                        host_chain_id = signal.host_chain_id,
+                        reason = %reason,
+                        "Drift revert lock acquisition failed"
+                    );
+                    update_signal_status(pool, signal.id, &SignalStatus::Failed(reason.clone()))
+                        .await?;
+                    REVERT_FAILURE_COUNTER
+                        .with_label_values(&[&signal.host_chain_id.to_string()])
+                        .inc();
+                    anyhow::bail!(reason);
                 }
-                waited_grace = true;
             }
+        };
+
+        if matches!(signal.status, SignalStatus::Pending) {
             update_signal_status(pool, signal.id, &SignalStatus::Reverting).await?;
         }
 
-        if let Err(e) = execute_revert(
+        let revert_result = execute_revert(
             pool,
             signal.host_chain_id,
             signal.offending_host_block_number,
         )
-        .await
-        {
+        .await;
+
+        if let Err(e) = revert_result {
             REVERT_FAILURE_COUNTER
                 .with_label_values(&[&signal.host_chain_id.to_string()])
                 .inc();
@@ -702,39 +774,144 @@ async fn run_all_pending_as_runner(
     Ok(())
 }
 
+/// Acquire `pg_advisory_lock_shared(DRIFT_REVERT_LOCK_KEY)` on a connection
+/// detached from the pool. The returned `PgConnection` must be held for the
+/// service's normal-operation lifetime; dropping it releases the shared lock
+/// and unblocks any runner waiting on the exclusive lock.
+pub async fn acquire_shared_presence_lock(
+    pool: &Pool<Postgres>,
+) -> Result<PgConnection, sqlx::Error> {
+    let mut conn = pool.acquire().await?.detach();
+    sqlx::query("SELECT pg_advisory_lock_shared($1)")
+        .bind(DRIFT_REVERT_LOCK_KEY)
+        .execute(&mut conn)
+        .await?;
+    Ok(conn)
+}
+
+/// Acquire `pg_advisory_lock(DRIFT_REVERT_LOCK_KEY)` exclusive on a detached
+/// connection, with `lock_timeout` set so the call returns an error if the
+/// lock can't be obtained in time.
+async fn acquire_exclusive_revert_lock(
+    pool: &Pool<Postgres>,
+    timeout: Duration,
+) -> Result<PgConnection, sqlx::Error> {
+    let mut conn = pool.acquire().await?.detach();
+    sqlx::query("SELECT set_config('lock_timeout', $1, false)")
+        .bind(format!("{}ms", timeout.as_millis()))
+        .execute(&mut conn)
+        .await?;
+    sqlx::query("SELECT pg_advisory_lock($1)")
+        .bind(DRIFT_REVERT_LOCK_KEY)
+        .execute(&mut conn)
+        .await?;
+    Ok(conn)
+}
+
+/// Returned by [`init`] / [`init_with_reexec`]. Lets the caller register
+/// pools they write through so the watcher can drain them before releasing
+/// the presence lock on signal detection.
+#[derive(Clone, Default)]
+pub struct DriftRevertHandle {
+    writing_pools: Arc<Mutex<Vec<Pool<Postgres>>>>,
+}
+
+impl DriftRevertHandle {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register a pool the service writes through. The watcher closes every
+    /// registered pool before releasing the presence lock and re-execing,
+    /// so the runner cannot start the revert while this process still has
+    /// uncommitted writes in flight.
+    ///
+    /// Registering the same `Pool` `Arc` more than once (or as the same
+    /// `Pool` passed to [`init`]) is fine — `Pool::close()` is idempotent
+    /// on an already-closed pool.
+    pub fn register_writing_pool(&self, app_pool: Pool<Postgres>) {
+        self.writing_pools.lock().unwrap().push(app_pool);
+    }
+
+    /// Returns the currently registered pools.
+    fn writing_pools(&self) -> Vec<Pool<Postgres>> {
+        self.writing_pools.lock().unwrap().clone()
+    }
+}
+
 /// Initialize drift-revert handling for a service. Call once at startup,
 /// before the main loop begins.
 ///
 /// 1. If a pending signal exists, handles it (runner runs the revert,
 ///    waiters block until done).
-/// 2. Spawns a background watcher that polls for future signals and
-///    re-execs the process when one appears.
+/// 2. Acquires `pg_advisory_lock_shared(DRIFT_REVERT_LOCK_KEY)` on a
+///    dedicated connection — this signals "service is alive and writing"
+///    to any future runner.
+/// 3. Spawns a background watcher that polls for future signals and
+///    re-execs the process when one appears (which drops the presence
+///    connection, releasing the shared lock).
 ///
 /// Pass `Some(RevertRunnerConfig)` for the revert runner (e.g. gw-listener),
-/// `None` for all other services.
+/// `None` for all other services. The returned [`DriftRevertHandle`] lets
+/// the caller register their writing pool(s) for drain on signal.
 pub async fn init(
-    pool: Pool<Postgres>,
+    drift_revert_pool: Pool<Postgres>,
     cancel_token: CancellationToken,
     runner_cfg: Option<RevertRunnerConfig>,
-) -> anyhow::Result<()> {
-    init_with_reexec(pool, cancel_token, runner_cfg, ProcessReExec::new()).await
+) -> anyhow::Result<DriftRevertHandle> {
+    init_with_reexec(
+        drift_revert_pool,
+        cancel_token,
+        runner_cfg,
+        ProcessReExec::new(),
+    )
+    .await
 }
 
 /// Like [`init`] but lets the caller inject a custom `ReExec` implementation.
 /// Primarily used by tests to swap in a mock.
 pub async fn init_with_reexec<R: ReExec + 'static>(
-    pool: Pool<Postgres>,
+    drift_revert_pool: Pool<Postgres>,
     cancel_token: CancellationToken,
     runner_cfg: Option<RevertRunnerConfig>,
     re_exec: R,
-) -> anyhow::Result<()> {
-    handle_pending_signal_on_startup(&pool, runner_cfg, &cancel_token).await?;
+) -> anyhow::Result<DriftRevertHandle> {
+    // Sequence: handle any in-flight signal → acquire shared presence →
+    // re-check for in-flight. The re-check closes the
+    // window where a new signal could be created between
+    // `handle_pending_signal_on_startup` returning and us taking the
+    // shared lock. We can't take the shared lock first because that would
+    // deadlock the runner if a Pending signal already exists at startup.
+    let presence_conn = loop {
+        handle_pending_signal_on_startup(&drift_revert_pool, runner_cfg.clone(), &cancel_token)
+            .await?;
+        let presence_conn = acquire_shared_presence_lock(&drift_revert_pool).await?;
+        if oldest_in_flight_signal(&drift_revert_pool).await?.is_some() {
+            // A new signal slipped in between the two awaits above — drop
+            // presence so the runner can take exclusive, then loop back to
+            // wait for the revert to complete.
+            drop(presence_conn);
+            continue;
+        }
+        break presence_conn;
+    };
 
+    let handle = DriftRevertHandle::new();
+
+    let watcher_handle = handle.clone();
     tokio::spawn(async move {
-        if let Err(e) = run_signal_watcher(&pool, cancel_token, &re_exec).await {
+        if let Err(e) = run_signal_watcher_with_presence(
+            &drift_revert_pool,
+            cancel_token,
+            &re_exec,
+            presence_conn,
+            watcher_handle,
+        )
+        .await
+        {
             error!(error = %e, "Drift-revert signal watcher failed");
         }
     });
 
-    Ok(())
+    Ok(handle)
 }

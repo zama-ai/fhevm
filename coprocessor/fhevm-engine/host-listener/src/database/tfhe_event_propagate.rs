@@ -72,7 +72,6 @@ pub type ChainCache = RwLock<lru::LruCache<Handle, ChainHash>>;
 pub type OrderedChains = Vec<Chain>;
 
 const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
-const SLOW_LANE_RESET_ADVISORY_LOCK_KEY_BASE: i64 = 1_907_000_000;
 const SLOW_LANE_RESET_BATCH_SIZE: i64 = 5_000;
 const MAX_RETRY_FOR_TRANSIENT_ERROR: usize = 20;
 const MAX_RETRY_ON_UNKNOWN_ERROR: usize = 5;
@@ -90,7 +89,8 @@ fn apply_connection_options(options: PgConnectOptions) -> PgConnectOptions {
 }
 
 fn slow_lane_reset_advisory_lock_key(chain_id: ChainId) -> i64 {
-    SLOW_LANE_RESET_ADVISORY_LOCK_KEY_BASE.saturating_add(chain_id.as_i64())
+    fhevm_engine_common::pg_advisory_locks::SLOW_LANE_RESET_LOCK_KEY_BASE
+        .saturating_add(chain_id.as_i64())
 }
 
 pub fn retry_on_sqlx_error(err: &SqlxError, retry_count: &mut usize) -> bool {

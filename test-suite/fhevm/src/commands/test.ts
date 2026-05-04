@@ -955,8 +955,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         };
         const hostChainId = process.env.CHAIN_ID ?? "12345";
 
-        // Snapshot row counts before the revert runs. The gw-listener is
-        // still in the grace period (pending status), so this is stable.
+        // Snapshot row counts while the signal is still Pending.
         const computationsBefore = await countComputations(dbOptions, hostChainId);
         console.log(`[drift-auto-recovery] computations before revert: ${computationsBefore}`);
 

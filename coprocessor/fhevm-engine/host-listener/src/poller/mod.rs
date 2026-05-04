@@ -157,18 +157,22 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
 
     // Drift-revert: must run before any DB state reads so we don't read
     // pre-revert state.
+    // 2 connections: one detached for the shared presence advisory lock, one in the pool for the watcher's polling queries.
     let (drift_revert_pool, _pool_refresh_handle) = connect_pool_with_options(
         &config.database_url,
-        PgPoolOptions::new().max_connections(1),
+        PgPoolOptions::new().max_connections(2),
         Some(&cancel_token),
     )
     .await?;
-    fhevm_engine_common::drift_revert::init(
+    let drift_handle = fhevm_engine_common::drift_revert::init(
         drift_revert_pool,
         cancel_token.clone(),
         None,
     )
     .await?;
+    // Register the Database's main writing pool so the watcher drains it
+    // before releasing the presence lock.
+    drift_handle.register_writing_pool(db.pool().await);
 
     if config.dependent_ops_max_per_chain == 0 {
         let promoted = db.promote_all_dep_chains_to_fast_priority().await?;

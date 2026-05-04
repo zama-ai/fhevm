@@ -12,11 +12,41 @@ const CHAIN_A: i64 = 100;
 /// Builds a `RevertRunnerConfig` for tests. Defaults pin the attempts
 /// thresholds high enough that they never trip incidentally; tests for the
 /// breaker itself override `max_recent_attempts` / `recent_attempts_window`.
-fn runner_cfg(grace_period: Duration) -> RevertRunnerConfig {
+fn runner_cfg() -> RevertRunnerConfig {
     RevertRunnerConfig {
-        grace_period,
         max_recent_attempts: 100,
         recent_attempts_window: Duration::from_secs(3600),
+        lock_acquisition_timeout: Duration::from_secs(30),
+    }
+}
+
+/// Poll `pg_locks` until any session is parked (granted = false) on the
+/// exclusive advisory lock for `key`. Returns true on success, false on
+/// timeout. Used in tests to deterministically observe that the runner has
+/// reached the lock-acquisition step instead of relying on a wall-clock sleep.
+async fn wait_until_blocked_on_exclusive_lock(pool: &PgPool, key: i64, deadline: Duration) -> bool {
+    let end = std::time::Instant::now() + deadline;
+    loop {
+        let waiting: bool = sqlx::query_scalar(
+            "SELECT EXISTS (
+                SELECT 1 FROM pg_locks
+                WHERE locktype = 'advisory'
+                  AND ((classid::bigint << 32) | (objid::bigint & x'ffffffff'::bigint)) = $1
+                  AND mode = 'ExclusiveLock'
+                  AND NOT granted
+            )",
+        )
+        .bind(key)
+        .fetch_one(pool)
+        .await
+        .expect("query pg_locks");
+        if waiting {
+            return true;
+        }
+        if std::time::Instant::now() >= end {
+            return false;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
 
@@ -308,7 +338,7 @@ async fn runner_processes_concurrent_signals_from_multiple_chains() {
         .expect("should create B");
     assert!(id_b > id_a, "B should have a newer id than A");
 
-    let cfg = runner_cfg(Duration::from_millis(10));
+    let cfg = runner_cfg();
     let cancel = CancellationToken::new();
     drift_revert::handle_pending_signal_on_startup(&pool, Some(cfg), &cancel)
         .await
@@ -346,7 +376,7 @@ async fn runner_refuses_on_failed_latest() {
     setup_failed_signal(&pool).await;
 
     let cancel = CancellationToken::new();
-    let cfg = runner_cfg(Duration::from_millis(10));
+    let cfg = runner_cfg();
     let result = drift_revert::handle_pending_signal_on_startup(&pool, Some(cfg), &cancel).await;
     assert!(
         result.is_err(),
@@ -384,9 +414,9 @@ async fn runner_marks_failed_when_too_many_recent_attempts() {
         .unwrap();
 
     let cfg = RevertRunnerConfig {
-        grace_period: Duration::from_millis(10),
         max_recent_attempts: 3,
         recent_attempts_window: Duration::from_secs(3600),
+        lock_acquisition_timeout: Duration::from_secs(30),
     };
     let cancel = CancellationToken::new();
     let err = drift_revert::handle_pending_signal_on_startup(&pool, Some(cfg), &cancel)
@@ -424,9 +454,9 @@ async fn runner_too_many_attempts_isolates_per_chain() {
         .unwrap();
 
     let cfg = RevertRunnerConfig {
-        grace_period: Duration::from_millis(10),
         max_recent_attempts: 3,
         recent_attempts_window: Duration::from_secs(3600),
+        lock_acquisition_timeout: Duration::from_secs(30),
     };
     let cancel = CancellationToken::new();
     drift_revert::handle_pending_signal_on_startup(&pool, Some(cfg), &cancel)
@@ -486,9 +516,9 @@ async fn runner_too_many_attempts_ignores_old_dones_outside_window() {
 
     // Threshold of 3 within a 1-hour window. Old Dones don't count → runner proceeds.
     let cfg = RevertRunnerConfig {
-        grace_period: Duration::from_millis(10),
         max_recent_attempts: 3,
         recent_attempts_window: Duration::from_secs(3600),
+        lock_acquisition_timeout: Duration::from_secs(30),
     };
     let cancel = CancellationToken::new();
     drift_revert::handle_pending_signal_on_startup(&pool, Some(cfg), &cancel)
@@ -513,7 +543,7 @@ async fn waiter_refuses_on_failed_latest() {
 
 #[tokio::test]
 #[serial(db)]
-async fn runner_resumes_from_reverting_status_without_grace_period() {
+async fn runner_resumes_from_reverting_status() {
     let db = setup_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
@@ -560,20 +590,11 @@ async fn runner_resumes_from_reverting_status_without_grace_period() {
         .await
         .unwrap();
 
-    // Grace period is set very large; if the runner incorrectly waits it,
-    // the test should complete in under a second anyway — we assert it did.
-    let cfg = runner_cfg(Duration::from_secs(30));
+    let cfg = runner_cfg();
     let cancel = CancellationToken::new();
-    let started = std::time::Instant::now();
     drift_revert::handle_pending_signal_on_startup(&pool, Some(cfg), &cancel)
         .await
         .expect("runner should resume");
-    let elapsed = started.elapsed();
-
-    assert!(
-        elapsed < Duration::from_secs(5),
-        "runner should skip grace period for Reverting status, took {elapsed:?}"
-    );
 
     // Signal marked Done.
     let latest = drift_revert::latest_signal(&pool).await.unwrap().unwrap();
@@ -766,9 +787,14 @@ async fn signal_watcher_reexecs_on_pending_signal() {
         .await
         .expect("create signal");
 
-    drift_revert::run_signal_watcher(&pool, cancel, &mock)
-        .await
-        .expect("run_signal_watcher");
+    drift_revert::run_signal_watcher(
+        &pool,
+        cancel,
+        &mock,
+        drift_revert::DriftRevertHandle::new(),
+    )
+    .await
+    .expect("run_signal_watcher");
 
     assert!(mock.was_called(), "re_exec should have been called");
 }
@@ -783,9 +809,14 @@ async fn signal_watcher_exits_cleanly_on_cancel() {
 
     cancel.cancel();
 
-    drift_revert::run_signal_watcher(&pool, cancel, &mock)
-        .await
-        .expect("run_signal_watcher");
+    drift_revert::run_signal_watcher(
+        &pool,
+        cancel,
+        &mock,
+        drift_revert::DriftRevertHandle::new(),
+    )
+    .await
+    .expect("run_signal_watcher");
 
     assert!(!mock.was_called(), "re_exec should NOT have been called");
 }
@@ -802,7 +833,7 @@ async fn handle_pending_signal_runner_marks_done() {
         .await
         .expect("create signal");
 
-    let cfg = runner_cfg(Duration::from_millis(10));
+    let cfg = runner_cfg();
 
     let cancel = CancellationToken::new();
     drift_revert::handle_pending_signal_on_startup(&pool, Some(cfg), &cancel)
@@ -980,12 +1011,12 @@ async fn init_handles_pending_signal_and_spawns_watcher() {
         .await
         .expect("create signal");
 
-    let cfg = runner_cfg(Duration::from_millis(10));
+    let cfg = runner_cfg();
 
     let mock = MockReExec::new();
 
     // init as runner: handles the pending signal (revert + mark done).
-    drift_revert::init_with_reexec(pool.clone(), cancel.clone(), Some(cfg), mock)
+    let _drift_handle = drift_revert::init_with_reexec(pool.clone(), cancel.clone(), Some(cfg), mock)
         .await
         .expect("init");
 
@@ -1003,4 +1034,172 @@ async fn init_handles_pending_signal_and_spawns_watcher() {
 
     // Clean up: cancel the watcher so the background task exits.
     cancel.cancel();
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn runner_blocks_until_services_release_shared_lock() {
+    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let pool = PgPool::connect(db.db_url()).await.unwrap();
+
+    setup_chain_and_computation(&pool, CHAIN_A, 10).await;
+    drift_revert::create_revert_signal(&pool, CHAIN_A, 10)
+        .await
+        .unwrap()
+        .unwrap();
+
+    // Hold a shared presence lock — simulates a live service that hasn't
+    // re-execed yet.
+    let presence = drift_revert::acquire_shared_presence_lock(&pool)
+        .await
+        .expect("acquire presence");
+
+    let cfg = runner_cfg();
+    let cancel = CancellationToken::new();
+    let pool_for_runner = pool.clone();
+    let runner = tokio::spawn(async move {
+        drift_revert::handle_pending_signal_on_startup(&pool_for_runner, Some(cfg), &cancel).await
+    });
+
+    // Wait until pg_locks shows a session parked on the exclusive lock for
+    // our key — that's the deterministic signal that the runner is blocked.
+    let blocked = wait_until_blocked_on_exclusive_lock(
+        &pool,
+        fhevm_engine_common::pg_advisory_locks::DRIFT_REVERT_LOCK_KEY,
+        Duration::from_secs(5),
+    )
+    .await;
+    assert!(
+        blocked,
+        "runner should be parked on the exclusive lock while shared is held"
+    );
+    assert!(!runner.is_finished());
+
+    // Release shared lock — runner should now acquire exclusive and complete.
+    drop(presence);
+
+    tokio::time::timeout(Duration::from_secs(5), runner)
+        .await
+        .expect("runner must finish promptly after shared released")
+        .expect("join")
+        .expect("runner");
+
+    let signal = drift_revert::latest_signal(&pool).await.unwrap().unwrap();
+    assert_eq!(signal.status, SignalStatus::Done);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn runner_marks_failed_on_lock_acquisition_timeout() {
+    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let pool = PgPool::connect(db.db_url()).await.unwrap();
+
+    setup_chain_and_computation(&pool, CHAIN_A, 10).await;
+    drift_revert::create_revert_signal(&pool, CHAIN_A, 10)
+        .await
+        .unwrap()
+        .unwrap();
+
+    // Hold the shared presence lock for the duration of the test so the
+    // runner can never acquire exclusive.
+    let _presence = drift_revert::acquire_shared_presence_lock(&pool)
+        .await
+        .expect("acquire presence");
+
+    let cfg = RevertRunnerConfig {
+        max_recent_attempts: 100,
+        recent_attempts_window: Duration::from_secs(3600),
+        lock_acquisition_timeout: Duration::from_millis(100),
+    };
+    let cancel = CancellationToken::new();
+    let err = drift_revert::handle_pending_signal_on_startup(&pool, Some(cfg), &cancel)
+        .await
+        .expect_err("runner must error when exclusive lock acquisition times out");
+    assert!(
+        err.to_string()
+            .contains("failed to acquire exclusive revert lock"),
+        "error should mention lock failure, got: {err}"
+    );
+
+    let signal = drift_revert::latest_signal(&pool).await.unwrap().unwrap();
+    match signal.status {
+        SignalStatus::Failed(reason) => assert!(
+            reason.contains("failed to acquire exclusive revert lock"),
+            "Failed reason should mention the lock, got: {reason}"
+        ),
+        other => panic!("expected Failed status, got: {}", other.as_db_str()),
+    }
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn signal_watcher_releases_presence_lock() {
+    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    // Two pools sharing the same DB: the watcher will close its pool, so we
+    // need a separate one to verify the lock state afterwards.
+    let pool_for_watcher = PgPool::connect(db.db_url()).await.unwrap();
+    let pool_for_verify = PgPool::connect(db.db_url()).await.unwrap();
+    let cancel = CancellationToken::new();
+    let mock = MockReExec::new();
+
+    setup_chain_and_computation(&pool_for_watcher, CHAIN_A, 10).await;
+    drift_revert::create_revert_signal(&pool_for_watcher, CHAIN_A, 10)
+        .await
+        .unwrap()
+        .unwrap();
+
+    drift_revert::run_signal_watcher(
+        &pool_for_watcher,
+        cancel,
+        &mock,
+        drift_revert::DriftRevertHandle::new(),
+    )
+    .await
+    .expect("run_signal_watcher");
+    assert!(mock.was_called(), "watcher should call re_exec on signal");
+
+    // The watcher must have released the shared lock — `pg_try_advisory_lock`
+    // returns false if the key is held in any (shared or exclusive) mode.
+    let mut conn = pool_for_verify.acquire().await.expect("acquire").detach();
+    let acquired: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
+        .bind(fhevm_engine_common::pg_advisory_locks::DRIFT_REVERT_LOCK_KEY)
+        .fetch_one(&mut conn)
+        .await
+        .expect("try lock");
+    assert!(
+        acquired,
+        "exclusive lock must be available — watcher must have released the shared presence lock"
+    );
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn watcher_closes_registered_writing_pools_on_signal() {
+    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let pool = PgPool::connect(db.db_url()).await.unwrap();
+    // A separate pool, registered as the service's writing pool. The watcher
+    // must close it before dropping the presence lock so the runner cannot
+    // start the revert while writes are in flight on this pool.
+    let writing_pool = PgPool::connect(db.db_url()).await.unwrap();
+    let cancel = CancellationToken::new();
+    let mock = MockReExec::new();
+
+    setup_chain_and_computation(&pool, CHAIN_A, 10).await;
+    drift_revert::create_revert_signal(&pool, CHAIN_A, 10)
+        .await
+        .unwrap()
+        .unwrap();
+
+    let handle = drift_revert::DriftRevertHandle::new();
+    handle.register_writing_pool(writing_pool.clone());
+
+    drift_revert::run_signal_watcher(&pool, cancel, &mock, handle)
+        .await
+        .expect("run_signal_watcher");
+
+    assert!(mock.was_called(), "watcher should call re_exec");
+    assert!(
+        writing_pool.is_closed(),
+        "registered writing pool must be closed before re_exec",
+    );
 }
