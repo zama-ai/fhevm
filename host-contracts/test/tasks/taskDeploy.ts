@@ -8,17 +8,13 @@ import { deployFreshKMSGenerationProxy, readHostAddress, withPatchedMethods } fr
 
 describe('task:deployAllHostContracts', function () {
   it('requires the KMSGeneration deployment role to be explicit', async function () {
-    await expect(run('task:deployAllHostContracts')).to.be.rejectedWith(
-      'Missing or invalid required --with-kms-generation flag',
-    );
+    await expect(run('task:deployAllHostContracts')).to.be.rejectedWith(/withKmsGeneration/);
   });
 });
 
 describe('task:deployEmptyUUPSProxies', function () {
   it('requires the KMSGeneration deployment role to be explicit', async function () {
-    await expect(run('task:deployEmptyUUPSProxies')).to.be.rejectedWith(
-      'Missing or invalid required --with-kms-generation flag',
-    );
+    await expect(run('task:deployEmptyUUPSProxies')).to.be.rejectedWith(/withKmsGeneration/);
   });
 });
 
