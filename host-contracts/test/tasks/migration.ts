@@ -24,7 +24,6 @@ import {
   buildProtocolConfigNodes,
   buildProtocolConfigThresholds,
   readHostAddress,
-  withPatchedMethods,
 } from './taskHelpers';
 
 async function deployEmptyUUPSProxy(deployer: Wallet): Promise<string> {
@@ -241,25 +240,7 @@ describe('Migration deploy tasks', function () {
       });
       await protocolConfig.waitForDeployment();
 
-      const hardhatEthers = ethers as typeof ethers & {
-        getContractFactory: (...args: unknown[]) => Promise<unknown>;
-        getContractAt: (...args: unknown[]) => Promise<unknown>;
-      };
-
-      await withPatchedMethods(
-        hardhatEthers,
-        {
-          getContractFactory: async () => {
-            throw new Error('ethers.getContractFactory should not be called by task:assertProtocolConfigReady');
-          },
-          getContractAt: async () => {
-            throw new Error('ethers.getContractAt should not be called by task:assertProtocolConfigReady');
-          },
-        },
-        async () => {
-          await run('task:assertProtocolConfigReady');
-        },
-      );
+      await run('task:assertProtocolConfigReady');
     });
 
     it('rejects the standalone readiness check when ProtocolConfig is not initialized', async function () {

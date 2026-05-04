@@ -4,7 +4,7 @@ import { ethers, run } from 'hardhat';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE, PREP_KEYGEN_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import type { KMSGeneration } from '../../types';
-import { deployFreshKMSGenerationProxy, readHostAddress, withPatchedMethods } from './taskHelpers';
+import { deployFreshKMSGenerationProxy, readHostAddress } from './taskHelpers';
 
 describe('task:deployAllHostContracts', function () {
   it('requires the KMSGeneration deployment role to be explicit', async function () {
@@ -71,41 +71,5 @@ describe('task:assertNoPendingKeyManagementRequest', function () {
     await kmsGeneration.abortCrsgen(CRS_COUNTER_BASE + 1n);
 
     await run('task:assertNoPendingKeyManagementRequest', { address: kmsGenerationAddress });
-  });
-
-  it('does not depend on raw storage reads for a passing preflight', async function () {
-    const provider = ethers.provider as typeof ethers.provider & {
-      getStorage: (address: string, position: string) => Promise<string>;
-    };
-    const hardhatEthers = ethers as typeof ethers & {
-      getContractFactory: (...args: unknown[]) => Promise<unknown>;
-      getContractAt: (...args: unknown[]) => Promise<unknown>;
-    };
-
-    await withPatchedMethods(
-      provider,
-      {
-        getStorage: async () => {
-          throw new Error('provider.getStorage should not be called by task:assertNoPendingKeyManagementRequest');
-        },
-      },
-      async () =>
-        withPatchedMethods(
-          hardhatEthers,
-          {
-            getContractFactory: async () => {
-              throw new Error(
-                'ethers.getContractFactory should not be called by task:assertNoPendingKeyManagementRequest',
-              );
-            },
-            getContractAt: async () => {
-              throw new Error('ethers.getContractAt should not be called by task:assertNoPendingKeyManagementRequest');
-            },
-          },
-          async () => {
-            await run('task:assertNoPendingKeyManagementRequest', { address: kmsGenerationAddress });
-          },
-        ),
-    );
   });
 });

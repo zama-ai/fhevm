@@ -60,27 +60,6 @@ export function buildProtocolConfigThresholds() {
   };
 }
 
-export async function withPatchedMethods<T extends object, R>(
-  target: T,
-  patches: Partial<{ [K in keyof T]: T[K] }>,
-  action: () => Promise<R>,
-): Promise<R> {
-  const originalValues = new Map<keyof T, T[keyof T]>();
-
-  for (const [key, value] of Object.entries(patches) as Array<[keyof T, T[keyof T]]>) {
-    originalValues.set(key, target[key]);
-    target[key] = value;
-  }
-
-  try {
-    return await action();
-  } finally {
-    for (const [key, value] of originalValues.entries()) {
-      target[key] = value;
-    }
-  }
-}
-
 export async function deployFreshKMSGenerationProxy(deployer: Wallet): Promise<KMSGeneration> {
   const emptyProxyFactory = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
   const proxyAddress = await deployEmptyProxy(emptyProxyFactory);
