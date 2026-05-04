@@ -16,7 +16,7 @@ use connector_utils::{
         rand::{rand_digest, rand_sns_ct},
         setup::{
             DbInstance, S3_CT_DIGEST, S3_CT_HANDLE, S3Instance, TestInstanceBuilder,
-            init_host_chains_acl_contracts_mock,
+            erc1271_magic_response, init_host_chains_acl_contracts_mock,
         },
     },
     types::{
@@ -95,11 +95,19 @@ async fn test_processing_request(
     // Mocking Host chain. ACL call counts per variant:
     //   - Public:            1 `isAllowedForDecryption`
     //   - Legacy user:       2 `isAllowed` (user + contract)
-    //   - RFC016 user (V2):  1 U256 (`decryptionSignatureInvalidatedBefore`) + 1 `isAllowed`
-    //                        (direct ownership path, empty `allowedContracts`)
+    //   - RFC016 user (V2):  1 `isValidSignature` (RFC-012, ERC-1271 fallback — random fixture
+    //                        signature can't ecrecover to userAddress so the call always fires)
+    //                        + 1 U256 (`decryptionSignatureInvalidatedBefore`) + 1 `isAllowed`
+    //                        (direct ownership path, empty `allowedContracts`). All three fire
+    //                        concurrently via `try_join!`, consumed FIFO in poll order thanks
+    //                        to the `biased` annotation.
     let acl_responses = match event_type {
         TestEventType::PublicDecryption => vec![true.abi_encode()],
-        TestEventType::UserDecryptionV2 => vec![U256::ZERO.abi_encode(), true.abi_encode()],
+        TestEventType::UserDecryptionV2 => vec![
+            erc1271_magic_response(),
+            U256::ZERO.abi_encode(),
+            true.abi_encode(),
+        ],
         TestEventType::UserDecryption => vec![true.abi_encode(); 2],
         _ => vec![],
     };

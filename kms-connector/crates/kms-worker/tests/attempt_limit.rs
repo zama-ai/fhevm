@@ -16,7 +16,7 @@ use connector_utils::{
         rand::{rand_digest, rand_sns_ct},
         setup::{
             DbInstance, S3_CT_DIGEST, S3_CT_HANDLE, S3Instance, TestInstanceBuilder,
-            init_host_chains_acl_contracts_mock,
+            erc1271_magic_response, init_host_chains_acl_contracts_mock,
         },
     },
     types::ProtocolEventKind,
@@ -84,13 +84,20 @@ async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::R
     info!("Gateway mock started!");
 
     // Mocking Host chain.
-    // Per attempt: Public → 1 bool; Legacy user → 2 bools; V2 → 1 U256 (invalidation) + 1 bool.
+    // Per attempt: Public → 1 bool; Legacy user → 2 bools;
+    // V2 → 1 `isValidSignature` (RFC-012) + 1 U256 (invalidation) + 1 bool (ownership).
     let acl_responses = match event_type {
         TestEventType::PublicDecryption => {
             vec![true.abi_encode(); MAX_DECRYPTION_ATTEMPTS as usize]
         }
         TestEventType::UserDecryptionV2 => (0..MAX_DECRYPTION_ATTEMPTS)
-            .flat_map(|_| vec![U256::ZERO.abi_encode(), true.abi_encode()])
+            .flat_map(|_| {
+                vec![
+                    erc1271_magic_response(),
+                    U256::ZERO.abi_encode(),
+                    true.abi_encode(),
+                ]
+            })
             .collect(),
         TestEventType::UserDecryption => {
             vec![true.abi_encode(); 2 * MAX_DECRYPTION_ATTEMPTS as usize]

@@ -4,6 +4,7 @@ mod kms;
 mod kms_client;
 mod processor;
 pub mod s3;
+mod signature;
 
 pub use context::{ContextManager, DbContextManager};
 pub use decryption::DecryptionProcessor;

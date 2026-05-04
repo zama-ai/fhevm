@@ -12,7 +12,10 @@ use connector_utils::tests::{
         check_request_failed_in_db, insert_rand_request,
     },
     rand::{rand_digest, rand_sns_ct},
-    setup::{DbInstance, TestInstanceBuilder, init_host_chains_acl_contracts_mock},
+    setup::{
+        DbInstance, TestInstanceBuilder, erc1271_magic_response,
+        init_host_chains_acl_contracts_mock,
+    },
 };
 use kms_worker::core::Config;
 use mocktail::server::MockServer;
@@ -60,13 +63,20 @@ async fn test_decryption_acl_failure(#[case] event_type: TestEventType) -> anyho
     info!("Gateway mock started!");
 
     // Mocking Host chain ACL to DENY decryption.
-    // Per attempt: Public → 1 bool; Legacy user → 2 bools; V2 → 1 U256 (invalidation) + 1 bool.
+    // Per attempt: Public → 1 bool; Legacy user → 2 bools;
+    // V2 → 1 `isValidSignature` (RFC-012) + 1 U256 (invalidation) + 1 bool (ownership, denied).
     let acl_responses = match event_type {
         TestEventType::PublicDecryption => {
             vec![false.abi_encode(); MAX_DECRYPTION_ATTEMPTS as usize]
         }
         TestEventType::UserDecryptionV2 => (0..MAX_DECRYPTION_ATTEMPTS)
-            .flat_map(|_| vec![U256::ZERO.abi_encode(), false.abi_encode()])
+            .flat_map(|_| {
+                vec![
+                    erc1271_magic_response(),
+                    U256::ZERO.abi_encode(),
+                    false.abi_encode(),
+                ]
+            })
             .collect(),
         TestEventType::UserDecryption => {
             vec![false.abi_encode(); 2 * MAX_DECRYPTION_ATTEMPTS as usize]
