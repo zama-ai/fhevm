@@ -9,7 +9,6 @@ import {
   requiresKmsGenerationContractAddress,
   requiresMultichainAclAddress,
   requiresProtocolConfigContractAddress,
-  usesHostKmsGeneration,
   validateBundleCompatibility,
 } from "../compat/compat";
 import { driftDatabaseName } from "../drift";
@@ -714,16 +713,14 @@ export const runStep = async (state: State, step: StepName) => {
         );
         await waitForContainer("gateway-sc-add-pausers", "complete");
       }
-      const useHostKms = usesHostKmsGeneration(state);
-      const bootstrapComponent = useHostKms ? "host-sc" : "gateway-sc";
-      const keygenService = useHostKms ? "host-sc-trigger-keygen" : "gateway-sc-trigger-keygen";
-      const crsgenService = useHostKms ? "host-sc-trigger-crsgen" : "gateway-sc-trigger-crsgen";
+      const keygenService = "host-sc-trigger-keygen";
+      const crsgenService = "host-sc-trigger-crsgen";
       await timed("[bootstrap] trigger-keygen", () =>
-        stepComposeTask(bootstrapComponent, state, [keygenService], { noDeps: true }),
+        stepComposeTask("host-sc", state, [keygenService], { noDeps: true }),
       );
       await waitForContainer(keygenService, "complete");
       await timed("[bootstrap] trigger-crsgen", () =>
-        stepComposeTask(bootstrapComponent, state, [crsgenService], { noDeps: true }),
+        stepComposeTask("host-sc", state, [crsgenService], { noDeps: true }),
       );
       await waitForContainer(crsgenService, "complete");
       await timed("[bootstrap] wait-for-materials", () => waitForBootstrap(state));

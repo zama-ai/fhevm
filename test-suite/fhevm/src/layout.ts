@@ -187,8 +187,6 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
     "gateway-sc-deploy",
     "gateway-sc-add-network",
     "gateway-sc-add-pausers",
-    "gateway-sc-trigger-keygen",
-    "gateway-sc-trigger-crsgen",
   ],
   "host-contracts": ["host-sc-deploy", "host-sc-add-pausers", "host-sc-trigger-keygen", "host-sc-trigger-crsgen"],
   "test-suite": ["test-suite-e2e-debug"],

@@ -134,8 +134,6 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
     "gateway-sc-deploy": buildSpec("../../../gateway-contracts", "Dockerfile"),
     "gateway-sc-add-network": buildSpec("../../../gateway-contracts", "Dockerfile"),
     "gateway-sc-add-pausers": buildSpec("../../../gateway-contracts", "Dockerfile"),
-    "gateway-sc-trigger-keygen": buildSpec("../../../gateway-contracts", "Dockerfile"),
-    "gateway-sc-trigger-crsgen": buildSpec("../../../gateway-contracts", "Dockerfile"),
   },
   "host-sc": {
     "host-sc-deploy": buildSpec("../../..", "host-contracts/Dockerfile"),
