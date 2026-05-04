@@ -3,6 +3,7 @@ use crate::core::event_processor::{
     context::ContextManager,
     decryption::{DecryptionProcessor, UserDecryptionExtraData},
     kms::KMSGenerationProcessor,
+    signature::Erc1271Error,
 };
 use alloy::providers::Provider;
 use anyhow::anyhow;
@@ -93,6 +94,23 @@ pub enum ProcessingError {
     Irrecoverable(anyhow::Error),
     #[error("Processing failed: {0}")]
     Recoverable(anyhow::Error),
+}
+
+/// ERC-1271 (RFC-012) signature errors map onto `ProcessingError` so callers can use the `?`
+/// operator. Missing code at an EOA is terminal, but smart-account validation can depend on
+/// mutable wallet state, so negative ERC-1271 results are retried through the existing attempt
+/// and validity-window limits.
+impl From<Erc1271Error> for ProcessingError {
+    fn from(err: Erc1271Error) -> Self {
+        match err {
+            Erc1271Error::EoaMismatchNoCode(_) | Erc1271Error::EmptySigOnEoa(_) => {
+                Self::Irrecoverable(anyhow::Error::new(err))
+            }
+            Erc1271Error::Transport(_)
+            | Erc1271Error::WrongMagic(..)
+            | Erc1271Error::Rejected(..) => Self::Recoverable(anyhow::Error::new(err)),
+        }
+    }
 }
 
 impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> {
