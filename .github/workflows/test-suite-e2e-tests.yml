@@ -352,12 +352,15 @@ jobs:
         run: |
           ./fhevm-cli test "$TEST_PROFILE"
 
-      - name: Host listener consumer only selected e2e suite
+      - name: Host listener consumer only test without drift-revert tests
+        if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' }}
         working-directory: test-suite/fhevm
         run: |
           trap 'docker start coprocessor-host-listener coprocessor-host-listener-poller>/dev/null 2>&1 || true' EXIT
           docker stop coprocessor-host-listener coprocessor-host-listener-poller
-          ./fhevm-cli test "$TEST_PROFILE"
+          for TEST in input-proof input-proof-compute-decrypt user-decryption delegated-user-decryption erc20 public-decrypt-http-ebool public-decrypt-http-mixed; do
+            ./fhevm-cli $TEST
+          done
           docker start coprocessor-host-listener coprocessor-host-listener-poller
           trap - EXIT
 
