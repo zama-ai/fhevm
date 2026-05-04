@@ -5,7 +5,7 @@ services:
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/host-sc.env
     command:
-      - npx hardhat task:deployAllHostContracts --with-kms-generation $${HOST_SC_WITH_KMS_GENERATION:-true}
+      - npx hardhat task:deployAllHostContracts $${HOST_SC_DEPLOY_KMS_GENERATION_ARGS}
     volumes:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/${HOST_ADDRESS_DIR:-host}:/app/addresses # workdir in host's Dockerfile is /app
 

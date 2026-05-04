@@ -84,6 +84,9 @@ const applyHostScKmsEnv = (envs: Record<string, Record<string, string>>) => {
   }
 };
 
+const hostDeployKmsGenerationArgs = (plan: StackSpec, enabled: boolean) =>
+  usesHostKmsGeneration(plan) ? `--with-kms-generation ${enabled}` : "";
+
 /** Applies base runtime defaults before compat or discovery-specific rewrites. */
 const applyBaseRuntimeEnv = (
   envs: Record<string, Record<string, string>>,
@@ -283,6 +286,7 @@ export const renderEnvMaps = async (
   envs["host-node"].HOST_NODE_CHAIN_ID = defaultChain.chainId;
   envs["host-sc"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["host-sc"].HOST_ADDRESS_DIR = defaultChain.key;
+  envs["host-sc"].HOST_SC_DEPLOY_KMS_GENERATION_ARGS = hostDeployKmsGenerationArgs(plan, true);
   envs["coprocessor"].RPC_HTTP_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["coprocessor"].RPC_WS_URL = `ws://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
@@ -324,6 +328,7 @@ export const renderEnvMaps = async (
     hostSc.RPC_URL = hostHttp;
     hostSc.CHAIN_ID = chain.chainId;
     hostSc.HOST_ADDRESS_DIR = chain.key;
+    hostSc.HOST_SC_DEPLOY_KMS_GENERATION_ARGS = hostDeployKmsGenerationArgs(plan, false);
     hostSc.HOST_SC_DEPLOY_CONTAINER_NAME = `${chain.sc}-deploy`;
     hostSc.HOST_SC_PAUSERS_CONTAINER_NAME = `${chain.sc}-add-pausers`;
     hostSc.NUM_COPROCESSORS = String(plan.topology.count);

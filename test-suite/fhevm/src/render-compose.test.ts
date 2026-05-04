@@ -232,36 +232,14 @@ describe("render-compose", () => {
     });
   });
 
-  test("extra host-sc chain deploy service disables KMSGeneration", async () => {
-    await withTempStateDir(async () => {
-      await mkdir(path.dirname(envPath("host-sc")), { recursive: true });
-      await writeFile(envPath("coprocessor"), "\n");
-      await writeFile(envPath("coprocessor-chain-b.0"), "\n");
-      await writeFile(envPath("host-sc"), "\n");
-      await writeFile(envPath("host-sc-chain-b"), "\n");
-      await generateComposeOverrides(multiChainHostContractsState, stackSpecForState(multiChainHostContractsState));
-
-      const extra = YAML.parse(await readFile(composePath("host-sc-chain-b"), "utf8")) as {
-        services: Record<string, { command?: string[]; environment?: Record<string, string> }>;
-      };
-
-      const extraDeployService = extra.services["host-sc-chain-b-deploy"];
-      const extraCommandStr = (extraDeployService?.command ?? []).join(" ");
-
-      expect(extraCommandStr).toContain("task:deployAllHostContracts");
-      expect(extraCommandStr).toContain("--with-kms-generation $${HOST_SC_WITH_KMS_GENERATION:-true}");
-      expect(extraDeployService?.environment).toMatchObject({ HOST_SC_WITH_KMS_GENERATION: "false" });
-    });
-  });
-
-  test("default host-sc deploy service enables KMSGeneration by default", async () => {
+  test("host-sc deploy service reads KMSGeneration args from env", async () => {
     const template = YAML.parse(
       await readFile(path.join(TEMPLATE_COMPOSE_DIR, "host-sc-docker-compose.yml"), "utf8"),
     ) as { services: Record<string, { command?: string[] }> };
 
     const cmd = (template.services["host-sc-deploy"]?.command ?? []).join(" ");
     expect(cmd).toContain("task:deployAllHostContracts");
-    expect(cmd).toContain("--with-kms-generation $${HOST_SC_WITH_KMS_GENERATION:-true}");
+    expect(cmd).toContain("$${HOST_SC_DEPLOY_KMS_GENERATION_ARGS}");
   });
 
   test("merges instance env into list-form service environments without dropping KEY_ID", async () => {

@@ -9,6 +9,7 @@ import {
   requiresKmsGenerationContractAddress,
   requiresMultichainAclAddress,
   requiresProtocolConfigContractAddress,
+  usesHostKmsGeneration,
   validateBundleCompatibility,
 } from "../compat/compat";
 import { driftDatabaseName } from "../drift";
@@ -136,6 +137,7 @@ import {
   projectContainers,
   removeProjectResources,
   resetAfterStep,
+  stepComposeRun,
   stepComposeTask,
   stepComposeUp,
 } from "./runtime-compose";
@@ -713,16 +715,24 @@ export const runStep = async (state: State, step: StepName) => {
         );
         await waitForContainer("gateway-sc-add-pausers", "complete");
       }
-      const keygenService = "host-sc-trigger-keygen";
-      const crsgenService = "host-sc-trigger-crsgen";
+      const triggerComponent = usesHostKmsGeneration(state) ? "host-sc" : "gateway-sc";
+      const triggerService = `${triggerComponent}-deploy`;
       await timed("[bootstrap] trigger-keygen", () =>
-        stepComposeTask("host-sc", state, [keygenService], { noDeps: true }),
+        stepComposeRun(
+          triggerComponent,
+          state,
+          triggerService,
+          "npx hardhat task:triggerKeygen --params-type 0 --use-internal-proxy-address true",
+        ),
       );
-      await waitForContainer(keygenService, "complete");
       await timed("[bootstrap] trigger-crsgen", () =>
-        stepComposeTask("host-sc", state, [crsgenService], { noDeps: true }),
+        stepComposeRun(
+          triggerComponent,
+          state,
+          triggerService,
+          "npx hardhat task:triggerCrsgen --params-type 0 --max-bit-length 2048 --use-internal-proxy-address true",
+        ),
       );
-      await waitForContainer(crsgenService, "complete");
       await timed("[bootstrap] wait-for-materials", () => waitForBootstrap(state));
       await generateRuntime(state, stackSpecForState(state));
       break;

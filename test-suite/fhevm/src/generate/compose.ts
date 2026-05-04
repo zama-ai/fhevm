@@ -468,14 +468,6 @@ const buildExtraHostScOverride = async (
     const cloneService = structuredClone(service);
     cloneService.container_name = cloneName;
     cloneService.env_file = [envPath(scPrefix)];
-    // Non-default host chains must not deploy KMSGeneration; the base command
-    // expands this value inside the host-contracts container.
-    if (cloneName === `${scPrefix}-deploy`) {
-      cloneService.environment = {
-        ...normalizeEnvironment(cloneService.environment),
-        HOST_SC_WITH_KMS_GENERATION: "false",
-      };
-    }
     applyBuildPolicy(cloneService, localHostContracts);
     if (localHostContracts) {
       cloneService.build = localBuildSpecFor("host-sc", name);
