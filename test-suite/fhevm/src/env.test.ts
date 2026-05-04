@@ -115,6 +115,8 @@ describe("env", () => {
     expect(rendered.componentEnvs["host-sc"].KMS_GEN_THRESHOLD).toBe(
       rendered.componentEnvs["gateway-sc"].KMS_GENERATION_THRESHOLD,
     );
+    expect(rendered.componentEnvs["gateway-sc"].MPC_THRESHOLD).toBe("0");
+    expect(rendered.componentEnvs["host-sc"].MPC_THRESHOLD).toBe("1");
   });
 
   test("sources kms-generation addresses from host contracts for modern bundles", async () => {
