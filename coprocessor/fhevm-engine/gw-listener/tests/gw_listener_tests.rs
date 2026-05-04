@@ -95,7 +95,8 @@ async fn verify_proof_request_inserted_into_db() -> anyhow::Result<()> {
         provider.clone(),
     );
 
-    let run_handle = tokio::spawn(async move { gw_listener.run().await });
+    let db_pool = env.db_pool.clone();
+    let run_handle = tokio::spawn(async move { gw_listener.run(db_pool).await });
 
     let contract_address = PrivateKeySigner::random().address();
     let user_address = PrivateKeySigner::random().address();

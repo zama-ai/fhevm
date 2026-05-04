@@ -3,12 +3,18 @@ use std::time::Duration;
 use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
-use fhevm_engine_common::database::resolve_database_url_from_option;
-use fhevm_engine_common::{metrics_server, telemetry, utils::DatabaseURL};
+use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
+use fhevm_engine_common::{
+    drift_revert::{self, RevertRunnerConfig},
+    metrics_server, telemetry,
+    utils::DatabaseURL,
+};
+use gw_listener::aws_s3::AwsS3Client;
 use gw_listener::gw_listener::GatewayListener;
 use gw_listener::http_server::HttpServer;
 use gw_listener::ConfigSettings;
 use humantime::parse_duration;
+use sqlx::postgres::PgPoolOptions;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Level};
@@ -96,6 +102,29 @@ struct Conf {
     /// coprocessors to submit their ciphertext material. Wall-clock duration.
     #[arg(long, default_value = "5m", value_parser = parse_duration, requires = "ciphertext_commits_address")]
     drift_post_consensus_grace: Duration,
+
+    /// How long to wait after detecting a pending drift-revert signal before
+    /// running the revert SQL. Gives other services time to see the signal and
+    /// re-exec before the DB state changes.
+    #[arg(long, default_value = "60s", value_parser = parse_duration)]
+    drift_auto_revert_grace_period: Duration,
+
+    /// Enable automatic drift recovery. When false (default), the drift
+    /// detector still runs and logs drift, but no revert signal is created
+    /// and no automatic recovery kicks in. Opt-in while the feature rolls out.
+    /// Also readable from `DRIFT_AUTO_REVERT_ENABLED` env var.
+    #[arg(long, env = "DRIFT_AUTO_REVERT_ENABLED", default_value_t = false)]
+    drift_auto_revert_enabled: bool,
+
+    /// Maximum number of successful reverts allowed for a host chain within
+    /// `--drift-auto-revert-recent-attempts-window` before refusing further
+    /// reverts. Catches loops where each revert succeeds but drift recurs.
+    #[arg(long, default_value_t = 2)]
+    drift_auto_revert_max_recent_attempts: u32,
+
+    /// Time window over which `--drift-auto-revert-max-recent-attempts` is counted.
+    #[arg(long, default_value = "30m", value_parser = parse_duration)]
+    drift_auto_revert_recent_attempts_window: Duration,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -169,17 +198,17 @@ async fn main() -> anyhow::Result<()> {
         gateway_config_address: conf.gateway_config_address,
         drift_no_consensus_timeout: conf.drift_no_consensus_timeout,
         drift_post_consensus_grace: conf.drift_post_consensus_grace,
+        drift_auto_revert_grace_period: conf.drift_auto_revert_grace_period,
+        drift_auto_revert_enabled: conf.drift_auto_revert_enabled,
     };
 
-    let gw_listener = GatewayListener::new(
+    let gw_listener = std::sync::Arc::new(GatewayListener::new(
         conf.input_verification_address,
         config.clone(),
         cancel_token.clone(),
         provider.clone(),
-    );
-
-    // Wrap the GatewayListener in an Arc
-    let gw_listener = std::sync::Arc::new(gw_listener);
+        aws_s3_client.clone(),
+    ));
 
     let http_server = HttpServer::new(
         gw_listener.clone(),
@@ -189,17 +218,34 @@ async fn main() -> anyhow::Result<()> {
 
     install_signal_handlers(cancel_token.clone())?;
 
+    let http_server_fut = tokio::spawn(async move { http_server.start().await });
+    metrics_server::spawn(conf.metrics_addr.clone(), cancel_token.child_token());
+
     info!(
         health_check_port = conf.health_check_port,
         "Starting HTTP health check server"
     );
 
-    // Run both services in parallel. Here we assume that if gw listener stops without an error, HTTP server should also stop.
-    let gw_listener_fut = tokio::spawn(async move { gw_listener.run().await });
-    let http_server_fut = tokio::spawn(async move { http_server.start().await });
+    let (db_pool, _pool_refresh_handle) = connect_pool_with_options(
+        &config.database_url,
+        PgPoolOptions::new().max_connections(config.database_pool_size),
+        Some(&cancel_token),
+    )
+    .await?;
 
-    // Start the metrics server.
-    metrics_server::spawn(conf.metrics_addr.clone(), cancel_token.child_token());
+    // gw-listener is the revert runner — it runs the revert SQL if pending.
+    drift_revert::init(
+        db_pool.clone(),
+        cancel_token.clone(),
+        Some(RevertRunnerConfig {
+            grace_period: config.drift_auto_revert_grace_period,
+            max_recent_attempts: conf.drift_auto_revert_max_recent_attempts,
+            recent_attempts_window: conf.drift_auto_revert_recent_attempts_window,
+        }),
+    )
+    .await?;
+
+    let gw_listener_fut = tokio::spawn(async move { gw_listener.run(db_pool).await });
 
     let gw_listener_res = gw_listener_fut.await;
     let http_server_res = http_server_fut.await;

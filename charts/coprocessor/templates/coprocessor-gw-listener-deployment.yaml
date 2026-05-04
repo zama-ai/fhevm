@@ -1,4 +1,5 @@
 {{- if .Values.gwListener.enabled -}}
+{{- $disabled := default (list) .Values.gwListener.disabledArgs -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -21,6 +22,9 @@ spec:
         app: coprocessor-gw-listener
         app.kubernetes.io/name: {{ include "gwListenerName" . }}
         {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.gwListener.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       {{- with .Values.podAnnotations }}
@@ -51,44 +55,135 @@ spec:
           image: {{ .Values.gwListener.image.name }}:{{ .Values.gwListener.image.tag }}
           command: ["gw_listener"]
           args:
+            {{- if not (has "database-url" $disabled) }}
             - --database-url=$(DATABASE_URL)
+            {{- end }}
+            {{- if not (has "gw-url" $disabled) }}
             - --gw-url=$(GATEWAY_URL)
+            {{- end }}
+            {{- if not (has "input-verification-address" $disabled) }}
             - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
             - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
+            {{- end }}
+            {{- if and (or .Values.commonConfig.gatewayContractAddresses.gatewayConfig.value .Values.commonConfig.gatewayContractAddresses.gatewayConfig.valueFrom) (not (has "gateway-config-address" $disabled)) }}
             - --gateway-config-address=$(GATEWAY_CONFIG_ADDRESS)
+            {{- end }}
+            {{- if not (has "health-check-port" $disabled) }}
             - --health-check-port={{ .Values.gwListener.ports.healthcheck }}
+            {{- end }}
+            {{- if not (has "metrics-addr" $disabled) }}
             - --metrics-addr=0.0.0.0:{{ .Values.gwListener.ports.metrics }}
-            - --log-level={{ .Values.gwListener.args.logLevel }}
-            - --service-name={{ .Values.gwListener.args.serviceName }}
-            - --database-pool-size={{ .Values.gwListener.args.databasePoolSize }}
-            - --verify-proof-req-database-channel={{ .Values.gwListener.args.verifyProofReqDatabaseChannel }}
-            - --error-sleep-initial-secs={{ .Values.gwListener.args.errorSleepInitialSecs }}
-            - --error-sleep-max-secs={{ .Values.gwListener.args.errorSleepMaxSecs }}
-            - --provider-max-retries={{ .Values.gwListener.args.providerMaxRetries }}
-            - --provider-retry-interval={{ .Values.gwListener.args.providerRetryInterval }}
-            - --get-logs-poll-interval={{ .Values.gwListener.args.getLogsPollInterval }}
-            - --get-logs-block-batch-size={{ .Values.gwListener.args.getLogsBlockBatchSize }}
-            - --log-last-processed-every-number-of-updates={{ .Values.gwListener.args.logLastProcessedEveryNumberOfUpdates }}
+            {{- end }}
             {{- with .Values.gwListener.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
-{{- include "coprocessorDatabaseEnv" . | nindent 12 }}
+            {{- with .Values.commonConfig.databaseUser }}
+            - name: DATABASE_USER
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.databaseEndpoint }}
+            - name: DATABASE_ENDPOINT
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if eq (include "coprocessorDatabaseAuthMode" .) "password" }}
+            {{- with .Values.commonConfig.databasePassword }}
+            - name: DATABASE_PASSWORD
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.databaseUrl }}
+            - name: DATABASE_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if eq (include "coprocessorDatabaseAuthMode" .) "iam" }}
+            - name: DATABASE_IAM_AUTH_ENABLED
+              value: "true"
+            {{- with .Values.commonConfig.databaseIamRegion }}
+            - name: DATABASE_IAM_REGION
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.databaseSslRootCertPath }}
+            - name: DATABASE_SSL_ROOT_CERT_PATH
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.gatewayUrl }}
             - name: GATEWAY_URL
-              value: {{ .Values.commonConfig.gatewayUrl | quote }}
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.gatewayContractAddresses.inputVerification }}
             - name: INPUT_VERIFICATION_ADDRESS
-              value: {{ required "commonConfig.gatewayContractAddresses.inputVerification is required" .Values.commonConfig.gatewayContractAddresses.inputVerification | quote }}
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.gatewayContractAddresses.ciphertextCommits }}
             - name: CIPHERTEXT_COMMITS_ADDRESS
-              value: {{ required "commonConfig.gatewayContractAddresses.ciphertextCommits is required" .Values.commonConfig.gatewayContractAddresses.ciphertextCommits | quote }}
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.gatewayContractAddresses.gatewayConfig }}
             - name: GATEWAY_CONFIG_ADDRESS
-              value: {{ required "commonConfig.gatewayContractAddresses.gatewayConfig is required" .Values.commonConfig.gatewayContractAddresses.gatewayConfig | quote }}
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.gwListener.config.chainId }}
+            - name: CHAIN_ID
+              value: {{ . | quote }}
+            {{- end }}
           {{- if default .Values.commonConfig.tracing.enabled .Values.gwListener.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint | quote }}
             - name: OTEL_SERVICE_NAME
+              {{- if .Values.gwListener.tracing.service }}
+              value: {{ .Values.gwListener.tracing.service | quote }}
+              {{- else }}
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+              {{- end }}
           {{- end }}
           {{- with .Values.commonConfig.env }}
             {{- toYaml . | nindent 12 }}
