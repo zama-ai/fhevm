@@ -77,6 +77,7 @@ describe("env", () => {
     expect(rendered.componentEnvs["host-sc"].RPC_URL).toBe("http://host-node:9650");
     expect(rendered.componentEnvs["coprocessor"].RPC_HTTP_URL).toBe("http://host-node:9650");
     expect(rendered.componentEnvs["kms-connector"].KMS_CONNECTOR_ETHEREUM_URL).toBe("http://host-node:9650");
+    expect(rendered.componentEnvs["kms-connector"].KMS_CONNECTOR_ETHEREUM_CHAIN_ID).toBe("543210");
     expect(rendered.componentEnvs["test-suite"].RPC_URL).toBe("http://host-node:9650");
     expect(rendered.componentEnvs["test-suite"].CHAIN_ID_HOST).toBe("543210");
   });
