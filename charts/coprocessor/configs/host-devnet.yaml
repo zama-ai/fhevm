@@ -1,4 +1,3 @@
-contracts.version: "v0.12.0-0"
 acl.address: "0xBCA6F8De823a399Dc431930FD5EE550Bf1C0013e"
 decryption_oracle.address: "0x6aff1990AB3840dA2a1bE098598046826860629d"
 fhevm_executor.address: "0x5cc8c5A366E733d4f1e677B2A9C08Bc2ea49b302"
