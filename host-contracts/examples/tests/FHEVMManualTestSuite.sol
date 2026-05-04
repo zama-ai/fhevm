@@ -335,24 +335,4 @@ contract FHEVMManualTestSuite {
         resEbool = result;
     }
 
-    function test_isIn_euint256_found(externalEuint256 a, bytes calldata inputProof) public {
-        euint256 value = FHE.fromExternal(a, inputProof);
-        euint256[] memory set = new euint256[](3);
-        set[0] = FHE.asEuint256(1);
-        set[1] = FHE.asEuint256(42);
-        set[2] = FHE.asEuint256(100);
-        ebool result = FHE.isIn(value, set);
-        FHE.allowThis(result);
-        resEbool = result;
-    }
-
-    function test_isIn_euint256_not_found(externalEuint256 a, bytes calldata inputProof) public {
-        euint256 value = FHE.fromExternal(a, inputProof);
-        euint256[] memory set = new euint256[](2);
-        set[0] = FHE.asEuint256(1);
-        set[1] = FHE.asEuint256(2);
-        ebool result = FHE.isIn(value, set);
-        FHE.allowThis(result);
-        resEbool = result;
-    }
 }

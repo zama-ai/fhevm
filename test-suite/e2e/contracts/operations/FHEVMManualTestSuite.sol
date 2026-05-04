@@ -467,4 +467,42 @@ contract FHEVMManualTestSuite is E2ECoprocessorConfig {
         resEbool = FHE.isIn(value, set);
         FHE.makePubliclyDecryptable(resEbool);
     }
+
+    function test_isIn_eaddress_found(externalEaddress a, bytes calldata inputProof) external {
+        eaddress value = FHE.fromExternal(a, inputProof);
+        eaddress[] memory set = new eaddress[](3);
+        set[0] = FHE.asEaddress(address(0x1111111111111111111111111111111111111111));
+        set[1] = FHE.asEaddress(address(0x2222222222222222222222222222222222222222));
+        set[2] = FHE.asEaddress(address(0x3333333333333333333333333333333333333333));
+        resEbool = FHE.isIn(value, set);
+        FHE.makePubliclyDecryptable(resEbool);
+    }
+
+    function test_isIn_eaddress_not_found(externalEaddress a, bytes calldata inputProof) external {
+        eaddress value = FHE.fromExternal(a, inputProof);
+        eaddress[] memory set = new eaddress[](2);
+        set[0] = FHE.asEaddress(address(0x1111111111111111111111111111111111111111));
+        set[1] = FHE.asEaddress(address(0x2222222222222222222222222222222222222222));
+        resEbool = FHE.isIn(value, set);
+        FHE.makePubliclyDecryptable(resEbool);
+    }
+
+    function test_isIn_euint256_found(externalEuint256 a, bytes calldata inputProof) external {
+        euint256 value = FHE.fromExternal(a, inputProof);
+        euint256[] memory set = new euint256[](3);
+        set[0] = FHE.asEuint256(1);
+        set[1] = FHE.asEuint256(42);
+        set[2] = FHE.asEuint256(100);
+        resEbool = FHE.isIn(value, set);
+        FHE.makePubliclyDecryptable(resEbool);
+    }
+
+    function test_isIn_euint256_not_found(externalEuint256 a, bytes calldata inputProof) external {
+        euint256 value = FHE.fromExternal(a, inputProof);
+        euint256[] memory set = new euint256[](2);
+        set[0] = FHE.asEuint256(1);
+        set[1] = FHE.asEuint256(2);
+        resEbool = FHE.isIn(value, set);
+        FHE.makePubliclyDecryptable(resEbool);
+    }
 }

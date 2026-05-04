@@ -1386,4 +1386,60 @@ describe('FHEVM manual operations', function () {
     const res = await this.instance.publicDecrypt([handle]);
     assert.equal(res.clearValues[handle], false);
   });
+
+  it('test operator "isIn" eaddress - value found in set', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.addAddress('0x2222222222222222222222222222222222222222');
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_isIn_eaddress_found(
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEbool();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], true);
+  });
+
+  it('test operator "isIn" eaddress - value not found in set', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.addAddress('0x4444444444444444444444444444444444444444');
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_isIn_eaddress_not_found(
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEbool();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], false);
+  });
+
+  it('test operator "isIn" euint256 - value found in set', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add256(42n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_isIn_euint256_found(
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEbool();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], true);
+  });
+
+  it('test operator "isIn" euint256 - value not found in set', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add256(99n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_isIn_euint256_not_found(
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEbool();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], false);
+  });
 });

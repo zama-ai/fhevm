@@ -874,23 +874,4 @@ describe('FHEVM manual operations', function () {
     expect(res).to.equal(true);
   });
 
-  it('isIn euint256 - value found in set returns true', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    input.add256(42n);
-    const encryptedAmount = await input.encrypt();
-    const tx = await this.contract.test_isIn_euint256_found(encryptedAmount.handles[0], encryptedAmount.inputProof);
-    await tx.wait();
-    const res = await decryptBool(await this.contract.resEbool());
-    expect(res).to.equal(true);
-  });
-
-  it('isIn euint256 - value not found in set returns false', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    input.add256(99n);
-    const encryptedAmount = await input.encrypt();
-    const tx = await this.contract.test_isIn_euint256_not_found(encryptedAmount.handles[0], encryptedAmount.inputProof);
-    await tx.wait();
-    const res = await decryptBool(await this.contract.resEbool());
-    expect(res).to.equal(false);
-  });
 });
