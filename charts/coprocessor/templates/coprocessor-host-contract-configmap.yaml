@@ -1,0 +1,24 @@
+{{- if .Values.hostContractConfigMap.enabled -}}
+{{- $cm := .Values.hostContractConfigMap -}}
+{{- $allowed := list "" "devnet" "testnet" "mainnet" -}}
+{{- $network := default "" $cm.network -}}
+{{- if not (has $network $allowed) -}}
+{{- fail (printf "hostContractConfigMap.network must be one of: devnet, testnet, mainnet (or empty); got %q" $network) -}}
+{{- end -}}
+{{- $preset := dict -}}
+{{- if $network -}}
+{{- $preset = .Files.Get (printf "configs/host-%s.yaml" $network) | fromYaml -}}
+{{- end -}}
+{{- $merged := mergeOverwrite (deepCopy $preset) ($cm.addresses | default dict) -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $cm.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ $cm.name }}
+data:
+  {{- range $k, $v := $merged }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}
+{{- end -}}
