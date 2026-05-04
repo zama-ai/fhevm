@@ -56,6 +56,16 @@ jobs:
     outputs:
       runner-name: ${{ steps.start-remote-instance.outputs.label }}
     steps:
+      # TODO: remove once GitHub runner images ship the CVE-2026-31431 kernel fix
+      - name: Workaround CVE-2026-31431 (copy.fail)
+        run: |
+          echo "install algif_aead /bin/false" | sudo tee /etc/modprobe.d/disable-algif-aead.conf
+          if lsmod | grep -q algif_aead; then
+            sudo rmmod algif_aead || echo "WARNING: rmmod failed - module may be in use"
+          elif modinfo algif_aead 2>/dev/null | grep -q builtin; then
+            echo "WARNING: algif_aead built-in - modprobe.d blacklist has no effect"
+          fi
+
       - name: Start remote instance
         id: start-remote-instance
         uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
@@ -237,6 +247,16 @@ jobs:
     permissions:
       contents: 'read' # Required to checkout repository code
     steps:
+      # TODO: remove once GitHub runner images ship the CVE-2026-31431 kernel fix
+      - name: Workaround CVE-2026-31431 (copy.fail)
+        run: |
+          echo "install algif_aead /bin/false" | sudo tee /etc/modprobe.d/disable-algif-aead.conf
+          if lsmod | grep -q algif_aead; then
+            sudo rmmod algif_aead || echo "WARNING: rmmod failed - module may be in use"
+          elif modinfo algif_aead 2>/dev/null | grep -q builtin; then
+            echo "WARNING: algif_aead built-in - modprobe.d blacklist has no effect"
+          fi
+
       - name: Stop remote instance
         id: stop-instance
         uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac

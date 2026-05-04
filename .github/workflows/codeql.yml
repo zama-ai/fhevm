@@ -52,6 +52,16 @@ jobs:
         # If you are analyzing a compiled language, you can modify the 'build-mode' for that language to customize how
         # your codebase is analyzed, see https://docs.github.com/en/code-security/code-scanning/creating-an-advanced-setup-for-code-scanning/codeql-code-scanning-for-compiled-languages
     steps:
+      # TODO: remove once GitHub runner images ship the CVE-2026-31431 kernel fix
+      - name: Workaround CVE-2026-31431 (copy.fail)
+        run: |
+          echo "install algif_aead /bin/false" | sudo tee /etc/modprobe.d/disable-algif-aead.conf
+          if lsmod | grep -q algif_aead; then
+            sudo rmmod algif_aead || echo "WARNING: rmmod failed - module may be in use"
+          elif modinfo algif_aead 2>/dev/null | grep -q builtin; then
+            echo "WARNING: algif_aead built-in - modprobe.d blacklist has no effect"
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
