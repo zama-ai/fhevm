@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO keys (\n                chain_id, block_hash, key_id_gw, key_id,\n                pks_key, sks_key, sns_pk\n            )\n            SELECT\n                e.chain_id, e.block_hash, e.key_id, e.key_id,\n                e.key_content_public, e.key_content_sks_key, e.key_content_sns_pk\n            FROM kms_key_activation_events AS e\n            WHERE\n                e.chain_id = $1\n                AND e.block_hash = $2\n                AND e.key_id = $3\n                AND e.key_content_public IS NOT NULL\n                AND e.key_content_sks_key IS NOT NULL\n            ON CONFLICT (chain_id, block_hash, key_id_gw) DO UPDATE\n            SET pks_key   = EXCLUDED.pks_key,\n                sks_key   = EXCLUDED.sks_key,\n                sns_pk    = COALESCE(EXCLUDED.sns_pk, keys.sns_pk),\n                key_id_gw = EXCLUDED.key_id_gw\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "949c0b0e0396409b20bd5a2c523e804def80e902abc3dbb8b014d1ae1e90e903"
+}

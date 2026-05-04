@@ -21,7 +21,7 @@ gatewayOwnershipTransfer:
 
   image:
     name: ghcr.io/zama-ai/fhevm/gateway-contracts
-    tag: v0.10.0
+    tag: v0.13.0
 
   # ConfigMap to store deployed contract addresses
   configmap:
@@ -71,7 +71,7 @@ hostOwnershipTransfer:
 
   image:
     name: ghcr.io/zama-ai/fhevm/host-contracts
-    tag: v0.10.0
+    tag: v0.13.0
 
   # ConfigMap to store deployed contract addresses
   configmap:

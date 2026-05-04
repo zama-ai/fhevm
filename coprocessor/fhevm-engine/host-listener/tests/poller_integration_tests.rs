@@ -29,6 +29,13 @@ sol!(
     "artifacts/ACLTest.sol/ACLTest.json"
 );
 
+sol!(
+    #[sol(rpc)]
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    KMSGenerationTest,
+    "artifacts/KMSGenerationTest.sol/KMSGenerationTest.json"
+);
+
 #[tokio::test]
 #[serial(db)]
 async fn poller_state_round_trip() -> Result<(), Box<dyn std::error::Error>> {
@@ -106,6 +113,8 @@ async fn poller_catches_up_to_safe_tip(
 
     let tfhe_contract = FHEVMExecutorTest::deploy(provider.clone()).await?;
     let acl_contract = ACLTest::deploy(provider.clone()).await?;
+    let kms_generation_contract =
+        KMSGenerationTest::deploy(provider.clone()).await?;
     let signer_address = provider
         .signer_addresses()
         .next()
@@ -163,6 +172,7 @@ async fn poller_catches_up_to_safe_tip(
         url: http_url,
         acl_address: *acl_contract.address(),
         tfhe_address: *tfhe_contract.address(),
+        kms_generation_address: *kms_generation_contract.address(),
         database_url: db_url.clone(),
         finality_lag,
         batch_size: 2,

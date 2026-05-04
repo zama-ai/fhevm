@@ -58,13 +58,19 @@ commonConfig:
   # --coprocessor-api-key and v0.11 snsWorker renders --tenant-api-key.
   tenantApiKey: {}
 
+  # Host chain configuration
+  hostChainWsUrl: "ws://ethereum-node:8546"
+  hostChainHttpUrl: "http://ethereum-node:8545"
+  aclContractAddress: {}            # required — e.g. 0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c
+  fhevmExecutorContractAddress: {}  # required — e.g. 0x...
+  kmsGenerationContractAddress: {}  # required — e.g. 0x...
+
   # Gateway chain configuration. Consumed by gwListener and txSender.
   # Each field accepts either a literal `value` or a `valueFrom` block
   # (secretKeyRef or configMapKeyRef). Leave unset to inject nothing.
   gatewayUrl: {}
   gatewayContractAddresses:
     inputVerification: {}     # required by gwListener, txSender
-    kmsGeneration: {}         # required by gwListener
     ciphertextCommits: {}     # required by txSender; optional for gwListener (drift detection)
     gatewayConfig: {}         # optional for gwListener (drift detection)
     multichainAcl: {}         # legacy v0.11 txSender only; disable the arg on v0.12+
@@ -622,7 +628,7 @@ gwListener:
 
   image:
     name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/gw-listener
-    tag: v0.11.0
+    tag: v0.12.0
 
   replicas: 1
 
