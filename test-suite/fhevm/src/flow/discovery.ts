@@ -124,7 +124,6 @@ export const validateDiscovery = (
     "KMS_VERIFIER_CONTRACT_ADDRESS",
     "INPUT_VERIFIER_CONTRACT_ADDRESS",
     "PAUSER_SET_CONTRACT_ADDRESS",
-    ...(requiresKmsGenerationContractAddress(state) ? ["KMS_GENERATION_CONTRACT_ADDRESS"] : []),
     ...(requiresProtocolConfigContractAddress(state) ? ["PROTOCOL_CONFIG_CONTRACT_ADDRESS"] : []),
   ];
   for (const key of requiredGateway) {

@@ -127,6 +127,17 @@ describe("validateDiscovery", () => {
       'Host discovery for non-canonical chain "chain-b" contains KMS_GENERATION_CONTRACT_ADDRESS',
     );
   });
+
+  test("accepts KMSGeneration only on the canonical host", () => {
+    const state = completeState();
+    state.scenario.hostChains = [
+      { key: "chain-a", chainId: "12345", rpcPort: 8545 },
+      { key: "chain-b", chainId: "67890", rpcPort: 8547 },
+    ];
+    state.discovery = validDiscovery(["chain-a", "chain-b"]);
+
+    expect(() => validateDiscovery(state)).not.toThrow();
+  });
 });
 
 describe("resumeRepairStep", () => {
