@@ -303,15 +303,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "alloy"
-version = "2.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8010fc7e9e8643ef4e758cdccf3eef26734594aedf88a9d5ed35e51837d42ef"
-dependencies = [
- "alloy-core",
-]
-
-[[package]]
 name = "alloy-chains"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -446,6 +437,7 @@ checksum = "9d4769c6ffddca380b0070d71c8b7f30bed375543fe76bb2f74ec0acf4b7cd16"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
+ "k256",
  "serde",
  "thiserror 2.0.12",
 ]
@@ -2276,7 +2268,7 @@ name = "connector-utils"
 version = "0.12.0"
 dependencies = [
  "actix-web",
- "alloy 1.0.38",
+ "alloy",
  "anyhow",
  "async-trait",
  "aws-config",
@@ -2866,7 +2858,7 @@ dependencies = [
 name = "fhevm_gateway_bindings"
 version = "0.1.0-rc14"
 dependencies = [
- "alloy 1.0.38",
+ "alloy",
  "serde",
 ]
 
@@ -2875,7 +2867,7 @@ name = "fhevm_host_bindings"
 version = "0.10.0"
 source = "git+https://github.com/zama-ai/fhevm.git?rev=9035f20a332ef7c06a9cd08b83622d5d29894d85#9035f20a332ef7c06a9cd08b83622d5d29894d85"
 dependencies = [
- "alloy 1.0.38",
+ "alloy",
  "serde",
 ]
 
@@ -3207,7 +3199,7 @@ name = "gw-listener"
 version = "0.12.0"
 dependencies = [
  "actix-web",
- "alloy 1.0.38",
+ "alloy",
  "anyhow",
  "bc2wrap",
  "connector-utils",
@@ -3906,7 +3898,7 @@ name = "kms-worker"
 version = "0.12.0"
 dependencies = [
  "actix-web",
- "alloy 1.0.38",
+ "alloy",
  "anyhow",
  "bc2wrap",
  "connector-utils",
@@ -7021,7 +7013,7 @@ name = "tx-sender"
 version = "0.12.0"
 dependencies = [
  "actix-web",
- "alloy 1.0.38",
+ "alloy",
  "anyhow",
  "bc2wrap",
  "connector-utils",
@@ -7140,7 +7132,7 @@ checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 name = "user-decryption-signature"
 version = "0.1.0"
 dependencies = [
- "alloy 2.0.4",
+ "alloy",
  "fhevm_gateway_bindings",
  "thiserror 2.0.12",
 ]

@@ -3,7 +3,6 @@ use crate::core::event_processor::{
     context::ContextManager,
     decryption::{DecryptionProcessor, UserDecryptionExtraData},
     kms::KMSGenerationProcessor,
-    signature::Erc1271Error,
 };
 use alloy::providers::Provider;
 use anyhow::anyhow;
@@ -14,6 +13,7 @@ use sqlx::{Pool, Postgres};
 use thiserror::Error;
 use tonic::Code;
 use tracing::{error, info};
+use user_decryption_signature::Erc1271Error;
 
 /// Interface used to process Gateway's events.
 pub trait EventProcessor: Send {
