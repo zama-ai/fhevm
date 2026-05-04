@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE verify_proofs SET handles = $1, verified = $2, verified_at = NOW()\n                WHERE zk_proof_id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bool",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7a192c4614f12c9ab927f424e62c6642d31205f9ff238ca8becfb4f4cb7f9ca7"
+}

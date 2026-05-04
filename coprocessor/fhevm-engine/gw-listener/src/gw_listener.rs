@@ -4,12 +4,10 @@ use alloy::eips::BlockId;
 use alloy::rpc::types::Filter;
 use alloy::sol_types::SolEventInterface;
 use alloy::{network::Ethereum, primitives::Address, providers::Provider, rpc::types::Log};
+use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::database::connect_options_for_database_url;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::utils::to_hex;
-use fhevm_engine_common::{
-    chain_id::ChainId,
-    database::{connect_options_for_database_url, connect_pool_with_options},
-};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres, Row};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
@@ -55,18 +53,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         }
     }
 
-    pub async fn run(&self) -> anyhow::Result<()> {
+    pub async fn run(&self, db_pool: Pool<Postgres>) -> anyhow::Result<()> {
         info!(
             conf = ?self.conf,
             self.input_verification_address = %self.input_verification_address,
             "Starting Gateway Listener",
         );
-        let (db_pool, _pool_refresh_handle) = connect_pool_with_options(
-            &self.conf.database_url,
-            PgPoolOptions::new().max_connections(self.conf.database_pool_size),
-            Some(&self.cancel_token),
-        )
-        .await?;
 
         let get_logs_handle = {
             let s = self.clone();
@@ -124,6 +116,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             expected_senders,
             self.conf.drift_no_consensus_timeout,
             self.conf.drift_post_consensus_grace,
+            self.conf.drift_auto_revert_enabled,
         );
         if let Err(e) = self
             .rebuild_drift_detector(

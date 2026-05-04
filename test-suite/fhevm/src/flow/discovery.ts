@@ -1,4 +1,4 @@
-import { requiresMultichainAclAddress } from "../compat/compat";
+import { requiresLegacyGatewayKmsGenerationAddress, requiresMultichainAclAddress } from "../compat/compat";
 import { PreflightError } from "../errors";
 import {
   DEFAULT_GATEWAY_RPC_PORT,
@@ -103,6 +103,7 @@ export const validateDiscovery = (state: Pick<State, "target" | "versions" | "di
     "DECRYPTION_ADDRESS",
     "INPUT_VERIFICATION_ADDRESS",
     "CIPHERTEXT_COMMITS_ADDRESS",
+    ...(requiresLegacyGatewayKmsGenerationAddress(state) ? ["KMS_GENERATION_ADDRESS"] : []),
     ...(requiresMultichainAclAddress(state) ? ["MULTICHAIN_ACL_ADDRESS"] : []),
   ];
   const requiredHost = [
@@ -111,8 +112,7 @@ export const validateDiscovery = (state: Pick<State, "target" | "versions" | "di
     "KMS_VERIFIER_CONTRACT_ADDRESS",
     "INPUT_VERIFIER_CONTRACT_ADDRESS",
     "PAUSER_SET_CONTRACT_ADDRESS",
-    "PROTOCOL_CONFIG_CONTRACT_ADDRESS",
-    "KMS_GENERATION_CONTRACT_ADDRESS",
+    ...(requiresLegacyGatewayKmsGenerationAddress(state) ? [] : ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", "KMS_GENERATION_CONTRACT_ADDRESS"]),
   ];
   for (const key of requiredGateway) {
     if (!discovery.gateway[key]) {

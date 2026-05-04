@@ -21,7 +21,6 @@ interface IProtocolConfig {
     error InvalidHighThreshold(string thresholdName, uint256 threshold, uint256 nodeCount);
     error InvalidKmsContext(uint256 kmsContextId);
     error InvalidNullThreshold(string thresholdName);
-    error KeyManagementRequestInFlight();
     error KmsNodeNullSigner();
     error KmsNodeNullTxSender();
     error KmsSignerAlreadyRegistered(address signer);
@@ -590,11 +589,6 @@ interface IProtocolConfig {
         "internalType": "string"
       }
     ]
-  },
-  {
-    "type": "error",
-    "name": "KeyManagementRequestInFlight",
-    "inputs": []
   },
   {
     "type": "error",
@@ -1607,81 +1601,6 @@ error InvalidNullThreshold(string thresholdName);
                         &self.thresholdName,
                     ),
                 )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `KeyManagementRequestInFlight()` and selector `0x8e2bfd90`.
-```solidity
-error KeyManagementRequestInFlight();
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct KeyManagementRequestInFlight;
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = ();
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = ();
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<KeyManagementRequestInFlight>
-        for UnderlyingRustTuple<'_> {
-            fn from(value: KeyManagementRequestInFlight) -> Self {
-                ()
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for KeyManagementRequestInFlight {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for KeyManagementRequestInFlight {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "KeyManagementRequestInFlight()";
-            const SELECTOR: [u8; 4] = [142u8, 43u8, 253u8, 144u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
@@ -5859,8 +5778,6 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
         #[allow(missing_docs)]
         InvalidNullThreshold(InvalidNullThreshold),
         #[allow(missing_docs)]
-        KeyManagementRequestInFlight(KeyManagementRequestInFlight),
-        #[allow(missing_docs)]
         KmsNodeNullSigner(KmsNodeNullSigner),
         #[allow(missing_docs)]
         KmsNodeNullTxSender(KmsNodeNullTxSender),
@@ -5884,7 +5801,6 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
             [69u8, 149u8, 252u8, 226u8],
             [119u8, 221u8, 190u8, 129u8],
             [132u8, 102u8, 128u8, 74u8],
-            [142u8, 43u8, 253u8, 144u8],
             [202u8, 168u8, 20u8, 163u8],
             [209u8, 140u8, 79u8, 240u8],
             [245u8, 26u8, 246u8, 187u8],
@@ -5894,7 +5810,7 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
     impl alloy_sol_types::SolInterface for IProtocolConfigErrors {
         const NAME: &'static str = "IProtocolConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 10usize;
+        const COUNT: usize = 9usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -5912,9 +5828,6 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                 }
                 Self::InvalidNullThreshold(_) => {
                     <InvalidNullThreshold as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::KeyManagementRequestInFlight(_) => {
-                    <KeyManagementRequestInFlight as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::KmsNodeNullSigner(_) => {
                     <KmsNodeNullSigner as alloy_sol_types::SolError>::SELECTOR
@@ -6014,17 +5927,6 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                             .map(IProtocolConfigErrors::KmsNodeNullTxSender)
                     }
                     KmsNodeNullTxSender
-                },
-                {
-                    fn KeyManagementRequestInFlight(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
-                        <KeyManagementRequestInFlight as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IProtocolConfigErrors::KeyManagementRequestInFlight)
-                    }
-                    KeyManagementRequestInFlight
                 },
                 {
                     fn InvalidHighThreshold(
@@ -6148,17 +6050,6 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                     KmsNodeNullTxSender
                 },
                 {
-                    fn KeyManagementRequestInFlight(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
-                        <KeyManagementRequestInFlight as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolConfigErrors::KeyManagementRequestInFlight)
-                    }
-                    KeyManagementRequestInFlight
-                },
-                {
                     fn InvalidHighThreshold(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
@@ -6228,11 +6119,6 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                         inner,
                     )
                 }
-                Self::KeyManagementRequestInFlight(inner) => {
-                    <KeyManagementRequestInFlight as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::KmsNodeNullSigner(inner) => {
                     <KmsNodeNullSigner as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -6284,12 +6170,6 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                 }
                 Self::InvalidNullThreshold(inner) => {
                     <InvalidNullThreshold as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::KeyManagementRequestInFlight(inner) => {
-                    <KeyManagementRequestInFlight as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

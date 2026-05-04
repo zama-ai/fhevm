@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT crs FROM crs WHERE crs_id = $1",
+  "query": "SELECT cks_key FROM keys WHERE key_id_gw = $1",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "crs",
+        "name": "cks_key",
         "type_info": "Bytea"
       }
     ],
@@ -15,8 +15,8 @@
       ]
     },
     "nullable": [
-      false
+      true
     ]
   },
-  "hash": "615f86e8d30acec4a74b6f5a0a4446b1d19ec5a7f14162f27d07536bf3e68dce"
+  "hash": "491e08ab708c87e6d99289e7017d765d4d47dcced641df69fc639b58f4c34794"
 }

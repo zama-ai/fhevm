@@ -2,6 +2,7 @@ pub mod chain_id;
 pub mod crs;
 pub mod database;
 pub mod db_keys;
+pub mod drift_revert;
 #[cfg(feature = "gpu")]
 pub mod gpu_memory;
 pub mod healthz_server;

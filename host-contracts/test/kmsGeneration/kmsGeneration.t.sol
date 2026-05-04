@@ -27,6 +27,12 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     KMSGenerationHarness internal kmsGenerationHarness;
     ProtocolConfig internal protocolConfig;
 
+    struct MigrationFixture {
+        address migrateProxy;
+        address kmsGenImpl;
+        KMSGeneration.MigrationState state;
+    }
+
     // Counter bases (matching contract)
     uint256 internal constant PREP_KEYGEN_COUNTER_BASE = uint256(3) << 248;
     uint256 internal constant KEY_COUNTER_BASE = uint256(4) << 248;
@@ -86,18 +92,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     // Helpers
     // -----------------------------------------------------------------------
 
-    function _makeKmsNodes(uint256 count) internal pure returns (KmsNode[] memory nodes) {
-        nodes = new KmsNode[](count);
-        for (uint256 i = 0; i < count; i++) {
-            nodes[i] = KmsNode({
-                txSenderAddress: address(uint160(0xA1 + i)),
-                signerAddress: vm.addr((i + 1) * 0x100),
-                ipAddress: string.concat("127.0.0.", vm.toString(i + 1)),
-                storageUrl: string.concat("https://s", vm.toString(i), ".example.com")
-            });
-        }
-    }
-
     function _assertNoEventEmitted(bytes32 eventSelector, string memory message) internal {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         for (uint256 i = 0; i < logs.length; i++) {
@@ -113,6 +107,11 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         state = _defaultMigrationState(migrateProxy);
     }
 
+    function _deployMigrationFixture() internal returns (MigrationFixture memory fixture) {
+        (fixture.migrateProxy, fixture.kmsGenImpl) = _deployMigrationProxy();
+        fixture.state = _defaultMigrationState(fixture.migrateProxy);
+    }
+
     function _computeDomainSeparator(address verifier) internal view returns (bytes32) {
         return
             keccak256(
@@ -124,11 +123,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
                     verifier
                 )
             );
-    }
-
-    function _computeSignature(uint256 privateKey, bytes32 digest) internal pure returns (bytes memory) {
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
-        return abi.encodePacked(r, s, v);
     }
 
     function _buildExtraData() internal view returns (bytes memory) {
@@ -285,9 +279,13 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
         keyId = KEY_COUNTER_BASE + 1;
+        assertEq(kmsGeneration.getKeyCounter(), keyId);
+        assertFalse(kmsGeneration.isRequestDone(keyId));
 
         _doPrepKeygenResponse(prepKeygenId, kmsPk0, kmsTxSender0);
+        assertFalse(kmsGeneration.isRequestDone(keyId));
         _doKeygenResponse(prepKeygenId, keyId, kmsPk0, kmsTxSender0);
+        assertTrue(kmsGeneration.isRequestDone(keyId));
     }
 
     /// @dev Run a full CRS cycle
@@ -296,7 +294,10 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         kmsGeneration.crsgenRequest(4096, IKMSGeneration.ParamsType.Default);
 
         crsId = CRS_COUNTER_BASE + 1;
+        assertEq(kmsGeneration.getCrsCounter(), crsId);
+        assertFalse(kmsGeneration.isRequestDone(crsId));
         _doCrsgenResponse(crsId, kmsPk0, kmsTxSender0);
+        assertTrue(kmsGeneration.isRequestDone(crsId));
     }
 
     function _defaultMigrationState(
@@ -374,6 +375,15 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         );
     }
 
+    function _expectMigrationRevert(MigrationFixture memory fixture, bytes memory expectedRevert) internal {
+        vm.expectRevert(expectedRevert);
+        _upgradeMigrationProxy(fixture.migrateProxy, fixture.kmsGenImpl, fixture.state);
+    }
+
+    function _assumeNotCurrentKmsTxSender(address caller) internal view {
+        vm.assume(!protocolConfig.isKmsTxSenderForContext(protocolConfig.getCurrentKmsContextId(), caller));
+    }
+
     // -----------------------------------------------------------------------
     // Init tests
     // -----------------------------------------------------------------------
@@ -382,7 +392,8 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         assertEq(kmsGeneration.getVersion(), "KMSGeneration v0.1.0");
         assertEq(kmsGeneration.getActiveKeyId(), 0);
         assertEq(kmsGeneration.getActiveCrsId(), 0);
-        assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
+        assertEq(kmsGeneration.getKeyCounter(), KEY_COUNTER_BASE);
+        assertEq(kmsGeneration.getCrsCounter(), CRS_COUNTER_BASE);
     }
 
     function test_revertDoubleInitFromEmptyProxy() public {
@@ -426,7 +437,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         (, uint256 keyId) = _runFullKeygenCycle();
         assertEq(kmsGeneration.getActiveKeyId(), keyId);
         assertEq(uint256(kmsGeneration.getKeyParamsType(keyId)), uint256(IKMSGeneration.ParamsType.Default));
-        assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
     }
 
     function test_keygenMaterials() public {
@@ -461,7 +471,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         uint256 crsId = _runFullCrsCycle();
         assertEq(kmsGeneration.getActiveCrsId(), crsId);
         assertEq(uint256(kmsGeneration.getCrsParamsType(crsId)), uint256(IKMSGeneration.ParamsType.Default));
-        assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
     }
 
     function test_emitKeygenLifecycleEvents() public {
@@ -521,22 +530,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     }
 
     // -----------------------------------------------------------------------
-    // hasPendingKeyManagementRequest
-    // -----------------------------------------------------------------------
-
-    function test_pendingKeyManagementRequest() public {
-        vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
-        assertTrue(kmsGeneration.hasPendingKeyManagementRequest());
-    }
-
-    function test_pendingCrsRequest() public {
-        vm.prank(owner);
-        kmsGeneration.crsgenRequest(4096, IKMSGeneration.ParamsType.Default);
-        assertTrue(kmsGeneration.hasPendingKeyManagementRequest());
-    }
-
-    // -----------------------------------------------------------------------
     // Sequential ordering
     // -----------------------------------------------------------------------
 
@@ -569,7 +562,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         kmsGeneration.keygenResponse(KEY_COUNTER_BASE + 1, _mockKeyDigests(), hex"");
     }
 
-    function test_revertReplayAcrossContexts() public {
+    function test_revertPrepKeygenResponseSignedWithStaleContextExtraData() public {
         bytes memory oldExtraData = _buildExtraData();
 
         vm.prank(owner);
@@ -592,47 +585,103 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         kmsGeneration.prepKeygenResponse(prepKeygenId, replaySig);
     }
 
+    function test_revertKeygenResponseSignedWithStaleContextExtraData() public {
+        bytes memory oldExtraData = _buildExtraData();
+
+        vm.prank(owner);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        vm.prank(owner);
+        kmsGeneration.abortKeygen(PREP_KEYGEN_COUNTER_BASE + 1);
+
+        vm.prank(owner);
+        protocolConfig.defineNewKmsContext(_makeKmsNodes(2), _defaultThresholds());
+
+        vm.prank(owner);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+
+        uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 2;
+        uint256 keyId = KEY_COUNTER_BASE + 2;
+        _doPrepKeygenResponse(prepKeygenId, kmsPk0, kmsTxSender0);
+
+        IKMSGeneration.KeyDigest[] memory digests = _mockKeyDigests();
+        bytes32 replayDigest = _hashKeygen(prepKeygenId, keyId, digests, oldExtraData);
+        bytes memory replaySig = _computeSignature(kmsPk0, replayDigest);
+
+        vm.prank(kmsTxSender0);
+        vm.expectPartialRevert(IKMSGeneration.KmsSignerDoesNotMatchTxSender.selector);
+        kmsGeneration.keygenResponse(keyId, digests, replaySig);
+    }
+
+    function test_revertCrsgenResponseSignedWithStaleContextExtraData() public {
+        bytes memory oldExtraData = _buildExtraData();
+
+        vm.prank(owner);
+        kmsGeneration.crsgenRequest(4096, IKMSGeneration.ParamsType.Default);
+        vm.prank(owner);
+        kmsGeneration.abortCrsgen(CRS_COUNTER_BASE + 1);
+
+        vm.prank(owner);
+        protocolConfig.defineNewKmsContext(_makeKmsNodes(2), _defaultThresholds());
+
+        vm.prank(owner);
+        kmsGeneration.crsgenRequest(4096, IKMSGeneration.ParamsType.Default);
+
+        uint256 crsId = CRS_COUNTER_BASE + 2;
+        bytes memory crsDigestData = hex"deadbeef";
+        bytes32 replayDigest = _hashCrsgen(crsId, 4096, crsDigestData, oldExtraData);
+        bytes memory replaySig = _computeSignature(kmsPk0, replayDigest);
+
+        vm.prank(kmsTxSender0);
+        vm.expectPartialRevert(IKMSGeneration.KmsSignerDoesNotMatchTxSender.selector);
+        kmsGeneration.crsgenResponse(crsId, crsDigestData, replaySig);
+    }
+
     // -----------------------------------------------------------------------
     // Access control
     // -----------------------------------------------------------------------
 
-    function test_revertKeygenNotOwner() public {
-        vm.prank(address(0x999));
-        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
+    function testFuzz_revertKeygenNotOwner(address caller) public {
+        vm.assume(caller != owner);
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, caller));
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
     }
 
-    function test_revertCrsgenNotOwner() public {
-        vm.prank(address(0x999));
-        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
+    function testFuzz_revertCrsgenNotOwner(address caller) public {
+        vm.assume(caller != owner);
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, caller));
         kmsGeneration.crsgenRequest(4096, IKMSGeneration.ParamsType.Default);
     }
 
-    function test_revertPrepKeygenResponseNotTxSender() public {
+    function testFuzz_revertPrepKeygenResponseNotTxSender(address caller) public {
+        _assumeNotCurrentKmsTxSender(caller);
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
 
-        vm.prank(address(0x999));
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.NotKmsTxSender.selector, address(0x999)));
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.NotKmsTxSender.selector, caller));
         kmsGeneration.prepKeygenResponse(PREP_KEYGEN_COUNTER_BASE + 1, hex"");
     }
 
-    function test_revertKeygenResponseNotTxSender() public {
+    function testFuzz_revertKeygenResponseNotTxSender(address caller) public {
+        _assumeNotCurrentKmsTxSender(caller);
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
 
         IKMSGeneration.KeyDigest[] memory digests = _mockKeyDigests();
-        vm.prank(address(0x999));
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.NotKmsTxSender.selector, address(0x999)));
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.NotKmsTxSender.selector, caller));
         kmsGeneration.keygenResponse(KEY_COUNTER_BASE + 1, digests, hex"");
     }
 
-    function test_revertCrsgenResponseNotTxSender() public {
+    function testFuzz_revertCrsgenResponseNotTxSender(address caller) public {
+        _assumeNotCurrentKmsTxSender(caller);
         vm.prank(owner);
         kmsGeneration.crsgenRequest(4096, IKMSGeneration.ParamsType.Default);
 
-        vm.prank(address(0x999));
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.NotKmsTxSender.selector, address(0x999)));
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.NotKmsTxSender.selector, caller));
         kmsGeneration.crsgenResponse(CRS_COUNTER_BASE + 1, hex"deadbeef", hex"");
     }
 
@@ -697,25 +746,23 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     // Invalid request ID
     // -----------------------------------------------------------------------
 
-    function test_revertPrepKeygenNotRequested() public {
+    function testFuzz_revertPrepKeygenNotRequested(uint256 prepKeygenId) public {
         vm.prank(kmsTxSender0);
-        vm.expectRevert(
-            abi.encodeWithSelector(IKMSGeneration.PrepKeygenNotRequested.selector, PREP_KEYGEN_COUNTER_BASE + 99)
-        );
-        kmsGeneration.prepKeygenResponse(PREP_KEYGEN_COUNTER_BASE + 99, hex"");
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.PrepKeygenNotRequested.selector, prepKeygenId));
+        kmsGeneration.prepKeygenResponse(prepKeygenId, hex"");
     }
 
-    function test_revertKeygenNotRequested() public {
+    function testFuzz_revertKeygenNotRequested(uint256 keyId) public {
         IKMSGeneration.KeyDigest[] memory d = _mockKeyDigests();
         vm.prank(kmsTxSender0);
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeygenNotRequested.selector, KEY_COUNTER_BASE + 99));
-        kmsGeneration.keygenResponse(KEY_COUNTER_BASE + 99, d, hex"");
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeygenNotRequested.selector, keyId));
+        kmsGeneration.keygenResponse(keyId, d, hex"");
     }
 
-    function test_revertCrsgenNotRequested() public {
+    function testFuzz_revertCrsgenNotRequested(uint256 crsId) public {
         vm.prank(kmsTxSender0);
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CrsgenNotRequested.selector, CRS_COUNTER_BASE + 99));
-        kmsGeneration.crsgenResponse(CRS_COUNTER_BASE + 99, hex"deadbeef", hex"");
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CrsgenNotRequested.selector, crsId));
+        kmsGeneration.crsgenResponse(crsId, hex"deadbeef", hex"");
     }
 
     function test_revertKmsSignerDoesNotMatchTxSender() public {
@@ -794,15 +841,16 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     function test_abortKeygen() public {
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
-        assertTrue(kmsGeneration.hasPendingKeyManagementRequest());
 
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
+        uint256 keyId = KEY_COUNTER_BASE + 1;
         vm.expectEmit(true, true, true, true, address(kmsGeneration));
         emit IKMSGeneration.AbortKeygen(prepKeygenId);
         vm.prank(owner);
         kmsGeneration.abortKeygen(prepKeygenId);
 
-        assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
+        assertTrue(kmsGeneration.isRequestDone(prepKeygenId));
+        assertTrue(kmsGeneration.isRequestDone(keyId));
     }
 
     function test_abortKeygenAfterPrepConsensus() public {
@@ -810,15 +858,17 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
 
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
+        uint256 keyId = KEY_COUNTER_BASE + 1;
         _doPrepKeygenResponse(prepKeygenId, kmsPk0, kmsTxSender0);
-        assertTrue(kmsGeneration.hasPendingKeyManagementRequest());
+        assertFalse(kmsGeneration.isRequestDone(keyId));
 
         vm.expectEmit(true, true, true, true, address(kmsGeneration));
         emit IKMSGeneration.AbortKeygen(prepKeygenId);
         vm.prank(owner);
         kmsGeneration.abortKeygen(prepKeygenId);
 
-        assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
+        assertTrue(kmsGeneration.isRequestDone(prepKeygenId));
+        assertTrue(kmsGeneration.isRequestDone(keyId));
 
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Test);
@@ -827,23 +877,21 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     function test_abortCrsgen() public {
         vm.prank(owner);
         kmsGeneration.crsgenRequest(4096, IKMSGeneration.ParamsType.Default);
-        assertTrue(kmsGeneration.hasPendingKeyManagementRequest());
 
         uint256 crsId = CRS_COUNTER_BASE + 1;
+        assertFalse(kmsGeneration.isRequestDone(crsId));
         vm.expectEmit(true, true, true, true, address(kmsGeneration));
         emit IKMSGeneration.AbortCrsgen(crsId);
         vm.prank(owner);
         kmsGeneration.abortCrsgen(crsId);
 
-        assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
+        assertTrue(kmsGeneration.isRequestDone(crsId));
     }
 
-    function test_revertAbortKeygenInvalidId() public {
+    function testFuzz_revertAbortKeygenInvalidId(uint256 prepKeygenId) public {
         vm.prank(owner);
-        vm.expectRevert(
-            abi.encodeWithSelector(IKMSGeneration.AbortKeygenInvalidId.selector, PREP_KEYGEN_COUNTER_BASE + 99)
-        );
-        kmsGeneration.abortKeygen(PREP_KEYGEN_COUNTER_BASE + 99);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.AbortKeygenInvalidId.selector, prepKeygenId));
+        kmsGeneration.abortKeygen(prepKeygenId);
     }
 
     function test_revertAbortKeygenAlreadyDone() public {
@@ -853,10 +901,10 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         kmsGeneration.abortKeygen(prepKeygenId);
     }
 
-    function test_revertAbortCrsgenInvalidId() public {
+    function testFuzz_revertAbortCrsgenInvalidId(uint256 crsId) public {
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.AbortCrsgenInvalidId.selector, CRS_COUNTER_BASE + 99));
-        kmsGeneration.abortCrsgen(CRS_COUNTER_BASE + 99);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.AbortCrsgenInvalidId.selector, crsId));
+        kmsGeneration.abortCrsgen(crsId);
     }
 
     function test_revertAbortCrsgenAlreadyDone() public {
@@ -866,15 +914,17 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         kmsGeneration.abortCrsgen(crsId);
     }
 
-    function test_abortKeygenNotOwner() public {
-        vm.prank(address(0x999));
-        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
+    function testFuzz_abortKeygenNotOwner(address caller) public {
+        vm.assume(caller != owner);
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, caller));
         kmsGeneration.abortKeygen(PREP_KEYGEN_COUNTER_BASE + 1);
     }
 
-    function test_abortCrsgenNotOwner() public {
-        vm.prank(address(0x999));
-        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
+    function testFuzz_abortCrsgenNotOwner(address caller) public {
+        vm.assume(caller != owner);
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, caller));
         kmsGeneration.abortCrsgen(CRS_COUNTER_BASE + 1);
     }
 
@@ -897,7 +947,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         assertEq(kmsGeneration.getActiveKeyId(), keyId);
         assertEq(uint256(kmsGeneration.getKeyParamsType(keyId)), uint256(IKMSGeneration.ParamsType.Test));
-        assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
     }
 
     function test_revertGetAbortedKeyViews() public {
@@ -933,7 +982,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         assertEq(kmsGeneration.getActiveCrsId(), crsId);
         assertEq(uint256(kmsGeneration.getCrsParamsType(crsId)), uint256(IKMSGeneration.ParamsType.Test));
-        assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
     }
 
     function test_revertGetAbortedCrsViews() public {
@@ -955,28 +1003,24 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     // Nonexistent ID view reverts (never started)
     // -----------------------------------------------------------------------
 
-    function test_revertGetKeyParamsTypeNonexistent() public {
-        uint256 fakeKeyId = KEY_COUNTER_BASE + 99;
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeyNotGenerated.selector, fakeKeyId));
-        kmsGeneration.getKeyParamsType(fakeKeyId);
+    function testFuzz_revertGetKeyParamsTypeNonexistent(uint256 keyId) public {
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeyNotGenerated.selector, keyId));
+        kmsGeneration.getKeyParamsType(keyId);
     }
 
-    function test_revertGetKeyMaterialsNonexistent() public {
-        uint256 fakeKeyId = KEY_COUNTER_BASE + 99;
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeyNotGenerated.selector, fakeKeyId));
-        kmsGeneration.getKeyMaterials(fakeKeyId);
+    function testFuzz_revertGetKeyMaterialsNonexistent(uint256 keyId) public {
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeyNotGenerated.selector, keyId));
+        kmsGeneration.getKeyMaterials(keyId);
     }
 
-    function test_revertGetCrsParamsTypeNonexistent() public {
-        uint256 fakeCrsId = CRS_COUNTER_BASE + 99;
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CrsNotGenerated.selector, fakeCrsId));
-        kmsGeneration.getCrsParamsType(fakeCrsId);
+    function testFuzz_revertGetCrsParamsTypeNonexistent(uint256 crsId) public {
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CrsNotGenerated.selector, crsId));
+        kmsGeneration.getCrsParamsType(crsId);
     }
 
-    function test_revertGetCrsMaterialsNonexistent() public {
-        uint256 fakeCrsId = CRS_COUNTER_BASE + 99;
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CrsNotGenerated.selector, fakeCrsId));
-        kmsGeneration.getCrsMaterials(fakeCrsId);
+    function testFuzz_revertGetCrsMaterialsNonexistent(uint256 crsId) public {
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CrsNotGenerated.selector, crsId));
+        kmsGeneration.getCrsMaterials(crsId);
     }
 
     // -----------------------------------------------------------------------
@@ -1009,7 +1053,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         assertEq(kmsGeneration.getVersion(), "KMSGeneration v0.1.0");
         assertEq(kmsGeneration.getActiveKeyId(), 0);
         assertEq(kmsGeneration.getActiveCrsId(), 0);
-        assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
 
         // Deploy the V2 implementation and upgrade
         address v2Impl = address(new KMSGenerationUpgradedExample());
@@ -1023,7 +1066,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         // Verify state is preserved
         assertEq(kmsGeneration.getActiveKeyId(), 0);
         assertEq(kmsGeneration.getActiveCrsId(), 0);
-        assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
     }
 
     // -----------------------------------------------------------------------
@@ -1035,7 +1077,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         assertEq(migrated.getVersion(), "KMSGeneration v0.1.0");
         assertEq(migrated.getActiveKeyId(), KEY_COUNTER_BASE + 1);
         assertEq(migrated.getActiveCrsId(), CRS_COUNTER_BASE + 1);
-        assertFalse(migrated.hasPendingKeyManagementRequest());
 
         // Verify material lookups work post-migration
         (string[] memory keyUrls, IKMSGeneration.KeyDigest[] memory migratedDigests) = migrated.getKeyMaterials(
@@ -1080,72 +1121,59 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     }
 
     function test_migrationRejectsEmptyKeyDigests() public {
-        (
-            address migrateProxy,
-            address kmsGenImpl,
-            KMSGeneration.MigrationState memory state
-        ) = _deployMigrationProxyAndState();
-        state.activeKeyDigests = new IKMSGeneration.KeyDigest[](0);
+        MigrationFixture memory fixture = _deployMigrationFixture();
+        fixture.state.activeKeyDigests = new IKMSGeneration.KeyDigest[](0);
 
-        vm.expectRevert(abi.encodeWithSelector(KMSGeneration.InvalidMigrationMaterial.selector, state.activeKeyId));
-        _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
+        _expectMigrationRevert(
+            fixture,
+            abi.encodeWithSelector(KMSGeneration.InvalidMigrationMaterial.selector, fixture.state.activeKeyId)
+        );
     }
 
     function test_migrationRejectsEmptyCrsDigest() public {
-        (
-            address migrateProxy,
-            address kmsGenImpl,
-            KMSGeneration.MigrationState memory state
-        ) = _deployMigrationProxyAndState();
-        state.activeCrsDigest = "";
+        MigrationFixture memory fixture = _deployMigrationFixture();
+        fixture.state.activeCrsDigest = "";
 
-        vm.expectRevert(abi.encodeWithSelector(KMSGeneration.InvalidMigrationMaterial.selector, state.activeCrsId));
-        _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
+        _expectMigrationRevert(
+            fixture,
+            abi.encodeWithSelector(KMSGeneration.InvalidMigrationMaterial.selector, fixture.state.activeCrsId)
+        );
     }
 
     function test_migrationRejectsActiveKeyWithoutConsensusTxSenders() public {
-        (
-            address migrateProxy,
-            address kmsGenImpl,
-            KMSGeneration.MigrationState memory state
-        ) = _deployMigrationProxyAndState();
-        state.keyConsensusTxSenders = new address[](0);
+        MigrationFixture memory fixture = _deployMigrationFixture();
+        fixture.state.keyConsensusTxSenders = new address[](0);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(KMSGeneration.InvalidMigrationConsensusState.selector, state.activeKeyId)
+        _expectMigrationRevert(
+            fixture,
+            abi.encodeWithSelector(KMSGeneration.InvalidMigrationConsensusState.selector, fixture.state.activeKeyId)
         );
-        _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
     }
 
     function test_migrationRejectsActivePrepKeygenWithoutConsensusDigest() public {
-        (
-            address migrateProxy,
-            address kmsGenImpl,
-            KMSGeneration.MigrationState memory state
-        ) = _deployMigrationProxyAndState();
-        state.prepKeygenConsensusDigest = bytes32(0);
+        MigrationFixture memory fixture = _deployMigrationFixture();
+        fixture.state.prepKeygenConsensusDigest = bytes32(0);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(KMSGeneration.InvalidMigrationConsensusState.selector, state.activePrepKeygenId)
+        _expectMigrationRevert(
+            fixture,
+            abi.encodeWithSelector(
+                KMSGeneration.InvalidMigrationConsensusState.selector,
+                fixture.state.activePrepKeygenId
+            )
         );
-        _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
     }
 
     function test_migrationRejectsBelowKmsGenThresholdQuorum() public {
         // Raise kmsGen threshold to 3 on a freshly-defined context before building migration state.
         _switchToMultiSignerContext();
 
-        (
-            address migrateProxy,
-            address kmsGenImpl,
-            KMSGeneration.MigrationState memory state
-        ) = _deployMigrationProxyAndState();
+        MigrationFixture memory fixture = _deployMigrationFixture();
         // _defaultMigrationState ships only 1 tx sender per request, below the kmsGen threshold of 3.
         // The first validated request (the active key) is the one that reverts.
-        vm.expectRevert(
-            abi.encodeWithSelector(KMSGeneration.InvalidMigrationConsensusState.selector, state.activeKeyId)
+        _expectMigrationRevert(
+            fixture,
+            abi.encodeWithSelector(KMSGeneration.InvalidMigrationConsensusState.selector, fixture.state.activeKeyId)
         );
-        _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
     }
 
     function test_migrationAcceptsExactlyKmsGenThresholdQuorum() public {
@@ -1171,23 +1199,19 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         assertEq(recorded.length, 3);
     }
 
-    function test_migrationRejectsUnknownConsensusTxSender() public {
-        (
-            address migrateProxy,
-            address kmsGenImpl,
-            KMSGeneration.MigrationState memory state
-        ) = _deployMigrationProxyAndState();
-        address unknownTxSender = address(0xBEEF);
-        state.keyConsensusTxSenders[0] = unknownTxSender;
+    function testFuzz_migrationRejectsUnknownConsensusTxSender(address unknownTxSender) public {
+        MigrationFixture memory fixture = _deployMigrationFixture();
+        vm.assume(!protocolConfig.isKmsTxSenderForContext(fixture.state.contextId, unknownTxSender));
+        fixture.state.keyConsensusTxSenders[0] = unknownTxSender;
 
-        vm.expectRevert(
+        _expectMigrationRevert(
+            fixture,
             abi.encodeWithSelector(
                 KMSGeneration.UnknownMigrationConsensusTxSender.selector,
-                state.activeKeyId,
+                fixture.state.activeKeyId,
                 unknownTxSender
             )
         );
-        _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
     }
 
     function test_migrationLateSignerStillUpdatesConsensusTxSenders() public {
@@ -1202,8 +1226,13 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         );
         bytes memory keySig = _computeSignature(kmsPk1, keyDigest);
 
+        vm.recordLogs();
         vm.prank(kmsTxSender1);
         migrated.keygenResponse(state.activeKeyId, _mockKeyDigests(), keySig);
+        _assertNoEventEmitted(
+            IKMSGeneration.ActivateKey.selector,
+            "late migrated keygen response should not emit ActivateKey"
+        );
 
         address[] memory keyConsTxSenders = migrated.getConsensusTxSenders(state.activeKeyId);
         assertEq(keyConsTxSenders.length, 2);
@@ -1212,39 +1241,24 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     }
 
     function test_migrationRejectsKeyCounterAheadOfImportedState() public {
-        (
-            address migrateProxy,
-            address kmsGenImpl,
-            KMSGeneration.MigrationState memory state
-        ) = _deployMigrationProxyAndState();
-        state.keyCounter++;
+        MigrationFixture memory fixture = _deployMigrationFixture();
+        fixture.state.keyCounter++;
 
-        vm.expectRevert(KMSGeneration.InvalidMigrationCounterState.selector);
-        _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
+        _expectMigrationRevert(fixture, abi.encodeWithSelector(KMSGeneration.InvalidMigrationCounterState.selector));
     }
 
     function test_migrationRejectsCrsCounterAheadOfImportedState() public {
-        (
-            address migrateProxy,
-            address kmsGenImpl,
-            KMSGeneration.MigrationState memory state
-        ) = _deployMigrationProxyAndState();
-        state.crsCounter++;
+        MigrationFixture memory fixture = _deployMigrationFixture();
+        fixture.state.crsCounter++;
 
-        vm.expectRevert(KMSGeneration.InvalidMigrationCounterState.selector);
-        _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
+        _expectMigrationRevert(fixture, abi.encodeWithSelector(KMSGeneration.InvalidMigrationCounterState.selector));
     }
 
     function test_migrationRejectsPrepCounterAheadOfImportedState() public {
-        (
-            address migrateProxy,
-            address kmsGenImpl,
-            KMSGeneration.MigrationState memory state
-        ) = _deployMigrationProxyAndState();
-        state.prepKeygenCounter++;
+        MigrationFixture memory fixture = _deployMigrationFixture();
+        fixture.state.prepKeygenCounter++;
 
-        vm.expectRevert(KMSGeneration.InvalidMigrationCounterState.selector);
-        _upgradeMigrationProxy(migrateProxy, kmsGenImpl, state);
+        _expectMigrationRevert(fixture, abi.encodeWithSelector(KMSGeneration.InvalidMigrationCounterState.selector));
     }
 
     // -----------------------------------------------------------------------
@@ -1268,7 +1282,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         vm.recordLogs();
         _doPrepKeygenResponse(prepKeygenId, kmsPk3, kmsTxSender3);
         _assertNoEventEmitted(
-            keccak256("KeygenRequest(uint256,uint256,bytes)"),
+            IKMSGeneration.KeygenRequest.selector,
             "4th prepKeygen response should not emit KeygenRequest"
         );
     }
@@ -1295,10 +1309,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         // 4th response should be silently ignored (no ActivateKey event, no revert)
         vm.recordLogs();
         _doKeygenResponse(prepKeygenId, keyId, kmsPk3, kmsTxSender3);
-        _assertNoEventEmitted(
-            keccak256("ActivateKey(uint256,string[],IKMSGeneration.KeyDigest[])"),
-            "4th keygen response should not emit ActivateKey"
-        );
+        _assertNoEventEmitted(IKMSGeneration.ActivateKey.selector, "4th keygen response should not emit ActivateKey");
     }
 
     function test_postConsensusCrsgenResponseIgnored() public {
@@ -1317,10 +1328,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         // 4th response should be silently ignored (no ActivateCrs event, no revert)
         vm.recordLogs();
         _doCrsgenResponse(crsId, kmsPk3, kmsTxSender3);
-        _assertNoEventEmitted(
-            keccak256("ActivateCrs(uint256,string[],bytes)"),
-            "4th crsgen response should not emit ActivateCrs"
-        );
+        _assertNoEventEmitted(IKMSGeneration.ActivateCrs.selector, "4th crsgen response should not emit ActivateCrs");
     }
 
     function test_fullKeygenCycleMultiSigner() public {
@@ -1357,6 +1365,5 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _doKeygenResponse(prepKeygenId, keyId, kmsPk2, kmsTxSender2);
 
         assertEq(kmsGeneration.getActiveKeyId(), keyId);
-        assertFalse(kmsGeneration.hasPendingKeyManagementRequest());
     }
 }

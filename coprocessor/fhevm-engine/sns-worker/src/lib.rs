@@ -21,6 +21,7 @@ use aws_sdk_s3::{config::Builder, Client};
 use fhevm_engine_common::{
     chain_id::ChainId,
     db_keys::DbKeyId,
+    drift_revert,
     healthz_server::{self},
     metrics_server,
     pg_pool::{PostgresPoolManager, ServiceError},
@@ -36,7 +37,6 @@ use tokio::{
         mpsc::{self, Sender},
         RwLock,
     },
-    task,
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Level};
@@ -392,50 +392,6 @@ impl UploadJob {
     }
 }
 
-/// Runs the SnS worker loop
-pub async fn run_computation_loop(
-    pool_mngr: &PostgresPoolManager,
-    conf: Config,
-    tx: Sender<UploadJob>,
-    token: CancellationToken,
-    client: Arc<Client>,
-    events_tx: InternalEvents,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let port = conf.health_checks.port;
-
-    let service = Arc::new(
-        SwitchNSquashService::create(
-            pool_mngr,
-            conf,
-            tx,
-            token.child_token(),
-            client,
-            events_tx.clone(),
-        )
-        .await?,
-    );
-
-    // Start health check server
-    let healthz = healthz_server::HttpServer::new(service.clone(), port, token.child_token());
-    task::spawn(async move {
-        if let Err(err) = healthz.start().await {
-            error!(
-                task = "health_check",
-                error = %err,
-                "Error while running server"
-            );
-        }
-        anyhow::Ok(())
-    });
-
-    // Run the main service loop
-    service.run(pool_mngr).await;
-    token.cancel();
-
-    info!("Worker stopped");
-    Ok(())
-}
-
 /// Runs the uploader loop
 pub async fn run_uploader_loop(
     pool_mngr: &PostgresPoolManager,
@@ -552,6 +508,42 @@ pub async fn run_all(
         );
     }
 
+    // Build the service.
+    // create() is a pure struct constructor — no DB or
+    // S3 calls — so it's safe to run before drift_revert::init.
+    let service = Arc::new(
+        SwitchNSquashService::create(
+            &pool_mngr,
+            conf.clone(),
+            uploads_tx,
+            token.child_token(),
+            client,
+            events_tx.clone(),
+        )
+        .await?,
+    );
+
+    // Start health check BEFORE drift_revert::init so the orchestrator sees us as alive.
+    let healthz = healthz_server::HttpServer::new(
+        service.clone(),
+        conf.health_checks.port,
+        token.child_token(),
+    );
+    spawn(async move {
+        if let Err(err) = healthz.start().await {
+            error!(
+                task = "health_check",
+                error = %err,
+                "Error while running server"
+            );
+        }
+        anyhow::Ok(())
+    });
+
+    // Drift-revert: must run before any DB-using task so the uploader and
+    // service loop don't read or write rows the revert SQL is about to delete.
+    drift_revert::init(pool_mngr.pool().clone(), token.clone(), None).await?;
+
     // Spawns a task to handle S3 uploads
     spawn(async move {
         if let Err(err) = run_uploader_loop(&pg_mngr, &conf, jobs_rx, tx, s3, is_ready).await {
@@ -559,16 +551,10 @@ pub async fn run_all(
         }
     });
 
-    // Run the main computation loop
-    // This will handle the PBS computations
-    let conf = config.clone();
-    let token = parent_token.child_token();
+    // Run the main service loop
+    service.run(&pool_mngr).await;
+    token.cancel();
 
-    if let Err(err) =
-        run_computation_loop(&pool_mngr, conf, uploads_tx, token, client, events_tx).await
-    {
-        error!(error = %err, "SnS worker failed");
-    }
-
+    info!("Worker stopped");
     Ok(())
 }

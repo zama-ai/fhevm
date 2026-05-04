@@ -3,7 +3,12 @@
  */
 
 import { ensureLockSnapshot, previewBundle, resolveBundle } from "../resolve/bundle-store";
-import { assertSupportedBundleScenario, requiresMultichainAclAddress, validateBundleCompatibility } from "../compat/compat";
+import {
+  assertSupportedBundleScenario,
+  requiresLegacyGatewayKmsGenerationAddress,
+  requiresMultichainAclAddress,
+  validateBundleCompatibility,
+} from "../compat/compat";
 import { driftDatabaseName } from "../drift";
 import { serviceNameList } from "../generate/compose";
 import { generateRuntime } from "../generate";
@@ -554,6 +559,7 @@ export const runStep = async (state: State, step: StepName) => {
         "INPUT_VERIFICATION_ADDRESS",
         "CIPHERTEXT_COMMITS_ADDRESS",
         "DECRYPTION_ADDRESS",
+        ...(requiresLegacyGatewayKmsGenerationAddress(state) ? ["KMS_GENERATION_ADDRESS"] : []),
       ]);
       (await ensureDiscovery(state)).gateway = await readEnvFile(gatewayAddressesPath);
       await generateRuntime(state, stackSpecForState(state));
@@ -572,8 +578,7 @@ export const runStep = async (state: State, step: StepName) => {
         "KMS_VERIFIER_CONTRACT_ADDRESS",
         "INPUT_VERIFIER_CONTRACT_ADDRESS",
         "HCU_LIMIT_CONTRACT_ADDRESS",
-        "PROTOCOL_CONFIG_CONTRACT_ADDRESS",
-        "KMS_GENERATION_CONTRACT_ADDRESS",
+        ...(requiresLegacyGatewayKmsGenerationAddress(state) ? [] : ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", "KMS_GENERATION_CONTRACT_ADDRESS"]),
       ]);
       for (const chain of extraHostChains(state)) {
         const scKey = chain.sc;
@@ -586,8 +591,7 @@ export const runStep = async (state: State, step: StepName) => {
             "KMS_VERIFIER_CONTRACT_ADDRESS",
             "INPUT_VERIFIER_CONTRACT_ADDRESS",
             "HCU_LIMIT_CONTRACT_ADDRESS",
-            "PROTOCOL_CONFIG_CONTRACT_ADDRESS",
-            "KMS_GENERATION_CONTRACT_ADDRESS",
+            ...(requiresLegacyGatewayKmsGenerationAddress(state) ? [] : ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", "KMS_GENERATION_CONTRACT_ADDRESS"]),
           ]);
         });
         await timed(`[multi-chain] ${scKey}-add-pausers`, async () => {

@@ -103,6 +103,28 @@ Note that recommendations assume a smoke test that runs transactions/requests at
  - **Type**: Histogram
  - **Description**: Block distance between the consensus event and seeing all expected submissions for a handle. Diagnostic metric for understanding on-chain completion latency; the grace window is wall-clock based and configured via `--drift-post-consensus-grace`. Bucket boundaries: 0, 1, 2, 3, 5, 8, 13, 21, 34.
 
+#### Metric Name: `coprocessor_drift_revert_signal_created_counter`
+ - **Type**: Counter (labeled by `host_chain_id`)
+ - **Description**: Number of drift-revert signals created, per host chain. Each signal represents one detected consensus drift that triggered the auto-recovery mechanism. Emitted by gw-listener only.
+ - **Alarm**: Any non-zero increase is unusual — drift should be rare.
+    - **Recommendation**: alarm on `increase(counter[5m]) > 0`.
+
+#### Metric Name: `coprocessor_drift_revert_success_counter`
+ - **Type**: Counter (labeled by `host_chain_id`)
+ - **Description**: Number of drift reverts that completed successfully per host chain (SQL ran to completion and signal marked Done). Emitted by gw-listener only.
+
+#### Metric Name: `coprocessor_drift_revert_failure_counter`
+ - **Type**: Counter (labeled by `host_chain_id`)
+ - **Description**: Number of drift reverts that failed during SQL execution per host chain (signal marked Failed). Recovery did not complete and operator intervention may be required. Emitted by gw-listener only.
+ - **Alarm**: Any non-zero increase.
+    - **Recommendation**: alarm on `increase(counter[1m]) > 0`.
+
+#### Metric Name: `coprocessor_drift_revert_too_many_attempts_counter`
+ - **Type**: Counter (labeled by `host_chain_id`)
+ - **Description**: Number of times the revert runner refused to revert because too many successful reverts already happened in the recent window for this host chain. Indicates a deterministic loop where reverts succeed but drift keeps recurring (e.g. a tfhe-worker bug). The signal is marked Failed and the service refuses to start until an operator intervenes. Emitted by gw-listener only.
+ - **Alarm**: Any non-zero increase.
+    - **Recommendation**: alarm on `increase(counter[1m]) > 0`.
+
 ### zkproof-worker
 
 Metrics for zkproof-worker are to be added in future releases, if/when needed. Currently, the transaction-sender handles ZK proof related metrics, please see its section.
