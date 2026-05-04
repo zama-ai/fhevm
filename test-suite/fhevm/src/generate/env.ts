@@ -70,7 +70,6 @@ const applyHostScKmsEnv = (envs: Record<string, Record<string, string>>) => {
   hostEnv.PUBLIC_DECRYPTION_THRESHOLD = gatewayEnv.PUBLIC_DECRYPTION_THRESHOLD;
   hostEnv.USER_DECRYPTION_THRESHOLD = gatewayEnv.USER_DECRYPTION_THRESHOLD;
   hostEnv.KMS_GEN_THRESHOLD = gatewayEnv.KMS_GENERATION_THRESHOLD;
-  hostEnv.MPC_THRESHOLD = gatewayEnv.MPC_THRESHOLD;
 
   const numKmsNodes = Number(gatewayEnv.NUM_KMS_NODES ?? "0");
   for (let index = 0; index < numKmsNodes; index += 1) {
@@ -257,18 +256,6 @@ const validateEnvMaps = (
   for (const env of [...Object.values(envs), ...Object.values(instanceEnvs)]) {
     assertNoGeneratedPlaceholders(env);
   }
-  validateGeneratedKmsThresholds(envs["gateway-sc"], "gateway-sc", [
-    "PUBLIC_DECRYPTION_THRESHOLD",
-    "USER_DECRYPTION_THRESHOLD",
-    "KMS_GENERATION_THRESHOLD",
-  ]);
-  validateGeneratedGatewayMpcThreshold(envs["gateway-sc"]);
-  validateGeneratedKmsThresholds(envs["host-sc"], "host-sc", [
-    "PUBLIC_DECRYPTION_THRESHOLD",
-    "USER_DECRYPTION_THRESHOLD",
-    "KMS_GEN_THRESHOLD",
-    "MPC_THRESHOLD",
-  ]);
 };
 
 /** Renders component and per-instance env maps from state, topology, and discovery. */
