@@ -13,7 +13,8 @@
     "!**/*.test.ts",
     "!**/*.template",
     "!**/*.tsbuildinfo",
-    "!tsconfig.build.json"
+    "!vitest.config.ts",
+    "!tsconfig.json"
   ],
   "exports": {
     ".": {
