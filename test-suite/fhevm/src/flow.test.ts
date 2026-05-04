@@ -34,7 +34,7 @@ const completeState = (): State => ({
       CONNECTOR_GW_LISTENER_VERSION: "02f6cc0",
       CONNECTOR_KMS_WORKER_VERSION: "02f6cc0",
       CONNECTOR_TX_SENDER_VERSION: "02f6cc0",
-      CORE_VERSION: "v0.13.10-rc.3",
+      CORE_VERSION: "v0.13.20-0",
       RELAYER_VERSION: "v0.11.0-rc.2",
       RELAYER_MIGRATE_VERSION: "v0.11.0-rc.1",
       TEST_SUITE_VERSION: "02f6cc0",
@@ -392,6 +392,6 @@ describe("runtime helpers", () => {
     expect(bundle.env.GATEWAY_VERSION).toBe("LOCAL BUILD");
     expect(bundle.env.RELAYER_VERSION).toBe("LOCAL BUILD");
     expect(bundle.env.TEST_SUITE_VERSION).toBe("LOCAL BUILD");
-    expect(bundle.env.CORE_VERSION).toBe("v0.13.10-rc.3");
+    expect(bundle.env.CORE_VERSION).toBe("v0.13.20-0");
   });
 });
