@@ -476,11 +476,10 @@ task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
   }
 });
 
-// Off-chain pre-flight replacing the removed on-chain hasPendingKeyManagementRequest guard.
+// Off-chain pre-flight that asserts no pending key management request on KMSGeneration.
 //
-// Uses minimal inline view ABIs so operators can run from a fresh checkout without compiled
-// artifacts. It also confirms the address is actually KMSGeneration before reading the
-// request counters, so a wrong code-bearing address cannot silently return a false green.
+// Confirms the address is actually KMSGeneration before reading the request counters, so a
+// wrong code-bearing address cannot silently return a false green.
 task('task:assertNoPendingKeyManagementRequest')
   .addOptionalParam(
     'address',
@@ -502,15 +501,7 @@ task('task:assertNoPendingKeyManagementRequest')
     await assertContractDeployed(hre, kmsGenAddress, 'KMSGeneration');
     await assertContractMatchesVersionPrefix(hre, kmsGenAddress, 'KMSGeneration');
 
-    const kmsGen = new hre.ethers.Contract(
-      kmsGenAddress,
-      [
-        'function getKeyCounter() view returns (uint256)',
-        'function getCrsCounter() view returns (uint256)',
-        'function isRequestDone(uint256 requestId) view returns (bool)',
-      ],
-      hre.ethers.provider,
-    );
+    const kmsGen = await hre.ethers.getContractAt('KMSGeneration', kmsGenAddress);
     const readKmsStatusView = async <T>(viewLabel: string, read: () => Promise<T>): Promise<T> => {
       try {
         return await read();
