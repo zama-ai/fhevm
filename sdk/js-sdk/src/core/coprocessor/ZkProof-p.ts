@@ -22,7 +22,7 @@ import {
 import { bytes32ToHex, bytesToHexLarge, concatBytes, hexToBytes32, toBytes } from '../base/bytes.js';
 import { assertIsUint64, assertIsUint8, asUint64BigInt, uint64ToBytes32 } from '../base/uint.js';
 import { ZkProofError } from '../errors/ZkProofError.js';
-import { assertIsEncryptionBitsArray, fheTypeIdFromEncryptionBits } from '../handle/FheType.js';
+import { asEncryptionBits, assertIsEncryptionBitsArray, fheTypeIdFromEncryptionBits } from '../handle/FheType.js';
 import { buildHandle } from '../handle/FhevmHandle.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
@@ -73,7 +73,7 @@ class ZkProofImpl implements ZkProof {
     this.#userAddress = parameters.userAddress;
     this.#ciphertextWithZkProof = parameters.ciphertextWithZkProof;
     this.#encryptionBits = Object.freeze([...parameters.encryptionBits]);
-    this.#fheTypeIds = Object.freeze(this.#encryptionBits.map(fheTypeIdFromEncryptionBits));
+    this.#fheTypeIds = Object.freeze(this.#encryptionBits.map((w) => fheTypeIdFromEncryptionBits(asEncryptionBits(w))));
     this.#extraData = parameters.extraData;
     Object.freeze(this);
   }
