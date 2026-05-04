@@ -25,6 +25,7 @@ fhevm_host_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "903
 kms-grpc = { git = "https://github.com/zama-ai/kms.git", tag = "v0.13.0-rc.1", default-features = true }
 bc2wrap = { git = "https://github.com/zama-ai/kms.git", tag = "v0.13.0-rc.1", default-features = true }
 tfhe = "=1.5.1"
+user-decryption-signature = { path = "../shared/user-decryption-signature", default-features = false }
 
 #####################################################################
 #                       External dependencies                       #

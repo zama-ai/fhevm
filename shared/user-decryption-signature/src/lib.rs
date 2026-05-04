@@ -44,10 +44,8 @@ sol! {
 // `self.domain` (which carries deployment-specific name/version), so it doesn't go through
 // the default constructor. Kept exposed for downstream consumers that lack an
 // `Eip712DomainMsg` and want the canonical defaults.
-#[allow(dead_code)]
 pub const DEFAULT_DOMAIN_NAME: &str = "Decryption";
 /// Default EIP-712 domain `version` for the Gateway `Decryption` contract.
-#[allow(dead_code)]
 pub const DEFAULT_DOMAIN_VERSION: &str = "1";
 /// ERC-1271 magic return value: `bytes4(keccak256("isValidSignature(bytes32,bytes)"))`.
 pub const ERC1271_MAGIC_VALUE: [u8; 4] = [0x16, 0x26, 0xba, 0x7e];
@@ -77,7 +75,6 @@ pub enum Erc1271Error {
 ///
 /// `chain_id` is the host `contractsChainId` (extracted from the handle), **not** the Gateway
 /// chain id used for KMS gRPC requests.
-#[allow(dead_code)] // see `DEFAULT_DOMAIN_NAME` for rationale
 pub fn default_user_decrypt_domain(chain_id: u64, verifying_contract: Address) -> Eip712Domain {
     Eip712Domain {
         name: Some(DEFAULT_DOMAIN_NAME.into()),

@@ -11,6 +11,7 @@ bc2wrap.workspace = true
 connector-utils.workspace = true
 fhevm_gateway_bindings.workspace = true
 fhevm_host_bindings.workspace = true
+user-decryption-signature.workspace = true
 
 actix-web.workspace = true
 alloy.workspace = true
@@ -35,7 +36,6 @@ tracing-opentelemetry.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
-alloy = { workspace = true, features = ["json-rpc"] }
 connector-utils = { workspace = true, features = ["tests"] }
 mocktail.workspace = true
 rstest.workspace = true

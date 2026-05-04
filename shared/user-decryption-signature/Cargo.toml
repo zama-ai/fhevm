@@ -1,0 +1,27 @@
+[package]
+name = "user-decryption-signature"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+fhevm_gateway_bindings = { path = "../../gateway-contracts/rust_bindings", default-features = false }
+
+alloy = { version = "2.0", default-features = false, features = [
+    "k256",
+    "providers",
+    "rpc-types",
+    "sol-types",
+] }
+thiserror = { version = "2.0", default-features = false }
+
+[dev-dependencies]
+alloy = { version = "2.0", default-features = false, features = [
+    "json-rpc",
+    "signer-local",
+] }
+serde_json = { version = "1.0.149", default-features = false, features = [
+    "std",
+] }
+tokio = { version = "1.52.1", default-features = false, features = [
+    "macros",
+] }
