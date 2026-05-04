@@ -29,6 +29,9 @@ struct Args {
     #[arg(long, help = "TFHE contract address to monitor")]
     tfhe_contract_address: Address,
 
+    #[arg(long, help = "KMS generation contract address to monitor")]
+    pub kms_generation_address: Address,
+
     #[arg(long, help = "PostgreSQL connection URL")]
     database_url: DatabaseURL,
 
@@ -144,6 +147,7 @@ async fn main() -> anyhow::Result<()> {
         url: args.url,
         acl_address: args.acl_contract_address,
         tfhe_address: args.tfhe_contract_address,
+        kms_generation_address: args.kms_generation_address,
         database_url: args.database_url,
         finality_lag: args.finality_lag,
         batch_size: args.batch_size,

@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
-import { gatewayConfigAddress, kmsGenerationAddress } from "../addresses/GatewayAddresses.sol";
+import { gatewayConfigAddress } from "../addresses/GatewayAddresses.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { ICiphertextCommits } from "./interfaces/ICiphertextCommits.sol";
 import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
-import { IKMSGeneration } from "./interfaces/IKMSGeneration.sol";
 import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
 import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
@@ -20,11 +19,6 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
      * @notice The address of the GatewayConfig contract, used for fetching information about coprocessors.
      */
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
-
-    /**
-     * @notice The address of the KMSGeneration contract, used for fetching information about the current key.
-     */
-    IKMSGeneration private constant KMS_GENERATION = IKMSGeneration(kmsGenerationAddress);
 
     /**
      * @notice The domain separator for the add ciphertext hash.

@@ -1,35 +1,12 @@
-use alloy::primitives::{Address, Uint};
+use alloy::primitives::Address;
 use alloy::transports::http::reqwest::Url;
 use fhevm_engine_common::utils::DatabaseURL;
 use std::time::Duration;
 
-pub mod aws_s3;
-pub(crate) mod database;
-pub(crate) mod digest;
 pub(crate) mod drift_detector;
 pub mod gw_listener;
 pub mod http_server;
 pub(crate) mod metrics;
-pub(crate) mod sks_key;
-
-pub(crate) type KeyId = Uint<256, 4>;
-
-#[derive(Clone, Copy, Debug)]
-pub enum KeyType {
-    ServerKey = 0,
-    PublicKey = 1,
-}
-
-impl TryFrom<u8> for KeyType {
-    type Error = anyhow::Error;
-    fn try_from(value: u8) -> anyhow::Result<KeyType> {
-        match value {
-            0 => Ok(KeyType::ServerKey),
-            1 => Ok(KeyType::PublicKey),
-            _ => Err(anyhow::anyhow!("Invalid KeyType")),
-        }
-    }
-}
 
 #[derive(Clone, Debug)]
 pub struct ConfigSettings {
@@ -48,8 +25,6 @@ pub struct ConfigSettings {
 
     pub get_logs_poll_interval: Duration,
     pub get_logs_block_batch_size: u64,
-    pub replay_from_block: Option<i64>,
-    pub replay_skip_verify_proof: bool,
 
     pub log_last_processed_every_number_of_updates: u64,
 
@@ -80,8 +55,6 @@ impl Default for ConfigSettings {
             health_check_timeout: Duration::from_secs(4),
             get_logs_poll_interval: Duration::from_millis(500),
             get_logs_block_batch_size: 100,
-            replay_from_block: None,
-            replay_skip_verify_proof: false,
             log_last_processed_every_number_of_updates: 50,
             ciphertext_commits_address: None,
             gateway_config_address: None,

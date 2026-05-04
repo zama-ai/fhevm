@@ -21,9 +21,13 @@ use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
 use sqlx::postgres::PgPoolOptions;
 
 use crate::cmd::block_history::BlockSummary;
-use crate::database::ingest::{ingest_block_logs, BlockLogs, IngestOptions};
+use crate::database::ingest::{
+    ingest_block_logs, update_finalized_blocks_aux, BlockLogs, IngestOptions,
+};
 use crate::database::tfhe_event_propagate::Database;
 use crate::health_check::HealthCheck;
+use crate::kms_generation::aws_s3::AwsS3Client;
+use crate::kms_generation::process_kms_generation_activations;
 use crate::poller::http_client::HttpChainClient;
 use crate::poller::metrics::{
     inc_blocks_processed, inc_db_errors, inc_rpc_errors,
@@ -71,6 +75,7 @@ pub struct PollerConfig {
     pub url: String,
     pub acl_address: Address,
     pub tfhe_address: Address,
+    pub kms_generation_address: Address,
     pub database_url: DatabaseURL,
     pub finality_lag: u64,
     pub batch_size: u64,
@@ -93,6 +98,7 @@ pub struct PollerConfig {
 pub async fn run_poller(config: PollerConfig) -> Result<()> {
     let acl_address = config.acl_address;
     let tfhe_address = config.tfhe_address;
+    let kms_generation_address = config.kms_generation_address;
 
     let blockchain_tick = HeartBeat::new();
     let blockchain_timeout_tick = HeartBeat::new();
@@ -107,6 +113,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         &config.url,
         acl_address,
         tfhe_address,
+        kms_generation_address,
         config.retry_interval,
         config.max_http_retries,
         config.rpc_compute_units_per_second,
@@ -135,6 +142,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         config.dependence_cache_size,
     )
     .await?;
+    let aws_s3_client = AwsS3Client {};
 
     let health_check = HealthCheck {
         blockchain_timeout_tick: blockchain_timeout_tick.clone(),
@@ -230,6 +238,20 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         blockchain_timeout_tick.update();
 
         let safe_tip = latest.saturating_sub(config.finality_lag);
+        let client_ref = &client;
+        update_finalized_blocks_aux(
+            &mut db,
+            latest,
+            config.finality_lag,
+            |block_number| async move {
+                client_ref
+                    .header_for_block(block_number)
+                    .await
+                    .map(|header| header.hash)
+            },
+        )
+        .await;
+
         if safe_tip <= last_caught_up_block {
             info!(
                 chain_id = %chain_id,
@@ -304,6 +326,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 &block_logs,
                 acl_address,
                 tfhe_address,
+                kms_generation_address,
                 config.retry_interval,
                 ingest_options,
             )
@@ -326,6 +349,18 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                     break;
                 }
             }
+            let db_pool = db.pool.read().await.clone();
+            tokio::spawn(async move {
+                if let Err(err) =
+                    process_kms_generation_activations(db_pool, aws_s3_client)
+                        .await
+                {
+                    error!(
+                        error = %err,
+                        "Error processing KMSGeneration activations"
+                    );
+                }
+            });
         }
 
         let new_anchor = last_caught_up_block + processed_blocks;
@@ -375,15 +410,25 @@ async fn ingest_with_retry(
     block_logs: &BlockLogs<Log>,
     acl_address: Address,
     tfhe_address: Address,
+    kms_generation_address: Address,
     retry_interval: Duration,
     options: IngestOptions,
 ) -> Result<u64, (sqlx::Error, u64)> {
     let mut errors = 0;
     let acl = Some(acl_address);
     let tfhe = Some(tfhe_address);
+    let kms_gen_address = Some(kms_generation_address);
     loop {
-        match ingest_block_logs(chain_id, db, block_logs, &acl, &tfhe, options)
-            .await
+        match ingest_block_logs(
+            chain_id,
+            db,
+            block_logs,
+            &acl,
+            &tfhe,
+            &kms_gen_address,
+            options,
+        )
+        .await
         {
             Ok(_) => return Ok(errors),
             Err(err) => {

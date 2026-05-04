@@ -45,7 +45,7 @@ pub async fn run_http_server(
     config: &HttpConfig,
     orchestrator: Arc<Orchestrator>,
     repositories: Arc<Repositories>,
-    user_decrypt_shares_threshold: u16,
+    user_decrypt_shares_threshold: u32,
     bouncer_throttlers: BouncerThrottlers,
     host_chain_id_checker: Arc<HostChainIdChecker>,
 ) -> SocketAddr {

@@ -210,6 +210,9 @@ impl TestSetup {
             hc.url = format!("http://localhost:{}", host_port);
         }
 
+        // Wire protocol_config URL to the host mock server
+        settings.protocol_config.ethereum_http_rpc_url = format!("http://localhost:{}", host_port);
+
         // Register default ACL allow-all pattern on host mock
         register_default_host_acl_allow_all(&host_server_clone, &settings.host_chains);
 
@@ -240,6 +243,10 @@ impl TestSetup {
         for hc in &mut relayer_settings.host_chains {
             hc.url = format!("http://localhost:{}", host_port);
         }
+
+        // Wire relayer protocol_config URL to the host mock server
+        relayer_settings.protocol_config.ethereum_http_rpc_url =
+            format!("http://localhost:{}", host_port);
 
         // Update relayer listener pool URLs to use the mock server
         for listener in &mut relayer_settings.gateway.listener_pool.listeners {

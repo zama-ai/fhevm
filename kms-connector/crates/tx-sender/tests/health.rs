@@ -19,6 +19,7 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
     let state = State::new(
         test_instance.db().clone(),
         test_instance.provider().clone(),
+        test_instance.provider().clone(),
         Duration::from_secs(5),
     );
 

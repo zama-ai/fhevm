@@ -55,7 +55,6 @@ Here's the complete list of environment variables used for deploying the FHEVM g
 | `MNEMONIC`                          | "Mnemonic phrase for address generation    | string        | "adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer" | -                                                                                |
 | `RPC_URL`                           | URL of the RPC node                        | string        | "http://127.0.0.1:8757"                                                                             | -                                                                                |
 | `GATEWAY_CONFIG_ADDRESS`            | Address of the GatewayConfig contract      | address       | -                                                                                                   | Only for production settings                                                     |
-| `KMS_GENERATION_ADDRESS`            | Address of the KmsGeneration contract      | address       | -                                                                                                   | Only for production settings                                                     |
 | `PAUSER_SET_ADDRESS`                | Address of the PauserSet contract          | address       | -                                                                                                   | Only for production settings                                                     |
 | `NEW_OWNER_PRIVATE_KEY`             | Private key for new owner acceptance       | bytes32       | -                                                                                                   | Only used in task that transfers ownership of the gateway to a new EAO owner     |
 
@@ -269,14 +268,6 @@ GATEWAY_CONFIG_ADDRESS="0xC7D45661a345eC5cA0e8521CFEF7e32FDA0Daa68" # (address)
 ```
 
 This (static) address is needed for adding host chains to the GatewayConfig contract separately. In a proper production setting, this environment variable needs to be dynamically set after deploying the contracts.
-
-- KMSGeneration address
-
-```bash
-KMS_GENERATION_ADDRESS="0x87A5b1152AA51728258dbc1AA54B6a83DCd1d3dd" # (address)
-```
-
-This (static) address is needed for generating the FHE key and CRS through the KMSGeneration contract. In a proper production setting, this environment variable needs to be dynamically set after deploying the contracts.
 
 - PauserSet address
 

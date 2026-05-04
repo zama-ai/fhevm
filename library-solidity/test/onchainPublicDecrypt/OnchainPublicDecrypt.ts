@@ -69,13 +69,22 @@ describe('OnchainPublicDecrypt', function () {
   it('3 KMS Signers - threshold of 2: isPublicDecryptionResultValid (View) and checkSignatures (Non-View)', async function () {
     const parsedEnv = dotenv.parse(fs.readFileSync('./fhevmTemp/addresses/.env.host'));
     const kmsAdd = parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS;
+    const protocolConfigAdd = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
     const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
     const accounts = await ethers.getSigners();
     const signerAddresses = [accounts[7], accounts[8], accounts[9]].map((s) => s.address);
     const kmsVerifier = await ethers.getContractAt('KMSVerifier', kmsAdd);
-    const txNewConfig = await kmsVerifier.connect(deployer).defineNewContext(signerAddresses, 2);
+    const protocolConfig = await ethers.getContractAt('ProtocolConfig', protocolConfigAdd);
+    const newNodes = signerAddresses.map((address, index) => ({
+      txSenderAddress: address,
+      signerAddress: address,
+      ipAddress: `127.0.0.${index + 1}`,
+      storageUrl: `https://kms-${index + 1}.example.com`,
+    }));
+    const newThresholds = { publicDecryption: 2, userDecryption: 2, kmsGen: 2, mpc: 2 };
+    const txNewConfig = await protocolConfig.connect(deployer).defineNewKmsContext(newNodes, newThresholds);
     await txNewConfig.wait();
-    expect(await kmsVerifier.getThreshold()).to.equal(2);
+    expect(await protocolConfig.getPublicDecryptionThreshold()).to.equal(2);
     expect(await kmsVerifier.getKmsSigners()).to.deep.equal(signerAddresses); /// Now KMS_SIGNER_ADDRESS_0, KMS_SIGNER_ADDRESS_1 and KMS_SIGNER_ADDRESS_2 are all signers, threshold is 2
 
     const tx = await this.contract.requestDecryption();
@@ -115,9 +124,18 @@ describe('OnchainPublicDecrypt', function () {
     await this.contract.callbackDecryption(decryptedResult, decryptionProof6);
     expect(await this.contract.yUint64()).to.equal(42);
 
-    const txResetConfig = await kmsVerifier.connect(deployer).defineNewContext([signerAddresses[0]], 1);
+    const resetNodes = [
+      {
+        txSenderAddress: signerAddresses[0],
+        signerAddress: signerAddresses[0],
+        ipAddress: '127.0.0.1',
+        storageUrl: 'https://kms-1.example.com',
+      },
+    ];
+    const resetThresholds = { publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1 };
+    const txResetConfig = await protocolConfig.connect(deployer).defineNewKmsContext(resetNodes, resetThresholds);
     await txResetConfig.wait();
-    expect(await kmsVerifier.getThreshold()).to.equal(1);
+    expect(await protocolConfig.getPublicDecryptionThreshold()).to.equal(1);
     expect(await kmsVerifier.getKmsSigners()).to.deep.equal([signerAddresses[0]]);
   });
 });

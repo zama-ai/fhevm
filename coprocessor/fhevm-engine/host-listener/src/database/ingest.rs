@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::future::Future;
 
 use alloy::primitives::Address;
 use alloy::rpc::types::Log;
@@ -8,13 +9,15 @@ use fhevm_engine_common::types::Handle;
 use sqlx::types::time::{OffsetDateTime, PrimitiveDateTime};
 use tracing::{error, info};
 
-use crate::cmd::block_history::BlockSummary;
+use crate::cmd::block_history::{BlockHash, BlockSummary};
 use crate::cmd::InfiniteLogIter;
-use crate::contracts::{AclContract, TfheContract};
+use crate::contracts::{AclContract, KMSGeneration, TfheContract};
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
     acl_result_handles, tfhe_result_handle, Chain, ChainHash, Database, LogTfhe,
 };
+use crate::kms_generation::insert_kms_generation_events_tx;
+use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
 
 pub struct BlockLogs<T> {
     pub logs: Vec<T>,
@@ -145,11 +148,13 @@ pub async fn ingest_block_logs(
     block_logs: &BlockLogs<Log>,
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
+    kms_generation_contract_address: &Option<Address>,
     options: IngestOptions,
 ) -> Result<(), sqlx::Error> {
     let mut tx = db.new_transaction().await?;
     let mut is_allowed = HashSet::<Handle>::new();
     let mut tfhe_event_log = vec![];
+    let mut kms_gen_events = vec![];
     let block_hash = block_logs.summary.hash;
     let block_number = block_logs.summary.number;
     let mut catchup_insertion = 0;
@@ -220,7 +225,20 @@ pub async fn ingest_block_logs(
             }
         }
 
-        if is_acl_address || is_tfhe_address {
+        let is_kms_gen_address =
+            &current_address == kms_generation_contract_address;
+        if kms_generation_contract_address.is_none() || is_kms_gen_address {
+            if let Ok(event) =
+                KMSGeneration::KMSGenerationEvents::decode_log(&log.inner)
+            {
+                kms_gen_events.push((event.data, log.clone()));
+                continue;
+            } else {
+                KMS_EVENT_DECODE_FAIL_COUNTER.inc()
+            }
+        }
+
+        if is_acl_address || is_tfhe_address || is_kms_gen_address {
             error!(
                 event_address = ?log.inner.address,
                 acl_contract_address = ?acl_contract_address,
@@ -311,6 +329,14 @@ pub async fn ingest_block_logs(
             info!(block_number, catchup_insertion, "Catchup inserted events");
         }
     }
+    insert_kms_generation_events_tx(
+        &mut tx,
+        kms_gen_events,
+        chain_id,
+        block_hash.as_ref(),
+        block_number,
+    )
+    .await?;
     db.mark_block_as_valid(&mut tx, &block_logs.summary, block_logs.finalized)
         .await?;
     if at_least_one_insertion {
@@ -332,6 +358,30 @@ pub async fn update_finalized_blocks(
     last_block_number: u64,
     finality_lag: u64,
 ) {
+    let log_iter = &*log_iter;
+    update_finalized_blocks_aux(
+        db,
+        last_block_number,
+        finality_lag,
+        |block_number| async move {
+            log_iter
+                .get_block_by_number(block_number)
+                .await
+                .map(|block| block.header.hash)
+        },
+    )
+    .await;
+}
+
+pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
+    db: &mut Database,
+    last_block_number: u64,
+    finality_lag: u64,
+    mut get_block_hash_by_number: GetBlockHash,
+) where
+    GetBlockHash: FnMut(u64) -> GetBlockHashFuture,
+    GetBlockHashFuture: Future<Output = anyhow::Result<BlockHash>>,
+{
     info!(last_block_number, finality_lag, "Updating finalized blocks");
     let mut tx = match db.new_transaction().await {
         Ok(tx) => tx,
@@ -343,7 +393,7 @@ pub async fn update_finalized_blocks(
             return;
         }
     };
-    let last_finalized_block = last_block_number - finality_lag;
+    let last_finalized_block = last_block_number.saturating_sub(finality_lag);
     let blocks_number = match Database::get_finalized_blocks_number(
         &mut tx,
         last_finalized_block as i64,
@@ -362,9 +412,9 @@ pub async fn update_finalized_blocks(
     };
     info!(?blocks_number, "Finalizing blocks");
     for block_number in blocks_number {
-        let block =
-            match log_iter.get_block_by_number(block_number as u64).await {
-                Ok(block) => block,
+        let block_hash =
+            match get_block_hash_by_number(block_number as u64).await {
+                Ok(block_hash) => block_hash,
                 Err(err) => {
                     error!(
                         block_number,
@@ -375,11 +425,7 @@ pub async fn update_finalized_blocks(
                 }
             };
         if let Err(err) = db
-            .update_block_as_finalized(
-                &mut tx,
-                block_number,
-                &block.header.hash,
-            )
+            .update_block_as_finalized(&mut tx, block_number, &block_hash)
             .await
         {
             error!(block_number, ?err, "Failed to update block as finalized");

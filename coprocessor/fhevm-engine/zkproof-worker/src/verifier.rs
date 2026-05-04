@@ -12,7 +12,7 @@ use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::safe_deserialize_conformant;
 use sha3::Digest;
 use sha3::Keccak256;
-use sqlx::{postgres::PgListener, PgPool, Row};
+use sqlx::{postgres::PgListener, PgPool};
 use sqlx::{Postgres, Transaction};
 use std::str::FromStr;
 use tfhe::integer::ciphertext::IntegerProvenCompactCiphertextListConformanceParams;
@@ -267,7 +267,7 @@ async fn execute_verify_proof_routine(
     conf: &Config,
 ) -> Result<(), ExecutionError> {
     let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
-    if let Ok(row) = sqlx::query(
+    if let Ok(row) = sqlx::query!(
         "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id
             FROM verify_proofs
             WHERE verified IS NULL
@@ -278,14 +278,16 @@ async fn execute_verify_proof_routine(
     .await
     {
         let started_at = SystemTime::now();
-        let request_id: i64 = row.get("zk_proof_id");
-        let input: Vec<u8> = row.get("input");
-        let host_chain_id_raw: i64 = row.get("chain_id");
+        let request_id: i64 = row.zk_proof_id;
+        let input: Vec<u8> = row
+            .input
+            .ok_or(ExecutionError::NullInput(row.zk_proof_id))?;
+        let host_chain_id_raw: i64 = row.chain_id;
         let host_chain_id = ChainId::try_from(host_chain_id_raw)
             .map_err(|_| ExecutionError::UnknownChainId(host_chain_id_raw))?;
-        let contract_address = row.get("contract_address");
-        let user_address = row.get("user_address");
-        let transaction_id: Option<Vec<u8>> = row.get("transaction_id");
+        let contract_address = row.contract_address;
+        let user_address = row.user_address;
+        let transaction_id: Option<Vec<u8>> = row.transaction_id;
 
         info!(
             message = "Process zk-verify request",
@@ -369,13 +371,13 @@ async fn execute_verify_proof_routine(
             tracing::Span::current().record("valid", verified);
 
             // Mark as verified=true/false and set handles, if computed
-            sqlx::query(
+            sqlx::query!(
                 "UPDATE verify_proofs SET handles = $1, verified = $2, verified_at = NOW()
                 WHERE zk_proof_id = $3",
+                handles_bytes,
+                verified,
+                request_id
             )
-            .bind(handles_bytes)
-            .bind(verified)
-            .bind(request_id)
             .execute(&mut *txn)
             .await?;
 
@@ -385,10 +387,12 @@ async fn execute_verify_proof_routine(
         .await?;
 
         // Notify
-        sqlx::query("SELECT pg_notify($1, '')")
-            .bind(conf.notify_database_channel.clone())
-            .execute(&mut *txn)
-            .await?;
+        sqlx::query!(
+            "SELECT pg_notify($1, '')",
+            conf.notify_database_channel.clone()
+        )
+        .execute(&mut *txn)
+        .await?;
 
         txn.commit().await?;
 
@@ -628,7 +632,7 @@ fn finalize_ciphertext(
 
 /// Returns the number of remaining tasks in the database.
 async fn get_remaining_tasks(pool: &PgPool) -> Result<i64, ExecutionError> {
-    let row = sqlx::query(
+    Ok(sqlx::query_scalar!(
         "
         SELECT COUNT(*)
         FROM (
@@ -641,11 +645,8 @@ async fn get_remaining_tasks(pool: &PgPool) -> Result<i64, ExecutionError> {
         ",
     )
     .fetch_one(pool)
-    .await?;
-
-    let count: i64 = row.get("count");
-
-    Ok(count)
+    .await
+    .map(|count| count.unwrap_or(0))?)
 }
 
 pub(crate) async fn insert_ciphertexts(

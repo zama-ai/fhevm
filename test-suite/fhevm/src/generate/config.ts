@@ -61,6 +61,26 @@ const rewriteHostChains = (
   return config;
 };
 
+/** Rewrites protocol_config with the discovered ProtocolConfig address and host chain RPC. */
+const rewriteProtocolConfig = (
+  config: Record<string, unknown>,
+  state: Pick<State, "discovery">,
+  chains: HostChainScenario[],
+) => {
+  const pc = config.protocol_config as Record<string, unknown> | undefined;
+  if (!pc) return config;
+  const runtimes = hostChainRuntimes(chains);
+  const defaultChain = runtimes[0];
+  if (defaultChain) {
+    pc.ethereum_http_rpc_url = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
+    const hostAddresses = state.discovery?.hosts[defaultChain.key];
+    if (hostAddresses?.PROTOCOL_CONFIG_CONTRACT_ADDRESS) {
+      pc.address = hostAddresses.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+    }
+  }
+  return config;
+};
+
 /** Renders the relayer config file from the template and compatibility policy. */
 export const renderRelayerConfig = (
   state: Pick<State, "versions" | "discovery"> & Partial<Pick<State, "overrides">>,
@@ -71,6 +91,7 @@ export const renderRelayerConfig = (
   const chains = plan?.hostChains ?? [];
   if (chains.length) {
     config = rewriteHostChains(config, state, chains);
+    config = rewriteProtocolConfig(config, state, chains);
   }
   return YAML.stringify(config);
 };

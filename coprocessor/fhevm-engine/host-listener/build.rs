@@ -14,6 +14,7 @@ fn build_contracts() {
         "cargo:rerun-if-changed=../../../host-contracts/contracts/ACLEvents.sol"
     );
     println!("cargo:rerun-if-changed=../../../host-contracts/contracts/FHEVMExecutor.sol");
+    println!("cargo:rerun-if-changed=../../../host-contracts/contracts/KMSGeneration.sol");
     // Step 1: Copy ../../contracts/.env.example to ../../contracts/.env
     let env_example = Path::new("../../../host-contracts/.env.example");
     let env_dest = Path::new("../../../host-contracts/.env");
