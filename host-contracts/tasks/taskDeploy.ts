@@ -86,35 +86,29 @@ async function readView<T>(errorMessage: string, read: () => Promise<T>): Promis
   }
 }
 
-// OZ upgrades' upgradeProxy sometimes returns before the upgradeToAndCall tx has been mined on
-// interval-mining networks. Poll a view that only the upgraded implementation answers to so the
-// task only returns once the new impl is observable on-chain.
+// OZ upgrades' upgradeProxy can return before the upgradeToAndCall tx is mined on
+// interval-mining networks. Poll until the new implementation answers a
+// state-dependent view.
 async function waitForUpgradeLanded(
   hre: HardhatRuntimeEnvironment,
-  upgraded: { getAddress(): Promise<string> },
+  proxyAddress: string,
   contractLabel: string,
 ): Promise<void> {
-  const upgradedAddress = await upgraded.getAddress();
-  const contract = new hre.ethers.Contract(
-    upgradedAddress,
+  const proxy = new hre.ethers.Contract(
+    proxyAddress,
     ['function getCurrentKmsContextId() view returns (uint256)'],
     hre.ethers.provider,
   );
-  const attempts = 10;
-  const delayMs = 250;
-  for (let attempt = 0; attempt < attempts; attempt++) {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
     try {
-      await contract.getCurrentKmsContextId();
+      await proxy.getCurrentKmsContextId();
       return;
     } catch {
-      if (attempt === attempts - 1) {
-        throw new Error(
-          `${contractLabel} upgrade did not land after ${(attempts * delayMs) / 1000}s of polling. The upgradeToAndCall tx may have reverted or the provider is not mining.`,
-        );
-      }
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      await new Promise((resolve) => setTimeout(resolve, 500));
     }
   }
+  throw new Error(`${contractLabel} upgrade did not land after 30s of polling`);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -584,7 +578,7 @@ task('task:deployProtocolConfig')
     const initialKmsNodes = buildKmsNodes(taskArguments.useAddress);
     const thresholds = buildKmsThresholds();
 
-    const upgraded = await upgrades.upgradeProxy(proxy, newImplem, {
+    await upgrades.upgradeProxy(proxy, newImplem, {
       call: {
         fn: 'initializeFromEmptyProxy',
         args: [initialKmsNodes, thresholds],
@@ -594,7 +588,7 @@ task('task:deployProtocolConfig')
     // networks (e.g. anvil --block-time). Poll a state-dependent view so the task only returns
     // once the new implementation is live, otherwise downstream tasks (assertProtocolConfigReady)
     // hit a revert against the still-empty proxy.
-    await waitForUpgradeLanded(hre, upgraded, 'ProtocolConfig');
+    await waitForUpgradeLanded(hre, proxyAddress, 'ProtocolConfig');
     console.log('ProtocolConfig code set successfully at address:', proxyAddress);
   });
 

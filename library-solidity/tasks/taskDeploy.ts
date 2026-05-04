@@ -4,10 +4,35 @@ import dotenv from 'dotenv';
 import { Wallet } from 'ethers';
 import * as fs from 'fs-extra';
 import { task, types } from 'hardhat/config';
-import type { TaskArguments } from 'hardhat/types';
+import type { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 import path from 'path';
 
 import { getRequiredEnvVar } from './utils/loadVariables';
+
+// OZ upgrades' upgradeProxy can return before the upgradeToAndCall tx is mined on
+// interval-mining networks. Poll until the new implementation answers a
+// state-dependent view.
+async function waitForUpgradeLanded(
+  hre: HardhatRuntimeEnvironment,
+  proxyAddress: string,
+  contractLabel: string,
+): Promise<void> {
+  const proxy = new hre.ethers.Contract(
+    proxyAddress,
+    ['function getCurrentKmsContextId() view returns (uint256)'],
+    hre.ethers.provider,
+  );
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    try {
+      await proxy.getCurrentKmsContextId();
+      return;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+  throw new Error(`${contractLabel} upgrade did not land after 30s of polling`);
+}
 
 const MISSING_WITH_KMS_GENERATION = '__missing_with_kms_generation__';
 const WITH_KMS_GENERATION_HELP = `Missing or invalid required --with-kms-generation flag.
@@ -238,7 +263,8 @@ task('task:deployKMSVerifier').setAction(async function (_taskArguments: TaskArg
 // ProtocolConfig
 ////////////////////////////////////////////////////////////////////////////////
 
-task('task:deployProtocolConfig').setAction(async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
+task('task:deployProtocolConfig').setAction(async function (_taskArguments: TaskArguments, hre) {
+  const { ethers, upgrades } = hre;
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
@@ -253,6 +279,9 @@ task('task:deployProtocolConfig').setAction(async function (_taskArguments: Task
       args: [buildKmsNodes(), buildKmsThresholds()],
     },
   });
+  // upgrades.upgradeProxy can return before the upgradeToAndCall tx is mined on interval-mining
+  // networks. Wait until the new implementation is observable on-chain.
+  await waitForUpgradeLanded(hre, proxyAddress, 'ProtocolConfig');
   console.info('ProtocolConfig code set successfully at address:', proxyAddress);
 });
 
