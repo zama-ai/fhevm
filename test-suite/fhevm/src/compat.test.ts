@@ -96,6 +96,23 @@ describe("compat", () => {
     expect(policy.coprocessorDropFlags["host-listener-poller"]).toContain("--kms-generation-address");
   });
 
+  test("drops kms-generation-address for v0.12 host listener images", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-supported",
+        lockName: "latest-supported.json",
+        env: {
+          COPROCESSOR_HOST_LISTENER_VERSION: "v0.12.1",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.coprocessorDropFlags["host-listener"]).toContain("--kms-generation-address");
+    expect(policy.coprocessorDropFlags["host-listener-poller"]).toContain("--kms-generation-address");
+  });
+
   test("treats sha-style gateway bundles as modern kms-generation sourcing", () => {
     expect(
       requiresLegacyGatewayKmsGenerationAddress({
