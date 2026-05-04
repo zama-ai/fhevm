@@ -12,6 +12,10 @@ gateway_url = "http://localhost:8545"
 # ENV: KMS_CONNECTOR_GATEWAY_CHAIN_ID
 gateway_chain_id = 54321
 
+# Chain ID for the Ethereum-like network; defaults to Sepolia (required)
+# ENV: KMS_CONNECTOR_ETHEREUM_CHAIN_ID
+ethereum_chain_id = 11155111
+
 # List of KMS-core shards gRPC endpoints (required)
 # Format: http://host:port
 # ENV: KMS_CONNECTOR_KMS_CORE_ENDPOINTS
@@ -94,9 +98,9 @@ address = "0x0000000000000000000000000000000000000000"
 # ENV: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__DOMAIN_VERSION
 # domain_version = "1"
 
-# Configuration of the KMSGeneration contract (required)
+# Configuration of the KMSGeneration contract on Ethereum (required)
 [kms_generation_contract]
-# Address of the KMSGeneration contract (required)
+# Address of the KMSGeneration contract on Ethereum (required)
 # Format: hex string with 0x prefix
 # ENV: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS
 address = "0x0000000000000000000000000000000000000000"

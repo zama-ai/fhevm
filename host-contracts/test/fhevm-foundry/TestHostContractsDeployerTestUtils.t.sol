@@ -4,13 +4,16 @@ pragma solidity ^0.8.24;
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
 import {HostContractsDeployerTestUtils} from "@fhevm-foundry/HostContractsDeployerTestUtils.sol";
-import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
+import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd, protocolConfigAdd, kmsGenerationAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 import {ACL} from "@fhevm-host-contracts/contracts/ACL.sol";
 import {FHEVMExecutor} from "@fhevm-host-contracts/contracts/FHEVMExecutor.sol";
 import {KMSVerifier} from "@fhevm-host-contracts/contracts/KMSVerifier.sol";
 import {InputVerifier} from "@fhevm-host-contracts/contracts/InputVerifier.sol";
 import {HCULimit} from "@fhevm-host-contracts/contracts/HCULimit.sol";
 import {PauserSet} from "@fhevm-host-contracts/contracts/immutable/PauserSet.sol";
+import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
+import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
+import {KmsNode} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
 contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
@@ -46,27 +49,23 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
     function test_DeployKMSVerifier_UsesProxyUpgradeFlow() public {
         // KMSVerifier inherits ACLOwnable as well, ensuring the ACL proxy is in place avoids upgrade reverts.
         _deployACL(OWNER);
-        address[] memory initialSigners = new address[](2);
-        initialSigners[0] = address(0x1111);
-        initialSigners[1] = address(0x2222);
-        uint256 initialThreshold = 1;
+        KmsNode[] memory initialKmsNodes = _makeKmsNodes(2);
+        _deployProtocolConfig(OWNER, initialKmsNodes, _defaultThresholds());
 
         (KMSVerifier kmsVerifierProxy, address kmsVerifierImplementation) = _deployKMSVerifier(
             OWNER,
             GATEWAY_SOURCE_CONTRACT,
-            GATEWAY_CHAIN_ID,
-            initialSigners,
-            initialThreshold
+            GATEWAY_CHAIN_ID
         );
 
         assertEq(address(kmsVerifierProxy), kmsVerifierAdd, "KMSVerifier proxy address mismatch");
         assertNotEq(kmsVerifierImplementation, address(0), "Implementation not deployed");
-        assertEq(kmsVerifierProxy.getVersion(), "KMSVerifier v0.2.0", "Version mismatch");
-        assertEq(kmsVerifierProxy.getThreshold(), initialThreshold, "Threshold mismatch");
+        assertEq(kmsVerifierProxy.getVersion(), "KMSVerifier v0.3.0", "Version mismatch");
+        assertEq(kmsVerifierProxy.getThreshold(), _defaultThresholds().publicDecryption, "Threshold mismatch");
         address[] memory storedSigners = kmsVerifierProxy.getKmsSigners();
-        assertEq(storedSigners.length, initialSigners.length, "Signers length mismatch");
-        assertEq(storedSigners[0], initialSigners[0], "Signer[0] mismatch");
-        assertEq(storedSigners[1], initialSigners[1], "Signer[1] mismatch");
+        assertEq(storedSigners.length, initialKmsNodes.length, "Signers length mismatch");
+        assertEq(storedSigners[0], initialKmsNodes[0].signerAddress, "Signer[0] mismatch");
+        assertEq(storedSigners[1], initialKmsNodes[1].signerAddress, "Signer[1] mismatch");
         assertEq(_readImplementationSlot(kmsVerifierAdd), kmsVerifierImplementation, "Implementation slot mismatch");
     }
 
@@ -129,8 +128,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
     }
 
     function test_DeployFullHostStack_DeploysAndWiresAllContracts() public {
-        address[] memory kmsSigners = new address[](1);
-        kmsSigners[0] = address(0x7777);
+        KmsNode[] memory initialKmsNodes = _makeKmsNodes(1);
         address[] memory inputSigners = new address[](1);
         inputSigners[0] = address(0x8888);
         address pauser = address(0xbeef);
@@ -141,8 +139,8 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
             GATEWAY_SOURCE_CONTRACT,
             GATEWAY_SOURCE_CONTRACT,
             GATEWAY_CHAIN_ID,
-            kmsSigners,
-            1,
+            initialKmsNodes,
+            _defaultThresholds(),
             inputSigners,
             1
         );
@@ -153,7 +151,11 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         assertEq(aclProxy.getPauserSetAddress(), pauserSetAdd, "ACL PauserSet wiring mismatch");
         assertEq(fheExecutor.getACLAddress(), aclAdd, "Executor ACL wiring mismatch");
         assertEq(fheExecutor.getHCULimitAddress(), hcuLimitAdd, "Executor HCULimit wiring mismatch");
-        assertEq(KMSVerifier(kmsVerifierAdd).getThreshold(), 1, "KMSVerifier threshold mismatch");
+        assertEq(
+            KMSVerifier(kmsVerifierAdd).getThreshold(),
+            _defaultThresholds().publicDecryption,
+            "KMSVerifier threshold mismatch"
+        );
         assertEq(InputVerifier(inputVerifierAdd).getThreshold(), 1, "InputVerifier threshold mismatch");
         assertTrue(PauserSet(pauserSetAdd).isPauser(pauser), "Pauser not registered");
         assertFalse(aclProxy.isAllowed(bytes32(uint256(1)), address(this)), "Unexpected ACL allow");
@@ -170,6 +172,38 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         vm.prank(fhevmExecutorAdd);
         aclProxy.allowTransient(bytes32(uint256(1)), address(this));
         assertTrue(aclProxy.allowedTransient(bytes32(uint256(1)), address(this)), "Transient allow failed");
+    }
+
+    function test_DeployProtocolConfig_UsesProxyUpgradeFlow() public {
+        _deployACL(OWNER);
+
+        KmsNode[] memory nodes = _makeKmsNodes(2);
+
+        (ProtocolConfig pcProxy, address pcImplementation) = _deployProtocolConfig(OWNER, nodes, _defaultThresholds());
+
+        assertEq(address(pcProxy), protocolConfigAdd, "ProtocolConfig proxy address mismatch");
+        assertNotEq(pcImplementation, address(0), "Implementation not deployed");
+        assertEq(pcProxy.getVersion(), "ProtocolConfig v0.1.0", "Version mismatch");
+        assertEq(pcProxy.getPublicDecryptionThreshold(), 1, "Public decryption threshold mismatch");
+        assertEq(pcProxy.getUserDecryptionThreshold(), 1, "User decryption threshold mismatch");
+        assertEq(pcProxy.getKmsGenThreshold(), 1, "KmsGen threshold mismatch");
+        assertEq(pcProxy.getMpcThreshold(), 1, "Mpc threshold mismatch");
+        assertEq(_readImplementationSlot(protocolConfigAdd), pcImplementation, "Implementation slot mismatch");
+    }
+
+    function test_DeployKMSGeneration_UsesProxyUpgradeFlow() public {
+        _deployACL(OWNER);
+
+        // KMSGeneration reads from ProtocolConfig so we need it deployed
+        KmsNode[] memory nodes = _makeKmsNodes(1);
+        _deployProtocolConfig(OWNER, nodes, _defaultThresholds());
+
+        (KMSGeneration kgProxy, address kgImplementation) = _deployKMSGeneration(OWNER);
+
+        assertEq(address(kgProxy), kmsGenerationAdd, "KMSGeneration proxy address mismatch");
+        assertNotEq(kgImplementation, address(0), "Implementation not deployed");
+        assertEq(kgProxy.getVersion(), "KMSGeneration v0.1.0", "Version mismatch");
+        assertEq(_readImplementationSlot(kmsGenerationAdd), kgImplementation, "Implementation slot mismatch");
     }
 
     function _readImplementationSlot(address proxy) private view returns (address) {

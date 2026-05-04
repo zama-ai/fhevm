@@ -58,13 +58,19 @@ commonConfig:
   # --coprocessor-api-key and v0.11 snsWorker renders --tenant-api-key.
   tenantApiKey: {}
 
+  # Host chain configuration
+  hostChainWsUrl: "ws://ethereum-node:8546"
+  hostChainHttpUrl: "http://ethereum-node:8545"
+  aclContractAddress: {}            # required — e.g. 0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c
+  fhevmExecutorContractAddress: {}  # required — e.g. 0x...
+  kmsGenerationContractAddress: {}  # required — e.g. 0x...
+
   # Gateway chain configuration. Consumed by gwListener and txSender.
   # Each field accepts either a literal `value` or a `valueFrom` block
   # (secretKeyRef or configMapKeyRef). Leave unset to inject nothing.
   gatewayUrl: {}
   gatewayContractAddresses:
     inputVerification: {}     # required by gwListener, txSender
-    kmsGeneration: {}         # required by gwListener
     ciphertextCommits: {}     # required by txSender; optional for gwListener (drift detection)
     gatewayConfig: {}         # optional for gwListener (drift detection)
     multichainAcl: {}         # legacy v0.11 txSender only; disable the arg on v0.12+
@@ -86,6 +92,55 @@ commonConfig:
 # on key conflict.
 podAnnotations: {}
 podLabels: {}
+
+# -----------------------------------------------------------------------------
+# Host Contract ConfigMap
+# -----------------------------------------------------------------------------
+# Optional ConfigMap rendering host chain contract addresses. Downstream
+# components (dbMigration, hostListener, hostListenerPoller,
+# hostListenerCatchupOnly) reference its keys via configMapKeyRef.
+hostContractConfigMap:
+  enabled: false
+
+  # Resource name. Downstream components reference this via configMapKeyRef.name.
+  name: eth-sc-addresses
+
+  # Selects a bundled preset from configs/host-<network>.yaml.
+  # Allowed values: "" (no preset), "devnet", "testnet", "mainnet".
+  # An unrecognized value fails the render.
+  network: ""
+
+  # Operator overrides, deep-merged on top of the preset. Keys are used
+  # as-is. Operator entries win on key collision with the preset.
+  # Example:
+  #   addresses:
+  #     acl.address: "0xabc..."             # override preset
+  #     custom_thing.address: "0xdef..."    # add bespoke key
+  addresses: {}
+
+# -----------------------------------------------------------------------------
+# Gateway Contract ConfigMap
+# -----------------------------------------------------------------------------
+# Optional ConfigMap rendering gateway chain contract addresses. Downstream
+# components (gwListener, txSender) reference its keys via configMapKeyRef.
+gatewayContractConfigMap:
+  enabled: false
+
+  # Resource name. Downstream components reference this via configMapKeyRef.name.
+  name: gw-sc-addresses
+
+  # Selects a bundled preset from configs/gateway-<network>.yaml.
+  # Allowed values: "" (no preset), "devnet", "testnet", "mainnet".
+  # An unrecognized value fails the render.
+  network: ""
+
+  # Operator overrides, deep-merged on top of the preset. Keys are used
+  # as-is. Operator entries win on key collision with the preset.
+  # Example:
+  #   addresses:
+  #     kms_generation.address: "0xabc..."  # override preset
+  #     custom_thing.address: "0xdef..."    # add bespoke key
+  addresses: {}
 
 # -----------------------------------------------------------------------------
 # Database Migration
@@ -573,7 +628,7 @@ gwListener:
 
   image:
     name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/gw-listener
-    tag: v0.11.0
+    tag: v0.12.0
 
   replicas: 1
 

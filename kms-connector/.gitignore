@@ -5,3 +5,5 @@
 
 .crates.toml
 .crates2.json
+
+tests/contracts/cache

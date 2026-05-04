@@ -9,6 +9,7 @@ use clap::Parser;
 use futures_util::stream::StreamExt;
 use rustls;
 use tokio::sync::RwLock;
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn, Level};
 
@@ -29,6 +30,9 @@ use crate::database::ingest::{
 };
 use crate::database::tfhe_event_propagate::Database;
 use crate::health_check::HealthCheck;
+use crate::kms_generation::aws_s3::AwsS3Client;
+use crate::kms_generation::process_kms_generation_activations;
+
 use fhevm_engine_common::chain_id::ChainId;
 
 pub mod block_history;
@@ -57,6 +61,9 @@ pub struct Args {
 
     #[arg(long)]
     pub tfhe_contract_address: String,
+
+    #[arg(long)]
+    pub kms_generation_address: String,
 
     #[arg(
         long,
@@ -238,6 +245,10 @@ impl InfiniteLogIter {
         if !args.tfhe_contract_address.is_empty() {
             contract_addresses
                 .push(Address::from_str(&args.tfhe_contract_address).unwrap());
+        };
+        if !args.kms_generation_address.is_empty() {
+            contract_addresses
+                .push(Address::from_str(&args.kms_generation_address).unwrap());
         };
         Self {
             url: args.url.clone(),
@@ -942,6 +953,7 @@ async fn db_insert_block(
     block_logs: &BlockLogs<Log>,
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
+    kms_generation_address: &Option<Address>,
     args: &Args,
 ) -> anyhow::Result<()> {
     info!(
@@ -958,6 +970,7 @@ async fn db_insert_block(
             block_logs,
             acl_contract_address,
             tfhe_contract_address,
+            kms_generation_address,
             IngestOptions {
                 dependence_by_connexity: args.dependence_by_connexity,
                 dependence_cross_block: args.dependence_cross_block,
@@ -1039,6 +1052,17 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             })?,
         )
     };
+    let kms_generation_address = if args.kms_generation_address.is_empty() {
+        None
+    } else {
+        Some(Address::from_str(&args.kms_generation_address).map_err(
+            |err| {
+                error!(error = %err, "Invalid KMSGeneration contract address");
+                anyhow!("Invalid KMSGeneration contract address: {err}")
+            },
+        )?)
+    };
+    let aws_s3_client = AwsS3Client {};
 
     let mut log_iter = InfiniteLogIter::new(&args);
     let chain_id = log_iter.get_chain_id().await?;
@@ -1074,6 +1098,8 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             error!(error = %err, "Health check server failed");
         }
     });
+
+    let mut background_tasks = JoinSet::new();
 
     // Drift-revert: must run before any DB state reads so we don't read
     // pre-revert state.
@@ -1118,6 +1144,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                 &block_logs,
                 &acl_contract_address,
                 &tfhe_contract_address,
+                &kms_generation_address,
                 &args,
             )
             .await;
@@ -1140,6 +1167,10 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                 )
                 .await;
             }
+            background_tasks.spawn(process_kms_generation_activations(
+                db.pool.read().await.clone(),
+                aws_s3_client,
+            ));
         }
 
         if !args.only_catchup_loop {
@@ -1157,6 +1188,11 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         log_iter.reset_for_catchup_loop();
     }
     cancel_token.cancel();
+    for t in background_tasks.join_all().await.iter() {
+        if let Err(err) = t {
+            error!(error = %err, "Error in background task");
+        }
+    }
     anyhow::Result::Ok(())
 }
 

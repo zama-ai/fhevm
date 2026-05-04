@@ -2,7 +2,6 @@ import { task, types } from "hardhat/config";
 import type { HardhatEthersHelpers, TaskArguments } from "hardhat/types";
 
 import { GatewayConfig } from "../typechain-types";
-
 import { getRequiredEnvVar, loadGatewayAddresses } from "./utils";
 
 async function loadGatewayConfigContract(

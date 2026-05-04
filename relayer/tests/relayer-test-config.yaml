@@ -6,6 +6,13 @@ host_chains:
     url: "http://localhost:8545"
     acl_address: "0x339EBB773A9bC1deCFfD5ef4BC7c907e26C1f836"
 
+protocol_config:
+  ethereum_http_rpc_url: "http://localhost:8545"
+  address: "0x1234567890123456789012345678901234567890"
+  retry:
+    max_attempts: 3
+    retry_interval_ms: 100
+
 gateway:
   blockchain_rpc:
     # MUST support method eth_sendRawTransactionSync

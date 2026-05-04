@@ -13,26 +13,21 @@ use connector_utils::{
     types::{
         ProtocolEventKind,
         db::{EventType, ParamsTypeDb},
-        event::PRSS_INIT_ID,
     },
 };
-use fhevm_gateway_bindings::{
-    decryption::{
-        Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
-        IDecryption::{ContractsInfo, RequestValidity},
-    },
-    kms_generation::KMSGeneration::{
-        CrsgenRequest, KeyReshareSameSet, KeygenRequest, PRSSInit, PrepKeygenRequest,
-    },
+use fhevm_gateway_bindings::decryption::{
+    Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
+    IDecryption::{ContractsInfo, RequestValidity},
 };
-use gw_listener::core::{Config, GatewayListener};
+use fhevm_host_bindings::kms_generation::KMSGeneration::{
+    CrsgenRequest, KeygenRequest, PrepKeygenRequest,
+};
+use gw_listener::core::{Config, EthereumListener, EventListener, GatewayListener};
 use sqlx::{Pool, Postgres, Row, postgres::PgRow};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
-
-const NB_POLL_GROUPS: usize = 2;
 
 pub async fn start_test_listener(
     test_instance: &mut TestInstance,
@@ -42,23 +37,31 @@ pub async fn start_test_listener(
     let mut config = Config::default();
     config.decryption_contract.address = *test_instance.decryption_contract().address();
     config.kms_generation_contract.address = *test_instance.kms_generation_contract().address();
+    config.kms_verifier_address = test_instance.kms_verifier_address();
     config.decryption_from_block_number = from_block_number;
     config.kms_operation_from_block_number = from_block_number;
     config.decryption_polling = Duration::from_millis(300);
     config.key_management_polling = Duration::from_millis(300);
-    let gw_listener = GatewayListener::new(
+
+    let gateway_listener = GatewayListener::new(
+        test_instance.db().clone(),
+        test_instance.provider().clone(),
+        &config,
+        cancel_token.clone(),
+    );
+    let ethereum_listener = EthereumListener::new(
         test_instance.db().clone(),
         test_instance.provider().clone(),
         &config,
         cancel_token,
     );
+    let event_listener = EventListener::new(gateway_listener, ethereum_listener);
 
-    let listener_task = tokio::spawn(gw_listener.start());
+    let listener_task = tokio::spawn(async move {
+        event_listener.start().await.unwrap();
+    });
 
-    // Wait for both polling tasks to start + 2 anvil blocks
-    for _ in 0..NB_POLL_GROUPS {
-        test_instance.wait_for_log("Started ").await;
-    }
+    // Wait for 2 anvil blocks for listener to be ready
     tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
 
     Ok(listener_task)
@@ -144,27 +147,6 @@ pub async fn mock_event_on_gw(
                 .await?;
             (tx, event.into())
         }
-        EventType::PrssInit => {
-            let tx = test_instance
-                .kms_generation_contract()
-                .prssInit()
-                .send()
-                .await?;
-            (tx, PRSSInit.into())
-        }
-        EventType::KeyReshareSameSet => {
-            let rand_key_id = rand_u256();
-            let event = KeyReshareSameSet {
-                keyId: rand_key_id,
-                ..Default::default()
-            };
-            let tx = test_instance
-                .kms_generation_contract()
-                .keyReshareSameSet(rand_key_id)
-                .send()
-                .await?;
-            (tx, event.into())
-        }
     };
     let receipt = pending_tx.get_receipt().await?;
     let block_number = test_instance
@@ -185,8 +167,6 @@ pub async fn fetch_from_db(db: &Pool<Postgres>, event_type: EventType) -> sqlx::
         EventType::PrepKeygenRequest => "SELECT * FROM prep_keygen_requests",
         EventType::KeygenRequest => "SELECT * FROM keygen_requests",
         EventType::CrsgenRequest => "SELECT * FROM crsgen_requests",
-        EventType::PrssInit => "SELECT * FROM prss_init",
-        EventType::KeyReshareSameSet => "SELECT * FROM key_reshare_same_set",
     };
     sqlx::query(query).fetch_all(db).await
 }
@@ -250,20 +230,6 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
                 if e.maxBitLength
                     == U256::from_le_bytes(r.try_get::<[u8; 32], _>("max_bit_length")?)
                 {
-                    return Ok(());
-                }
-            }
-        }
-        ProtocolEventKind::PrssInit(_) => {
-            for r in rows {
-                if U256::from_le_bytes(r.try_get::<[u8; 32], _>("id")?) == PRSS_INIT_ID {
-                    return Ok(());
-                }
-            }
-        }
-        ProtocolEventKind::KeyReshareSameSet(e) => {
-            for r in rows {
-                if e.keyId == U256::from_le_bytes(r.try_get::<[u8; 32], _>("key_id")?) {
                     return Ok(());
                 }
             }

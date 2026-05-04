@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 
 import "../KMSGeneration.sol";
 
+/// @custom:oz-upgrades-unsafe-allow missing-initializer
 contract KMSGenerationV2Example is KMSGeneration {
     string private constant CONTRACT_NAME = "KMSGeneration";
 

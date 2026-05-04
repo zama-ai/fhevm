@@ -8,6 +8,13 @@ host_chains:
     url: "https://ethereum-sepolia-rpc.publicnode.com"
     acl_address: "0xf0Ffdc93b7E186bC2f8CB3dAA75D86d1930A433D"
 
+protocol_config:
+  ethereum_http_rpc_url: "https://ethereum-sepolia-rpc.publicnode.com"
+  address: "TODO"
+  retry:
+    max_attempts: 3
+    retry_interval_ms: 200
+
 gateway:
   blockchain_rpc:
     # MUST support method eth_sendRawTransactionSync

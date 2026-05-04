@@ -3,13 +3,12 @@ use crate::{
     types::db::{OperationStatus, ParamsTypeDb, SnsCiphertextMaterialDbItem},
 };
 use alloy::primitives::{FixedBytes, U256};
-use fhevm_gateway_bindings::{
-    decryption::Decryption::{
-        PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
-    },
-    kms_generation::KMSGeneration::{
-        CrsgenRequest, KeyReshareSameSet, KeygenRequest, PRSSInit, PrepKeygenRequest,
-    },
+use anyhow::anyhow;
+use fhevm_gateway_bindings::decryption::Decryption::{
+    DecryptionEvents, PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
+};
+use fhevm_host_bindings::kms_generation::KMSGeneration::{
+    CrsgenRequest, KMSGenerationEvents, KeygenRequest, PrepKeygenRequest,
 };
 use sqlx::{
     Pool, Postgres, Row,
@@ -86,10 +85,6 @@ impl ProtocolEvent {
             ProtocolEventKind::Crsgen(e) => {
                 update_crsgen_status(db, e.crsId, status, already_sent).await
             }
-            ProtocolEventKind::PrssInit(id) => update_prss_init_status(db, *id, status).await,
-            ProtocolEventKind::KeyReshareSameSet(e) => {
-                update_key_reshare_same_set_status(db, e.keyId, status).await
-            }
         }
     }
 }
@@ -101,8 +96,6 @@ pub enum ProtocolEventKind {
     PrepKeygen(PrepKeygenRequest),
     Keygen(KeygenRequest),
     Crsgen(CrsgenRequest),
-    PrssInit(U256),
-    KeyReshareSameSet(KeyReshareSameSet),
 }
 
 pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
@@ -161,8 +154,8 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
 pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let kind = ProtocolEventKind::PrepKeygen(PrepKeygenRequest {
         prepKeygenId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
-        epochId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("epoch_id")?),
         paramsType: row.try_get::<ParamsTypeDb, _>("params_type")? as u8,
+        extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
     });
     Ok(ProtocolEvent {
         kind,
@@ -183,6 +176,7 @@ pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let kind = ProtocolEventKind::Keygen(KeygenRequest {
         prepKeygenId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
         keyId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?),
+        extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
     });
     Ok(ProtocolEvent {
         kind,
@@ -204,6 +198,7 @@ pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
         crsId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("crs_id")?),
         maxBitLength: U256::from_le_bytes(row.try_get::<[u8; 32], _>("max_bit_length")?),
         paramsType: row.try_get::<ParamsTypeDb, _>("params_type")? as u8,
+        extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
     });
     Ok(ProtocolEvent {
         kind,
@@ -214,44 +209,6 @@ pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
             .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
 
         already_sent: row.try_get::<bool, _>("already_sent")?,
-        error_counter: 0,
-        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
-    })
-}
-
-pub fn from_prss_init_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
-    let kind = ProtocolEventKind::PrssInit(U256::from_le_bytes(row.try_get::<[u8; 32], _>("id")?));
-    Ok(ProtocolEvent {
-        kind,
-
-        tx_hash: row
-            .try_get::<Vec<u8>, _>("tx_hash")
-            .ok()
-            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
-
-        already_sent: false,
-        error_counter: 0,
-        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
-    })
-}
-
-pub fn from_key_reshare_same_set_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
-    let kind = ProtocolEventKind::KeyReshareSameSet(KeyReshareSameSet {
-        prepKeygenId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
-        keyId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?),
-        keyReshareId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_reshare_id")?),
-        paramsType: row.try_get::<ParamsTypeDb, _>("params_type")? as u8,
-    });
-    Ok(ProtocolEvent {
-        kind,
-        tx_hash: row
-            .try_get::<Vec<u8>, _>("tx_hash")
-            .ok()
-            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
-
-        already_sent: false,
         error_counter: 0,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
         otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
@@ -342,28 +299,6 @@ async fn update_crsgen_status(
     execute_update_event_query(db, query).await;
 }
 
-async fn update_prss_init_status(db: &Pool<Postgres>, id: U256, status: OperationStatus) {
-    let query = sqlx::query!(
-        "UPDATE prss_init SET status = $1 WHERE id = $2",
-        status as OperationStatus,
-        id.as_le_slice()
-    );
-    execute_update_event_query(db, query).await;
-}
-
-async fn update_key_reshare_same_set_status(
-    db: &Pool<Postgres>,
-    id: U256,
-    status: OperationStatus,
-) {
-    let query = sqlx::query!(
-        "UPDATE key_reshare_same_set SET status = $1 WHERE key_id = $2",
-        status as OperationStatus,
-        id.as_le_slice()
-    );
-    execute_update_event_query(db, query).await;
-}
-
 async fn execute_update_event_query(db: &Pool<Postgres>, query: Query<'_, Postgres, PgArguments>) {
     let query_result = match query.execute(db).await {
         Ok(result) => result,
@@ -394,10 +329,6 @@ impl Display for ProtocolEventKind {
             }
             ProtocolEventKind::Keygen(e) => write!(f, "KeygenRequest #{}", e.keyId),
             ProtocolEventKind::Crsgen(e) => write!(f, "CrsgenRequest #{}", e.crsId),
-            ProtocolEventKind::PrssInit(id) => write!(f, "PrssInit #{id}"),
-            ProtocolEventKind::KeyReshareSameSet(e) => {
-                write!(f, "KeyReshareSameSet #{}", e.keyId)
-            }
         }
     }
 }
@@ -432,16 +363,28 @@ impl From<CrsgenRequest> for ProtocolEventKind {
     }
 }
 
-impl From<PRSSInit> for ProtocolEventKind {
-    fn from(_value: PRSSInit) -> Self {
-        Self::PrssInit(PRSS_INIT_ID)
+impl TryFrom<DecryptionEvents> for ProtocolEventKind {
+    type Error = anyhow::Error;
+
+    fn try_from(value: DecryptionEvents) -> Result<Self, Self::Error> {
+        match value {
+            DecryptionEvents::PublicDecryptionRequest(e) => Ok(e.into()),
+            DecryptionEvents::UserDecryptionRequest(e) => Ok(e.into()),
+            _ => Err(anyhow!("Unexpected Decryption event: {value:?}")),
+        }
     }
 }
 
-impl From<KeyReshareSameSet> for ProtocolEventKind {
-    fn from(value: KeyReshareSameSet) -> Self {
-        Self::KeyReshareSameSet(value)
+impl TryFrom<KMSGenerationEvents> for ProtocolEventKind {
+    type Error = anyhow::Error;
+
+    fn try_from(value: KMSGenerationEvents) -> Result<Self, Self::Error> {
+        match value {
+            KMSGenerationEvents::PrepKeygenRequest(e) => Ok(e.into()),
+            KMSGenerationEvents::KeygenRequest(e) => Ok(e.into()),
+            KMSGenerationEvents::CrsgenRequest(e) => Ok(e.into()),
+            // `KMSGenerationEvents` does not currently implement `Debug` unfortunately
+            _ => Err(anyhow!("Unexpected KMSGeneration event")),
+        }
     }
 }
-
-pub const PRSS_INIT_ID: U256 = U256::ONE;

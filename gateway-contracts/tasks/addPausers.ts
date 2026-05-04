@@ -6,7 +6,12 @@ import { getRequiredEnvVar, loadGatewayAddresses } from "./utils/loadVariables";
 // Note: Internal PauserSet address is defined in the `addresses/` directory. It should be used
 // for local testing. By default, we use the PAUSER_SET_ADDRESS env var, as done in deployment
 task("task:addGatewayPausers")
-  .addParam("useInternalProxyAddress", "If proxy address from the /addresses directory should be used", false, types.boolean)
+  .addParam(
+    "useInternalProxyAddress",
+    "If proxy address from the /addresses directory should be used",
+    false,
+    types.boolean,
+  )
   .setAction(async function ({ useInternalProxyAddress }, hre) {
     await hre.run("compile:specific", { contract: "contracts/immutable" });
     console.log("Adding pausers to PauserSet contract");

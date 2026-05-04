@@ -387,10 +387,9 @@ pub struct ApiError {
     pub label: ErrorLabel,
     pub message: String,
     pub request_id: Option<String>,
-    /// RFC 7231 timestamp indicating when client should retry (e.g. "Wed, 21 Oct 2015 07:28:00 GMT").
-    /// Uses absolute timestamp instead of relative seconds for cache-safety.
-    /// retry_after is only used in the case of Rate limit errors.
-    #[schema(example = "Thu, 14 Nov 2024 15:30:00 GMT")]
+    /// Relative seconds indicating when client should retry (e.g. "10").
+    /// Only used in the case of Rate limit errors.
+    #[schema(example = "10")]
     pub retry_after: Option<String>,
     /// Only used in Bad Requests
     pub details: Option<Vec<ErrorDetail>>,
