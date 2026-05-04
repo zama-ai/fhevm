@@ -5,9 +5,10 @@ use alloy::primitives::Address;
 use alloy::rpc::types::Log;
 use alloy_primitives::LogData;
 use anyhow::Result;
+use fhevm_engine_common::database::connect_pool_with_options;
+use sqlx::postgres::PgPoolOptions;
 use tokio::sync::RwLock;
 use tokio::time::sleep;
-use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 use fhevm_engine_common::chain_id::ChainId;
@@ -114,11 +115,10 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         database_pool: db.pool.clone(),
         database_tick: db.tick.clone(),
     };
-    let health_check_cancel_token = CancellationToken::new();
     let health_check_server = HealthHttpServer::new(
         Arc::new(health_check),
         config.health_port,
-        health_check_cancel_token.clone(),
+        client.cancel_token.clone(),
     );
     tokio::spawn(async move {
         if let Err(err) = health_check_server.start().await {
@@ -131,6 +131,21 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         dependence_cross_block: config.dependence_cross_block,
         dependent_ops_max_per_chain: config.dependent_ops_max_per_chain,
     };
+
+    // Drift-revert: must run before any DB state reads so we don't read
+    // pre-revert state.
+    let (drift_revert_pool, _pool_refresh_handle) = connect_pool_with_options(
+        &config.database_url,
+        PgPoolOptions::new().max_connections(1),
+        None,
+    )
+    .await?;
+    fhevm_engine_common::drift_revert::init(
+        drift_revert_pool,
+        client.cancel_token.clone(),
+        None,
+    )
+    .await?;
 
     let chain_id_str = config.chain_id.to_string();
     let consumer_task = client.consume(move |payload, _cancel| {
@@ -201,7 +216,6 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         "Host listener consumer graceful stop"
     );
     client.cancel();
-    health_check_cancel_token.cancel();
     match consumer_result {
         Ok(Ok(())) => {
             info!("Consumer task completed successfully");
