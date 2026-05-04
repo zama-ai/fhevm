@@ -9,7 +9,6 @@ use fhevm_engine_common::{
     metrics_server, telemetry,
     utils::DatabaseURL,
 };
-use gw_listener::aws_s3::AwsS3Client;
 use gw_listener::gw_listener::GatewayListener;
 use gw_listener::http_server::HttpServer;
 use gw_listener::ConfigSettings;
@@ -207,7 +206,6 @@ async fn main() -> anyhow::Result<()> {
         config.clone(),
         cancel_token.clone(),
         provider.clone(),
-        aws_s3_client.clone(),
     ));
 
     let http_server = HttpServer::new(
