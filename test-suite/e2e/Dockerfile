@@ -40,6 +40,11 @@ COPY library-solidity ./library-solidity
 COPY test-suite/e2e ./test-suite/e2e
 COPY sdk/js-sdk ./sdk/js-sdk
 
+WORKDIR /app/sdk/js-sdk
+
+RUN npm install
+RUN npm run build
+
 WORKDIR /app/test-suite/e2e
 
 RUN npx hardhat compile

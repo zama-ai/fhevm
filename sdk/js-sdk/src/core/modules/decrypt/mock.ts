@@ -53,7 +53,7 @@ export async function decryptAndReconstruct(
   const cleartextEthereumModule = runtime.ethereum as CleartextEthereumModule;
   const { tkmsPrivateKey, shares } = parameters;
 
-  const privateKeySecp256k1 = asBytesHex(tkmsPrivateKey as unknown);
+  const privateKeySecp256k1 = asBytesHex(tkmsPrivateKey);
   const publicKeySecp256k1 = cleartextEthereumModule.getPublicKey({ privateKey: privateKeySecp256k1 });
 
   const metadata: KmsSigncryptedSharesMetadata = getMetadata(shares);
@@ -149,7 +149,7 @@ export async function getTkmsPublicKeyHex(
   parameters: GetTkmsPublicKeyHexParameters,
 ): Promise<GetTkmsPublicKeyHexReturnType> {
   const { tkmsPrivateKey } = parameters;
-  const privateKeySecp256k1 = asBytesHex(tkmsPrivateKey as unknown);
+  const privateKeySecp256k1 = asBytesHex(tkmsPrivateKey);
   const cleartextEthereumModule = runtime.ethereum as CleartextEthereumModule;
   const publicKeySecp256k1 = cleartextEthereumModule.getPublicKey({ privateKey: privateKeySecp256k1 });
   return Promise.resolve(publicKeySecp256k1);
@@ -164,7 +164,7 @@ export async function serializeTkmsPrivateKey(
   parameters: SerializeTkmsPrivateKeyParameters,
 ): Promise<SerializeTkmsPrivateKeyReturnType> {
   const { tkmsPrivateKey } = parameters;
-  const privateKeySecp256k1 = asBytesHex(tkmsPrivateKey as unknown);
+  const privateKeySecp256k1 = asBytesHex(tkmsPrivateKey);
   const privateKeySecp256k1Bytes = hexToBytes(privateKeySecp256k1);
   return Promise.resolve(privateKeySecp256k1Bytes);
 }

@@ -149,6 +149,10 @@ HCU_LIMIT=0x233ff88A48c172d29F675403e6A8e302b0F032D9
 
 # fhevm-cli
 
+```sh
+cd <root>/test-suite/e2e
+```
+
 `./fhevm-cli up --help`
 `./fhevm-cli up --override test-suite` : use local test suite
 `./fhevm-cli upgrade test-suite`: rebuild test suite

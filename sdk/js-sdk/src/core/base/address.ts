@@ -1,4 +1,4 @@
-import type { Address, Bytes20, Bytes20HexNo0x, ChecksummedAddress } from '../types/primitives.js';
+import type { Address, Bytes20, ChecksummedAddress } from '../types/primitives.js';
 import type {
   RecordAddressPropertyType,
   RecordChecksummedAddressArrayPropertyType,
@@ -117,7 +117,7 @@ export function isAddress(value: unknown): value is Address {
     return false;
   }
 
-  const hexNo0x = remove0x(value) as Bytes20HexNo0x;
+  const hexNo0x = remove0x(value);
   const hexNo0xLowerCase = hexNo0x.toLowerCase();
 
   if (hexNo0x === hexNo0xLowerCase) {

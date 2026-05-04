@@ -104,25 +104,25 @@ export class FhevmSdk implements SdkInstance {
   }): Promise<ClearValueType> {
     const { handle, contractAddress, signer } = parameters;
 
-    let transportKeypair;
+    let transportKeyPair;
     if (parameters.transportKeypair) {
-      transportKeypair = await this.#fullClient.parseTransportKeypair(parameters.transportKeypair);
+      transportKeyPair = await this.#fullClient.parseTransportKeyPair(parameters.transportKeypair);
     } else {
-      transportKeypair = await this.#fullClient.generateTransportKeypair();
+      transportKeyPair = await this.#fullClient.generateTransportKeyPair();
     }
 
     const signedPermit = await this.#fullClient.signDecryptionPermit({
       contractAddresses: [contractAddress],
       durationDays: 10,
       startTimestamp: Math.floor(Date.now() / 1000),
-      transportKeypair,
+      transportKeyPair,
       signer,
       signerAddress: signer.address,
     });
 
     const res = await this.#fullClient.decryptValue({
       contractAddress,
-      transportKeypair,
+      transportKeyPair,
       signedPermit,
       encryptedValue: handle,
     });
@@ -140,27 +140,28 @@ export class FhevmSdk implements SdkInstance {
     readonly signer: Signer & { readonly address: string };
     readonly delegateTransportKeypair?: { readonly privateKey: string; readonly publicKey: string } | undefined;
   }): Promise<ClearValueType> {
-    const { handle, contractAddress, signer } = parameters;
+    const { handle, contractAddress, signer, delegatorAddress } = parameters;
 
-    let transportKeypair;
+    let transportKeyPair;
     if (parameters.delegateTransportKeypair) {
-      transportKeypair = await this.#fullClient.parseTransportKeypair(parameters.delegateTransportKeypair);
+      transportKeyPair = await this.#fullClient.parseTransportKeyPair(parameters.delegateTransportKeypair);
     } else {
-      transportKeypair = await this.#fullClient.generateTransportKeypair();
+      transportKeyPair = await this.#fullClient.generateTransportKeyPair();
     }
 
     const signedPermit = await this.#fullClient.signDecryptionPermit({
       contractAddresses: [contractAddress],
       durationDays: 10,
       startTimestamp: Math.floor(Date.now() / 1000),
-      transportKeypair,
+      transportKeyPair,
       signer,
       signerAddress: signer.address,
+      delegatorAddress,
     });
 
     const res = await this.#fullClient.decryptValue({
       contractAddress,
-      transportKeypair,
+      transportKeyPair,
       signedPermit,
       encryptedValue: handle,
     });
@@ -228,8 +229,8 @@ export class FhevmSdk implements SdkInstance {
   }
 
   async generateKeypair(): Promise<{ publicKey: string; privateKey: string }> {
-    const p = await this.#fullClient.generateTransportKeypair();
-    return this.#fullClient.serializeTransportKeypair({ transportKeypair: p });
+    const p = await this.#fullClient.generateTransportKeyPair();
+    return this.#fullClient.serializeTransportKeyPair({ transportKeyPair: p });
   }
 
   async userDecrypt(parameters: {

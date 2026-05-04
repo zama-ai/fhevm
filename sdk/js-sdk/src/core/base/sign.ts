@@ -1,20 +1,27 @@
 import type { Address, Bytes65Hex, BytesHex, ChecksummedAddress } from '../types/primitives.js';
-import { secp256k1 } from '@noble/curves/secp256k1';
+import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 import { addressToChecksummedAddress } from './address.js';
-import { bytesToHex } from './bytes.js';
+import { bytesToHex, bytesToHexNo0x, hexToBytes } from './bytes.js';
 
 export function sign({ hash, privateKey }: { readonly hash: BytesHex; readonly privateKey: BytesHex }): Bytes65Hex {
-  const sig = secp256k1.sign(hash.slice(2), privateKey.slice(2), {
+  const sig = secp256k1.sign(hexToBytes(hash), hexToBytes(privateKey), {
+    prehash: false,
     lowS: true,
     extraEntropy: true,
+    format: 'recovered',
   });
 
-  if (sig.recovery !== 0 && sig.recovery !== 1) {
+  if (sig.length !== 65) {
+    throw new Error('Unexpected signature length');
+  }
+
+  const recovery = sig[64];
+  if (recovery !== 0 && recovery !== 1) {
     throw new Error('Unexpected signature recovery value');
   }
 
-  const signatureHex = `0x${sig.toCompactHex()}${sig.recovery === 0 ? '1b' : '1c'}` as BytesHex;
+  const signatureHex = `0x${bytesToHexNo0x(sig.subarray(0, 64))}${recovery === 0 ? '1b' : '1c'}` as BytesHex;
 
   if (signatureHex.length !== 2 + 130) {
     throw new Error('Unexpected signature length');
@@ -48,10 +55,10 @@ function _recoverPublicKey(parameters: { readonly hash: BytesHex; readonly signa
     throw new Error(`Invalid v value: ${v}`);
   }
 
-  const sig = secp256k1.Signature.fromCompact(compactHex).addRecoveryBit(recoveryBit);
+  const sig = secp256k1.Signature.fromBytes(hexToBytes(compactHex), 'compact').addRecoveryBit(recoveryBit);
 
-  // toRawBytes(false) → uncompressed encoding: 0x04 || X (32) || Y (32) = 65 bytes.
-  return sig.recoverPublicKey(hash.slice(2)).toRawBytes(false);
+  // toBytes(false) → uncompressed encoding: 0x04 || X (32) || Y (32) = 65 bytes.
+  return sig.recoverPublicKey(hexToBytes(hash)).toBytes(false);
 }
 
 function _keccak256(bytes: Uint8Array): Uint8Array {

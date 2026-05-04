@@ -1,5 +1,5 @@
 import type {
-  BuildWithProofPackedReturnTypeParameters,
+  BuildWithProofPackedParameters,
   BuildWithProofPackedReturnType,
   ParseTFHEProvenCompactCiphertextListParameters,
   ParseTFHEProvenCompactCiphertextListReturnType,
@@ -17,11 +17,9 @@ import type {
 import type {
   FheEncryptionCrs,
   FheEncryptionCrsBrand,
-  FheEncryptionCrsBytes,
   FheEncryptionKeyBytes,
   FheEncryptionPublicKey,
   FheEncryptionPublicKeyBrand,
-  FheEncryptionPublicKeyBytes,
 } from '../../../types/fheEncryptionKey.js';
 import type { CompactCiphertextListBuilder } from '../../../../wasm/tfhe/tfhe.v1.5.3.js';
 import type { Bytes, UintNumber } from '../../../types/primitives.js';
@@ -195,7 +193,7 @@ export async function parseTFHEProvenCompactCiphertextList(
 
 export async function buildWithProofPacked(
   runtime: FhevmRuntime,
-  parameters: BuildWithProofPackedReturnTypeParameters,
+  parameters: BuildWithProofPackedParameters,
 ): Promise<BuildWithProofPackedReturnType> {
   await initTfheModule(runtime);
 
@@ -359,7 +357,7 @@ export async function serializeFheEncryptionPublicKey(
   return Object.freeze({
     id: tfhePublicKey.id,
     bytes: tfhePublicKeyBytes,
-  }) as FheEncryptionPublicKeyBytes;
+  });
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -389,7 +387,7 @@ export async function serializeFheEncryptionCrs(
     id: tfheCrs.id,
     capacity: tfheCrs.capacity,
     bytes: tfheCrsBytes,
-  }) as FheEncryptionCrsBytes;
+  });
 }
 
 ////////////////////////////////////////////////////////////////////////////////

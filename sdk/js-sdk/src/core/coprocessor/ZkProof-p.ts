@@ -6,7 +6,6 @@ import type {
   Bytes32,
   Uint64,
   Bytes21Hex,
-  Uint8Number,
   BytesHex,
 } from '../types/primitives.js';
 import type { ZkProofLike, ZkProof } from '../types/zkProof-p.js';
@@ -105,7 +104,7 @@ class ZkProofImpl implements ZkProof {
 
   /** The ciphertext with Zk proof (guaranteed non-empty). Returns a copy. */
   public get ciphertextWithZkProof(): Bytes {
-    return new Uint8Array(this.#ciphertextWithZkProof) as Bytes;
+    return new Uint8Array(this.#ciphertextWithZkProof);
   }
 
   /** The encryption bit sizes for each encrypted value in the proof. */
@@ -379,7 +378,7 @@ function _zkProofToInputHandles(
         chainId: args.chainId,
         fheTypeId,
         ...(options?.version !== undefined ? { version: options.version } : {}),
-        index: i as Uint8Number,
+        index: i,
       }),
     );
   }

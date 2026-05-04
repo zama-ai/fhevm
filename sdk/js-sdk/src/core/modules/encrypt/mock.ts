@@ -6,15 +6,13 @@ import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 import type {
   FheEncryptionCrs,
   FheEncryptionCrsBrand,
-  FheEncryptionCrsBytes,
   FheEncryptionKeyBytes,
   FheEncryptionPublicKey,
   FheEncryptionPublicKeyBrand,
-  FheEncryptionPublicKeyBytes,
 } from '../../types/fheEncryptionKey.js';
 import type { Bytes, BytesHex, UintNumber } from '../../types/primitives.js';
 import type {
-  BuildWithProofPackedReturnTypeParameters,
+  BuildWithProofPackedParameters,
   BuildWithProofPackedReturnType,
   ParseTFHEProvenCompactCiphertextListParameters,
   ParseTFHEProvenCompactCiphertextListReturnType,
@@ -123,7 +121,7 @@ export async function parseTFHEProvenCompactCiphertextList(
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function buildWithProofPacked(
-  parameters: BuildWithProofPackedReturnTypeParameters,
+  parameters: BuildWithProofPackedParameters,
 ): Promise<BuildWithProofPackedReturnType> {
   const { fheEncryptionKey: publicEncryptionParams, metaData, typedValues, extraData } = parameters;
 
@@ -219,7 +217,7 @@ export async function serializeFheEncryptionPublicKey(
   return Object.freeze({
     id: tfhePublicKey.id,
     bytes: tfhePublicKeyBytes,
-  }) as FheEncryptionPublicKeyBytes;
+  });
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -246,7 +244,7 @@ export async function serializeFheEncryptionCrs(
     id: tfheCrs.id,
     capacity: tfheCrs.capacity,
     bytes: tfheCrsBytes,
-  }) as FheEncryptionCrsBytes;
+  });
 }
 
 ////////////////////////////////////////////////////////////////////////////////

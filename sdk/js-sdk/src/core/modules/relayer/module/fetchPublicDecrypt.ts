@@ -1,4 +1,4 @@
-import type { Bytes65Hex, BytesHex } from '../../../types/primitives.js';
+import type { Bytes65Hex } from '../../../types/primitives.js';
 import type { RelayerFetchPublicDecryptPayload } from '../../../types/relayer-p.js';
 import type { FetchPublicDecryptResult } from '../../../types/relayer.js';
 import type { FetchPublicDecryptParameters, FetchPublicDecryptReturnType, RelayerClientWithRuntime } from '../types.js';
@@ -33,7 +33,7 @@ export async function fetchPublicDecrypt(
   const result = (await request.run()) as FetchPublicDecryptResult;
 
   return {
-    orderedAbiEncodedClearValues: ensure0x(result.decryptedValue) as BytesHex,
+    orderedAbiEncodedClearValues: ensure0x(result.decryptedValue),
     kmsPublicDecryptEIP712Signatures: result.signatures.map(ensure0x) as Bytes65Hex[],
     extraData: result.extraData,
   };

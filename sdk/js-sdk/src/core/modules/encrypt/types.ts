@@ -108,7 +108,7 @@ export type ParseTFHEProvenCompactCiphertextListModuleFunction = {
 // 2. buildWithProofPacked
 ////////////////////////////////////////////////////////////////////////////////
 
-export type BuildWithProofPackedReturnTypeParameters = {
+export type BuildWithProofPackedParameters = {
   readonly fheEncryptionKey: FheEncryptionKeyWasm;
   readonly typedValues: TypedValue[];
   readonly metaData: Uint8Array;
@@ -121,7 +121,7 @@ export type BuildWithProofPackedReturnType = {
 };
 
 export type BuildWithProofPackedModuleFunction = {
-  buildWithProofPacked(parameters: BuildWithProofPackedReturnTypeParameters): Promise<BuildWithProofPackedReturnType>;
+  buildWithProofPacked(parameters: BuildWithProofPackedParameters): Promise<BuildWithProofPackedReturnType>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

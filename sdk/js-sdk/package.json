@@ -13,7 +13,7 @@
     "build:types": "tsc --project ./tsconfig.build.esm.json --declarationDir ./src/_types --emitDeclarationOnly --declaration --declarationMap",
     "clean": "rm -rf *.tsbuildinfo src/*.tsbuildinfo src/_esm src/_cjs src/_types",
     "size-limit": "size-limit",
-    "lint": "eslint && tsc --project ./tsconfig.json --noEmit",
+    "lint": "eslint --config ./eslint.config.js && tsc --project ./tsconfig.json --noEmit",
     "lint:jsdoc": "eslint --config eslint.jsdoc.config.js",
     "prettier:ext": "./scripts/prettier/check-file-casing.sh && ./scripts/prettier/check-import-order.sh ./scripts/prettier/check-no-leading-comment.sh",
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
