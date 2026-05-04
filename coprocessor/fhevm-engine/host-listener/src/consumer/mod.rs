@@ -33,6 +33,7 @@ pub struct ConsumerConfig {
     pub url: String,
     pub acl_address: Address,
     pub tfhe_address: Address,
+    pub kms_generation_address: Address,
     pub database_url: DatabaseURL,
     pub database_retry_interval: Duration,
     pub service_name: String,
@@ -180,6 +181,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 &block_logs,
                 config.acl_address,
                 config.tfhe_address,
+                config.kms_generation_address,
                 config.database_retry_interval,
                 ingest_options,
             )
@@ -239,15 +241,25 @@ async fn ingest_with_retry(
     block_logs: &BlockLogs<Log>,
     acl_address: Address,
     tfhe_address: Address,
+    kms_generation_address: Address,
     retry_interval: Duration,
     options: IngestOptions,
 ) -> Result<u64, (sqlx::Error, u64)> {
     let mut errors = 0;
     let acl = Some(acl_address);
     let tfhe = Some(tfhe_address);
+    let kms_generation = Some(kms_generation_address);
     loop {
-        match ingest_block_logs(chain_id, db, block_logs, &acl, &tfhe, options)
-            .await
+        match ingest_block_logs(
+            chain_id,
+            db,
+            block_logs,
+            &acl,
+            &tfhe,
+            &kms_generation,
+            options,
+        )
+        .await
         {
             Ok(_) => return Ok(errors),
             Err(err) => {
