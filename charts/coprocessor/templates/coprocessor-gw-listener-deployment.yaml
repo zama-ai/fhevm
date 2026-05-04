@@ -63,6 +63,8 @@ spec:
             {{- end }}
             {{- if not (has "input-verification-address" $disabled) }}
             - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
+            {{- end }}
+            {{- if and (or .Values.commonConfig.gatewayContractAddresses.ciphertextCommits.value .Values.commonConfig.gatewayContractAddresses.ciphertextCommits.valueFrom) (not (has "ciphertext-commits-address" $disabled)) }}
             - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
             {{- end }}
             {{- if and (or .Values.commonConfig.gatewayContractAddresses.gatewayConfig.value .Values.commonConfig.gatewayContractAddresses.gatewayConfig.valueFrom) (not (has "gateway-config-address" $disabled)) }}
