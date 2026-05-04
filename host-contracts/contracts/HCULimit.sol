@@ -1546,36 +1546,36 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 n = values.length;
         uint256 opHCU;
         if (valueType == FheType.Uint8) {
-            if (n <= 10) opHCU = 91000;
-            else if (n <= 30) opHCU = 189000;
-            else if (n <= 60) opHCU = 315000;
-            else opHCU = 477000;
+            if (n <= 10) opHCU = 71300;
+            else if (n <= 30) opHCU = 148000;
+            else if (n <= 60) opHCU = 247000;
+            else opHCU = 374000;
         } else if (valueType == FheType.Uint16) {
-            if (n <= 10) opHCU = 131000;
-            else if (n <= 30) opHCU = 278000;
-            else if (n <= 60) opHCU = 482000;
-            else opHCU = 771000;
+            if (n <= 10) opHCU = 103000;
+            else if (n <= 30) opHCU = 218000;
+            else if (n <= 60) opHCU = 378000;
+            else opHCU = 605000;
         } else if (valueType == FheType.Uint32) {
-            if (n <= 10) opHCU = 175000;
-            else if (n <= 30) opHCU = 383000;
-            else if (n <= 60) opHCU = 677000;
-            else opHCU = 1054000;
+            if (n <= 10) opHCU = 137000;
+            else if (n <= 30) opHCU = 300000;
+            else if (n <= 60) opHCU = 531000;
+            else opHCU = 827000;
         } else if (valueType == FheType.Uint64) {
-            if (n <= 10) opHCU = 278000;
-            else if (n <= 30) opHCU = 627000;
-            else opHCU = 1121000;
+            if (n <= 10) opHCU = 218000;
+            else if (n <= 30) opHCU = 492000;
+            else opHCU = 879000;
         } else if (valueType == FheType.Uint128) {
-            if (n <= 10) opHCU = 326000;
-            else if (n <= 30) opHCU = 682000;
-            else opHCU = 1174000;
+            if (n <= 10) opHCU = 256000;
+            else if (n <= 30) opHCU = 535000;
+            else opHCU = 921000;
         } else if (valueType == FheType.Uint160) {
-            if (n <= 10) opHCU = 365000;
-            else if (n <= 30) opHCU = 745000;
-            else opHCU = 1128000;
+            if (n <= 10) opHCU = 286000;
+            else if (n <= 30) opHCU = 584000;
+            else opHCU = 885000;
         } else if (valueType == FheType.Uint256) {
-            if (n <= 10) opHCU = 409000;
-            else if (n <= 30) opHCU = 747000;
-            else opHCU = 1202000;
+            if (n <= 10) opHCU = 321000;
+            else if (n <= 30) opHCU = 586000;
+            else opHCU = 943000;
         } else {
             revert UnsupportedOperation();
         }
