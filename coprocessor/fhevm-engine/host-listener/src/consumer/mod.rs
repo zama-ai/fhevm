@@ -92,6 +92,21 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         config.dependence_cache_size,
     )
     .await?;
+    // Drift-revert: must run before any DB state reads so we don't read
+    // pre-revert state.
+    let (drift_revert_pool, _pool_refresh_handle) = connect_pool_with_options(
+        &config.database_url,
+        PgPoolOptions::new().max_connections(1),
+        None,
+    )
+    .await?;
+    fhevm_engine_common::drift_revert::init(
+        drift_revert_pool,
+        client.cancel_token.clone(),
+        None,
+    )
+    .await?;
+
     if config.dependent_ops_max_per_chain == 0 {
         let promoted = db.promote_all_dep_chains_to_fast_priority().await?;
         if promoted > 0 {
@@ -131,21 +146,6 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         dependence_cross_block: config.dependence_cross_block,
         dependent_ops_max_per_chain: config.dependent_ops_max_per_chain,
     };
-
-    // Drift-revert: must run before any DB state reads so we don't read
-    // pre-revert state.
-    let (drift_revert_pool, _pool_refresh_handle) = connect_pool_with_options(
-        &config.database_url,
-        PgPoolOptions::new().max_connections(1),
-        None,
-    )
-    .await?;
-    fhevm_engine_common::drift_revert::init(
-        drift_revert_pool,
-        client.cancel_token.clone(),
-        None,
-    )
-    .await?;
 
     let chain_id_str = config.chain_id.to_string();
     let consumer_task = client.consume(move |payload, _cancel| {
