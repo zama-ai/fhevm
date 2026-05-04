@@ -4,13 +4,10 @@ use alloy::eips::BlockId;
 use alloy::rpc::types::Filter;
 use alloy::sol_types::SolEventInterface;
 use alloy::{network::Ethereum, primitives::Address, providers::Provider, rpc::types::Log};
+use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::connect_options_for_database_url;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::utils::to_hex;
-use fhevm_engine_common::{
-    chain_id::ChainId,
-    database::{connect_options_for_database_url, connect_pool_with_options},
-};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres, Row};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};

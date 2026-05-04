@@ -1099,6 +1099,8 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         }
     });
 
+    let mut background_tasks = JoinSet::new();
+
     // Drift-revert: must run before any DB state reads so we don't read
     // pre-revert state.
     let (drift_revert_pool, _pool_refresh_handle) = connect_pool_with_options(
