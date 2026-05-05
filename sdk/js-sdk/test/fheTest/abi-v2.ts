@@ -10,6 +10,7 @@ export const FHETestAddresses = JSON.parse(
   localhost: string;
   localhostFhevm: string;
   devnet: string;
+  sepolia: string;
 }>;
 
 export const FHETestABI = [
