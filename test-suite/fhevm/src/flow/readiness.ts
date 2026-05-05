@@ -1,5 +1,5 @@
 import { BootstrapTimeout, ContainerCrashed, MinioError, PreflightError, ProbeTimeout, RpcError } from "../errors";
-import { usesHostKmsGeneration } from "../compat/compat";
+import { requiresModernHostAddressArtifacts } from "../compat/compat";
 import {
   COPROCESSOR_DB_CONTAINER,
   CRSGEN_ID_SELECTOR,
@@ -282,7 +282,7 @@ export const probeBootstrap = async (state: State) => {
   const keyPrefix = discovery.minioKeyPrefix ?? "PUB";
   try {
     const defaultHostKey = defaultHostChainKey(state.scenario.hostChains);
-    const useHostKms = usesHostKmsGeneration(state);
+    const useHostKms = requiresModernHostAddressArtifacts(state);
     const rawRpcUrl = useHostKms
       ? discovery.endpoints.hosts[defaultHostKey]?.http
       : discovery.endpoints.gateway.http;

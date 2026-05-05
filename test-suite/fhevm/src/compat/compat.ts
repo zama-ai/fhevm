@@ -204,15 +204,12 @@ const requiresLegacyPauserTaskFlag = (version: string) =>
   versionLt(version, [0, 13, 0], { unparsed: "modern" });
 
 /** Detects when host address artifacts include ProtocolConfig and KMSGeneration proxy addresses. */
-const requiresModernHostAddressArtifacts = (state: CompatState) =>
+export const requiresModernHostAddressArtifacts = (state: CompatState) =>
   effectiveCompatOverrides(state).some((override) => override.group === "host-contracts") ||
   !versionLt(state.versions.env.HOST_VERSION ?? "", [0, 13, 0], { unparsed: "modern" });
 
-/** Detects when keygen bootstrap and runtime should use the host-chain KMSGeneration contract. */
-export const usesHostKmsGeneration = (state: CompatState) => requiresModernHostAddressArtifacts(state);
-
 /** Detects when gateway discovery/runtime must require the legacy gateway KMSGeneration address. */
-export const requiresGatewayKmsGenerationAddress = (state: CompatState) => !usesHostKmsGeneration(state);
+export const requiresGatewayKmsGenerationAddress = (state: CompatState) => !requiresModernHostAddressArtifacts(state);
 
 type BundleIncompatibility = { severity: "error"; code: string; message: string };
 

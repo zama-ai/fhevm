@@ -5,7 +5,7 @@ import {
   compatPolicyForState,
   requiresLegacyRelayerUrl,
   requiresMultichainAclAddress,
-  usesHostKmsGeneration,
+  requiresModernHostAddressArtifacts,
 } from "../compat/compat";
 import { driftDatabaseName } from "../drift";
 import type { StackSpec } from "../stack-spec/stack-spec";
@@ -85,7 +85,7 @@ const applyHostScKmsEnv = (envs: Record<string, Record<string, string>>) => {
 };
 
 const hostDeployKmsGenerationArgs = (plan: StackSpec, enabled: boolean) =>
-  usesHostKmsGeneration(plan) ? `--with-kms-generation ${enabled}` : "";
+  requiresModernHostAddressArtifacts(plan) ? `--with-kms-generation ${enabled}` : "";
 
 /** Applies base runtime defaults before compat or discovery-specific rewrites. */
 const applyBaseRuntimeEnv = (
@@ -155,7 +155,7 @@ const applyDiscoveryEnv = (
     return;
   }
   const primaryHost = state.discovery.hosts[defaultChain.key] ?? {};
-  const kmsGenerationAddress = usesHostKmsGeneration(plan)
+  const kmsGenerationAddress = requiresModernHostAddressArtifacts(plan)
     ? primaryHost.KMS_GENERATION_CONTRACT_ADDRESS
     : state.discovery.gateway.KMS_GENERATION_ADDRESS;
 

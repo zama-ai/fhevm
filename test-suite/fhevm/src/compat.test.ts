@@ -10,7 +10,7 @@ import {
   requiresLegacyGatewayKmsGenerationAddress,
   requiresLegacyKmsCoreConfig,
   requiresLegacyRelayerUrl,
-  usesHostKmsGeneration,
+  requiresModernHostAddressArtifacts,
   validateBundleCompatibility,
 } from "./compat/compat";
 import { testDefaultScenario } from "./test-fixtures";
@@ -234,7 +234,7 @@ describe("compat", () => {
       overrides: [],
       scenario: testDefaultScenario(),
     };
-    expect(usesHostKmsGeneration(state)).toBe(false);
+    expect(requiresModernHostAddressArtifacts(state)).toBe(false);
     expect(requiresGatewayKmsGenerationAddress(state)).toBe(true);
   });
 
@@ -249,7 +249,7 @@ describe("compat", () => {
       overrides: [],
       scenario: testDefaultScenario(),
     };
-    expect(usesHostKmsGeneration(state)).toBe(true);
+    expect(requiresModernHostAddressArtifacts(state)).toBe(true);
     expect(requiresGatewayKmsGenerationAddress(state)).toBe(false);
   });
 
@@ -264,7 +264,7 @@ describe("compat", () => {
       overrides: [{ group: "host-contracts" as const }],
       scenario: testDefaultScenario(),
     };
-    expect(usesHostKmsGeneration(state)).toBe(true);
+    expect(requiresModernHostAddressArtifacts(state)).toBe(true);
     expect(requiresGatewayKmsGenerationAddress(state)).toBe(false);
   });
 
