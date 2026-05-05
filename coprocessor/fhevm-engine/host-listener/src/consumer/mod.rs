@@ -5,11 +5,11 @@ use alloy::primitives::Address;
 use alloy::rpc::types::Log;
 use alloy_primitives::LogData;
 use anyhow::Result;
-use fhevm_engine_common::database::connect_pool_with_options;
-use sqlx::postgres::PgPoolOptions;
 use tokio::sync::RwLock;
 use tokio::time::sleep;
 use tracing::{error, info, warn};
+
+use fhevm_engine_common::drift_revert::SignalStatus as DriftStatus;
 
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
@@ -71,6 +71,87 @@ pub fn collect_logs(payload: &BlockPayload) -> Vec<Log> {
     logs
 }
 
+#[derive(Copy, Debug, Clone)]
+struct KnownDrift {
+    id: i64,
+    is_finished: bool,
+    catchup_to: i64,
+}
+
+const STARTING_DRIFT: KnownDrift = KnownDrift {
+    id: -1,
+    is_finished: true,
+    catchup_to: 0,
+};
+
+const DRIFT_BLOCK_MARGIN_TO_RESTART: i64 = 5;
+
+async fn check_if_drift_is_over(
+    db: &Database,
+    host_chain_id: i64,
+    last_known_drift_locked: Arc<RwLock<KnownDrift>>,
+    current_block: u64,
+) -> anyhow::Result<bool> {
+    let last_known_drift = *last_known_drift_locked.read().await;
+    let pool = db.pool().await;
+    if !last_known_drift.is_finished {
+        // verify if it's finished
+        let last_drift =
+            fhevm_engine_common::drift_revert::drift_signal_for_chain(
+                &pool,
+                host_chain_id,
+                last_known_drift.id,
+            )
+            .await?;
+        let status = last_drift.map(|ds| ds.status);
+        if status.is_none() {
+            error!("Drift with id {} for chain {} is not found in db, please handle manually", last_known_drift.id, host_chain_id);
+        }
+        match status {
+            Some(DriftStatus::Done) | None => {
+                // db cleaning is done, let's check if catchup is over
+                let tip_block = db.read_last_valid_block().await.unwrap_or(0);
+                let is_finished = tip_block
+                    > last_known_drift.catchup_to
+                        + DRIFT_BLOCK_MARGIN_TO_RESTART;
+                if is_finished {
+                    last_known_drift_locked.write().await.is_finished = true;
+                }
+                return Ok(is_finished);
+            }
+            Some(DriftStatus::Pending) | Some(DriftStatus::Reverting) => {
+                return Ok(false);
+            }
+            Some(DriftStatus::Failed(msg)) => {
+                error!("Drift with id {} for chain {} has failed with error: {}, please handle manually", last_known_drift.id, host_chain_id, &msg);
+                return Ok(false);
+            }
+        }
+    }
+    let pool = db.pool().await;
+    let Some(last_drift) =
+        fhevm_engine_common::drift_revert::latest_signal_for_chain(
+            &pool,
+            host_chain_id,
+        )
+        .await?
+    else {
+        // never has a drift
+        return Ok(true);
+    };
+    if last_drift.id == last_known_drift.id {
+        // same old drift already finished
+        return Ok(true);
+    }
+    // we have a new drift let's save it and assumeit's not finished yet
+    *last_known_drift_locked.write().await = KnownDrift {
+        id: last_drift.id,
+        catchup_to: current_block as i64,
+        is_finished: false,
+    };
+    return Ok(false);
+}
+
 pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     info!("Starting consumer with config: {:?}", config);
     let contracts = vec![config.acl_address, config.tfhe_address];
@@ -91,20 +172,6 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         &config.database_url,
         chain_id,
         config.dependence_cache_size,
-    )
-    .await?;
-    // Drift-revert: must run before any DB state reads so we don't read
-    // pre-revert state.
-    let (drift_revert_pool, _pool_refresh_handle) = connect_pool_with_options(
-        &config.database_url,
-        PgPoolOptions::new().max_connections(1),
-        None,
-    )
-    .await?;
-    fhevm_engine_common::drift_revert::init(
-        drift_revert_pool,
-        client.cancel_token.clone(),
-        None,
     )
     .await?;
 
@@ -148,12 +215,35 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         dependent_ops_max_per_chain: config.dependent_ops_max_per_chain,
     };
 
+    let last_known_drift = Arc::new(RwLock::new(STARTING_DRIFT));
     let chain_id_str = config.chain_id.to_string();
     let consumer_task = client.consume(move |payload, _cancel| {
+        // if drift wait until the other listener is back to current block
         blockchain_tick.update();
         let mut db = db.clone();
         let chain_id_str = chain_id_str.clone();
+        let known_drift = last_known_drift.clone();
         async move {
+             let drift_is_over = check_if_drift_is_over(
+                &db,
+                chain_id.as_u64() as i64,
+                known_drift,
+                payload.block_number,
+            ).await;
+            let drift_is_over = match drift_is_over {
+                Ok(is_over) => is_over,
+                Err(err) => {
+                    error!(error = %err, "Drift check error, assuming no drift and proceeding with block processing");
+                    false
+                }
+            };
+            if !drift_is_over {
+                warn!(
+                    block_number = payload.block_number,
+                    "Drift in progress, skipping block processing until resolved"
+                );
+                return Err(HandlerError::Transient(Box::from("Drift in progress")));
+            }
             let block_summary = BlockSummary {
                 number: payload.block_number,
                 hash: payload.block_hash,

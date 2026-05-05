@@ -172,6 +172,36 @@ pub async fn latest_signal(pool: &Pool<Postgres>) -> anyhow::Result<Option<Drift
     Ok(row.map(signal_from_row))
 }
 
+/// Fetch the latest signal row (by id) for a specific chain, if any.
+pub async fn latest_signal_for_chain(pool: &Pool<Postgres>, host_chain_id: i64) -> anyhow::Result<Option<DriftRevertSignal>> {
+    let row = sqlx::query(
+        "SELECT id, host_chain_id, offending_host_block_number, status \
+         FROM drift_revert_signal
+         WHERE host_chain_id = $1
+         ORDER BY id DESC LIMIT 1",
+    )
+    .bind(host_chain_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(signal_from_row))
+}
+
+/// Fetch the a specific signal row.
+pub async fn drift_signal_for_chain(pool: &Pool<Postgres>, host_chain_id: i64, drift_id: i64) -> anyhow::Result<Option<DriftRevertSignal>> {
+    let row = sqlx::query(
+        "SELECT id, host_chain_id, offending_host_block_number, status \
+         FROM drift_revert_signal
+         WHERE host_chain_id = $1
+         AND id = $2
+         ORDER BY id DESC LIMIT 1",
+    )
+    .bind(host_chain_id)
+    .bind(drift_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(signal_from_row))
+}
+
 /// Fetch the oldest in-flight (Pending or Reverting) signal, if any. The
 /// runner processes signals in this order so no chain's drift is dropped
 /// when multiple chains report drift concurrently.
