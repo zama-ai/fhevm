@@ -11,7 +11,7 @@ CONTRACTS_DIR="$JS_SDK_DIR/contracts"
 DEPLOY_FHEVM_SCRIPT="$CONTRACTS_DIR/script/fhevm-deploy.sh"
 DEPLOY_FHE_TEST_SCRIPT="$CONTRACTS_DIR/script/fhetest-deploy.sh"
 
-PORT="${PORT:-8545}"
+PORT="${PORT:-8544}"
 RPC_URL="${RPC_URL:-http://127.0.0.1:${PORT}}"
 CHAIN_ID="${CHAIN_ID:-31337}"
 READY_TIMEOUT="${READY_TIMEOUT:-30}"
@@ -104,6 +104,8 @@ echo "✅ Anvil is ready."
 # ------------------------------------------------------------------------------
 # Deploy FHEVM cleartext
 # ------------------------------------------------------------------------------
+
+    echo "RPC_URL=\"$RPC_URL\"" > "$TEST_DIR/.env.localhost"
 
 echo "🏗️  Deploying FHEVM cleartext stack..."
 (
