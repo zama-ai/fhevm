@@ -397,16 +397,42 @@ impl RedisConsumer {
             tokio::select! {
                 // Periodic drain of own PEL — reclaimed messages get handler retries
                 _ = pending_check_interval.tick() => {
+                    // Half-Open expired without ever dispatching a probe (e.g., our PEL was
+                    // emptied by a ClaimSweeper claim while we were in cooldown). Reopen the
+                    // breaker rather than auto-closing blind.
+                    if let Some(ref mut breaker) = cb
+                        && breaker.half_open_expired()
+                    {
+                        warn!(
+                            stream = %config.retry.base.stream,
+                            "Circuit breaker: half_open_timeout elapsed with empty PEL — reopening"
+                        );
+                        breaker.expire_half_open();
+                        continue;
+                    }
+
                     if let Some(ref breaker) = cb
                         && breaker.is_open()
                     {
                         continue;
                     }
+
+                    // While Half-Open, the PEL drain provides the probe. Skip if a probe is
+                    // already in flight and clamp XREADGROUP COUNT to 1 so we dispatch at most
+                    // one probe per Half-Open window.
+                    let (skip_dispatch, read_count) = match cb.as_ref() {
+                        Some(b) if b.is_half_open() => (b.probe_in_flight(), 1usize),
+                        _ => (false, config.prefetch_count),
+                    };
+                    if skip_dispatch {
+                        continue;
+                    }
+
                     let pending = match self.xreadgroup(
                         &config.retry.base.stream,
                         &config.retry.base.group_name,
                         &config.retry.base.consumer_name,
-                        config.prefetch_count,
+                        read_count,
                         "0",
                     ).await {
                         Ok(entries) => entries,
@@ -495,6 +521,17 @@ impl RedisConsumer {
                                     }
                                 }
                             });
+
+                            // While Half-Open, dispatch exactly one probe per cooldown cycle.
+                            // The next PEL ticks will skip until the probe outcome lands via
+                            // result_rx and clears `probe_in_flight` (in record_success /
+                            // record_transient_failure).
+                            if let Some(ref mut breaker) = cb
+                                && breaker.is_half_open()
+                            {
+                                breaker.mark_probe_dispatched();
+                                break;
+                            }
                         }
                     }
                 }
@@ -504,6 +541,14 @@ impl RedisConsumer {
                 // MultiplexedConnection (redis-rs #1236) and hangs
                 // indefinitely on dead sockets.
                 _ = new_msg_interval.tick() => {
+                    // While Open or Half-Open, never read new messages. The Half-Open probe
+                    // must come from the PEL drain (XREADGROUP "0") so the failed message is
+                    // retried first and ordering is preserved.
+                    if let Some(ref breaker) = cb
+                        && (breaker.is_open() || breaker.is_half_open())
+                    {
+                        continue;
+                    }
                     match self.xreadgroup(
                         &config.retry.base.stream,
                         &config.retry.base.group_name,
@@ -777,6 +822,20 @@ impl RedisConsumer {
                             stream_id = %stream_id,
                             "Worker exited before reporting result, cleared in-flight marker"
                         );
+                    }
+                    // If the abnormal exit was the Half-Open probe, clear `probe_in_flight`
+                    // so the next pending tick can dispatch a fresh probe. We do NOT call
+                    // `record_transient_failure` here — abnormal exit is not necessarily an
+                    // infra failure, and the message stays in PEL either way.
+                    if let Some(ref mut breaker) = cb
+                        && breaker.is_half_open()
+                        && breaker.probe_in_flight()
+                    {
+                        warn!(
+                            stream_id = %stream_id,
+                            "Probe worker exited abnormally; clearing probe_in_flight to allow re-probe"
+                        );
+                        breaker.clear_probe_in_flight();
                     }
                 }
 
