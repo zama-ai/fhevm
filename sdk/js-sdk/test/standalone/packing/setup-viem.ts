@@ -1,8 +1,8 @@
 import type { FhevmChain } from '@fhevm/sdk/chains';
 import { createPublicClient, http, type PublicClient, type Transport, type Chain } from 'viem';
-import { mnemonicToAccount, type HDAccount } from 'viem/accounts';
+import { mnemonicToAccount } from 'viem/accounts';
 import { sepolia as viemSepolia, mainnet as viemMainnet, anvil as viemAnvil } from 'viem/chains';
-import { getBaseEnv, type FheTestChainName } from './setupCommon.js';
+import { getBaseEnv, type FheTestBaseEnv, type FheTestChainName } from './setupCommon.js';
 
 // Re-export for convenience
 export type { FheTestChainName } from './setupCommon.js';
@@ -38,10 +38,12 @@ function buildConfig(): FheTestViemConfig {
       ? viemSepolia
       : env.chainName === 'mainnet'
         ? viemMainnet
-        : viemAnvil;
+        : env.chainName === 'localhostFhevm'
+          ? { ...viemAnvil, id: env.fhevmChain.id }
+          : viemAnvil;
 
-  const account: HDAccount = mnemonicToAccount(env.mnemonic);
-  const bobAccount: HDAccount = mnemonicToAccount(env.mnemonic, {
+  const account = mnemonicToAccount(env.mnemonic);
+  const bobAccount = mnemonicToAccount(env.mnemonic, {
     path: "m/44'/60'/0'/0/1",
   });
 

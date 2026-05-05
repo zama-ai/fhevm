@@ -1,9 +1,8 @@
 import { resolveFhevmConfig } from '@fhevm/sdk/actions/host';
 import { createFhevmBaseClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { safeJSONstringify } from '../../../src/core/base/string.js';
 import { type FheTestEthersConfig, getEthersTestConfig } from './setup.js';
-import { isCleartext } from '../setupCommon.js';
+import { isCleartext, safeJSONstringify } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //

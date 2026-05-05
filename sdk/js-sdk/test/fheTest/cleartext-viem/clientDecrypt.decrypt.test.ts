@@ -1,15 +1,11 @@
 import type { Hex } from 'viem';
-import type { ChecksummedAddress, TypedValue } from '../../../src/core/types/primitives.js';
-import type { FheType } from '../../../src/core/types/fheType.js';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { createFhevmCleartextDecryptClient } from '@fhevm/sdk/viem/cleartext';
 import { getViemTestConfig, type FheTestViemConfig } from '../viem/setup.js';
-import { isCleartext } from '../setupCommon.js';
 import { FHETestABI } from '../abi-v2.js';
-import { fheTypeIdFromName } from '../../../src/core/handle/FheType.js';
-import { toFhevmHandle } from '../../../src/core/handle/FhevmHandle.js';
-import { asEncryptedValue } from '../../../src/core/handle/EncryptedValue.js';
+import { decryptTestCases, isCleartext, fheTypeIdFromName, clearTypeFromHandle } from '../setupCommon.js';
+import { asEncryptedValue, type EncryptedValue, type TypedValue } from '@fhevm/sdk/types';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -17,20 +13,6 @@ import { asEncryptedValue } from '../../../src/core/handle/EncryptedValue.js';
 // ----------
 // CHAIN=localhost npx vitest run --config test/fheTest/vitest.config.ts cleartext-viem/clientDecrypt.decrypt.test.ts
 //
-////////////////////////////////////////////////////////////////////////////////
-
-// Each FHE type to decrypt individually
-const decryptTestCases: readonly FheType[] = [
-  'ebool',
-  'euint8',
-  'euint16',
-  'euint32',
-  'euint64',
-  'euint128',
-  'euint256',
-  'eaddress',
-] as const;
-
 ////////////////////////////////////////////////////////////////////////////////
 
 describe.runIf(isCleartext(getViemTestConfig().chainName))('Decrypt client — user decrypt', () => {
@@ -109,21 +91,23 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))('Decrypt client — u
       const fheTypeId = fheTypeIdFromName(fheType);
 
       // Read handle from FHETest contract
-      const handle = await config.publicClient.readContract({
-        address: config.fheTestAddress as Hex,
-        abi: FHETestABI,
-        functionName: 'getHandleOf',
-        args: [config.account.address, fheTypeId],
-      });
-      expect(handle).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
-      console.log(`  ${fheType}: handle=${handle.slice(0, 20)}...`);
+      const encryptedValue: EncryptedValue = asEncryptedValue(
+        await config.publicClient.readContract({
+          address: config.fheTestAddress as Hex,
+          abi: FHETestABI,
+          functionName: 'getHandleOf',
+          args: [config.account.address, fheTypeId],
+        }),
+      );
+      expect(encryptedValue).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
+      console.log(`  ${fheType}: handle=${encryptedValue.slice(0, 20)}...`);
 
       // Read expected clear value from FHETest._db
       const expectedRaw = await config.publicClient.readContract({
         address: config.fheTestAddress as Hex,
         abi: FHETestABI,
         functionName: 'getClearText',
-        args: [handle],
+        args: [encryptedValue],
       });
 
       // Decrypt via SDK
@@ -144,13 +128,13 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))('Decrypt client — u
       });
 
       const typedValue = await client.decryptValue({
-        contractAddress: config.fheTestAddress as ChecksummedAddress,
-        encryptedValue: handle,
+        contractAddress: config.fheTestAddress,
+        encryptedValue: encryptedValue,
         signedPermit,
         transportKeyPair: transportKeyPair,
       });
 
-      expect(typedValue.type).toBe(toFhevmHandle(handle).clearType);
+      expect(typedValue.type).toBe(clearTypeFromHandle(encryptedValue));
 
       console.log(`  ${fheType}: decrypted=${typedValue.value} expected=${expectedRaw}`);
 
@@ -176,28 +160,31 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))('Decrypt client — u
   it('should decrypt all types in a single call', async () => {
     // Read all handles and their expected clear values from FHETest
     const entries: {
-      fheType: FheType;
-      handle: Hex;
+      fheType: string;
+      handle: EncryptedValue;
       expectedRaw: bigint;
     }[] = [];
 
     for (const fheType of decryptTestCases) {
       const fheTypeId = fheTypeIdFromName(fheType);
-      const handle = await config.publicClient.readContract({
-        address: config.fheTestAddress as Hex,
-        abi: FHETestABI,
-        functionName: 'getHandleOf',
-        args: [config.account.address, fheTypeId],
-      });
-      expect(handle).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
+      const encryptedValue: EncryptedValue = asEncryptedValue(
+        await config.publicClient.readContract({
+          address: config.fheTestAddress as Hex,
+          abi: FHETestABI,
+          functionName: 'getHandleOf',
+          args: [config.account.address, fheTypeId],
+        }),
+      );
+      expect(encryptedValue).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
+
       const expectedRaw = await config.publicClient.readContract({
         address: config.fheTestAddress as Hex,
         abi: FHETestABI,
         functionName: 'getClearText',
-        args: [handle],
+        args: [encryptedValue],
       });
-      entries.push({ fheType, handle, expectedRaw });
-      console.log(`  ${fheType}: handle=${handle.slice(0, 20)}... expected=${expectedRaw}`);
+      entries.push({ fheType, handle: encryptedValue, expectedRaw });
+      console.log(`  ${fheType}: handle=${encryptedValue.slice(0, 20)}... expected=${expectedRaw}`);
     }
 
     // Decrypt all in a single call
@@ -221,7 +208,7 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))('Decrypt client — u
 
     const typedValues: readonly TypedValue[] = await client.decryptValues({
       encryptedValues,
-      contractAddress: config.fheTestAddress as ChecksummedAddress,
+      contractAddress: config.fheTestAddress,
       signedPermit,
       transportKeyPair: transportKeyPair,
     });

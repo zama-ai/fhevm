@@ -150,7 +150,7 @@ HCU_LIMIT=0x233ff88A48c172d29F675403e6A8e302b0F032D9
 # fhevm-cli
 
 ```
-cd <root>/test-suite/e2e
+cd <root>/test-suite/fhevm
 
 ./fhevm-cli up --help
 

@@ -1,15 +1,17 @@
-import type { Handle } from '../../../src/core/types/encryptedTypes-p.js';
 import type { Hex } from 'viem';
-import type { FheType } from '../../../src/core/types/fheType.js';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { createFhevmCleartextBaseClient } from '@fhevm/sdk/viem/cleartext';
 import { getViemTestConfig, type FheTestViemConfig } from '../viem/setup.js';
-import { isCleartext } from '../setupCommon.js';
 import { FHETestABI } from '../abi-v2.js';
-import { fheTypeIdFromName } from '../../../src/core/handle/FheType.js';
-import { toFhevmHandle } from '../../../src/core/handle/FhevmHandle.js';
-import { asEncryptedValue } from '../../../src/core/handle/EncryptedValue.js';
+import {
+  decryptTestCases,
+  isCleartext,
+  fheTypeIdFromName,
+  clearTypeFromHandle,
+  fheTypeIdFromHandle,
+} from '../setupCommon.js';
+import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -17,20 +19,6 @@ import { asEncryptedValue } from '../../../src/core/handle/EncryptedValue.js';
 // ----------
 // CHAIN=localhost npx vitest run --config test/fheTest/vitest.config.ts cleartext-viem/clientBase.readPublicValue.test.ts
 //
-////////////////////////////////////////////////////////////////////////////////
-
-// Each FHE type to public-decrypt
-const decryptTestCases: readonly FheType[] = [
-  'ebool',
-  'euint8',
-  'euint16',
-  'euint32',
-  'euint64',
-  'euint128',
-  'euint256',
-  'eaddress',
-] as const;
-
 ////////////////////////////////////////////////////////////////////////////////
 
 describe.runIf(isCleartext(getViemTestConfig().chainName))('Base client — readPublicValue', () => {
@@ -60,7 +48,7 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))('Base client — read
       const fheTypeId = fheTypeIdFromName(fheType);
 
       // Read handle from FHETest contract
-      const handle: Handle = toFhevmHandle(
+      const encryptedValue: EncryptedValue = asEncryptedValue(
         await config.publicClient.readContract({
           address: config.fheTestAddress as Hex,
           abi: FHETestABI,
@@ -68,17 +56,17 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))('Base client — read
           args: [config.account.address, fheTypeId],
         }),
       );
-      expect(handle.bytes32Hex).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
-      expect(handle.fheType).toBe(fheType);
+      expect(encryptedValue).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
+      expect(fheTypeIdFromHandle(encryptedValue)).toBe(fheTypeIdFromName(fheType));
 
       // Read expected clear value from FHETest._db
       const expectedRaw = await config.publicClient.readContract({
         address: config.fheTestAddress as Hex,
         abi: FHETestABI,
         functionName: 'getClearText',
-        args: [handle.bytes32Hex],
+        args: [encryptedValue],
       });
-      console.log(`  ${fheType}: handle=${handle.bytes32Hex.slice(0, 20)}... expected=${expectedRaw}`);
+      console.log(`  ${fheType}: handle=${encryptedValue.slice(0, 20)}... expected=${expectedRaw}`);
 
       // Public decrypt via SDK
       const client = createFhevmCleartextBaseClient({
@@ -86,12 +74,11 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))('Base client — read
         publicClient: config.publicClient,
       });
 
-      const encryptedValue = asEncryptedValue(handle);
       const typedValue = await client.readPublicValue({
         encryptedValue,
       });
 
-      expect(typedValue.type).toBe(handle.clearType);
+      expect(typedValue.type).toBe(clearTypeFromHandle(encryptedValue));
 
       console.log(`  ${fheType}: decrypted=${typedValue.value} expected=${expectedRaw}`);
 
@@ -114,13 +101,13 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))('Base client — read
   it('should readPublicValue all types in a single call', async () => {
     // Read all handles and their expected clear values
     const entries: {
-      handle: Handle;
+      encryptedValue: EncryptedValue;
       expectedRaw: bigint;
     }[] = [];
 
     for (const fheType of decryptTestCases) {
       const fheTypeId = fheTypeIdFromName(fheType);
-      const handle: Handle = toFhevmHandle(
+      const encryptedValue: EncryptedValue = asEncryptedValue(
         await config.publicClient.readContract({
           address: config.fheTestAddress as Hex,
           abi: FHETestABI,
@@ -128,16 +115,16 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))('Base client — read
           args: [config.account.address, fheTypeId],
         }),
       );
-      expect(handle.bytes32Hex).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
-      expect(handle.fheType).toBe(fheType);
+      expect(encryptedValue).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
+      expect(fheTypeIdFromHandle(encryptedValue)).toBe(fheTypeIdFromName(fheType));
       const expectedRaw = await config.publicClient.readContract({
         address: config.fheTestAddress as Hex,
         abi: FHETestABI,
         functionName: 'getClearText',
-        args: [handle.bytes32Hex],
+        args: [encryptedValue],
       });
-      entries.push({ handle, expectedRaw });
-      console.log(`  ${fheType}: handle=${handle.bytes32Hex.slice(0, 20)}... expected=${expectedRaw}`);
+      entries.push({ encryptedValue, expectedRaw });
+      console.log(`  ${fheType}: handle=${encryptedValue.slice(0, 20)}... expected=${expectedRaw}`);
     }
 
     // Public decrypt all in a single call
@@ -146,7 +133,7 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))('Base client — read
       publicClient: config.publicClient,
     });
 
-    const allEncryptedValues = entries.map((e) => asEncryptedValue(e.handle));
+    const allEncryptedValues = entries.map((e) => asEncryptedValue(e.encryptedValue));
     const typedValues = await client.readPublicValues({
       encryptedValues: allEncryptedValues,
     });
@@ -154,15 +141,15 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))('Base client — read
     expect(typedValues).toHaveLength(entries.length);
 
     for (let i = 0; i < entries.length; i++) {
-      const { handle, expectedRaw } = entries[i]!;
+      const { encryptedValue, expectedRaw } = entries[i]!;
       const typedValue = typedValues[i]!;
-      console.log(`  ${handle.fheType}: decrypted=${typedValue.value} expected=${expectedRaw}`);
+      console.log(`  ${clearTypeFromHandle(encryptedValue)}: decrypted=${typedValue.value} expected=${expectedRaw}`);
 
-      expect(typedValue.type).toBe(handle.clearType);
+      expect(typedValue.type).toBe(clearTypeFromHandle(encryptedValue));
 
-      if (handle.fheType === 'ebool') {
+      if (clearTypeFromHandle(encryptedValue) === 'ebool') {
         expect(typedValue.value).toBe(expectedRaw !== 0n);
-      } else if (handle.fheType === 'eaddress') {
+      } else if (clearTypeFromHandle(encryptedValue) === 'eaddress') {
         const expectedAddr = '0x' + expectedRaw.toString(16).padStart(40, '0');
         expect(String(typedValue.value).toLowerCase()).toBe(expectedAddr.toLowerCase());
       } else {

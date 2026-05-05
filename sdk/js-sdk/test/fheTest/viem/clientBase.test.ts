@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmBaseClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import { sepolia as fhevmSepolia } from '@fhevm/sdk/chains';
 import { createPublicClient, http } from 'viem';
 import { sepolia as viemSepolia } from 'viem/chains';
 import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
@@ -43,12 +42,12 @@ describe.runIf(!isCleartext(getViemTestConfig().chainName))('createFhevmBaseClie
 
   it('should create a base client with sepolia chain', () => {
     const client = createFhevmBaseClient({
-      chain: fhevmSepolia,
+      chain: config.fhevmChain,
       publicClient: config.publicClient,
     });
     expect(client).toBeDefined();
-    expect(client.chain).toBe(fhevmSepolia);
-    expect(client.chain.id).toBe(11_155_111);
+    expect(client.chain).toBe(config.fhevmChain);
+    expect(client.chain.id).toBe(config.fhevmChain.id);
     expect(client.client).toBe(config.publicClient);
   });
 
@@ -101,11 +100,11 @@ describe.runIf(!isCleartext(getViemTestConfig().chainName))('createFhevmBaseClie
       transport: http('https://ethereum-sepolia-rpc.publicnode.com'),
     });
     const client = createFhevmBaseClient({
-      chain: fhevmSepolia,
+      chain: config.fhevmChain,
       publicClient: customPublicClient,
     });
     expect(client).toBeDefined();
-    expect(client.chain.id).toBe(11_155_111);
+    expect(client.chain.id).toBe(config.fhevmChain.id);
     expect(client.client).toBe(customPublicClient);
   });
 

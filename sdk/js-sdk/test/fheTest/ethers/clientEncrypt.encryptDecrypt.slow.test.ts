@@ -1,13 +1,9 @@
 import type { ethers } from 'ethers';
-import type { TypedValue } from '../../../src/core/types/primitives.js';
-import type { EncryptedValue } from '../../../src/core/types/encryptedTypes.js';
+import type { EncryptedValue } from '@fhevm/sdk/types';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmDecryptClient, createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
-import { createTypedValueArray } from '../../../src/core/base/typedValue.js';
-import { isBytes32Hex } from '../../../src/core/base/bytes.js';
-import { toFhevmHandle } from '../../../src/core/handle/FhevmHandle.js';
-import { isCleartext } from '../setupCommon.js';
+import { clearTypeFromHandle, encryptTestCases, isBytes32Hex, isCleartext } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -23,44 +19,6 @@ import { isCleartext } from '../setupCommon.js';
 // ----------------
 // CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts ethers/clientEncrypt.encryptDecrypt.test.ts
 //
-////////////////////////////////////////////////////////////////////////////////
-
-// Map FHE type to: contract function name, value type name, test value
-const encryptTestCases: TypedValue[] = createTypedValueArray([
-  {
-    value: true,
-    type: 'bool' as const,
-  },
-  {
-    type: 'uint8' as const,
-    value: 42,
-  },
-  {
-    type: 'uint16' as const,
-    value: 1234,
-  },
-  {
-    type: 'uint32' as const,
-    value: 123456,
-  },
-  {
-    type: 'uint64' as const,
-    value: 123456789n,
-  },
-  {
-    type: 'uint128' as const,
-    value: 123456789012345n,
-  },
-  {
-    type: 'uint256' as const,
-    value: 123456789012345678901234567890n,
-  },
-  {
-    type: 'address' as const,
-    value: '0x37AC010c1c566696326813b840319B58Bb5840E4',
-  },
-]);
-
 ////////////////////////////////////////////////////////////////////////////////
 
 describe.runIf(!isCleartext(getEthersTestConfig().chainName))(
@@ -119,7 +77,7 @@ describe.runIf(!isCleartext(getEthersTestConfig().chainName))(
 
       for (let i = 0; i < encryptTestCases.length; i++) {
         const enc: EncryptedValue = result.encryptedValues[i]!;
-        const fheType = toFhevmHandle(enc).fheType;
+        const fheType = clearTypeFromHandle(enc);
         const ct = encryptTestCases[i]!.value;
 
         const inputHandle = enc;

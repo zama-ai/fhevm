@@ -11,7 +11,7 @@
   },
   "type": "module",
   "dependencies": {
-    "@fhevm/sdk": "file:pack/fhevm-sdk-1.0.0-alpha.4.tgz"
+    "@fhevm/sdk": "file:manual-packing/fhevm-sdk-1.0.0-alpha.4.tgz"
   },
   "devDependencies": {
     "ethers": "^6.15.0",

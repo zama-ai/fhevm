@@ -2,9 +2,8 @@ import { resolveFhevmConfig } from '@fhevm/sdk/actions/host';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { createFhevmCleartextBaseClient } from '@fhevm/sdk/viem/cleartext';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { safeJSONstringify } from '../../../src/core/base/string.js';
 import { type FheTestViemConfig, getViemTestConfig } from '../viem/setup.js';
-import { isCleartext } from '../setupCommon.js';
+import { isCleartext, safeJSONstringify } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //

@@ -1,14 +1,11 @@
 import type { ethers } from 'ethers';
-import type { TypedValue } from '../../../src/core/types/primitives.js';
-import type { EncryptedValue } from '../../../src/core/types/encryptedTypes.js';
+import type { EncryptedValue } from '@fhevm/sdk/types';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { createFhevmCleartextDecryptClient, createFhevmCleartextEncryptClient } from '@fhevm/sdk/ethers/cleartext';
 import { getEthersTestConfig, type FheTestEthersConfig } from '../ethers/setup.js';
-import { createTypedValueArray } from '../../../src/core/base/typedValue.js';
-import { isBytes32Hex } from '../../../src/core/base/bytes.js';
-import { toFhevmHandle } from '../../../src/core/handle/FhevmHandle.js';
-import { isCleartext } from '../setupCommon.js';
+import { clearTypeFromHandle, encryptTestCases, isBytes32Hex, isCleartext } from '../setupCommon.js';
+import { asEncryptedValue } from '@fhevm/sdk/types';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -16,44 +13,6 @@ import { isCleartext } from '../setupCommon.js';
 // ----------
 // CHAIN=localhost npx vitest run --config test/fheTest/vitest.config.ts cleartext-ethers/clientEncrypt.encryptDecrypt.slow.test.ts
 //
-////////////////////////////////////////////////////////////////////////////////
-
-// Map FHE type to: contract function name, value type name, test value
-const encryptTestCases: TypedValue[] = createTypedValueArray([
-  {
-    value: true,
-    type: 'bool' as const,
-  },
-  {
-    type: 'uint8' as const,
-    value: 42,
-  },
-  {
-    type: 'uint16' as const,
-    value: 1234,
-  },
-  {
-    type: 'uint32' as const,
-    value: 123456,
-  },
-  {
-    type: 'uint64' as const,
-    value: 123456789n,
-  },
-  {
-    type: 'uint128' as const,
-    value: 123456789012345n,
-  },
-  {
-    type: 'uint256' as const,
-    value: 123456789012345678901234567890n,
-  },
-  {
-    type: 'address' as const,
-    value: '0x37AC010c1c566696326813b840319B58Bb5840E4',
-  },
-]);
-
 ////////////////////////////////////////////////////////////////////////////////
 
 describe.runIf(isCleartext(getEthersTestConfig().chainName))(
@@ -112,7 +71,7 @@ describe.runIf(isCleartext(getEthersTestConfig().chainName))(
 
       for (let i = 0; i < encryptTestCases.length; i++) {
         const enc: EncryptedValue = result.encryptedValues[i]!;
-        const fheType = toFhevmHandle(enc).fheType;
+        const clearType = clearTypeFromHandle(asEncryptedValue(enc));
         const ct = encryptTestCases[i]!.value;
 
         const inputHandle = enc;
@@ -121,31 +80,31 @@ describe.runIf(isCleartext(getEthersTestConfig().chainName))(
 
         let tx: ethers.TransactionResponse;
 
-        console.log(`setE${fheType.substring(1)}(${inputHandle})...`);
+        console.log(`setE${clearType}(${inputHandle})...`);
 
-        switch (fheType) {
-          case 'ebool':
+        switch (clearType) {
+          case 'bool':
             tx = await fheTest.setEbool!(inputHandle, inputProof, ct, makePublic);
             break;
-          case 'euint8':
+          case 'uint8':
             tx = await fheTest.setEuint8!(inputHandle, inputProof, ct, makePublic);
             break;
-          case 'euint16':
+          case 'uint16':
             tx = await fheTest.setEuint16!(inputHandle, inputProof, ct, makePublic);
             break;
-          case 'euint32':
+          case 'uint32':
             tx = await fheTest.setEuint32!(inputHandle, inputProof, ct, makePublic);
             break;
-          case 'euint64':
+          case 'uint64':
             tx = await fheTest.setEuint64!(inputHandle, inputProof, ct, makePublic);
             break;
-          case 'euint128':
+          case 'uint128':
             tx = await fheTest.setEuint128!(inputHandle, inputProof, ct, makePublic);
             break;
-          case 'euint256':
+          case 'uint256':
             tx = await fheTest.setEuint256!(inputHandle, inputProof, ct, makePublic);
             break;
-          case 'eaddress':
+          case 'address':
             tx = await fheTest.setEaddress!(inputHandle, inputProof, ct, makePublic);
             break;
           default:

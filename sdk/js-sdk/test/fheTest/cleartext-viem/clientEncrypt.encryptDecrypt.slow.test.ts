@@ -1,15 +1,11 @@
-import type { TypedValue } from '../../../src/core/types/primitives.js';
-import type { EncryptedValue } from '../../../src/core/types/encryptedTypes.js';
+import type { EncryptedValue } from '@fhevm/sdk/types';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { createFhevmCleartextEncryptClient, createFhevmCleartextDecryptClient } from '@fhevm/sdk/viem/cleartext';
 import { getViemTestConfig, type FheTestViemConfig } from '../viem/setup.js';
-import { getBaseEnv, isCleartext } from '../setupCommon.js';
+import { clearTypeFromHandle, encryptTestCases, getBaseEnv, isBytes32Hex, isCleartext } from '../setupCommon.js';
 import { FHETestABI } from '../abi-v2.js';
-import { createTypedValueArray } from '../../../src/core/base/typedValue.js';
 import { createWalletClient, http, type Hex } from 'viem';
-import { isBytes32Hex } from '../../../src/core/base/bytes.js';
-import { toFhevmHandle } from '../../../src/core/handle/FhevmHandle.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -17,44 +13,6 @@ import { toFhevmHandle } from '../../../src/core/handle/FhevmHandle.js';
 // ----------
 // CHAIN=localhost npx vitest run --config test/fheTest/vitest.config.ts cleartext-viem/clientEncrypt.encryptDecrypt.slow.test.ts
 //
-////////////////////////////////////////////////////////////////////////////////
-
-// Map FHE type to: contract function name, value type name, test value
-const encryptTestCases: TypedValue[] = createTypedValueArray([
-  {
-    value: true,
-    type: 'bool' as const,
-  },
-  {
-    type: 'uint8' as const,
-    value: 42,
-  },
-  {
-    type: 'uint16' as const,
-    value: 1234,
-  },
-  {
-    type: 'uint32' as const,
-    value: 123456,
-  },
-  {
-    type: 'uint64' as const,
-    value: 123456789n,
-  },
-  {
-    type: 'uint128' as const,
-    value: 123456789012345n,
-  },
-  {
-    type: 'uint256' as const,
-    value: 123456789012345678901234567890n,
-  },
-  {
-    type: 'address' as const,
-    value: '0x37AC010c1c566696326813b840319B58Bb5840E4',
-  },
-]);
-
 ////////////////////////////////////////////////////////////////////////////////
 
 describe.runIf(isCleartext(getViemTestConfig().chainName))(
@@ -117,7 +75,7 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))(
 
       for (let i = 0; i < encryptTestCases.length; i++) {
         const enc: EncryptedValue = result.encryptedValues[i]!;
-        const fheType = toFhevmHandle(enc).fheType;
+        const clearType = clearTypeFromHandle(enc);
         const ct = encryptTestCases[i]!.value;
 
         const inputHandle = enc;
@@ -125,7 +83,7 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))(
         const makePublic = true;
 
         // Compute function name from fheType: ebool → setEbool, euint8 → setEuint8, etc.
-        const functionName = `set${fheType.charAt(0).toUpperCase()}${fheType.slice(1)}`;
+        const functionName = `setE${clearType}`;
         console.log(`${functionName}(${inputHandle})...`);
 
         const hash = await walletClient.writeContract({
@@ -152,7 +110,7 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))(
 
       // ┌─────────────────────────────────────────────────────────────────────┐
       // │  Phase 3: PRIVATE DECRYPT                                           │
-      // │  Decrypt via signed permit + e2e transport key pair                  │
+      // │  Decrypt via signed permit + e2e transport key pair                 │
       // └─────────────────────────────────────────────────────────────────────┘
       const decryptClient = createFhevmCleartextDecryptClient({
         chain: config.fhevmChain,
