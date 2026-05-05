@@ -512,6 +512,12 @@ impl Database {
                 insert_computation(tx, result, &deps, &NO_SCALAR).await
             }
 
+            E::FheIsIn(C::FheIsIn { value, values, result, .. }) => {
+                let mut deps: Vec<&Handle> = vec![value];
+                deps.extend(values.iter());
+                insert_computation(tx, result, &deps, &NO_SCALAR).await
+            }
+
             | E::Initialized(_)
             | E::Upgraded(_)
             | E::VerifyInput(_)
@@ -1043,6 +1049,7 @@ fn event_to_op_int(op: &TfheContractEvents) -> FheOperation {
         E::FheRand(_) => O::FheRand as i32,
         E::FheRandBounded(_) => O::FheRandBounded as i32,
         E::FheSum(_) => O::FheSum as i32,
+        E::FheIsIn(_) => O::FheIsIn as i32,
         // Not tfhe ops
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => -1,
     }
@@ -1079,6 +1086,7 @@ pub fn event_name(op: &TfheContractEvents) -> &'static str {
         E::FheRand(_) => "FheRand",
         E::FheRandBounded(_) => "FheRandBounded",
         E::FheSum(_) => "FheSum",
+        E::FheIsIn(_) => "FheIsIn",
         E::Initialized(_) => "Initialized",
         E::Upgraded(_) => "Upgraded",
         E::VerifyInput(_) => "VerifyInput",
@@ -1116,7 +1124,8 @@ pub fn tfhe_result_handle(op: &TfheContractEvents) -> Option<Handle> {
         | E::FheRand(C::FheRand { result, .. })
         | E::FheRandBounded(C::FheRandBounded { result, .. })
         | E::TrivialEncrypt(C::TrivialEncrypt { result, .. })
-        | E::FheSum(C::FheSum { result, .. }) => Some(*result),
+        | E::FheSum(C::FheSum { result, .. })
+        | E::FheIsIn(C::FheIsIn { result, .. }) => Some(*result),
 
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => None,
     }
@@ -1289,6 +1298,12 @@ pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
         E::FheRand(_) | E::FheRandBounded(_) | E::TrivialEncrypt(_) => vec![],
 
         E::FheSum(C::FheSum { values, .. }) => values.clone(),
+
+        E::FheIsIn(C::FheIsIn { value, values, .. }) => {
+            let mut handles = vec![*value];
+            handles.extend(values.iter().copied());
+            handles
+        }
 
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
     }
