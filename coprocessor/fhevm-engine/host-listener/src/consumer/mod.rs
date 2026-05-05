@@ -168,6 +168,25 @@ async fn check_if_drift_revert_is_over(
     return Ok(false);
 }
 
+
+pub async fn promote_once_all_chains_to_fast(db: &Database, dependent_ops_max_per_chain: u32) {
+    if dependent_ops_max_per_chain == 0 {
+        let count = match db.promote_all_dep_chains_to_fast_priority().await {
+            Ok(count) => count,
+            Err(err) => {
+                error!(error = %err, "Failed to initially promote dependence chains to fast priority on startup");
+                return;
+            }
+        };
+        if count > 0 {
+            info!(
+                count,
+                "Slow-lane disabled: promoted all chains to fast on startup"
+            );
+        }
+    }
+}
+
 pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     info!("Starting consumer with config: {:?}", config);
     let contracts = vec![config.acl_address, config.tfhe_address, config.kms_generation_address];
@@ -191,15 +210,6 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     )
     .await?;
 
-    if config.dependent_ops_max_per_chain == 0 {
-        let promoted = db.promote_all_dep_chains_to_fast_priority().await?;
-        if promoted > 0 {
-            info!(
-                count = promoted,
-                "Slow-lane disabled: promoted all chains to fast on startup"
-            );
-        }
-    }
     db.tick.update();
 
     info!("Consumer registering contracts");
@@ -250,6 +260,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 Ok(true) => (), // all good
                 Err(err) => error!(%err, "Can't check drift-revert status"),
             }
+            promote_once_all_chains_to_fast(&db, ingest_options.dependent_ops_max_per_chain).await;
             let block_summary = BlockSummary {
                 number: payload.block_number,
                 hash: payload.block_hash,
