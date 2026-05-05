@@ -26,6 +26,43 @@ export class FhevmSdk implements SdkInstance {
     this.#auth = auth;
   }
 
+  getUserDecryptErrorMessage(parameters: {
+    readonly type: "user-unauthorized" | "user-equal-contract" | "contract-unauthorized" | "permit-expired";
+    readonly signer: Signer & { readonly address: string };
+    readonly handle?: string | undefined;
+    readonly contractAddress?: string | undefined;
+  }): string {
+    if (parameters.type === "user-unauthorized") {
+      return `User ${parameters.signer.address} is not authorized to decrypt handle ${parameters.handle}!`;
+    } else if (parameters.type === "user-equal-contract") {
+      return `userAddress ${parameters.signer.address} should not be equal to contractAddress when requesting user decryption!`;
+    } else if (parameters.type === "contract-unauthorized") {
+      return `Dapp contract ${parameters.contractAddress} is not authorized to user decrypt handle ${parameters.handle}!`;
+    } else if (parameters.type === "permit-expired") {
+      return "request has expired";
+    } else {
+      return "unknown error type";
+    }
+  }
+
+  getDelegatedUserDecryptErrorMessage(parameters: {
+    readonly type: "revocation" | "contract-unauthorized" | "permit-expired" | "delegation-does-not-exist";
+    readonly signer: Signer & { readonly address: string };
+    readonly handle?: string | undefined;
+    readonly contractAddress?: string | undefined;
+    readonly delegatorAddress?: string | undefined;
+  }): string {
+    if (parameters.type === "revocation" || parameters.type === "delegation-does-not-exist") {
+      return `Delegate ${parameters.signer.address} is not delegated by ${parameters.delegatorAddress} to user decrypt handle ${parameters.handle} on contract ${parameters.contractAddress}`;
+    } else if (parameters.type === "contract-unauthorized") {
+      return `Delegate ${parameters.signer.address} is not delegated by ${parameters.delegatorAddress} to user decrypt handle ${parameters.handle} on contract ${parameters.contractAddress}`;
+    } else if (parameters.type === "permit-expired") {
+      return "request has expired";
+    } else {
+      return "unknown error type";
+    }
+  }
+
   static async create(parameters: {
     readonly verifyingContractAddressDecryption: string;
     readonly verifyingContractAddressInputVerification: string;
@@ -100,6 +137,7 @@ export class FhevmSdk implements SdkInstance {
     readonly handle: string;
     readonly contractAddress: string;
     readonly signer: Signer & { readonly address: string };
+    readonly startTimestamp?: number | undefined;
     readonly transportKeypair?: { readonly privateKey: string; readonly publicKey: string } | undefined;
   }): Promise<ClearValueType> {
     const { handle, contractAddress, signer } = parameters;
@@ -114,7 +152,7 @@ export class FhevmSdk implements SdkInstance {
     const signedPermit = await this.#fullClient.signDecryptionPermit({
       contractAddresses: [contractAddress],
       durationDays: 10,
-      startTimestamp: Math.floor(Date.now() / 1000),
+      startTimestamp: parameters.startTimestamp ?? Math.floor(Date.now() / 1000),
       transportKeyPair,
       signer,
       signerAddress: signer.address,

@@ -248,8 +248,12 @@ describe("EncryptedERC20", function () {
         });
         expect.fail("Expected an error to be thrown - Bob should not be able to user decrypt Alice balance");
       } catch (error) {
-        expect((error as { message: string }).message).to.equal(
-          `User address ${this.signers.bob.address} is not authorized to user decrypt handle ${balanceHandleAlice}!`,
+        expect((error as { message: string }).message).to.contain(
+          this.instances.bob.getUserDecryptErrorMessage({
+            type: "user-unauthorized",
+            signer: this.signers.bob,
+            handle: balanceHandleAlice,
+          }),
         );
       }
     });

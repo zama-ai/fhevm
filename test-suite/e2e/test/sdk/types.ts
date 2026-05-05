@@ -3,10 +3,26 @@ import type { Signer } from "ethers";
 export interface SdkInstance {
   get supportsWildcard(): boolean;
 
+  getUserDecryptErrorMessage(parameters: {
+    readonly type: "user-unauthorized" | "user-equal-contract" | "contract-unauthorized" | "permit-expired";
+    readonly signer: Signer & { readonly address: string };
+    readonly handle?: string | undefined;
+    readonly contractAddress?: string | undefined;
+  }): string;
+
+  getDelegatedUserDecryptErrorMessage(parameters: {
+    readonly type: "revocation" | "contract-unauthorized" | "permit-expired";
+    readonly signer: Signer & { readonly address: string };
+    readonly handle?: string | undefined;
+    readonly contractAddress?: string | undefined;
+    readonly delegatorAddress?: string | undefined;
+  }): string;
+
   userDecryptSingleHandle(parameters: {
     readonly handle: string;
     readonly contractAddress: string;
     readonly signer: Signer & { readonly address: string };
+    readonly startTimestamp?: number | undefined;
     readonly transportKeypair?: { readonly privateKey: string; readonly publicKey: string } | undefined;
   }): Promise<ClearValueType>;
 

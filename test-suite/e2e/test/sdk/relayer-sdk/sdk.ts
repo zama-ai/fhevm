@@ -114,6 +114,7 @@ export class RelayerSdk implements SdkInstance {
     readonly handle: string;
     readonly contractAddress: string;
     readonly signer: Signer & { readonly address: string };
+    readonly startTimestamp?: number | undefined;
     readonly transportKeypair?: { readonly privateKey: string; readonly publicKey: string } | undefined;
   }): Promise<ClearValueType> {
     const { handle, contractAddress, signer } = parameters;
@@ -129,7 +130,7 @@ export class RelayerSdk implements SdkInstance {
         },
       ],
       durationDays: 10,
-      startTimestamp: Math.floor(Date.now() / 1000),
+      startTimestamp: parameters.startTimestamp ?? Math.floor(Date.now() / 1000),
       signer,
       contractAddress,
     });
@@ -249,5 +250,34 @@ export class RelayerSdk implements SdkInstance {
       durationDays,
       extraData,
     );
+  }
+
+  getUserDecryptErrorMessage(parameters: {
+    readonly type: "user-unauthorized" | "user-equal-contract" | "contract-unauthorized" | "permit-expired";
+    readonly signer: Signer & { readonly address: string };
+    readonly handle?: string | undefined;
+    readonly contractAddress?: string | undefined;
+  }): string {
+    if (parameters.type === "user-unauthorized") {
+      return `User address ${parameters.signer.address} is not authorized to user decrypt handle ${parameters.handle}!`;
+    } else if (parameters.type === "user-equal-contract") {
+      return `User address ${parameters.signer.address} should not be equal to contract address when requesting user decryption!`;
+    } else if (parameters.type === "contract-unauthorized") {
+      return `is not authorized to user decrypt handle`;
+    } else if (parameters.type === "permit-expired") {
+      return "request has expired";
+    } else {
+      return "unknown error type";
+    }
+  }
+
+  getDelegatedUserDecryptErrorMessage(parameters: {
+    readonly type: "revocation" | "contract-unauthorized" | "permit-expired" | "delegation-does-not-exist";
+    readonly signer: Signer & { readonly address: string };
+    readonly handle?: string | undefined;
+    readonly contractAddress?: string | undefined;
+    readonly delegatorAddress?: string | undefined;
+  }): string {
+    return "not_allowed_on_host_acl";
   }
 }

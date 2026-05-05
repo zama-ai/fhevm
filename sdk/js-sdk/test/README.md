@@ -157,3 +157,31 @@ cd <root>/test-suite/e2e
 `./fhevm-cli up --override test-suite` : use local test suite
 `./fhevm-cli upgrade test-suite`: rebuild test suite
 `./fhevm-cli test --grep BBB`
+`./fhevm-cli up --target latest-supported`
+
+```json
+{
+  "target": "latest-supported",
+  "lockName": "latest-supported.json",
+  "sources": ["profile=latest-supported"],
+  "env": {
+    "GATEWAY_VERSION": "b2d8a6c",
+    "HOST_VERSION": "b2d8a6c",
+    "COPROCESSOR_DB_MIGRATION_VERSION": "b2d8a6c",
+    "COPROCESSOR_HOST_LISTENER_VERSION": "b2d8a6c",
+    "COPROCESSOR_GW_LISTENER_VERSION": "b2d8a6c",
+    "COPROCESSOR_TX_SENDER_VERSION": "b2d8a6c",
+    "COPROCESSOR_TFHE_WORKER_VERSION": "b2d8a6c",
+    "COPROCESSOR_ZKPROOF_WORKER_VERSION": "b2d8a6c",
+    "COPROCESSOR_SNS_WORKER_VERSION": "b2d8a6c",
+    "CONNECTOR_DB_MIGRATION_VERSION": "b2d8a6c",
+    "CONNECTOR_GW_LISTENER_VERSION": "b2d8a6c",
+    "CONNECTOR_KMS_WORKER_VERSION": "b2d8a6c",
+    "CONNECTOR_TX_SENDER_VERSION": "b2d8a6c",
+    "CORE_VERSION": "c57f52f", // 13.20
+    "RELAYER_VERSION": "b2d8a6c",
+    "RELAYER_MIGRATE_VERSION": "b2d8a6c",
+    "TEST_SUITE_VERSION": "v0.12.1"
+  }
+}
+```

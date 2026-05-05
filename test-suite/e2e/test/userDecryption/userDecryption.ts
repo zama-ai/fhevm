@@ -110,36 +110,31 @@ describe("User decryption", function () {
 
         expect.fail("Expected an error to be thrown - user is not allowed for handle");
       } catch (error) {
-        expect((error as { message: string }).message).to.equal(
-          `User address ${this.signers.bob.address} is not authorized to user decrypt handle ${handle}!`,
+        expect((error as { message: string }).message).to.contain(
+          this.instances.bob.getUserDecryptErrorMessage({
+            type: "user-unauthorized",
+            signer: this.signers.bob,
+            handle,
+          }),
         );
       }
     });
 
     it("should reject when userAddress equals contractAddress", async function () {
       const handle = await this.contract.xBool();
-      const handleContractPairs = [
-        {
-          handle: handle,
-          contractAddress: this.signers.alice.address,
-        },
-      ];
-      const startTimestamp = Math.floor(Date.now() / 1000);
-      const durationDays = 10;
-
       try {
-        await this.instances.alice.userDecrypt({
+        await this.instances.alice.userDecryptSingleHandle({
           contractAddress: this.signers.alice.address,
-          handleContractPairs,
+          handle,
           signer: this.signers.alice,
-          startTimestamp,
-          durationDays,
         });
-
         expect.fail("Expected an error to be thrown - userAddress and contractAddress cannot be equal");
       } catch (error) {
-        expect((error as { message: string }).message).to.equal(
-          `User address ${this.signers.alice.address} should not be equal to contract address when requesting user decryption!`,
+        expect((error as { message: string }).message).to.contain(
+          this.instances.alice.getUserDecryptErrorMessage({
+            type: "user-equal-contract",
+            signer: this.signers.alice,
+          }),
         );
       }
     });
@@ -150,46 +145,38 @@ describe("User decryption", function () {
       const contract2 = await factory2.connect(this.signers.alice).deploy();
       await contract2.waitForDeployment();
       const wrongContractAddress = await contract2.getAddress();
-      const startTimestamp = Math.floor(Date.now() / 1000);
-      const durationDays = 10;
 
       try {
-        await this.instances.alice.userDecrypt({
+        await this.instances.alice.userDecryptSingleHandle({
           contractAddress: wrongContractAddress,
-          handleContractPairs: [{ handle, contractAddress: wrongContractAddress }],
+          handle,
           signer: this.signers.alice,
-          startTimestamp,
-          durationDays,
         });
         expect.fail("Expected an error - contract should not be allowed");
       } catch (error) {
-        expect((error as { message: string }).message).to.include("is not authorized to user decrypt handle");
+        expect((error as { message: string }).message).to.include(
+          this.instances.alice.getUserDecryptErrorMessage({
+            type: "contract-unauthorized",
+            signer: this.signers.alice,
+            contractAddress: wrongContractAddress,
+            handle,
+          }),
+        );
       }
     });
 
     it("should reject when request has expired", async function () {
       const handle = await this.contract.xBool();
-      const handleContractPairs = [
-        {
-          handle: handle,
-          contractAddress: this.contractAddress,
-        },
-      ];
-
-      const startTimestamp = Number(BigInt(Math.floor(Date.now() / 1000)) - 20n * 86400n);
-      const durationDays = 10;
-
       try {
-        await this.instances.alice.userDecrypt({
+        await this.instances.alice.userDecryptSingleHandle({
           contractAddress: this.contractAddress,
-          handleContractPairs,
+          handle,
           signer: this.signers.alice,
-          startTimestamp,
-          durationDays,
+          startTimestamp: Number(BigInt(Math.floor(Date.now() / 1000)) - 20n * 86400n),
         });
         expect.fail("Expected an error to be thrown - request should have expired");
       } catch (error) {
-        expect((error as { message: string }).message).to.equal("User decrypt request has expired");
+        expect((error as { message: string }).message).to.include("request has expired");
       }
     });
   });

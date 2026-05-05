@@ -8,6 +8,8 @@ import type { Signers } from "./signers";
 import { FhevmInstances } from "./types";
 
 // By default use @fhevm/sdk
+// const useFhevmSdk =
+//   !(typeof process.env.RELAYER_SDK_VERSION === "string" && process.env.RELAYER_SDK_VERSION.length > 0) && false;
 const useFhevmSdk = true;
 
 const defaults = (() => {

@@ -233,7 +233,15 @@ describe("Delegated user decryption", function () {
         });
         expect.fail("Expected delegated user decrypt to be rejected after revocation");
       } catch (error: unknown) {
-        expect(relayerErrorLabel(error)).to.equal(NOT_ALLOWED_ON_HOST_ACL);
+        expect((error as { message: string }).message).contains(
+          this.instances.bob.getDelegatedUserDecryptErrorMessage({
+            contractAddress: this.tokenAddress,
+            delegatorAddress: this.smartWalletAddress,
+            handle: balanceHandle,
+            signer: this.signers.bob,
+            type: "revocation",
+          }),
+        );
       }
     });
 
@@ -249,7 +257,15 @@ describe("Delegated user decryption", function () {
         });
         expect.fail("Expected delegated user decrypt to be rejected without delegation");
       } catch (error: unknown) {
-        expect(relayerErrorLabel(error)).to.equal(NOT_ALLOWED_ON_HOST_ACL);
+        expect((error as { message: string }).message).contains(
+          this.instances.dave.getDelegatedUserDecryptErrorMessage({
+            handle: balanceHandle,
+            contractAddress: this.tokenAddress,
+            delegatorAddress: this.smartWalletAddress,
+            signer: this.signers.dave,
+            type: "delegation-does-not-exist",
+          }),
+        );
       }
     });
 
@@ -278,7 +294,16 @@ describe("Delegated user decryption", function () {
         });
         expect.fail("Expected delegated user decrypt to be rejected for wrong contract");
       } catch (error: unknown) {
-        expect(relayerErrorLabel(error)).to.equal(NOT_ALLOWED_ON_HOST_ACL);
+        //expect(relayerErrorLabel(error)).to.equal(NOT_ALLOWED_ON_HOST_ACL);
+        expect((error as { message: string }).message).contains(
+          this.instances.eve.getDelegatedUserDecryptErrorMessage({
+            type: "contract-unauthorized",
+            contractAddress: this.tokenAddress,
+            delegatorAddress: this.smartWalletAddress,
+            handle: balanceHandle,
+            signer: this.signers.eve,
+          }),
+        );
       }
     });
 
@@ -306,7 +331,15 @@ describe("Delegated user decryption", function () {
         });
         expect.fail("Expected delegated user decrypt to be rejected for expired delegation");
       } catch (error: unknown) {
-        expect(relayerErrorLabel(error)).to.equal(NOT_ALLOWED_ON_HOST_ACL);
+        expect((error as { message: string }).message).contains(
+          this.instances.eve.getDelegatedUserDecryptErrorMessage({
+            type: "contract-unauthorized",
+            contractAddress: this.tokenAddress,
+            delegatorAddress: this.smartWalletAddress,
+            handle: balanceHandle,
+            signer: this.signers.eve,
+          }),
+        );
       }
     });
   });
