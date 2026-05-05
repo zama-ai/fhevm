@@ -196,7 +196,7 @@ export function isZkProof(value: unknown): value is ZkProof {
 
 export function assertIsZkProof(
   value: unknown,
-  options: { subject?: string } & ErrorMetadataParams,
+  options: { readonly subject?: string; readonly metaMessages?: string[] | undefined } & ErrorMetadataParams,
 ): asserts value is ZkProof {
   if (!isZkProof(value)) {
     throw new InvalidTypeError(
@@ -204,6 +204,7 @@ export function assertIsZkProof(
         subject: options.subject,
         type: typeof value,
         expectedType: 'ZkProof',
+        metaMessages: options.metaMessages,
       },
       options,
     );

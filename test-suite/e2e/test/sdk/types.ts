@@ -11,7 +11,7 @@ export interface SdkInstance {
   }): string;
 
   getDelegatedUserDecryptErrorMessage(parameters: {
-    readonly type: "revocation" | "contract-unauthorized" | "permit-expired";
+    readonly type: "revocation" | "contract-unauthorized" | "permit-expired" | "delegation-does-not-exist";
     readonly signer: Signer & { readonly address: string };
     readonly handle?: string | undefined;
     readonly contractAddress?: string | undefined;
