@@ -14,6 +14,7 @@ use anyhow::Context;
 use aws_config::BehaviorVersion;
 use clap::{Parser, ValueEnum};
 use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
+use fhevm_engine_common::drift_revert;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Level};
@@ -350,12 +351,12 @@ async fn main() -> anyhow::Result<()> {
         "Transaction sender and HTTP health check server starting"
     );
 
-    // Run both services in parallel. Here we assume that if transaction sender stops without an error, HTTP server should also stop.
-    let transaction_sender_fut = tokio::spawn(async move { transaction_sender.run().await });
     let http_server_fut = tokio::spawn(async move { http_server.start().await });
-
-    // Start metrics server.
     metrics_server::spawn(conf.metrics_addr.clone(), cancel_token.child_token());
+
+    drift_revert::init(db_pool.clone(), cancel_token.clone(), None).await?;
+
+    let transaction_sender_fut = tokio::spawn(async move { transaction_sender.run().await });
 
     // Start gauge update routine.
     spawn_gauge_update_routine(

@@ -12,55 +12,14 @@ use std::time::Duration;
 use tracing::info;
 
 #[rstest]
+#[case::public_decryption(EventType::PublicDecryptionRequest)]
+#[case::user_decryption(EventType::UserDecryptionRequest)]
+#[case::prep_keygen(EventType::PrepKeygenRequest)]
+#[case::keygen(EventType::KeygenRequest)]
+#[case::crsgen(EventType::CrsgenRequest)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_pick_public_decryption_with_pg_notif() -> anyhow::Result<()> {
-    test_pick_request_with_pg_notification(EventType::PublicDecryptionRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_pick_user_decryption_with_pg_notif() -> anyhow::Result<()> {
-    test_pick_request_with_pg_notification(EventType::UserDecryptionRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_pick_prep_keygen_with_pg_notif() -> anyhow::Result<()> {
-    test_pick_request_with_pg_notification(EventType::PrepKeygenRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_pick_keygen_with_pg_notif() -> anyhow::Result<()> {
-    test_pick_request_with_pg_notification(EventType::KeygenRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_pick_crsgen_with_pg_notif() -> anyhow::Result<()> {
-    test_pick_request_with_pg_notification(EventType::CrsgenRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_prss_init_with_pg_notification() -> anyhow::Result<()> {
-    test_pick_request_with_pg_notification(EventType::PrssInit).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_pick_key_reshare_same_set_with_pg_notification() -> anyhow::Result<()> {
-    test_pick_request_with_pg_notification(EventType::KeyReshareSameSet).await
-}
-
-async fn test_pick_request_with_pg_notification(event_type: EventType) -> anyhow::Result<()> {
+async fn test_pick_request_with_pg_notif(#[case] event_type: EventType) -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_setup().await?;
     let mut event_picker = init_event_picker(test_instance.db().clone()).await?;
 

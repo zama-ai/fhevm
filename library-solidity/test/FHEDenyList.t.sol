@@ -36,8 +36,6 @@ contract FHEDenyListTest is HostContractsDeployerTestUtils {
 
         adapter = new DenyListLibraryAdapter();
 
-        address[] memory kmsSigners = new address[](1);
-        kmsSigners[0] = address(0x1111);
         address[] memory inputSigners = new address[](1);
         inputSigners[0] = address(0x2222);
 
@@ -47,8 +45,8 @@ contract FHEDenyListTest is HostContractsDeployerTestUtils {
             GATEWAY_SOURCE,
             GATEWAY_SOURCE,
             GATEWAY_CHAIN_ID,
-            kmsSigners,
-            1,
+            _makeKmsNodes(1),
+            _defaultThresholds(),
             inputSigners,
             1
         );

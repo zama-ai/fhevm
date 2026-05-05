@@ -47,7 +47,7 @@ const CIPHERTEXT_DRIFT_FORBIDDEN_NETWORKS = new Set(["sepolia", "mainnet", "zwsD
 const timedLabel = (label: string, started: number) =>
   `${label} (${Math.round((Date.now() - started) / 1000)}s)`;
 
-const TEST_PROFILE_NAMES = [...Object.keys(TEST_GREP), "ciphertext-drift", "coprocessor-db-state-revert", "heavy", "light", "standard"].sort();
+const TEST_PROFILE_NAMES = [...Object.keys(TEST_GREP), "ciphertext-drift", "ciphertext-drift-auto-recovery", "coprocessor-db-state-revert", "heavy", "light", "standard"].sort();
 const ZERO_TESTS_RE = /\b0 passing\b/;
 const PAUSE_PROFILE_SCOPE: Record<string, string> = {
   "paused-host-contracts": "host",
@@ -74,6 +74,8 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "negative-acl": "Run negative ACL scenarios.",
   "multi-chain-isolation": "Run multi-chain state isolation coverage.",
   "ciphertext-drift": "Run ciphertext drift detection checks (requires 2+ coprocessors).",
+  "ciphertext-drift-auto-recovery":
+    "Run ciphertext drift auto-recovery checks — services self-recover (requires 2+ coprocessors).",
   "coprocessor-db-state-revert": "Run coprocessor DB state revert checks.",
 };
 
@@ -282,6 +284,87 @@ const assertOnChainDivergence = async (
     throw new PreflightError(`on-chain AddCiphertextMaterial events show identical digests — drift not visible on chain`);
   }
   console.log(`[drift] on-chain divergence confirmed: ${logs.length} submissions with ${unique.size} distinct digest(s)`);
+};
+
+type DriftRevertDbOptions = {
+  instanceIndex: number;
+  postgresContainer: string;
+  postgresUser: string;
+  postgresPassword: string;
+};
+
+/** Counts computations rows for the host chain (coprocessor DB). */
+const countComputations = async (dbOptions: DriftRevertDbOptions, hostChainId: string) => {
+  const dbName = driftDatabaseName(dbOptions.instanceIndex);
+  const value = await psql(
+    dbName,
+    ["-t", "-A", "-c", `SELECT COUNT(*) FROM computations WHERE host_chain_id = ${hostChainId};`],
+    dbOptions,
+  );
+  return Number(value);
+};
+
+/** Polls `computations` row count until it reaches `target` — signals that
+ * the host-listener has caught up with blocks re-processed after a revert. */
+const waitForComputationsCatchup = async (
+  options: DriftRevertDbOptions & {
+    hostChainId: string;
+    target: number;
+    timeoutSeconds: number;
+    pollIntervalSeconds: number;
+  },
+) => {
+  const attempts = Math.max(0, Math.ceil(options.timeoutSeconds / options.pollIntervalSeconds));
+  let lastCount = -1;
+  for (let attempt = 0; attempt <= attempts; attempt += 1) {
+    lastCount = await countComputations(options, options.hostChainId);
+    if (lastCount >= options.target) {
+      return lastCount;
+    }
+    if (attempt === attempts) {
+      throw new PreflightError(
+        `timed out waiting for computations to catch up: have ${lastCount}, need >= ${options.target}`,
+      );
+    }
+    await Bun.sleep(options.pollIntervalSeconds * 1000);
+  }
+  return lastCount;
+};
+
+/** Polls drift_revert_signal until the latest row reaches a given status. */
+const waitForDriftRevertStatus = async (
+  options: DriftRevertDbOptions & {
+    targetStatus: "reverting" | "done";
+    timeoutSeconds: number;
+    pollIntervalSeconds: number;
+  },
+) => {
+  const dbName = driftDatabaseName(options.instanceIndex);
+  const attempts = Math.max(0, Math.ceil(options.timeoutSeconds / options.pollIntervalSeconds));
+  for (let attempt = 0; attempt <= attempts; attempt += 1) {
+    const status = await psql(
+      dbName,
+      ["-t", "-A", "-c", "SELECT status FROM drift_revert_signal ORDER BY id DESC LIMIT 1;"],
+      options,
+    );
+    if (status === options.targetStatus) {
+      return;
+    }
+    // "done" is also acceptable when waiting for "reverting" — we may have
+    // missed the transition if our polling was slower than the hold.
+    if (options.targetStatus === "reverting" && status === "done") {
+      return;
+    }
+    if (status.startsWith("failed")) {
+      throw new PreflightError(`drift_revert_signal transitioned to status=${status}`);
+    }
+    if (attempt === attempts) {
+      throw new PreflightError(
+        `timed out waiting for drift_revert_signal to reach status=${options.targetStatus} in ${dbName} (last status: ${status || "<none>"})`,
+      );
+    }
+    await Bun.sleep(options.pollIntervalSeconds * 1000);
+  }
 };
 
 /** Builds the `docker exec` argv used to run tests inside the test-suite container. */
@@ -695,9 +778,27 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     return undefined;
   };
 
-  const ciphertextDriftSkipReason = () =>
+  // Auto-recovery requires consensus mismatch detection — the gateway must be
+  // able to reach consensus while a minority dissents. This means threshold
+  // must be strictly less than count (e.g., 2-of-3).
+  const ciphertextDriftAutoRecoveryRequirement = () => {
+    const base = ciphertextDriftRequirement();
+    if (base) {
+      return base;
+    }
+    const topology = topologyForState(state);
+    if (topology.threshold >= topology.count) {
+      return "ciphertext-drift-auto-recovery requires a topology where threshold < count (e.g. 2-of-3); rerun `fhevm-cli up --scenario two-of-three` first";
+    }
+    return undefined;
+  };
+
+  const ciphertextDriftAutoRecoverySkipReason = () =>
     ciphertextDriftNetworkRequirement(options.network) ??
-    (state.scenario.topology.count < 2 ? "topology has fewer than 2 coprocessors" : ciphertextDriftRequirement());
+    (state.scenario.topology.count < 3 ||
+      state.scenario.topology.threshold >= state.scenario.topology.count
+      ? "topology does not support consensus mismatch detection (needs threshold < count, e.g. 2-of-3)"
+      : ciphertextDriftAutoRecoveryRequirement());
 
   const multiChainIsolationRequirement = () =>
     state.scenario.hostChains.length > 1
@@ -729,9 +830,9 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         const faultyInstanceIndex = parseDriftInstanceIndex(process.env.FAULTY_INSTANCE_INDEX ?? "1");
         const driftInjectTimeoutSeconds = parsePositiveInteger(process.env.DRIFT_INJECT_TIMEOUT_SECONDS ?? "180", "DRIFT_INJECT_TIMEOUT_SECONDS");
         const driftInjectPollIntervalSeconds = parsePositiveInteger(process.env.DRIFT_INJECT_POLL_INTERVAL_SECONDS ?? "2", "DRIFT_INJECT_POLL_INTERVAL_SECONDS");
-        const driftAlertTimeoutSeconds = parsePositiveInteger(process.env.DRIFT_ALERT_TIMEOUT_SECONDS ?? "180", "DRIFT_ALERT_TIMEOUT_SECONDS");
+        const driftAlertTimeoutSeconds = parsePositiveInteger(process.env.DRIFT_ALERT_TIMEOUT_SECONDS ?? "360", "DRIFT_ALERT_TIMEOUT_SECONDS");
         const driftAlertPollIntervalSeconds = parsePositiveInteger(process.env.DRIFT_ALERT_POLL_INTERVAL_SECONDS ?? "2", "DRIFT_ALERT_POLL_INTERVAL_SECONDS");
-        const grepPattern = process.env.GREP_PATTERN ?? "test user input uint64 \\(non-trivial\\)";
+        const grepPattern = process.env.GREP_PATTERN ?? "test add 42 to uint64 input and decrypt";
         const injector = injectCiphertextDrift({
           instanceIndex: faultyInstanceIndex,
           timeoutSeconds: driftInjectTimeoutSeconds,
@@ -760,6 +861,157 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           const gatewayRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.gateway.http);
           await assertOnChainDivergence(gatewayRpcUrl, ciphertextCommitsAddress, injectedHandleHex);
         }
+      });
+    }
+    if (name === "ciphertext-drift-auto-recovery") {
+      console.log("[test] ciphertext-drift-auto-recovery");
+      const started = Date.now();
+      const precondition = ciphertextDriftAutoRecoveryRequirement();
+      if (precondition) {
+        throw new PreflightError(precondition);
+      }
+      return runLogged("ciphertext-drift-auto-recovery", started, async () => {
+        const postgres = postgresRuntime();
+        const logSince = new Date().toISOString();
+        const faultyInstanceIndex = parseDriftInstanceIndex(process.env.FAULTY_INSTANCE_INDEX ?? "1");
+        const driftInjectTimeoutSeconds = parsePositiveInteger(
+          process.env.DRIFT_INJECT_TIMEOUT_SECONDS ?? "180",
+          "DRIFT_INJECT_TIMEOUT_SECONDS",
+        );
+        const driftInjectPollIntervalSeconds = parsePositiveInteger(
+          process.env.DRIFT_INJECT_POLL_INTERVAL_SECONDS ?? "2",
+          "DRIFT_INJECT_POLL_INTERVAL_SECONDS",
+        );
+        const driftAlertTimeoutSeconds = parsePositiveInteger(
+          process.env.DRIFT_ALERT_TIMEOUT_SECONDS ?? "360",
+          "DRIFT_ALERT_TIMEOUT_SECONDS",
+        );
+        const driftAlertPollIntervalSeconds = parsePositiveInteger(
+          process.env.DRIFT_ALERT_POLL_INTERVAL_SECONDS ?? "2",
+          "DRIFT_ALERT_POLL_INTERVAL_SECONDS",
+        );
+        const driftRecoveryTimeoutSeconds = parsePositiveInteger(
+          process.env.DRIFT_RECOVERY_TIMEOUT_SECONDS ?? "300",
+          "DRIFT_RECOVERY_TIMEOUT_SECONDS",
+        );
+        const driftRecoveryPollIntervalSeconds = parsePositiveInteger(
+          process.env.DRIFT_RECOVERY_POLL_INTERVAL_SECONDS ?? "2",
+          "DRIFT_RECOVERY_POLL_INTERVAL_SECONDS",
+        );
+        // Must target a test that produces a compute output (byte 21 = 0xff).
+        // The drift injector only corrupts compute-output handles, because
+        // input drift is out of scope for auto-recovery.
+        const grepPattern = process.env.GREP_PATTERN ?? "test add 42 to uint64 input and decrypt";
+
+        const injector = injectCiphertextDrift({
+          instanceIndex: faultyInstanceIndex,
+          timeoutSeconds: driftInjectTimeoutSeconds,
+          pollIntervalSeconds: driftInjectPollIntervalSeconds,
+          postgresContainer: postgres.postgresContainer,
+          postgresUser: postgres.postgresUser,
+          postgresPassword: postgres.postgresPassword,
+        });
+
+        // Run the e2e tests that trigger the drift. This run may surface
+        // errors due to the drift itself — we tolerate that and verify
+        // recovery in the next step.
+        await runWithHeartbeat(
+          buildTestContainerArgs(
+            runTestsArgs({ ...options, parallel: false, grep: grepPattern }),
+            ["-e", "GATEWAY_RPC_URL="],
+          ),
+          "test ciphertext-drift-auto-recovery (initial run)",
+        ).catch((error) => {
+          console.log(
+            `[drift-auto-recovery] initial test run failed (expected due to drift): ${formatCliError(error) ?? "unknown error"}`,
+          );
+        });
+
+        const injectedHandleHex = await injector;
+        const warning = await waitForDriftWarning(injectedHandleHex, {
+          since: logSince,
+          timeoutSeconds: driftAlertTimeoutSeconds,
+          pollIntervalSeconds: driftAlertPollIntervalSeconds,
+        });
+        console.log(
+          `[drift-auto-recovery] drift detected in ${warning.container} for handle 0x${injectedHandleHex}`,
+        );
+
+        // Cross-check that drift was visible on chain (≥2 distinct digests
+        // across the AddCiphertextMaterial submissions). Folded in from the
+        // former `ciphertext-drift` profile so this single test covers both
+        // detection and recovery.
+        const ciphertextCommitsAddress = state.discovery!.gateway.CIPHERTEXT_COMMITS_ADDRESS;
+        if (ciphertextCommitsAddress) {
+          const gatewayRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.gateway.http);
+          await assertOnChainDivergence(gatewayRpcUrl, ciphertextCommitsAddress, injectedHandleHex);
+        }
+
+        const dbOptions = {
+          instanceIndex: faultyInstanceIndex,
+          postgresContainer: postgres.postgresContainer,
+          postgresUser: postgres.postgresUser,
+          postgresPassword: postgres.postgresPassword,
+        };
+        const hostChainId = process.env.CHAIN_ID ?? "12345";
+
+        // Snapshot row counts before the revert runs. The gw-listener is
+        // still in the grace period (pending status), so this is stable.
+        const computationsBefore = await countComputations(dbOptions, hostChainId);
+        console.log(`[drift-auto-recovery] computations before revert: ${computationsBefore}`);
+
+        // Wait for the revert to actually run (status transitions to
+        // "reverting" and the SQL completes). DRIFT_REVERT_TEST_HOLD_SECS
+        // (defaulted in generated env) keeps status=reverting for ~15s so
+        // we have a window to query the post-SQL state.
+        await waitForDriftRevertStatus({
+          ...dbOptions,
+          targetStatus: "reverting",
+          timeoutSeconds: driftRecoveryTimeoutSeconds,
+          pollIntervalSeconds: driftRecoveryPollIntervalSeconds,
+        });
+
+        // Snapshot counts while status=reverting. Services are still blocked
+        // waiting for status=done, so no new writes are racing.
+        const computationsAfterRevert = await countComputations(dbOptions, hostChainId);
+        console.log(`[drift-auto-recovery] computations after revert: ${computationsAfterRevert}`);
+        if (computationsAfterRevert >= computationsBefore) {
+          throw new PreflightError(
+            `drift revert did not delete any computations (before=${computationsBefore}, after=${computationsAfterRevert})`,
+          );
+        }
+
+        // Wait for the revert to finish.
+        await waitForDriftRevertStatus({
+          ...dbOptions,
+          targetStatus: "done",
+          timeoutSeconds: driftRecoveryTimeoutSeconds,
+          pollIntervalSeconds: driftRecoveryPollIntervalSeconds,
+        });
+
+        // Wait for host-listener to re-process the reverted blocks so the
+        // follow-up test isn't racing against catchup.
+        const caughtUp = await waitForComputationsCatchup({
+          ...dbOptions,
+          hostChainId,
+          target: computationsBefore,
+          timeoutSeconds: driftRecoveryTimeoutSeconds,
+          pollIntervalSeconds: driftRecoveryPollIntervalSeconds,
+        });
+        console.log(`[drift-auto-recovery] revert completed; computations caught up to ${caughtUp} (>= ${computationsBefore}); re-running tests to verify recovery`);
+
+        // Re-run the e2e tests to verify the services have fully recovered.
+        const followUp = await runWithHeartbeat(
+          buildTestContainerArgs(
+            runTestsArgs({ ...options, parallel: false, grep: grepPattern }),
+            ["-e", "GATEWAY_RPC_URL="],
+          ),
+          "test ciphertext-drift-auto-recovery (post-recovery)",
+        );
+        assertMatchedTests(
+          followUp.stdout + followUp.stderr,
+          "test ciphertext-drift-auto-recovery (post-recovery)",
+        );
       });
     }
     if (name === "multi-chain-isolation") {
@@ -822,17 +1074,17 @@ export const test = async (testName: string | undefined, options: TestOptions) =
             continue;
           }
         }
-        if (profile === "ciphertext-drift") {
-          const skipReason = ciphertextDriftSkipReason();
-          if (skipReason) {
-            console.log(`[test] skipping ciphertext-drift: ${skipReason}`);
-            continue;
-          }
-        }
         if (profile === "coprocessor-db-state-revert") {
           const skipReason = dbStateRevertSkipReason();
           if (skipReason) {
             console.log(`[test] skipping coprocessor-db-state-revert: ${skipReason}`);
+            continue;
+          }
+        }
+        if (profile === "ciphertext-drift-auto-recovery") {
+          const skipReason = ciphertextDriftAutoRecoverySkipReason();
+          if (skipReason) {
+            console.log(`[test] skipping ciphertext-drift-auto-recovery: ${skipReason}`);
             continue;
           }
         }

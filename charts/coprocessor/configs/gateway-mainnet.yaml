@@ -1,0 +1,8 @@
+ciphertext_commits.address: "0xd82cF70FC102028cd01acB87D0E107780ae4F41F"
+decryption.address: "0x0f6024a97684f7d90ddb0fAAD79cB15F2C888D24"
+gateway_config.address: "0xDE537Be194777A56f8B19d14079E6a78249390ab"
+input_verification.address: "0xcB1bB072f38bdAF0F328CdEf1Fc6eDa1DF029287"
+kms_generation.address: "0x290947F9fed2d91fdB22f35E162aDfA744b7aEe3"
+multichain_acl.address: "0x055d9FD50a612A9027716ec8db663E7D68562468"
+pauser_set.address: "0x571ecb596fCc5c840DA35CbeCA175580db50ac1b"
+protocol_payment.address: "0x7E179E45E5fe0a21015Be25185363B4F2F2F7e89"

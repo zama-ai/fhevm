@@ -11,7 +11,7 @@ use alloy::{
 };
 use anyhow::anyhow;
 use connector_utils::types::{
-    KmsGrpcRequest, extra_data::parse_extra_data_context, handle::extract_chain_id_from_handle,
+    KmsGrpcRequest, extra_data::parse_extra_data, handle::extract_chain_id_from_handle,
     u256_to_request_id,
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
@@ -265,23 +265,15 @@ where
             })?;
         info!("Extracted key_id {key_id} from snsCtMaterials[0]");
 
-        let context_id = self.extract_and_validate_context(extra_data).await?;
+        let context_id = parse_extra_data(extra_data)
+            .map_err(ProcessingError::Irrecoverable)?
+            .context_id;
+        // TODO: validation of epoch_id during RFC-005 implementation
+        self.context_manager.validate_context(context_id).await?;
+
         let ciphertexts = self.prepare_ciphertexts(&key_id, sns_materials).await?;
 
         let request_id = Some(u256_to_request_id(decryption_id));
-
-        // TODO(https://github.com/zama-ai/fhevm-internal/issues/1167):
-        // Workaround for backward compatibility with relayer-sdk <=0.4.2.
-        // The SDK sends extraData=0x00 in the user decryption request, but does not pass extraData
-        // to the TKMS library during response signature verification (reconstruction step),
-        // effectively verifying against empty bytes. We normalize 0x00 → vec![] here so the KMS
-        // signs over empty extraData, matching what the SDK expects during verification.
-        // This is fixed in relayer-sdk v0.5.0.
-        let extra_data = if extra_data.as_ref() == [0x00] {
-            vec![]
-        } else {
-            extra_data.to_vec()
-        };
 
         if let Some(user_decrypt_data) = user_decrypt_data {
             let client_address = user_decrypt_data.user_address.to_checksum(None);
@@ -293,9 +285,9 @@ where
                 domain: Some(self.domain.clone()),
                 enc_key,
                 typed_ciphertexts: ciphertexts,
-                extra_data,
+                extra_data: extra_data.to_vec(),
                 epoch_id: None,
-                context_id,
+                context_id: Some(u256_to_request_id(context_id)),
             };
 
             Ok(user_decryption_request.into())
@@ -305,9 +297,9 @@ where
                 ciphertexts,
                 key_id: Some(RequestId { request_id: key_id }),
                 domain: Some(self.domain.clone()),
-                extra_data,
+                extra_data: extra_data.to_vec(),
                 epoch_id: None,
-                context_id,
+                context_id: Some(u256_to_request_id(context_id)),
             };
             Ok(public_decryption_request.into())
         }
@@ -359,21 +351,6 @@ where
                 ProcessingError::Irrecoverable(anyhow!("No transaction found with hash {tx_hash}!"))
             })
             .map(|tx| tx.input().to_vec())
-    }
-
-    /// Parses `extraData` for a context ID and validates it if present.
-    async fn extract_and_validate_context(
-        &self,
-        extra_data: &[u8],
-    ) -> Result<Option<RequestId>, ProcessingError> {
-        match parse_extra_data_context(extra_data) {
-            Err(e) => Err(ProcessingError::Irrecoverable(e)),
-            Ok(None) => Ok(None),
-            Ok(Some(context_id)) => {
-                self.context_manager.validate_context(context_id).await?;
-                Ok(Some(u256_to_request_id(context_id)))
-            }
-        }
     }
 }
 

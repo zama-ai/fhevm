@@ -1,0 +1,14 @@
+version: 1
+kind: coprocessor-consensus
+name: Two Of Three Multi Chain
+description: 3 coprocessors with threshold 2 across two host chains — enables consensus mismatch detection (for drift auto-recovery) plus multi-chain coverage.
+hostChains:
+  - key: host
+    chainId: "12345"
+    rpcPort: 8545
+  - key: chain-b
+    chainId: "67890"
+    rpcPort: 8547
+topology:
+  count: 3
+  threshold: 2

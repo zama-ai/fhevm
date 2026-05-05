@@ -1,13 +1,15 @@
 use crate::{
     conn::WalletProvider,
-    tests::setup::{CustomTestWriter, DbInstance, KmsInstance, S3Instance, gw::GatewayInstance},
+    tests::setup::{
+        CustomTestWriter, DbInstance, KmsInstance, S3Instance, blockchain::GatewayInstance,
+    },
 };
-use alloy::transports::http::reqwest::Url;
+use alloy::{primitives::Address, transports::http::reqwest::Url};
 use fhevm_gateway_bindings::{
     decryption::Decryption::DecryptionInstance,
     gateway_config::GatewayConfig::GatewayConfigInstance,
-    kms_generation::KMSGeneration::KMSGenerationInstance,
 };
+use fhevm_host_bindings::kms_generation::KMSGeneration::KMSGenerationInstance;
 use sqlx::{Pool, Postgres};
 use std::time::Duration;
 use testcontainers::{ContainerAsync, GenericImage};
@@ -93,6 +95,10 @@ impl TestInstance {
 
     pub fn kms_generation_contract(&self) -> &KMSGenerationInstance<WalletProvider> {
         &self.gateway().kms_generation_contract
+    }
+
+    pub fn kms_verifier_address(&self) -> Address {
+        self.gateway().kms_verifier_address
     }
 
     fn gateway(&self) -> &GatewayInstance {

@@ -13,6 +13,13 @@ host_chains:
     url: "https://ethereum-rpc.publicnode.com"
     acl_address: "0xcA2E8f1F656CD25C01F05d0b243Ab1ecd4a8ffb6"
 
+protocol_config:
+  ethereum_http_rpc_url: "https://ethereum-rpc.publicnode.com"
+  address: "TODO"
+  retry:
+    max_attempts: 3
+    retry_interval_ms: 200
+
 gateway:
   blockchain_rpc:
     # MUST support method eth_sendRawTransactionSync

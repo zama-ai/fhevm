@@ -83,7 +83,7 @@ See [ID.md](ID.md) for detailed relationships.
 
 Both POST (202) and GET (202) responses include a `Retry-After` header computed from real-time queue depth and drain rate — not a fixed value.
 
-- Format: RFC 7231 timestamp for 429; seconds for 202
+- Format: relative seconds for both 429 and 202
 - POST: estimated from queue depth at submission time
 - GET: estimated from the request's current position and processing stage
 - See [dynamic-retry-after-design.md](dynamic-retry-after-design.md) for formulas and examples

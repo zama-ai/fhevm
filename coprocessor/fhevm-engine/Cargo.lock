@@ -1602,9 +1602,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-http-client"
-version = "1.1.1"
+version = "1.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "147e8eea63a40315d704b97bf9bc9b8c1402ae94f89d5ad6f7550d963309da1b"
+checksum = "0709f0083aa19b704132684bc26d3c868e06bd428ccc4373b0b55c3e8748a58b"
 dependencies = [
  "aws-smithy-async",
  "aws-smithy-protocol-test",
@@ -1645,9 +1645,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-mocks"
-version = "0.1.1"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "178b1ad961028a58d48ce857f86ffbd5233a4b7e2c7b56d026fb1c1afe46696e"
+checksum = "0993183a62912ef1c7b348f04e1bb678e10bd74710201945c9e6bffc20096dd5"
 dependencies = [
  "aws-smithy-http-client",
  "aws-smithy-runtime-api",
@@ -1666,9 +1666,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-protocol-test"
-version = "0.63.4"
+version = "0.63.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee2116be0e3a8e18771b126f8eb69901b2780fbe12b1890370cb1c462337d13b"
+checksum = "b59f9305f7863a70f4a0c048fa6d81fb9dd9373a751358791faaad8881c1377f"
 dependencies = [
  "assert-json-diff",
  "aws-smithy-runtime-api",
@@ -3593,18 +3593,11 @@ version = "0.7.0"
 dependencies = [
  "alloy",
  "anyhow",
- "async-trait",
- "aws-config",
- "aws-credential-types",
- "aws-sdk-s3",
- "aws-smithy-mocks",
  "axum",
  "clap",
  "fhevm-engine-common",
  "fhevm_gateway_bindings",
  "foundry-compilers",
- "futures-util",
- "gw-listener",
  "humantime",
  "prometheus",
  "rustls",
@@ -3612,16 +3605,13 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
- "sha3",
  "sqlx",
  "test-harness",
- "tfhe",
  "tokio",
  "tokio-util",
  "tower-http 0.5.2",
  "tracing",
  "tracing-subscriber",
- "url",
 ]
 
 [[package]]
@@ -3776,12 +3766,18 @@ dependencies = [
  "alloy",
  "alloy-primitives 1.5.2",
  "anyhow",
+ "async-trait",
+ "aws-config",
+ "aws-credential-types",
+ "aws-sdk-s3",
+ "aws-smithy-mocks",
  "bigdecimal",
  "clap",
  "fhevm-engine-common",
  "foundry-compilers",
  "foundry-compilers-artifacts 0.13.5",
  "futures-util",
+ "host-listener",
  "lru 0.13.0",
  "prometheus",
  "rustls",
@@ -3789,8 +3785,10 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
+ "sha3",
  "sqlx",
  "test-harness",
+ "tfhe",
  "time",
  "tokio",
  "tokio-util",
@@ -3798,6 +3796,7 @@ dependencies = [
  "tracing-subscriber",
  "tracing-test",
  "union-find",
+ "url",
 ]
 
 [[package]]
@@ -6610,7 +6609,7 @@ dependencies = [
  "memchr",
  "once_cell",
  "percent-encoding",
- "rustls 0.23.31",
+ "rustls",
  "serde",
  "serde_json",
  "sha2",

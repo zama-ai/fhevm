@@ -7,11 +7,11 @@ use connector_utils::{
         db::{EventType, ParamsTypeDb, SnsCiphertextMaterialDbItem},
     },
 };
-use fhevm_gateway_bindings::{
-    decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
-    kms_generation::KMSGeneration::{
-        CrsgenRequest, KeyReshareSameSet, KeygenRequest, PrepKeygenRequest,
-    },
+use fhevm_gateway_bindings::decryption::Decryption::{
+    PublicDecryptionRequest, UserDecryptionRequest,
+};
+use fhevm_host_bindings::kms_generation::KMSGeneration::{
+    CrsgenRequest, KeygenRequest, PrepKeygenRequest,
 };
 use sqlx::{
     PgExecutor, Pool, Postgres,
@@ -65,14 +65,6 @@ async fn publish_event_inner<'e>(
         ProtocolEventKind::Crsgen(e) => {
             let params_type: ParamsTypeDb = e.paramsType.try_into()?;
             publish_crsgen_request(executor, e, params_type, tx_hash, created_at, otlp_ctx).await
-        }
-        ProtocolEventKind::PrssInit(id) => {
-            publish_prss_init(executor, id, tx_hash, created_at, otlp_ctx).await
-        }
-        ProtocolEventKind::KeyReshareSameSet(e) => {
-            let params_type: ParamsTypeDb = e.paramsType.try_into()?;
-            publish_key_reshare_same_set(executor, e, params_type, tx_hash, created_at, otlp_ctx)
-                .await
         }
     }
     .map_err(|err| anyhow!("Failed to publish event: {err}"))?;
@@ -159,12 +151,12 @@ async fn publish_prep_keygen_request<'e>(
 ) -> anyhow::Result<PgQueryResult> {
     sqlx::query!(
         "INSERT INTO prep_keygen_requests(\
-            prep_keygen_id, epoch_id, params_type, tx_hash, created_at, otlp_context\
+            prep_keygen_id, params_type, extra_data, tx_hash, created_at, otlp_context\
         ) \
         VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
         request.prepKeygenId.as_le_slice(),
-        request.epochId.as_le_slice(),
         params_type as ParamsTypeDb,
+        request.extraData.as_ref(),
         tx_hash.map(|h| h.to_vec()),
         created_at,
         bc2wrap::serialize(&otlp_ctx)?,
@@ -182,10 +174,11 @@ async fn publish_keygen_request<'e>(
     otlp_ctx: PropagationContext,
 ) -> anyhow::Result<PgQueryResult> {
     sqlx::query!(
-        "INSERT INTO keygen_requests(prep_keygen_id, key_id, tx_hash, created_at, otlp_context) \
-            VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+        "INSERT INTO keygen_requests(prep_keygen_id, key_id, extra_data, tx_hash, created_at, otlp_context) \
+            VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
         request.prepKeygenId.as_le_slice(),
         request.keyId.as_le_slice(),
+        request.extraData.as_ref(),
         tx_hash.map(|h| h.to_vec()),
         created_at,
         bc2wrap::serialize(&otlp_ctx)?,
@@ -205,58 +198,13 @@ async fn publish_crsgen_request<'e>(
 ) -> anyhow::Result<PgQueryResult> {
     sqlx::query!(
         "INSERT INTO crsgen_requests(\
-            crs_id, max_bit_length, params_type, tx_hash, created_at, otlp_context\
+            crs_id, max_bit_length, params_type, extra_data, tx_hash, created_at, otlp_context\
         ) \
-        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+        VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
         request.crsId.as_le_slice(),
         request.maxBitLength.as_le_slice(),
         params_type as ParamsTypeDb,
-        tx_hash.map(|h| h.to_vec()),
-        created_at,
-        bc2wrap::serialize(&otlp_ctx)?,
-    )
-    .execute(executor)
-    .await
-    .map_err(anyhow::Error::from)
-}
-
-async fn publish_prss_init<'e>(
-    executor: impl PgExecutor<'e>,
-    id: U256,
-    tx_hash: Option<FixedBytes<32>>,
-    created_at: DateTime<Utc>,
-    otlp_ctx: PropagationContext,
-) -> anyhow::Result<PgQueryResult> {
-    sqlx::query!(
-        "INSERT INTO prss_init(id, tx_hash, created_at, otlp_context) \
-            VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
-        id.as_le_slice(),
-        tx_hash.map(|h| h.to_vec()),
-        created_at,
-        bc2wrap::serialize(&otlp_ctx)?,
-    )
-    .execute(executor)
-    .await
-    .map_err(anyhow::Error::from)
-}
-
-async fn publish_key_reshare_same_set<'e>(
-    executor: impl PgExecutor<'e>,
-    request: KeyReshareSameSet,
-    params_type: ParamsTypeDb,
-    tx_hash: Option<FixedBytes<32>>,
-    created_at: DateTime<Utc>,
-    otlp_ctx: PropagationContext,
-) -> anyhow::Result<PgQueryResult> {
-    sqlx::query!(
-        "INSERT INTO key_reshare_same_set(\
-            prep_keygen_id, key_id, key_reshare_id, params_type, tx_hash, created_at, otlp_context\
-        ) \
-        VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
-        request.prepKeygenId.as_le_slice(),
-        request.keyId.as_le_slice(),
-        request.keyReshareId.as_le_slice(),
-        params_type as ParamsTypeDb,
+        request.extraData.as_ref(),
         tx_hash.map(|h| h.to_vec()),
         created_at,
         bc2wrap::serialize(&otlp_ctx)?,

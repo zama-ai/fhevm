@@ -15,7 +15,7 @@ pub use user_decrypt_handler::GatewayHandler as UserDecryptGatewayHandler;
 use crate::config::settings::{ListenerType, Settings};
 use crate::gateway::arbitrum::transaction::tx_processor::GatewayTxProcessor;
 use crate::gateway::throttlers::GatewayThrottlers;
-use crate::host::HostAclChecker;
+use crate::host::{HostAclChecker, ThresholdResolver};
 use crate::orchestrator::{HealthCheck, Orchestrator};
 use crate::readiness::{
     checker::ReadinessChecker,
@@ -92,6 +92,15 @@ pub async fn initialize_gateway(
     )?;
     let readiness_checker = Arc::new(ReadinessChecker::new(host_acl_checker, &settings.gateway)?);
 
+    let threshold_resolver = Arc::new(
+        ThresholdResolver::new(
+            &settings.protocol_config,
+            settings.gateway.contracts.user_decrypt_shares_threshold, // u32
+            10_000,
+        )
+        .await?,
+    );
+
     PublicDecryptReadinessProcessor::orchestrator_spawn_task(
         gateway_throttlers
             .readiness_throttlers
@@ -167,9 +176,9 @@ pub async fn initialize_gateway(
         repositories.user_decrypt.clone(),
         user_decrypt_handler::UserDecryptHandlerConfig {
             decryption_address,
-            shares_threshold: settings.gateway.contracts.user_decrypt_shares_threshold as usize,
             gw_event_retry: settings.gateway.gw_event_not_found_retry.clone(),
         },
+        threshold_resolver,
     );
 
     // Register transaction helper with orchestrator for health checks
