@@ -1,22 +1,31 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
+import type { EncryptedERC20 } from '../../types/contracts';
 import { createInstance as createHardhatInstance } from '../instance';
 import { isLiveNetwork } from '../network';
 import { getSigners as getHardhatSigners, initSigners } from '../signers';
 import { userDecryptSingleHandle } from '../utils';
+import { deployChainFixture } from './multiChain.fixture';
+import type { ChainConfig } from './multiChainHelper';
 import {
   HOST_CHAINS,
+  createInstance,
+  evmRevert,
+  evmSnapshot,
   getProvider,
   getSigners,
   getWallet,
-  createInstance,
-  evmSnapshot,
-  evmRevert,
 } from './multiChainHelper';
-import { deployChainFixture } from './multiChain.fixture';
 
-import type { EncryptedERC20 } from '../../types/contracts';
+async function getVersion(chain: ChainConfig, address: string): Promise<string | undefined> {
+  const contract = new ethers.Contract(address, ['function getVersion() view returns (string)'], getProvider(chain));
+  try {
+    return await contract.getVersion();
+  } catch {
+    return undefined;
+  }
+}
 
 describe('Multi-Chain State Isolation', function () {
   this.timeout(300_000);
@@ -46,6 +55,52 @@ describe('Multi-Chain State Isolation', function () {
     } catch {
       // automine may already be enabled
     }
+  });
+
+  describe('Canonical Host Contracts Topology', function () {
+    it('KMSGeneration is deployed only on the canonical host', async function () {
+      const kmsGenAddress = process.env.KMS_GENERATION_CONTRACT_ADDRESS;
+      if (!kmsGenAddress) {
+        this.skip();
+        return;
+      }
+      expect(kmsGenAddress, 'KMS_GENERATION_CONTRACT_ADDRESS must be set in the e2e env').to.match(
+        /^0x[0-9a-fA-F]{40}$/,
+      );
+
+      expect(await getVersion(this.chains[0], kmsGenAddress)).to.match(/^KMSGeneration v/);
+
+      await Promise.all(
+        this.chains.slice(1).map(async (chain: ChainConfig) => {
+          expect(
+            chain.kmsGenerationAddress,
+            `non-canonical chain ${chain.rpcUrl} must not export KMS_GENERATION_CONTRACT_ADDRESS`,
+          ).to.be.undefined;
+          const version = await getVersion(chain, kmsGenAddress);
+          expect(
+            version ?? '',
+            `canonical KMSGeneration address ${kmsGenAddress} must not identify as KMSGeneration on ${chain.rpcUrl}`,
+          ).not.to.match(/^KMSGeneration v/);
+        }),
+      );
+    });
+
+    it('ProtocolConfig is deployed on every host chain', async function () {
+      if (this.chains.some((chain: { protocolConfigAddress?: string }) => !chain.protocolConfigAddress)) {
+        this.skip();
+        return;
+      }
+      for (const chain of this.chains) {
+        expect(chain.protocolConfigAddress, `chain.protocolConfigAddress must be set for ${chain.rpcUrl}`).to.match(
+          /^0x[0-9a-fA-F]{40}$/,
+        );
+        const code = await getProvider(chain).getCode(chain.protocolConfigAddress!);
+        expect(
+          code,
+          `ProtocolConfig should be deployed at ${chain.protocolConfigAddress} on ${chain.rpcUrl}`,
+        ).to.not.eq('0x');
+      }
+    });
   });
 
   describe('User Input Across Chains', function () {

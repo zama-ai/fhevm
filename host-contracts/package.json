@@ -9,7 +9,7 @@
   "main": "contracts/ACL.sol",
   "scripts": {
     "compile": "HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && cross-env TS_NODE_TRANSPILE_ONLY=true hardhat compile",
-    "deploy:emptyProxies": "hardhat task:deployEmptyUUPSProxies &&  hardhat compile:specific --contract 'contracts/immutable' && hardhat task:deployPauserSet",
+    "deploy:emptyProxies": "hardhat task:deployEmptyUUPSProxies --with-kms-generation true &&  hardhat compile:specific --contract 'contracts/immutable' && hardhat task:deployPauserSet",
     "lint": "npm run lint:sol && npm run lint:ts && npm run prettier:check",
     "lint:ts": "eslint --ignore-path ./.eslintignore --ext .js,.ts .",
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",

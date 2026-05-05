@@ -205,5 +205,5 @@ jobs:
       lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
       relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
       relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
-      scenario: ${{ startsWith(github.base_ref, 'release/') && 'two-of-three' || 'two-of-three-multi-chain' }}
+      scenario: two-of-three-multi-chain
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
