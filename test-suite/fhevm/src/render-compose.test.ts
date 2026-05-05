@@ -72,6 +72,12 @@ const relayerOverrideState: State = {
   overrides: [{ group: "relayer" }],
 };
 
+const gatewayContractsOverrideState: State = {
+  ...state,
+  overrides: [{ group: "gateway-contracts" }],
+  scenario: testDefaultScenario(),
+};
+
 const envAndArgsScenarioState: State = {
   ...state,
   scenario: resolveScenarioFile(
@@ -173,10 +179,23 @@ describe("render-compose", () => {
       expect(doc.services["host-sc-chain-b-deploy"]?.build).toBeTruthy();
       expect(doc.services["host-sc-chain-b-add-pausers"]?.image).toContain(":fhevm-local");
       expect(doc.services["host-sc-chain-b-add-pausers"]?.build).toBeTruthy();
-      expect(doc.services["host-sc-chain-b-trigger-keygen"]?.image).toContain(":fhevm-local");
-      expect(doc.services["host-sc-chain-b-trigger-keygen"]?.build).toBeTruthy();
-      expect(doc.services["host-sc-chain-b-trigger-crsgen"]?.image).toContain(":fhevm-local");
-      expect(doc.services["host-sc-chain-b-trigger-crsgen"]?.build).toBeTruthy();
+      expect(doc.services["host-sc-chain-b-trigger-keygen"]).toBeUndefined();
+      expect(doc.services["host-sc-chain-b-trigger-crsgen"]).toBeUndefined();
+    });
+  });
+
+  test("keeps legacy gateway trigger services in local gateway overrides", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await generateComposeOverrides(gatewayContractsOverrideState, stackSpecForState(gatewayContractsOverrideState));
+      const doc = YAML.parse(await readFile(composePath("gateway-sc"), "utf8")) as {
+        services: Record<string, { image?: string; build?: unknown }>;
+      };
+      expect(doc.services["gateway-sc-trigger-keygen"]?.image).toContain(":fhevm-local");
+      expect(doc.services["gateway-sc-trigger-keygen"]?.build).toBeTruthy();
+      expect(doc.services["gateway-sc-trigger-crsgen"]?.image).toContain(":fhevm-local");
+      expect(doc.services["gateway-sc-trigger-crsgen"]?.build).toBeTruthy();
     });
   });
 

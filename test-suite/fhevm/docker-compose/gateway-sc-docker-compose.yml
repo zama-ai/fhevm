@@ -38,3 +38,31 @@ services:
     # contract is compiled, and it imports these addresses.
     volumes:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/gateway:/app/addresses  # workdir in gateway's Dockerfile is /app
+
+  gateway-sc-trigger-keygen:
+    container_name: gateway-sc-trigger-keygen
+    image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
+    env_file:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/gateway-sc.env
+    # Legacy gateway-KMS bundles trigger material generation from gateway KMSGeneration.
+    command:
+      - npx hardhat task:triggerKeygen --params-type 0 --use-internal-proxy-address true
+    depends_on:
+      gateway-sc-add-pausers:
+        condition: service_completed_successfully
+    volumes:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/gateway:/app/addresses
+
+  gateway-sc-trigger-crsgen:
+    container_name: gateway-sc-trigger-crsgen
+    image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
+    env_file:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/gateway-sc.env
+    # Legacy gateway-KMS bundles must use the same params type as keygen.
+    command:
+      - npx hardhat task:triggerCrsgen --params-type 0 --max-bit-length 2048 --use-internal-proxy-address true
+    depends_on:
+      gateway-sc-trigger-keygen:
+        condition: service_completed_successfully
+    volumes:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/gateway:/app/addresses

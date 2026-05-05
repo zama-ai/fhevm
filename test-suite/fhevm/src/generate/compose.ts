@@ -134,6 +134,8 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
     "gateway-sc-deploy": buildSpec("../../../gateway-contracts", "Dockerfile"),
     "gateway-sc-add-network": buildSpec("../../../gateway-contracts", "Dockerfile"),
     "gateway-sc-add-pausers": buildSpec("../../../gateway-contracts", "Dockerfile"),
+    "gateway-sc-trigger-keygen": buildSpec("../../../gateway-contracts", "Dockerfile"),
+    "gateway-sc-trigger-crsgen": buildSpec("../../../gateway-contracts", "Dockerfile"),
   },
   "host-sc": {
     "host-sc-deploy": buildSpec("../../..", "host-contracts/Dockerfile"),
@@ -148,6 +150,7 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
   },
 };
 const localBuildSpecFor = (component: string, service: string) => COMPONENT_BUILD_SPECS[component]?.[service];
+const CANONICAL_HOST_ONLY_SERVICES = new Set(["host-sc-trigger-keygen", "host-sc-trigger-crsgen"]);
 
 /** Rewrites bind-mount volume paths to absolute template-rooted paths. */
 const rewriteVolume = (value: unknown) => {
@@ -464,6 +467,9 @@ const buildExtraHostScOverride = async (
   const localHostContracts = overriddenServicesForComponent(plan, "host-sc").size > 0;
   const services: Record<string, Record<string, unknown>> = {};
   for (const [name, service] of Object.entries(doc.services)) {
+    if (CANONICAL_HOST_ONLY_SERVICES.has(name)) {
+      continue;
+    }
     const cloneName = name.replace("host-sc-", `${scPrefix}-`);
     const cloneService = structuredClone(service);
     cloneService.container_name = cloneName;

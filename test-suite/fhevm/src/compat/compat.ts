@@ -197,7 +197,7 @@ export const supportsCoprocessorDbStateRevert = (state: Pick<CompatState, "versi
 
 /** Detects when gateway deployment still emits a gateway-side KMSGeneration address. */
 export const requiresLegacyGatewayKmsGenerationAddress = (state: Pick<CompatState, "versions">) =>
-  versionLt(state.versions.env.GATEWAY_VERSION ?? "", [0, 12, 0], { unparsed: "modern" });
+  versionLt(state.versions.env.GATEWAY_VERSION ?? "", [0, 13, 0], { unparsed: "modern" });
 
 /** Detects when contract tasks still expect the legacy internal PauserSet flag name. */
 const requiresLegacyPauserTaskFlag = (version: string) =>

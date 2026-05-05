@@ -711,14 +711,25 @@ export const runStep = async (state: State, step: StepName) => {
         );
         await waitForContainer("gateway-sc-add-pausers", "complete");
       }
-      await timed("[bootstrap] trigger-keygen", () =>
-        stepComposeTask("host-sc", state, ["host-sc-trigger-keygen"], { noDeps: true }),
-      );
-      await waitForContainer("host-sc-trigger-keygen", "complete");
-      await timed("[bootstrap] trigger-crsgen", () =>
-        stepComposeTask("host-sc", state, ["host-sc-trigger-crsgen"], { noDeps: true }),
-      );
-      await waitForContainer("host-sc-trigger-crsgen", "complete");
+      if (requiresModernHostAddressArtifacts(state)) {
+        await timed("[bootstrap] trigger-keygen", () =>
+          stepComposeTask("host-sc", state, ["host-sc-trigger-keygen"], { noDeps: true }),
+        );
+        await waitForContainer("host-sc-trigger-keygen", "complete");
+        await timed("[bootstrap] trigger-crsgen", () =>
+          stepComposeTask("host-sc", state, ["host-sc-trigger-crsgen"], { noDeps: true }),
+        );
+        await waitForContainer("host-sc-trigger-crsgen", "complete");
+      } else {
+        await timed("[bootstrap] trigger-keygen", () =>
+          stepComposeTask("gateway-sc", state, ["gateway-sc-trigger-keygen"], { noDeps: true }),
+        );
+        await waitForContainer("gateway-sc-trigger-keygen", "complete");
+        await timed("[bootstrap] trigger-crsgen", () =>
+          stepComposeTask("gateway-sc", state, ["gateway-sc-trigger-crsgen"], { noDeps: true }),
+        );
+        await waitForContainer("gateway-sc-trigger-crsgen", "complete");
+      }
       await timed("[bootstrap] wait-for-materials", () => waitForBootstrap(state));
       await generateRuntime(state, stackSpecForState(state));
       break;
