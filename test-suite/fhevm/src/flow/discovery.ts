@@ -1,8 +1,7 @@
 import {
   requiresGatewayKmsGenerationAddress,
-  requiresKmsGenerationContractAddress,
   requiresMultichainAclAddress,
-  requiresProtocolConfigContractAddress,
+  usesHostKmsGeneration,
 } from "../compat/compat";
 import { PreflightError } from "../errors";
 import {
@@ -124,7 +123,7 @@ export const validateDiscovery = (
     "KMS_VERIFIER_CONTRACT_ADDRESS",
     "INPUT_VERIFIER_CONTRACT_ADDRESS",
     "PAUSER_SET_CONTRACT_ADDRESS",
-    ...(requiresProtocolConfigContractAddress(state) ? ["PROTOCOL_CONFIG_CONTRACT_ADDRESS"] : []),
+    ...(usesHostKmsGeneration(state) ? ["PROTOCOL_CONFIG_CONTRACT_ADDRESS"] : []),
   ];
   for (const key of requiredGateway) {
     if (!discovery.gateway[key]) {
@@ -138,7 +137,7 @@ export const validateDiscovery = (
     }
     const requiredHostForChain = [
       ...requiredHost,
-      ...(index === 0 && requiresKmsGenerationContractAddress(state) ? ["KMS_GENERATION_CONTRACT_ADDRESS"] : []),
+      ...(index === 0 && usesHostKmsGeneration(state) ? ["KMS_GENERATION_CONTRACT_ADDRESS"] : []),
     ];
     for (const key of requiredHostForChain) {
       if (!host[key]) {

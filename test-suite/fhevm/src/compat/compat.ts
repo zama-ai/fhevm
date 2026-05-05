@@ -208,14 +208,6 @@ const requiresModernHostAddressArtifacts = (state: CompatState) =>
   effectiveCompatOverrides(state).some((override) => override.group === "host-contracts") ||
   !versionLt(state.versions.env.HOST_VERSION ?? "", [0, 13, 0], { unparsed: "modern" });
 
-/** Detects when host discovery/runtime must require PROTOCOL_CONFIG_CONTRACT_ADDRESS. */
-export const requiresProtocolConfigContractAddress = (state: CompatState) =>
-  requiresModernHostAddressArtifacts(state);
-
-/** Detects when host discovery/runtime must require KMS_GENERATION_CONTRACT_ADDRESS. */
-export const requiresKmsGenerationContractAddress = (state: CompatState) =>
-  requiresModernHostAddressArtifacts(state);
-
 /** Detects when keygen bootstrap and runtime should use the host-chain KMSGeneration contract. */
 export const usesHostKmsGeneration = (state: CompatState) => requiresModernHostAddressArtifacts(state);
 

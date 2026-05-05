@@ -7,11 +7,9 @@ import {
   MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY,
   compatPolicyForState,
   requiresGatewayKmsGenerationAddress,
-  requiresKmsGenerationContractAddress,
   requiresLegacyGatewayKmsGenerationAddress,
   requiresLegacyKmsCoreConfig,
   requiresLegacyRelayerUrl,
-  requiresProtocolConfigContractAddress,
   usesHostKmsGeneration,
   validateBundleCompatibility,
 } from "./compat/compat";
@@ -236,8 +234,6 @@ describe("compat", () => {
       overrides: [],
       scenario: testDefaultScenario(),
     };
-    expect(requiresProtocolConfigContractAddress(state)).toBe(false);
-    expect(requiresKmsGenerationContractAddress(state)).toBe(false);
     expect(usesHostKmsGeneration(state)).toBe(false);
     expect(requiresGatewayKmsGenerationAddress(state)).toBe(true);
   });
@@ -253,8 +249,6 @@ describe("compat", () => {
       overrides: [],
       scenario: testDefaultScenario(),
     };
-    expect(requiresProtocolConfigContractAddress(state)).toBe(true);
-    expect(requiresKmsGenerationContractAddress(state)).toBe(true);
     expect(usesHostKmsGeneration(state)).toBe(true);
     expect(requiresGatewayKmsGenerationAddress(state)).toBe(false);
   });
@@ -270,8 +264,6 @@ describe("compat", () => {
       overrides: [{ group: "host-contracts" as const }],
       scenario: testDefaultScenario(),
     };
-    expect(requiresProtocolConfigContractAddress(state)).toBe(true);
-    expect(requiresKmsGenerationContractAddress(state)).toBe(true);
     expect(usesHostKmsGeneration(state)).toBe(true);
     expect(requiresGatewayKmsGenerationAddress(state)).toBe(false);
   });
