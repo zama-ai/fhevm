@@ -14,7 +14,6 @@ import {
 } from "../layout";
 import type { Discovery, State } from "../types";
 import { predictedCrsId, predictedKeyId, readEnvFile } from "../utils/fs";
-import { exists } from "../utils/fs";
 import { run } from "../utils/process";
 import { hostChainsForState } from "./topology";
 
@@ -86,16 +85,21 @@ export const ensureDiscovery = async (state: State) => {
 /** Loads generated gateway and host address artifacts from disk. */
 export const discoverContracts = async (state: Pick<State, "scenario">) => {
   const hostChains = hostChainsForState(state);
-  const gwExists = await exists(gatewayAddressesPath);
-  const hostExistence = await Promise.all(hostChains.map((chain) => exists(hostChainAddressesPath(chain.key))));
-  if (!gwExists || hostExistence.some((value) => !value)) {
-    throw new PreflightError("Missing generated address files under .fhevm/runtime/addresses");
-  }
+  const readAddressEnv = async (file: string) => {
+    try {
+      return await readEnvFile(file);
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+        throw new PreflightError("Missing generated address files under .fhevm/runtime/addresses");
+      }
+      throw error;
+    }
+  };
   return {
-    gateway: await readEnvFile(gatewayAddressesPath),
+    gateway: await readAddressEnv(gatewayAddressesPath),
     hosts: Object.fromEntries(
       await Promise.all(
-        hostChains.map(async (chain) => [chain.key, await readEnvFile(hostChainAddressesPath(chain.key))] as const),
+        hostChains.map(async (chain) => [chain.key, await readAddressEnv(hostChainAddressesPath(chain.key))] as const),
       ),
     ),
   };
