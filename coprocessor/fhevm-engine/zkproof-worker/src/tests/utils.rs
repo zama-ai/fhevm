@@ -169,7 +169,7 @@ pub(crate) async fn decrypt_ciphertexts(
 ) -> anyhow::Result<Vec<DecryptionResult>> {
     let stored = fetch_stored_ciphertexts(pool, handles).await?;
     let db_key_cache = DbKeyCache::new(MAX_CACHED_KEYS).expect("create db key cache");
-    let key = db_key_cache.fetch_latest(pool).await?;
+    let key = db_key_cache.fetch_latest_from_pool(pool).await?;
 
     tokio::task::spawn_blocking(move || {
         let client_key = key.cks.expect("client key available in tests");
@@ -199,7 +199,7 @@ pub(crate) async fn compress_inputs_without_rerandomization(
     raw_ct: &[u8],
 ) -> anyhow::Result<Vec<Vec<u8>>> {
     let db_key_cache = DbKeyCache::new(MAX_CACHED_KEYS).expect("create db key cache");
-    let latest_key = db_key_cache.fetch_latest(pool).await?;
+    let latest_key = db_key_cache.fetch_latest_from_pool(pool).await?;
     let latest_crs = CrsCache::load(pool)
         .await?
         .get_latest()
@@ -257,7 +257,7 @@ pub(crate) async fn generate_zk_pok_with_inputs(
 ) -> Vec<u8> {
     let db_key_cache = DbKeyCache::new(MAX_CACHED_KEYS).expect("create db key cache");
 
-    let latest_key = db_key_cache.fetch_latest(pool).await.unwrap();
+    let latest_key = db_key_cache.fetch_latest_from_pool(pool).await.unwrap();
 
     let latest_crs = CrsCache::load(pool)
         .await

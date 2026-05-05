@@ -211,9 +211,9 @@ describe("Multi-Chain State Isolation", function () {
         to: this.signersB.bob.address,
         value: ethers.parseEther("0.1"),
       });
-      await transferB.wait();
+      const receiptB = await transferB.wait();
 
-      const chainBBlockDuring = await providerB.getBlockNumber();
+      const chainBBlockDuring = receiptB!.blockNumber;
       expect(chainBBlockDuring).to.be.greaterThan(chainBBlockBefore);
 
       const reverted = await evmRevert(ethers.provider, snapshotId);
