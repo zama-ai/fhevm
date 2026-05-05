@@ -173,7 +173,10 @@ pub async fn latest_signal(pool: &Pool<Postgres>) -> anyhow::Result<Option<Drift
 }
 
 /// Fetch the latest signal row (by id) for a specific chain, if any.
-pub async fn latest_signal_for_chain(pool: &Pool<Postgres>, host_chain_id: i64) -> anyhow::Result<Option<DriftRevertSignal>> {
+pub async fn latest_signal_for_chain(
+    pool: &Pool<Postgres>,
+    host_chain_id: i64,
+) -> anyhow::Result<Option<DriftRevertSignal>> {
     let row = sqlx::query(
         "SELECT id, host_chain_id, offending_host_block_number, status \
          FROM drift_revert_signal
@@ -187,7 +190,11 @@ pub async fn latest_signal_for_chain(pool: &Pool<Postgres>, host_chain_id: i64) 
 }
 
 /// Fetch the a specific signal row.
-pub async fn drift_signal_for_chain(pool: &Pool<Postgres>, host_chain_id: i64, drift_id: i64) -> anyhow::Result<Option<DriftRevertSignal>> {
+pub async fn drift_signal_for_chain(
+    pool: &Pool<Postgres>,
+    host_chain_id: i64,
+    drift_id: i64,
+) -> anyhow::Result<Option<DriftRevertSignal>> {
     let row = sqlx::query(
         "SELECT id, host_chain_id, offending_host_block_number, status \
          FROM drift_revert_signal
