@@ -392,7 +392,11 @@ async fn main() {
         flow_lock.clone(),
         handler_publisher.clone(),
     );
-    let reorg_handler = ReorgHandler::new(Arc::clone(&evm_listener), flow_lock, handler_publisher);
+    let reorg_handler = ReorgHandler::new(
+        Arc::clone(&evm_listener),
+        flow_lock,
+        handler_publisher.clone(),
+    );
 
     let filters = Filters::new(repositories_for_filters, settings.blockchain.chain_id);
     let filters = Arc::new(filters);
@@ -407,7 +411,7 @@ async fn main() {
     ));
     let cleaner_handler = CleanerHandler::new(Arc::clone(&cleaner));
 
-    let catchup_handler = CatchupHandler::new(Arc::clone(&evm_listener));
+    let catchup_handler = CatchupHandler::new(Arc::clone(&evm_listener), handler_publisher.clone());
     let range_catchup_handler = RangeCatchupHandler::new(Arc::clone(&evm_listener));
 
     // ── Ensure AMQP queues/bindings exist before checking depth ────────
@@ -508,35 +512,6 @@ async fn main() {
             process::exit(1);
         }
     }
-    // Remove this, its only for testing purposes.
-    // TODO: Remove, only for testing purposes.
-    // It simulates consumer lib to test if we are properly revcieving the events.
-    // let dyn_routing = format!("coprocessor.{}", routing::NEW_EVENT);
-    // let test_consumer_lib = match broker
-    //     .consumer(&Topic::new(dyn_routing.clone()).with_namespace(namespace::EMPTY_NAMESPACE))
-    //     .group(dyn_routing.clone())
-    //     .prefetch(20)
-    //     .max_retries(5)
-    //     .redis_claim_min_idle(10)
-    //     .redis_claim_interval(1)
-    //     .redis_block_ms(200)
-    //     .circuit_breaker(3, Duration::from_secs(30))
-    //     .build()
-    // {
-    //     Ok(c) => c,
-    //     Err(e) => {
-    //         error!("Failed to build test consumer consumer: {}", e);
-    //         process::exit(1);
-    //     }
-    // };
-
-    // let consumer_lib_handler_test =
-    //     AsyncHandlerPayloadOnly::new(move |event: BlockPayload| async move {
-    //         // println!("Consumer received event: {}", event);
-    //         info!("GETTING EVENT FROM BLOCK: {}", event.block_number);
-    //         Ok::<(), EvmListenerError>(())
-    //     });
-
     // ── Periodic queue depth poller ──────────────────────────────────────
     // Polls broker.queue_depths() every 15s for each listener topic and emits
     // the values as broker_queue_depth_* Prometheus gauges.
@@ -589,6 +564,10 @@ async fn main() {
     // ── Run both consumers concurrently ─────────────────────────────────
     info!("Starting consumers");
 
+    // Comment out the next line and the matching `r = sim_fut => r,` arm
+    // below to disable the in-process consumer-lib simulation.
+    // let sim_fut = listener_core::sim::run(broker.clone(), seed_publisher.clone());
+
     let (consumer_name, result) = tokio::select! {
         r = fetch_consumer.run(fetch_handler) => ("Fetch", r),
         r = reorg_consumer.run(reorg_handler) => ("Reorg", r),
@@ -597,9 +576,7 @@ async fn main() {
         r = cleaner_consumer.run(cleaner_handler) => ("Cleaner", r),
         r = catchup_consumer.run(catchup_handler) => ("Catchup", r),
         r = range_catchup_consumer.run(range_catchup_handler) => ("RangeCatchup", r),
-
-        // TEST CONSUMER: TO REMOVE.
-        // r = test_consumer_lib.run(consumer_lib_handler_test) => ("test copro lib consumer", r),
+        // r = sim_fut => r,
     };
 
     error!("{consumer_name} consumer exited: {result:?}");
