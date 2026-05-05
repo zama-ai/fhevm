@@ -1,0 +1,249 @@
+# -- Listener image
+image:
+  repository: hub.zama.org/ghcr/zama-ai/fhevm/listener/listener-core
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# -- ServiceAccount configuration
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+# -- Shared annotations/labels applied to all listener pods
+podAnnotations: {}
+podLabels: {}
+
+# ---------------------------------------------------------------------------
+# Shared config — operator-level overrides applied on top of the base defaults
+# in configs/listener-default.yaml (symlinked from config/listener-default.yaml).
+#
+# Merge order (last wins):
+#   1. configs/listener-default.yaml  (application defaults from Rust code)
+#   2. commonConfig                   (this block — shared across all listeners)
+#   3. listeners[].config             (chain-specific overrides)
+#
+# Only add keys here that DIFFER from the base defaults. The base file already
+# carries every field with the Rust-matching default value.
+# ---------------------------------------------------------------------------
+commonConfig:
+  broker:
+    broker_type: redis
+
+# ---------------------------------------------------------------------------
+# Shared env vars — merged into all listener pods + migration job.
+# Use valueFrom.secretKeyRef to reference Secrets created by ESO or manually.
+# ---------------------------------------------------------------------------
+# -- Name of the K8s Secret holding sensitive values (database URL, broker URL).
+# Referenced by env vars below. Must match fallbackSecret.name when ESO is
+# disabled, or the Secret name created by ExternalSecret when ESO is enabled.
+secretName: listener-secrets
+
+env:
+  - name: APP_DATABASE__DB_URL
+    valueFrom:
+      secretKeyRef:
+        name: "database-credentials"
+        key: database-url
+  # - name: APP_BROKER__BROKER_URL
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: "broker-credentials"
+  #       key: broker-url
+
+envFrom: []
+
+# ---------------------------------------------------------------------------
+# Per-chain listener instances.
+# Each entry creates its own Deployment + ConfigMap.
+#
+# The "config" block uses the SAME nested structure as the Rust config file
+# (config/listener-default.yaml). Only specify fields you want to override;
+# everything else inherits from the base defaults + commonConfig.
+# ---------------------------------------------------------------------------
+listeners: []
+  # - name: ethereum
+  #   config:
+  #     blockchain:
+  #       chain_id: 1
+  #       rpc_url: http://listener-erpc:4000/listener-indexer/evm/1
+  #       network: ethereum-mainnet
+  #       strategy:
+  #         block_start_on_first_start: 24572795
+  #         range_size: 10
+  #         max_parallel_requests: 10
+  #   # -- Per-listener env overrides (merged with root env, per-listener wins)
+  #   env: []
+  #   # -- Per-listener resource overrides
+  #   # resources: {}
+  #   # -- Per-listener security context overrides
+  #   # podSecurityContext: {}
+  #   # securityContext: {}
+  #   # -- Per-listener scheduling overrides
+  #   # nodeSelector: {}
+  #   # tolerations: []
+  #   # affinity: {}
+
+  # - name: base-sepolia
+  #   config:
+  #     blockchain:
+  #       chain_id: 84532
+  #       rpc_url: http://listener-erpc:4000/listener-indexer/evm/84532
+  #       network: base-sepolia
+  #       strategy:
+  #         block_start_on_first_start: 38342520
+  #         range_size: 100
+  #         max_parallel_requests: 50
+  #   env: []
+
+# ---------------------------------------------------------------------------
+# Security context — hardened defaults for distroless nonroot base image.
+# Overridable per-listener.
+#
+# seccompProfile.type=RuntimeDefault is required by the Pod Security Standard
+# "restricted (strict)" profile and the Kyverno restrict-seccomp-strict policy.
+# ---------------------------------------------------------------------------
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10000
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+  seccompProfile:
+    type: RuntimeDefault
+
+# -- Default resource requests/limits for listener pods
+resources:
+  requests:
+    cpu: "1"
+    memory: 1Gi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+# -- Prometheus metrics endpoint configuration.
+# The metrics port is derived from the telemetry config chain
+# (listener-default.yaml -> commonConfig -> listeners[].config),
+# so there is no separate port setting here.
+metrics:
+  enabled: true
+  path: /metrics
+  service:
+    type: ClusterIP
+    annotations: {}
+  serviceMonitor:
+    enabled: false
+    namespace: ""
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+    annotations: {}
+
+# -- Node scheduling constraints
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# ---------------------------------------------------------------------------
+# ExternalSecret integration.
+# When true, the chart assumes Secrets already exist (created by the
+# external-secrets operator or manually). No Secret resource is rendered.
+# When false, the fallbackSecret below is rendered instead.
+# ---------------------------------------------------------------------------
+externalSecret:
+  enabled: true
+
+# ---------------------------------------------------------------------------
+# Fallback Secret — only rendered when externalSecret.enabled=false.
+# For environments without the external-secrets operator.
+# ---------------------------------------------------------------------------
+fallbackSecret:
+  name: listener-secrets
+  data: {}
+    # database-url: "postgres://postgres:postgres@listener-postgresql:5432/listener"
+    # broker-url: "redis://listener-redis-master:6379"
+
+
+# ---------------------------------------------------------------------------
+# eRPC proxy (optional inline Deployment — no official Helm chart exists).
+# ---------------------------------------------------------------------------
+erpc:
+  enabled: false
+  # -- CLI arguments passed to the eRPC container. The image's entrypoint is
+  # `erpc`, which takes the config-file path as a positional argument. Without
+  # an explicit path eRPC searches a hardcoded set of well-known locations
+  # (/home/nonroot/erpc.yaml, /erpc.yaml, /root/erpc.yaml, ...) — none of which
+  # match the ConfigMap mount at /config/erpc.yaml below, so the rendered
+  # config would be silently ignored and the proxy would boot with default
+  # public endpoints. The default below points at the mounted ConfigMap.
+  args:
+    - /config/erpc.yaml
+  # -- Base eRPC config profile (must exist as a symlink in charts/listener/configs/).
+  # Available profiles: erpc-base.yaml (minimal), erpc-public.yaml (public nodes), etc.
+  baseConfig: erpc-base.yaml
+  image:
+    repository: ghcr.io/erpc/erpc
+    tag: "0.0.63"
+    pullPolicy: IfNotPresent
+  replicas: 1
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  service:
+    type: ClusterIP
+    httpPort: 4000
+    metricsPort: 4001
+  env: []
+  envFrom: []
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  # -- Security context — hardened defaults for the eRPC distroless image.
+  # seccompProfile.type=RuntimeDefault satisfies the Pod Security Standard
+  # "restricted (strict)" profile and the Kyverno restrict-seccomp-strict
+  # policy. Override to {} to opt out.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    fsGroup: 65534
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault
+  serviceMonitor:
+    enabled: false
+    namespace: ""
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+    annotations: {}
+  # -- Partial overrides deep-merged on top of configs/erpc-public.yaml.
+  # Example: set logLevel to info without replacing the entire config.
+  config: {}
+    # logLevel: info
+  # -- Full replacement (ignores base + config overrides).
+  # Usage: --set-file erpc.configFile=path/to/custom-erpc.yaml
+  configFile: ""

@@ -83,40 +83,6 @@ Note that recommendations assume a smoke test that runs transactions/requests at
  - **Alarm**: If the counter increases over a period of time.
     - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter[1m]) == 0`.
 
-#### Metric Name: `coprocessor_gw_listener_activate_crs_success_counter`
- - **Type**: Counter
- - **Description**: Counts the number of successful activate CRS requests in GW listener.
- - **Alarm**: N/A - no alarm needed as activate CRS is an infrequent event.
-
-#### Metric Name: `coprocessor_gw_listener_activate_crs_fail_counter`
- - **Type**: Counter
- - **Description**: Counts the number of failed activate CRS requests in GW listener.
- - **Alarm**: If the counter increases from 0. Activate CRS is an important event that should not fail.
-    - **Recommendation**: alarm on any failures over a 1 minute period, i.e. `increase(counter[1m]) > 0`.
-
-#### Metric Name: `coprocessor_gw_listener_crs_digest_mismatch_counter`
- - **Type**: Counter
- - **Description**: Counts the number of CRS digest mismatches in GW listener.
- - **Alarm**: If the counter increases from 0. CRS digest mismatch is not something that is supposed to happen in normal circumstances.
-    - **Recommendation**: alarm on any failures over a 1 minute period, i.e. `increase(counter[1m]) > 0`.
-
-#### Metric Name: `coprocessor_gw_listener_activate_key_success_counter`
- - **Type**: Counter
- - **Description**: Counts the number of successful activate key requests in GW listener.
- - **Alarm**: N/A - no alarm needed as activate key is an infrequent event.
-
-#### Metric Name: `coprocessor_gw_listener_activate_key_fail_counter`
- - **Type**: Counter
- - **Description**: Counts the number of failed activate key requests in GW listener.
- - **Alarm**: If the counter increases from 0. Activate key is an important event that should not fail.
-    - **Recommendation**: alarm on any failures over a 1 minute period, i.e. `increase(counter[1m]) > 0`.
-
-#### Metric Name: `coprocessor_gw_listener_key_digest_mismatch_counter`
- - **Type**: Counter
- - **Description**: Counts the number of key digest mismatches in GW listener.
- - **Alarm**: If the counter increases from 0. Key digest mismatch is not something that is supposed to happen in normal circumstances.
-    - **Recommendation**: alarm on any failures over a 1 minute period, i.e. `increase(counter[1m]) > 0`.
-
 #### Metric Name: `coprocessor_gw_listener_drift_detected_counter`
  - **Type**: Counter
  - **Description**: Number of handles where coprocessor digests diverged. Does not discriminate whether divergence comes from the local coprocessor or another coprocessor in the network.
@@ -136,6 +102,28 @@ Note that recommendations assume a smoke test that runs transactions/requests at
 #### Metric Name: `coprocessor_gw_listener_post_consensus_completion_blocks`
  - **Type**: Histogram
  - **Description**: Block distance between the consensus event and seeing all expected submissions for a handle. Diagnostic metric for understanding on-chain completion latency; the grace window is wall-clock based and configured via `--drift-post-consensus-grace`. Bucket boundaries: 0, 1, 2, 3, 5, 8, 13, 21, 34.
+
+#### Metric Name: `coprocessor_drift_revert_signal_created_counter`
+ - **Type**: Counter (labeled by `host_chain_id`)
+ - **Description**: Number of drift-revert signals created, per host chain. Each signal represents one detected consensus drift that triggered the auto-recovery mechanism. Emitted by gw-listener only.
+ - **Alarm**: Any non-zero increase is unusual — drift should be rare.
+    - **Recommendation**: alarm on `increase(counter[5m]) > 0`.
+
+#### Metric Name: `coprocessor_drift_revert_success_counter`
+ - **Type**: Counter (labeled by `host_chain_id`)
+ - **Description**: Number of drift reverts that completed successfully per host chain (SQL ran to completion and signal marked Done). Emitted by gw-listener only.
+
+#### Metric Name: `coprocessor_drift_revert_failure_counter`
+ - **Type**: Counter (labeled by `host_chain_id`)
+ - **Description**: Number of drift reverts that failed during SQL execution per host chain (signal marked Failed). Recovery did not complete and operator intervention may be required. Emitted by gw-listener only.
+ - **Alarm**: Any non-zero increase.
+    - **Recommendation**: alarm on `increase(counter[1m]) > 0`.
+
+#### Metric Name: `coprocessor_drift_revert_too_many_attempts_counter`
+ - **Type**: Counter (labeled by `host_chain_id`)
+ - **Description**: Number of times the revert runner refused to revert because too many successful reverts already happened in the recent window for this host chain. Indicates a deterministic loop where reverts succeed but drift keeps recurring (e.g. a tfhe-worker bug). The signal is marked Failed and the service refuses to start until an operator intervenes. Emitted by gw-listener only.
+ - **Alarm**: Any non-zero increase.
+    - **Recommendation**: alarm on `increase(counter[1m]) > 0`.
 
 ### zkproof-worker
 

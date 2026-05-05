@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT key_id_gw, sequence_number FROM keys ORDER BY sequence_number DESC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "key_id_gw",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "sequence_number",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "1c9bdf28b161f4184c2f2e41a3004a92e224a128a60f1fb1149cdb8bc319754e"
+}

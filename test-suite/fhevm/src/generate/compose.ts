@@ -106,15 +106,17 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
     "gateway-sc-deploy": buildSpec("../../../gateway-contracts", "Dockerfile"),
     "gateway-sc-add-network": buildSpec("../../../gateway-contracts", "Dockerfile"),
     "gateway-sc-add-pausers": buildSpec("../../../gateway-contracts", "Dockerfile"),
-    "gateway-sc-trigger-keygen": buildSpec("../../../gateway-contracts", "Dockerfile"),
-    "gateway-sc-trigger-crsgen": buildSpec("../../../gateway-contracts", "Dockerfile"),
   },
   "host-sc": {
     "host-sc-deploy": buildSpec("../../..", "host-contracts/Dockerfile"),
     "host-sc-add-pausers": buildSpec("../../..", "host-contracts/Dockerfile"),
+    "host-sc-trigger-keygen": buildSpec("../../..", "host-contracts/Dockerfile"),
+    "host-sc-trigger-crsgen": buildSpec("../../..", "host-contracts/Dockerfile"),
   },
   "test-suite": {
-    "test-suite-e2e-debug": buildSpec("../../..", "test-suite/e2e/Dockerfile"),
+    "test-suite-e2e-debug": buildSpec("../../..", "test-suite/e2e/Dockerfile", {
+      args: { RELAYER_SDK_VERSION: "${RELAYER_SDK_VERSION}" },
+    }),
   },
 };
 const localBuildSpecFor = (component: string, service: string) => COMPONENT_BUILD_SPECS[component]?.[service];

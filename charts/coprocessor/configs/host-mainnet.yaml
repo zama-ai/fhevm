@@ -1,0 +1,7 @@
+acl.address: "0xcA2E8f1F656CD25C01F05d0b243Ab1ecd4a8ffb6"
+decryption_oracle.address: "0x67C1BeAEcc62ACA04F859255DF8af3C13B895EF7"
+fhevm_executor.address: "0xD82385dADa1ae3E969447f20A3164F6213100e75"
+hcu_limit.address: "0x3b4da65e45Fda2CAa0285A735ab4361a44F171E2"
+input_verifier.address: "0xCe0FC2e05CFff1B719EFF7169f7D80Af770c8EA2"
+kms_verifier.address: "0x77627828a55156b04Ac0DC0eb30467f1a552BB03"
+pauser_set.address: "0xbBfE1680b4a63ED05f7F80CE330BED7C992A586C"

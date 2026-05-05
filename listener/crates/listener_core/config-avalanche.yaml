@@ -1,0 +1,39 @@
+name: avalanche-mainnet-listener
+
+http_port: 8082
+
+database:
+  db_url: postgres://postgres:postgres@localhost:5432/listener
+
+broker:
+  broker_type: redis
+  broker_url: redis://localhost:6379
+
+log:
+  format: compact
+
+telemetry:
+  enabled: true
+  metrics_port: 9093
+
+blockchain:
+  type: evm
+  chain_id: 43114
+  rpc_url: https://avalanche-c-chain-rpc.publicnode.com
+  network: avalanche-mainnet
+  finality_depth: 10
+  cleaner:
+    active: true
+    blocks_to_keep: 1000
+    cron_secs: 3600
+  strategy:
+    automatic_startup: true
+    # Only for the first startup.
+    block_start_on_first_start: current
+    range_size: 200
+    loop_delay_ms: 1000
+    max_parallel_requests: 50
+    block_fetcher: block_receipts
+    compute_block: true
+    compute_block_allow_skipping: true
+    max_exponential_backoff_ms: 2000

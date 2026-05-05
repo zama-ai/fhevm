@@ -1,29 +1,40 @@
-{{- if .Values.hostListener.enabled -}}
+{{- range $i, $chain := .Values.chains }}
+{{- if (($chain.hostListener).enabled) }}
+{{- $useLegacyName := $chain.hostListener.useLegacyName | default false -}}
+{{- $deploymentName := ternary (printf "%s-host-listener" $.Release.Name) (printf "%s-host-listener-%s" $.Release.Name $chain.name) $useLegacyName -}}
+{{- $appLabel := ternary "coprocessor-host-listener" (printf "coprocessor-host-listener-%s" $chain.name) $useLegacyName -}}
+{{- $args := default (dict) $.Values.hostListenerShared.args -}}
+{{- $disabled := default (list) $.Values.hostListenerShared.disabledArgs -}}
+{{- $serviceName := coalesce $chain.hostListener.serviceName (get $args "serviceName") -}}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    app: coprocessor-host-listener
-    app.kubernetes.io/name: {{ include "hostListenerName" . }}
-  name: {{ include "hostListenerName" . }}
+    app: {{ $appLabel }}
+    app.kubernetes.io/name: {{ $deploymentName }}
+  name: {{ $deploymentName }}
 spec:
-  replicas: {{ .Values.hostListener.replicas }}
+  replicas: {{ $.Values.hostListenerShared.replicas }}
   selector:
     matchLabels:
-      app: coprocessor-host-listener
-  {{- if .Values.hostListener.updateStrategy }}
+      app: {{ $appLabel }}
+  {{- if $.Values.hostListenerShared.updateStrategy }}
   strategy:
-    {{- toYaml .Values.hostListener.updateStrategy | nindent 4 }}
+    {{- toYaml $.Values.hostListenerShared.updateStrategy | nindent 4 }}
   {{- end }}
   template:
     metadata:
       labels:
-        app: coprocessor-host-listener
-        app.kubernetes.io/name: {{ include "hostListenerName" . }}
-        {{- with .Values.podLabels }}
+        app: {{ $appLabel }}
+        app.kubernetes.io/name: {{ $deploymentName }}
+        {{- with $.Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- with .Values.podAnnotations }}
+        {{- with $.Values.hostListenerShared.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with $.Values.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -31,83 +42,200 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
-      {{- with .Values.hostListener.nodeSelector }}
+      {{- with $.Values.hostListenerShared.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.hostListener.affinity }}
+      {{- with $.Values.hostListenerShared.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.hostListener.tolerations }}
+      {{- with $.Values.hostListenerShared.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if .Values.hostListener.serviceAccountName }}
-      serviceAccountName: {{ .Values.hostListener.serviceAccountName }}
+      {{- if $.Values.hostListenerShared.serviceAccountName }}
+      serviceAccountName: {{ $.Values.hostListenerShared.serviceAccountName }}
       {{- end }}
       containers:
         - name: coprocessor-host-listener
-          image: {{ .Values.hostListener.image.name }}:{{ .Values.hostListener.image.tag }}
+          image: {{ $.Values.hostListenerShared.image.name }}:{{ $.Values.hostListenerShared.image.tag }}
           command: ["host_listener"]
           args:
+            {{- if not (has "database-url" $disabled) }}
             - --database-url=$(DATABASE_URL)
+            {{- end }}
+            {{- if not (has "url" $disabled) }}
             - --url=$(ETHEREUM_RPC_URL)
+            {{- end }}
+            {{- if not (has "acl-contract-address" $disabled) }}
             - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
+            {{- end }}
+            {{- if not (has "tfhe-contract-address" $disabled) }}
             - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
-            - --health-port={{ .Values.hostListener.ports.healthcheck }}
-            - --dependent-ops-max-per-chain={{ int .Values.commonConfig.dependentOpsMaxPerChain }}
-            - --log-level={{ .Values.hostListener.args.logLevel }}
-            - --initial-block-time={{ .Values.hostListener.args.initialBlockTime }}
-            - --reorg-maximum-duration-in-blocks={{ .Values.hostListener.args.reorgMaximumDurationInBlocks }}
-            - --service-name={{ .Values.hostListener.args.serviceName }}
-            - --catchup-finalization-in-blocks={{ .Values.hostListener.args.catchupFinalizationInBlocks }}
+            {{- end }}
+            {{- if not (has "kms-generation-address" $disabled) }}
+            - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
+            {{- end }}
+            {{- if not (has "health-port" $disabled) }}
+            - --health-port={{ $.Values.hostListenerShared.ports.healthcheck }}
+            {{- end }}
+            {{- if and $serviceName (not (has "service-name" $disabled)) }}
+            - --service-name={{ $serviceName }}
+            {{- end }}
+            {{- with $.Values.commonConfig.tenantApiKey }}
+            {{- if and (or .value .valueFrom) (not (has "coprocessor-api-key" $disabled)) }}
             - --coprocessor-api-key=$(TENANT_API_KEY)
-            {{- with .Values.hostListener.extraArgs }}
+            {{- end }}
+            {{- end }}
+            {{- with $.Values.hostListenerShared.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with $chain.hostListener.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
+            {{- with $.Values.commonConfig.databaseUser }}
+            - name: DATABASE_USER
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with $.Values.commonConfig.databaseEndpoint }}
+            - name: DATABASE_ENDPOINT
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if eq (include "coprocessorDatabaseAuthMode" $) "password" }}
+            {{- with $.Values.commonConfig.databasePassword }}
+            - name: DATABASE_PASSWORD
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with $.Values.commonConfig.databaseUrl }}
             - name: DATABASE_URL
-              value: {{ .Values.commonConfig.databaseUrl | quote }}
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if eq (include "coprocessorDatabaseAuthMode" $) "iam" }}
+            - name: DATABASE_IAM_AUTH_ENABLED
+              value: "true"
+            {{- with $.Values.commonConfig.databaseIamRegion }}
+            - name: DATABASE_IAM_REGION
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with $.Values.commonConfig.databaseSslRootCertPath }}
+            - name: DATABASE_SSL_ROOT_CERT_PATH
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with $.Values.commonConfig.tenantApiKey }}
+            - name: TENANT_API_KEY
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if or $chain.wsUrl $chain.wsUrlValueFrom }}
             - name: ETHEREUM_RPC_URL
-              value: {{ .Values.commonConfig.hostChainWsUrl | quote }}
+              {{- if $chain.wsUrl }}
+              value: {{ $chain.wsUrl | quote }}
+              {{- else if $chain.wsUrlValueFrom }}
+              valueFrom:
+                {{- toYaml $chain.wsUrlValueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if or $chain.aclContractAddress $chain.aclContractAddressValueFrom }}
             - name: ACL_CONTRACT_ADDRESS
-              value: {{ required "commonConfig.aclContractAddress is required" .Values.commonConfig.aclContractAddress | quote }}
+              {{- if $chain.aclContractAddress }}
+              value: {{ $chain.aclContractAddress | quote }}
+              {{- else if $chain.aclContractAddressValueFrom }}
+              valueFrom:
+                {{- toYaml $chain.aclContractAddressValueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if or $chain.fhevmExecutorContractAddress $chain.fhevmExecutorContractAddressValueFrom }}
             - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
-              value: {{ required "commonConfig.fhevmExecutorContractAddress is required" .Values.commonConfig.fhevmExecutorContractAddress | quote }}
-          {{- if default .Values.commonConfig.tracing.enabled .Values.hostListener.tracing.enabled }}
+              {{- if $chain.fhevmExecutorContractAddress }}
+              value: {{ $chain.fhevmExecutorContractAddress | quote }}
+              {{- else if $chain.fhevmExecutorContractAddressValueFrom }}
+              valueFrom:
+                {{- toYaml $chain.fhevmExecutorContractAddressValueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if or $chain.kmsGenerationContractAddress $chain.kmsGenerationContractAddressValueFrom }}
+            - name: KMS_GENERATION_ADDRESS
+              {{- if $chain.kmsGenerationContractAddress }}
+              value: {{ $chain.kmsGenerationContractAddress | quote }}
+              {{- else if $chain.kmsGenerationContractAddressValueFrom }}
+              valueFrom:
+                {{- toYaml $chain.kmsGenerationContractAddressValueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+          {{- if default $.Values.commonConfig.tracing.enabled $.Values.hostListenerShared.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: {{ .Values.commonConfig.tracing.endpoint | quote }}
+              value: {{ $.Values.commonConfig.tracing.endpoint | quote }}
             - name: OTEL_SERVICE_NAME
+              {{- if $.Values.hostListenerShared.tracing.service }}
+              value: {{ $.Values.hostListenerShared.tracing.service | quote }}
+              {{- else }}
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+              {{- end }}
           {{- end }}
-          {{- with .Values.commonConfig.env }}
+          {{- with $.Values.commonConfig.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.hostListener.env }}
+          {{- with $.Values.hostListenerShared.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $chain.hostListener.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
           ports:
-            {{- range $portName, $portValue := .Values.hostListener.ports }}
+            {{- range $portName, $portValue := $.Values.hostListenerShared.ports }}
             - name: {{ $portName }}
               containerPort: {{ $portValue }}
               protocol: TCP
             {{- end }}
           resources:
             requests:
-              cpu: {{ .Values.hostListener.resources.requests.cpu | default "100m" }}
-              memory: {{ .Values.hostListener.resources.requests.memory | default "256Mi" }}
+              cpu: {{ $.Values.hostListenerShared.resources.requests.cpu | default "100m" }}
+              memory: {{ $.Values.hostListenerShared.resources.requests.memory | default "256Mi" }}
             limits:
-              cpu: {{ .Values.hostListener.resources.limits.cpu | default "500m" }}
-              memory: {{ .Values.hostListener.resources.limits.memory | default "512Mi" }}
-          {{- if and .Values.hostListener.probes .Values.hostListener.probes.liveness.enabled }}
+              cpu: {{ $.Values.hostListenerShared.resources.limits.cpu | default "500m" }}
+              memory: {{ $.Values.hostListenerShared.resources.limits.memory | default "512Mi" }}
+          {{- if and $.Values.hostListenerShared.probes $.Values.hostListenerShared.probes.liveness.enabled }}
           livenessProbe:
-            {{- toYaml (omit .Values.hostListener.probes.liveness "enabled") | nindent 12 }}
+            {{- toYaml (omit $.Values.hostListenerShared.probes.liveness "enabled") | nindent 12 }}
           {{- end }}
-          {{- if and .Values.hostListener.probes .Values.hostListener.probes.readiness.enabled }}
+          {{- if and $.Values.hostListenerShared.probes $.Values.hostListenerShared.probes.readiness.enabled }}
           readinessProbe:
-            {{- toYaml (omit .Values.hostListener.probes.readiness "enabled") | nindent 12 }}
+            {{- toYaml (omit $.Values.hostListenerShared.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
-{{- end -}}
+{{- end }}
+{{- end }}

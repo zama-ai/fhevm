@@ -18,6 +18,12 @@ spec:
       labels:
         app: coprocessor-db-migration
         app.kubernetes.io/name: {{ .Release.Name }}-db-migration
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.dbMigration.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
       imagePullSecrets:
         - name: registry-credentials
@@ -40,10 +46,99 @@ spec:
       containers:
       - name: db-migration
         image: {{ .Values.dbMigration.image.name }}:{{ .Values.dbMigration.image.tag }}
+        {{- with .Values.dbMigration.command }}
+        command:
+          {{- toYaml . | nindent 10 }}
+        {{- else }}
         command: ["/initialize_db.sh"]
+        {{- end }}
         env:
+          {{- with .Values.commonConfig.databaseUser }}
+          - name: DATABASE_USER
+            {{- if .value }}
+            value: {{ .value | quote }}
+            {{- else if .valueFrom }}
+            valueFrom:
+              {{- toYaml .valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
+          {{- with .Values.commonConfig.databaseEndpoint }}
+          - name: DATABASE_ENDPOINT
+            {{- if .value }}
+            value: {{ .value | quote }}
+            {{- else if .valueFrom }}
+            valueFrom:
+              {{- toYaml .valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
+          {{- if eq (include "coprocessorDatabaseAuthMode" .) "password" }}
+          {{- with .Values.commonConfig.databasePassword }}
+          - name: DATABASE_PASSWORD
+            {{- if .value }}
+            value: {{ .value | quote }}
+            {{- else if .valueFrom }}
+            valueFrom:
+              {{- toYaml .valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
+          {{- end }}
+          {{- with .Values.commonConfig.databaseUrl }}
           - name: DATABASE_URL
-            value: {{ .Values.commonConfig.databaseUrl | quote }}
+            value: {{ . | quote }}
+          {{- end }}
+          {{- with .Values.commonConfig.tenantApiKey }}
+          - name: TENANT_API_KEY
+            {{- if .value }}
+            value: {{ .value | quote }}
+            {{- else if .valueFrom }}
+            valueFrom:
+              {{- toYaml .valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
+          {{- with .Values.dbMigration.config.chainId }}
+          - name: CHAIN_ID
+            value: {{ . | quote }}
+          {{- end }}
+          {{- with .Values.dbMigration.config.aclContractAddress }}
+          - name: ACL_CONTRACT_ADDRESS
+            {{- if .value }}
+            value: {{ .value | quote }}
+            {{- else if .valueFrom }}
+            valueFrom:
+              {{- toYaml .valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
+          {{- with .Values.dbMigration.config.inputVerifierAddress }}
+          - name: INPUT_VERIFIER_ADDRESS
+            {{- if .value }}
+            value: {{ .value | quote }}
+            {{- else if .valueFrom }}
+            valueFrom:
+              {{- toYaml .valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
+          {{- if eq (include "coprocessorDatabaseAuthMode" .) "iam" }}
+          - name: DATABASE_IAM_AUTH_ENABLED
+            value: "true"
+          {{- with .Values.commonConfig.databaseIamRegion }}
+          - name: DATABASE_IAM_REGION
+            {{- if .value }}
+            value: {{ .value | quote }}
+            {{- else if .valueFrom }}
+            valueFrom:
+              {{- toYaml .valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
+          {{- with .Values.commonConfig.databaseSslRootCertPath }}
+          - name: DATABASE_SSL_ROOT_CERT_PATH
+            {{- if .value }}
+            value: {{ .value | quote }}
+            {{- else if .valueFrom }}
+            valueFrom:
+              {{- toYaml .valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
+          {{- end }}
         {{- with .Values.commonConfig.env }}
           {{- toYaml . | nindent 10 }}
         {{- end }}

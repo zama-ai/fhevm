@@ -146,7 +146,7 @@ Runtime resolution is intentionally fixed:
 
 Only `devnet`, `testnet`, and `mainnet` resolve from GitOps today. Non-network targets do not.
 `latest-main` is intentionally modern-only; if the resolver cannot find a complete image set after the floor, it fails instead of walking into older protocol behavior.
-`sha` requires `--sha <git-sha>` and fails fast unless every repo-owned package is available at that 7-character SHA tag, the SHA is on `main`, and it is at or after the simple-ACL floor.
+`sha` requires `--sha <git-sha>` and resolves every repo-owned image to that 7-character SHA tag. The CLI does not query GitHub or prove branch ancestry for this target; Docker pull or boot-time validation reports missing images or incompatible stacks.
 
 ## Pinning an Exact Version Bundle
 
@@ -189,6 +189,38 @@ The lock file must contain every version key. Example:
 If you also pass `--target`, it must match the lock file. Otherwise the CLI infers the target from the lock file itself.
 The lock file replaces only the version resolution step — preflight, boot pipeline, and everything else run normally.
 
+## Rollout Lock Generation
+
+For release compatibility matrices, check in a compat-test definition under `compat-tests/` and either generate the full rollout locally or render one ephemeral step on demand:
+
+```sh
+./fhevm-cli rollout \
+  --compat-test ./compat-tests/v0.12-to-main.json \
+  --out /tmp/fhevm-rollout
+
+./fhevm-cli rollout \
+  --compat-test ./compat-tests/v0.12-to-main.json \
+  --step 3 \
+  --out /tmp/fhevm-step.lock.json
+```
+
+Compat-tests define:
+
+- explicit `from` and `to` version maps
+- explicit `harness.testSuiteVersion` for the harness line that should materialize into `TEST_SUITE_VERSION`
+- explicit `harness.relayerSdkVersion`
+- ordered rollout `steps` with either `units` or ordered `substeps`
+- an explicit `units` map that assigns every version key to exactly one rollout unit
+- optional execution defaults such as scenario
+
+`rollout` writes:
+
+- `00-baseline.lock.json`
+- one cumulative lock file per rollout step
+- `matrix.json` for GitHub Actions matrix expansion
+
+GitHub Actions consumes the compat-test JSON directly and renders one temporary lock file per matrix job. The generated lock files are execution artifacts, not checked-in state.
+
 ## Version Override via Environment Variables
 
 After resolving a target bundle, the CLI applies **environment variable overrides**: any
@@ -196,15 +228,15 @@ After resolving a target bundle, the CLI applies **environment variable override
 
 This is how CI works. The merge queue workflow:
 
-1. Builds repo-owned Docker images for touched components
-2. Sets `*_VERSION=<head-sha-short>` only for repo-owned components whose build succeeded
-3. Falls back to the PR base short SHA for skipped repo-owned components
-4. Pins `CORE_VERSION` from the release base branch when the PR targets `release/*`
-5. Runs `./fhevm-cli up` with `two-of-two-multi-chain` for non-release orchestrate and `two-of-two` for `release/*`
-6. Passes `build=false` explicitly because merge queue is validating selected registry images, while direct PR e2e uses `build=true`
+1. Resolves a frozen baseline lock from `github.event.pull_request.base.sha`
+2. Uploads that lock as a workflow artifact
+3. Builds repo-owned Docker images for touched components
+4. Sets `*_VERSION=<head-sha-short>` only for repo-owned components whose build succeeded
+5. Leaves skipped component outputs empty so the reusable e2e workflow keeps the frozen lock value
+6. Runs `./fhevm-cli up --lock-file <baseline-lock>` with `two-of-two-multi-chain` for non-release orchestrate and `two-of-two` for `release/*`
+7. Passes `build=false` explicitly because merge queue is validating selected registry images, while direct PR e2e uses `build=true`
 
-Orchestrate does not resolve a new bundle in workflow YAML. It follows the historical base/head per-service image selection model, then passes those explicit versions into the reusable e2e workflow.
-Release orchestrate keeps one extra compatibility bridge: it carries over the base branch `CORE_VERSION` from the release branch’s own checked-in defaults.
+Orchestrate resolves the baseline once from the PR base SHA, then passes that lock artifact into the reusable e2e workflow. Head-image overrides are applied only for components rebuilt by the PR.
 The reusable workflow now runs on `pull_request` directly and treats PR e2e as source validation with `build=true`.
 Orchestrate passes `build=false` explicitly because it is validating selected registry images rather than rebuilding from source.
 
@@ -262,8 +294,8 @@ The matrix has three sections:
 | `anchors` | Git history reference points | simple-ACL cutover commit |
 
 Merge-queue e2e explicitly keeps `build=false`.
-For non-release PRs it boots `two-of-two-multi-chain` and uses the historical base/head per-service version selection.
-For `release/*` PRs it boots `two-of-two`, restores the old base/head per-service version selection, and carries forward the base branch `CORE_VERSION`.
+For non-release PRs it boots `two-of-two-multi-chain` from the frozen base lock plus any successful head-image overrides.
+For `release/*` PRs it boots `two-of-two` from the same frozen-lock model.
 
 ### How to update
 

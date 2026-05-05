@@ -89,8 +89,6 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
 
         adapter = new DelegationLibraryAdapter();
 
-        address[] memory kmsSigners = new address[](1);
-        kmsSigners[0] = address(0x1111);
         address[] memory inputSigners = new address[](1);
         inputSigners[0] = address(0x2222);
 
@@ -100,8 +98,8 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
             GATEWAY_SOURCE,
             GATEWAY_SOURCE,
             GATEWAY_CHAIN_ID,
-            kmsSigners,
-            1,
+            _makeKmsNodes(1),
+            _defaultThresholds(),
             inputSigners,
             1
         );
@@ -132,6 +130,7 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
         vm.assume(delegate != address(adapter));
         vm.assume(contractContext != address(adapter));
         vm.assume(delegate != contractContext);
+        vm.assume(delegate != acl.WILDCARD_DELEGATION_ADDRESS());
     }
 
     function testFuzz_IsUserDecryptable_ReturnsFalseWhenUserEqualsContract(
@@ -249,6 +248,7 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
 
     function test_DelegateUserDecryption_RevertsWhenDelegateEqualsContract(address contractContext) public {
         vm.assume(contractContext != address(adapter));
+        vm.assume(contractContext != acl.WILDCARD_DELEGATION_ADDRESS());
         uint64 expirationDate = uint64(block.timestamp + DEFAULT_FUTURE_EXPIRY_OFFSET);
 
         vm.expectRevert(abi.encodeWithSelector(ACL.DelegateCannotBeContractAddress.selector, contractContext));

@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO crsgen_requests(crs_id, max_bit_length, params_type, extra_data, tx_hash, created_at, otlp_context) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        {
+          "Custom": {
+            "name": "params_type",
+            "kind": {
+              "Enum": [
+                "Default",
+                "Test"
+              ]
+            }
+          }
+        },
+        "Bytea",
+        "Bytea",
+        "Timestamptz",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b7769c246f228d2270f3b388132168aafb9db182e820db5fb4a04b4f675cf186"
+}

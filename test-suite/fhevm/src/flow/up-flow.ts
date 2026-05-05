@@ -3,7 +3,12 @@
  */
 
 import { ensureLockSnapshot, previewBundle, resolveBundle } from "../resolve/bundle-store";
-import { assertSupportedBundleScenario, requiresMultichainAclAddress, validateBundleCompatibility } from "../compat/compat";
+import {
+  assertSupportedBundleScenario,
+  requiresLegacyGatewayKmsGenerationAddress,
+  requiresMultichainAclAddress,
+  validateBundleCompatibility,
+} from "../compat/compat";
 import { driftDatabaseName } from "../drift";
 import { serviceNameList } from "../generate/compose";
 import { generateRuntime } from "../generate";
@@ -25,7 +30,7 @@ import {
   RpcError,
   SchemaGuardError,
 } from "../errors";
-import { describeBundle } from "../resolve/target";
+import { describeBundle, REPO_KEYS } from "../resolve/target";
 import {
   ADDRESS_DIR,
   COMPOSE_OUT_DIR,
@@ -72,7 +77,7 @@ import type {
   VersionBundle,
   VersionTarget,
 } from "../types";
-import { STEP_NAMES } from "../types";
+import { OVERRIDE_GROUPS, STEP_NAMES } from "../types";
 import {
   exists,
   hostReachableMaterialUrl,
@@ -255,7 +260,26 @@ const overrideWarnings = (overrides: LocalOverride[], target?: string) => {
 };
 
 /** Prints the resolved version bundle in compact or detailed form. */
-const printBundle = (bundle: VersionBundle, options?: { detailed?: boolean }) => {
+const fullBuildActive = (overrides: LocalOverride[]) =>
+  OVERRIDE_GROUPS.every((group) => overrides.some((item) => item.group === group));
+
+/** Rewrites displayed repo-owned versions to match the effective runtime source under `--build`. */
+export const displayedBundle = (
+  bundle: VersionBundle,
+  overrides: LocalOverride[],
+) =>
+  !fullBuildActive(overrides)
+    ? bundle
+    : {
+        ...bundle,
+        env: Object.fromEntries(
+          Object.entries(bundle.env).map(([key, value]) => [key, REPO_KEYS.has(key) ? "LOCAL BUILD" : value]),
+        ),
+      };
+
+/** Prints the resolved version bundle in compact or detailed form. */
+const printBundle = (state: Pick<State, "versions" | "overrides">, options?: { detailed?: boolean }) => {
+  const bundle = displayedBundle(state.versions, state.overrides);
   console.log(`[resolve] ${bundle.lockName}`);
   if (options?.detailed) {
     console.log(describeBundle(bundle));
@@ -461,7 +485,7 @@ export const runStep = async (state: State, step: StepName) => {
       await preflight(state, true, state.requiresGitHub ?? true);
       break;
     case "resolve":
-      printBundle(state.versions, { detailed: true });
+      printBundle(state, { detailed: true });
       break;
     case "generate":
       await generateRuntime(state, stackSpecForState(state));
@@ -484,6 +508,17 @@ export const runStep = async (state: State, step: StepName) => {
         throw new PreflightError("Missing default host chain");
       }
       await waitForRpc(`http://localhost:${defaultChain.rpcPort}`);
+      // Fund the kms-connector tx-sender on the host chain. The wallet is derived from the gateway
+      // mnemonic so anvil pre-funds it there, but not on the host chain (different mnemonic).
+      const kmsConnectorEnv = await readEnvFile(envPath("kms-connector"));
+      const txSenderKey = kmsConnectorEnv.KMS_CONNECTOR_PRIVATE_KEY;
+      if (txSenderKey) {
+        const txSenderAddress = (await run(["cast", "wallet", "address", txSenderKey])).stdout.trim();
+        await run([
+          "cast", "rpc", "anvil_setBalance", txSenderAddress, "0x56BC75E2D63100000", // 100 ETH
+          "--rpc-url", `http://localhost:${defaultChain.rpcPort}`,
+        ]);
+      }
       await stepComposeUp("gateway-node", state);
       await waitForRpc(`http://localhost:${DEFAULT_GATEWAY_RPC_PORT}`);
       const plan = stackSpecForState(state);
@@ -522,9 +557,9 @@ export const runStep = async (state: State, step: StepName) => {
       await ensureGeneratedAddressFile(gatewayAddressesPath, "gateway-sc-deploy", [
         "GATEWAY_CONFIG_ADDRESS",
         "INPUT_VERIFICATION_ADDRESS",
-        "KMS_GENERATION_ADDRESS",
         "CIPHERTEXT_COMMITS_ADDRESS",
         "DECRYPTION_ADDRESS",
+        ...(requiresLegacyGatewayKmsGenerationAddress(state) ? ["KMS_GENERATION_ADDRESS"] : []),
       ]);
       (await ensureDiscovery(state)).gateway = await readEnvFile(gatewayAddressesPath);
       await generateRuntime(state, stackSpecForState(state));
@@ -543,6 +578,7 @@ export const runStep = async (state: State, step: StepName) => {
         "KMS_VERIFIER_CONTRACT_ADDRESS",
         "INPUT_VERIFIER_CONTRACT_ADDRESS",
         "HCU_LIMIT_CONTRACT_ADDRESS",
+        ...(requiresLegacyGatewayKmsGenerationAddress(state) ? [] : ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", "KMS_GENERATION_CONTRACT_ADDRESS"]),
       ]);
       for (const chain of extraHostChains(state)) {
         const scKey = chain.sc;
@@ -555,6 +591,7 @@ export const runStep = async (state: State, step: StepName) => {
             "KMS_VERIFIER_CONTRACT_ADDRESS",
             "INPUT_VERIFIER_CONTRACT_ADDRESS",
             "HCU_LIMIT_CONTRACT_ADDRESS",
+            ...(requiresLegacyGatewayKmsGenerationAddress(state) ? [] : ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", "KMS_GENERATION_CONTRACT_ADDRESS"]),
           ]);
         });
         await timed(`[multi-chain] ${scKey}-add-pausers`, async () => {
@@ -670,13 +707,13 @@ export const runStep = async (state: State, step: StepName) => {
         await waitForContainer("gateway-sc-add-pausers", "complete");
       }
       await timed("[bootstrap] trigger-keygen", () =>
-        stepComposeTask("gateway-sc", state, ["gateway-sc-trigger-keygen"], { noDeps: true }),
+        stepComposeTask("host-sc", state, ["host-sc-trigger-keygen"], { noDeps: true }),
       );
-      await waitForContainer("gateway-sc-trigger-keygen", "complete");
+      await waitForContainer("host-sc-trigger-keygen", "complete");
       await timed("[bootstrap] trigger-crsgen", () =>
-        stepComposeTask("gateway-sc", state, ["gateway-sc-trigger-crsgen"], { noDeps: true }),
+        stepComposeTask("host-sc", state, ["host-sc-trigger-crsgen"], { noDeps: true }),
       );
-      await waitForContainer("gateway-sc-trigger-crsgen", "complete");
+      await waitForContainer("host-sc-trigger-crsgen", "complete");
       await timed("[bootstrap] wait-for-materials", () => waitForBootstrap(state));
       await generateRuntime(state, stackSpecForState(state));
       break;
@@ -903,7 +940,7 @@ export const upDryRun = async (options: Omit<UpOptions, "dryRun">) => {
     state.scenarioSourcePath ??= state.scenario?.sourcePath;
     ensureResumeOptions(state, options);
     await preflight(state, false, state.requiresGitHub);
-    printBundle(state.versions, { detailed: true });
+    printBundle(state, { detailed: true });
     printPlan(state, options.fromStep ?? startStep(state, options));
     console.log("[dry-run] resume preview uses persisted state only; no runtime state or containers were changed");
     return;
@@ -915,7 +952,7 @@ export const upDryRun = async (options: Omit<UpOptions, "dryRun">) => {
   await assertSchemaCompatibility(bundle, options.overrides, scenario, options.allowSchemaMismatch);
   const state = previewStateFromBundle(options, bundle, scenario);
   await preflight(state, false, state.requiresGitHub);
-  printBundle(state.versions, { detailed: true });
+  printBundle(state, { detailed: true });
   printPlan(state, options.fromStep);
   console.log("[dry-run] preflight passed; no runtime state or containers were changed");
 };

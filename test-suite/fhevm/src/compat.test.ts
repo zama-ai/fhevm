@@ -6,6 +6,7 @@ import {
   MODERN_RELAYER_IMAGE_REPOSITORY,
   MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY,
   compatPolicyForState,
+  requiresLegacyGatewayKmsGenerationAddress,
   requiresLegacyKmsCoreConfig,
   requiresLegacyRelayerUrl,
   validateBundleCompatibility,
@@ -74,6 +75,36 @@ describe("compat", () => {
     expect(policy.connectorEnv.KMS_CONNECTOR_CHAIN_ID).toBe("KMS_CONNECTOR_GATEWAY_CHAIN_ID");
   });
 
+  test("drops kms-generation-address for old host listener images", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-supported",
+        lockName: "latest-supported.json",
+        env: {
+          COPROCESSOR_HOST_LISTENER_VERSION: "v0.11.0",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.coprocessorDropFlags["host-listener"]).toContain("--kms-generation-address");
+    expect(policy.coprocessorDropFlags["host-listener-poller"]).toContain("--kms-generation-address");
+  });
+
+  test("treats sha-style gateway bundles as modern kms-generation sourcing", () => {
+    expect(
+      requiresLegacyGatewayKmsGenerationAddress({
+        versions: {
+          target: "latest-main",
+          lockName: "latest-main.json",
+          env: { GATEWAY_VERSION: "abcdef0" } as Record<string, string>,
+          sources: [],
+        },
+      }),
+    ).toBe(false);
+  });
+
   test("detects legacy relayer URL behavior", () => {
     expect(
       requiresLegacyRelayerUrl({
@@ -108,6 +139,24 @@ describe("compat", () => {
         env: {
           HOST_VERSION: "v0.11.0",
           GATEWAY_VERSION: "v0.11.0",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
+    expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
+  });
+
+  test("keeps legacy pauser flags for v0.12 contract tags", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-supported",
+        lockName: "v0.12.0.json",
+        env: {
+          HOST_VERSION: "v0.12.0",
+          GATEWAY_VERSION: "v0.12.0",
         } as Record<string, string>,
         sources: [],
       },

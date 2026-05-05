@@ -50,12 +50,12 @@ abstract contract EIP712UpgradeableCrossChain is Initializable, IERC5267 {
     }
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.EIP712UpgradeableCrossChain")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant EIP712UpgradeableCrossChainLocation =
+    bytes32 private constant EIP712_UPGRADEABLE_CROSS_CHAIN_LOCATION =
         0xe910845fd818f61127c84f3586776436a37dead33625056c65162537e3373600;
 
     function _getEIP712Storage() private pure returns (EIP712Storage storage $) {
         assembly {
-            $.slot := EIP712UpgradeableCrossChainLocation
+            $.slot := EIP712_UPGRADEABLE_CROSS_CHAIN_LOCATION
         }
     }
 

@@ -1,0 +1,24 @@
+{
+  "extends": "../tsconfig.base.json",
+  "include": [".", "../src"],
+  "exclude": ["standalone"],
+  "compilerOptions": {
+    "composite": true,
+    "noEmit": true,
+    "rootDir": "..",
+    "paths": {
+      "~test/*": ["./src/*"],
+      "fhevm": ["./../src/index.ts"],
+      "fhevm/ethers": ["./../src/ethers/index.ts"],
+      "fhevm/viem": ["./../src/viem/index.ts"],
+      "@fhevm/sdk/ethers": ["./../src/ethers/index.ts"],
+      "@fhevm/sdk/viem": ["./../src/viem/index.ts"],
+      "@fhevm/sdk/chains": ["./../src/core/chains/index.ts"],
+      "@fhevm/sdk/actions/base": ["./../src/core/actions/base/index.ts"],
+      "@fhevm/sdk/actions/chain": ["./../src/core/actions/chain/index.ts"],
+      "@fhevm/sdk/actions/decrypt": ["./../src/core/actions/decrypt/index.ts"],
+      "@fhevm/sdk/actions/encrypt": ["./../src/core/actions/encrypt/index.ts"],
+      "@fhevm/sdk/actions/host": ["./../src/core/actions/host/index.ts"]
+    }
+  }
+}

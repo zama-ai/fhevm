@@ -47,3 +47,14 @@ Note that there are two thread pools in the Coprocessor backend:
 The tokio one (set via `--tokio-threads`) determines how many tokio threads are spawned. These threads are used for async tasks and should not be blocked.
 
 The FHE compute threads are the ones that actually run the FHE computation (set via `--coprocessor-fhe-threads`).
+
+#### RDS IAM Authentication
+
+When using AWS RDS/PostgreSQL IAM database authentication, `DATABASE_URL` should not contain a
+password. Use a URL such as
+`postgresql://coprocessor@my-db.cluster-xyz.eu-west-2.rds.amazonaws.com:5432/coprocessor` and
+set `DATABASE_IAM_AUTH_ENABLED=true`. The runtime will fetch AWS credentials from the default
+provider chain, generate 15-minute IAM tokens automatically, and refresh pooled connections before
+they expire. Set `DATABASE_IAM_REGION` and `DATABASE_SSL_ROOT_CERT_PATH` as well: the former pins
+token signing to the correct AWS region, and the latter is required for `verify-full` TLS against
+the RDS endpoint.

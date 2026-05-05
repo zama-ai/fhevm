@@ -187,10 +187,8 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
     "gateway-sc-deploy",
     "gateway-sc-add-network",
     "gateway-sc-add-pausers",
-    "gateway-sc-trigger-keygen",
-    "gateway-sc-trigger-crsgen",
   ],
-  "host-contracts": ["host-sc-deploy", "host-sc-add-pausers"],
+  "host-contracts": ["host-sc-deploy", "host-sc-add-pausers", "host-sc-trigger-keygen", "host-sc-trigger-crsgen"],
   "test-suite": ["test-suite-e2e-debug"],
 };
 
@@ -287,7 +285,11 @@ export const STANDARD_TEST_PROFILES = [
   "random-subset",
   "multi-chain-isolation",
   "hcu-block-cap",
-  "ciphertext-drift",
+  // Covers both drift detection (incl. an on-chain divergence cross-check folded
+  // in from the former `ciphertext-drift` profile) and full auto-recovery.
+  // `ciphertext-drift` is still registered as a profile for on-demand runs but
+  // is omitted from the standard suite to avoid leaving a corrupted DB.
+  "ciphertext-drift-auto-recovery",
 ] as const;
 
 /** Heavy suites are the slowest and most stateful CI checks. */

@@ -3,6 +3,7 @@
  */
 import {
   compatPolicyForState,
+  requiresLegacyGatewayKmsGenerationAddress,
   requiresLegacyRelayerUrl,
   requiresMultichainAclAddress,
 } from "../compat/compat";
@@ -61,6 +62,28 @@ const applyTopologyEnv = (
   envs["host-sc"].COPROCESSOR_THRESHOLD = String(plan.topology.threshold);
 };
 
+/** Keeps host-contract deployment KMS inputs aligned with the gateway-side source of truth. */
+const applyHostScKmsEnv = (envs: Record<string, Record<string, string>>) => {
+  const gatewayEnv = envs["gateway-sc"];
+  const hostEnv = envs["host-sc"];
+  hostEnv.NUM_KMS_NODES = gatewayEnv.NUM_KMS_NODES;
+  hostEnv.PUBLIC_DECRYPTION_THRESHOLD = gatewayEnv.PUBLIC_DECRYPTION_THRESHOLD;
+  hostEnv.USER_DECRYPTION_THRESHOLD = gatewayEnv.USER_DECRYPTION_THRESHOLD;
+  hostEnv.KMS_GEN_THRESHOLD = gatewayEnv.KMS_GENERATION_THRESHOLD;
+
+  const numKmsNodes = Number(gatewayEnv.NUM_KMS_NODES ?? "0");
+  for (let index = 0; index < numKmsNodes; index += 1) {
+    const txSender = gatewayEnv[`KMS_TX_SENDER_ADDRESS_${index}`];
+    const signer = gatewayEnv[`KMS_SIGNER_ADDRESS_${index}`];
+    const storageUrl = gatewayEnv[`KMS_NODE_STORAGE_URL_${index}`];
+    const ipAddress = gatewayEnv[`KMS_NODE_IP_ADDRESS_${index}`];
+    if (txSender) hostEnv[`KMS_TX_SENDER_ADDRESS_${index}`] = txSender;
+    if (signer) hostEnv[`KMS_SIGNER_ADDRESS_${index}`] = signer;
+    if (storageUrl) hostEnv[`KMS_NODE_STORAGE_URL_${index}`] = storageUrl;
+    if (ipAddress) hostEnv[`KMS_NODE_IP_${index}`] = ipAddress;
+  }
+};
+
 /** Applies base runtime defaults before compat or discovery-specific rewrites. */
 const applyBaseRuntimeEnv = (
   envs: Record<string, Record<string, string>>,
@@ -72,6 +95,12 @@ const applyBaseRuntimeEnv = (
   const crsKeyId = state.discovery?.actualCrsKeyId ?? state.discovery?.crsKeyId ?? predictedCrsId();
 
   envs["coprocessor"].DATABASE_URL = `postgresql://${envs.database.POSTGRES_USER}:${envs.database.POSTGRES_PASSWORD}@${POSTGRES_HOST}/coprocessor`;
+  // E2E tests opt into automatic drift revert. Set via env (not CLI flag).
+  envs["coprocessor"].DRIFT_AUTO_REVERT_ENABLED = "true";
+  // Test-only: hold drift-revert signal in "reverting" state briefly so e2e
+  // tests can observe the post-revert DB state before services resume.
+  // No-op when no drift revert is in progress.
+  envs["coprocessor"].DRIFT_REVERT_TEST_HOLD_SECS = "15";
   envs["coprocessor"].TENANT_API_KEY = DEFAULT_TENANT_API_KEY;
   envs["coprocessor"].COPROCESSOR_API_KEY = DEFAULT_TENANT_API_KEY;
   envs["coprocessor"].AWS_ENDPOINT_URL = state.discovery?.endpoints.minioExternal ?? MINIO_INTERNAL_URL;
@@ -123,6 +152,9 @@ const applyDiscoveryEnv = (
     return;
   }
   const primaryHost = state.discovery.hosts[defaultChain.key] ?? {};
+  const kmsGenerationAddress = requiresLegacyGatewayKmsGenerationAddress(plan)
+    ? state.discovery.gateway.KMS_GENERATION_ADDRESS
+    : primaryHost.KMS_GENERATION_CONTRACT_ADDRESS;
 
   updateContracts(envs["gateway-sc"], state.discovery.gateway);
   updateContracts(envs["gateway-mocked-payment"], {
@@ -142,7 +174,7 @@ const applyDiscoveryEnv = (
     INPUT_VERIFICATION_ADDRESS: state.discovery.gateway.INPUT_VERIFICATION_ADDRESS,
     CIPHERTEXT_COMMITS_ADDRESS: state.discovery.gateway.CIPHERTEXT_COMMITS_ADDRESS,
     ...(requiresMultichainAclAddress(plan) ? { MULTICHAIN_ACL_ADDRESS: state.discovery.gateway.MULTICHAIN_ACL_ADDRESS } : {}),
-    KMS_GENERATION_ADDRESS: state.discovery.gateway.KMS_GENERATION_ADDRESS,
+    KMS_GENERATION_ADDRESS: kmsGenerationAddress,
   });
 
   const kmsHostChains = chains.map((chain) => {
@@ -157,7 +189,7 @@ const applyDiscoveryEnv = (
   updateContracts(envs["kms-connector"], {
     KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
     KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS: state.discovery.gateway.GATEWAY_CONFIG_ADDRESS,
-    KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS: state.discovery.gateway.KMS_GENERATION_ADDRESS,
+    KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS: kmsGenerationAddress,
     KMS_CONNECTOR_HOST_CHAINS: JSON.stringify(kmsHostChains),
   });
   updateContracts(envs["relayer"], {
@@ -240,6 +272,7 @@ export const renderEnvMaps = async (
     throw new Error("Missing default host chain");
   }
   applyTopologyEnv(envs, plan);
+  applyHostScKmsEnv(envs);
   applyBaseRuntimeEnv(envs, state);
   applyCompatEnv(envs, plan);
   applyDiscoveryEnv(envs, state, plan);

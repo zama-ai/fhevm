@@ -134,34 +134,32 @@ pub struct ListenerInstanceConfig {
     pub url: String,
 }
 
-/// Custom deserializer to handle both standard YAML arrays and
-/// Env Variable indexed maps (e.g., listeners__0__url).
-fn deserialize_listeners_from_map_or_seq<'de, D>(
+/// Generic deserializer to handle both standard YAML arrays and
+/// Env Variable indexed maps (e.g., field__0__key, field__1__key).
+/// Works for any Vec<T> where T: Deserialize — used for listeners,
+/// host_chains, backoff_intervals, histogram buckets, etc.
+pub(crate) fn deserialize_vec_from_map_or_seq<'de, D, T>(
     deserializer: D,
-) -> Result<Vec<ListenerInstanceConfig>, D::Error>
+) -> Result<Vec<T>, D::Error>
 where
     D: Deserializer<'de>,
+    T: Deserialize<'de>,
 {
-    // Helper enum to capture either a Sequence (YAML) or a Map (Env Var)
     #[derive(Deserialize)]
     #[serde(untagged)]
-    enum MapOrSeq {
-        List(Vec<ListenerInstanceConfig>),
-        Map(HashMap<String, ListenerInstanceConfig>),
+    enum MapOrSeq<T> {
+        List(Vec<T>),
+        Map(HashMap<String, T>),
     }
 
     match MapOrSeq::deserialize(deserializer)? {
         MapOrSeq::List(list) => Ok(list),
         MapOrSeq::Map(map) => {
-            // Filter keys that look like integers ("0", "1"), parse them, and sort
-            let mut items: Vec<(usize, ListenerInstanceConfig)> = map
+            let mut items: Vec<(usize, T)> = map
                 .into_iter()
                 .filter_map(|(k, v)| k.parse::<usize>().ok().map(|idx| (idx, v)))
                 .collect();
-
-            // Sort by index to ensure "0" comes before "1"
             items.sort_by_key(|(idx, _)| *idx);
-
             Ok(items.into_iter().map(|(_, v)| v).collect())
         }
     }
@@ -202,7 +200,7 @@ pub struct ListenerPoolConfig {
     pub dedup_max_capacity: usize,
     /// List of listeners in the pool
     /// Each listener has a type and URL; instance_id is assigned by position (0-indexed)
-    #[serde(deserialize_with = "deserialize_listeners_from_map_or_seq")]
+    #[serde(deserialize_with = "deserialize_vec_from_map_or_seq")]
     pub listeners: Vec<ListenerInstanceConfig>,
 }
 
@@ -361,6 +359,7 @@ impl UserDecryptQueueSettings {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct HttpMetricsConfig {
+    #[serde(deserialize_with = "deserialize_vec_from_map_or_seq")]
     pub histogram_buckets: Vec<f64>,
 }
 
@@ -387,12 +386,16 @@ pub struct MetricsConfig {
     pub endpoint: String,
 
     // metrics buckets.
+    #[serde(deserialize_with = "deserialize_vec_from_map_or_seq")]
     pub query_duration_histogram_bucket: Vec<f64>,
+    #[serde(deserialize_with = "deserialize_vec_from_map_or_seq")]
     pub request_status_duration_histogram_bucket: Vec<f64>,
+    #[serde(deserialize_with = "deserialize_vec_from_map_or_seq")]
     pub transaction_duration_secs_histogram_bucket: Vec<f64>,
     /// Histogram buckets for raw ETA (before clamping) in retry-after computation.
     /// Higher resolution at small values for typical requests, exponential for full queue.
     /// Example: [1, 2, 5, 10, 20, 30, 60, 120, 300, 600, 1200, 2400]
+    #[serde(deserialize_with = "deserialize_vec_from_map_or_seq")]
     pub retry_after_raw_eta_histogram_bucket: Vec<f64>,
 }
 
@@ -538,7 +541,7 @@ pub struct ContractConfig {
     pub decryption_address: String,
     pub input_verification_address: String,
     /// Number of shares required for user decryption threshold consensus
-    pub user_decrypt_shares_threshold: u16,
+    pub user_decrypt_shares_threshold: u32,
 }
 
 impl ContractConfig {
@@ -572,6 +575,13 @@ pub struct HostChainConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct ProtocolConfigSettings {
+    pub ethereum_http_rpc_url: String,
+    pub address: String,
+    pub retry: RetrySettings,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 /// Top-level configuration structure.
 ///
 /// Contains all configuration settings for the relayer service.
@@ -589,7 +599,10 @@ pub struct Settings {
     /// Storage configuration
     pub storage: StorageConfig,
     /// Host chain configurations (required, at least one entry)
+    #[serde(deserialize_with = "deserialize_vec_from_map_or_seq")]
     pub host_chains: Vec<HostChainConfig>,
+    /// ProtocolConfig contract settings for dynamic threshold resolution
+    pub protocol_config: ProtocolConfigSettings,
 }
 
 // Error type for application-specific configuration errors
@@ -624,7 +637,11 @@ impl Settings {
         let s = s.add_source(
             Environment::with_prefix("APP")
                 .separator("__") // Use double underscore
-                .prefix_separator("_"), // Separator between APP and the rest
+                .prefix_separator("_") // Separator between APP and the rest
+                // Required for structs with numeric fields (e.g., host_chains.chain_id: u64)
+                // inside Vec fields using deserialize_vec_from_map_or_seq. Without this,
+                // env vars remain strings and fail to deserialize into numeric types.
+                .try_parsing(true),
         );
 
         let settings: Settings = s
@@ -652,6 +669,9 @@ impl Settings {
         // Validate contract addresses
         settings.validate_addresses()?;
 
+        // Validate protocol_config settings
+        settings.validate_protocol_config()?;
+
         // Validate listener pool configuration
         settings.validate_listener_pool_config()?;
 
@@ -668,6 +688,7 @@ impl Settings {
                 "input_verification",
                 &self.gateway.contracts.input_verification_address,
             ),
+            ("protocol_config", &self.protocol_config.address),
         ];
 
         for (name, address) in addresses {
@@ -713,6 +734,24 @@ impl Settings {
             }
         }
 
+        Ok(())
+    }
+
+    fn validate_protocol_config(&self) -> Result<(), AppConfigError> {
+        let pc = &self.protocol_config;
+        if !pc.ethereum_http_rpc_url.starts_with("http://")
+            && !pc.ethereum_http_rpc_url.starts_with("https://")
+        {
+            return Err(AppConfigError::InvalidNetworkConfig(format!(
+                "protocol_config.ethereum_http_rpc_url must start with http:// or https://: {}",
+                pc.ethereum_http_rpc_url
+            )));
+        }
+        if pc.retry.max_attempts < 1 {
+            return Err(AppConfigError::Config(
+                "protocol_config.retry.max_attempts must be at least 1".to_string(),
+            ));
+        }
         Ok(())
     }
 
@@ -799,6 +838,7 @@ pub struct LogConfig {
 mod tests {
     use super::*;
     use config::{Config, File, FileFormat};
+    use serial_test::serial;
     use std::io::Write;
     use std::path::PathBuf;
     use tempfile::NamedTempFile;
@@ -1237,6 +1277,7 @@ mod tests {
     }
 
     #[test]
+    #[serial] // avoid env var leakage from parallel tests
     fn test_settings_new_rejects_invalid_address() {
         let builder = ConfigBuilder::from_example()
             .expect("Failed to load example config")
@@ -1261,5 +1302,170 @@ mod tests {
             err.contains("Invalid") && err.contains("address"),
             "Error should mention invalid address, got: {err}"
         );
+    }
+
+    #[test]
+    fn test_deserialize_host_chains_from_indexed_env_vars() {
+        let config_path = ConfigBuilder::from_example()
+            .expect("Failed to load example config")
+            .to_temp_file()
+            .expect("Failed to create temp config file");
+
+        // Simulate env vars: APP_HOST_CHAINS__0__*, APP_HOST_CHAINS__1__*
+        let config = Config::builder()
+            .add_source(File::from(config_path.as_path()).format(FileFormat::Yaml))
+            .set_override("host_chains.0.chain_id", 8009_i64)
+            .expect("Failed to set override")
+            .set_override("host_chains.0.url", "http://localhost:8545")
+            .expect("Failed to set override")
+            .set_override(
+                "host_chains.0.acl_address",
+                "0x339EBB773A9bC1deCFfD5ef4BC7c907e26C1f836",
+            )
+            .expect("Failed to set override")
+            .set_override("host_chains.1.chain_id", 10901_i64)
+            .expect("Failed to set override")
+            .set_override("host_chains.1.url", "http://localhost:9545")
+            .expect("Failed to set override")
+            .set_override(
+                "host_chains.1.acl_address",
+                "0xE61cff9C581c7c91AEF682c2C10e8632864339ab",
+            )
+            .expect("Failed to set override")
+            .build()
+            .expect("Failed to build config");
+
+        let settings: Settings = config
+            .try_deserialize()
+            .expect("Failed to deserialize settings with indexed host_chains");
+        let host_chains = &settings.host_chains;
+
+        assert_eq!(
+            host_chains.len(),
+            2,
+            "Should have 2 host chains from indexed overrides"
+        );
+
+        assert_eq!(host_chains[0].chain_id, 8009);
+        assert_eq!(host_chains[0].url, "http://localhost:8545");
+        assert_eq!(
+            host_chains[0].acl_address,
+            "0x339EBB773A9bC1deCFfD5ef4BC7c907e26C1f836"
+        );
+
+        assert_eq!(host_chains[1].chain_id, 10901);
+        assert_eq!(host_chains[1].url, "http://localhost:9545");
+        assert_eq!(
+            host_chains[1].acl_address,
+            "0xE61cff9C581c7c91AEF682c2C10e8632864339ab"
+        );
+    }
+
+    #[test]
+    fn test_deserialize_host_chains_standard_yaml_still_works() {
+        let config_path = ConfigBuilder::from_example()
+            .expect("Failed to load example config")
+            .to_temp_file()
+            .expect("Failed to create temp config file");
+
+        let config = Config::builder()
+            .add_source(File::from(config_path.as_path()).format(FileFormat::Yaml))
+            .build()
+            .expect("Failed to build config");
+
+        let settings: Settings = config.try_deserialize().expect("Failed to deserialize");
+        assert_eq!(settings.host_chains.len(), 1);
+        assert_eq!(settings.host_chains[0].chain_id, 8009);
+        assert_eq!(settings.host_chains[0].url, "http://localhost:8545");
+        assert_eq!(
+            settings.host_chains[0].acl_address,
+            "0x339EBB773A9bC1deCFfD5ef4BC7c907e26C1f836"
+        );
+    }
+
+    /// Mirrors the real K8s deployment: YAML base config + env var overrides.
+    /// Loads env vars from tests/relayer-test-env-only.env, then calls
+    /// Settings::new (same code path as the real app).
+    /// Values in the env file intentionally differ from the YAML to prove
+    /// env vars actually override. This catches map-vs-sequence and other
+    /// type issues for any field set via env vars.
+    #[test]
+    #[serial] // avoid env var leakage from parallel tests
+    fn test_settings_from_yaml_with_env_overrides() {
+        let env_content = std::fs::read_to_string("tests/relayer-test-env-only.env")
+            .expect("Failed to read tests/relayer-test-env-only.env");
+
+        // Set env vars (same as K8s would inject them)
+        let mut set_vars = Vec::new();
+        for line in env_content.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            if let Some((key, value)) = line.split_once('=') {
+                env::set_var(key, value);
+                set_vars.push(key.to_string());
+            }
+        }
+
+        // Use Settings::new — same code path as the real app
+        let result = Settings::new(Some("tests/relayer-test-config.yaml".to_string()));
+
+        // Clean up env vars before assertions to avoid leaking into other tests
+        for key in &set_vars {
+            env::remove_var(key);
+        }
+
+        let settings = result.expect(
+            "Failed to deserialize Settings with env overrides — \
+             a config field may not support env var configuration",
+        );
+
+        // Verify env var overrides took effect (values differ from YAML)
+        // host_chains: YAML has chain_id=8009, env has 99999
+        assert_eq!(settings.host_chains[0].chain_id, 99999);
+        assert_eq!(settings.host_chains[0].url, "http://env-override:8545");
+
+        // blockchain_rpc: YAML has chain_id=654321, env has 111111
+        assert_eq!(settings.gateway.blockchain_rpc.chain_id, 111111);
+        assert_eq!(
+            settings.gateway.blockchain_rpc.http_url,
+            "http://env-override:8757"
+        );
+
+        // listeners: YAML has 3, env overrides to 2
+        assert_eq!(settings.gateway.listener_pool.listeners.len(), 2);
+
+        // contracts: YAML has threshold=9, env has 5
+        assert_eq!(settings.gateway.contracts.user_decrypt_shares_threshold, 5);
+
+        // copro_kms_backoff_intervals: env overrides to different values
+        assert_eq!(
+            settings.http.retry_after.copro_kms_backoff_intervals.len(),
+            2
+        );
+        assert_eq!(
+            settings.http.retry_after.copro_kms_backoff_intervals[0].retry_interval_secs,
+            2
+        );
+
+        // histogram buckets: env overrides via indexed env vars
+        assert_eq!(
+            settings.metrics.query_duration_histogram_bucket,
+            vec![0.01, 0.05, 0.1]
+        );
+        assert_eq!(
+            settings.http.metrics.histogram_buckets,
+            vec![0.01, 0.05, 0.1]
+        );
+
+        // keyurl: env overrides
+        assert_eq!(
+            settings.keyurl.fhe_public_key.data_id,
+            "env-override-key-id"
+        );
+
+        // storage: env overrides
+        assert!(settings.storage.sql_database_url.contains("env-override"));
     }
 }

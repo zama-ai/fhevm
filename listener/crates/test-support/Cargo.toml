@@ -1,0 +1,9 @@
+[package]
+name = "test-support"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+tokio.workspace = true
+testcontainers = { version = "0.23", features = ["reusable-containers"] }
+testcontainers-modules = { version = "0.11", features = ["redis"] }
