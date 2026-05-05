@@ -136,7 +136,6 @@ import {
   projectContainers,
   removeProjectResources,
   resetAfterStep,
-  stepComposeRun,
   stepComposeTask,
   stepComposeUp,
 } from "./runtime-compose";
@@ -715,21 +714,13 @@ export const runStep = async (state: State, step: StepName) => {
         await waitForContainer("gateway-sc-add-pausers", "complete");
       }
       await timed("[bootstrap] trigger-keygen", () =>
-        stepComposeRun(
-          "host-sc",
-          state,
-          "host-sc-deploy",
-          "npx hardhat task:triggerKeygen --params-type 0 --use-internal-proxy-address true",
-        ),
+        stepComposeTask("host-sc", state, ["host-sc-trigger-keygen"], { noDeps: true }),
       );
+      await waitForContainer("host-sc-trigger-keygen", "complete");
       await timed("[bootstrap] trigger-crsgen", () =>
-        stepComposeRun(
-          "host-sc",
-          state,
-          "host-sc-deploy",
-          "npx hardhat task:triggerCrsgen --params-type 0 --max-bit-length 2048 --use-internal-proxy-address true",
-        ),
+        stepComposeTask("host-sc", state, ["host-sc-trigger-crsgen"], { noDeps: true }),
       );
+      await waitForContainer("host-sc-trigger-crsgen", "complete");
       await timed("[bootstrap] wait-for-materials", () => waitForBootstrap(state));
       await generateRuntime(state, stackSpecForState(state));
       break;

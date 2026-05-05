@@ -272,13 +272,6 @@ export const stepComposeTask = async (
   await composeUp(component, services, { ...options, forceRecreate: true });
 };
 
-export const stepComposeRun = async (component: string, state: State, service: string, command: string) => {
-  await maybeBuild(component, state);
-  await runStreaming([...dockerArgs(component), "run", "--rm", "--no-deps", "--entrypoint", "sh", service, "-lc", command], {
-    env: await composeEnv(component),
-  });
-};
-
 /** Maps a multi-chain compose name to the component whose env it needs. */
 const multiChainEnvComponent = (name: string) =>
   name.startsWith("coprocessor-") ? "coprocessor" : name;
