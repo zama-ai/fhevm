@@ -130,21 +130,21 @@ export const validateDiscovery = (
       throw new PreflightError(`Missing gateway discovery value ${key}`);
     }
   }
-  for (const [index, chain] of hostChainsForState(state).entries()) {
+  for (const chain of hostChainsForState(state)) {
     const host = discovery.hosts[chain.key];
     if (!host) {
       throw new PreflightError(`Missing discovery for host chain "${chain.key}"`);
     }
     const requiredHostForChain = [
       ...requiredHost,
-      ...(index === 0 && usesHostKmsGeneration(state) ? ["KMS_GENERATION_CONTRACT_ADDRESS"] : []),
+      ...(chain.isDefault && usesHostKmsGeneration(state) ? ["KMS_GENERATION_CONTRACT_ADDRESS"] : []),
     ];
     for (const key of requiredHostForChain) {
       if (!host[key]) {
         throw new PreflightError(`Missing host discovery value ${key} for chain "${chain.key}"`);
       }
     }
-    if (index > 0 && host.KMS_GENERATION_CONTRACT_ADDRESS) {
+    if (!chain.isDefault && host.KMS_GENERATION_CONTRACT_ADDRESS) {
       throw new PreflightError(
         `Host discovery for non-canonical chain "${chain.key}" contains KMS_GENERATION_CONTRACT_ADDRESS; this belongs on the canonical host only`,
       );
