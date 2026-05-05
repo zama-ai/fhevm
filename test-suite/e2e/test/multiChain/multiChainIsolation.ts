@@ -65,13 +65,13 @@ describe('Multi-Chain State Isolation', function () {
       );
       expect(await kmsGeneration.getVersion()).to.match(/^KMSGeneration v/);
 
-      for (let i = 1; i < this.chains.length; i++) {
-        const code = await getProvider(this.chains[i]).getCode(kmsGenAddress);
+      await Promise.all(this.chains.slice(1).map(async (chain) => {
+        const code = await getProvider(chain).getCode(kmsGenAddress);
         expect(
           code,
-          `KMSGeneration should not be deployed at ${kmsGenAddress} on non-canonical chain ${this.chains[i].rpcUrl}`,
+          `KMSGeneration should not be deployed at ${kmsGenAddress} on non-canonical chain ${chain.rpcUrl}`,
         ).to.eq('0x');
-      }
+      }));
     });
 
     it('ProtocolConfig is deployed on every host chain', async function () {
