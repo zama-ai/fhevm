@@ -79,7 +79,7 @@ const validDiscovery = (hostKeys: string[]): Discovery => ({
     MULTICHAIN_ACL_ADDRESS: "0x6",
   },
   hosts: Object.fromEntries(
-    hostKeys.map((key, index) => [
+    hostKeys.map((key) => [
       key,
       {
         ACL_CONTRACT_ADDRESS: "0x10",
@@ -88,7 +88,6 @@ const validDiscovery = (hostKeys: string[]): Discovery => ({
         INPUT_VERIFIER_CONTRACT_ADDRESS: "0x13",
         PAUSER_SET_CONTRACT_ADDRESS: "0x14",
         PROTOCOL_CONFIG_CONTRACT_ADDRESS: "0x15",
-        ...(index === 0 ? { KMS_GENERATION_CONTRACT_ADDRESS: "0x16" } : {}),
       },
     ]),
   ),
@@ -107,7 +106,6 @@ describe("validateDiscovery", () => {
   test("requires KMSGeneration on the canonical host", () => {
     const state = completeState();
     state.discovery = validDiscovery(["host"]);
-    delete state.discovery.hosts.host.KMS_GENERATION_CONTRACT_ADDRESS;
 
     expect(() => validateDiscovery(state)).toThrow(
       'Missing host discovery value KMS_GENERATION_CONTRACT_ADDRESS for chain "host"',
@@ -121,6 +119,7 @@ describe("validateDiscovery", () => {
       { key: "chain-b", chainId: "67890", rpcPort: 8547 },
     ];
     state.discovery = validDiscovery(["chain-a", "chain-b"]);
+    state.discovery.hosts["chain-a"].KMS_GENERATION_CONTRACT_ADDRESS = "0x16";
     state.discovery.hosts["chain-b"].KMS_GENERATION_CONTRACT_ADDRESS = "0x17";
 
     expect(() => validateDiscovery(state)).toThrow(
@@ -135,6 +134,7 @@ describe("validateDiscovery", () => {
       { key: "chain-b", chainId: "67890", rpcPort: 8547 },
     ];
     state.discovery = validDiscovery(["chain-a", "chain-b"]);
+    state.discovery.hosts["chain-a"].KMS_GENERATION_CONTRACT_ADDRESS = "0x16";
 
     expect(() => validateDiscovery(state)).not.toThrow();
   });
