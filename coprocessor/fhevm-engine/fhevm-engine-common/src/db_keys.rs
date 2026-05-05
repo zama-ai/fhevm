@@ -2,7 +2,7 @@ use crate::utils::safe_deserialize_key;
 use bytesize::ByteSize;
 use sqlx::{
     postgres::{types::Oid, PgRow},
-    PgPool, Row,
+    PgConnection, PgPool, Row,
 };
 use std::{num::NonZeroUsize, ops::DerefMut, sync::Arc};
 use tokio::sync::RwLock;
@@ -44,19 +44,15 @@ impl DbKeyCache {
     }
 
     /// Fetches the latest key by sequence_number.
-    pub async fn fetch_latest<'a, T>(&self, executor: T) -> anyhow::Result<DbKey>
-    where
-        T: sqlx::PgExecutor<'a>,
-    {
+    pub async fn fetch_latest(&self, executor: &mut PgConnection) -> anyhow::Result<DbKey> {
         let row = sqlx::query(
-            "SELECT key_id, sequence_number, pks_key, sks_key, cks_key FROM keys ORDER BY sequence_number DESC LIMIT 1",
+            "SELECT key_id, sequence_number FROM keys ORDER BY sequence_number DESC LIMIT 1",
         )
-        .fetch_optional(executor)
+        .fetch_optional(&mut *executor)
         .await?
         .ok_or_else(|| anyhow::anyhow!("No keys found in database"))?;
 
         let key_id: DbKeyId = row.try_get("key_id")?;
-        let sequence_number: i64 = row.try_get("sequence_number")?;
 
         // Check if already in cache
         {
@@ -66,63 +62,33 @@ impl DbKeyCache {
             }
         }
 
-        // Not in cache, deserialize and cache it
-        let pks_key: Vec<u8> = row.try_get("pks_key")?;
-        let sks_key: Vec<u8> = row.try_get("sks_key")?;
-        let cks_key: Option<Vec<u8>> = row.try_get("cks_key")?;
-
-        let pks: tfhe::CompactPublicKey = safe_deserialize_key(&pks_key)?;
-        let cks: Option<tfhe::ClientKey> = cks_key
-            .as_ref()
-            .map(|k| safe_deserialize_key(k))
-            .transpose()?;
-
-        let result;
-        #[cfg(not(feature = "gpu"))]
-        {
-            let sks: tfhe::ServerKey = safe_deserialize_key(&sks_key)?;
-
-            result = DbKey {
-                key_id: key_id.clone(),
-                sequence_number,
-                sks,
-                pks,
-                cks,
-            }
-        }
-        #[cfg(feature = "gpu")]
-        {
-            let num_gpus = get_number_of_gpus() as u64;
-            let csks: tfhe::CompressedServerKey = safe_deserialize_key(&sks_key)?;
-
-            result = DbKey {
-                key_id: key_id.clone(),
-                sequence_number,
-                sks: csks.clone().decompress(),
-                csks: csks.clone(),
-                #[cfg(feature = "latency")]
-                gpu_sks: vec![csks.decompress_to_gpu()],
-                #[cfg(not(feature = "latency"))]
-                gpu_sks: (0..num_gpus)
-                    .map(|i| csks.decompress_to_specific_gpu(tfhe::GpuIndex::new(i as u32)))
-                    .collect::<Vec<_>>(),
-                pks,
-                cks,
-            };
-        }
+        // Only fetch the heavy key blobs when the latest key is not already cached.
+        let row = sqlx::query(
+            "SELECT key_id, sequence_number, pks_key, sks_key, cks_key FROM keys WHERE key_id = $1",
+        )
+        .bind(&key_id)
+        .fetch_optional(&mut *executor)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Latest key disappeared from database"))?;
+        let result = Self::deserialize_db_key_row(row)?;
 
         // Insert into cache
         {
             let mut cache = self.cache.write().await;
-            cache.put(key_id.clone(), result.clone());
+            cache.put(result.key_id.clone(), result.clone());
         }
 
         info!(
             "Latest key cached: key_id={:?}, seq={}",
-            hex::encode(&key_id),
-            sequence_number
+            hex::encode(&result.key_id),
+            result.sequence_number
         );
         Ok(result)
+    }
+
+    pub async fn fetch_latest_from_pool(&self, pool: &PgPool) -> anyhow::Result<DbKey> {
+        let mut conn = pool.acquire().await?;
+        self.fetch_latest(&mut conn).await
     }
 
     pub async fn populate<'a, T>(
@@ -188,53 +154,57 @@ impl DbKeyCache {
         let mut res = Vec::with_capacity(rows.len());
 
         for row in rows {
-            let key_id = row.try_get("key_id")?;
-            let sequence_number: i64 = row.try_get("sequence_number")?;
-            let pks_key: Vec<u8> = row.try_get("pks_key")?;
-            let sks_key: Vec<u8> = row.try_get("sks_key")?;
-            let cks_key: Option<Vec<u8>> = row.try_get("cks_key")?;
-
-            let pks: tfhe::CompactPublicKey = safe_deserialize_key(&pks_key)?;
-            let cks: Option<tfhe::ClientKey> = cks_key
-                .as_ref()
-                .map(|k| safe_deserialize_key(k))
-                .transpose()?;
-
-            #[cfg(not(feature = "gpu"))]
-            {
-                let sks: tfhe::ServerKey = safe_deserialize_key(&sks_key)?;
-
-                res.push(DbKey {
-                    key_id,
-                    sequence_number,
-                    sks,
-                    pks,
-                    cks,
-                });
-            }
-            #[cfg(feature = "gpu")]
-            {
-                let num_gpus = get_number_of_gpus() as u64;
-                let csks: tfhe::CompressedServerKey = safe_deserialize_key(&sks_key)?;
-
-                res.push(DbKey {
-                    key_id,
-                    sequence_number,
-                    sks: csks.clone().decompress(),
-                    csks: csks.clone(),
-                    #[cfg(feature = "latency")]
-                    gpu_sks: vec![csks.decompress_to_gpu()],
-                    #[cfg(not(feature = "latency"))]
-                    gpu_sks: (0..num_gpus)
-                        .map(|i| csks.decompress_to_specific_gpu(tfhe::GpuIndex::new(i as u32)))
-                        .collect::<Vec<_>>(),
-                    pks,
-                    cks,
-                });
-            }
+            res.push(Self::deserialize_db_key_row(row)?);
         }
 
         Ok(res)
+    }
+
+    fn deserialize_db_key_row(row: PgRow) -> anyhow::Result<DbKey> {
+        let key_id = row.try_get("key_id")?;
+        let sequence_number: i64 = row.try_get("sequence_number")?;
+        let pks_key: Vec<u8> = row.try_get("pks_key")?;
+        let sks_key: Vec<u8> = row.try_get("sks_key")?;
+        let cks_key: Option<Vec<u8>> = row.try_get("cks_key")?;
+
+        let pks: tfhe::CompactPublicKey = safe_deserialize_key(&pks_key)?;
+        let cks: Option<tfhe::ClientKey> = cks_key
+            .as_ref()
+            .map(|k| safe_deserialize_key(k))
+            .transpose()?;
+
+        #[cfg(not(feature = "gpu"))]
+        {
+            let sks: tfhe::ServerKey = safe_deserialize_key(&sks_key)?;
+
+            Ok(DbKey {
+                key_id,
+                sequence_number,
+                sks,
+                pks,
+                cks,
+            })
+        }
+        #[cfg(feature = "gpu")]
+        {
+            let num_gpus = get_number_of_gpus() as u64;
+            let csks: tfhe::CompressedServerKey = safe_deserialize_key(&sks_key)?;
+
+            Ok(DbKey {
+                key_id,
+                sequence_number,
+                sks: csks.clone().decompress(),
+                csks: csks.clone(),
+                #[cfg(feature = "latency")]
+                gpu_sks: vec![csks.decompress_to_gpu()],
+                #[cfg(not(feature = "latency"))]
+                gpu_sks: (0..num_gpus)
+                    .map(|i| csks.decompress_to_specific_gpu(tfhe::GpuIndex::new(i as u32)))
+                    .collect::<Vec<_>>(),
+                pks,
+                cks,
+            })
+        }
     }
 }
 
