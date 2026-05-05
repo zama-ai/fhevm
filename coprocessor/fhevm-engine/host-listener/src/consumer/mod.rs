@@ -86,7 +86,7 @@ const STARTING_DRIFT: KnownDrift = KnownDrift {
 
 const DRIFT_BLOCK_MARGIN_TO_RESTART: i64 = 5;
 
-async fn check_if_drift_is_over(
+async fn check_if_drift_revert_is_over(
     db: &Database,
     host_chain_id: i64,
     last_known_drift_locked: Arc<RwLock<KnownDrift>>,
@@ -95,7 +95,6 @@ async fn check_if_drift_is_over(
     let last_known_drift = *last_known_drift_locked.read().await;
     let pool = db.pool().await;
     if !last_known_drift.is_finished {
-        // verify if it's finished
         let last_drift =
             fhevm_engine_common::drift_revert::drift_signal_for_chain(
                 &pool,
@@ -105,7 +104,7 @@ async fn check_if_drift_is_over(
             .await?;
         let status = last_drift.map(|ds| ds.status);
         if status.is_none() {
-            error!("Drift with id {} for chain {} is not found in db, please handle manually", last_known_drift.id, host_chain_id);
+            error!("Drift-revert with id {} for chain {} is not found in db, please handle manually", last_known_drift.id, host_chain_id);
         }
         match status {
             Some(DriftStatus::Done) | None => {
@@ -116,14 +115,31 @@ async fn check_if_drift_is_over(
                         + DRIFT_BLOCK_MARGIN_TO_RESTART;
                 if is_finished {
                     last_known_drift_locked.write().await.is_finished = true;
+                    info!(
+                        tip_block = tip_block,
+                        catchup_to = last_known_drift.catchup_to,
+                        "Drift-revert catchup done, going back to realtime blocks"
+                    );
+                } else {
+                    info!(
+                        tip_block = tip_block,
+                        catchup_to = last_known_drift.catchup_to,
+                        "Drift-revert catchup in progress, waiting for more blocks to be processed"
+                    );
                 }
                 return Ok(is_finished);
             }
             Some(DriftStatus::Pending) | Some(DriftStatus::Reverting) => {
+                info!(
+                    drift_id = last_known_drift.id,
+                    block_number = current_block,
+                    "Drift-revert in progress with status {:?}, waiting for it to be resolved before processing new blocks",
+                    status.unwrap()
+                );
                 return Ok(false);
             }
             Some(DriftStatus::Failed(msg)) => {
-                error!("Drift with id {} for chain {} has failed with error: {}, please handle manually", last_known_drift.id, host_chain_id, &msg);
+                error!("Drift-revert with id {} for chain {} has failed with error: {}, please handle manually", last_known_drift.id, host_chain_id, &msg);
                 return Ok(false);
             }
         }
@@ -218,31 +234,21 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     let last_known_drift = Arc::new(RwLock::new(STARTING_DRIFT));
     let chain_id_str = config.chain_id.to_string();
     let consumer_task = client.consume(move |payload, _cancel| {
-        // if drift wait until the other listener is back to current block
         blockchain_tick.update();
         let mut db = db.clone();
         let chain_id_str = chain_id_str.clone();
-        let known_drift = last_known_drift.clone();
+        let last_known_drift = last_known_drift.clone();
         async move {
-             let drift_is_over = check_if_drift_is_over(
+            let drift_revert_is_over = check_if_drift_revert_is_over(
                 &db,
                 chain_id.as_u64() as i64,
-                known_drift,
+                last_known_drift,
                 payload.block_number,
             ).await;
-            let drift_is_over = match drift_is_over {
-                Ok(is_over) => is_over,
-                Err(err) => {
-                    error!(error = %err, "Drift check error, assuming no drift and proceeding with block processing");
-                    false
-                }
-            };
-            if !drift_is_over {
-                warn!(
-                    block_number = payload.block_number,
-                    "Drift in progress, skipping block processing until resolved"
-                );
-                return Err(HandlerError::Transient(Box::from("Drift in progress")));
+            match drift_revert_is_over {
+                Ok(false) => return Err(HandlerError::Transient(Box::from("Drift in progress"))),
+                Ok(true) => (), // all good
+                Err(err) => error!(%err, "Can't check drift-revert status"),
             }
             let block_summary = BlockSummary {
                 number: payload.block_number,
