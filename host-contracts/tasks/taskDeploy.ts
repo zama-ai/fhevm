@@ -90,15 +90,17 @@ async function waitForUpgradeLanded(
     hre.ethers.provider,
   );
   const deadline = Date.now() + 30_000;
+  let lastError: unknown;
   while (Date.now() < deadline) {
     try {
       await proxy.getCurrentKmsContextId();
       return;
-    } catch {
+    } catch (err) {
+      lastError = err;
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
   }
-  throw new Error(`${contractLabel} upgrade did not land after 30s of polling`);
+  throw new Error(`${contractLabel} upgrade did not land after 30s of polling (last error: ${formatError(lastError)})`);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

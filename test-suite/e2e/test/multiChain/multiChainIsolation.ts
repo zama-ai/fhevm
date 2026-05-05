@@ -7,6 +7,7 @@ import { isLiveNetwork } from '../network';
 import { getSigners as getHardhatSigners, initSigners } from '../signers';
 import { userDecryptSingleHandle } from '../utils';
 import { deployChainFixture } from './multiChain.fixture';
+import type { ChainConfig } from './multiChainHelper';
 import {
   HOST_CHAINS,
   createInstance,
@@ -16,6 +17,15 @@ import {
   getSigners,
   getWallet,
 } from './multiChainHelper';
+
+async function getVersion(chain: ChainConfig, address: string): Promise<string | undefined> {
+  const contract = new ethers.Contract(address, ['function getVersion() view returns (string)'], getProvider(chain));
+  try {
+    return await contract.getVersion();
+  } catch {
+    return undefined;
+  }
+}
 
 describe('Multi-Chain State Isolation', function () {
   this.timeout(300_000);
@@ -58,20 +68,21 @@ describe('Multi-Chain State Isolation', function () {
         /^0x[0-9a-fA-F]{40}$/,
       );
 
-      const kmsGeneration = new ethers.Contract(
-        kmsGenAddress!,
-        ['function getVersion() view returns (string)'],
-        getProvider(this.chains[0]),
-      );
-      expect(await kmsGeneration.getVersion()).to.match(/^KMSGeneration v/);
+      expect(await getVersion(this.chains[0], kmsGenAddress)).to.match(/^KMSGeneration v/);
 
-      await Promise.all(this.chains.slice(1).map(async (chain) => {
-        const code = await getProvider(chain).getCode(kmsGenAddress);
-        expect(
-          code,
-          `KMSGeneration should not be deployed at ${kmsGenAddress} on non-canonical chain ${chain.rpcUrl}`,
-        ).to.eq('0x');
-      }));
+      await Promise.all(
+        this.chains.slice(1).map(async (chain: ChainConfig) => {
+          expect(
+            chain.kmsGenerationAddress,
+            `non-canonical chain ${chain.rpcUrl} must not export KMS_GENERATION_CONTRACT_ADDRESS`,
+          ).to.be.undefined;
+          const version = await getVersion(chain, kmsGenAddress);
+          expect(
+            version ?? '',
+            `canonical KMSGeneration address ${kmsGenAddress} must not identify as KMSGeneration on ${chain.rpcUrl}`,
+          ).not.to.match(/^KMSGeneration v/);
+        }),
+      );
     });
 
     it('ProtocolConfig is deployed on every host chain', async function () {

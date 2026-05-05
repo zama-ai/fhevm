@@ -19,6 +19,7 @@ export interface ChainConfig {
   kmsVerifierAddress: string;
   inputVerifierAddress: string;
   protocolConfigAddress?: string;
+  kmsGenerationAddress?: string;
 }
 
 function requireEnv(name: string): string {
@@ -40,6 +41,7 @@ function parseHostChains(): ChainConfig[] {
     kmsVerifierAddress: requireEnv('KMS_VERIFIER_CONTRACT_ADDRESS'),
     inputVerifierAddress: requireEnv('INPUT_VERIFIER_CONTRACT_ADDRESS'),
     protocolConfigAddress: optionalEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS'),
+    kmsGenerationAddress: optionalEnv('KMS_GENERATION_CONTRACT_ADDRESS'),
   };
   const chains: ChainConfig[] = [primary];
   for (let i = 1; ; i++) {
@@ -53,6 +55,7 @@ function parseHostChains(): ChainConfig[] {
       kmsVerifierAddress: requireEnv(`HOST_CHAIN_${i}_KMS_VERIFIER_CONTRACT_ADDRESS`),
       inputVerifierAddress: requireEnv(`HOST_CHAIN_${i}_INPUT_VERIFIER_CONTRACT_ADDRESS`),
       protocolConfigAddress: optionalEnv(`HOST_CHAIN_${i}_PROTOCOL_CONFIG_CONTRACT_ADDRESS`),
+      kmsGenerationAddress: optionalEnv(`HOST_CHAIN_${i}_KMS_GENERATION_CONTRACT_ADDRESS`),
     });
   }
   return chains;

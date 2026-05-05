@@ -9,6 +9,10 @@ import path from 'path';
 
 import { getRequiredEnvVar } from './utils/loadVariables';
 
+function formatError(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 // OZ upgrades' upgradeProxy can return before the upgradeToAndCall tx is mined on
 // interval-mining networks. Poll until the new implementation answers a
 // state-dependent view.
@@ -23,15 +27,17 @@ async function waitForUpgradeLanded(
     hre.ethers.provider,
   );
   const deadline = Date.now() + 30_000;
+  let lastError: unknown;
   while (Date.now() < deadline) {
     try {
       await proxy.getCurrentKmsContextId();
       return;
-    } catch {
+    } catch (err) {
+      lastError = err;
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
   }
-  throw new Error(`${contractLabel} upgrade did not land after 30s of polling`);
+  throw new Error(`${contractLabel} upgrade did not land after 30s of polling (last error: ${formatError(lastError)})`);
 }
 
 const LEGACY_DEPLOY_ALL_HOST_CONTRACTS_WARNING = `task:deployLegacyAllHostContracts is deprecated and will be removed after the v0.13 rollout.
