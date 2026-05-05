@@ -165,11 +165,13 @@ async fn check_if_drift_revert_is_over(
         catchup_to: current_block as i64,
         is_finished: false,
     };
-    return Ok(false);
+    Ok(false)
 }
 
-
-pub async fn promote_once_all_chains_to_fast(db: &Database, dependent_ops_max_per_chain: u32) {
+pub async fn promote_once_all_chains_to_fast(
+    db: &Database,
+    dependent_ops_max_per_chain: u32,
+) {
     if dependent_ops_max_per_chain == 0 {
         let count = match db.promote_all_dep_chains_to_fast_priority().await {
             Ok(count) => count,
@@ -189,7 +191,11 @@ pub async fn promote_once_all_chains_to_fast(db: &Database, dependent_ops_max_pe
 
 pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     info!("Starting consumer with config: {:?}", config);
-    let contracts = vec![config.acl_address, config.tfhe_address, config.kms_generation_address];
+    let contracts = vec![
+        config.acl_address,
+        config.tfhe_address,
+        config.kms_generation_address,
+    ];
     let chain_id: u64 = config.chain_id.parse()?;
     let chain_id = ChainId::try_from(chain_id)?;
 
@@ -254,13 +260,22 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 chain_id.as_u64() as i64,
                 last_known_drift,
                 payload.block_number,
-            ).await;
+            )
+            .await;
             match drift_revert_is_over {
-                Ok(false) => return Err(HandlerError::Transient(Box::from("Drift in progress"))),
+                Ok(false) => {
+                    return Err(HandlerError::Transient(Box::from(
+                        "Drift in progress",
+                    )))
+                }
                 Ok(true) => (), // all good
                 Err(err) => error!(%err, "Can't check drift-revert status"),
             }
-            promote_once_all_chains_to_fast(&db, ingest_options.dependent_ops_max_per_chain).await;
+            promote_once_all_chains_to_fast(
+                &db,
+                ingest_options.dependent_ops_max_per_chain,
+            )
+            .await;
             let block_summary = BlockSummary {
                 number: payload.block_number,
                 hash: payload.block_hash,
