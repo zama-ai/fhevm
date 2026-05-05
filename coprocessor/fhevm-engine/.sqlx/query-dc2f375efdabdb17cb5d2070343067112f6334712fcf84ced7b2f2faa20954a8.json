@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO crs (chain_id, block_hash, crs_id, crs)\n            SELECT e.chain_id, e.block_hash, e.crs_id, e.crs_content\n            FROM kms_crs_activation_events AS e\n            WHERE\n                e.chain_id = $1\n                AND e.block_hash = $2\n                AND e.crs_id = $3\n                AND e.crs_content IS NOT NULL\n            ON CONFLICT (chain_id, block_hash, crs_id) DO UPDATE\n            SET crs = EXCLUDED.crs\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dc2f375efdabdb17cb5d2070343067112f6334712fcf84ced7b2f2faa20954a8"
+}

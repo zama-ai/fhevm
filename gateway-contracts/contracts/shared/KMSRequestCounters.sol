@@ -5,15 +5,19 @@ pragma solidity ^0.8.24;
  * @notice The KMS request types.
  * @dev The first request type is deprecated.
  * See `Decryption.sol` for more details.
+ * Indexes 3–6 were previously used by KMSGeneration (PrepKeygen, Keygen, Crsgen,
+ * KeyReshare) before it was moved to Ethereum. They are intentionally not reused
+ * here: historical requestIds with those prefixes are still served by the
+ * view-only KMSGeneration getters on existing Gateway deployments.
  */
 enum RequestType {
     _deprecated_, // 0: DEPRECATED
     PublicDecrypt, // 1
     UserDecrypt, // 2
-    PrepKeygen, // 3
-    Keygen, // 4
-    Crsgen, // 5
-    KeyReshare // 6
+    _deprecated_3_, // 3: was PrepKeygen
+    _deprecated_4_, // 4: was Keygen
+    _deprecated_5_, // 5: was Crsgen
+    _deprecated_6_ // 6: was KeyReshare
 }
 
 // Bit position to left shift for initializing the counters
@@ -27,15 +31,3 @@ uint256 constant PUBLIC_DECRYPT_COUNTER_BASE = uint256(RequestType.PublicDecrypt
 
 // User decrypt requestId format in bytes: [0000 0010 | counter_1..31]
 uint256 constant USER_DECRYPT_COUNTER_BASE = uint256(RequestType.UserDecrypt) << REQUEST_TYPE_SHIFT;
-
-// Preprocessing keygen requestId format in bytes: [0000 0011 | counter_1..31]
-uint256 constant PREP_KEYGEN_COUNTER_BASE = uint256(RequestType.PrepKeygen) << REQUEST_TYPE_SHIFT;
-
-// Keygen requestId format in bytes: [0000 0100 | counter_1..31]
-uint256 constant KEY_COUNTER_BASE = uint256(RequestType.Keygen) << REQUEST_TYPE_SHIFT;
-
-// CRS generation requestId format in bytes: [0000 0101 | counter_1..31]
-uint256 constant CRS_COUNTER_BASE = uint256(RequestType.Crsgen) << REQUEST_TYPE_SHIFT;
-
-// Key resharing requestId format in bytes: [0000 0110 | counter_1..31]
-uint256 constant KEY_RESHARE_COUNTER_BASE = uint256(RequestType.KeyReshare) << REQUEST_TYPE_SHIFT;

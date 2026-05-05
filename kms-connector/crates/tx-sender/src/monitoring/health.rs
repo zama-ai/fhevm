@@ -1,7 +1,7 @@
 use actix_web::http::StatusCode;
 use connector_utils::{
     conn::WalletProvider,
-    monitoring::health::{Healthcheck, database_healthcheck, gateway_healthcheck},
+    monitoring::health::{Healthcheck, database_healthcheck, rpc_node_healthcheck},
 };
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
@@ -11,19 +11,22 @@ use std::time::Duration;
 /// The struct used to monitor the state of the `TransactionSender`.
 pub struct State {
     pub db_pool: Pool<Postgres>,
-    provider: WalletProvider,
+    gateway_provider: WalletProvider,
+    ethereum_provider: WalletProvider,
     healthcheck_timeout: Duration,
 }
 
 impl State {
     pub fn new(
         db_pool: Pool<Postgres>,
-        provider: WalletProvider,
+        gateway_provider: WalletProvider,
+        ethereum_provider: WalletProvider,
         healthcheck_timeout: Duration,
     ) -> Self {
         Self {
             db_pool,
-            provider,
+            gateway_provider,
+            ethereum_provider,
             healthcheck_timeout,
         }
     }
@@ -34,8 +37,20 @@ impl Healthcheck for State {
         let mut errors = vec![];
         let database_connected =
             database_healthcheck(&self.db_pool, self.healthcheck_timeout, &mut errors).await;
-        let gateway_connected =
-            gateway_healthcheck(&self.provider, self.healthcheck_timeout, &mut errors).await;
+        let gateway_connected = rpc_node_healthcheck(
+            &self.gateway_provider,
+            self.healthcheck_timeout,
+            "Gateway",
+            &mut errors,
+        )
+        .await;
+        let ethereum_connected = rpc_node_healthcheck(
+            &self.ethereum_provider,
+            self.healthcheck_timeout,
+            "Ethereum",
+            &mut errors,
+        )
+        .await;
 
         let (status_code, healthy) = if errors.is_empty() {
             (StatusCode::OK, true)
@@ -47,6 +62,7 @@ impl Healthcheck for State {
             healthy,
             database_connected,
             gateway_connected,
+            ethereum_connected,
             details: errors.join("; "),
         };
 
@@ -67,6 +83,8 @@ pub struct HealthStatus {
     pub database_connected: bool,
     /// Gateway provider connection status.
     pub gateway_connected: bool,
+    /// Ethereum provider connection status.
+    pub ethereum_connected: bool,
     /// Details about any issues encountered during healthcheck.
     pub details: String,
 }

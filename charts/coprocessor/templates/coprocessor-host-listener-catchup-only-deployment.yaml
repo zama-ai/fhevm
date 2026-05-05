@@ -74,6 +74,9 @@ spec:
             {{- if not (has "tfhe-contract-address" $disabled) }}
             - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
             {{- end }}
+            {{- if not (has "kms-generation-address" $disabled) }}
+            - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
+            {{- end }}
             {{- if not (has "health-port" $disabled) }}
             - --health-port={{ $.Values.hostListenerCatchupOnlyShared.ports.healthcheck }}
             {{- end }}
@@ -181,6 +184,15 @@ spec:
               {{- else if $chain.fhevmExecutorContractAddressValueFrom }}
               valueFrom:
                 {{- toYaml $chain.fhevmExecutorContractAddressValueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if or $chain.kmsGenerationContractAddress $chain.kmsGenerationContractAddressValueFrom }}
+            - name: KMS_GENERATION_ADDRESS
+              {{- if $chain.kmsGenerationContractAddress }}
+              value: {{ $chain.kmsGenerationContractAddress | quote }}
+              {{- else if $chain.kmsGenerationContractAddressValueFrom }}
+              valueFrom:
+                {{- toYaml $chain.kmsGenerationContractAddressValueFrom | nindent 16 }}
               {{- end }}
             {{- end }}
           {{- if default $.Values.commonConfig.tracing.enabled $.Values.hostListenerCatchupOnlyShared.tracing.enabled }}

@@ -148,6 +148,10 @@ jobs:
           cp -r ../../previous-fhevm/host-contracts/contracts ./previous-contracts
           docker cp fhevm-sc-deploy:/app/addresses ./
 
+      - name: Bootstrap host contracts missing from UPGRADE_FROM_TAG
+        working-directory: current-fhevm/host-contracts
+        run: npx hardhat task:ensureMigrationProxyAddresses
+
       - name: Run prepare-only upgrades
         working-directory: current-fhevm/host-contracts
         run: |
