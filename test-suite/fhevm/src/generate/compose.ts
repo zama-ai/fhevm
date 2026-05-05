@@ -3,11 +3,9 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-
 import YAML from "yaml";
 
-import { compatPolicyForState, type CompatPolicy } from "../compat/compat";
-import { topologyForState, type StackSpec } from "../stack-spec/stack-spec";
+import { type CompatPolicy, compatPolicyForState } from "../compat/compat";
 import {
   COMPONENTS,
   COMPOSE_OUT_DIR,
@@ -21,6 +19,7 @@ import {
   hostChainNames,
   hostChainRuntimes,
 } from "../layout";
+import { type StackSpec, topologyForState } from "../stack-spec/stack-spec";
 import type { HostChainScenario, ResolvedCoprocessorScenarioInstance, State } from "../types";
 import { ensureDir, exists, mergeArgs, readEnvFile, remove, toServiceName } from "../utils/fs";
 
@@ -33,7 +32,9 @@ const LOCAL_BUILD_TAG = "fhevm-local";
 const localInstanceTag = (index: number) => `${LOCAL_BUILD_TAG}-i${index}`;
 
 /** Builds the environment passed to docker compose from resolved versions. */
-export const resolvedComposeEnv = (state: Pick<State, "versions" | "overrides" | "scenario">): Record<string, string> => ({
+export const resolvedComposeEnv = (
+  state: Pick<State, "versions" | "overrides" | "scenario">,
+): Record<string, string> => ({
   ...state.versions.env,
   ...compatPolicyForState(state).composeEnv,
   COMPOSE_IGNORE_ORPHANS: "true",
@@ -79,20 +80,47 @@ const buildSpec = (context: string, dockerfile: string, extra: Record<string, un
 });
 const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknown>>> = {
   coprocessor: {
-    "coprocessor-db-migration": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "db-migration" }),
-    "coprocessor-host-listener": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "host-listener" }),
-    "coprocessor-host-listener-poller": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "host-listener" }),
-    "coprocessor-gw-listener": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "gw-listener" }),
-    "coprocessor-tfhe-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "tfhe-worker" }),
-    "coprocessor-zkproof-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "zkproof-worker" }),
-    "coprocessor-sns-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "sns-worker" }),
-    "coprocessor-transaction-sender": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", { target: "transaction-sender" }),
+    "coprocessor-db-migration": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+      target: "db-migration",
+    }),
+    "coprocessor-host-listener": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+      target: "host-listener",
+    }),
+    "coprocessor-host-listener-poller": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+      target: "host-listener",
+    }),
+    "coprocessor-gw-listener": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+      target: "gw-listener",
+    }),
+    "coprocessor-tfhe-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+      target: "tfhe-worker",
+    }),
+    "coprocessor-zkproof-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+      target: "zkproof-worker",
+    }),
+    "coprocessor-sns-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+      target: "sns-worker",
+    }),
+    "coprocessor-transaction-sender": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+      target: "transaction-sender",
+    }),
   },
   "kms-connector": {
-    "kms-connector-db-migration": buildSpec("../../..", "kms-connector/connector-db/Dockerfile", { args: { RUST_IMAGE_VERSION: "1.91.0" } }),
-    "kms-connector-gw-listener": buildSpec("../../..", "kms-connector/Dockerfile.workspace", { target: "gw-listener", args: { RUST_IMAGE_VERSION: "1.91.0" } }),
-    "kms-connector-kms-worker": buildSpec("../../..", "kms-connector/Dockerfile.workspace", { target: "kms-worker", args: { RUST_IMAGE_VERSION: "1.91.0" } }),
-    "kms-connector-tx-sender": buildSpec("../../..", "kms-connector/Dockerfile.workspace", { target: "tx-sender", args: { RUST_IMAGE_VERSION: "1.91.0" } }),
+    "kms-connector-db-migration": buildSpec("../../..", "kms-connector/connector-db/Dockerfile", {
+      args: { RUST_IMAGE_VERSION: "1.91.0" },
+    }),
+    "kms-connector-gw-listener": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
+      target: "gw-listener",
+      args: { RUST_IMAGE_VERSION: "1.91.0" },
+    }),
+    "kms-connector-kms-worker": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
+      target: "kms-worker",
+      args: { RUST_IMAGE_VERSION: "1.91.0" },
+    }),
+    "kms-connector-tx-sender": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
+      target: "tx-sender",
+      args: { RUST_IMAGE_VERSION: "1.91.0" },
+    }),
   },
   relayer: {
     "relayer-db-migration": buildSpec("../../..", "relayer/docker/relayer-migrate/Dockerfile"),
@@ -106,6 +134,8 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
     "gateway-sc-deploy": buildSpec("../../../gateway-contracts", "Dockerfile"),
     "gateway-sc-add-network": buildSpec("../../../gateway-contracts", "Dockerfile"),
     "gateway-sc-add-pausers": buildSpec("../../../gateway-contracts", "Dockerfile"),
+    "gateway-sc-trigger-keygen": buildSpec("../../../gateway-contracts", "Dockerfile"),
+    "gateway-sc-trigger-crsgen": buildSpec("../../../gateway-contracts", "Dockerfile"),
   },
   "host-sc": {
     "host-sc-deploy": buildSpec("../../..", "host-contracts/Dockerfile"),
@@ -120,6 +150,7 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
   },
 };
 const localBuildSpecFor = (component: string, service: string) => COMPONENT_BUILD_SPECS[component]?.[service];
+const CANONICAL_HOST_ONLY_SERVICES = new Set(["host-sc-trigger-keygen", "host-sc-trigger-crsgen"]);
 
 /** Rewrites bind-mount volume paths to absolute template-rooted paths. */
 const rewriteVolume = (value: unknown) => {
@@ -169,9 +200,10 @@ const normalizeEnvironment = (value: unknown) => {
     ) as Record<string, string>;
   }
   if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, String(item ?? "")]),
-    ) as Record<string, string>;
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, String(item ?? "")])) as Record<
+      string,
+      string
+    >;
   }
   return {} as Record<string, string>;
 };
@@ -187,9 +219,7 @@ const interpolateComposeValue = (value: unknown, vars: Record<string, string>): 
   if (!value || typeof value !== "object") {
     return value;
   }
-  return Object.fromEntries(
-    Object.entries(value).map(([key, item]) => [key, interpolateComposeValue(item, vars)]),
-  );
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, interpolateComposeValue(item, vars)]));
 };
 
 /** Rewrites copied coprocessor dependencies to point at instance-specific service names. */
@@ -274,7 +304,9 @@ export const serviceNameList = (state: Pick<State, "scenario">, component: strin
 
 /** Loads a template compose document for a component. */
 const loadComposeDoc = async (component: string) =>
-  YAML.parse(await fs.readFile(path.join(TEMPLATE_COMPOSE_DIR, `${component}-docker-compose.yml`), "utf8")) as ComposeDoc;
+  YAML.parse(
+    await fs.readFile(path.join(TEMPLATE_COMPOSE_DIR, `${component}-docker-compose.yml`), "utf8"),
+  ) as ComposeDoc;
 
 /** Loads a previously generated compose override document for a component. */
 const loadGeneratedComposeDoc = async (component: string) =>
@@ -435,6 +467,9 @@ const buildExtraHostScOverride = async (
   const localHostContracts = overriddenServicesForComponent(plan, "host-sc").size > 0;
   const services: Record<string, Record<string, unknown>> = {};
   for (const [name, service] of Object.entries(doc.services)) {
+    if (CANONICAL_HOST_ONLY_SERVICES.has(name)) {
+      continue;
+    }
     const cloneName = name.replace("host-sc-", `${scPrefix}-`);
     const cloneService = structuredClone(service);
     cloneService.container_name = cloneName;
@@ -549,8 +584,9 @@ export const generateComposeOverrides = async (_state: State, plan: StackSpec) =
   // Clean up stale multi-chain compose files from previous runs.
   // Scan the output directory for files matching multi-chain naming patterns
   // and remove any that are not part of the current active set.
-  const multiChainPrefixes = (({ node, sc, copro }) => [node, sc, copro])(hostChainNames("__placeholder__"))
-    .map((value) => value.replace("__placeholder__", ""));
+  const multiChainPrefixes = (({ node, sc, copro }) => [node, sc, copro])(hostChainNames("__placeholder__")).map(
+    (value) => value.replace("__placeholder__", ""),
+  );
   const activeSet = new Set(extraChainFileNames);
   const dirEntries = await fs.readdir(COMPOSE_OUT_DIR).catch(() => [] as string[]);
   for (const entry of dirEntries) {
