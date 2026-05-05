@@ -228,7 +228,7 @@ describe("compat", () => {
       versions: {
         target: "latest-supported" as const,
         lockName: "latest-supported.json",
-        env: { HOST_VERSION: "v0.11.0" } as Record<string, string>,
+        env: { GATEWAY_VERSION: "v0.11.0", HOST_VERSION: "v0.11.0" } as Record<string, string>,
         sources: [],
       },
       overrides: [],
@@ -236,6 +236,21 @@ describe("compat", () => {
     };
     expect(requiresModernHostAddressArtifacts(state)).toBe(false);
     expect(requiresGatewayKmsGenerationAddress(state)).toBe(true);
+  });
+
+  test("does not require gateway KMSGeneration once gateway stops emitting it", () => {
+    const state = {
+      versions: {
+        target: "latest-supported" as const,
+        lockName: "v0.12.0.json",
+        env: { GATEWAY_VERSION: "v0.12.0", HOST_VERSION: "v0.12.0" } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    };
+    expect(requiresModernHostAddressArtifacts(state)).toBe(false);
+    expect(requiresGatewayKmsGenerationAddress(state)).toBe(false);
   });
 
   test("requires ProtocolConfig and KMSGeneration host addresses on v0.13+ bundles", () => {

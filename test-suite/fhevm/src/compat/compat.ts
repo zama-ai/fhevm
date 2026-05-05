@@ -209,7 +209,8 @@ export const requiresModernHostAddressArtifacts = (state: CompatState) =>
   !versionLt(state.versions.env.HOST_VERSION ?? "", [0, 13, 0], { unparsed: "modern" });
 
 /** Detects when gateway discovery/runtime must require the legacy gateway KMSGeneration address. */
-export const requiresGatewayKmsGenerationAddress = (state: CompatState) => !requiresModernHostAddressArtifacts(state);
+export const requiresGatewayKmsGenerationAddress = (state: CompatState) =>
+  requiresLegacyGatewayKmsGenerationAddress(state) && !requiresModernHostAddressArtifacts(state);
 
 type BundleIncompatibility = { severity: "error"; code: string; message: string };
 
