@@ -59,5 +59,7 @@ fhevm enforces access control with a blockchain-based Access Control List (ACL):
 - **Transient access**: `FHE.allowTransient` provides temporary access for specific transactions.
 - **Validation**: `FHE.isSenderAllowed` ensures that only authorized entities can interact with ciphertexts.
 - **Persistent public decryption**: `FHE.makePubliclyDecryptable`, `FHE.isPubliclyDecryptable` makes a given ciphertext permanently publicly decryptable.
+- **User decryption delegation**: `FHE.delegateUserDecryption` allows users to delegate decryption rights to another address.
+- **Account deny list**: `FHE.isAccountDenied` checks whether an account is blocked from interacting with encrypted values.
 
 For more information see [ACL](../acl/README.md).

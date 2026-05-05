@@ -94,10 +94,10 @@ The `asEbool` functions behave similarly to the `asEuint` functions, but for enc
 ### Configuration
 
 ```solidity
-function setFHEVM(FHEVMConfig.FHEVMConfigStruct memory fhevmConfig) internal
+function setCoprocessor(CoprocessorConfig memory coprocessorConfig) internal
 ```
 
-Sets the FHEVM configuration for encrypted operations.
+Sets the FHEVM coprocessor configuration for encrypted operations. The `CoprocessorConfig` struct contains the addresses of the ACL, Coprocessor (FHEVMExecutor), and KMSVerifier contracts. In most cases, you do not need to call this directly — inherit from `ZamaEthereumConfig` instead, which calls this automatically based on the current chain ID.
 
 ### Initialization Checks
 
@@ -105,7 +105,7 @@ Sets the FHEVM configuration for encrypted operations.
 function isInitialized(T v) internal pure returns (bool)
 ```
 
-Returns true if the encrypted value is initialized, false otherwise. Supported for all encrypted types (T can be ebool, euintX, eaddress, ebytesX).
+Returns true if the encrypted value is initialized, false otherwise. Supported for all encrypted types (T can be ebool, euintX, eaddress).
 
 ### Arithmetic operations
 
@@ -264,7 +264,7 @@ function gt(euint16 a, uint32 b) internal view returns (ebool)
 function select(ebool control, T a, T b) internal returns (T)
 ```
 
-If control is true, returns a, otherwise returns b. Available for ebool, eaddress, and ebytes\* types.
+If control is true, returns a, otherwise returns b. Available for all encrypted types (ebool, euintX, eaddress).
 
 This operator takes three inputs. The first input `b` is of type `ebool` and the two others of type `euintX`. If `b` is an encryption of `true`, the first integer parameter is returned. Otherwise, the second integer parameter is returned.
 
@@ -389,7 +389,154 @@ function finalize() public {
 }
 ```
 
-## Additional Notes
+## Public decryption functions
+
+These functions support the three-step public decryption workflow. For a complete tutorial, see [Public decryption](decryption/oracle.md).
+
+### Make publicly decryptable
+
+```solidity
+function makePubliclyDecryptable(T value) internal returns (T)
+```
+
+Marks an encrypted value as publicly decryptable. Once called, any entity can request the off-chain decryption of this value via the relayer SDK. Supported for all encrypted types (T can be ebool, euintX, eaddress). The calling contract must have ACL permission to access the handle.
+
+### Check if publicly decryptable
+
+```solidity
+function isPubliclyDecryptable(T value) internal view returns (bool)
+```
+
+Returns true if the encrypted value has been marked as publicly decryptable. Supported for all encrypted types.
+
+### Verify decryption signatures
+
+```solidity
+function checkSignatures(
+    bytes32[] memory handlesList,
+    bytes memory abiEncodedCleartexts,
+    bytes memory decryptionProof
+) internal
+```
+
+Verifies that the cleartext values submitted on-chain match the authentic decryption results from the KMS. Reverts if:
+
+- The `decryptionProof` is empty or has invalid length
+- The number of valid signatures is below the KMS signers threshold
+- Any signature is from a non-registered KMS signer
+
+Emits a `PublicDecryptionVerified(handlesList, abiEncodedCleartexts)` event on success.
+
+{% hint style="warning" %}
+The order of handles in `handlesList` must match the order used when calling `publicDecrypt` off-chain. A proof computed for `[handleA, handleB]` is different from a proof computed for `[handleB, handleA]`.
+{% endhint %}
+
+### Validate decryption result (view)
+
+```solidity
+function isPublicDecryptionResultValid(
+    bytes32[] memory handlesList,
+    bytes memory abiEncodedCleartexts,
+    bytes memory decryptionProof
+) internal view returns (bool)
+```
+
+A `view` variant of `checkSignatures`. Returns `true` if the KMS signatures are valid, `false` otherwise (or reverts on malformed input). Unlike `checkSignatures`, this function does not emit events or cache results.
+
+{% hint style="info" %}
+Prefer `checkSignatures` over this function in most cases. `checkSignatures` provides better safety (replay protection via events), is optimized for gas via caching, and is the standard approach for on-chain verification. Use `isPublicDecryptionResultValid` only when you need a read-only validation check (for example, in off-chain simulations).
+{% endhint %}
+
+### Convert to bytes32
+
+```solidity
+function toBytes32(T value) internal pure returns (bytes32)
+```
+
+Converts an encrypted type handle to its underlying `bytes32` representation. Supported for all encrypted types (ebool, euintX, eaddress). This is required when building the `handlesList` array for `checkSignatures`.
+
+**Example**
+
+```solidity
+bytes32[] memory handles = new bytes32[](2);
+handles[0] = FHE.toBytes32(encryptedFoo);
+handles[1] = FHE.toBytes32(encryptedBar);
+```
+
+## User decryption delegation
+
+These functions allow users to delegate their decryption rights to another address (for example, a backend service or a relayer) for specific contracts.
+
+### Delegate user decryption
+
+```solidity
+function delegateUserDecryption(address delegate, address contractAddress, uint64 expirationDate) internal
+function delegateUserDecryptionWithoutExpiration(address delegate, address contractAddress) internal
+```
+
+Delegates the caller's user decryption rights to `delegate` for ciphertexts associated with `contractAddress`. The delegation can have an expiration date or be indefinite.
+
+- The `delegate` cannot be the contract address itself.
+- The `delegate` cannot be `address(this)`.
+
+### Batch delegate user decryption
+
+```solidity
+function delegateUserDecryptions(
+    address delegate,
+    address[] memory contractAddresses,
+    uint64 expirationDate
+) internal
+
+function delegateUserDecryptionsWithoutExpiration(
+    address delegate,
+    address[] memory contractAddresses
+) internal
+```
+
+Delegates user decryption rights across multiple contracts in a single call.
+
+### Revoke user decryption delegation
+
+```solidity
+function revokeUserDecryptionDelegation(address delegate, address contractAddress) internal
+function revokeUserDecryptionDelegations(address delegate, address[] memory contractAddresses) internal
+```
+
+Revokes previously granted decryption delegation for one or more contracts.
+
+### Query delegation status
+
+```solidity
+function isDelegatedForUserDecryption(
+    address delegator,
+    address delegate,
+    address contractAddress,
+    bytes32 handle
+) internal view returns (bool)
+
+function getDelegatedUserDecryptionExpirationDate(
+    address delegator,
+    address delegate,
+    address contractAddress
+) internal view returns (uint64)
+
+function isUserDecryptable(bytes32 handle, address user, address contractAddress) internal view returns (bool)
+```
+
+- **`isDelegatedForUserDecryption`**: Checks if `delegate` has active decryption delegation from `delegator` for a specific handle and contract.
+- **`getDelegatedUserDecryptionExpirationDate`**: Returns the expiration timestamp of a delegation. Returns `0` if no delegation exists.
+- **`isUserDecryptable`**: Checks if a handle can be decrypted by `user` in the context of `contractAddress`. Returns `true` only if both the user and the contract have persistent ACL permission on the handle.
+
+## Account deny list
+
+```solidity
+function isAccountDenied(address account) internal view returns (bool)
+```
+
+Returns whether the given account is on the deny list. Denied accounts cannot interact with encrypted values.
+
+## Additional notes
 
 - **Underlying implementation**:\
   All encrypted operations and access control functionalities are performed through the underlying `Impl` library.
