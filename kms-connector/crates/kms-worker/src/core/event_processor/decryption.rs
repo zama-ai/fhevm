@@ -1,11 +1,6 @@
 use crate::core::{
     config::Config,
-    event_processor::{
-        ProcessingError,
-        context::ContextManager,
-        s3::S3Service,
-        signature::{compute_user_decrypt_digest, verify_signature},
-    },
+    event_processor::{ProcessingError, context::ContextManager, s3::S3Service},
 };
 use alloy::{
     consensus::Transaction,
@@ -32,6 +27,7 @@ use kms_grpc::kms::v1::{
 use sqlx::types::chrono::Utc;
 use std::collections::HashMap;
 use tracing::info;
+use user_decryption_signature::{compute_user_decrypt_digest, verify_signature};
 
 #[derive(Clone)]
 /// The struct responsible of processing incoming decryption requests.
@@ -598,9 +594,6 @@ impl UserDecryptionExtraData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::event_processor::signature::{
-        ERC1271_MAGIC_VALUE, compute_user_decrypt_digest, default_user_decrypt_domain,
-    };
     use alloy::{
         providers::{ProviderBuilder, mock::Asserter},
         signers::{SignerSync, local::PrivateKeySigner},
@@ -614,6 +607,9 @@ mod tests {
     };
     use fhevm_host_bindings::acl::ACL;
     use rstest::rstest;
+    use user_decryption_signature::{
+        ERC1271_MAGIC_VALUE, compute_user_decrypt_digest, default_user_decrypt_domain,
+    };
 
     enum ExpectedOutcome {
         Ok,
