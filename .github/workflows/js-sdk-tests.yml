@@ -114,8 +114,8 @@ jobs:
       - name: Setup Forge Soldeer
         run: cd contracts && forge soldeer install
 
-      - name: Set .env.localhost
-        run: echo 'RPC_URL="http://127.0.0.1:8545"' > test/.env.localhost
+      #- name: Set .env.localhost
+      #  run: echo 'RPC_URL="http://127.0.0.1:8545"' > test/.env.localhost
 
       - name: Set .env
         run: |
