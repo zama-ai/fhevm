@@ -5,8 +5,9 @@
 import { ensureLockSnapshot, previewBundle, resolveBundle } from "../resolve/bundle-store";
 import {
   assertSupportedBundleScenario,
-  requiresLegacyGatewayKmsGenerationAddress,
+  requiresGatewayKmsGenerationAddress,
   requiresMultichainAclAddress,
+  requiresModernHostAddressArtifacts,
   validateBundleCompatibility,
 } from "../compat/compat";
 import { driftDatabaseName } from "../drift";
@@ -112,6 +113,7 @@ import {
   waitForTestSuite,
 } from "./readiness";
 import {
+  assertGeneratedAddressFileLacks,
   ensureGeneratedAddressFile,
   ensureRuntimeArtifacts,
   multiChainComposeEntries,
@@ -559,7 +561,7 @@ export const runStep = async (state: State, step: StepName) => {
         "INPUT_VERIFICATION_ADDRESS",
         "CIPHERTEXT_COMMITS_ADDRESS",
         "DECRYPTION_ADDRESS",
-        ...(requiresLegacyGatewayKmsGenerationAddress(state) ? ["KMS_GENERATION_ADDRESS"] : []),
+        ...(requiresGatewayKmsGenerationAddress(state) ? ["KMS_GENERATION_ADDRESS"] : []),
       ]);
       (await ensureDiscovery(state)).gateway = await readEnvFile(gatewayAddressesPath);
       await generateRuntime(state, stackSpecForState(state));
@@ -578,7 +580,7 @@ export const runStep = async (state: State, step: StepName) => {
         "KMS_VERIFIER_CONTRACT_ADDRESS",
         "INPUT_VERIFIER_CONTRACT_ADDRESS",
         "HCU_LIMIT_CONTRACT_ADDRESS",
-        ...(requiresLegacyGatewayKmsGenerationAddress(state) ? [] : ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", "KMS_GENERATION_CONTRACT_ADDRESS"]),
+        ...(requiresModernHostAddressArtifacts(state) ? ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", "KMS_GENERATION_CONTRACT_ADDRESS"] : []),
       ]);
       for (const chain of extraHostChains(state)) {
         const scKey = chain.sc;
@@ -591,7 +593,10 @@ export const runStep = async (state: State, step: StepName) => {
             "KMS_VERIFIER_CONTRACT_ADDRESS",
             "INPUT_VERIFIER_CONTRACT_ADDRESS",
             "HCU_LIMIT_CONTRACT_ADDRESS",
-            ...(requiresLegacyGatewayKmsGenerationAddress(state) ? [] : ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", "KMS_GENERATION_CONTRACT_ADDRESS"]),
+            ...(requiresModernHostAddressArtifacts(state) ? ["PROTOCOL_CONFIG_CONTRACT_ADDRESS"] : []),
+          ]);
+          await assertGeneratedAddressFileLacks(hostChainAddressesPath(chain.key), `${scKey}-deploy`, [
+            "KMS_GENERATION_CONTRACT_ADDRESS",
           ]);
         });
         await timed(`[multi-chain] ${scKey}-add-pausers`, async () => {
@@ -706,14 +711,25 @@ export const runStep = async (state: State, step: StepName) => {
         );
         await waitForContainer("gateway-sc-add-pausers", "complete");
       }
-      await timed("[bootstrap] trigger-keygen", () =>
-        stepComposeTask("host-sc", state, ["host-sc-trigger-keygen"], { noDeps: true }),
-      );
-      await waitForContainer("host-sc-trigger-keygen", "complete");
-      await timed("[bootstrap] trigger-crsgen", () =>
-        stepComposeTask("host-sc", state, ["host-sc-trigger-crsgen"], { noDeps: true }),
-      );
-      await waitForContainer("host-sc-trigger-crsgen", "complete");
+      if (requiresModernHostAddressArtifacts(state)) {
+        await timed("[bootstrap] trigger-keygen", () =>
+          stepComposeTask("host-sc", state, ["host-sc-trigger-keygen"], { noDeps: true }),
+        );
+        await waitForContainer("host-sc-trigger-keygen", "complete");
+        await timed("[bootstrap] trigger-crsgen", () =>
+          stepComposeTask("host-sc", state, ["host-sc-trigger-crsgen"], { noDeps: true }),
+        );
+        await waitForContainer("host-sc-trigger-crsgen", "complete");
+      } else {
+        await timed("[bootstrap] trigger-keygen", () =>
+          stepComposeTask("gateway-sc", state, ["gateway-sc-trigger-keygen"], { noDeps: true }),
+        );
+        await waitForContainer("gateway-sc-trigger-keygen", "complete");
+        await timed("[bootstrap] trigger-crsgen", () =>
+          stepComposeTask("gateway-sc", state, ["gateway-sc-trigger-crsgen"], { noDeps: true }),
+        );
+        await waitForContainer("gateway-sc-trigger-crsgen", "complete");
+      }
       await timed("[bootstrap] wait-for-materials", () => waitForBootstrap(state));
       await generateRuntime(state, stackSpecForState(state));
       break;
