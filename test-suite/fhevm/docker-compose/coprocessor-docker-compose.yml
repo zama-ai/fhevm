@@ -77,6 +77,7 @@ services:
       - --database-url=${DATABASE_URL}
       - --acl-contract-address=${ACL_CONTRACT_ADDRESS}
       - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
+      - --kms-generation-address=${KMS_GENERATION_ADDRESS}
       - --url=redis://listener-redis:6379
       #- --url=amqp://user:pass@listener-rabbitmq:5672
       - --chain-id=${CHAIN_ID}
