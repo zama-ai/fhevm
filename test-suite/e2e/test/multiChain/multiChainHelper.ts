@@ -18,13 +18,17 @@ export interface ChainConfig {
   aclAddress: string;
   kmsVerifierAddress: string;
   inputVerifierAddress: string;
-  protocolConfigAddress: string;
+  protocolConfigAddress?: string;
 }
 
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`Missing required env var: ${name}`);
   return value;
+}
+
+function optionalEnv(name: string): string | undefined {
+  return process.env[name] || undefined;
 }
 
 /** Discovers all host chains from indexed env vars (HOST_CHAIN_1_*, HOST_CHAIN_2_*, …). */
@@ -35,7 +39,7 @@ function parseHostChains(): ChainConfig[] {
     aclAddress: requireEnv('ACL_CONTRACT_ADDRESS'),
     kmsVerifierAddress: requireEnv('KMS_VERIFIER_CONTRACT_ADDRESS'),
     inputVerifierAddress: requireEnv('INPUT_VERIFIER_CONTRACT_ADDRESS'),
-    protocolConfigAddress: requireEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS'),
+    protocolConfigAddress: optionalEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS'),
   };
   const chains: ChainConfig[] = [primary];
   for (let i = 1; ; i++) {
@@ -48,7 +52,7 @@ function parseHostChains(): ChainConfig[] {
       aclAddress: requireEnv(`HOST_CHAIN_${i}_ACL_CONTRACT_ADDRESS`),
       kmsVerifierAddress: requireEnv(`HOST_CHAIN_${i}_KMS_VERIFIER_CONTRACT_ADDRESS`),
       inputVerifierAddress: requireEnv(`HOST_CHAIN_${i}_INPUT_VERIFIER_CONTRACT_ADDRESS`),
-      protocolConfigAddress: requireEnv(`HOST_CHAIN_${i}_PROTOCOL_CONFIG_CONTRACT_ADDRESS`),
+      protocolConfigAddress: optionalEnv(`HOST_CHAIN_${i}_PROTOCOL_CONFIG_CONTRACT_ADDRESS`),
     });
   }
   return chains;
