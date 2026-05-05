@@ -564,6 +564,9 @@ impl DriftDetector {
     /// Finalize a normal log-polling batch: check deferred consensus results,
     /// alert on completed-without-consensus handles, and evict stale handles.
     pub(crate) async fn end_of_batch(&mut self, db_pool: &Pool<Postgres>) -> anyhow::Result<()> {
+        if self.replaying {
+            return Ok(());
+        }
         self.refresh_pending_consensus_checks(db_pool).await?;
         self.finalize_completed_without_consensus();
         self.evict_stale(Instant::now());
@@ -985,6 +988,35 @@ mod tests {
 
         assert_eq!(detector.deferred_drift_detected, 1);
         assert!(detector.open_handles.get(&handle).unwrap().drift_reported);
+    }
+
+    #[tokio::test]
+    async fn end_of_batch_is_noop_while_replaying() {
+        let mut detector = detector();
+        let handle = FixedBytes::from([12u8; 32]);
+        let senders = senders();
+        let base = Instant::now();
+
+        detector.set_replaying(true);
+        for sender in senders {
+            submit_at(
+                &mut detector,
+                handle,
+                [13u8; 32],
+                [14u8; 32],
+                sender,
+                10,
+                base,
+            );
+        }
+
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://test:test@localhost:5432/test")
+            .unwrap();
+        detector.end_of_batch(&pool).await.unwrap();
+
+        assert!(detector.open_handles.contains_key(&handle));
+        assert_eq!(detector.deferred_consensus_timeout, 0);
     }
 
     #[test]
