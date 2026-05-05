@@ -9,7 +9,6 @@ import {
   requiresKmsGenerationContractAddress,
   requiresMultichainAclAddress,
   requiresProtocolConfigContractAddress,
-  usesHostKmsGeneration,
   validateBundleCompatibility,
 } from "../compat/compat";
 import { driftDatabaseName } from "../drift";
@@ -715,21 +714,19 @@ export const runStep = async (state: State, step: StepName) => {
         );
         await waitForContainer("gateway-sc-add-pausers", "complete");
       }
-      const triggerComponent = usesHostKmsGeneration(state) ? "host-sc" : "gateway-sc";
-      const triggerService = `${triggerComponent}-deploy`;
       await timed("[bootstrap] trigger-keygen", () =>
         stepComposeRun(
-          triggerComponent,
+          "host-sc",
           state,
-          triggerService,
+          "host-sc-deploy",
           "npx hardhat task:triggerKeygen --params-type 0 --use-internal-proxy-address true",
         ),
       );
       await timed("[bootstrap] trigger-crsgen", () =>
         stepComposeRun(
-          triggerComponent,
+          "host-sc",
           state,
-          triggerService,
+          "host-sc-deploy",
           "npx hardhat task:triggerCrsgen --params-type 0 --max-bit-length 2048 --use-internal-proxy-address true",
         ),
       );
