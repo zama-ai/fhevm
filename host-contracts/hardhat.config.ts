@@ -18,6 +18,7 @@ import './tasks/generateKmsMaterials';
 import './tasks/ownership';
 import './tasks/pauseContracts';
 import './tasks/taskDeploy';
+import './tasks/taskMigrate';
 import './tasks/taskUtils';
 import './tasks/upgradeContracts';
 
@@ -88,8 +89,6 @@ task('test', async (taskArgs, hre, runSuper) => {
     await hre.run('task:addHostPausers', { useInternalProxyAddress: true });
   }
   await hre.run('compile:specific', { contract: 'examples' });
-  // Compile migration-only legacy mocks used by test/tasks/migration.ts.
-  await hre.run('compile:specific', { contract: 'test/migration-only-previous-contracts' });
   await runSuper();
 });
 
