@@ -106,9 +106,9 @@ impl GatewayInstance {
             .map_err(|e| anyhow::anyhow!("Could not find gateway-contracts directory: {e}"))?;
 
         let kms_connector_tests_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tests/contracts")
+            .join("../../tests")
             .canonicalize()
-            .map_err(|e| anyhow::anyhow!("Could not find kms-connector tests/contracts: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("Could not find kms-connector tests: {e}"))?;
 
         let rpc_url = Self::anvil_http_endpoint_impl(anvil_host_port).to_string();
         let private_key = DEPLOYER_PRIVATE_KEY.to_string();
@@ -116,7 +116,7 @@ impl GatewayInstance {
         let (decryption_addr, gateway_config_addr, kms_generation_addr, kms_verifier_addr) =
             tokio::task::spawn_blocking(move || {
                 let decryption = deploy_contract(
-                    "DecryptionMock.sol",
+                    "contracts/DecryptionMock.sol",
                     "DecryptionMock",
                     &rpc_url,
                     &private_key,
@@ -132,7 +132,7 @@ impl GatewayInstance {
                 )?;
 
                 let kms_generation = deploy_contract(
-                    "KMSGenerationMock.sol",
+                    "contracts/KMSGenerationMock.sol",
                     "KMSGenerationMock",
                     &rpc_url,
                     &private_key,
@@ -140,7 +140,7 @@ impl GatewayInstance {
                 )?;
 
                 let kms_verifier = deploy_contract(
-                    "KMSVerifierMock.sol",
+                    "contracts/KMSVerifierMock.sol",
                     "KMSVerifierMock",
                     &rpc_url,
                     &private_key,
