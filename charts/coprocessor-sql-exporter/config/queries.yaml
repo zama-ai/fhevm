@@ -1,0 +1,85 @@
+allowed_handles_txn_sent:
+  query: |
+    SELECT 'txn_sent' AS status, count(*)::float AS count
+    FROM allowed_handles
+    WHERE txn_is_sent = true
+    UNION ALL
+    SELECT 'txn_unsent' AS status, count(*)::float AS count
+    FROM allowed_handles
+    WHERE txn_is_sent = false
+  metrics:
+    - status:
+        usage: "LABEL"
+        description: "Transaction status"
+    - count:
+        usage: "GAUGE"
+        description: "Number of allowed handles transactions sent"
+
+ciphertext_txn_sent:
+  query: |
+    SELECT 'txn_sent' AS status, count(*)::float AS count
+    FROM ciphertext_digest
+    WHERE txn_is_sent = true
+    UNION ALL
+    SELECT 'txn_unsent' AS status, count(*)::float AS count
+    FROM ciphertext_digest
+    WHERE txn_is_sent = false
+  metrics:
+    - status:
+        usage: "LABEL"
+        description: "Transaction status"
+    - count:
+        usage: "GAUGE"
+        description: "Number of ciphertext transactions sent"
+
+computations_completion:
+  query: |
+    SELECT 'completed' AS status, COUNT(*)::float AS count
+    FROM computations
+    WHERE is_completed = true
+    UNION ALL
+    SELECT 'uncompleted' AS status, COUNT(*)::float AS count
+    FROM computations
+    WHERE is_completed = false
+  metrics:
+    - status:
+        usage: "LABEL"
+        description: "Completion status"
+    - count:
+        usage: "GAUGE"
+        description: "Number of computations done"
+
+pbs_completion:
+  query: |
+    SELECT 'completed' AS status, COUNT(*)::float AS count
+    FROM pbs_computations
+    WHERE is_completed = true
+    UNION ALL
+    SELECT 'uncompleted' AS status, COUNT(*)::float AS count
+    FROM pbs_computations
+    WHERE is_completed = false
+  metrics:
+    - status:
+        usage: "LABEL"
+        description: "Completion status"
+    - count:
+        usage: "GAUGE"
+        description: "Number of PBS done"
+
+ciphertexts:
+  query: |
+    SELECT COUNT(*)::float AS count
+    FROM ciphertexts
+  metrics:
+    - count:
+        usage: "GAUGE"
+        description: "Number of ciphertexts in ciphertexts table"
+
+zkproof:
+  query: |
+    SELECT COUNT(*)::float AS count
+    FROM verify_proofs
+  metrics:
+    - count:
+        usage: "GAUGE"
+        description: "Number of remaining ZK-Proof to process"

@@ -1,7 +1,6 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: coprocessor-sql-exporter-config
+  name: coprocessor-postgres-exporter-queries
 data:
-  config: |-
-{{ .Files.Get "config/config.yml" | indent 4 }}
+{{ (.Files.Glob "config/queries.yaml").AsConfig | indent 2 }}

@@ -1,38 +1,38 @@
-prometheus-sql-exporter:
-  replicaCount: 1
-
+prometheus-postgres-exporter:
   image:
-    repository: ghcr.io/justwatchcom/sql_exporter
-    tag: "v0.9"
-
+    registry: hub.zama.org/cgr
+    repository: zama.ai/prometheus-postgres-exporter
+    # if not set appVersion field from Chart.yaml is used
+    #tag: ""
+    pullPolicy: IfNotPresent
+    pullSecrets:
+      - registry-credentials
   serviceMonitor:
     enabled: true
     interval: 30s
-
-  extraEnvs:
-    - name: DATABASE_ENDPOINT
-      valueFrom:
-        secretKeyRef:
-          name: database-credentials
-          key: endpoint
-    - name: DATABASE_USERNAME
-      valueFrom:
-        secretKeyRef:
-          name: database-credentials
-          key: username
-    - name: DATABASE_PASSWORD
-      valueFrom:
-        secretKeyRef:
-          name: database-credentials
-          key: password
-    - name: DATABASE_NAME
-      value: "coprocessor"
+    multipleTarget:
+      enabled: true
+      sharedAuthModule:
+        enabled: true
+        name: "shared"
+      targets:
+        - endpoint: coprocessor-database.coproc.svc.cluster.local
+          name: coprocessor-database
+          port: 5432
+          databaseName: postgres
+  config:
+    existingSecret:
+      enabled: true
+      name: "postgres-exporter-config"
+      key: "postgres_exporter.yml"
+    extraArgs:
+      - --extend.query-path=/etc/postgres_exporter/queries.yaml
   extraVolumes:
-    - name: custom-config
+    - name: custom-queries
       configMap:
-        name: coprocessor-sql-exporter-config
+        name: coprocessor-postgres-exporter-queries
   extraVolumeMounts:
-    - name: custom-config
-      mountPath: /custom-config.yml
-      subPath: config
-  configFilePath: "/custom-config.yml"
+    - name: custom-queries
+      mountPath: /etc/postgres_exporter/queries.yaml
+      subPath: queries.yaml
+      readOnly: true
