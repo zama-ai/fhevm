@@ -170,7 +170,7 @@ async fn check_if_drift_revert_is_over(
 
 pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     info!("Starting consumer with config: {:?}", config);
-    let contracts = vec![config.acl_address, config.tfhe_address];
+    let contracts = vec![config.acl_address, config.tfhe_address, config.kms_generation_address];
     let chain_id: u64 = config.chain_id.parse()?;
     let chain_id = ChainId::try_from(chain_id)?;
 
