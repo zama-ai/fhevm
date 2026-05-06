@@ -59,7 +59,7 @@ await contract.myFunction(
 
 ```ts
 // Generate a transport key pair (private key never leaves the browser)
-const e2eTransportKeyPair = await client.generateE2eTransportKeyPair();
+const transportKeyPair = await client.generateTransportKeyPair();
 
 // Create and sign a decrypt permit in one step
 const signedPermit = await client.signDecryptionPermit({
@@ -68,13 +68,13 @@ const signedPermit = await client.signDecryptionPermit({
   durationDays: 7,
   signerAddress: await signer.getAddress(),
   signer,
-  e2eTransportKeyPair,
+  transportKeyPair,
 });
 
 // Decrypt
 const results = await client.decrypt({
   encryptedValues: [{ encryptedValue: encryptedBalance, contractAddress: '0xYourContract...' }],
-  e2eTransportKeyPair,
+  transportKeyPair,
   signedPermit,
 });
 

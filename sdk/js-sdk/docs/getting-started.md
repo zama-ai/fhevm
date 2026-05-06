@@ -243,7 +243,7 @@ Here's the full flow:
 // 1. Generate a transport key pair
 //    This encrypts the channel between your app and the Zama Protocol —
 //    only your app can read the decrypted values.
-const e2eTransportKeyPair = await client.generateE2eTransportKeyPair();
+const transportKeyPair = await client.generateTransportKeyPair();
 
 // 2. Create and sign the decrypt permit in one step
 //    The SDK constructs the EIP-712 message and signs it with your signer.
@@ -253,7 +253,7 @@ const signedPermit = await client.signDecryptionPermit({
   durationDays: 7,
   signerAddress: await signer.getAddress(), // or walletClient.account.address for viem
   signer, // ethers Signer or viem WalletClient
-  e2eTransportKeyPair,
+  transportKeyPair,
 });
 
 // 3. Decrypt — pass the encrypted value you read from your contract
@@ -261,7 +261,7 @@ const encryptedBalance = await contract.balances(userAddress);
 
 const results = await client.decrypt({
   encryptedValues: [{ encryptedValue: encryptedBalance, contractAddress: '0xYourContract...' }],
-  e2eTransportKeyPair,
+  transportKeyPair,
   signedPermit,
 });
 
@@ -301,7 +301,7 @@ const signedPermit = await client.signDecryptionPermit({
   durationDays: 7,
   signerAddress: await signer.getAddress(),
   signer,
-  e2eTransportKeyPair,
+  transportKeyPair,
   onBehalfOf: '0xDataOwnerAddress...',
 });
 ```

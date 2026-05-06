@@ -37,7 +37,7 @@ src/
 │   ├── actions/             # Standalone action functions
 │   │   ├── base/            # publicDecrypt, fetchVerifiedInputProof, ACL checks, signers
 │   │   ├── chain/           # EIP-712 creation, verification, signDecryptionPermit, keypair ops
-│   │   ├── decrypt/         # decrypt, generateE2eTransportKeyPair, decryptKmsSignedcryptedShares
+│   │   ├── decrypt/         # decrypt, generateTransportKeyPair, decryptKmsSignedcryptedShares
 │   │   ├── encrypt/         # encrypt, generateZkProof
 │   │   └── host/            # Contract reads (ACL, KMSVerifier, InputVerifier, FhevmExecutor)
 │   ├── base/                # Primitives (address, bytes, errors, trustedValue)
@@ -51,7 +51,7 @@ src/
 │   │   └── relayer/         # RelayerModule (HTTP client)
 │   ├── runtime/             # CoreFhevm-p.ts (client), CoreFhevmRuntime-p.ts (runtime)
 │   ├── types/               # All shared type definitions
-│   └── kms/                 # E2eTransportKeyPair, SignedDecryptionPermit
+│   └── kms/                 # TransportKeyPair, SignedDecryptionPermit
 ├── ethers/                  # Ethers.js v6 adapter
 │   ├── clients/             # createFhevmClient, createFhevmEncryptClient, createFhevmDecryptClient
 │   └── internal/            # Runtime config, TrustedClient sealing, EthereumModule impl
@@ -72,8 +72,8 @@ Clients are built by composing a base `CoreFhevm` with decorator actions via `.e
 ```
 createCoreFhevm() → base client (chain, runtime, trustedClient)
   ↓ .extend() chains decorators:
-  ├─ baseActions       → publicDecrypt, signDecryptionPermit, parseE2eTransportKeyPair, ...
-  ├─ decryptActions    → decrypt, generateE2eTransportKeyPair, createUserDecryptEIP712, ...
+  ├─ baseActions       → publicDecrypt, signDecryptionPermit, parseTransportKeyPair, ...
+  ├─ decryptActions    → decrypt, generateTransportKeyPair, createUserDecryptEIP712, ...
   └─ encryptActions    → encrypt
 ```
 
@@ -173,7 +173,7 @@ Files suffixed with `-p.ts` contain internal implementation. The public file (wi
 | `CoreFhevm-p.ts`              | Core client class with private fields    |
 | `CoreFhevmRuntime-p.ts`       | Runtime factory with module composition  |
 | `ethers-p.ts` / `viem-p.ts`   | Adapter internals (runtime cache, token) |
-| `E2eTransportKeyPair-p.ts`    | E2E transport key pair implementation    |
+| `TransportKeyPair-p.ts`       | E2E transport key pair implementation    |
 | `SignedDecryptionPermit-p.ts` | Signed permit implementation             |
 
 ---

@@ -108,15 +108,15 @@ Has all base, encrypt, and decrypt methods.
 
 ### Base methods (all client types)
 
-| Method                                 | Sync/Async | What it does                                 |
-| -------------------------------------- | ---------- | -------------------------------------------- |
-| `publicDecrypt(params)`                | async      | Decrypt publicly readable encrypted values   |
-| `signDecryptionPermit(params)`         | async      | Create and sign a decrypt permit in one step |
-| `parseE2eTransportKeyPair(params)`     | async      | Restore a key pair from serialized bytes     |
-| `serializeE2eTransportKeyPair(params)` | sync       | Serialize a key pair for storage             |
-| `fetchFheEncryptionKeyBytes(params?)`  | async      | Fetch the network's public encryption key    |
-| `init()`                               | async      | Eagerly load WASM modules                    |
-| `ready`                                | Promise    | Resolves when WASM modules are loaded        |
+| Method                                | Sync/Async | What it does                                 |
+| ------------------------------------- | ---------- | -------------------------------------------- |
+| `publicDecrypt(params)`               | async      | Decrypt publicly readable encrypted values   |
+| `signDecryptionPermit(params)`        | async      | Create and sign a decrypt permit in one step |
+| `parseTransportKeyPair(params)`       | async      | Restore a key pair from serialized bytes     |
+| `serializeTransportKeyPair(params)`   | sync       | Serialize a key pair for storage             |
+| `fetchFheEncryptionKeyBytes(params?)` | async      | Fetch the network's public encryption key    |
+| `init()`                              | async      | Eagerly load WASM modules                    |
+| `ready`                               | Promise    | Resolves when WASM modules are loaded        |
 
 ### Encrypt methods (`FhevmClient`, `FhevmEncryptClient`)
 
@@ -132,7 +132,7 @@ Has all base, encrypt, and decrypt methods.
 | `createUserDecryptEIP712(params)`          | async      | Build EIP-712 typed data for a decrypt permit (lower-level)           |
 | `createDelegatedUserDecryptEIP712(params)` | async      | Build EIP-712 typed data for a delegated decrypt permit (lower-level) |
 | `publicDecrypt(params)`                    | async      | Decrypt publicly readable encrypted values                            |
-| `generateE2eTransportKeyPair()`            | async      | Generate a new E2E transport key pair for decryption                  |
+| `generateTransportKeyPair()`               | async      | Generate a new E2E transport key pair for decryption                  |
 
 ## Client properties
 

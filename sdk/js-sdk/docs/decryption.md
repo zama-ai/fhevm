@@ -87,20 +87,20 @@ The flow has two steps:
 The E2E transport key pair encrypts the communication channel between your app and the Zama Protocol. The private key stays in your browser; the public key is included in the permit so the protocol knows how to encrypt its response for you.
 
 ```ts
-const e2eTransportKeyPair = await client.generateE2eTransportKeyPair();
+const transportKeyPair = await client.generateTransportKeyPair();
 ```
 
-The returned `E2eTransportKeyPair` is an opaque object — you can't access the raw private key. This is intentional: the SDK protects it to prevent accidental exposure.
+The returned `transportKeyPair` is an opaque object — you can't access the raw private key. This is intentional: the SDK protects it to prevent accidental exposure.
 
 **Saving and restoring keys:** If you want to persist a key across sessions (e.g., in localStorage), you can serialize and restore it:
 
 ```ts
 // Save
-const serialized = client.serializeE2eTransportKeyPair({ e2eTransportKeyPair });
+const serialized = client.serializeTransportKeyPair({ transportKeyPair });
 localStorage.setItem('fhevm-key', JSON.stringify(serialized));
 
 // Restore
-const restored = await client.parseE2eTransportKeyPair({
+const restored = await client.parseTransportKeyPair({
   serialized: localStorage.getItem('fhevm-key'),
 });
 ```
@@ -116,7 +116,7 @@ const signedPermit = await client.signDecryptionPermit({
   durationDays: 7,
   signerAddress: await signer.getAddress(), // or walletClient.account.address for viem
   signer, // ethers Signer or viem WalletClient
-  e2eTransportKeyPair,
+  transportKeyPair,
 });
 ```
 
@@ -130,7 +130,7 @@ Now you have everything needed to request decryption:
 
 ```ts
 const results = await client.decrypt({
-  e2eTransportKeyPair,
+  transportKeyPair,
   encryptedValues: [
     { encryptedValue: encryptedValue1, contractAddress: '0xContractA...' },
     { encryptedValue: encryptedValue2, contractAddress: '0xContractA...' },
@@ -147,7 +147,7 @@ results[0].fheType; // "euint32", "ebool", etc.
 1. The SDK checks ACL permissions for each encrypted value
 2. The permit and encrypted values are sent to the Zama Protocol
 3. The protocol returns encrypted shares
-4. The SDK decrypts the shares locally using your `e2eTransportKeyPair` (TKMS WASM)
+4. The SDK decrypts the shares locally using your `transportKeyPair` (TKMS WASM)
 5. The plaintext is reconstructed and returned
 
 The plaintext never touches the blockchain or any server — it's reconstructed entirely in your browser.
@@ -165,7 +165,7 @@ const signedPermit = await client.signDecryptionPermit({
   durationDays: 1,
   signerAddress: await signer.getAddress(),
   signer,
-  e2eTransportKeyPair,
+  transportKeyPair,
   onBehalfOf: '0xDataOwnerAddress...',
 });
 ```
@@ -186,12 +186,12 @@ const signedPermit = await client.signDecryptionPermit({
   durationDays: 7,
   signerAddress: await signer.getAddress(),
   signer,
-  e2eTransportKeyPair,
+  transportKeyPair,
 });
 
 // Decrypt multiple batches with the same permit
-await client.decrypt({ e2eTransportKeyPair, encryptedValues: batch1, signedPermit });
-await client.decrypt({ e2eTransportKeyPair, encryptedValues: batch2, signedPermit });
+await client.decrypt({ transportKeyPair, encryptedValues: batch1, signedPermit });
+await client.decrypt({ transportKeyPair, encryptedValues: batch2, signedPermit });
 ```
 
 Permits are valid from `startTimestamp` until `startTimestamp + durationDays`. This design minimizes the number of wallet signature requests your users see — you can ask once and use the permit for all subsequent decryptions during that session.

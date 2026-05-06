@@ -16,7 +16,7 @@ Encryption with FHE is heavier than a typical Ethereum transaction. The SDK is d
 | `decrypt()` (first call)                    | 2-5s    | Relayer call + RPC | TKMS (~600KB)  |
 | `decrypt()` (subsequent)                    | 1-3s    | Relayer call + RPC | Already loaded |
 | `signDecryptionPermit()`                    | <100ms  | None               | None           |
-| `generateE2eTransportKeyPair()`             | <100ms  | None               | TKMS           |
+| `generateTransportKeyPair()`                | <100ms  | None               | TKMS           |
 
 Times are approximate and depend on network speed, device, and thread count.
 

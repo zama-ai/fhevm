@@ -183,21 +183,21 @@ Decrypts encrypted values using a transport key pair and signed permit.
 decrypt(fhevm, parameters: DecryptParameters): Promise<readonly ClearValue[]>
 ```
 
-| Parameter             | Type                                                              | Description                                                 |
-| --------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------- |
-| `encryptedValues`     | `EncryptedValueEntry \| readonly EncryptedValueEntry[]`           | Encrypted values with their contract addresses              |
-| `signedPermit`        | `SignedSelfDecryptionPermit \| SignedDelegatedDecryptionPermit`   | Signed permit from `signDecryptionPermit()`                 |
-| `e2eTransportKeyPair` | `E2eTransportKeyPair`                                             | E2E transport key pair from `generateE2eTransportKeyPair()` |
-| `options?`            | `RelayerUserDecryptOptions \| RelayerDelegatedUserDecryptOptions` | Optional relayer options                                    |
+| Parameter          | Type                                                              | Description                                              |
+| ------------------ | ----------------------------------------------------------------- | -------------------------------------------------------- |
+| `encryptedValues`  | `EncryptedValueEntry \| readonly EncryptedValueEntry[]`           | Encrypted values with their contract addresses           |
+| `signedPermit`     | `SignedSelfDecryptionPermit \| SignedDelegatedDecryptionPermit`   | Signed permit from `signDecryptionPermit()`              |
+| `transportKeyPair` | `TransportKeyPair`                                                | E2E transport key pair from `generateTransportKeyPair()` |
+| `options?`         | `RelayerUserDecryptOptions \| RelayerDelegatedUserDecryptOptions` | Optional relayer options                                 |
 
 Each `EncryptedValueEntry` has `{ encryptedValue: EncryptedValueLike, contractAddress: ChecksummedAddress }`.
 
-### `generateE2eTransportKeyPair(fhevm)` / `client.generateE2eTransportKeyPair()`
+### `generateTransportKeyPair(fhevm)` / `client.generateTransportKeyPair()`
 
 Generates a new E2E transport key pair for decryption.
 
 ```ts
-generateE2eTransportKeyPair(fhevm): Promise<E2eTransportKeyPair>
+generateTransportKeyPair(fhevm): Promise<TransportKeyPair>
 ```
 
 ### `decryptKmsSignedcryptedShares(fhevm, parameters)`
@@ -226,15 +226,15 @@ signDecryptionPermit(fhevm, parameters: SignSelfDecryptionPermitParameters): Pro
 signDecryptionPermit(fhevm, parameters: SignDelegatedDecryptionPermitParameters): Promise<SignedDelegatedDecryptionPermit>
 ```
 
-| Parameter             | Type                  | Description                                |
-| --------------------- | --------------------- | ------------------------------------------ |
-| `contractAddresses`   | `readonly string[]`   | Allowed contracts (max 10)                 |
-| `startTimestamp`      | `number`              | Unix timestamp (seconds)                   |
-| `durationDays`        | `number`              | Validity period (max 365)                  |
-| `signerAddress`       | `string`              | Address of the signer                      |
-| `signer`              | `NativeSigner`        | Ethers Signer or viem WalletClient         |
-| `e2eTransportKeyPair` | `E2eTransportKeyPair` | Transport key pair                         |
-| `onBehalfOf?`         | `string`              | Optional — address to decrypt on behalf of |
+| Parameter           | Type                | Description                                |
+| ------------------- | ------------------- | ------------------------------------------ |
+| `contractAddresses` | `readonly string[]` | Allowed contracts (max 10)                 |
+| `startTimestamp`    | `number`            | Unix timestamp (seconds)                   |
+| `durationDays`      | `number`            | Validity period (max 365)                  |
+| `signerAddress`     | `string`            | Address of the signer                      |
+| `signer`            | `NativeSigner`      | Ethers Signer or viem WalletClient         |
+| `transportKeyPair`  | `TransportKeyPair`  | Transport key pair                         |
+| `onBehalfOf?`       | `string`            | Optional — address to decrypt on behalf of |
 
 ### `createKmsUserDecryptEIP712(fhevm, parameters)` / `client.createUserDecryptEIP712(parameters)`
 
@@ -260,20 +260,20 @@ Verifies a decrypt permit EIP-712 signature. Throws on invalid signature.
 verifyKmsUserDecryptEIP712(fhevm, parameters: VerifyKmsUserDecryptEIP712Parameters): Promise<void>
 ```
 
-### `parseE2eTransportKeyPair(fhevm, parameters)` / `client.parseE2eTransportKeyPair(parameters)`
+### `parseTransportKeyPair(fhevm, parameters)` / `client.parseTransportKeyPair(parameters)`
 
 Restores a key pair from serialized bytes.
 
 ```ts
-parseE2eTransportKeyPair(fhevm, parameters: ParseE2eTransportKeyPairParameters): Promise<E2eTransportKeyPair>
+parseTransportKeyPair(fhevm, parameters: ParseTransportKeyPairParameters): Promise<TransportKeyPair>
 ```
 
-### `serializeE2eTransportKeyPair(fhevm, parameters)` / `client.serializeE2eTransportKeyPair(parameters)`
+### `serializeTransportKeyPair(fhevm, parameters)` / `client.serializeTransportKeyPair(parameters)`
 
 Serializes a key pair for storage/persistence.
 
 ```ts
-serializeE2eTransportKeyPair(fhevm, parameters: SerializeE2eTransportKeyPairParameters): SerializeE2eTransportKeyPairReturnType
+serializeTransportKeyPair(fhevm, parameters: SerializeTransportKeyPairParameters): SerializeTransportKeyPairReturnType
 ```
 
 ### `fetchFheEncryptionKeyBytes(fhevm, parameters?)` / `client.fetchFheEncryptionKeyBytes(parameters?)`
@@ -364,7 +364,7 @@ readKmsVerifierContractData(fhevm, parameters: ReadKmsVerifierContractDataParame
 
 **Proofs:** `VerifiedInputProof`, `InputProof`, `ZkProof`, `PublicDecryptionProof`
 
-**Permits:** `SignedSelfDecryptionPermit`, `SignedDelegatedDecryptionPermit`, `SignedDecryptionPermit`, `KmsUserDecryptEIP712`, `KmsDelegatedUserDecryptEIP712`, `KmsEIP712Domain`, `E2eTransportKeyPair`
+**Permits:** `SignedSelfDecryptionPermit`, `SignedDelegatedDecryptionPermit`, `SignedDecryptionPermit`, `KmsUserDecryptEIP712`, `KmsDelegatedUserDecryptEIP712`, `KmsEIP712Domain`, `TransportKeyPair`
 
 **Chains:** `FhevmChain`
 

@@ -300,14 +300,14 @@ Extends the decrypt permit EIP-712 with a `delegatedAccount` field for decryptin
 
 ## E2E transport key pair
 
-### `E2eTransportKeyPair`
+### `TransportKeyPair`
 
 An opaque key pair object for end-to-end encrypted communication with the Zama Protocol. The private key is never directly accessible — this prevents accidental exposure.
 
 ```ts
-type E2eTransportKeyPair = {
+type TransportKeyPair = {
   readonly publicKey: BytesHex;
 };
 ```
 
-Create with `generateE2eTransportKeyPair()`, serialize with `serializeE2eTransportKeyPair()`, restore with `parseE2eTransportKeyPair()`.
+Create with `generateTransportKeyPair()`, serialize with `serializeTransportKeyPair()`, restore with `parseTransportKeyPair()`.

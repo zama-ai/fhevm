@@ -202,7 +202,7 @@ export type DecryptValueParameters = {
   readonly handle: HandleLike;
   readonly contractAddress: string;
   readonly signedPermit: SignedSelfDecryptionPermit;
-  readonly e2eTransportKeyPair: E2eTransportKeyPair;
+  readonly transportKeyPair: TransportKeyPair;
   readonly options?: RelayerUserDecryptOptions | undefined;
 };
 export async function decryptValue(
@@ -215,7 +215,7 @@ export type DecryptHandleParameters = {
   readonly handle: HandleLike;
   readonly contractAddress: string;
   readonly signedPermit: SignedSelfDecryptionPermit;
-  readonly e2eTransportKeyPair: E2eTransportKeyPair;
+  readonly transportKeyPair: TransportKeyPair;
   readonly options?: RelayerUserDecryptOptions | undefined;
 };
 export async function decryptHandle(
@@ -227,7 +227,7 @@ export async function decryptHandle(
 export type DecryptValuesParameters = {
   readonly handles: { readonly handle: HandleLike; readonly contractAddress: string }[];
   readonly signedPermit: SignedSelfDecryptionPermit;
-  readonly e2eTransportKeyPair: E2eTransportKeyPair;
+  readonly transportKeyPair: TransportKeyPair;
   readonly options?: RelayerUserDecryptOptions | undefined;
 };
 export async function decryptValues(
@@ -240,7 +240,7 @@ export type DecryptValuesParameters = {
   readonly handles: HandleLike[];
   readonly contractAddress: string;
   readonly signedPermit: SignedSelfDecryptionPermit;
-  readonly e2eTransportKeyPair: E2eTransportKeyPair;
+  readonly transportKeyPair: TransportKeyPair;
   readonly options?: RelayerUserDecryptOptions | undefined;
 };
 export async function decryptValues(
@@ -252,7 +252,7 @@ export async function decryptValues(
 export type DecryptHandlesParameters = {
   readonly handles: { readonly handle: HandleLike; readonly contractAddress: string }[];
   readonly signedPermit: SignedSelfDecryptionPermit;
-  readonly e2eTransportKeyPair: E2eTransportKeyPair;
+  readonly transportKeyPair: TransportKeyPair;
   readonly options?: RelayerUserDecryptOptions | undefined;
 };
 export async function decryptHandles(
@@ -264,7 +264,7 @@ export async function decryptHandles(
 export type DecryptHandleContractPairsParameters = {
   readonly handles: { readonly handle: HandleLike; readonly contractAddress: string }[];
   readonly signedPermit: SignedSelfDecryptionPermit;
-  readonly e2eTransportKeyPair: E2eTransportKeyPair;
+  readonly transportKeyPair: TransportKeyPair;
   readonly options?: RelayerUserDecryptOptions | undefined;
 };
 export async function decryptHandleContractPairs(

@@ -18,9 +18,9 @@ export function assertPermitMatchesKeyPair(
   assertIsSignedDecryptionPermit(signedPermit, {});
   assertIsTransportKeyPair(transportKeyPair, {});
 
-  if (signedPermit.e2eTransportPublicKey.toLowerCase() !== transportKeyPair.publicKey.toLowerCase()) {
+  if (signedPermit.transportPublicKey.toLowerCase() !== transportKeyPair.publicKey.toLowerCase()) {
     throw new Error(
-      "The permit's publicKey does not match the E2eTransportKeyPair's publicKey. " +
+      "The permit's publicKey does not match the TransportKeyPairKeyPair's publicKey. " +
         'Ensure the permit was signed with the same key pair.',
     );
   }

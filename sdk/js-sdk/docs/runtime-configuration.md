@@ -307,13 +307,13 @@ setFhevmRuntimeConfig({
 
 WASM modules load **lazily** — not when you call `setFhevmRuntimeConfig()` or `createFhevmClient()`, but the first time you call an action that needs them:
 
-| First call to...                | What loads                     | Size                           |
-| ------------------------------- | ------------------------------ | ------------------------------ |
-| `encrypt()`                     | TFHE WASM + network public key | ~5MB WASM + ~50MB key download |
-| `decrypt()`                     | TKMS WASM                      | ~600KB                         |
-| `publicDecrypt()`               | Nothing (HTTP only)            | —                              |
-| `signDecryptionPermit()`        | Nothing                        | —                              |
-| `generateE2eTransportKeyPair()` | TKMS WASM                      | ~600KB                         |
+| First call to...             | What loads                     | Size                           |
+| ---------------------------- | ------------------------------ | ------------------------------ |
+| `encrypt()`                  | TFHE WASM + network public key | ~5MB WASM + ~50MB key download |
+| `decrypt()`                  | TKMS WASM                      | ~600KB                         |
+| `publicDecrypt()`            | Nothing (HTTP only)            | —                              |
+| `signDecryptionPermit()`     | Nothing                        | —                              |
+| `generateTransportKeyPair()` | TKMS WASM                      | ~600KB                         |
 
 If you want to preload WASM at app startup (for example, behind a loading spinner), call:
 

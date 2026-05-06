@@ -61,10 +61,10 @@ The SDK is designed to prevent accidental exposure of sensitive material:
 
 ### Transport keys are opaque
 
-When you call `generateE2eTransportKeyPair()`, the returned object wraps the private key in a way that prevents accidental logging or serialization:
+When you call `generateTransportKeyPair()`, the returned object wraps the private key in a way that prevents accidental logging or serialization:
 
 ```ts
-const keypair = await client.generateE2eTransportKeyPair();
+const keypair = await client.generateTransportKeyPair();
 console.log(keypair); // Does NOT print the private key
 ```
 
@@ -92,7 +92,7 @@ After calling `decrypt()`, the plaintext values are in your application's memory
 
 ### Store transport keys securely
 
-If you persist key pairs across sessions (via `parseE2eTransportKeyPair`), store the serialized bytes securely:
+If you persist key pairs across sessions (via `parseTransportKeyPair`), store the serialized bytes securely:
 
 ```ts
 // Acceptable: encrypted localStorage, secure enclave, browser credential store

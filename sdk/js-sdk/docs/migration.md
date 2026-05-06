@@ -11,9 +11,9 @@ This guide helps you migrate from the old SDK (`@zama-fhe/relayer-sdk` v0.4.x) t
 | Initialization            | `initSDK()` + `createInstance(config)`                     | `setFhevmRuntimeConfig()` + `createFhevmClient({ chain, provider })`                      |
 | Configuration             | Flat config object (`SepoliaConfig`)                       | Chain definitions (`sepolia` from `@fhevm/sdk/chains`)                                    |
 | Encryption                | Builder pattern: `.add32(42).encrypt()`                    | Declarative: `encrypt({ values: [{ type: "uint32", value: 42 }] })`                       |
-| Key generation            | `generateKeyPair()` → raw `{ publicKey, privateKey }`      | `generateE2eTransportKeyPair()` → opaque `E2eTransportKeyPair`                            |
-| Permit creation + signing | Separate: `createEIP712()` + wallet sign + manual bundling | Combined: `signDecryptionPermit({ signer, e2eTransportKeyPair, ... })`                    |
-| Decrypt                   | 9 positional args                                          | Object: `decrypt({ e2eTransportKeyPair, encryptedValues, signedPermit })`                 |
+| Key generation            | `generateKeyPair()` → raw `{ publicKey, privateKey }`      | `generateTransportKeyPair()` → opaque `transportKeyPair`                                  |
+| Permit creation + signing | Separate: `createEIP712()` + wallet sign + manual bundling | Combined: `signDecryptionPermit({ signer, transportKeyPair, ... })`                       |
+| Decrypt                   | 9 positional args                                          | Object: `decrypt({ transportKeyPair, encryptedValues, signedPermit })`                    |
 | Read public values        | `publicDecrypt(handles)` → `{ clearValues }`               | `publicDecrypt({ encryptedValues })` → `PublicDecryptionProof` with `.orderedClearValues` |
 | Provider                  | Passed in config as `network`                              | Passed directly as `provider`                                                             |
 | Framework support         | Framework-agnostic (single entry)                          | Explicit adapters (`/ethers`, `/viem`)                                                    |
@@ -123,11 +123,11 @@ const { publicKey, privateKey } = instance.generateKeyPair();
 **After:**
 
 ```ts
-const e2eTransportKeyPair = await client.generateE2eTransportKeyPair();
+const transportKeyPair = await client.generateTransportKeyPair();
 // privateKey is hidden inside the key pair — never exposed
 ```
 
-The new SDK wraps the private key in an opaque `E2eTransportKeyPair` object. You can't access the raw private key directly — this prevents accidental exposure. The key pair is what you pass to `signDecryptionPermit()` and `decrypt()`.
+The new SDK wraps the private key in an opaque `transportKeyPair` object. You can't access the raw private key directly — this prevents accidental exposure. The key pair is what you pass to `signDecryptionPermit()` and `decrypt()`.
 
 ---
 
@@ -163,7 +163,7 @@ const signedPermit = await client.signDecryptionPermit({
   durationDays: 7,
   signerAddress: await signer.getAddress(),
   signer,
-  e2eTransportKeyPair,
+  transportKeyPair,
 });
 ```
 
@@ -197,7 +197,7 @@ const results = await instance.userDecrypt(
 
 ```ts
 const results = await client.decrypt({
-  e2eTransportKeyPair,
+  transportKeyPair,
   encryptedValues: [{ encryptedValue: '0x...', contractAddress: '0xContractA...' }],
   signedPermit,
 });
@@ -207,7 +207,7 @@ const results = await client.decrypt({
 Key differences:
 
 - Named parameters instead of 9 positional arguments.
-- Pass the `e2eTransportKeyPair` object instead of separate `privateKey` + `publicKey` strings.
+- Pass the `transportKeyPair` object instead of separate `privateKey` + `publicKey` strings.
 - Pass a `signedPermit` from `signDecryptionPermit()` instead of raw signature + permit params.
 - The result is a typed array (`ClearValue[]`) instead of a plain `Record`. Each entry has `.value` (typed correctly as `number`, `bigint`, `boolean`, or `string`), `.fheType`, and `.encryptedValue`.
 
@@ -276,7 +276,7 @@ const signedPermit = await client.signDecryptionPermit({
   durationDays: 1,
   signerAddress: await signer.getAddress(),
   signer,
-  e2eTransportKeyPair,
+  transportKeyPair,
   onBehalfOf: '0xDataOwnerAddress...',
 });
 ```
@@ -352,17 +352,17 @@ const encrypted = await client.encrypt({
 });
 
 // Decrypt
-const e2eTransportKeyPair = await client.generateE2eTransportKeyPair();
+const transportKeyPair = await client.generateTransportKeyPair();
 const signedPermit = await client.signDecryptionPermit({
   contractAddresses: [contractAddr],
   startTimestamp: startTs,
   durationDays: 7,
   signerAddress: userAddr,
   signer,
-  e2eTransportKeyPair,
+  transportKeyPair,
 });
 const results = await client.decrypt({
-  e2eTransportKeyPair,
+  transportKeyPair,
   encryptedValues: [{ encryptedValue: handle, contractAddress: contractAddr }],
   signedPermit,
 });

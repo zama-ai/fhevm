@@ -82,13 +82,13 @@ export type DecryptParameters =
   | {
       readonly encryptedValues: EncryptedValueArray;
       readonly signedPermit: SignedSelfDecryptionPermit;
-      readonly e2eTransportKeyPair: E2eTransportKeyPair;
+      readonly transportKeyPair: TransportKeyPair;
       readonly options?: RelayerUserDecryptOptions | undefined;
     }
   | {
       readonly encryptedValues: EncryptedValueArray;
       readonly signedPermit: SignedDelegatedDecryptionPermit;
-      readonly e2eTransportKeyPair: E2eTransportKeyPair;
+      readonly transportKeyPair: TransportKeyPair;
       readonly options?: RelayerDelegatedUserDecryptOptions | undefined;
     };
 

@@ -149,7 +149,7 @@ describe('hello', () => {
 
       // Let's generate a simple kms private decryption key
       // const transportKeyPair =
-      //   await fhevmDecryptClient.generateE2eTransportKeyPair();
+      //   await fhevmDecryptClient.generateTransportKeyPairKeyPair();
 
       // const dummySigner: ethers.Signer =
       //   transportKeyPair as unknown as ethers.Signer;

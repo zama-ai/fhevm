@@ -125,7 +125,7 @@ abstract class SignedDecryptionPermitBaseImpl {
     }
   }
 
-  public get e2eTransportPublicKey(): BytesHex {
+  public get transportPublicKey(): BytesHex {
     return this.#eip712.message.publicKey;
   }
 
@@ -440,7 +440,7 @@ export async function parseSignedDecryptionPermit(
 
   if (eip712.message.publicKey.toLowerCase() !== transportKeyPair.publicKey.toLowerCase()) {
     throw new Error(
-      "The permit's publicKey does not match the E2eTransportKeyPair's publicKey. " +
+      "The permit's publicKey does not match the TransportKeyPairKeyPair's publicKey. " +
         'Ensure the permit was signed with the same key pair.',
     );
   }
