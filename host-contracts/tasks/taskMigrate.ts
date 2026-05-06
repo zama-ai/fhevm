@@ -203,6 +203,8 @@ task(
   const migrationContextId = BigInt(getRequiredEnvVar('MIGRATION_CONTEXT_ID'));
   const parsedEnv = readHostEnv();
   const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+  // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild
+  await hre.run('compile:specific', { contract: 'contracts' });
   const decodedArgs = buildProtocolConfigMigrationArgs(migrationContextId, initialKmsNodes, thresholds);
   const artifact = await hre.artifacts.readArtifact('ProtocolConfig');
   const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
@@ -227,6 +229,8 @@ task(
 ).setAction(async function (_, hre) {
   const parsedEnv = readHostEnv();
   const proxyAddress = parsedEnv.KMS_GENERATION_CONTRACT_ADDRESS;
+  // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild
+  await hre.run('compile:specific', { contract: 'contracts' });
   const decodedArgs = buildKMSGenerationMigrationArgs(buildKMSGenerationMigrationStateFromEnv());
   const artifact = await hre.artifacts.readArtifact('KMSGeneration');
   const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
