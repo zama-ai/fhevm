@@ -409,12 +409,13 @@ where
 
         // Short-circuit on first positive. Individual transport errors are tolerated as long as at
         // least one contract returns true.
-        if results.into_iter().any(|r| matches!(r, Ok(true))) {
+        if results.iter().any(|r| matches!(r, Ok(true))) {
             Ok(())
         } else {
             Err(ProcessingError::Recoverable(anyhow!(
-                "No contract in allowedContracts is allowed to decrypt handle {}",
-                hex::encode(handle)
+                "No contract in allowedContracts is allowed to decrypt handle {} ({:?})",
+                hex::encode(handle),
+                results,
             )))
         }
     }
