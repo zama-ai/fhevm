@@ -149,6 +149,14 @@ HCU_LIMIT=0x233ff88A48c172d29F675403e6A8e302b0F032D9
 
 # fhevm-cli
 
+Run e2e tests using @fhevm/sdk:
+edit : `/Users/alex/src/me/zama-ai/fhevm/test-suite/e2e/test/instance.ts`
+set `const useFhevmSdk = true;`
+
+Run e2e tests using @zama-fhe/relayer-sdk:
+edit : `/Users/alex/src/me/zama-ai/fhevm/test-suite/e2e/test/instance.ts`
+set `const useFhevmSdk = false;`
+
 ```
 cd <root>/test-suite/fhevm
 
