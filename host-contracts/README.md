@@ -157,3 +157,26 @@ against the canonical `ProtocolConfig` state during initialization.
 
 - `KMSVerifier.NewContextSet(uint256,address[],uint256)` -> `ProtocolConfig.NewKmsContext(uint256,KmsNode[],KmsThresholds)`
 - `KMSVerifier.KMSContextDestroyed(uint256)` -> `ProtocolConfig.KmsContextDestroyed(uint256)`
+
+## Host Deployment Role
+
+`task:deployAllHostContracts` requires an explicit `--with-kms-generation` value:
+
+```bash
+npx hardhat task:deployAllHostContracts --with-kms-generation true   # canonical host
+npx hardhat task:deployAllHostContracts --with-kms-generation false  # non-canonical host
+```
+
+`KMSGeneration` is deployed only on the canonical host chain. Non-canonical host chains
+deploy the common host contracts only.
+
+### Non-canonical host chains
+
+`KMSGeneration` is NOT deployed on non-canonical host chains. `ProtocolConfig` on
+non-canonical chains is a replica whose state is mirrored manually (Phase 1) or via
+LayerZero / LzRead (Phase 2) from the canonical chain. Operators mirroring a canonical
+rotation to non-canonical chains call `defineNewKmsContext` directly on each non-canonical
+`ProtocolConfig`, using the same `kmsNodes` and `thresholds` as the canonical rotation.
+
+No on-chain guard prevents a non-canonical replica from drifting if a mirror transaction is
+skipped. Operators are responsible for fan-out correctness.

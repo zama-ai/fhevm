@@ -404,6 +404,7 @@ pub enum SupportedFheOperations {
     FheRand = 26,
     FheRandBounded = 27,
     FheSum = 28,
+    FheIsIn = 29,
     FheGetInputCiphertext = 32,
 }
 
@@ -875,7 +876,9 @@ impl SupportedFheOperations {
             | SupportedFheOperations::FheRand
             | SupportedFheOperations::FheRandBounded => FheOperationType::Other,
             SupportedFheOperations::FheGetInputCiphertext => FheOperationType::Other,
-            SupportedFheOperations::FheSum => FheOperationType::Other,
+            SupportedFheOperations::FheSum | SupportedFheOperations::FheIsIn => {
+                FheOperationType::Other
+            }
         }
     }
 
@@ -942,7 +945,8 @@ impl SupportedFheOperations {
             | SupportedFheOperations::FheDiv
             | SupportedFheOperations::FheRem
             | SupportedFheOperations::FheGetInputCiphertext
-            | SupportedFheOperations::FheSum => false,
+            | SupportedFheOperations::FheSum
+            | SupportedFheOperations::FheIsIn => false,
         }
     }
 }
@@ -980,6 +984,7 @@ impl TryFrom<i16> for SupportedFheOperations {
             26 => Ok(SupportedFheOperations::FheRand),
             27 => Ok(SupportedFheOperations::FheRandBounded),
             28 => Ok(SupportedFheOperations::FheSum),
+            29 => Ok(SupportedFheOperations::FheIsIn),
             32 => Ok(SupportedFheOperations::FheGetInputCiphertext),
             _ => Err(FhevmError::UnknownFheOperation(value as i32)),
         };

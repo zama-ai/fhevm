@@ -232,6 +232,37 @@ contract FHEVMManualTestSuite {
         resEuint64 = FHE.select(a_, b_, c_);
     }
 
+    function test_isIn_euint8_found(externalEuint8 a, bytes calldata inputProof) public {
+        euint8 value = FHE.fromExternal(a, inputProof);
+        euint8[] memory set = new euint8[](3);
+        set[0] = FHE.asEuint8(1);
+        set[1] = FHE.asEuint8(42);
+        set[2] = FHE.asEuint8(100);
+        ebool result = FHE.isIn(value, set);
+        FHE.allowThis(result);
+        resEbool = result;
+    }
+
+    function test_isIn_euint8_not_found(externalEuint8 a, bytes calldata inputProof) public {
+        euint8 value = FHE.fromExternal(a, inputProof);
+        euint8[] memory set = new euint8[](2);
+        set[0] = FHE.asEuint8(1);
+        set[1] = FHE.asEuint8(2);
+        ebool result = FHE.isIn(value, set);
+        FHE.allowThis(result);
+        resEbool = result;
+    }
+
+    function test_isIn_euint8_uninitialized() public {
+        euint8 uninit_;
+        euint8[] memory set = new euint8[](2);
+        set[0] = FHE.asEuint8(0);
+        set[1] = FHE.asEuint8(1);
+        ebool result = FHE.isIn(uninit_, set);
+        FHE.allowThis(result);
+        resEbool = result;
+    }
+
     function test_sum_euint8_uninitialized() public {
         euint8 uninit_;
         euint8[] memory values = new euint8[](2);
