@@ -160,6 +160,9 @@ set `const useFhevmSdk = false;`
 ```
 cd <root>/test-suite/fhevm
 
+# install fhevm-cli (if needed)
+bun install
+
 ./fhevm-cli up --help
 
 # Use local test suite
