@@ -20,8 +20,7 @@
     "codegen:overloads": "../library-solidity/codegen/codegen.mjs overloads --config ./codegen.config.json --verbose --force",
     "test:gas": "hardhat test --grep Gas",
     "test:forge": "forge test",
-    "forge:soldeer": "forge soldeer install",
-    "check:dao-kms-migration-parity": "ts-node --transpile-only scripts/checkDaoKmsMigrationParity.ts"
+    "forge:soldeer": "forge soldeer install"
   },
   "author": "",
   "license": "BSD-3-Clause-Clear",
