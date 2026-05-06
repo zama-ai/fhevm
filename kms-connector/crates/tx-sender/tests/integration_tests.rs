@@ -13,10 +13,8 @@ use connector_utils::{
     },
     types::db::OperationStatus,
 };
-use fhevm_gateway_bindings::{
-    decryption::Decryption::DecryptionInstance,
-    kms_generation::KMSGeneration::KMSGenerationInstance,
-};
+use fhevm_gateway_bindings::decryption::Decryption::DecryptionInstance;
+use fhevm_host_bindings::kms_generation::KMSGeneration;
 use rstest::rstest;
 use sqlx::Row;
 use std::time::Duration;
@@ -25,8 +23,8 @@ use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 use tx_sender::core::{
-    Config, DbKmsResponsePicker, TransactionSender,
-    tx_sender::{TransactionSenderInner, TransactionSenderInnerConfig},
+    Config, DbKmsResponsePicker, EthereumTransactionSender, GatewayTransactionSender,
+    TransactionSender, ethereum::EthereumSenderConfig, gateway::GatewaySenderConfig,
 };
 
 #[rstest]
@@ -354,29 +352,55 @@ async fn start_test_tx_sender(
 ) -> anyhow::Result<JoinHandle<()>> {
     let response_picker =
         DbKmsResponsePicker::connect(test_instance.db().clone(), &Config::default()).await?;
-    let provider = connect_to_rpc_node_with_wallet(
+
+    // Gateway provider + Decryption contract
+    let gw_sender_config = GatewaySenderConfig {
+        tx_retries: 3,
+        tx_retry_interval: Duration::from_millis(100),
+        trace_reverted_tx: true,
+        gas_multiplier_percent: 130,
+    };
+    let gw_provider = connect_to_rpc_node_with_wallet(
         test_instance.anvil_http_endpoint(),
         *CHAIN_ID as u64,
         KmsWallet::from_private_key_str(DEPLOYER_PRIVATE_KEY, Some(*CHAIN_ID as u64))?,
     )
     .await?;
-
-    let tx_sender_inner = TransactionSenderInner::new(
-        provider.clone(),
-        DecryptionInstance::new(
-            *test_instance.decryption_contract().address(),
-            provider.clone(),
-        ),
-        KMSGenerationInstance::new(*test_instance.kms_generation_contract().address(), provider),
-        TransactionSenderInnerConfig {
-            tx_retries: 3,
-            tx_retry_interval: Duration::from_millis(100),
-            trace_reverted_tx: true,
-            gas_multiplier_percent: 130,
-        },
+    let gw_sender = GatewayTransactionSender::new(
+        gw_provider.clone(),
+        DecryptionInstance::new(*test_instance.decryption_contract().address(), gw_provider),
+        gw_sender_config,
     );
-    let tx_sender =
-        TransactionSender::new(response_picker, tx_sender_inner, test_instance.db().clone());
+
+    // Ethereum provider + KMSGeneration contract (same Anvil in tests)
+    let eth_sender_config = EthereumSenderConfig {
+        tx_retries: 3,
+        tx_retry_interval: Duration::from_millis(100),
+        trace_reverted_tx: true,
+        gas_multiplier_percent: 130,
+        tx_required_confirmations: 2,
+        get_receipt_timeout: Duration::from_mins(1),
+    };
+
+    let eth_provider = connect_to_rpc_node_with_wallet(
+        test_instance.anvil_http_endpoint(),
+        *CHAIN_ID as u64,
+        KmsWallet::from_private_key_str(DEPLOYER_PRIVATE_KEY, Some(*CHAIN_ID as u64))?,
+    )
+    .await?;
+    let kms_generation_contract = KMSGeneration::new(
+        *test_instance.kms_generation_contract().address(),
+        eth_provider.clone(),
+    );
+    let eth_sender =
+        EthereumTransactionSender::new(eth_provider, kms_generation_contract, eth_sender_config);
+
+    let tx_sender = TransactionSender::new(
+        response_picker,
+        gw_sender,
+        eth_sender,
+        test_instance.db().clone(),
+    );
 
     Ok(tokio::spawn(tx_sender.start(cancel_token)))
 }

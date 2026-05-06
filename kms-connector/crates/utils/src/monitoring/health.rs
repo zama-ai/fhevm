@@ -43,22 +43,25 @@ pub async fn database_healthcheck(
     }
 }
 
-/// Performs the Gateway healthcheck.
+/// Performs the healthcheck of a blockchain RPC node.
+///
+/// Uses `eth_blockNumber` for this.
 ///
 /// Stores the potential error in the `errors` vector.
-pub async fn gateway_healthcheck<P: Provider>(
+pub async fn rpc_node_healthcheck<P: Provider>(
     provider: P,
     timeout: Duration,
+    chain_name: &str,
     errors: &mut Vec<String>,
 ) -> bool {
     match tokio::time::timeout(timeout, provider.get_block_number()).await {
         Ok(Ok(_)) => true,
         Ok(Err(e)) => {
-            errors.push(format!("Gateway connection failed: {e}"));
+            errors.push(format!("{chain_name} connection failed: {e}"));
             false
         }
         Err(e) => {
-            errors.push(format!("Gateway connection timed out: {e}"));
+            errors.push(format!("{chain_name} connection timed out: {e}"));
             false
         }
     }

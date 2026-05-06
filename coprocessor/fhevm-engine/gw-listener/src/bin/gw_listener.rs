@@ -9,7 +9,6 @@ use fhevm_engine_common::{
     metrics_server, telemetry,
     utils::DatabaseURL,
 };
-use gw_listener::aws_s3::AwsS3Client;
 use gw_listener::gw_listener::GatewayListener;
 use gw_listener::http_server::HttpServer;
 use gw_listener::ConfigSettings;
@@ -36,9 +35,6 @@ struct Conf {
 
     #[arg(short, long)]
     input_verification_address: Address,
-
-    #[arg(long)]
-    kms_generation_address: Address,
 
     #[arg(long, default_value_t = 1)]
     error_sleep_initial_secs: u16,
@@ -80,16 +76,6 @@ struct Conf {
     /// gw-listener service name in OTLP traces
     #[arg(long, env = "OTEL_SERVICE_NAME", default_value = "gw-listener")]
     pub service_name: String,
-
-    #[arg(long, default_value = None, help = "Can be negative from last processed block", allow_hyphen_values = true, alias = "catchup-kms-generation-from-block")]
-    pub replay_from_block: Option<i64>,
-
-    #[arg(
-        long,
-        default_value_t = false,
-        help = "Skip VerifyProofRequest events during replay"
-    )]
-    pub replay_skip_verify_proof: bool,
 
     #[arg(
         long,
@@ -193,8 +179,6 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    let aws_s3_client = AwsS3Client {};
-
     let cancel_token = CancellationToken::new();
 
     let config = ConfigSettings {
@@ -208,8 +192,6 @@ async fn main() -> anyhow::Result<()> {
         health_check_timeout: conf.health_check_timeout,
         get_logs_poll_interval: conf.get_logs_poll_interval,
         get_logs_block_batch_size: conf.get_logs_block_batch_size,
-        replay_from_block: conf.replay_from_block,
-        replay_skip_verify_proof: conf.replay_skip_verify_proof,
         log_last_processed_every_number_of_updates: conf.log_last_processed_every_number_of_updates,
         ciphertext_commits_address: conf.ciphertext_commits_address,
         gateway_config_address: conf.gateway_config_address,
@@ -221,11 +203,9 @@ async fn main() -> anyhow::Result<()> {
 
     let gw_listener = std::sync::Arc::new(GatewayListener::new(
         conf.input_verification_address,
-        conf.kms_generation_address,
         config.clone(),
         cancel_token.clone(),
         provider.clone(),
-        aws_s3_client.clone(),
     ));
 
     let http_server = HttpServer::new(

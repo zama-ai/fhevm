@@ -64,9 +64,6 @@ spec:
             {{- if not (has "input-verification-address" $disabled) }}
             - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
             {{- end }}
-            {{- if not (has "kms-generation-address" $disabled) }}
-            - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
-            {{- end }}
             {{- if and (or .Values.commonConfig.gatewayContractAddresses.ciphertextCommits.value .Values.commonConfig.gatewayContractAddresses.ciphertextCommits.valueFrom) (not (has "ciphertext-commits-address" $disabled)) }}
             - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
             {{- end }}
@@ -149,15 +146,6 @@ spec:
             {{- end }}
             {{- with .Values.commonConfig.gatewayContractAddresses.inputVerification }}
             - name: INPUT_VERIFICATION_ADDRESS
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
-              {{- end }}
-            {{- end }}
-            {{- with .Values.commonConfig.gatewayContractAddresses.kmsGeneration }}
-            - name: KMS_GENERATION_ADDRESS
               {{- if .value }}
               value: {{ .value | quote }}
               {{- else if .valueFrom }}

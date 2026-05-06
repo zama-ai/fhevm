@@ -11,7 +11,11 @@ import {HCULimit} from "@fhevm-host-contracts/contracts/HCULimit.sol";
 import {PauserSet} from "@fhevm-host-contracts/contracts/immutable/PauserSet.sol";
 import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {EmptyUUPSProxyACL} from "@fhevm-host-contracts/contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
-import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
+import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
+import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
+import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
+import {KmsNode} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
+import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd, protocolConfigAdd, kmsGenerationAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 
 /**
  * @dev Thin wrapper so `deployCodeTo` can load locally compiled bytecode for the OZ proxy.
@@ -82,9 +86,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
     function _deployKMSVerifier(
         address owner,
         address verifyingContractSource,
-        uint64 chainIDSource,
-        address[] memory initialSigners,
-        uint256 initialThreshold
+        uint64 chainIDSource
     ) internal returns (KMSVerifier kmsVerifierProxy, address kmsVerifierImplementation) {
         address emptyProxyImplementation = address(new EmptyUUPSProxy());
 
@@ -101,10 +103,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         vm.prank(owner);
         EmptyUUPSProxy(kmsVerifierAdd).upgradeToAndCall(
             kmsVerifierImplementation,
-            abi.encodeCall(
-                KMSVerifier.initializeFromEmptyProxy,
-                (verifyingContractSource, chainIDSource, initialSigners, initialThreshold)
-            )
+            abi.encodeCall(KMSVerifier.initializeFromEmptyProxy, (verifyingContractSource, chainIDSource))
         );
 
         kmsVerifierProxy = KMSVerifier(kmsVerifierAdd);
@@ -169,8 +168,8 @@ abstract contract HostContractsDeployerTestUtils is Test {
         address kmsVerifyingSource,
         address inputVerifyingSource,
         uint64 chainIDSource,
-        address[] memory kmsSigners,
-        uint256 kmsThreshold,
+        KmsNode[] memory initialKmsNodes,
+        IProtocolConfig.KmsThresholds memory initialThresholds,
         address[] memory inputSigners,
         uint256 inputThreshold
     ) internal {
@@ -178,7 +177,9 @@ abstract contract HostContractsDeployerTestUtils is Test {
         PauserSet pauserSet = _deployPauserSet();
         (FHEVMExecutor fheExecutor, ) = _deployFHEVMExecutor(owner);
         _deployHCULimit(owner);
-        _deployKMSVerifier(owner, kmsVerifyingSource, chainIDSource, kmsSigners, kmsThreshold);
+        (ProtocolConfig protocolConfigProxy, ) = _deployProtocolConfig(owner, initialKmsNodes, initialThresholds);
+        _deployKMSGeneration(owner);
+        _deployKMSVerifier(owner, kmsVerifyingSource, chainIDSource);
         _deployInputVerifier(owner, inputVerifyingSource, chainIDSource, inputSigners, inputThreshold);
 
         vm.prank(owner);
@@ -187,13 +188,95 @@ abstract contract HostContractsDeployerTestUtils is Test {
         require(fheExecutor.getACLAddress() == aclAdd, "executor ACL wiring");
         require(fheExecutor.getHCULimitAddress() == hcuLimitAdd, "executor HCU wiring");
         require(aclProxy.getPauserSetAddress() == pauserSetAdd, "ACL PauserSet wiring");
-        require(KMSVerifier(kmsVerifierAdd).getThreshold() == kmsThreshold, "KMS threshold wiring");
+        require(protocolConfigProxy.getCurrentKmsContextId() != 0, "ProtocolConfig wiring");
+        require(
+            protocolConfigProxy.getPublicDecryptionThreshold() == initialThresholds.publicDecryption,
+            "KMS threshold wiring"
+        );
         require(InputVerifier(inputVerifierAdd).getThreshold() == inputThreshold, "Input threshold wiring");
+    }
+
+    function _deployProtocolConfig(
+        address owner,
+        KmsNode[] memory initialKmsNodes,
+        IProtocolConfig.KmsThresholds memory initialThresholds
+    ) internal returns (ProtocolConfig protocolConfigProxy, address protocolConfigImplementation) {
+        address emptyProxyImplementation = address(new EmptyUUPSProxy());
+
+        deployCodeTo(
+            "fhevm-foundry/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
+            abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
+            protocolConfigAdd
+        );
+        vm.label(protocolConfigAdd, "ProtocolConfig Proxy");
+
+        protocolConfigImplementation = address(new ProtocolConfig());
+        vm.label(protocolConfigImplementation, "ProtocolConfig Implementation");
+
+        vm.prank(owner);
+        EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
+            protocolConfigImplementation,
+            abi.encodeCall(ProtocolConfig.initializeFromEmptyProxy, (initialKmsNodes, initialThresholds))
+        );
+
+        protocolConfigProxy = ProtocolConfig(protocolConfigAdd);
+    }
+
+    function _deployKMSGeneration(
+        address owner
+    ) internal returns (KMSGeneration kmsGenerationProxy, address kmsGenerationImplementation) {
+        address emptyProxyImplementation = address(new EmptyUUPSProxy());
+
+        deployCodeTo(
+            "fhevm-foundry/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
+            abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
+            kmsGenerationAdd
+        );
+        vm.label(kmsGenerationAdd, "KMSGeneration Proxy");
+
+        kmsGenerationImplementation = address(new KMSGeneration());
+        vm.label(kmsGenerationImplementation, "KMSGeneration Implementation");
+
+        vm.prank(owner);
+        EmptyUUPSProxy(kmsGenerationAdd).upgradeToAndCall(
+            kmsGenerationImplementation,
+            abi.encodeCall(KMSGeneration.initializeFromEmptyProxy, ())
+        );
+
+        kmsGenerationProxy = KMSGeneration(kmsGenerationAdd);
     }
 
     function _deployPauserSet() internal returns (PauserSet pauserSet) {
         vm.etch(pauserSetAdd, address(new PauserSet()).code);
         vm.label(pauserSetAdd, "PauserSet");
         pauserSet = PauserSet(pauserSetAdd);
+    }
+
+    function _defaultThresholds() internal pure returns (IProtocolConfig.KmsThresholds memory) {
+        return IProtocolConfig.KmsThresholds({publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1});
+    }
+
+    function _computeSignature(uint256 privateKey, bytes32 digest) internal pure returns (bytes memory signature) {
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
+        return abi.encodePacked(r, s, v);
+    }
+
+    function _makeKmsNodes(uint256 count) internal pure returns (KmsNode[] memory nodes) {
+        nodes = new KmsNode[](count);
+        for (uint256 i = 0; i < count; i++) {
+            nodes[i] = KmsNode({
+                txSenderAddress: address(uint160(0xA1 + i)),
+                signerAddress: vm.addr((i + 1) * 0x100),
+                ipAddress: string.concat("127.0.0.", vm.toString(i + 1)),
+                storageUrl: string.concat("https://s", vm.toString(i), ".example.com")
+            });
+        }
+    }
+
+    function _makeKmsNodesFromSigners(address[] memory signers) internal pure returns (KmsNode[] memory nodes) {
+        nodes = _makeKmsNodes(signers.length);
+        for (uint256 i = 0; i < signers.length; i++) {
+            nodes[i].signerAddress = signers[i];
+        }
     }
 }

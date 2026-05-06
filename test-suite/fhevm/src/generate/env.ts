@@ -5,6 +5,7 @@ import {
   compatPolicyForState,
   requiresLegacyRelayerUrl,
   requiresMultichainAclAddress,
+  requiresModernHostAddressArtifacts,
 } from "../compat/compat";
 import { driftDatabaseName } from "../drift";
 import type { StackSpec } from "../stack-spec/stack-spec";
@@ -60,6 +61,31 @@ const applyTopologyEnv = (
   envs["host-sc"].NUM_COPROCESSORS = String(plan.topology.count);
   envs["host-sc"].COPROCESSOR_THRESHOLD = String(plan.topology.threshold);
 };
+
+/** Keeps host-contract deployment KMS inputs aligned with the gateway-side source of truth. */
+const applyHostScKmsEnv = (envs: Record<string, Record<string, string>>) => {
+  const gatewayEnv = envs["gateway-sc"];
+  const hostEnv = envs["host-sc"];
+  hostEnv.NUM_KMS_NODES = gatewayEnv.NUM_KMS_NODES;
+  hostEnv.PUBLIC_DECRYPTION_THRESHOLD = gatewayEnv.PUBLIC_DECRYPTION_THRESHOLD;
+  hostEnv.USER_DECRYPTION_THRESHOLD = gatewayEnv.USER_DECRYPTION_THRESHOLD;
+  hostEnv.KMS_GEN_THRESHOLD = gatewayEnv.KMS_GENERATION_THRESHOLD;
+
+  const numKmsNodes = Number(gatewayEnv.NUM_KMS_NODES ?? "0");
+  for (let index = 0; index < numKmsNodes; index += 1) {
+    const txSender = gatewayEnv[`KMS_TX_SENDER_ADDRESS_${index}`];
+    const signer = gatewayEnv[`KMS_SIGNER_ADDRESS_${index}`];
+    const storageUrl = gatewayEnv[`KMS_NODE_STORAGE_URL_${index}`];
+    const ipAddress = gatewayEnv[`KMS_NODE_IP_ADDRESS_${index}`];
+    if (txSender) hostEnv[`KMS_TX_SENDER_ADDRESS_${index}`] = txSender;
+    if (signer) hostEnv[`KMS_SIGNER_ADDRESS_${index}`] = signer;
+    if (storageUrl) hostEnv[`KMS_NODE_STORAGE_URL_${index}`] = storageUrl;
+    if (ipAddress) hostEnv[`KMS_NODE_IP_${index}`] = ipAddress;
+  }
+};
+
+const hostDeployKmsGenerationArgs = (plan: StackSpec, enabled: boolean) =>
+  requiresModernHostAddressArtifacts(plan) ? `--with-kms-generation ${enabled}` : "";
 
 /** Applies base runtime defaults before compat or discovery-specific rewrites. */
 const applyBaseRuntimeEnv = (
@@ -129,6 +155,9 @@ const applyDiscoveryEnv = (
     return;
   }
   const primaryHost = state.discovery.hosts[defaultChain.key] ?? {};
+  const kmsGenerationAddress = requiresModernHostAddressArtifacts(plan)
+    ? primaryHost.KMS_GENERATION_CONTRACT_ADDRESS
+    : state.discovery.gateway.KMS_GENERATION_ADDRESS;
 
   updateContracts(envs["gateway-sc"], state.discovery.gateway);
   updateContracts(envs["gateway-mocked-payment"], {
@@ -148,7 +177,7 @@ const applyDiscoveryEnv = (
     INPUT_VERIFICATION_ADDRESS: state.discovery.gateway.INPUT_VERIFICATION_ADDRESS,
     CIPHERTEXT_COMMITS_ADDRESS: state.discovery.gateway.CIPHERTEXT_COMMITS_ADDRESS,
     ...(requiresMultichainAclAddress(plan) ? { MULTICHAIN_ACL_ADDRESS: state.discovery.gateway.MULTICHAIN_ACL_ADDRESS } : {}),
-    KMS_GENERATION_ADDRESS: state.discovery.gateway.KMS_GENERATION_ADDRESS,
+    KMS_GENERATION_ADDRESS: kmsGenerationAddress,
   });
 
   const kmsHostChains = chains.map((chain) => {
@@ -163,7 +192,7 @@ const applyDiscoveryEnv = (
   updateContracts(envs["kms-connector"], {
     KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
     KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS: state.discovery.gateway.GATEWAY_CONFIG_ADDRESS,
-    KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS: state.discovery.gateway.KMS_GENERATION_ADDRESS,
+    KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS: kmsGenerationAddress,
     KMS_CONNECTOR_HOST_CHAINS: JSON.stringify(kmsHostChains),
   });
   updateContracts(envs["relayer"], {
@@ -177,6 +206,8 @@ const applyDiscoveryEnv = (
     ACL_CONTRACT_ADDRESS: primaryHost.ACL_CONTRACT_ADDRESS,
     INPUT_VERIFIER_CONTRACT_ADDRESS: primaryHost.INPUT_VERIFIER_CONTRACT_ADDRESS,
     FHEVM_EXECUTOR_CONTRACT_ADDRESS: primaryHost.FHEVM_EXECUTOR_CONTRACT_ADDRESS,
+    PROTOCOL_CONFIG_CONTRACT_ADDRESS: primaryHost.PROTOCOL_CONFIG_CONTRACT_ADDRESS,
+    KMS_GENERATION_CONTRACT_ADDRESS: primaryHost.KMS_GENERATION_CONTRACT_ADDRESS,
   });
 };
 
@@ -246,6 +277,7 @@ export const renderEnvMaps = async (
     throw new Error("Missing default host chain");
   }
   applyTopologyEnv(envs, plan);
+  applyHostScKmsEnv(envs);
   applyBaseRuntimeEnv(envs, state);
   applyCompatEnv(envs, plan);
   applyDiscoveryEnv(envs, state, plan);
@@ -254,9 +286,11 @@ export const renderEnvMaps = async (
   envs["host-node"].HOST_NODE_CHAIN_ID = defaultChain.chainId;
   envs["host-sc"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["host-sc"].HOST_ADDRESS_DIR = defaultChain.key;
+  envs["host-sc"].HOST_SC_DEPLOY_KMS_GENERATION_ARGS = hostDeployKmsGenerationArgs(plan, true);
   envs["coprocessor"].RPC_HTTP_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["coprocessor"].RPC_WS_URL = `ws://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
+  envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_CHAIN_ID = defaultChain.chainId;
   envs["test-suite"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["test-suite"].CHAIN_ID_HOST = defaultChain.chainId;
   const instanceEnvs = await buildInstanceEnvs(envs, plan, deriveWallet);
@@ -294,6 +328,7 @@ export const renderEnvMaps = async (
     hostSc.RPC_URL = hostHttp;
     hostSc.CHAIN_ID = chain.chainId;
     hostSc.HOST_ADDRESS_DIR = chain.key;
+    hostSc.HOST_SC_DEPLOY_KMS_GENERATION_ARGS = hostDeployKmsGenerationArgs(plan, false);
     hostSc.HOST_SC_DEPLOY_CONTAINER_NAME = `${chain.sc}-deploy`;
     hostSc.HOST_SC_PAUSERS_CONTAINER_NAME = `${chain.sc}-add-pausers`;
     hostSc.NUM_COPROCESSORS = String(plan.topology.count);
@@ -326,6 +361,7 @@ export const renderEnvMaps = async (
     envs["test-suite"][`HOST_CHAIN_${chainIndex}_KMS_VERIFIER_CONTRACT_ADDRESS`] = hostAddresses.KMS_VERIFIER_CONTRACT_ADDRESS ?? "";
     envs["test-suite"][`HOST_CHAIN_${chainIndex}_INPUT_VERIFIER_CONTRACT_ADDRESS`] = hostAddresses.INPUT_VERIFIER_CONTRACT_ADDRESS ?? "";
     envs["test-suite"][`HOST_CHAIN_${chainIndex}_FHEVM_EXECUTOR_CONTRACT_ADDRESS`] = hostAddresses.FHEVM_EXECUTOR_CONTRACT_ADDRESS ?? "";
+    envs["test-suite"][`HOST_CHAIN_${chainIndex}_PROTOCOL_CONFIG_CONTRACT_ADDRESS`] = hostAddresses.PROTOCOL_CONFIG_CONTRACT_ADDRESS ?? "";
   }
 
   validateEnvMaps(envs, instanceEnvs);

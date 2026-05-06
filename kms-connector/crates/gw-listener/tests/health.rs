@@ -22,6 +22,7 @@ async fn test_healthcheck_endpoints() -> anyhow::Result<()> {
     let state = State::new(
         test_instance.db().clone(),
         test_instance.provider().clone(),
+        test_instance.provider().clone(),
         Duration::from_secs(5),
     );
 
@@ -58,7 +59,7 @@ async fn test_healthcheck_endpoints() -> anyhow::Result<()> {
     assert_eq!(
         response.json::<VersionResponse>().await?,
         VersionResponse {
-            name: State::<RootProvider>::service_name().to_string(),
+            name: State::<RootProvider, RootProvider>::service_name().to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             build: GIT_COMMIT_HASH.to_string(),
         }

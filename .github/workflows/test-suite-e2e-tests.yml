@@ -100,7 +100,7 @@ on:
         type: string
       scenario:
         description: "Deployment scenario (e.g. two-of-three, two-of-three-multi-chain)"
-        default: "two-of-three"
+        default: "two-of-three-multi-chain"
         type: string
       test-profile:
         description: "Named test profile to run instead of the default standard suite"
@@ -152,7 +152,7 @@ jobs:
       RELAYER_VERSION: ${{ inputs.relayer-version }}
       CORE_VERSION: ${{ inputs.kms-core-version }}
       ORCHESTRATED: ${{ inputs.orchestrated && 'true' || 'false' }}
-      SCENARIO: ${{ inputs.scenario || 'two-of-three' }}
+      SCENARIO: ${{ inputs.scenario || 'two-of-three-multi-chain' }}
       TEST_PROFILE: ${{ inputs.test-profile || 'standard' }}
     runs-on: large_ubuntu_32
     steps:
@@ -374,6 +374,13 @@ jobs:
             echo "::endgroup::"
           }
           snapshot_logs "Relayer Logs" fhevm-relayer
+          snapshot_logs "KMS Connector Gateway Listener" kms-connector-gw-listener
+          snapshot_logs "KMS Connector KMS Worker" kms-connector-kms-worker
+          snapshot_logs "KMS Connector Transaction Sender" kms-connector-tx-sender
+          snapshot_logs "Host KMS Keygen Trigger" host-sc-trigger-keygen
+          snapshot_logs "Host KMS CRS Trigger" host-sc-trigger-crsgen
+          snapshot_logs "KMS Core" kms-core
+          snapshot_logs "Host SC Deploy" host-sc-deploy
           # Iterate over all running coprocessor instances (primary is "coprocessor-",
           # additional instances are "coprocessorN-" where N>=1).
           for container in $(docker ps --format '{{.Names}}' | grep -E '^coprocessor[0-9]*-gw-listener$' | sort); do

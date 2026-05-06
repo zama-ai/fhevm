@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT MIN(block_number) FROM last_block_polled WHERE event_type = ANY($1::event_type[])",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "min",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        {
+          "Custom": {
+            "name": "event_type[]",
+            "kind": {
+              "Array": {
+                "Custom": {
+                  "name": "event_type",
+                  "kind": {
+                    "Enum": [
+                      "PublicDecryptionRequest",
+                      "UserDecryptionRequest",
+                      "PrepKeygenRequest",
+                      "KeygenRequest",
+                      "CrsgenRequest",
+                      "PrssInit",
+                      "KeyReshareSameSet"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "dc0dc91d0c9aecef2fde527d27372730207300c1055b54916745adaf81ca18a3"
+}

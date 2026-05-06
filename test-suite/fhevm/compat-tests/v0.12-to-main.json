@@ -24,7 +24,7 @@
     "RELAYER_MIGRATE_VERSION": "186c343",
     "GATEWAY_VERSION": "186c343",
     "HOST_VERSION": "186c343",
-    "CORE_VERSION": "v0.13.10-rc.3",
+    "CORE_VERSION": "c57f52f",
     "CONNECTOR_DB_MIGRATION_VERSION": "186c343",
     "CONNECTOR_GW_LISTENER_VERSION": "186c343",
     "CONNECTOR_KMS_WORKER_VERSION": "186c343",
@@ -108,6 +108,6 @@
     "COPROCESSOR_SNS_WORKER": ["COPROCESSOR_SNS_WORKER_VERSION"]
   },
   "execution": {
-    "scenario": "two-of-two"
+    "scenario": "two-of-three-multi-chain"
   }
 }

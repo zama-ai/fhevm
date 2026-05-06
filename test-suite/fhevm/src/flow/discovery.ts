@@ -1,4 +1,8 @@
-import { requiresMultichainAclAddress } from "../compat/compat";
+import {
+  requiresGatewayKmsGenerationAddress,
+  requiresMultichainAclAddress,
+  requiresModernHostAddressArtifacts,
+} from "../compat/compat";
 import { PreflightError } from "../errors";
 import {
   DEFAULT_GATEWAY_RPC_PORT,
@@ -11,7 +15,6 @@ import {
 import type { Discovery, State } from "../types";
 import { predictedCrsId, predictedKeyId, readEnvFile } from "../utils/fs";
 import { run } from "../utils/process";
-import { exists } from "../utils/fs";
 import { hostChainsForState } from "./topology";
 
 /** Resolves the MinIO container IP used for host-reachable material URLs. */
@@ -44,7 +47,10 @@ export const defaultEndpoints = async () => {
   const ip = await minioIp();
   const hosts: Discovery["endpoints"]["hosts"] = {};
   return {
-    gateway: { http: `http://gateway-node:${DEFAULT_GATEWAY_RPC_PORT}`, ws: `ws://gateway-node:${DEFAULT_GATEWAY_RPC_PORT}` },
+    gateway: {
+      http: `http://gateway-node:${DEFAULT_GATEWAY_RPC_PORT}`,
+      ws: `ws://gateway-node:${DEFAULT_GATEWAY_RPC_PORT}`,
+    },
     hosts,
     minioInternal: MINIO_INTERNAL_URL,
     minioExternal: `http://${ip}:${MINIO_PORT}`,
@@ -79,28 +85,37 @@ export const ensureDiscovery = async (state: State) => {
 /** Loads generated gateway and host address artifacts from disk. */
 export const discoverContracts = async (state: Pick<State, "scenario">) => {
   const hostChains = hostChainsForState(state);
-  const gwExists = await exists(gatewayAddressesPath);
-  const hostExistence = await Promise.all(hostChains.map((chain) => exists(hostChainAddressesPath(chain.key))));
-  if (!gwExists || hostExistence.some((value) => !value)) {
-    throw new PreflightError("Missing generated address files under .fhevm/runtime/addresses");
-  }
+  const readAddressEnv = async (file: string) => {
+    try {
+      return await readEnvFile(file);
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+        throw new PreflightError("Missing generated address files under .fhevm/runtime/addresses");
+      }
+      throw error;
+    }
+  };
   return {
-    gateway: await readEnvFile(gatewayAddressesPath),
+    gateway: await readAddressEnv(gatewayAddressesPath),
     hosts: Object.fromEntries(
-      await Promise.all(hostChains.map(async (chain) => [chain.key, await readEnvFile(hostChainAddressesPath(chain.key))] as const)),
+      await Promise.all(
+        hostChains.map(async (chain) => [chain.key, await readAddressEnv(hostChainAddressesPath(chain.key))] as const),
+      ),
     ),
   };
 };
 
 /** Verifies that required discovery fields are present before rendering runtime artifacts. */
-export const validateDiscovery = (state: Pick<State, "target" | "versions" | "discovery" | "overrides" | "scenario">) => {
+export const validateDiscovery = (
+  state: Pick<State, "target" | "versions" | "discovery" | "overrides" | "scenario">,
+) => {
   const discovery = state.discovery;
   if (!discovery) {
     throw new PreflightError("Missing discovery state");
   }
   const requiredGateway = [
     "GATEWAY_CONFIG_ADDRESS",
-    "KMS_GENERATION_ADDRESS",
+    ...(requiresGatewayKmsGenerationAddress(state) ? ["KMS_GENERATION_ADDRESS"] : []),
     "DECRYPTION_ADDRESS",
     "INPUT_VERIFICATION_ADDRESS",
     "CIPHERTEXT_COMMITS_ADDRESS",
@@ -112,6 +127,7 @@ export const validateDiscovery = (state: Pick<State, "target" | "versions" | "di
     "KMS_VERIFIER_CONTRACT_ADDRESS",
     "INPUT_VERIFIER_CONTRACT_ADDRESS",
     "PAUSER_SET_CONTRACT_ADDRESS",
+    ...(requiresModernHostAddressArtifacts(state) ? ["PROTOCOL_CONFIG_CONTRACT_ADDRESS"] : []),
   ];
   for (const key of requiredGateway) {
     if (!discovery.gateway[key]) {
@@ -123,10 +139,19 @@ export const validateDiscovery = (state: Pick<State, "target" | "versions" | "di
     if (!host) {
       throw new PreflightError(`Missing discovery for host chain "${chain.key}"`);
     }
-    for (const key of requiredHost) {
+    const requiredHostForChain = [
+      ...requiredHost,
+      ...(chain.isDefault && requiresModernHostAddressArtifacts(state) ? ["KMS_GENERATION_CONTRACT_ADDRESS"] : []),
+    ];
+    for (const key of requiredHostForChain) {
       if (!host[key]) {
         throw new PreflightError(`Missing host discovery value ${key} for chain "${chain.key}"`);
       }
+    }
+    if (!chain.isDefault && host.KMS_GENERATION_CONTRACT_ADDRESS) {
+      throw new PreflightError(
+        `Host discovery for non-canonical chain "${chain.key}" contains KMS_GENERATION_CONTRACT_ADDRESS; this belongs on the canonical host only`,
+      );
     }
   }
 };

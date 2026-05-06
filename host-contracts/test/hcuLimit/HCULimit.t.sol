@@ -1366,6 +1366,59 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         vm.stopPrank();
     }
 
+    function test_checkHCUForFheIsInWorksAsExpectedForSupportedTypes(uint8 resultType, uint8 count) public {
+        vm.assume(resultType <= uint8(FheType.Int248));
+        vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheIsIn));
+        count = uint8(bound(count, 1, 10));
+
+        bytes32[] memory set = new bytes32[](count);
+        for (uint256 i = 0; i < count; i++) {
+            set[i] = bytes32(i + 1);
+        }
+
+        vm.prank(fhevmExecutor);
+        hcuLimit.checkHCUForFheIsIn(FheType(resultType), mockLHS, set, mockResult, fhevmExecutor);
+
+        uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
+        vm.assertGe(totalTransactionHCU, 60000);
+        vm.assertLe(totalTransactionHCU, 1_300_000);
+    }
+
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheIsIn(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        bytes32[] memory set = new bytes32[](2);
+        set[0] = bytes32(uint256(1));
+        set[1] = bytes32(uint256(2));
+        vm.prank(randomAccount);
+        vm.expectRevert(HCULimit.CallerMustBeFHEVMExecutorContract.selector);
+        hcuLimit.checkHCUForFheIsIn(FheType.Uint8, mockLHS, set, mockResult, fhevmExecutor);
+    }
+
+    function test_checkHCUForFheIsInRevertsForUnsupportedTypes(uint8 fheType) public {
+        vm.assume(fheType <= uint8(FheType.Int248));
+        vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheIsIn));
+        bytes32[] memory set = new bytes32[](2);
+        set[0] = bytes32(uint256(1));
+        set[1] = bytes32(uint256(2));
+        vm.expectRevert(HCULimit.UnsupportedOperation.selector);
+        vm.prank(fhevmExecutor);
+        hcuLimit.checkHCUForFheIsIn(FheType(fheType), mockLHS, set, mockResult, fhevmExecutor);
+    }
+
+    function test_checkHCUForFheIsInRevertsIfHCUTransactionIsAboveHCUTransactionLimit(uint8 resultType) public {
+        vm.assume(resultType <= uint8(FheType.Int248));
+        vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheIsIn));
+
+        hcuLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
+
+        bytes32[] memory set = new bytes32[](2);
+        set[0] = bytes32(uint256(1));
+        set[1] = bytes32(uint256(2));
+        vm.prank(fhevmExecutor);
+        vm.expectRevert(HCULimit.HCUTransactionLimitExceeded.selector);
+        hcuLimit.checkHCUForFheIsIn(FheType(resultType), mockLHS, set, mockResult, fhevmExecutor);
+    }
+
     function test_checkHCUForFheSumWorksAsExpectedForSupportedTypes(uint8 resultType, uint8 count) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheSum));

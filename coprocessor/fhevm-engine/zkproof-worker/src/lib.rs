@@ -68,6 +68,9 @@ pub enum ExecutionError {
     #[error("Cache creation error: {0})")]
     CacheCreationError(String),
 
+    #[error("Null input: {0})")]
+    NullInput(i64),
+
     #[error("{0}")]
     Other(#[from] Box<dyn std::error::Error + Send + Sync>),
 }

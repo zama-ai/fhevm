@@ -109,6 +109,7 @@ pub struct UserDecryptResponseModel {
     pub err_reason: Option<String>,
     pub gw_req_tx_hash: Option<String>,
     pub gw_consensus_tx_hash: Option<String>,
+    pub resolved_threshold: Option<i64>,
     pub shares: Json<Vec<UserDecryptResponseShare>>,
 }
 

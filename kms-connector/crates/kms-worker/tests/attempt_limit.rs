@@ -21,7 +21,7 @@ use connector_utils::{
     types::{ProtocolEventKind, db::EventType},
 };
 use fhevm_gateway_bindings::gateway_config::GatewayConfig::Coprocessor;
-use kms_grpc::kms::v1::{Empty, InitiateResharingResponse};
+use kms_grpc::kms::v1::Empty;
 use kms_worker::core::Config;
 use mocktail::{MockSet, StatusCode, server::MockServer};
 use rstest::rstest;
@@ -35,8 +35,6 @@ use tracing::{info, warn};
 #[case::prep_keygen_processing_not_removed_on_error(EventType::PrepKeygenRequest)]
 #[case::keygen_processing_not_removed_on_error(EventType::KeygenRequest)]
 #[case::crsgen_processing_not_removed_on_error(EventType::CrsgenRequest)]
-#[case::prss_init_processing_removal_on_error(EventType::PrssInit)]
-#[case::key_reshare_same_set_processing_removal_on_error(EventType::KeyReshareSameSet)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_request_processing(#[case] event_type: EventType) -> anyhow::Result<()> {
@@ -126,10 +124,7 @@ async fn test_request_processing(#[case] event_type: EventType) -> anyhow::Resul
 
     match &request {
         // Wait for kms_worker to remove the request from DB, then stop it
-        ProtocolEventKind::PublicDecryption(_)
-        | ProtocolEventKind::UserDecryption(_)
-        | ProtocolEventKind::PrssInit(_)
-        | ProtocolEventKind::KeyReshareSameSet(_) => {
+        ProtocolEventKind::PublicDecryption(_) | ProtocolEventKind::UserDecryption(_) => {
             while check_no_uncompleted_request_in_db(test_instance.db(), event_type)
                 .await
                 .is_err()
@@ -167,8 +162,6 @@ fn prepare_mocks(req: &ProtocolEventKind) -> MockSet {
         ProtocolEventKind::PrepKeygen(_) => ("KeyGenPreproc", "GetKeyGenPreprocResult"),
         ProtocolEventKind::Keygen(_) => ("KeyGen", "GetKeyGenResult"),
         ProtocolEventKind::Crsgen(_) => ("CrsGen", "GetCrsGenResult"),
-        ProtocolEventKind::PrssInit(_) => ("Init", ""),
-        ProtocolEventKind::KeyReshareSameSet(_) => ("InitiateResharing", ""),
     };
 
     // Mock initial KMS response to initial GRPC request
@@ -176,13 +169,7 @@ fn prepare_mocks(req: &ProtocolEventKind) -> MockSet {
         when.path(format!(
             "/kms_service.v1.CoreServiceEndpoint/{req_endpoint}"
         ));
-        match req {
-            ProtocolEventKind::KeyReshareSameSet(_) => {
-                then.pb(InitiateResharingResponse::default())
-            }
-            // KMS returns `Empty` for all kind of requests except `KeyReshareSameSet`
-            _ => then.pb(Empty::default()),
-        };
+        then.pb(Empty::default());
     });
 
     // Mock error response of result polling

@@ -33,6 +33,8 @@ export const COMPAT_MATRIX = {
   ],
   legacyShims: [
     { key: "COPROCESSOR_GW_LISTENER_VERSION", below: [0, 12, 0] as CompatSemver, profile: "legacy-gw-listener-no-drift-addresses", unparsed: "modern" as const },
+    { key: "COPROCESSOR_GW_LISTENER_VERSION", below: [0, 13, 0] as CompatSemver, profile: "legacy-gw-listener-kms-generation-address", unparsed: "modern" as const },
+    { key: "COPROCESSOR_HOST_LISTENER_VERSION", below: [0, 13, 0] as CompatSemver, profile: "legacy-host-listener-no-kms-generation-address", unparsed: "modern" as const },
     { key: "COPROCESSOR_HOST_LISTENER_VERSION", below: [0, 12, 0] as CompatSemver, profile: "legacy-coprocessor-api-keys", unparsed: "modern" as const },
     { key: "COPROCESSOR_TX_SENDER_VERSION", below: [0, 12, 0] as CompatSemver, profile: "legacy-tx-sender-gateway-flags", unparsed: "modern" as const },
     { key: "COPROCESSOR_TX_SENDER_VERSION", below: [0, 11, 1] as CompatSemver, profile: "legacy-tx-sender-host-chain-url", unparsed: "modern" as const },
@@ -53,6 +55,23 @@ const SHIM_PROFILES = {
     coprocessorArgs: {},
     coprocessorDropFlags: {
       "gw-listener": ["--ciphertext-commits-address", "--gateway-config-address"],
+    },
+    connectorEnv: {},
+    composeEnv: {},
+  },
+  "legacy-gw-listener-kms-generation-address": {
+    coprocessorArgs: {
+      "gw-listener": [["--kms-generation-address", { env: "KMS_GENERATION_ADDRESS" }]],
+    },
+    coprocessorDropFlags: {},
+    connectorEnv: {},
+    composeEnv: {},
+  },
+  "legacy-host-listener-no-kms-generation-address": {
+    coprocessorArgs: {},
+    coprocessorDropFlags: {
+      "host-listener": ["--kms-generation-address"],
+      "host-listener-poller": ["--kms-generation-address"],
     },
     connectorEnv: {},
     composeEnv: {},
@@ -176,9 +195,22 @@ export const supportsCoprocessorDbStateRevert = (state: Pick<CompatState, "versi
   !versionLt(state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION ?? "", [0, 12, 0], { unparsed: "modern" }) ||
   sameCompatBase(state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION ?? "", [0, 12, 0]);
 
+/** Detects when gateway deployment still emits a gateway-side KMSGeneration address. */
+export const requiresLegacyGatewayKmsGenerationAddress = (state: Pick<CompatState, "versions">) =>
+  versionLt(state.versions.env.GATEWAY_VERSION ?? "", [0, 13, 0], { unparsed: "modern" });
+
 /** Detects when contract tasks still expect the legacy internal PauserSet flag name. */
 const requiresLegacyPauserTaskFlag = (version: string) =>
   versionLt(version, [0, 13, 0], { unparsed: "modern" });
+
+/** Detects when host address artifacts include ProtocolConfig and KMSGeneration proxy addresses. */
+export const requiresModernHostAddressArtifacts = (state: CompatState) =>
+  effectiveCompatOverrides(state).some((override) => override.group === "host-contracts") ||
+  !versionLt(state.versions.env.HOST_VERSION ?? "", [0, 13, 0], { unparsed: "modern" });
+
+/** Detects when gateway discovery/runtime must require the legacy gateway KMSGeneration address. */
+export const requiresGatewayKmsGenerationAddress = (state: CompatState) =>
+  requiresLegacyGatewayKmsGenerationAddress(state) && !requiresModernHostAddressArtifacts(state);
 
 type BundleIncompatibility = { severity: "error"; code: string; message: string };
 

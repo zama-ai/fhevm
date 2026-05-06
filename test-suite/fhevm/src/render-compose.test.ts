@@ -1,15 +1,15 @@
-import path from "node:path";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 import YAML from "yaml";
 
-import { composePath, envPath, TEMPLATE_COMPOSE_DIR } from "./layout";
 import { generateComposeOverrides, loadMergedComposeDoc } from "./generate/compose";
+import { TEMPLATE_COMPOSE_DIR, composePath, envPath } from "./layout";
 import { presetBundle } from "./resolve/target";
 import { parseCoprocessorScenario, resolveScenarioFile } from "./scenario/resolve";
 import { stackSpecForState } from "./stack-spec/stack-spec";
-import { withTempStateDir } from "./test-state";
 import { testDefaultScenario } from "./test-fixtures";
+import { withTempStateDir } from "./test-state";
 import type { State } from "./types";
 import { composeEnv } from "./utils/process";
 
@@ -70,6 +70,12 @@ const multiChainHostContractsState: State = {
 const relayerOverrideState: State = {
   ...state,
   overrides: [{ group: "relayer" }],
+};
+
+const gatewayContractsOverrideState: State = {
+  ...state,
+  overrides: [{ group: "gateway-contracts" }],
+  scenario: testDefaultScenario(),
 };
 
 const envAndArgsScenarioState: State = {
@@ -173,6 +179,23 @@ describe("render-compose", () => {
       expect(doc.services["host-sc-chain-b-deploy"]?.build).toBeTruthy();
       expect(doc.services["host-sc-chain-b-add-pausers"]?.image).toContain(":fhevm-local");
       expect(doc.services["host-sc-chain-b-add-pausers"]?.build).toBeTruthy();
+      expect(doc.services["host-sc-chain-b-trigger-keygen"]).toBeUndefined();
+      expect(doc.services["host-sc-chain-b-trigger-crsgen"]).toBeUndefined();
+    });
+  });
+
+  test("keeps legacy gateway trigger services in local gateway overrides", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await generateComposeOverrides(gatewayContractsOverrideState, stackSpecForState(gatewayContractsOverrideState));
+      const doc = YAML.parse(await readFile(composePath("gateway-sc"), "utf8")) as {
+        services: Record<string, { image?: string; build?: unknown }>;
+      };
+      expect(doc.services["gateway-sc-trigger-keygen"]?.image).toContain(":fhevm-local");
+      expect(doc.services["gateway-sc-trigger-keygen"]?.build).toBeTruthy();
+      expect(doc.services["gateway-sc-trigger-crsgen"]?.image).toContain(":fhevm-local");
+      expect(doc.services["gateway-sc-trigger-crsgen"]?.build).toBeTruthy();
     });
   });
 
@@ -186,7 +209,9 @@ describe("render-compose", () => {
         services: Record<string, { image?: string; build?: { context?: string; dockerfile?: string } }>;
       };
       expect(doc.services["relayer-db-migration"]?.image).toContain(":fhevm-local");
-      expect(doc.services["relayer-db-migration"]?.build?.dockerfile).toContain("relayer/docker/relayer-migrate/Dockerfile");
+      expect(doc.services["relayer-db-migration"]?.build?.dockerfile).toContain(
+        "relayer/docker/relayer-migrate/Dockerfile",
+      );
       expect(doc.services["relayer"]?.image).toContain(":fhevm-local");
       expect(doc.services["relayer"]?.build?.dockerfile).toContain("relayer/docker/relayer/Dockerfile");
     });
@@ -212,10 +237,7 @@ describe("render-compose", () => {
       const env = await composeEnv("host-sc");
       const hostAddressDir = (env as Record<string, string>).HOST_ADDRESS_DIR ?? "host";
       const template = YAML.parse(
-        await readFile(
-          path.join(TEMPLATE_COMPOSE_DIR, "host-sc-docker-compose.yml"),
-          "utf8",
-        ),
+        await readFile(path.join(TEMPLATE_COMPOSE_DIR, "host-sc-docker-compose.yml"), "utf8"),
       ) as { services: Record<string, { volumes?: string[] }> };
       const defaultMount = String(template.services["host-sc-deploy"]?.volumes?.[0] ?? "").replace(
         /\$\{HOST_ADDRESS_DIR:-host\}/g,
@@ -225,10 +247,18 @@ describe("render-compose", () => {
         services: Record<string, { volumes?: string[] }>;
       };
       expect(defaultMount).toContain("/addresses/chain-a:/app/addresses");
-      expect(extra.services["host-sc-chain-b-deploy"]?.volumes?.[0]).toContain(
-        "/addresses/chain-b:/app/addresses",
-      );
+      expect(extra.services["host-sc-chain-b-deploy"]?.volumes?.[0]).toContain("/addresses/chain-b:/app/addresses");
     });
+  });
+
+  test("host-sc deploy service reads KMSGeneration args from env", async () => {
+    const template = YAML.parse(
+      await readFile(path.join(TEMPLATE_COMPOSE_DIR, "host-sc-docker-compose.yml"), "utf8"),
+    ) as { services: Record<string, { command?: string[] }> };
+
+    const cmd = (template.services["host-sc-deploy"]?.command ?? []).join(" ");
+    expect(cmd).toContain("task:deployAllHostContracts");
+    expect(cmd).toContain("$${HOST_SC_DEPLOY_KMS_GENERATION_ARGS}");
   });
 
   test("merges instance env into list-form service environments without dropping KEY_ID", async () => {

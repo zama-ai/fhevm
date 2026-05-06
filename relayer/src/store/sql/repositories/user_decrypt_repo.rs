@@ -760,8 +760,10 @@ impl UserDecryptRepository {
     pub async fn insert_share_and_complete_if_threshold_reached(
         &self,
         params: ShareInsertParams<'_>,
-        threshold: i64,
+        threshold: u32,
     ) -> SqlResult<ShareCompletionOutcome> {
+        // u32 → i64: safe widening for DB BIGINT column
+        let threshold = i64::from(threshold);
         let id_as_bytes_array: [u8; 32] = params.gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
         let share_index = u256_to_i32(params.share_index)
@@ -865,7 +867,8 @@ impl UserDecryptRepository {
                     ),
                     upd AS (
                         UPDATE user_decrypt_req
-                        SET req_status = 'completed'::req_status
+                        SET req_status = 'completed'::req_status,
+                            resolved_threshold = $2
                         WHERE gw_reference_id = $1
                           AND req_status = 'receipt_received'::req_status
                         RETURNING int_job_id, req_status as new_status, updated_at, err_reason
@@ -882,6 +885,7 @@ impl UserDecryptRepository {
                     "#
                 )
                 .bind(&gw_ref_id)
+                .bind(threshold)
                 .fetch_optional(&mut *tx)
                 .await?;
 
@@ -1031,13 +1035,18 @@ impl UserDecryptRepository {
     }
 
     // GET REQUESTS RESULTS.
-    /// Select in user_decrypt_req by ext_job_id and get all the shares on gw_reference_id to construct the the final response,
-    /// fields in return: ext_job_id, req_status, shares, updated_at, err_reason, gw_req_tx_hash, gw_consensus_tx_hash.
+    /// Select in user_decrypt_req by ext_job_id and get all the shares on gw_reference_id.
+    ///
+    /// The share LIMIT uses `COALESCE(resolved_threshold, $2)`: if the dynamic threshold
+    /// was stored at completion time, it takes precedence; otherwise the static fallback
+    /// `$2` is used (backward compatibility for rows created before the migration).
     pub async fn find_req_and_shares_by_ext_job_id(
         &self,
         ext_job_id: Uuid,
-        threshold: i64,
+        fallback_threshold: u32,
     ) -> SqlResult<Option<UserDecryptResponseModel>> {
+        // u32 → i64: safe widening for DB BIGINT column
+        let fallback_threshold = i64::from(fallback_threshold);
         let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
@@ -1051,6 +1060,7 @@ impl UserDecryptRepository {
                 r.err_reason,
                 r.gw_req_tx_hash,
                 r.gw_consensus_tx_hash,
+                r.resolved_threshold,
                 -- Aggregate shares into a JSON List.
                 -- If no shares exist, return an empty JSON array '[]'
                 -- Only select needed fields to avoid BYTEA deserialization issues
@@ -1073,13 +1083,16 @@ impl UserDecryptRepository {
                     SELECT gw_reference_id FROM user_decrypt_req WHERE ext_job_id = $1
                 )
                 ORDER BY created_at ASC, share_index ASC
-                LIMIT $2  -- Limit to exact threshold number of shares
+                LIMIT COALESCE(
+                    (SELECT resolved_threshold FROM user_decrypt_req WHERE ext_job_id = $1),
+                    $2
+                )
             ) s ON r.gw_reference_id = s.gw_reference_id
             WHERE r.ext_job_id = $1
             GROUP BY r.id
             "#,
             ext_job_id,
-            threshold
+            fallback_threshold
         )
         .fetch_optional(&mut *conn)
         .await;
