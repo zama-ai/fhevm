@@ -273,13 +273,34 @@ where
             )));
         }
 
-        // RFC-012 enforces that all handles share the same chain_id (as it's part of the EIP-712)
+        // The EIP-712 domain binds the signature to a single host chain id, so every handle in
+        // the request must originate from that chain. We pick the chain id from the first handle
+        // and require all subsequent handles to match — mixing chains here would otherwise route
+        // ACL queries against the wrong `ACLInstance`.
         let chain_id = request
             .handles
             .first()
             .ok_or_else(|| ProcessingError::Irrecoverable(anyhow!("request contains no handles")))
             .map(|h| extract_chain_id_from_handle(h.handle.as_slice()))?
             .map_err(ProcessingError::Irrecoverable)?;
+
+        for handle_entry in request.handles.iter().skip(1) {
+            match extract_chain_id_from_handle(handle_entry.handle.as_slice()) {
+                Ok(id) if id == chain_id => (),
+                Ok(other) => {
+                    return Err(ProcessingError::Irrecoverable(anyhow!(
+                        "user decryption request handles span multiple chains ({chain_id}, {other})",
+                    )));
+                }
+                Err(e) => {
+                    return Err(ProcessingError::Irrecoverable(anyhow!(
+                        "Failed to extract chain_id from handle {}: {e}",
+                        hex::encode(handle_entry.handle),
+                    )));
+                }
+            }
+        }
+
         let acl_contract = self.acl_contracts.get(&chain_id).ok_or_else(|| {
             ProcessingError::Recoverable(anyhow!(
                 "No ACL contract config found for chain id {chain_id}"
