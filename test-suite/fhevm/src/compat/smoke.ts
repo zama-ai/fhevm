@@ -17,6 +17,7 @@ import {
   dockerArgs,
   envPath,
 } from "../layout";
+import { supportsHostListenerConsumer } from "./compat";
 import { generateComposeOverrides } from "../generate/compose";
 import { renderEnvMaps, type WalletMaterial } from "../generate/env";
 import { stackSpecForState } from "../stack-spec/stack-spec";
@@ -32,10 +33,6 @@ const CONFIG_ERROR = /(environment variable .* not set|missing .*env|missing req
 const STARTUP_ERROR =
   /(connection refused|timed out|dns|network|database|postgres|tcp|websocket|transport|provider|rpc|lookup address information|name or service not known|no tenant found for the provided api key|failed to fetch chain id|failed to get chain id)/i;
 const COMPAT_COMPONENTS = ["coprocessor", "kms-connector"] as const;
-const COMPAT_SERVICES = {
-  "coprocessor": GROUP_BUILD_SERVICES.coprocessor.filter((name) => !name.endsWith("db-migration")),
-  "kms-connector": GROUP_BUILD_SERVICES["kms-connector"].filter((name) => !name.endsWith("db-migration")),
-} as const;
 
 const defaultScenario: State["scenario"] = testDefaultScenario();
 
@@ -169,9 +166,17 @@ const runLegacyService = async (component: (typeof COMPAT_COMPONENTS)[number], s
 const main = async () => {
   try {
     await prepareCompatRuntime();
+    const compatServices = {
+      "coprocessor": GROUP_BUILD_SERVICES.coprocessor.filter(
+        (name) =>
+          !name.endsWith("db-migration") &&
+          (name !== "coprocessor-host-listener-consumer" || supportsHostListenerConsumer(state)),
+      ),
+      "kms-connector": GROUP_BUILD_SERVICES["kms-connector"].filter((name) => !name.endsWith("db-migration")),
+    } as const;
     for (const component of COMPAT_COMPONENTS) {
       try {
-        for (const serviceName of COMPAT_SERVICES[component]) {
+        for (const serviceName of compatServices[component]) {
           await runLegacyService(component, serviceName);
         }
       } finally {

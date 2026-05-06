@@ -46,6 +46,10 @@ on:
         description: "Coprocessor ZKProof Worker Image Version"
         default: ""
         type: string
+      listener-core-version:
+        description: "Listener Core Image Version"
+        default: ""
+        type: string
       gateway-version:
         description: "Gateway version"
         default: ""
@@ -141,6 +145,7 @@ jobs:
       COPROCESSOR_TFHE_WORKER_VERSION: ${{ inputs.coprocessor-tfhe-worker-version }}
       COPROCESSOR_SNS_WORKER_VERSION: ${{ inputs.coprocessor-sns-worker-version }}
       COPROCESSOR_ZKPROOF_WORKER_VERSION: ${{ inputs.coprocessor-zkproof-worker-version }}
+      LISTENER_CORE_VERSION: ${{ inputs.listener-core-version }}
       GATEWAY_VERSION: ${{ inputs.gateway-version }}
       HOST_VERSION: ${{ inputs.host-version }}
       CONNECTOR_DB_MIGRATION_VERSION: ${{ inputs.connector-db-migration-version }}
@@ -347,14 +352,26 @@ jobs:
         run: |
           ./fhevm-cli test "$TEST_PROFILE"
 
+      - name: Host listener consumer only test without drift-revert tests
+        if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' }}
+        working-directory: test-suite/fhevm
+        run: |
+          trap 'docker start coprocessor-host-listener coprocessor-host-listener-poller>/dev/null 2>&1 || true' EXIT
+          docker stop coprocessor-host-listener coprocessor-host-listener-poller
+          for TEST in input-proof input-proof-compute-decrypt user-decryption delegated-user-decryption erc20 public-decrypt-http-ebool public-decrypt-http-mixed; do
+            ./fhevm-cli test $TEST
+          done
+          docker start coprocessor-host-listener coprocessor-host-listener-poller
+          trap - EXIT
+
       - name: Host listener poller test
         if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' }}
         working-directory: test-suite/fhevm
         run: |
-          trap 'docker start coprocessor-host-listener >/dev/null 2>&1 || true' EXIT
-          docker stop coprocessor-host-listener
+          trap 'docker start coprocessor-host-listener coprocessor-host-listener-consumer>/dev/null 2>&1 || true' EXIT
+          docker stop coprocessor-host-listener coprocessor-host-listener-consumer
           ./fhevm-cli test erc20
-          docker start coprocessor-host-listener
+          docker start coprocessor-host-listener coprocessor-host-listener-consumer
           trap - EXIT
 
       - name: Show logs
@@ -373,6 +390,8 @@ jobs:
             fi
             echo "::endgroup::"
           }
+          snapshot_logs "Listener Publisher" listener-publisher-for-anvil
+          snapshot_logs "Listener Redis" listener-redis
           snapshot_logs "Relayer Logs" fhevm-relayer
           snapshot_logs "KMS Connector Gateway Listener" kms-connector-gw-listener
           snapshot_logs "KMS Connector KMS Worker" kms-connector-kms-worker
