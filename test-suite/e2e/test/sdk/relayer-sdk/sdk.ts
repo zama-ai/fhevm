@@ -144,6 +144,7 @@ export class RelayerSdk implements SdkInstance {
     readonly contractAddress: string;
     readonly delegatorAddress: string;
     readonly signer: Signer & { readonly address: string };
+    readonly startTimestamp?: number | undefined;
     readonly delegateTransportKeypair?: { readonly privateKey: string; readonly publicKey: string } | undefined;
   }): Promise<ClearValueType> {
     const { handle, contractAddress, delegatorAddress, signer } = parameters;
@@ -154,7 +155,7 @@ export class RelayerSdk implements SdkInstance {
         contractAddress,
       },
     ];
-    const startTimeStamp = Math.floor(Date.now() / 1000);
+    const startTimeStamp = parameters.startTimestamp ?? Math.floor(Date.now() / 1000);
     const durationDays = 10;
     const contractAddresses = [contractAddress];
 

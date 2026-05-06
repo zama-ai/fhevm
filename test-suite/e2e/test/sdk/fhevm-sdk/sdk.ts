@@ -176,6 +176,7 @@ export class FhevmSdk implements SdkInstance {
     readonly contractAddress: string;
     readonly delegatorAddress: string;
     readonly signer: Signer & { readonly address: string };
+    readonly startTimestamp?: number | undefined;
     readonly delegateTransportKeypair?: { readonly privateKey: string; readonly publicKey: string } | undefined;
   }): Promise<ClearValueType> {
     const { handle, contractAddress, signer, delegatorAddress } = parameters;
@@ -190,7 +191,7 @@ export class FhevmSdk implements SdkInstance {
     const signedPermit = await this.#fullClient.signDecryptionPermit({
       contractAddresses: [contractAddress],
       durationDays: 10,
-      startTimestamp: Math.floor(Date.now() / 1000),
+      startTimestamp: parameters.startTimestamp ?? Math.floor(Date.now() / 1000),
       transportKeyPair,
       signer,
       signerAddress: signer.address,

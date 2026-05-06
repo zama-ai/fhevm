@@ -19,6 +19,12 @@ READY_TIMEOUT="${READY_TIMEOUT:-30}"
 ANVIL_PID=""
 
 # ------------------------------------------------------------------------------
+# Setup FOUNDRY_PROFILE 
+# ------------------------------------------------------------------------------
+
+export FOUNDRY_PROFILE="${FOUNDRY_PROFILE:-latest}"
+
+# ------------------------------------------------------------------------------
 # Check if anvil is installed
 # ------------------------------------------------------------------------------
 
@@ -79,7 +85,7 @@ fi
 # ------------------------------------------------------------------------------
 
 echo "🚚 Starting Anvil on $RPC_URL..."
-anvil --port "$PORT" --chain-id "$CHAIN_ID" &
+anvil --port "$PORT" --chain-id "$CHAIN_ID" --disable-code-size-limit &
 ANVIL_PID=$!
 
 # ------------------------------------------------------------------------------
@@ -102,10 +108,14 @@ done
 echo "✅ Anvil is ready."
 
 # ------------------------------------------------------------------------------
-# Deploy FHEVM cleartext
+# Save new anvil rpc-url
 # ------------------------------------------------------------------------------
 
-    echo "RPC_URL=\"$RPC_URL\"" > "$TEST_DIR/.env.localhost"
+echo "RPC_URL=\"$RPC_URL\"" > "$TEST_DIR/.env.localhost"
+
+# ------------------------------------------------------------------------------
+# Deploy FHEVM cleartext
+# ------------------------------------------------------------------------------
 
 echo "🏗️  Deploying FHEVM cleartext stack..."
 (
@@ -114,6 +124,11 @@ echo "🏗️  Deploying FHEVM cleartext stack..."
     sleep 1
     bash "$DEPLOY_FHE_TEST_SCRIPT"
 )
+
+echo
+echo "================================================================================"
+echo "🎯  Foundry profile: ${FOUNDRY_PROFILE}"
+echo "================================================================================"
 
 echo
 echo "✅ FHEVM Cleartext stack deployed and initialized on ${RPC_URL} (chain-id: $(cast chain-id --rpc-url "$RPC_URL"))."

@@ -35,6 +35,12 @@ ANVIL_PID=""
 REUSE_EXISTING_ANVIL=0
 
 # ------------------------------------------------------------------------------
+# Setup FOUNDRY_PROFILE 
+# ------------------------------------------------------------------------------
+
+export FOUNDRY_PROFILE="${FOUNDRY_PROFILE:-latest}"
+
+# ------------------------------------------------------------------------------
 # Check if anvil is installed
 # ------------------------------------------------------------------------------
 
@@ -95,7 +101,7 @@ else
     # ------------------------------------------------------------------------------
 
     echo "🚚 Starting Anvil on $RPC_URL..."
-    anvil --port "$PORT" --chain-id "$CHAIN_ID" &
+    anvil --port "$PORT" --chain-id "$CHAIN_ID" --disable-code-size-limit &
     ANVIL_PID=$!
 
     # ------------------------------------------------------------------------------
@@ -145,4 +151,10 @@ echo "🧪 Running cleartext ${ETH_LIBRARY} tests..."
     #CHAIN=localhost npx vitest run --config test/fheTest/vitest-manual-packing.config.ts "$TEST_TARGET"
 )
 
+echo
+echo "================================================================================"
+echo "🎯  Foundry profile: ${FOUNDRY_PROFILE}"
+echo "================================================================================"
+
+echo
 echo "✅ cleartext-${ETH_LIBRARY} tests passed."

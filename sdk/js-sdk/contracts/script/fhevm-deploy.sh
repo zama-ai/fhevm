@@ -14,22 +14,47 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR/.."
+CONTRACTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+cd "${CONTRACTS_DIR}"
 
 # load utils (fhevm_assert_chain, fhevm_rpc_url, is_anvil, ...)
 source "$SCRIPT_DIR/fhevm-lib.sh"
 
 # ==============================================================================
+# Profile aliases
+# ==============================================================================
+# `latest` is a friendly alias for whichever profile we currently consider the
+# tip of the supported set. Bump this when promoting a new version.
+LATEST_PROFILE_ALIAS="v13"
+
+# ==============================================================================
 # CLI options
+# 
+# Usage:
+#   ./fhevm-deploy.sh --profile v13 
+#   ./fhevm-deploy.sh --profile v13 --dry-run
+#   ./fhevm-deploy.sh --profile v13 --chain localhost
 # ==============================================================================
 
 chain_default="localhost"
 chain_cli=""
+profile_default="${FOUNDRY_PROFILE:-latest}"
+profile_cli=""
+dry_run=false
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --chain)
             chain_cli="${2:?--chain requires a value}"
             shift 2
+            ;;
+        --profile)
+            profile_cli="${2:?--profile requires a value}"
+            shift 2
+            ;;
+        --dry-run)
+            dry_run=true
+            shift
             ;;
         -h|--help)
             cat <<EOF
@@ -38,6 +63,9 @@ Usage: fhevm-deploy.sh [options]
 Options:
   --chain <name>        FHEVM chain (mainnet | testnet | devnet | localhost | localhostFhevm) [default: localhost].
                         Precedence: --chain flag > \$CHAIN env > $chain_default
+  --profile <name>      Foundry profile (v12 | v13 | latest) [default: $profile_default].
+  --dry-run             Print precomputed FHEVM host addresses and exit. No anvil, no broadcast,
+                        no addresses file written.
   -h, --help            Show this help.
 EOF
             exit 0
@@ -48,6 +76,16 @@ EOF
             ;;
     esac
 done
+
+profile="${profile_cli:-$profile_default}"
+fhevm_assert_foundry_profile "$profile"
+
+# Resolve `latest` to its concrete alias so the rest of the script works on a
+# canonical profile name (v12 / v13). The CLI surface still accepts `latest`.
+if [[ "$profile" == "latest" ]]; then
+    echo "ℹ️  profile=latest → resolving as ${LATEST_PROFILE_ALIAS}"
+    profile="$LATEST_PROFILE_ALIAS"
+fi
 
 # Resolve chain. Read $CHAIN BEFORE unsetting it below (the unset is for
 # downstream forge invocations that would otherwise pick CHAIN up from env).
@@ -69,10 +107,13 @@ rpc_url="$(fhevm_rpc_url "$chain")"
 # Fail-fast: anvil must already be running at $rpc_url. is_anvil returns
 # non-zero both for "RPC unreachable" and "wrong client running" — both are
 # blocking for this script (it relies on anvil_setBalance and a fresh chain).
-if ! is_anvil "$rpc_url"; then
-    echo "❌ anvil is not running at $rpc_url (or another client is on that port)" >&2
-    echo "   Start anvil first, e.g.:  anvil --port 8545" >&2
-    exit 1
+# Skipped in dry-run: precompute is purely deterministic, no RPC needed.
+if [[ "$dry_run" != "true" ]]; then
+    if ! is_anvil "$rpc_url"; then
+        echo "❌ anvil is not running at $rpc_url (or another client is on that port)" >&2
+        echo "   Start anvil first, e.g.:  anvil --port 8545" >&2
+        exit 1
+    fi
 fi
 
 # ==============================================================================
@@ -80,6 +121,20 @@ fi
 # ==============================================================================
 
 [[ -n "${CHAIN:-}" ]] && echo "Warning: unsetting CHAIN=$CHAIN" >&2; unset CHAIN
+
+# ==============================================================================
+
+foundry_profile="$profile"
+fhevm_host_addresses_file="$(fhevm_host_addresses_file "$profile")"
+
+case "$profile" in
+    v12) host_contracts_version="v0.12.0" ;;
+    v13) host_contracts_version="v0.13.0" ;;
+    *)
+        echo "❌ Error: cannot resolve host_contracts_version for profile '$profile'" >&2
+        exit 1
+        ;;
+esac
 
 # ==============================================================================
 
@@ -125,23 +180,32 @@ default_anvil_balance=10000
 # coprocessors_mnemonic_path="m/44'/60'/0'/0/"
 # coprocessors_mnemonic_index=11
 
-kms_nodes_mnemonic=${fhevm_mnemonic}
-kms_nodes_mnemonic_path="m/44'/60'/0'/3/"
-kms_nodes_mnemonic_index=0
-
 coprocessors_mnemonic=${fhevm_mnemonic}
 coprocessors_mnemonic_path="m/44'/60'/0'/2/"
 coprocessors_mnemonic_index=0
 
+kms_nodes_mnemonic=${fhevm_mnemonic}
+kms_nodes_mnemonic_path="m/44'/60'/0'/3/"
+kms_nodes_mnemonic_index=0
+
+kms_nodes_tx_sender_mnemonic=${fhevm_mnemonic}
+kms_nodes_tx_sender_mnemonic_path="m/44'/60'/0'/4/"
+kms_nodes_tx_sender_mnemonic_index=0
+
 # ==============================================================================
 
 declare -a FORGE_ENV=(
+    "FOUNDRY_PROFILE=${foundry_profile}"
+    "FHEVM_HOST_ADDRESSES_FILE=${fhevm_host_addresses_file}"
     "DEPLOYER_MNEMONIC=${deployer_mnemonic}"
     "DEPLOYER_MNEMONIC_INDEX=${deployer_mnemonic_index}"
     "EMPTY_UUPS_MNEMONIC=${empty_uups_mnemonic}"
     "EMPTY_UUPS_MNEMONIC_INDEX=${empty_uups_mnemonic_index}"
     "CHAIN_ID_GATEWAY=${chain_id_gateway}"
     "NUM_KMS_NODES=${num_kms_nodes}"
+    "KMS_NODES_TX_SENDER_MNEMONIC=${kms_nodes_tx_sender_mnemonic}"
+    "KMS_NODES_TX_SENDER_MNEMONIC_PATH=${kms_nodes_tx_sender_mnemonic_path}"
+    "KMS_NODES_TX_SENDER_MNEMONIC_INDEX=${kms_nodes_tx_sender_mnemonic_index}"
     "KMS_NODES_MNEMONIC=${kms_nodes_mnemonic}"
     "KMS_NODES_MNEMONIC_PATH=${kms_nodes_mnemonic_path}"
     "KMS_NODES_MNEMONIC_INDEX=${kms_nodes_mnemonic_index}"
@@ -163,11 +227,26 @@ declare -a FORGE_ENV=(
 
 # ==============================================================================
 #
+# ---- Dry run: print precomputed addresses and exit ----
+#
+# ==============================================================================
+
+if [[ "$dry_run" == "true" ]]; then
+    echo
+    echo "🧪 Dry run: printing precomputed FHEVM host addresses (profile=$profile)"
+    env "${FORGE_ENV[@]}" forge script \
+        script/${host_contracts_version}/DeployCleartextFHEVMHost.s.sol:PrintFHEVMHostAddressesDotSol \
+        --non-interactive
+    exit 0
+fi
+
+# ==============================================================================
+#
 # ---- Generate FHEVM host contracts addresses ----
 #
 # ==============================================================================
 
-env "${FORGE_ENV[@]}" forge script script/DeployCleartextFHEVMHost.s.sol:WriteFHEVMHostAddressesDotSol 
+env "${FORGE_ENV[@]}" forge script script/${host_contracts_version}/DeployCleartextFHEVMHost.s.sol:WriteFHEVMHostAddressesDotSol
 
 # ==============================================================================
 #
@@ -184,7 +263,7 @@ forge_json() {
     '
 }
 
-signers_json="$(forge_json script/DeployCleartextFHEVMHost.s.sol:PrintFhevmSigners)"
+signers_json="$(forge_json script/${host_contracts_version}/DeployCleartextFHEVMHost.s.sol:PrintFhevmSigners)"
 
 deployer_address="$(jq -r '.deployer.address' <<<"$signers_json")"
 empty_uups_deployer_address="$(jq -r '.emptyUupsDeployer.address' <<<"$signers_json")"
@@ -240,7 +319,7 @@ echo
 echo "🚚  Deploying Cleartext FHEVM Host Constracts ..."
 
 env "${FORGE_ENV[@]}" forge script \
-    script/DeployCleartextFHEVMHost.s.sol:Deploy \
+    script/${host_contracts_version}/DeployCleartextFHEVMHost.s.sol:Deploy \
     --non-interactive \
     --rpc-url "${rpc_url}" \
     --broadcast
@@ -255,7 +334,7 @@ echo
 echo "🥬  Verifying Cleartext FHEVM Host Constracts ..."
 
 env "${FORGE_ENV[@]}" forge script \
-    script/DeployCleartextFHEVMHost.s.sol:Verify \
+    script/${host_contracts_version}/DeployCleartextFHEVMHost.s.sol:Verify \
     --non-interactive \
     --rpc-url "${rpc_url}"
 

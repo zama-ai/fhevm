@@ -30,21 +30,10 @@ export interface SdkInstance {
     readonly handle: string;
     readonly contractAddress: string;
     readonly delegatorAddress: string;
-    readonly signer: Signer;
+    readonly signer: Signer & { readonly address: string };
+    readonly startTimestamp?: number | undefined;
     readonly delegateTransportKeypair?: { readonly privateKey: string; readonly publicKey: string } | undefined;
   }): Promise<ClearValueType>;
-
-  userDecrypt(parameters: {
-    readonly handleContractPairs: Array<{
-      readonly handle: string | Uint8Array<ArrayBufferLike>;
-      readonly contractAddress: string;
-    }>;
-    readonly signer: Signer & { readonly address: string };
-    readonly contractAddress: string;
-    readonly startTimestamp: number;
-    readonly durationDays: number;
-    readonly transportKeypair?: { readonly publicKey: string; readonly privateKey: string } | undefined;
-  }): Promise<ClearValues>;
 
   publicDecrypt(handles: readonly string[]): Promise<{
     clearValues: ClearValues;
