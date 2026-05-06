@@ -88,7 +88,7 @@ forge soldeer install
 
 #### 3. Add remappings
 
-Soldeer materialises each dependency under `dependencies/<name>-<version>/`, so your `remappings.txt` needs an entry per import prefix. The shape is:
+Soldeer materializes each dependency under `dependencies/<name>-<version>/`, so your `remappings.txt` needs an entry per import prefix. The shape is:
 
 ```
 @fhevm/host-contracts/=dependencies/forge-fhevm-<rev>/src/fhevm-host/
