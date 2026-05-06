@@ -111,7 +111,7 @@ async fn check_if_drift_revert_is_over(
                 // db cleaning is done, let's check if catchup is over
                 let tip_block = db.read_last_valid_block().await.unwrap_or(0);
                 let is_finished = tip_block
-                    > last_known_drift.catchup_to
+                    >= last_known_drift.catchup_to
                         + DRIFT_BLOCK_MARGIN_TO_RESTART;
                 if is_finished {
                     last_known_drift_locked.write().await.is_finished = true;
@@ -269,7 +269,10 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                     )))
                 }
                 Ok(true) => (), // all good
-                Err(err) => error!(%err, "Can't check drift-revert status"),
+                Err(err) => {
+                    error!(%err, "Can't check drift-revert status");
+                    return Err(HandlerError::Transient(err.into()));
+                }
             }
             promote_once_all_chains_to_fast(
                 &db,
