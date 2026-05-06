@@ -7,7 +7,6 @@ import type { HardhatEthersHelpers, HardhatRuntimeEnvironment, TaskArguments } f
 import path from 'path';
 
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from './utils/kmsGenerationConstants';
-import { buildKMSGenerationMigrationStateFromEnv } from './utils/kmsGenerationMigrationEnv';
 import { getRequiredEnvVar } from './utils/loadVariables';
 
 const ADDRESSES_DIR = path.join(__dirname, '../addresses');
@@ -17,11 +16,11 @@ const LEGACY_DEPLOY_ALL_HOST_CONTRACTS_WARNING = `task:deployLegacyAllHostContra
 It deploys KMSGeneration and is valid only for canonical-host deployments.
 Use task:deployAllHostContracts --with-kms-generation true instead.`;
 
-function ensureAddressesDirectoryExists() {
+export function ensureAddressesDirectoryExists() {
   fs.mkdirSync(ADDRESSES_DIR, { recursive: true });
 }
 
-function readHostEnv() {
+export function readHostEnv() {
   return dotenv.parse(fs.readFileSync(HOST_ENV_FILE));
 }
 
@@ -33,7 +32,7 @@ function writeHostAddressesSol(content: string, mode: 'w' | 'a') {
   fs.writeFileSync(HOST_ADDRESSES_FILE, content, { encoding: 'utf8', flag: mode });
 }
 
-function readExistingHostEnv(): Record<string, string> {
+export function readExistingHostEnv(): Record<string, string> {
   if (!fs.existsSync(HOST_ENV_FILE)) {
     return {};
   }
@@ -42,13 +41,6 @@ function readExistingHostEnv(): Record<string, string> {
 
 function formatError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-async function assertContractDeployed(hre: HardhatRuntimeEnvironment, address: string, label: string): Promise<void> {
-  const code = await hre.ethers.provider.getCode(address);
-  if (code === '0x') {
-    throw new Error(`No contract deployed at ${address} (expected ${label}) on the selected network.`);
-  }
 }
 
 async function assertContractMatchesVersionPrefix(
@@ -79,11 +71,7 @@ async function assertContractMatchesVersionPrefix(
 // OZ upgrades' upgradeProxy can return before the upgradeToAndCall tx is mined on
 // interval-mining networks. Poll until the new implementation answers a
 // state-dependent view.
-async function waitForUpgradeLanded(
-  hre: HardhatRuntimeEnvironment,
-  proxyAddress: string,
-  contractLabel: string,
-): Promise<void> {
+async function waitForProtocolConfigUpgradeLanded(hre: HardhatRuntimeEnvironment, proxyAddress: string): Promise<void> {
   const proxy = new hre.ethers.Contract(
     proxyAddress,
     ['function getCurrentKmsContextId() view returns (uint256)'],
@@ -100,7 +88,7 @@ async function waitForUpgradeLanded(
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
   }
-  throw new Error(`${contractLabel} upgrade did not land after 30s of polling (last error: ${formatError(lastError)})`);
+  throw new Error(`ProtocolConfig upgrade did not land after 30s of polling`);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -163,7 +151,7 @@ async function deployEmptyUUPSForACL(ethers: HardhatEthersHelpers, upgrades: Har
   return UUPSEmptyACLAddress;
 }
 
-async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUpgrades, deployer: Wallet) {
+export async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUpgrades, deployer: Wallet) {
   console.log('Deploying an EmptyUUPSProxy proxy contract...');
   const factory = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
   const UUPSEmpty = await upgrades.deployProxy(factory, {
@@ -183,11 +171,7 @@ task('task:deployEmptyUUPSProxies')
     undefined,
     types.boolean,
   )
-  .setAction(async function (
-    { withKmsGeneration }: { withKmsGeneration: boolean },
-    { ethers, upgrades, run },
-  ) {
-
+  .setAction(async function ({ withKmsGeneration }: { withKmsGeneration: boolean }, { ethers, upgrades, run }) {
     // Compile the EmptyUUPS proxy contract for ACL
     await run('compile:specific', { contract: 'contracts/emptyProxyACL' });
 
@@ -230,36 +214,6 @@ task('task:deployEmptyUUPSProxies')
       await run('task:setKMSGenerationAddress', { address: kmsGenerationAddress });
     }
   });
-
-task('task:ensureMigrationProxyAddresses').setAction(async function (_, { ethers, upgrades, run }) {
-  ensureAddressesDirectoryExists();
-
-  const existingEnv = readExistingHostEnv();
-
-  const targets = [
-    { envKey: 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', setterTask: 'task:setProtocolConfigAddress' },
-    { envKey: 'KMS_GENERATION_CONTRACT_ADDRESS', setterTask: 'task:setKMSGenerationAddress' },
-  ] as const;
-
-  const missingTargets = targets.filter(({ envKey }) => !existingEnv[envKey]);
-
-  if (missingTargets.length === 0) {
-    console.warn(
-      'Migration bootstrap is a no-op; addresses/.env.host already contains ProtocolConfig and KMSGeneration. Remove task:ensureMigrationProxyAddresses once UPGRADE_FROM_TAG includes #2243.',
-    );
-    return;
-  }
-
-  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
-  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-
-  await run('compile:specific', { contract: 'contracts/emptyProxy' });
-
-  for (const { envKey, setterTask } of missingTargets) {
-    const proxyAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-    await run(setterTask, { address: proxyAddress });
-  }
-});
 
 ////////////////////////////////////////////////////////////////////////////////
 // ACL
@@ -411,29 +365,22 @@ task('task:deployPauserSet').setAction(async function (_, hre) {
 // ProtocolConfig helpers
 ////////////////////////////////////////////////////////////////////////////////
 
-function buildKmsNodes(
-  useAddress: boolean,
-): { txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }[] {
+export function buildKmsNodes(): {
+  txSenderAddress: string;
+  signerAddress: string;
+  ipAddress: string;
+  storageUrl: string;
+}[] {
   const numNodes = +getRequiredEnvVar('NUM_KMS_NODES');
   const nodes: { txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }[] = [];
   for (let idx = 0; idx < numNodes; idx++) {
     const txSenderAddress = getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`);
-    let signerAddress: string;
-    if (!useAddress) {
-      const privKeySigner = getRequiredEnvVar(`PRIVATE_KEY_KMS_SIGNER_${idx}`);
-      signerAddress = new Wallet(privKeySigner).address;
-    } else {
-      signerAddress = getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`);
-    }
+    const signerAddress = getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`);
     const ipAddress = process.env[`KMS_NODE_IP_${idx}`] || '';
     const storageUrl = getRequiredEnvVar(`KMS_NODE_STORAGE_URL_${idx}`);
     nodes.push({ txSenderAddress, signerAddress, ipAddress, storageUrl });
   }
   return nodes;
-}
-
-function buildKmsSignerAddresses(useAddress: boolean): string[] {
-  return buildKmsNodes(useAddress).map((node) => node.signerAddress);
 }
 
 export function buildKmsThresholds() {
@@ -450,7 +397,6 @@ task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
   const protocolConfigAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
 
   try {
-    await assertContractDeployed(hre, protocolConfigAddress, 'ProtocolConfig');
     await assertContractMatchesVersionPrefix(hre, protocolConfigAddress, 'ProtocolConfig');
   } catch (err) {
     throw new Error(`Cannot deploy KMSVerifier: ${formatError(err)}`);
@@ -500,7 +446,6 @@ task('task:assertNoPendingKeyManagementRequest')
       );
     }
 
-    await assertContractDeployed(hre, kmsGenAddress, 'KMSGeneration');
     await assertContractMatchesVersionPrefix(hre, kmsGenAddress, 'KMSGeneration');
 
     const kmsGen = await hre.ethers.getContractAt('KMSGeneration', kmsGenAddress);
@@ -516,29 +461,30 @@ task('task:assertNoPendingKeyManagementRequest')
       }
     };
 
-    const keyCounter = await readKmsStatusView('getKeyCounter()', () => kmsGen.getKeyCounter());
-    const crsCounter = await readKmsStatusView('getCrsCounter()', () => kmsGen.getCrsCounter());
+    const [keyCounter, crsCounter] = await Promise.all([
+      readKmsStatusView('getKeyCounter()', () => kmsGen.getKeyCounter()),
+      readKmsStatusView('getCrsCounter()', () => kmsGen.getCrsCounter()),
+    ]);
 
-    if (keyCounter !== KEY_COUNTER_BASE) {
-      const done = await readKmsStatusView(`isRequestDone(${keyCounter.toString()})`, () =>
-        kmsGen.isRequestDone(keyCounter),
+    const [keyDone, crsDone] = await Promise.all([
+      keyCounter === KEY_COUNTER_BASE
+        ? Promise.resolve(true)
+        : readKmsStatusView(`isRequestDone(${keyCounter.toString()})`, () => kmsGen.isRequestDone(keyCounter)),
+      crsCounter === CRS_COUNTER_BASE
+        ? Promise.resolve(true)
+        : readKmsStatusView(`isRequestDone(${crsCounter.toString()})`, () => kmsGen.isRequestDone(crsCounter)),
+    ]);
+
+    if (keyCounter !== KEY_COUNTER_BASE && !keyDone) {
+      throw new Error(
+        `Keygen pending on ${kmsGenAddress}: keyCounter=${keyCounter} has not completed (isRequestDone=false). Complete or abort before proposing a new key management request.`,
       );
-      if (!done) {
-        throw new Error(
-          `Keygen pending on ${kmsGenAddress}: keyCounter=${keyCounter} has not completed (isRequestDone=false). Complete or abort before proposing a new key management request.`,
-        );
-      }
     }
 
-    if (crsCounter !== CRS_COUNTER_BASE) {
-      const done = await readKmsStatusView(`isRequestDone(${crsCounter.toString()})`, () =>
-        kmsGen.isRequestDone(crsCounter),
+    if (crsCounter !== CRS_COUNTER_BASE && !crsDone) {
+      throw new Error(
+        `CRS generation pending on ${kmsGenAddress}: crsCounter=${crsCounter} has not completed (isRequestDone=false). Complete or abort before proposing a new key management request.`,
       );
-      if (!done) {
-        throw new Error(
-          `CRS generation pending on ${kmsGenAddress}: crsCounter=${crsCounter} has not completed (isRequestDone=false). Complete or abort before proposing a new key management request.`,
-        );
-      }
     }
 
     console.log(`No pending key management requests on ${kmsGenAddress}.`);
@@ -548,77 +494,31 @@ task('task:assertNoPendingKeyManagementRequest')
 // ProtocolConfig
 ////////////////////////////////////////////////////////////////////////////////
 
-task('task:deployProtocolConfig')
-  .addOptionalParam(
-    'useAddress',
-    'Use addresses instead of private keys env variables for kms signers',
-    true,
-    types.boolean,
-  )
-  .setAction(async function (taskArguments: TaskArguments, hre) {
-    const { ethers, upgrades } = hre;
-    const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
-    const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-    const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-    const newImplem = await ethers.getContractFactory('ProtocolConfig', deployer);
-    const parsedEnv = readHostEnv();
-    const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
-    const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-    const initialKmsNodes = buildKmsNodes(taskArguments.useAddress);
-    const thresholds = buildKmsThresholds();
+task('task:deployProtocolConfig').setAction(async function (_taskArguments: TaskArguments, hre) {
+  const { ethers, upgrades } = hre;
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const newImplem = await ethers.getContractFactory('ProtocolConfig', deployer);
+  const parsedEnv = readHostEnv();
+  const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+  const initialKmsNodes = buildKmsNodes();
+  const thresholds = buildKmsThresholds();
 
-    await upgrades.upgradeProxy(proxy, newImplem, {
-      call: {
-        fn: 'initializeFromEmptyProxy',
-        args: [initialKmsNodes, thresholds],
-      },
-    });
-    // upgrades.upgradeProxy can return before the upgradeToAndCall tx is mined on interval-mining
-    // networks (e.g. anvil --block-time). Poll a state-dependent view so the task only returns
-    // once the new implementation is live, otherwise downstream tasks (assertProtocolConfigReady)
-    // hit a revert against the still-empty proxy.
-    await waitForUpgradeLanded(hre, proxyAddress, 'ProtocolConfig');
-    console.log('ProtocolConfig code set successfully at address:', proxyAddress);
+  await upgrades.upgradeProxy(proxy, newImplem, {
+    call: {
+      fn: 'initializeFromEmptyProxy',
+      args: [initialKmsNodes, thresholds],
+    },
   });
-
-////////////////////////////////////////////////////////////////////////////////
-// ProtocolConfig (migration)
-////////////////////////////////////////////////////////////////////////////////
-
-task('task:deployProtocolConfigFromMigration')
-  .addOptionalParam(
-    'useAddress',
-    'Use addresses instead of private keys env variables for kms signers',
-    true,
-    types.boolean,
-  )
-  .setAction(async function (taskArguments: TaskArguments, hre) {
-    await assertLegacyVerifierMatchesEnv(hre, taskArguments.useAddress);
-    const { ethers, upgrades } = hre;
-    const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
-    const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-    const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-    const newImplem = await ethers.getContractFactory('ProtocolConfig', deployer);
-    const parsedEnv = readHostEnv();
-    const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
-    const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-    const initialKmsNodes = buildKmsNodes(taskArguments.useAddress);
-    const thresholds = buildKmsThresholds();
-    const migrationContextId = BigInt(getRequiredEnvVar('MIGRATION_CONTEXT_ID'));
-
-    await upgrades.upgradeProxy(proxy, newImplem, {
-      call: {
-        fn: 'initializeFromMigration',
-        args: [migrationContextId, initialKmsNodes, thresholds],
-      },
-    });
-    console.log('ProtocolConfig (migration) code set successfully at address:', proxyAddress);
-    console.log('Migrated context ID:', migrationContextId.toString());
-  });
-
-////////////////////////////////////////////////////////////////////////////////
-// KMSGeneration helpers
-////////////////////////////////////////////////////////////////////////////////
+  // upgrades.upgradeProxy can return before the upgradeToAndCall tx is mined on interval-mining
+  // networks (e.g. anvil --block-time). Poll a state-dependent view so the task only returns
+  // once the new implementation is live, otherwise downstream tasks (assertProtocolConfigReady)
+  // hit a revert against the still-empty proxy.
+  await waitForProtocolConfigUpgradeLanded(hre, proxyAddress);
+  console.log('ProtocolConfig code set successfully at address:', proxyAddress);
+});
 
 ////////////////////////////////////////////////////////////////////////////////
 // KMSGeneration (host-side)
@@ -637,84 +537,6 @@ task('task:deployKMSGeneration').setAction(async function (taskArguments: TaskAr
   });
   console.log('KMSGeneration code set successfully at address:', proxyAddress);
 });
-
-////////////////////////////////////////////////////////////////////////////////
-// KMSGeneration (migration)
-////////////////////////////////////////////////////////////////////////////////
-
-task('task:deployKMSGenerationFromMigration')
-  .addOptionalParam(
-    'useAddress',
-    'Use addresses instead of private keys env variables for kms signers',
-    true,
-    types.boolean,
-  )
-  .setAction(async function (taskArguments: TaskArguments, hre) {
-    await assertLegacyVerifierMatchesEnv(hre, taskArguments.useAddress);
-    const { ethers, upgrades } = hre;
-    const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
-    const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-    const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-    const newImplem = await ethers.getContractFactory('KMSGeneration', deployer);
-    const parsedEnv = readHostEnv();
-    const proxyAddress = parsedEnv.KMS_GENERATION_CONTRACT_ADDRESS;
-    const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-    const migrationState = buildKMSGenerationMigrationStateFromEnv();
-
-    await upgrades.upgradeProxy(proxy, newImplem, {
-      call: {
-        fn: 'initializeFromMigration',
-        args: [migrationState],
-      },
-    });
-    console.log('KMSGeneration (migration) code set successfully at address:', proxyAddress);
-  });
-
-////////////////////////////////////////////////////////////////////////////////
-// Legacy host stack migration helpers
-////////////////////////////////////////////////////////////////////////////////
-
-const LEGACY_VERIFIER_ABI = [
-  'function getCurrentKmsContextId() view returns (uint256)',
-  'function getKmsSigners() view returns (address[])',
-  'function getThreshold() view returns (uint256)',
-];
-
-function getLegacyVerifier(hre: HardhatRuntimeEnvironment) {
-  const parsedEnv = readHostEnv();
-  return new hre.ethers.Contract(parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS, LEGACY_VERIFIER_ABI, hre.ethers.provider);
-}
-
-/**
- * Reconciles `.env.host` against the live legacy KMSVerifier (v0.2) before any
- * on-chain mutation. Called as the first step of both `task:deployProtocolConfigFromMigration`
- * and `task:deployKMSGenerationFromMigration` so the sub-tasks are safe to run
- * individually or out of order.
- */
-async function assertLegacyVerifierMatchesEnv(hre: HardhatRuntimeEnvironment, useAddress: boolean): Promise<void> {
-  const legacyVerifier = getLegacyVerifier(hre);
-  const legacyVerifierContextId = await legacyVerifier.getCurrentKmsContextId();
-  const migrationContextId = BigInt(getRequiredEnvVar('MIGRATION_CONTEXT_ID'));
-  const envSignerAddresses = buildKmsSignerAddresses(useAddress).map((address) => address.toLowerCase());
-  const legacySignerAddresses = (await legacyVerifier.getKmsSigners()).map((address: string) => address.toLowerCase());
-  const envPublicDecryptionThreshold = BigInt(buildKmsThresholds().publicDecryption);
-  const legacyPublicDecryptionThreshold = await legacyVerifier.getThreshold();
-  if (legacyVerifierContextId !== migrationContextId) {
-    throw new Error(
-      `Cannot migrate host stack: MIGRATION_CONTEXT_ID ${migrationContextId.toString()} does not match legacy verifier current context ${legacyVerifierContextId.toString()}.`,
-    );
-  }
-  if (JSON.stringify(envSignerAddresses) !== JSON.stringify(legacySignerAddresses)) {
-    throw new Error(
-      `Cannot migrate host stack: env-derived signer set ${JSON.stringify(envSignerAddresses)} does not match legacy verifier current signers ${JSON.stringify(legacySignerAddresses)}.`,
-    );
-  }
-  if (envPublicDecryptionThreshold !== legacyPublicDecryptionThreshold) {
-    throw new Error(
-      `Cannot migrate host stack: PUBLIC_DECRYPTION_THRESHOLD ${envPublicDecryptionThreshold.toString()} does not match legacy verifier current threshold ${legacyPublicDecryptionThreshold.toString()}.`,
-    );
-  }
-}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Setup ACL Address
