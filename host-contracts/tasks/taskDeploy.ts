@@ -71,10 +71,7 @@ async function assertContractMatchesVersionPrefix(
 // OZ upgrades' upgradeProxy can return before the upgradeToAndCall tx is mined on
 // interval-mining networks. Poll until the new implementation answers a
 // state-dependent view.
-async function waitForProtocolConfigUpgradeLanded(
-  hre: HardhatRuntimeEnvironment,
-  proxyAddress: string,
-): Promise<void> {
+async function waitForProtocolConfigUpgradeLanded(hre: HardhatRuntimeEnvironment, proxyAddress: string): Promise<void> {
   const proxy = new hre.ethers.Contract(
     proxyAddress,
     ['function getCurrentKmsContextId() view returns (uint256)'],
@@ -174,11 +171,7 @@ task('task:deployEmptyUUPSProxies')
     undefined,
     types.boolean,
   )
-  .setAction(async function (
-    { withKmsGeneration }: { withKmsGeneration: boolean },
-    { ethers, upgrades, run },
-  ) {
-
+  .setAction(async function ({ withKmsGeneration }: { withKmsGeneration: boolean }, { ethers, upgrades, run }) {
     // Compile the EmptyUUPS proxy contract for ACL
     await run('compile:specific', { contract: 'contracts/emptyProxyACL' });
 
@@ -372,20 +365,17 @@ task('task:deployPauserSet').setAction(async function (_, hre) {
 // ProtocolConfig helpers
 ////////////////////////////////////////////////////////////////////////////////
 
-export function buildKmsNodes(
-  useAddress: boolean,
-): { txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }[] {
+export function buildKmsNodes(): {
+  txSenderAddress: string;
+  signerAddress: string;
+  ipAddress: string;
+  storageUrl: string;
+}[] {
   const numNodes = +getRequiredEnvVar('NUM_KMS_NODES');
   const nodes: { txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }[] = [];
   for (let idx = 0; idx < numNodes; idx++) {
     const txSenderAddress = getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`);
-    let signerAddress: string;
-    if (!useAddress) {
-      const privKeySigner = getRequiredEnvVar(`PRIVATE_KEY_KMS_SIGNER_${idx}`);
-      signerAddress = new Wallet(privKeySigner).address;
-    } else {
-      signerAddress = getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`);
-    }
+    const signerAddress = getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`);
     const ipAddress = process.env[`KMS_NODE_IP_${idx}`] || '';
     const storageUrl = getRequiredEnvVar(`KMS_NODE_STORAGE_URL_${idx}`);
     nodes.push({ txSenderAddress, signerAddress, ipAddress, storageUrl });
@@ -504,38 +494,31 @@ task('task:assertNoPendingKeyManagementRequest')
 // ProtocolConfig
 ////////////////////////////////////////////////////////////////////////////////
 
-task('task:deployProtocolConfig')
-  .addOptionalParam(
-    'useAddress',
-    'Use addresses instead of private keys env variables for kms signers',
-    true,
-    types.boolean,
-  )
-  .setAction(async function (taskArguments: TaskArguments, hre) {
-    const { ethers, upgrades } = hre;
-    const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
-    const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-    const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-    const newImplem = await ethers.getContractFactory('ProtocolConfig', deployer);
-    const parsedEnv = readHostEnv();
-    const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
-    const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-    const initialKmsNodes = buildKmsNodes(taskArguments.useAddress);
-    const thresholds = buildKmsThresholds();
+task('task:deployProtocolConfig').setAction(async function (_taskArguments: TaskArguments, hre) {
+  const { ethers, upgrades } = hre;
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const newImplem = await ethers.getContractFactory('ProtocolConfig', deployer);
+  const parsedEnv = readHostEnv();
+  const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+  const initialKmsNodes = buildKmsNodes();
+  const thresholds = buildKmsThresholds();
 
-    await upgrades.upgradeProxy(proxy, newImplem, {
-      call: {
-        fn: 'initializeFromEmptyProxy',
-        args: [initialKmsNodes, thresholds],
-      },
-    });
-    // upgrades.upgradeProxy can return before the upgradeToAndCall tx is mined on interval-mining
-    // networks (e.g. anvil --block-time). Poll a state-dependent view so the task only returns
-    // once the new implementation is live, otherwise downstream tasks (assertProtocolConfigReady)
-    // hit a revert against the still-empty proxy.
-    await waitForProtocolConfigUpgradeLanded(hre, proxyAddress);
-    console.log('ProtocolConfig code set successfully at address:', proxyAddress);
+  await upgrades.upgradeProxy(proxy, newImplem, {
+    call: {
+      fn: 'initializeFromEmptyProxy',
+      args: [initialKmsNodes, thresholds],
+    },
   });
+  // upgrades.upgradeProxy can return before the upgradeToAndCall tx is mined on interval-mining
+  // networks (e.g. anvil --block-time). Poll a state-dependent view so the task only returns
+  // once the new implementation is live, otherwise downstream tasks (assertProtocolConfigReady)
+  // hit a revert against the still-empty proxy.
+  await waitForProtocolConfigUpgradeLanded(hre, proxyAddress);
+  console.log('ProtocolConfig code set successfully at address:', proxyAddress);
+});
 
 ////////////////////////////////////////////////////////////////////////////////
 // KMSGeneration (host-side)

@@ -1,6 +1,6 @@
 import { FunctionFragment, Interface, type InterfaceAbi } from 'ethers';
-import { task, types } from 'hardhat/config';
-import type { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
+import { task } from 'hardhat/config';
+import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
 import {
   buildKmsNodes,
@@ -197,59 +197,45 @@ task('task:deployEmptyProxiesProtocolConfigKMSGeneration').setAction(async funct
 task(
   'task:prepareDeployProtocolConfigFromMigration',
   'Deploys a ProtocolConfig migration implementation and prints DAO upgrade calldata without mutating the proxy',
-)
-  .addOptionalParam(
-    'useAddress',
-    'Use addresses instead of private keys env variables for kms signers',
-    true,
-    types.boolean,
-  )
-  .setAction(async function (taskArguments: TaskArguments, hre) {
-    const initialKmsNodes = buildKmsNodes(taskArguments.useAddress);
-    const thresholds = buildKmsThresholds();
-    const migrationContextId = BigInt(getRequiredEnvVar('MIGRATION_CONTEXT_ID'));
-    const parsedEnv = readHostEnv();
-    const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
-    const decodedArgs = buildProtocolConfigMigrationArgs(migrationContextId, initialKmsNodes, thresholds);
-    const artifact = await hre.artifacts.readArtifact('ProtocolConfig');
-    const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
-    const preparedUpgrade = await prepareDaoUpgrade(hre, {
-      proxyAddress,
-      contractName: 'ProtocolConfig',
-      innerFunctionSignature,
-      decodedArgs,
-    });
-
-    printPreparedDaoUpgrade(preparedUpgrade);
-    return preparedUpgrade;
+).setAction(async function (_, hre) {
+  const initialKmsNodes = buildKmsNodes();
+  const thresholds = buildKmsThresholds();
+  const migrationContextId = BigInt(getRequiredEnvVar('MIGRATION_CONTEXT_ID'));
+  const parsedEnv = readHostEnv();
+  const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+  const decodedArgs = buildProtocolConfigMigrationArgs(migrationContextId, initialKmsNodes, thresholds);
+  const artifact = await hre.artifacts.readArtifact('ProtocolConfig');
+  const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
+  const preparedUpgrade = await prepareDaoUpgrade(hre, {
+    proxyAddress,
+    contractName: 'ProtocolConfig',
+    innerFunctionSignature,
+    decodedArgs,
   });
+
+  printPreparedDaoUpgrade(preparedUpgrade);
+  return preparedUpgrade;
+});
 
 ////////////////////////////////////////////////////////////////////////////////
 // KMSGeneration (migration)
 ////////////////////////////////////////////////////////////////////////////////
 
-async function prepareKMSGenerationMigrationUpgrade(
-  hre: HardhatRuntimeEnvironment,
-  migrationState: KmsGenerationMigrationState,
-): Promise<PreparedDaoUpgrade> {
+task(
+  'task:prepareDeployKMSGenerationFromMigration',
+  'Deploys a KMSGeneration migration implementation from MIGRATION_* env and prints DAO upgrade calldata without mutating the proxy',
+).setAction(async function (_, hre) {
   const parsedEnv = readHostEnv();
   const proxyAddress = parsedEnv.KMS_GENERATION_CONTRACT_ADDRESS;
-  const decodedArgs = buildKMSGenerationMigrationArgs(migrationState);
+  const decodedArgs = buildKMSGenerationMigrationArgs(buildKMSGenerationMigrationStateFromEnv());
   const artifact = await hre.artifacts.readArtifact('KMSGeneration');
   const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
-  return prepareDaoUpgrade(hre, {
+  const preparedUpgrade = await prepareDaoUpgrade(hre, {
     proxyAddress,
     contractName: 'KMSGeneration',
     innerFunctionSignature,
     decodedArgs,
   });
-}
-
-task(
-  'task:prepareDeployKMSGenerationFromMigration',
-  'Deploys a KMSGeneration migration implementation from MIGRATION_* env and prints DAO upgrade calldata without mutating the proxy',
-).setAction(async function (_taskArguments: TaskArguments, hre) {
-  const preparedUpgrade = await prepareKMSGenerationMigrationUpgrade(hre, buildKMSGenerationMigrationStateFromEnv());
 
   printPreparedDaoUpgrade(preparedUpgrade);
   return preparedUpgrade;
