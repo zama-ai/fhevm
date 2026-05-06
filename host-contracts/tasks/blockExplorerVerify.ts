@@ -135,6 +135,52 @@ task('task:verifyPauserSet')
     });
   });
 
+task('task:verifyProtocolConfig')
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
+    if (useInternalProxyAddress) {
+      loadHostAddresses();
+    }
+    const proxyAddress = getRequiredEnvVar('PROTOCOL_CONFIG_CONTRACT_ADDRESS');
+    const implementationProtocolConfigAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
+    await run('verify:verify', {
+      address: implementationProtocolConfigAddress,
+      constructorArguments: [],
+    });
+    await run('verify:verify', {
+      address: proxyAddress,
+      constructorArguments: [],
+    });
+  });
+
+task('task:verifyKMSGeneration')
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
+    if (useInternalProxyAddress) {
+      loadHostAddresses();
+    }
+    const proxyAddress = getRequiredEnvVar('KMS_GENERATION_CONTRACT_ADDRESS');
+    const implementationKMSGenerationAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
+    await run('verify:verify', {
+      address: implementationKMSGenerationAddress,
+      constructorArguments: [],
+    });
+    await run('verify:verify', {
+      address: proxyAddress,
+      constructorArguments: [],
+    });
+  });
+
 task('task:verifyAllHostContracts')
   .addOptionalParam(
     'useInternalProxyAddress',
@@ -187,6 +233,22 @@ task('task:verifyAllHostContracts')
       // to not panic if Etherscan throws an error due to already verified implementation
       console.log('Verify PauserSet contract:');
       await hre.run('task:verifyPauserSet', { useInternalProxyAddress });
+    } catch (error) {
+      console.error('An error occurred:', error);
+    }
+
+    try {
+      // to not panic if Etherscan throws an error due to already verified implementation
+      console.log('Verify ProtocolConfig contract:');
+      await hre.run('task:verifyProtocolConfig', { useInternalProxyAddress });
+    } catch (error) {
+      console.error('An error occurred:', error);
+    }
+
+    try {
+      // to not panic if Etherscan throws an error due to already verified implementation
+      console.log('Verify KMSGeneration contract:');
+      await hre.run('task:verifyKMSGeneration', { useInternalProxyAddress });
     } catch (error) {
       console.error('An error occurred:', error);
     }
