@@ -226,6 +226,59 @@ where
         Ok(())
     }
 
+    /// Verify that a `UserDecryptionRequestV2` is internally consistent before the ACL phase:
+    /// `handles` and `snsCtMaterials` are pairwise aligned, and every handle resolves to the
+    /// same host chain id. Returns that shared chain id.
+    fn validate_handles_and_extract_chain_id(
+        request: &UserDecryptionRequestV2,
+    ) -> Result<u64, ProcessingError> {
+        if request.handles.len() != request.snsCtMaterials.len() {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "handles/snsCtMaterials length mismatch: {} vs {}",
+                request.handles.len(),
+                request.snsCtMaterials.len(),
+            )));
+        }
+
+        let chain_id = request
+            .handles
+            .first()
+            .ok_or_else(|| ProcessingError::Irrecoverable(anyhow!("request contains no handles")))
+            .map(|h| extract_chain_id_from_handle(h.handle.as_slice()))?
+            .map_err(ProcessingError::Irrecoverable)?;
+
+        for (i, (h, m)) in request
+            .handles
+            .iter()
+            .zip(request.snsCtMaterials.iter())
+            .enumerate()
+        {
+            if h.handle != m.ctHandle {
+                return Err(ProcessingError::Irrecoverable(anyhow!(
+                    "handles[{i}].handle ({}) != snsCtMaterials[{i}].ctHandle ({})",
+                    h.handle,
+                    m.ctHandle,
+                )));
+            }
+            match extract_chain_id_from_handle(h.handle.as_slice()) {
+                Ok(id) if id == chain_id => (),
+                Ok(other) => {
+                    return Err(ProcessingError::Irrecoverable(anyhow!(
+                        "user decryption request handles span multiple chains ({chain_id}, {other})",
+                    )));
+                }
+                Err(e) => {
+                    return Err(ProcessingError::Irrecoverable(anyhow!(
+                        "Failed to extract chain_id from handle {}: {e}",
+                        hex::encode(h.handle),
+                    )));
+                }
+            }
+        }
+
+        Ok(chain_id)
+    }
+
     /// RFC016 unified user decryption check — verifies the full ACL authorization for a
     /// `UserDecryptionRequestV2` payload.
     ///
@@ -247,6 +300,8 @@ where
             "Starting RFC016 check for {} handles...",
             request.handles.len()
         );
+
+        let chain_id = Self::validate_handles_and_extract_chain_id(request)?;
 
         let payload = &request.payload;
 
@@ -271,34 +326,6 @@ where
                 "userAddress {} is listed in allowedContracts — request rejected",
                 payload.userAddress
             )));
-        }
-
-        // The EIP-712 domain binds the signature to a single host chain id, so every handle in
-        // the request must originate from that chain. We pick the chain id from the first handle
-        // and require all subsequent handles to match — mixing chains here would otherwise route
-        // ACL queries against the wrong `ACLInstance`.
-        let chain_id = request
-            .handles
-            .first()
-            .ok_or_else(|| ProcessingError::Irrecoverable(anyhow!("request contains no handles")))
-            .map(|h| extract_chain_id_from_handle(h.handle.as_slice()))?
-            .map_err(ProcessingError::Irrecoverable)?;
-
-        for handle_entry in request.handles.iter().skip(1) {
-            match extract_chain_id_from_handle(handle_entry.handle.as_slice()) {
-                Ok(id) if id == chain_id => (),
-                Ok(other) => {
-                    return Err(ProcessingError::Irrecoverable(anyhow!(
-                        "user decryption request handles span multiple chains ({chain_id}, {other})",
-                    )));
-                }
-                Err(e) => {
-                    return Err(ProcessingError::Irrecoverable(anyhow!(
-                        "Failed to extract chain_id from handle {}: {e}",
-                        hex::encode(handle_entry.handle),
-                    )));
-                }
-            }
         }
 
         let acl_contract = self.acl_contracts.get(&chain_id).ok_or_else(|| {
