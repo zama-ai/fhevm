@@ -84,8 +84,12 @@ function signUserDecrypt(
 ## Constants
 
 | Constant | Value | Purpose |
-| ----------------------------------- | ----------------------- | --------------------------------------- |
-| `MOCK_INPUT_SIGNER_PK` | Foundry's first test key | Signs input proofs |
-| `MOCK_KMS_SIGNER_PK` | Foundry's second test key | Signs KMS decryption proofs |
+| ----------------------------------- | ------------------------------- | --------------------------------------- |
+| `MOCK_INPUT_SIGNER_PK` | Hardcoded mock key — see `FhevmTest.sol` | Signs input proofs (deterministic, mock signer) |
+| `MOCK_KMS_SIGNER_PK` | Hardcoded mock key — see `FhevmTest.sol` | Signs KMS decryption proofs (deterministic, mock signer) |
 | `EMPTY_EXTRA_DATA` | `hex"00"` | Default extra data appended to EIP-712 proofs |
 | `DEFAULT_USER_DECRYPT_DURATION_DAYS` | `1` | Default validity for user-decrypt sigs |
+
+{% hint style="info" %}
+The mock signer keys are Zama-specific values committed inside `forge-fhevm/src/FhevmTest.sol` — they are **not** Foundry's standard test private keys. They exist only so EIP-712 proofs are deterministic in tests.
+{% endhint %}

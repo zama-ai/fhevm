@@ -465,7 +465,9 @@ handles[1] = FHE.toBytes32(encryptedBar);
 
 ## User decryption delegation
 
-These functions allow users to delegate their decryption rights to another address (for example, a backend service or a relayer) for specific contracts.
+These functions transfer the rights of the `(delegator, contractAddress)` user-decryption pair to a new pair `(delegate, contractAddress)` for the same handles.
+
+When called from a contract, **the calling contract is the delegator** (`msg.sender` to the ACL is `address(this)`). EOAs that want to delegate their own rights must call `IACL.delegateForUserDecryption` on the ACL contract directly. See [User decryption delegation](acl/delegation.md) for the full guide.
 
 ### Delegate user decryption
 
@@ -474,10 +476,15 @@ function delegateUserDecryption(address delegate, address contractAddress, uint6
 function delegateUserDecryptionWithoutExpiration(address delegate, address contractAddress) internal
 ```
 
-Delegates the caller's user decryption rights to `delegate` for ciphertexts associated with `contractAddress`. The delegation can have an expiration date or be indefinite.
+Delegates the caller contract's user decryption rights to `delegate` for ciphertexts associated with `contractAddress`. The delegation can have an expiration date or be indefinite.
 
-- The `delegate` cannot be the contract address itself.
-- The `delegate` cannot be `address(this)`.
+The ACL enforces the following invariants — all must hold or the call reverts:
+
+- `contractAddress != address(this)` (reverts with `IACL-SenderCannotBeContractAddress`).
+- `delegate != address(this)` (reverts with `IACL-SenderCannotBeDelegate`).
+- `delegate != contractAddress` (reverts with `IACL-DelegateCannotBeContractAddress`).
+- `expirationDate > block.timestamp` (reverts with `IACL-ExpirationDateInThePast`).
+- At most one delegate-or-revoke per block for a given `(address(this), delegate, contractAddress)` tuple.
 
 ### Batch delegate user decryption
 

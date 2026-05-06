@@ -20,14 +20,6 @@
 | RELAYER_URL                | `https://relayer.testnet.zama.org`         |
 | GATEWAY_CHAIN_ID           | 10901                                      |
 
-## Local / Hardhat (chain ID 31337)
-
-| Contract/Service           | Address                                    |
-| -------------------------- | ------------------------------------------ |
-| ACL_CONTRACT               | 0x50157CFfD6bBFA2DECe204a89ec419c23ef5755D |
-| FHEVM_EXECUTOR_CONTRACT    | 0xe3a9105a3a932253A70F126eb1E3b589C643dD24 |
-| KMS_VERIFIER_CONTRACT      | 0x901F8942346f7AB3a01F6D7613119Bca447Bb030 |
-
 {% hint style="info" %}
 You do not need to configure these addresses manually. Inheriting from `ZamaEthereumConfig` automatically resolves the correct addresses based on the current `block.chainid`.
 {% endhint %}

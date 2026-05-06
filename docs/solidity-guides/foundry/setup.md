@@ -52,11 +52,11 @@ You should see the example `FHECounter` tests pass.
 
 ## Option 2: Add forge-fhevm to an existing project
 
-If you already have a Foundry project, add `forge-fhevm` as a Soldeer dependency.
+If you already have a Foundry project, add `forge-fhevm` as a [Soldeer](https://soldeer.xyz) dependency. The shape of the configuration is shown below; for the exact pinned versions, copy `foundry.toml` and `remappings.txt` from the [Foundry template](https://github.com/zama-ai/fhevm-foundry-template) — that's where the canonical, tested versions live.
 
 #### 1. Configure `foundry.toml`
 
-`forge-fhevm` requires Solidity `^0.8.27` and the Cancun EVM. Add the dependency and set the compiler to `foundry.toml`:
+`forge-fhevm` targets the Cancun EVM and a recent Solidity compiler. Your `foundry.toml` should look roughly like:
 
 ```toml
 [profile.default]
@@ -65,14 +65,15 @@ out = "out"
 libs = ["dependencies"]
 test = "test"
 script = "script"
-solc = "0.8.27"
 evm_version = "cancun"
+# solc = "0.8.x"   # see the template for the version currently tested
 
 [dependencies]
-forge-std = "1.14.0"
-"@encrypted-types" = "0.0.4"
-"@fhevm-solidity" = "0.11.1"
-forge-fhevm = { version = "eba2324", git = "https://github.com/zama-ai/forge-fhevm.git", rev = "eba2324" }
+# See the template's foundry.toml for the current versions
+forge-std = "..."
+"@encrypted-types" = "..."
+"@fhevm-solidity" = "..."
+forge-fhevm = { git = "https://github.com/zama-ai/forge-fhevm.git", rev = "..." }
 
 [soldeer]
 remappings_version = false
@@ -87,19 +88,17 @@ forge soldeer install
 
 #### 3. Add remappings
 
-Update (or create) `remappings.txt`:
+Soldeer materialises each dependency under `dependencies/<name>-<version>/`, so your `remappings.txt` needs an entry per import prefix. The shape is:
 
 ```
-@fhevm/host-contracts/=dependencies/forge-fhevm-eba2324/src/fhevm-host/
-@fhevm/solidity/=dependencies/@fhevm-solidity-0.11.1/
-encrypted-types/=dependencies/@encrypted-types-0.0.4/
-forge-fhevm/=dependencies/forge-fhevm-eba2324/src/
-forge-std/=dependencies/forge-std-1.14.0/src
+@fhevm/host-contracts/=dependencies/forge-fhevm-<rev>/src/fhevm-host/
+@fhevm/solidity/=dependencies/@fhevm-solidity-<version>/
+encrypted-types/=dependencies/@encrypted-types-<version>/
+forge-fhevm/=dependencies/forge-fhevm-<rev>/src/
+forge-std/=dependencies/forge-std-<version>/src
 ```
 
-{% hint style="warning" %}
-Soldeer pins each dependency directory by version (e.g. `forge-fhevm-eba2324`). When you upgrade, regenerate or update the matching remapping paths.
-{% endhint %}
+Replace the `<version>` / `<rev>` placeholders with whatever Soldeer wrote into `dependencies/`, or copy the whole file from the [template `remappings.txt`](https://github.com/zama-ai/fhevm-foundry-template/blob/main/remappings.txt) and adjust as you upgrade.
 
 ## Verify the install
 
