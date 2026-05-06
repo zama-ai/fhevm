@@ -1,6 +1,6 @@
 import { getRequiredEnvVar } from './loadVariables';
 
-const KMS_GENERATION_MIGRATION_ENV_KEYS = [
+export const KMS_GENERATION_MIGRATION_ENV_KEYS = [
   'MIGRATION_PREP_KEYGEN_COUNTER',
   'MIGRATION_KEY_COUNTER',
   'MIGRATION_CRS_COUNTER',
@@ -24,13 +24,33 @@ const KMS_GENERATION_MIGRATION_ENV_KEYS = [
 type KmsGenerationMigrationEnvKey = (typeof KMS_GENERATION_MIGRATION_ENV_KEYS)[number];
 export type KmsGenerationMigrationEnv = Record<KmsGenerationMigrationEnvKey, string>;
 export type KmsGenerationMigrationEnvSnapshot = Partial<KmsGenerationMigrationEnv>;
+export type KmsGenerationMigrationState = {
+  prepKeygenCounter: bigint;
+  keyCounter: bigint;
+  crsCounter: bigint;
+  activeKeyId: bigint;
+  activeCrsId: bigint;
+  activePrepKeygenId: bigint;
+  activeKeyDigests: Array<{ keyType: number; digest: string }>;
+  activeCrsDigest: string;
+  keyConsensusTxSenders: string[];
+  keyConsensusDigest: string;
+  crsConsensusTxSenders: string[];
+  crsConsensusDigest: string;
+  prepKeygenConsensusTxSenders: string[];
+  prepKeygenConsensusDigest: string;
+  crsMaxBitLength: bigint;
+  prepKeygenParamsType: number;
+  crsParamsType: number;
+  contextId: bigint;
+};
 
 function parseAddressList(envVarName: KmsGenerationMigrationEnvKey): string[] {
   const raw = getRequiredEnvVar(envVarName);
   return raw.split(',').map((address) => address.trim());
 }
 
-export function buildKMSGenerationMigrationStateFromEnv() {
+export function buildKMSGenerationMigrationStateFromEnv(): KmsGenerationMigrationState {
   return {
     prepKeygenCounter: BigInt(getRequiredEnvVar('MIGRATION_PREP_KEYGEN_COUNTER')),
     keyCounter: BigInt(getRequiredEnvVar('MIGRATION_KEY_COUNTER')),

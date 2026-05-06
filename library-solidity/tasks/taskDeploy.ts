@@ -198,20 +198,12 @@ task('task:deployFHEVMExecutor').setAction(async function (_taskArguments: TaskA
 // KMSVerifier
 ////////////////////////////////////////////////////////////////////////////////
 
-function buildKmsNodes(
-  useAddress: boolean,
-): { txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }[] {
+function buildKmsNodes(): { txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }[] {
   const numNodes = +getRequiredEnvVar('NUM_KMS_NODES');
   const nodes: { txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }[] = [];
   for (let idx = 0; idx < numNodes; idx++) {
     const txSenderAddress = getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`);
-    let signerAddress: string;
-    if (!useAddress) {
-      const privKeySigner = getRequiredEnvVar(`PRIVATE_KEY_KMS_SIGNER_${idx}`);
-      signerAddress = new Wallet(privKeySigner).address;
-    } else {
-      signerAddress = getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`);
-    }
+    const signerAddress = getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`);
     const ipAddress = process.env[`KMS_NODE_IP_${idx}`] || '';
     const storageUrl = getRequiredEnvVar(`KMS_NODE_STORAGE_URL_${idx}`);
     nodes.push({ txSenderAddress, signerAddress, ipAddress, storageUrl });
@@ -252,14 +244,7 @@ task('task:deployKMSVerifier').setAction(async function (_taskArguments: TaskArg
 // ProtocolConfig
 ////////////////////////////////////////////////////////////////////////////////
 
-task('task:deployProtocolConfig')
-  .addOptionalParam(
-    'useAddress',
-    'Use addresses instead of private keys env variables for kms signers',
-    true,
-    types.boolean,
-  )
-  .setAction(async function (taskArguments: TaskArguments, hre) {
+task('task:deployProtocolConfig').setAction(async function (_taskArguments: TaskArguments, hre) {
     const { ethers, upgrades } = hre;
     const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
     const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
@@ -272,7 +257,7 @@ task('task:deployProtocolConfig')
     await upgrades.upgradeProxy(proxy, newImplem, {
       call: {
         fn: 'initializeFromEmptyProxy',
-        args: [buildKmsNodes(taskArguments.useAddress), buildKmsThresholds()],
+        args: [buildKmsNodes(), buildKmsThresholds()],
       },
     });
     // upgrades.upgradeProxy can return before the upgradeToAndCall tx is mined on interval-mining
