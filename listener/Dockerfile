@@ -25,9 +25,11 @@ COPY . .
 RUN cargo build --release -p listener_core
 
 # ── Runtime ──────────────────────────────────────────────────────────
-FROM gcr.io/distroless/cc-debian12:nonroot
+FROM gcr.io/distroless/cc-debian12:nonroot AS prod
 COPY --from=builder /app/target/release/listener_core /app/listener_core
 COPY --from=builder /app/crates/listener_core/migrations/ /app/migrations/
 WORKDIR /app
 ENTRYPOINT ["/app/listener_core"]
 CMD ["--config", "/config.yaml"]
+
+FROM prod AS dev

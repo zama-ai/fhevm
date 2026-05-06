@@ -1,0 +1,57 @@
+services:
+  # ── Base infrastructure (always starts) ──────────────────────────────
+
+  # ── Message brokers (always start) ───────────────────────────────────
+
+  listener-redis:
+    image: redis:7-alpine
+    container_name: listener-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+
+  # listener-rabbitmq:
+  #   image: rabbitmq:3-management-alpine
+  #   container_name: listener-rabbitmq
+  #   ports:
+  #     - "5672:5672"
+  #     - "15672:15672"
+  #   environment:
+  #     RABBITMQ_DEFAULT_USER: user
+  #     RABBITMQ_DEFAULT_PASS: pass
+  #   restart: unless-stopped
+
+  # # ── RPC proxy (optional) ─────────────────────────────────────────────
+
+  # erpc:
+  #   image: ghcr.io/erpc/erpc:0.0.63
+  #   container_name: listener-erpc
+  #   profiles: [erpc, listener-1, listener-2]
+  #   volumes:
+  #     - ./config/erpc-public.yaml:/erpc.yaml
+  #   ports:
+  #     - "4000:4000"  # HTTP API
+  #     - "4001:4001"  # Metrics
+
+  # ── Listener instances (one per chain, pick via --profile) ───────────
+
+  listener-publisher-for-anvil:
+    # build:
+    #   context: ../../../listener
+    #   dockerfile: Dockerfile
+    image: ghcr.io/zama-ai/fhevm/listener/listener-core:${LISTENER_CORE_VERSION}
+    container_name: listener-publisher-for-anvil
+    profiles: [listener-publisher-for-anvil]
+    depends_on:
+      listener-redis: { condition: service_started }
+    #  rabbitmq:  { condition: service_started }
+    #  erpc:      { condition: service_started }
+    volumes:
+      - ../config/listener/listener-publisher-for-anvil.yaml:/config.yaml:ro
+    restart: unless-stopped
+
+volumes:
+  redis_data:

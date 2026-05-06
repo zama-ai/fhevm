@@ -22,6 +22,7 @@ const versionKeys = [
   "COPROCESSOR_TFHE_WORKER_VERSION",
   "COPROCESSOR_ZKPROOF_WORKER_VERSION",
   "COPROCESSOR_SNS_WORKER_VERSION",
+  "LISTENER_CORE_VERSION",
   "CONNECTOR_DB_MIGRATION_VERSION",
   "CONNECTOR_GW_LISTENER_VERSION",
   "CONNECTOR_KMS_WORKER_VERSION",
@@ -44,6 +45,7 @@ const compatTest = (): CompatTestDefinition => ({
     { name: "relayer", units: ["RELAYER"] },
     { name: "contracts", units: ["GATEWAY_CONTRACTS", "HOST_CONTRACTS"] },
     { name: "kms", units: ["KMS_CORE", "KMS_CONNECTOR"] },
+    { name: "listener-core", units: ["LISTENER_CORE"] },
     {
       name: "coprocessor",
       substeps: [
@@ -68,6 +70,7 @@ const compatTest = (): CompatTestDefinition => ({
       "CONNECTOR_KMS_WORKER_VERSION",
       "CONNECTOR_TX_SENDER_VERSION",
     ],
+    LISTENER_CORE: ["LISTENER_CORE_VERSION"],
     COPROCESSOR_DB_MIGRATION: ["COPROCESSOR_DB_MIGRATION_VERSION"],
     COPROCESSOR_HOST_LISTENER: ["COPROCESSOR_HOST_LISTENER_VERSION"],
     COPROCESSOR_GW_LISTENER: ["COPROCESSOR_GW_LISTENER_VERSION"],
@@ -144,30 +147,32 @@ describe("rollout", () => {
       "01-relayer.lock.json",
       "02-contracts.lock.json",
       "03-kms.lock.json",
-      "04-coprocessor-db-migration.lock.json",
-      "05-coprocessor-host-listener.lock.json",
-      "06-coprocessor-gw-listener.lock.json",
-      "07-coprocessor-tx-sender.lock.json",
-      "08-coprocessor-tfhe-worker.lock.json",
-      "09-coprocessor-zkproof-worker.lock.json",
-      "10-coprocessor-sns-worker.lock.json",
+      "04-listener-core.lock.json",
+      "05-coprocessor-db-migration.lock.json",
+      "06-coprocessor-host-listener.lock.json",
+      "07-coprocessor-gw-listener.lock.json",
+      "08-coprocessor-tx-sender.lock.json",
+      "09-coprocessor-tfhe-worker.lock.json",
+      "10-coprocessor-zkproof-worker.lock.json",
+      "11-coprocessor-sns-worker.lock.json",
     ]);
     expect(locks[0].env.TEST_SUITE_VERSION).toBe("to-test_suite_version");
     expect(locks[0].env.RELAYER_SDK_VERSION).toBe("0.5.0-alpha.1");
     expect(locks[1].env.RELAYER_VERSION).toBe("to-relayer_version");
     expect(locks[2].env.GATEWAY_VERSION).toBe("to-gateway_version");
     expect(locks[3].env.CORE_VERSION).toBe("to-core_version");
-    expect(locks[4].env.COPROCESSOR_DB_MIGRATION_VERSION).toBe("to-coprocessor_db_migration_version");
-    expect(locks[5].env.COPROCESSOR_HOST_LISTENER_VERSION).toBe("to-coprocessor_host_listener_version");
-    expect(locks[5].env.COPROCESSOR_GW_LISTENER_VERSION).toBe("from-coprocessor_gw_listener_version");
-    expect(locks[10].env.COPROCESSOR_SNS_WORKER_VERSION).toBe("to-coprocessor_sns_worker_version");
+    expect(locks[4].env.LISTENER_CORE_VERSION).toBe("to-listener_core_version");
+    expect(locks[5].env.COPROCESSOR_DB_MIGRATION_VERSION).toBe("to-coprocessor_db_migration_version");
+    expect(locks[6].env.COPROCESSOR_HOST_LISTENER_VERSION).toBe("to-coprocessor_host_listener_version");
+    expect(locks[6].env.COPROCESSOR_GW_LISTENER_VERSION).toBe("from-coprocessor_gw_listener_version");
+    expect(locks[11].env.COPROCESSOR_SNS_WORKER_VERSION).toBe("to-coprocessor_sns_worker_version");
     expect(locks[2].sources).toContain("compat-from:GATEWAY_VERSION=from-gateway_version");
     expect(locks[2].sources).toContain("compat-from:HOST_VERSION=from-host_version");
   });
 
   test("renders one rollout step on demand", () => {
-    const bundle = renderRolloutStep(compatTest(), 5);
-    expect(bundle.lockName).toBe("05-coprocessor-host-listener.lock.json");
+    const bundle = renderRolloutStep(compatTest(), 6);
+    expect(bundle.lockName).toBe("06-coprocessor-host-listener.lock.json");
     expect(bundle.env.RELAYER_VERSION).toBe("to-relayer_version");
     expect(bundle.env.COPROCESSOR_DB_MIGRATION_VERSION).toBe("to-coprocessor_db_migration_version");
     expect(bundle.env.COPROCESSOR_HOST_LISTENER_VERSION).toBe("to-coprocessor_host_listener_version");
@@ -181,13 +186,14 @@ describe("rollout", () => {
         { step: "relayer", stepIndex: 1, name: "01-relayer" },
         { step: "contracts", stepIndex: 2, name: "02-contracts" },
         { step: "kms", stepIndex: 3, name: "03-kms" },
-        { step: "coprocessor-db-migration", stepIndex: 4, name: "04-coprocessor-db-migration" },
-        { step: "coprocessor-host-listener", stepIndex: 5, name: "05-coprocessor-host-listener" },
-        { step: "coprocessor-gw-listener", stepIndex: 6, name: "06-coprocessor-gw-listener" },
-        { step: "coprocessor-tx-sender", stepIndex: 7, name: "07-coprocessor-tx-sender" },
-        { step: "coprocessor-tfhe-worker", stepIndex: 8, name: "08-coprocessor-tfhe-worker" },
-        { step: "coprocessor-zkproof-worker", stepIndex: 9, name: "09-coprocessor-zkproof-worker" },
-        { step: "coprocessor-sns-worker", stepIndex: 10, name: "10-coprocessor-sns-worker" },
+        { step: "listener-core", stepIndex: 4, name: "04-listener-core" },
+        { step: "coprocessor-db-migration", stepIndex: 5, name: "05-coprocessor-db-migration" },
+        { step: "coprocessor-host-listener", stepIndex: 6, name: "06-coprocessor-host-listener" },
+        { step: "coprocessor-gw-listener", stepIndex: 7, name: "07-coprocessor-gw-listener" },
+        { step: "coprocessor-tx-sender", stepIndex: 8, name: "08-coprocessor-tx-sender" },
+        { step: "coprocessor-tfhe-worker", stepIndex: 9, name: "09-coprocessor-tfhe-worker" },
+        { step: "coprocessor-zkproof-worker", stepIndex: 10, name: "10-coprocessor-zkproof-worker" },
+        { step: "coprocessor-sns-worker", stepIndex: 11, name: "11-coprocessor-sns-worker" },
       ],
     });
   });
@@ -207,10 +213,10 @@ describe("rollout", () => {
     );
     expect(matrix.include.at(-1)).toEqual({
       step: "coprocessor-sns-worker",
-      stepIndex: 10,
-      name: "10-coprocessor-sns-worker",
+      stepIndex: 11,
+      name: "11-coprocessor-sns-worker",
     });
-    const mixed = await readJson<VersionBundle>(path.join(outDir, "05-coprocessor-host-listener.lock.json"));
+    const mixed = await readJson<VersionBundle>(path.join(outDir, "06-coprocessor-host-listener.lock.json"));
     expect(mixed.env.RELAYER_VERSION).toBe("to-relayer_version");
     expect(mixed.env.HOST_VERSION).toBe("to-host_version");
     expect(mixed.env.COPROCESSOR_DB_MIGRATION_VERSION).toBe("to-coprocessor_db_migration_version");

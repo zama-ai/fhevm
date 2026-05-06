@@ -1,4 +1,4 @@
-use alloy::primitives::Address;
+use alloy_primitives::Address;
 use async_trait::async_trait;
 pub use broker::{AckDecision, Broker, HandlerError};
 use broker::{BrokerError, CancellationToken, Consumer, Handler, Message, Topic};
@@ -20,7 +20,7 @@ pub struct ListenerConsumer {
     broker: Broker,
     chain_id: u64,
     consumer_id: String,
-    cancel: CancellationToken,
+    pub cancel_token: CancellationToken,
 }
 
 impl ListenerConsumer {
@@ -36,14 +36,14 @@ impl ListenerConsumer {
             broker: broker.clone(),
             chain_id,
             consumer_id: consumer_id_trimmed.into(),
-            cancel: CancellationToken::new(),
+            cancel_token: CancellationToken::new(),
         }
     }
 
     /// Cancel via the cancel token passed to new
     /// This is useful for stopping the consumer from another task.
     pub fn cancel(&self) {
-        self.cancel.cancel();
+        self.cancel_token.cancel();
     }
 
     /// Return the chain ID this client publishes into.
@@ -102,7 +102,7 @@ impl ListenerConsumer {
 
     fn broker_consumer(&self) -> Result<Consumer, BrokerError> {
         let topic = self.consumer_topic();
-        let cancel = self.cancel.clone();
+        let cancel = self.cancel_token.clone();
         self.broker
             .consumer(&topic)
             .group(topic.to_string())
@@ -162,7 +162,7 @@ impl ListenerConsumer {
             let consumer = client.broker_consumer()?;
             let handler = ConsumerHandler {
                 call: Arc::new(f),
-                cancel: client.cancel.clone(),
+                cancel: client.cancel_token.clone(),
             };
             consumer.run(handler).await?;
             Ok(())
@@ -198,7 +198,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use alloy::primitives::B256;
+    use alloy_primitives::B256;
     use broker::{amqp::RmqPublisher, traits::Publisher};
     use primitives::event::BlockFlow;
 

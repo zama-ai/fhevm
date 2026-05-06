@@ -2,7 +2,6 @@
 tmp
 target
 .cursor
-Cargo.lock
 _erpc
 .env
 

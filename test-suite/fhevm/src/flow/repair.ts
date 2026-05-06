@@ -1,3 +1,4 @@
+import { supportsHostListenerConsumer } from "../compat/compat";
 import { hasLocalCoprocessorInstance } from "../scenario/resolve";
 import { topologyForState } from "../stack-spec/stack-spec";
 import {
@@ -15,25 +16,39 @@ import { extraHostChains, hostChainsForState } from "./topology";
 
 const UPGRADEABLE_GROUPS = ["coprocessor", "kms-connector", "test-suite"] as const;
 type UpgradeGroup = (typeof UPGRADEABLE_GROUPS)[number];
-const COPROCESSOR_RUNTIME_SUFFIXES = GROUP_SERVICE_SUFFIXES.coprocessor.filter((service) => service !== "db-migration");
-const COPROCESSOR_LISTENER_SUFFIXES = COPROCESSOR_RUNTIME_SUFFIXES.filter((service) => /^host-listener(?:-poller)?$/.test(service));
+const supportsConsumerForState = (state: { versions?: State["versions"] }) =>
+  !state.versions || supportsHostListenerConsumer({ versions: state.versions });
+const coprocessorRuntimeSuffixes = (state: { versions?: State["versions"] }) =>
+  GROUP_SERVICE_SUFFIXES.coprocessor.filter(
+    (service) =>
+      service !== "db-migration" &&
+      (service !== "host-listener-consumer" || supportsConsumerForState(state)),
+  );
+const coprocessorListenerSuffixes = (state: { versions?: State["versions"] }) =>
+  coprocessorRuntimeSuffixes(state).filter((service) => /^host-listener(?:-poller)?$/.test(service));
+const coprocessorServices = (state: { versions?: State["versions"] }) =>
+  GROUP_BUILD_SERVICES.coprocessor.filter(
+    (service) => service !== "coprocessor-host-listener-consumer" || supportsConsumerForState(state),
+  );
 
 /** Lists steady-state services expected for each resumable lifecycle step. */
 export const resumeSteadyStateServices = (state: State) => {
   const chains = hostChainsForState(state);
   const [defaultChain, ...extraChains] = chains;
   const topology = topologyForState(state);
+  const runtimeSuffixes = coprocessorRuntimeSuffixes(state);
+  const listenerSuffixes = coprocessorListenerSuffixes(state);
   return {
     "base": ["fhevm-minio", "coprocessor-and-kms-db", KMS_CORE_CONTAINER, "gateway-node", ...chains.map((chain) => chain.node)],
     "coprocessor": [
       ...Array.from({ length: topology.count }, (_, index) => {
         const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
-        return COPROCESSOR_RUNTIME_SUFFIXES.map((service) => `${prefix}${service}${defaultChain?.suffix ?? ""}`);
+        return runtimeSuffixes.map((service) => `${prefix}${service}${defaultChain?.suffix ?? ""}`);
       }).flat(),
       ...extraChains.flatMap((chain) =>
         Array.from({ length: topology.count }, (_, index) => {
           const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
-          return COPROCESSOR_LISTENER_SUFFIXES.map((service) => `${prefix}${service}${chain.suffix}`);
+          return listenerSuffixes.map((service) => `${prefix}${service}${chain.suffix}`);
         }).flat(),
       ),
     ],
@@ -95,7 +110,7 @@ export const multiChainCoprocessorUpgradeTargets = (
 
 /** Resolves which services and step an in-place upgrade should restart. */
 export const resolveUpgradePlan = (
-  state: Pick<State, "overrides" | "scenario">,
+  state: Pick<State, "overrides" | "scenario"> & { versions?: State["versions"] },
   groupValue: string | undefined,
 ) => {
   if (!groupValue || !UPGRADEABLE_GROUPS.includes(groupValue as UpgradeGroup)) {
@@ -114,7 +129,11 @@ export const resolveUpgradePlan = (
     throw new Error(`No runtime component registered for ${group}`);
   }
   const selectedServices = groupOverrides.flatMap((item) => item.services ?? []);
-  const fullGroupServices = groupOverrides.length && !selectedServices.length ? GROUP_BUILD_SERVICES[group] : [];
+  const fullGroupServices = groupOverrides.length && !selectedServices.length
+    ? group === "coprocessor"
+      ? coprocessorServices(state)
+      : GROUP_BUILD_SERVICES[group]
+    : [];
   const overrideServices = selectedServices.length ? [...new Set(selectedServices)] : fullGroupServices;
   const scenario = state.scenario;
   const plannedServices =
@@ -125,7 +144,7 @@ export const resolveUpgradePlan = (
           }
           const selected =
             instance.source.mode === "local"
-              ? instance.localServices ?? GROUP_BUILD_SERVICES.coprocessor
+              ? instance.localServices ?? coprocessorServices(state)
               : overrideServices;
           return selected.map((service) =>
             instance.index === 0 ? service : service.replace(/^coprocessor-/, `coprocessor${instance.index}-`),

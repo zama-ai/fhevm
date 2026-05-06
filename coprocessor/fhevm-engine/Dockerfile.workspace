@@ -72,6 +72,8 @@ COPY --from=contract_builder /app/host-contracts/artifacts/contracts /app/host-c
 COPY --from=contract_builder /app/gateway-contracts/artifacts/contracts /app/gateway-contracts/artifacts/contracts
 
 # Copy Rust sources and dependencies
+# TODO fix
+COPY listener ./listener
 COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
@@ -92,6 +94,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cp target/${CARGO_PROFILE}/tfhe_worker /out/ && \
     cp target/${CARGO_PROFILE}/host_listener /out/ && \
     cp target/${CARGO_PROFILE}/host_listener_poller /out/ && \
+    cp target/${CARGO_PROFILE}/host_listener_consumer /out/ && \
     cp target/${CARGO_PROFILE}/gw_listener /out/ && \
     cp target/${CARGO_PROFILE}/sns_worker /out/ && \
     cp target/${CARGO_PROFILE}/transaction_sender /out/ && \
@@ -133,6 +136,7 @@ COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder --chown=fhevm:fhevm /out/host_listener /usr/local/bin/host_listener
 COPY --from=builder --chown=fhevm:fhevm /out/host_listener_poller /usr/local/bin/host_listener_poller
+COPY --from=builder --chown=fhevm:fhevm /out/host_listener_consumer /usr/local/bin/host_listener_consumer
 
 USER fhevm:fhevm
 

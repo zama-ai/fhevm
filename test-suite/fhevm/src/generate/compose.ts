@@ -5,7 +5,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
 
-import { type CompatPolicy, compatPolicyForState } from "../compat/compat";
+import { type CompatPolicy, compatPolicyForState, supportsHostListenerConsumer } from "../compat/compat";
 import {
   COMPONENTS,
   COMPOSE_OUT_DIR,
@@ -87,6 +87,9 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
       target: "host-listener",
     }),
     "coprocessor-host-listener-poller": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+      target: "host-listener",
+    }),
+    "coprocessor-host-listener-consumer": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
       target: "host-listener",
     }),
     "coprocessor-gw-listener": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
@@ -359,7 +362,9 @@ const applyCoprocessorSource = (
   if (instance.source.mode === "registry") {
     service.image = rewriteImageTag(service.image, instance.source.tag);
   }
-  delete service.build;
+  if (service.image) {
+    delete service.build;
+  }
 };
 
 /** Builds the generated coprocessor compose override across all scenario instances. */
@@ -370,6 +375,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
   const services: Record<string, Record<string, unknown>> = {};
   const compat = compatPolicyForState(plan);
   const inheritedBuildServices = coprocessorBuildServices(plan);
+  const includeConsumer = supportsHostListenerConsumer(plan);
   for (const instance of plan.coprocessor.instances) {
     const localServices =
       instance.source.mode === "local"
@@ -382,6 +388,9 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
     const instanceEnv = await readEnvFile(envFileValue);
     const prefix = instance.index === 0 ? "coprocessor-" : `coprocessor${instance.index}-`;
     for (const [name, service] of Object.entries(doc.services)) {
+      if (!includeConsumer && name === "coprocessor-host-listener-consumer") {
+        continue;
+      }
       const suffix = name.replace(/^coprocessor-/, "");
       const serviceName = `${prefix}${suffix}`;
       const locallyBuilt = localServices.has(name);

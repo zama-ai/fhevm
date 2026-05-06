@@ -66,6 +66,7 @@ const REPO_PACKAGES = {
   COPROCESSOR_TFHE_WORKER_VERSION: "fhevm%2Fcoprocessor%2Ftfhe-worker",
   COPROCESSOR_ZKPROOF_WORKER_VERSION: "fhevm%2Fcoprocessor%2Fzkproof-worker",
   COPROCESSOR_SNS_WORKER_VERSION: "fhevm%2Fcoprocessor%2Fsns-worker",
+  LISTENER_CORE_VERSION: "fhevm%2Flistener%2Flistener-core",
   CONNECTOR_DB_MIGRATION_VERSION: "fhevm%2Fkms-connector%2Fdb-migration",
   CONNECTOR_GW_LISTENER_VERSION: "fhevm%2Fkms-connector%2Fgw-listener",
   CONNECTOR_KMS_WORKER_VERSION: "fhevm%2Fkms-connector%2Fkms-worker",
@@ -87,6 +88,7 @@ export const PACKAGE_TO_REPOSITORY = {
   COPROCESSOR_TFHE_WORKER_VERSION: "ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker",
   COPROCESSOR_ZKPROOF_WORKER_VERSION: "ghcr.io/zama-ai/fhevm/coprocessor/zkproof-worker",
   COPROCESSOR_SNS_WORKER_VERSION: "ghcr.io/zama-ai/fhevm/coprocessor/sns-worker",
+  LISTENER_CORE_VERSION: "ghcr.io/zama-ai/fhevm/listener/listener-core",
   CONNECTOR_DB_MIGRATION_VERSION: "ghcr.io/zama-ai/fhevm/kms-connector/db-migration",
   CONNECTOR_GW_LISTENER_VERSION: "ghcr.io/zama-ai/fhevm/kms-connector/gw-listener",
   CONNECTOR_KMS_WORKER_VERSION: "ghcr.io/zama-ai/fhevm/kms-connector/kms-worker",
@@ -245,6 +247,7 @@ const bundleFromFiles = async (
     const parsed = Object.fromEntries(
       Object.entries(docs).map(([name, text]) => [name, extractTagsFromYaml(text)]),
     ) as Record<string, Array<{ repository: string; tag: string }>>;
+    const coprocessorHostListenerVersion = findImageTag(parsed, "coprocessorHost", "COPROCESSOR_HOST_LISTENER_VERSION");
     return {
       target,
       lockName: `${target}.json`,
@@ -252,12 +255,13 @@ const bundleFromFiles = async (
         GATEWAY_VERSION: findImageTag(parsed, "gateway", "GATEWAY_VERSION"),
         HOST_VERSION: findImageTag(parsed, "host", "HOST_VERSION"),
         COPROCESSOR_DB_MIGRATION_VERSION: findImageTag(parsed, "coprocessorDb", "COPROCESSOR_DB_MIGRATION_VERSION"),
-        COPROCESSOR_HOST_LISTENER_VERSION: findImageTag(parsed, "coprocessorHost", "COPROCESSOR_HOST_LISTENER_VERSION"),
+        COPROCESSOR_HOST_LISTENER_VERSION: coprocessorHostListenerVersion,
         COPROCESSOR_GW_LISTENER_VERSION: findImageTag(parsed, "coprocessorGateway", "COPROCESSOR_GW_LISTENER_VERSION"),
         COPROCESSOR_TX_SENDER_VERSION: findImageTag(parsed, "coprocessorGateway", "COPROCESSOR_TX_SENDER_VERSION"),
         COPROCESSOR_TFHE_WORKER_VERSION: findImageTag(parsed, "coprocessorWorkers", "COPROCESSOR_TFHE_WORKER_VERSION"),
         COPROCESSOR_ZKPROOF_WORKER_VERSION: findImageTag(parsed, "coprocessorWorkers", "COPROCESSOR_ZKPROOF_WORKER_VERSION"),
         COPROCESSOR_SNS_WORKER_VERSION: findImageTag(parsed, "coprocessorWorkers", "COPROCESSOR_SNS_WORKER_VERSION"),
+        LISTENER_CORE_VERSION: coprocessorHostListenerVersion,
         CONNECTOR_DB_MIGRATION_VERSION: findImageTag(parsed, "connector", "CONNECTOR_DB_MIGRATION_VERSION"),
         CONNECTOR_GW_LISTENER_VERSION: findImageTag(parsed, "connector", "CONNECTOR_GW_LISTENER_VERSION"),
         CONNECTOR_KMS_WORKER_VERSION: findImageTag(parsed, "connector", "CONNECTOR_KMS_WORKER_VERSION"),

@@ -71,6 +71,11 @@ jobs:
       GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
       CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
       CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
+  listener-docker-build:
+    if: *build-trigger-condition
+    uses: ./.github/workflows/listener-docker-build.yml
+    permissions: *docker_permissions
+    secrets: *docker_secrets
   gateway-contracts-docker-build:
     if: *build-trigger-condition
     uses: ./.github/workflows/gateway-contracts-docker-build.yml
@@ -102,6 +107,7 @@ jobs:
     needs:
       - resolve-baseline
       - coprocessor-docker-build
+      - listener-docker-build
       - gateway-contracts-docker-build
       - host-contracts-docker-build
       - kms-connector-docker-build
@@ -120,6 +126,7 @@ jobs:
       coprocessor-tfhe-worker-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-tfhe-worker-version }}
       coprocessor-tx-sender-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-tx-sender-version }}
       coprocessor-zkproof-worker-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
+      listener-core-version: ${{ steps.create-e2e-tests-input.outputs.listener-core-version }}
       connector-db-migration-version: ${{ steps.create-e2e-tests-input.outputs.connector-db-migration-version }}
       connector-gw-listener-version: ${{ steps.create-e2e-tests-input.outputs.connector-gw-listener-version }}
       connector-kms-worker-version: ${{ steps.create-e2e-tests-input.outputs.connector-kms-worker-version }}
@@ -147,6 +154,7 @@ jobs:
               ["coprocessor-docker-build", "tfhe_worker_build_result", "coprocessor-tfhe-worker-version"],
               ["coprocessor-docker-build", "tx_sender_build_result", "coprocessor-tx-sender-version"],
               ["coprocessor-docker-build", "zkproof_worker_build_result", "coprocessor-zkproof-worker-version"],
+              ["listener-docker-build", "build_result", "listener-core-version"],
               ["kms-connector-docker-build", "db_migration_build_result", "connector-db-migration-version"],
               ["kms-connector-docker-build", "gw_listener_build_result", "connector-gw-listener-version"],
               ["kms-connector-docker-build", "kms_worker_build_result", "connector-kms-worker-version"],
@@ -195,6 +203,7 @@ jobs:
       coprocessor-tfhe-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tfhe-worker-version }}
       coprocessor-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tx-sender-version }}
       coprocessor-zkproof-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
+      listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
       connector-db-migration-version: ${{ needs.create-e2e-tests-input.outputs.connector-db-migration-version }}
       connector-gw-listener-version: ${{ needs.create-e2e-tests-input.outputs.connector-gw-listener-version }}
       connector-kms-worker-version: ${{ needs.create-e2e-tests-input.outputs.connector-kms-worker-version }}
