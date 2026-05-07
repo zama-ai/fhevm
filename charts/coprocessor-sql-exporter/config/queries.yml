@@ -1,0 +1,88 @@
+# This configuration can be tested with https://github.com/burningalchemist/sql_exporter
+# Configuration reference: https://github.com/burningalchemist/sql_exporter/blob/master/documentation/sql_exporter.yml
+global:
+  scrape_timeout: 10s
+  scrape_timeout_offset: 500ms
+  min_interval: 0s
+  max_connections: 3
+  max_idle_connections: 3
+
+target:
+  data_source_name: '$DATA_SOURCE_NAME'
+  collectors:
+    - coprocessor-database
+
+collectors:
+  - collector_name: coprocessor-database
+    min_interval: 30s
+    metrics:
+      - metric_name: allowed_handles_txn_sent
+        type: gauge
+        help: 'Number of allowed handles transactions sent'
+        key_labels:
+          - status
+        values: [count]
+        query: |
+          SELECT 'txn_sent' AS status, count(*)::float AS count
+          FROM allowed_handles
+          WHERE txn_is_sent = true
+          UNION ALL
+          SELECT 'txn_unsent' AS status, count(*)::float AS count
+          FROM allowed_handles
+          WHERE txn_is_sent = false;
+      - metric_name: ciphertext_txn_sent
+        type: gauge
+        help: 'Number of ciphertext transactions sent'
+        key_labels:
+          - status
+        values: [count]
+        query: |
+          SELECT 'txn_sent' AS status, count(*)::float AS count
+          FROM ciphertext_digest
+          WHERE txn_is_sent = true
+          UNION ALL
+          SELECT 'txn_unsent' AS status, count(*)::float AS count
+          FROM ciphertext_digest
+          WHERE txn_is_sent = false;
+      - metric_name: computations_completion
+        type: gauge
+        help: 'Number of computations done'
+        key_labels:
+          - status
+        values: [count]
+        query: |
+          SELECT 'completed' AS status, COUNT(*)::float AS count
+          FROM computations
+          WHERE is_completed = true
+          UNION ALL
+          SELECT 'uncompleted' AS status, COUNT(*)::float AS count
+          FROM computations
+          WHERE is_completed = false;
+      - metric_name: pbs_completion
+        type: gauge
+        help: 'Number of PBS done'
+        key_labels:
+          - status
+        values: [count]
+        query: |
+          SELECT 'completed' AS status, COUNT(*)::float AS count
+          FROM pbs_computations
+          WHERE is_completed = true
+          UNION ALL
+          SELECT 'uncompleted' AS status, COUNT(*)::float AS count
+          FROM pbs_computations
+          WHERE is_completed = false;
+      - metric_name: ciphertexts
+        type: gauge
+        help: 'Number of ciphertexts in ciphertexts table'
+        values: [count]
+        query: |
+          SELECT COUNT(*)::float AS count
+          FROM ciphertexts;
+      - metric_name: zkproof
+        type: gauge
+        help: 'Number of remaining ZK-Proof to process'
+        values: [count]
+        query: |
+          SELECT COUNT(*)::float AS count
+          FROM verify_proofs;
