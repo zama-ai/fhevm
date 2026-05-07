@@ -9,9 +9,9 @@ import {
   readHostEnv,
   waitForProtocolConfigUpgradeLanded,
 } from './taskDeploy';
-import { buildKMSGenerationMigrationStateFromEnv } from './utils/kmsGenerationMigrationEnv';
+import { buildKMSGenerationInitializeFromMigrationArgs } from './utils/kmsGenerationMigrationEnv';
 import { getRequiredEnvVar } from './utils/loadVariables';
-import { buildProtocolConfigMigrationStateFromEnv } from './utils/protocolConfigMigrationEnv';
+import { buildProtocolConfigInitializeFromMigrationArgs } from './utils/protocolConfigMigrationEnv';
 
 ////////////////////////////////////////////////////////////////////////////////
 // Proposal artifact helpers
@@ -151,12 +151,11 @@ task(
   'task:prepareDeployProtocolConfigFromMigration',
   'Deploys a ProtocolConfig migration implementation and prints DAO upgrade calldata without mutating the proxy',
 ).setAction(async function (_, hre) {
-  const migrationState = buildProtocolConfigMigrationStateFromEnv();
   const parsedEnv = readHostEnv();
   const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
   // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild
   await hre.run('compile:specific', { contract: 'contracts' });
-  const decodedArgs = [migrationState.migrationContextId, migrationState.kmsNodes, migrationState.thresholds];
+  const decodedArgs = buildProtocolConfigInitializeFromMigrationArgs();
   const artifact = await hre.artifacts.readArtifact('ProtocolConfig');
   const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
   const preparedUpgrade = await prepareDaoUpgrade(hre, {
@@ -183,8 +182,7 @@ task(
   const parsedEnv = readHostEnv();
   const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-  const migrationState = buildProtocolConfigMigrationStateFromEnv();
-  const decodedArgs = [migrationState.migrationContextId, migrationState.kmsNodes, migrationState.thresholds];
+  const decodedArgs = buildProtocolConfigInitializeFromMigrationArgs();
 
   await upgrades.upgradeProxy(proxy, newImplem, {
     call: {
@@ -211,7 +209,7 @@ task(
   const proxyAddress = parsedEnv.KMS_GENERATION_CONTRACT_ADDRESS;
   // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild
   await hre.run('compile:specific', { contract: 'contracts' });
-  const decodedArgs = [buildKMSGenerationMigrationStateFromEnv()];
+  const decodedArgs = buildKMSGenerationInitializeFromMigrationArgs();
   const artifact = await hre.artifacts.readArtifact('KMSGeneration');
   const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
   const preparedUpgrade = await prepareDaoUpgrade(hre, {
@@ -238,7 +236,7 @@ task(
   const parsedEnv = readHostEnv();
   const proxyAddress = parsedEnv.KMS_GENERATION_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-  const decodedArgs = [buildKMSGenerationMigrationStateFromEnv()];
+  const decodedArgs = buildKMSGenerationInitializeFromMigrationArgs();
 
   await upgrades.upgradeProxy(proxy, newImplem, {
     call: {

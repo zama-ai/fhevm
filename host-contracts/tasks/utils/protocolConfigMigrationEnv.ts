@@ -1,6 +1,7 @@
+import { makeEnvHelpers } from './envSnapshot';
 import { getRequiredEnvVar } from './loadVariables';
 
-export const PROTOCOL_CONFIG_MIGRATION_ENV_KEYS = [
+const PROTOCOL_CONFIG_MIGRATION_ENV_KEYS = [
   'MIGRATION_CONTEXT_ID',
   'MIGRATION_KMS_NODES',
   'MIGRATION_KMS_THRESHOLDS',
@@ -24,43 +25,19 @@ export type ProtocolConfigMigrationThresholds = {
   mpc: number;
 };
 
-export type ProtocolConfigMigrationState = {
-  migrationContextId: bigint;
-  kmsNodes: ProtocolConfigMigrationKmsNode[];
-  thresholds: ProtocolConfigMigrationThresholds;
-};
-
-export function buildProtocolConfigMigrationStateFromEnv(): ProtocolConfigMigrationState {
+export function buildProtocolConfigInitializeFromMigrationArgs(): [
+  bigint,
+  ProtocolConfigMigrationKmsNode[],
+  ProtocolConfigMigrationThresholds,
+] {
   const migrationContextId = BigInt(getRequiredEnvVar('MIGRATION_CONTEXT_ID'));
   const kmsNodes: ProtocolConfigMigrationKmsNode[] = JSON.parse(getRequiredEnvVar('MIGRATION_KMS_NODES'));
   const thresholds: ProtocolConfigMigrationThresholds = JSON.parse(getRequiredEnvVar('MIGRATION_KMS_THRESHOLDS'));
-  return { migrationContextId, kmsNodes, thresholds };
+  return [migrationContextId, kmsNodes, thresholds];
 }
 
-export function applyProtocolConfigMigrationEnv(env: ProtocolConfigMigrationEnv): void {
-  for (const key of PROTOCOL_CONFIG_MIGRATION_ENV_KEYS) {
-    process.env[key] = env[key];
-  }
-}
-
-export function snapshotProtocolConfigMigrationEnv(): ProtocolConfigMigrationEnvSnapshot {
-  const snapshot: ProtocolConfigMigrationEnvSnapshot = {};
-  for (const key of PROTOCOL_CONFIG_MIGRATION_ENV_KEYS) {
-    const value = process.env[key];
-    if (value !== undefined) {
-      snapshot[key] = value;
-    }
-  }
-  return snapshot;
-}
-
-export function restoreProtocolConfigMigrationEnv(snapshot: ProtocolConfigMigrationEnvSnapshot): void {
-  for (const key of PROTOCOL_CONFIG_MIGRATION_ENV_KEYS) {
-    const value = snapshot[key];
-    if (value === undefined) {
-      delete process.env[key];
-    } else {
-      process.env[key] = value;
-    }
-  }
-}
+export const {
+  apply: applyProtocolConfigMigrationEnv,
+  snapshot: snapshotProtocolConfigMigrationEnv,
+  restore: restoreProtocolConfigMigrationEnv,
+} = makeEnvHelpers(PROTOCOL_CONFIG_MIGRATION_ENV_KEYS);
