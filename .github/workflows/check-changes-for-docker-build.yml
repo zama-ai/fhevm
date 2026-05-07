@@ -72,9 +72,11 @@ jobs:
         shell: bash
         env:
           BASE_BRANCH_COMMIT: ${{ inputs.caller-workflow-event-before }}
+          CURRENT_COMMIT: ${{ github.sha }}
           IMAGE: ghcr.io/zama-ai/${{ inputs.docker-image }}
           MAX_COMMIT_COUNT: ${{ inputs.max-commit-count }}
         run: |
+          [[ "$BASE_BRANCH_COMMIT" != "0000000000000000000000000000000000000000" ]] || BASE_BRANCH_COMMIT="$CURRENT_COMMIT"
           mapfile -t CANDIDATES < <(git rev-list "${BASE_BRANCH_COMMIT}" --max-count="${MAX_COMMIT_COUNT}")
 
           LATEST_IMAGE_COMMIT=""
@@ -100,7 +102,9 @@ jobs:
         env:
           LATEST_IMAGE_COMMIT: ${{ steps.find-latest-image-commit.outputs.latest-image-commit }}
           BASE_BRANCH_COMMIT: ${{ inputs.caller-workflow-event-before }}
+          CURRENT_COMMIT: ${{ github.sha }}
         run: |
+          [[ "$BASE_BRANCH_COMMIT" != "0000000000000000000000000000000000000000" ]] || BASE_BRANCH_COMMIT="$CURRENT_COMMIT"
           echo "base-commit=${LATEST_IMAGE_COMMIT:-$BASE_BRANCH_COMMIT}" >> "$GITHUB_OUTPUT"
 
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
