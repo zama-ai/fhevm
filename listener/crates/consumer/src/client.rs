@@ -2,7 +2,7 @@ use alloy_primitives::Address;
 use async_trait::async_trait;
 pub use broker::{AckDecision, Broker, HandlerError};
 use broker::{BrokerError, CancellationToken, Consumer, Handler, Message, Topic};
-use primitives::event::{BlockPayload, FilterCommand, FilterCommandValidationError};
+use primitives::event::{BlockPayload, CatchupPayload, FilterCommand, FilterCommandValidationError};
 use primitives::routing;
 use primitives::utils::chain_id_to_namespace;
 use std::future::Future;
@@ -113,6 +113,30 @@ impl ListenerConsumer {
     /// Publish a filter registration command to the watch topic.
     pub async fn register_filter(&self, command: &FilterCommand) -> Result<(), ConsumerError> {
         self.publish_filter_command(command, routing::WATCH).await
+    }
+
+    /// Request a historical catch-up over `[block_start, block_end]` (inclusive).
+    ///
+    /// Publishes a [`CatchupPayload`] to the chain-namespaced
+    /// `routing::CATCHUP` control plane. The listener fans the range out to
+    /// its `range-catchup` workers; the resulting events are delivered on
+    /// `{consumer_id}.catchup-event` and consumed via
+    /// [`consume_catchup`](Self::consume_catchup).
+    pub async fn request_catchup(
+        &self,
+        block_start: u64,
+        block_end: u64,
+    ) -> Result<(), ConsumerError> {
+        let mut payload = CatchupPayload {
+            consumer_id: self.consumer_id.clone(),
+            block_start,
+            block_end,
+        };
+        payload.validate()?;
+        let namespace = chain_id_to_namespace(self.chain_id);
+        let publisher = self.broker.publisher(&namespace).await?;
+        publisher.publish(routing::CATCHUP, &payload).await?;
+        Ok(())
     }
 
     async fn publish_filter_command(
