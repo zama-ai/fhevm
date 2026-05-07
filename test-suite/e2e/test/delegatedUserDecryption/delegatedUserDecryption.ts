@@ -7,7 +7,10 @@ import { getSigners, initSigners } from "../signers";
 import { waitForBlock } from "../utils";
 
 const NOT_ALLOWED_ON_HOST_ACL = "not_allowed_on_host_acl";
-const DELEGATION_EXPIRY_SECONDS = 75;
+// Protocol v0.11 ACL enforces a 1-hour minimum (ExpirationDateBeforeOneHour).
+// Use 1h+1m so the grant succeeds on both v0.11 and v0.13, then fast-forward
+// with evm_increaseTime so the test doesn't wait 3660 real seconds.
+const DELEGATION_EXPIRY_SECONDS = 3660;
 const DELEGATION_EXPIRY_POLL_MS = 2_000;
 // Default delegation lifetime for tests that don't intentionally expire mid-run.
 const ONE_DAY_SECONDS = 24 * 60 * 60;
@@ -315,6 +318,9 @@ describe("Delegated user decryption", function () {
         .delegateUserDecryption(this.signers.eve.address, this.tokenAddress, expirationTimestamp);
       await tx.wait();
 
+      // Fast-forward blockchain time past the expiry instead of waiting in real time.
+      await ethers.provider.send("evm_increaseTime", [DELEGATION_EXPIRY_SECONDS + 60]);
+      await ethers.provider.send("evm_mine");
       await waitForDelegationExpiry(expirationTimestamp);
 
       const currentBlock = await ethers.provider.getBlockNumber();
@@ -513,6 +519,9 @@ describe("Delegated user decryption", function () {
           .delegateUserDecryption(this.signers.eve.address, this.wildcardAddress, expirationTimestamp);
         await tx.wait();
 
+        // Fast-forward blockchain time past the expiry instead of waiting in real time.
+        await ethers.provider.send("evm_increaseTime", [DELEGATION_EXPIRY_SECONDS + 60]);
+        await ethers.provider.send("evm_mine");
         await waitForDelegationExpiry(expirationTimestamp);
         await waitForBlock((await ethers.provider.getBlockNumber()) + PROPAGATION_BLOCKS);
 
