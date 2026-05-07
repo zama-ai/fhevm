@@ -68,32 +68,6 @@ async function assertContractMatchesVersionPrefix(
   }
 }
 
-// OZ upgrades' upgradeProxy can return before the upgradeToAndCall tx is mined on
-// interval-mining networks. Poll until the new implementation answers a
-// state-dependent view.
-export async function waitForProtocolConfigUpgradeLanded(
-  hre: HardhatRuntimeEnvironment,
-  proxyAddress: string,
-): Promise<void> {
-  const proxy = new hre.ethers.Contract(
-    proxyAddress,
-    ['function getCurrentKmsContextId() view returns (uint256)'],
-    hre.ethers.provider,
-  );
-  const deadline = Date.now() + 30_000;
-  let lastError: unknown;
-  while (Date.now() < deadline) {
-    try {
-      await proxy.getCurrentKmsContextId();
-      return;
-    } catch (err) {
-      lastError = err;
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-  }
-  throw new Error(`ProtocolConfig upgrade did not land after 30s of polling`);
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // All Host Contracts
 ////////////////////////////////////////////////////////////////////////////////
@@ -515,11 +489,6 @@ task('task:deployProtocolConfig').setAction(async function (_taskArguments: Task
       args: [initialKmsNodes, thresholds],
     },
   });
-  // upgrades.upgradeProxy can return before the upgradeToAndCall tx is mined on interval-mining
-  // networks (e.g. anvil --block-time). Poll a state-dependent view so the task only returns
-  // once the new implementation is live, otherwise downstream tasks (assertProtocolConfigReady)
-  // hit a revert against the still-empty proxy.
-  await waitForProtocolConfigUpgradeLanded(hre, proxyAddress);
   console.log('ProtocolConfig code set successfully at address:', proxyAddress);
 });
 

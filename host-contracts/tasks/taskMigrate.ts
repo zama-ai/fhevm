@@ -2,13 +2,7 @@ import { FunctionFragment, Interface, type InterfaceAbi } from 'ethers';
 import { task } from 'hardhat/config';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
-import {
-  deployEmptyUUPS,
-  ensureAddressesDirectoryExists,
-  readExistingHostEnv,
-  readHostEnv,
-  waitForProtocolConfigUpgradeLanded,
-} from './taskDeploy';
+import { deployEmptyUUPS, ensureAddressesDirectoryExists, readExistingHostEnv, readHostEnv } from './taskDeploy';
 import { buildKMSGenerationInitializeFromMigrationArgs } from './utils/kmsGenerationMigrationEnv';
 import { getRequiredEnvVar } from './utils/loadVariables';
 import { buildProtocolConfigInitializeFromMigrationArgs } from './utils/protocolConfigMigrationEnv';
@@ -190,10 +184,6 @@ task(
       args: decodedArgs,
     },
   });
-  // upgrades.upgradeProxy can return before the upgradeToAndCall tx is mined on interval-mining
-  // networks; poll a state-dependent view so the task only returns once the new implementation
-  // is live (mirrors task:deployProtocolConfig).
-  await waitForProtocolConfigUpgradeLanded(hre, proxyAddress);
   console.log('ProtocolConfig migration code set successfully at address:', proxyAddress);
 });
 
