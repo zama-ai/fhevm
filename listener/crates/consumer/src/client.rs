@@ -101,6 +101,11 @@ impl ListenerConsumer {
         Topic::new(routing)
     }
 
+    pub fn catchup_consumer_topic(&self) -> Topic {
+        let routing = routing::consumer_catchup_event_routing(self.consumer_id.clone());
+        Topic::new(routing)
+    }
+
     fn broker_consumer(&self) -> Result<Consumer, BrokerError> {
         let topic = self.consumer_topic();
         let cancel = self.cancel_token.clone();
@@ -118,6 +123,17 @@ impl ListenerConsumer {
             Broker::Amqp { .. } => builder,
         }
         .build()
+    }
+
+    fn broker_catchup_consumer(&self) -> Result<Consumer, BrokerError> {
+        let topic = self.catchup_consumer_topic();
+        let cancel = self.cancel.clone();
+        self.broker
+            .consumer(&topic)
+            .group(topic.to_string())
+            .prefetch(10)
+            .with_cancellation(cancel)
+            .build()
     }
 
     /// Publish filters registration command to watch contracts.
@@ -154,6 +170,11 @@ impl ListenerConsumer {
         self.broker_consumer()?.ensure_topology().await
     }
 
+    /// Ensure the catchup consumer topology is set up in the broker.
+    pub async fn ensure_catchup_consumer(&self) -> Result<(), BrokerError> {
+        self.broker_catchup_consumer()?.ensure_topology().await
+    }
+
     /// Start consuming messages with the provided handler function.
     ///
     /// The returned future owns an internal clone of the client, so it can be
@@ -172,6 +193,31 @@ impl ListenerConsumer {
             let handler = ConsumerHandler {
                 call: Arc::new(f),
                 cancel: client.cancel_token.clone(),
+            };
+            consumer.run(handler).await?;
+            Ok(())
+        }
+    }
+
+    /// Start consuming catchup messages with the provided handler function.
+    ///
+    /// Same shape and ownership as [`consume`](Self::consume); only differs
+    /// by subscribing to `{consumer_id}.catchup-event` instead of
+    /// `{consumer_id}.new-event`.
+    pub fn consume_catchup<F, Fut>(
+        &self,
+        f: F,
+    ) -> impl Future<Output = Result<(), BrokerError>> + Send + 'static
+    where
+        F: Fn(BlockPayload, CancellationToken) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<AckDecision, HandlerError>> + Send + 'static,
+    {
+        let client = self.clone();
+        async move {
+            let consumer = client.broker_catchup_consumer()?;
+            let handler = ConsumerHandler {
+                call: Arc::new(f),
+                cancel: client.cancel.clone(),
             };
             consumer.run(handler).await?;
             Ok(())
@@ -269,5 +315,74 @@ mod tests {
             "Consumer should have cancel and not timeout"
         );
         assert_eq!(COUNTER.fetch_add(0, Ordering::Relaxed), 2);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Docker"]
+    async fn test_consumer_catchup_happy_path() {
+        let broker_url = "amqp://user:pass@localhost:5672";
+        let broker = Broker::amqp(broker_url).build().await.unwrap();
+        let chain_id = 1;
+        let consumer_id = unique_name("copro-1-host-eth-catchup");
+        let consumer = ListenerConsumer::new(&broker, chain_id, &consumer_id);
+        consumer.ensure_catchup_consumer().await.unwrap();
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let consumer_task = consumer.consume_catchup(|payload, cancel| async move {
+            let v = COUNTER.fetch_add(1, Ordering::Relaxed);
+            eprintln!("Received catchup payload: {:?} {v}", payload);
+            if v + 1 >= 2 {
+                cancel.cancel();
+                println!("Cancel after receiving 2 catchup payloads");
+            }
+            Ok(AckDecision::Ack)
+        });
+        let consumer_run = tokio::spawn(consumer_task);
+        eprintln!("Catchup consumer task spawned, waiting for messages or timeout...");
+        let routing_key = consumer.catchup_consumer_topic();
+        assert_eq!(
+            routing_key.to_string(),
+            format!("{consumer_id}.catchup-event"),
+            "catchup_consumer_topic must derive from consumer_catchup_event_routing"
+        );
+        let publisher = RmqPublisher::connect(broker_url, "main").await;
+        let fake_block = BlockPayload {
+            flow: BlockFlow::Catchup,
+            chain_id,
+            block_number: 0,
+            block_hash: B256::ZERO,
+            parent_hash: B256::ZERO,
+            timestamp: 0,
+            transactions: vec![],
+        };
+        for _ in 1..=2 {
+            publisher
+                .publish(&routing_key.to_string(), &fake_block)
+                .await
+                .unwrap();
+        }
+        let with_timeout =
+            tokio::time::timeout(std::time::Duration::from_secs(5), consumer_run).await;
+        eprintln!("Catchup consumer task completed or timed out: {with_timeout:?}");
+        consumer.cancel();
+        assert!(
+            with_timeout.is_ok(),
+            "Catchup consumer should have cancel and not timeout"
+        );
+        assert_eq!(COUNTER.fetch_add(0, Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn catchup_consumer_topic_uses_catchup_event_routing() {
+        let consumer_id = "copro-1-host-eth";
+        let expected = format!("{consumer_id}.{}", routing::CATCHUP_EVENT);
+        assert_eq!(
+            routing::consumer_catchup_event_routing(consumer_id.into()),
+            expected,
+        );
+        assert_ne!(
+            routing::consumer_catchup_event_routing(consumer_id.into()),
+            routing::consumer_new_event_routing(consumer_id.into()),
+            "catchup and new-event routings must not collide",
+        );
     }
 }
