@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/consumer",
+    "crates/example",
     "crates/listener_core",
     "crates/shared/broker",
     "crates/shared/telemetry",
