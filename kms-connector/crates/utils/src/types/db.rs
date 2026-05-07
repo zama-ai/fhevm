@@ -5,7 +5,9 @@ use alloy::{
 };
 use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::Decryption::{
-    PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
+    PublicDecryptionRequest, SnsCiphertextMaterial,
+    UserDecryptionRequest_0 as UserDecryptionRequest,
+    UserDecryptionRequest_1 as UserDecryptionRequestV2,
 };
 use fhevm_host_bindings::kms_generation::{
     IKMSGeneration::KeyDigest,
@@ -18,10 +20,10 @@ use std::{fmt::Display, str::FromStr};
 #[derive(sqlx::Type, Clone, Debug, Default, PartialEq)]
 #[sqlx(type_name = "sns_ciphertext_material")]
 pub struct SnsCiphertextMaterialDbItem {
-    ct_handle: [u8; 32],
-    key_id: [u8; 32],
-    sns_ciphertext_digest: [u8; 32],
-    coprocessor_tx_sender_addresses: Vec<[u8; 20]>,
+    pub ct_handle: [u8; 32],
+    pub key_id: [u8; 32],
+    pub sns_ciphertext_digest: [u8; 32],
+    pub coprocessor_tx_sender_addresses: Vec<[u8; 20]>,
 }
 
 impl From<&SnsCiphertextMaterial> for SnsCiphertextMaterialDbItem {
@@ -155,7 +157,11 @@ impl From<&ProtocolEventKind> for EventType {
     fn from(value: &ProtocolEventKind) -> Self {
         match value {
             ProtocolEventKind::PublicDecryption(_) => Self::PublicDecryptionRequest,
-            ProtocolEventKind::UserDecryption(_) => Self::UserDecryptionRequest,
+            // Both legacy and RFC016 variants share the same `user_decryption_requests` table
+            // and the same `UserDecryptionRequest` event type for `last_block_polled` bookkeeping.
+            ProtocolEventKind::UserDecryption(_) | ProtocolEventKind::UserDecryptionV2(_) => {
+                Self::UserDecryptionRequest
+            }
             ProtocolEventKind::PrepKeygen(_) => Self::PrepKeygenRequest,
             ProtocolEventKind::Keygen(_) => Self::KeygenRequest,
             ProtocolEventKind::Crsgen(_) => Self::CrsgenRequest,
@@ -206,6 +212,21 @@ impl EventType {
             EventType::PrepKeygenRequest => PrepKeygenRequest::SIGNATURE_HASH,
             EventType::KeygenRequest => KeygenRequest::SIGNATURE_HASH,
             EventType::CrsgenRequest => CrsgenRequest::SIGNATURE_HASH,
+        }
+    }
+
+    /// Returns every topic0 hash that maps to this `EventType` in the Gateway ABI.
+    ///
+    /// `UserDecryptionRequest` currently covers two overloaded events — the legacy shape and the
+    /// RFC016 shape — so both topic0 hashes must be listed in the `eth_getLogs` filter. All other
+    /// event types map one-to-one to a single topic0.
+    pub fn signature_hashes(&self) -> Vec<B256> {
+        match self {
+            EventType::UserDecryptionRequest => vec![
+                UserDecryptionRequest::SIGNATURE_HASH,
+                UserDecryptionRequestV2::SIGNATURE_HASH,
+            ],
+            _ => vec![self.signature_hash()],
         }
     }
 }

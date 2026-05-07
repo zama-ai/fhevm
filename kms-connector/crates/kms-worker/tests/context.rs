@@ -6,19 +6,16 @@ use alloy::{
     providers::{ProviderBuilder, mock::Asserter},
     sol_types::SolValue,
 };
-use connector_utils::{
-    tests::{
-        db::requests::{
-            InsertRequestOptions, check_no_uncompleted_request_in_db, check_request_failed_in_db,
-            insert_rand_request,
-        },
-        rand::{rand_digest, rand_sns_ct},
-        setup::{
-            DbInstance, TESTING_KMS_CONTEXT, TestInstanceBuilder,
-            init_host_chains_acl_contracts_mock,
-        },
+use connector_utils::tests::{
+    db::requests::{
+        InsertRequestOptions, TestEventType, check_no_uncompleted_request_in_db,
+        check_request_failed_in_db, insert_rand_request,
     },
-    types::db::EventType,
+    rand::{rand_digest, rand_sns_ct},
+    setup::{
+        DbInstance, TESTING_KMS_CONTEXT, TestInstanceBuilder, erc1271_magic_response,
+        init_host_chains_acl_contracts_mock,
+    },
 };
 use kms_worker::core::Config;
 use mocktail::server::MockServer;
@@ -29,11 +26,14 @@ use tracing::{info, warn};
 
 /// Context ID does not exist in the DB → Recoverable error → retried until max attempts → failed.
 #[rstest]
-#[case::public_decryption(EventType::PublicDecryptionRequest)]
-#[case::user_decryption(EventType::UserDecryptionRequest)]
+#[case::public_decryption(TestEventType::PublicDecryption)]
+#[case::user_decryption(TestEventType::UserDecryption)]
+#[case::user_decryption_v2(TestEventType::UserDecryptionV2)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_decryption_context_not_found(#[case] event_type: EventType) -> anyhow::Result<()> {
+async fn test_decryption_context_not_found(
+    #[case] event_type: TestEventType,
+) -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::default()
         .with_db(DbInstance::setup().await?)
         .build();
@@ -52,7 +52,7 @@ async fn test_decryption_context_not_found(#[case] event_type: EventType) -> any
         .with_context_id(unknown_context_id);
 
     for _ in 0..MAX_DECRYPTION_ATTEMPTS {
-        if matches!(event_type, EventType::UserDecryptionRequest) {
+        if matches!(event_type, TestEventType::UserDecryption) {
             // Mocking `get_transaction_by_hash` call result
             let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
             asserter.push_success(&mock_tx);
@@ -64,12 +64,26 @@ async fn test_decryption_context_not_found(#[case] event_type: EventType) -> any
         .connect_mocked_client(asserter);
     info!("Gateway mock started!");
 
-    // Mocking Host chain ACL to ALLOW decryption
-    // Public: 1 ACL check, User: 2 ACL checks (user + contract)
+    // Mocking Host chain ACL to ALLOW decryption.
+    // Per attempt: Public → 1 bool; Legacy user → 2 bools;
+    // V2 → 1 `isValidSignature` (RFC-012) + 1 U256 (invalidation) + 1 bool (ownership).
     let acl_responses = match event_type {
-        EventType::PublicDecryptionRequest => vec![true; MAX_DECRYPTION_ATTEMPTS as usize],
-        EventType::UserDecryptionRequest => vec![true; 2 * MAX_DECRYPTION_ATTEMPTS as usize],
-        _ => unreachable!(),
+        TestEventType::PublicDecryption => {
+            vec![true.abi_encode(); MAX_DECRYPTION_ATTEMPTS as usize]
+        }
+        TestEventType::UserDecryptionV2 => (0..MAX_DECRYPTION_ATTEMPTS)
+            .flat_map(|_| {
+                vec![
+                    erc1271_magic_response(),
+                    U256::ZERO.abi_encode(),
+                    true.abi_encode(),
+                ]
+            })
+            .collect(),
+        TestEventType::UserDecryption => {
+            vec![true.abi_encode(); 2 * MAX_DECRYPTION_ATTEMPTS as usize]
+        }
+        _ => vec![],
     };
     let acl_contracts_mock =
         init_host_chains_acl_contracts_mock(sns_ct.ctHandle.as_slice(), acl_responses);
@@ -115,11 +129,12 @@ async fn test_decryption_context_not_found(#[case] event_type: EventType) -> any
 
 /// Context exists but is_valid = false → Irrecoverable error → immediately failed.
 #[rstest]
-#[case::public_decryption(EventType::PublicDecryptionRequest)]
-#[case::user_decryption(EventType::UserDecryptionRequest)]
+#[case::public_decryption(TestEventType::PublicDecryption)]
+#[case::user_decryption(TestEventType::UserDecryption)]
+#[case::user_decryption_v2(TestEventType::UserDecryptionV2)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_decryption_context_invalid(#[case] event_type: EventType) -> anyhow::Result<()> {
+async fn test_decryption_context_invalid(#[case] event_type: TestEventType) -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::default()
         .with_db(DbInstance::setup().await?)
         .build();
@@ -145,14 +160,15 @@ async fn test_decryption_context_invalid(#[case] event_type: EventType) -> anyho
 
     // Only 1 attempt needed — irrecoverable error means no retry
     match event_type {
-        EventType::PublicDecryptionRequest => {
+        TestEventType::PublicDecryption => {
             asserter.push_success(&false.abi_encode());
         }
-        EventType::UserDecryptionRequest => {
+        TestEventType::UserDecryption => {
             let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
             asserter.push_success(&mock_tx);
         }
-        _ => panic!("Unexpected event type"),
+        TestEventType::UserDecryptionV2 => (),
+        _ => panic!("Unexpected event kind"),
     };
 
     let gateway_mock_provider = ProviderBuilder::new()
@@ -160,11 +176,18 @@ async fn test_decryption_context_invalid(#[case] event_type: EventType) -> anyho
         .connect_mocked_client(asserter);
     info!("Gateway mock started!");
 
-    // Mocking Host chain ACL to ALLOW decryption (1 attempt only)
+    // Mocking Host chain ACL to ALLOW decryption (1 attempt only, irrecoverable error).
+    // Per attempt: Public → 1 bool; Legacy user → 2 bools;
+    // V2 → 1 `isValidSignature` (RFC-012) + 1 U256 (invalidation) + 1 bool (ownership).
     let acl_responses = match event_type {
-        EventType::PublicDecryptionRequest => vec![true],
-        EventType::UserDecryptionRequest => vec![true; 2],
-        _ => unreachable!(),
+        TestEventType::PublicDecryption => vec![true.abi_encode()],
+        TestEventType::UserDecryptionV2 => vec![
+            erc1271_magic_response(),
+            U256::ZERO.abi_encode(),
+            true.abi_encode(),
+        ],
+        TestEventType::UserDecryption => vec![true.abi_encode(); 2],
+        _ => vec![],
     };
     let acl_contracts_mock =
         init_host_chains_acl_contracts_mock(sns_ct.ctHandle.as_slice(), acl_responses);

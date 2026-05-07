@@ -141,6 +141,8 @@ impl DbEventPicker {
                 ) AS req
                 WHERE user_decryption_requests.decryption_id = req.decryption_id
                 RETURNING req.decryption_id, sns_ct_materials, user_address, public_key, extra_data,
+                signature, handle_owner_addresses, handle_contract_addresses, allowed_contracts,
+                start_timestamp, duration_seconds,
                 tx_hash, already_sent, error_counter, created_at, otlp_context
             ",
         )

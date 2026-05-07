@@ -41,6 +41,7 @@ jobs:
             - kms-connector/Cargo.*
             - gateway-contracts/rust_bindings/**
             - host-contracts/rust_bindings/**
+            - shared/user-decryption-signature/**
 
   start-runner:
     name: kms-connector-tests/start-runner
@@ -102,7 +103,7 @@ jobs:
           password: ${{ secrets.GHCR_READ_TOKEN }}
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
           toolchain: stable
           components: rustfmt, clippy

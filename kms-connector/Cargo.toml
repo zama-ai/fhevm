@@ -19,10 +19,13 @@ kms-worker.path = "crates/kms-worker"
 tx-sender.path = "crates/tx-sender"
 connector-utils.path = "crates/utils"
 fhevm_gateway_bindings = { path = "../gateway-contracts/rust_bindings", default-features = false }
-fhevm_host_bindings = { path = "../host-contracts/rust_bindings", default-features = false }
+# TODO: use path deps again ASAP
+# fhevm_host_bindings = { path = "../host-contracts/rust_bindings", default-features = false }
+fhevm_host_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "aa6c5f66849853d4ae329b6ba4c2051c001d18d6", default-features = false }
 kms-grpc = { git = "https://github.com/zama-ai/kms.git", tag = "v0.13.20-0", default-features = true }
 bc2wrap = { git = "https://github.com/zama-ai/kms.git", tag = "v0.13.20-0", default-features = true }
 tfhe = "=1.6.1"
+user-decryption-signature = { path = "../shared/user-decryption-signature", default-features = false }
 
 #####################################################################
 #                       External dependencies                       #

@@ -7,7 +7,7 @@ use alloy::{
     hex,
     primitives::{Address, Bytes, FixedBytes, U256, map::DefaultHashBuilder},
     providers::Provider,
-    sol_types::SolCall,
+    sol_types::{Eip712Domain, SolCall},
 };
 use anyhow::anyhow;
 use connector_utils::types::{
@@ -15,15 +15,19 @@ use connector_utils::types::{
     u256_to_request_id,
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
-    self, DecryptionInstance, SnsCiphertextMaterial, delegatedUserDecryptionRequestCall,
-    userDecryptionRequestCall,
+    self, DecryptionInstance, HandleEntry, SnsCiphertextMaterial,
+    UserDecryptionRequest_1 as UserDecryptionRequestV2, delegatedUserDecryptionRequestCall,
+    userDecryptionRequest_1Call as userDecryptionRequestCall,
 };
 use fhevm_host_bindings::acl::ACL::ACLInstance;
+use futures::future::{join_all, try_join_all};
 use kms_grpc::kms::v1::{
     Eip712DomainMsg, PublicDecryptionRequest, RequestId, TypedCiphertext, UserDecryptionRequest,
 };
+use sqlx::types::chrono::Utc;
 use std::collections::HashMap;
 use tracing::info;
+use user_decryption_signature::{compute_user_decrypt_digest, verify_signature};
 
 #[derive(Clone)]
 /// The struct responsible of processing incoming decryption requests.
@@ -42,6 +46,9 @@ pub struct DecryptionProcessor<GP: Provider, HP: Provider, C> {
 
     /// The entity used to collect ciphertexts from S3 buckets.
     s3_service: S3Service<GP>,
+
+    /// Gas cap for the `IERC1271.isValidSignature` static call (RFC-012).
+    erc1271_gas_limit: u64,
 }
 
 impl<GP, HP, C> DecryptionProcessor<GP, HP, C>
@@ -73,6 +80,7 @@ where
             decryption_contract,
             acl_contracts,
             s3_service,
+            erc1271_gas_limit: config.erc1271_gas_limit,
         }
     }
 
@@ -218,6 +226,270 @@ where
         Ok(())
     }
 
+    /// Verify that a `UserDecryptionRequestV2` is internally consistent before the ACL phase:
+    /// `handles` and `snsCtMaterials` are pairwise aligned, and every handle resolves to the
+    /// same host chain id. Returns that shared chain id.
+    fn validate_handles_and_extract_chain_id(
+        request: &UserDecryptionRequestV2,
+    ) -> Result<u64, ProcessingError> {
+        if request.handles.len() != request.snsCtMaterials.len() {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "handles/snsCtMaterials length mismatch: {} vs {}",
+                request.handles.len(),
+                request.snsCtMaterials.len(),
+            )));
+        }
+
+        let chain_id = request
+            .handles
+            .first()
+            .ok_or_else(|| ProcessingError::Irrecoverable(anyhow!("request contains no handles")))
+            .map(|h| extract_chain_id_from_handle(h.handle.as_slice()))?
+            .map_err(ProcessingError::Irrecoverable)?;
+
+        for (i, (h, m)) in request
+            .handles
+            .iter()
+            .zip(request.snsCtMaterials.iter())
+            .enumerate()
+        {
+            if h.handle != m.ctHandle {
+                return Err(ProcessingError::Irrecoverable(anyhow!(
+                    "handles[{i}].handle ({}) != snsCtMaterials[{i}].ctHandle ({})",
+                    h.handle,
+                    m.ctHandle,
+                )));
+            }
+            match extract_chain_id_from_handle(h.handle.as_slice()) {
+                Ok(id) if id == chain_id => (),
+                Ok(other) => {
+                    return Err(ProcessingError::Irrecoverable(anyhow!(
+                        "user decryption request handles span multiple chains ({chain_id}, {other})",
+                    )));
+                }
+                Err(e) => {
+                    return Err(ProcessingError::Irrecoverable(anyhow!(
+                        "Failed to extract chain_id from handle {}: {e}",
+                        hex::encode(h.handle),
+                    )));
+                }
+            }
+        }
+
+        Ok(chain_id)
+    }
+
+    /// RFC016 unified user decryption check — verifies the full ACL authorization for a
+    /// `UserDecryptionRequestV2` payload.
+    ///
+    /// 1. validity window (`startTimestamp <= now <= startTimestamp + durationSeconds`)
+    /// 2. `userAddress ∉ allowedContracts` when `allowedContracts` is non-empty
+    /// 3. concurrent host-chain checks (one RPC round-trip wave):
+    ///    - EIP-712 signature verification with `ecrecover` → ERC-1271 fallback (RFC-012)
+    ///    - signature invalidation: `startTimestamp >= ACL.decryptionSignatureInvalidatedBefore(userAddress)`
+    ///    - per-handle ownership (direct `isAllowed` if `ownerAddress == userAddress`, else
+    ///      `isHandleDelegatedForUserDecryption`)
+    ///    - per-handle contract allowance (any `isAllowed(handle, c)` for
+    ///      `c ∈ allowedContracts`, no-op in permissive mode)
+    #[tracing::instrument(skip_all)]
+    pub async fn check_user_decryption_request_v2(
+        &self,
+        request: &UserDecryptionRequestV2,
+    ) -> Result<(), ProcessingError> {
+        info!(
+            "Starting RFC016 check for {} handles...",
+            request.handles.len()
+        );
+
+        let chain_id = Self::validate_handles_and_extract_chain_id(request)?;
+
+        let payload = &request.payload;
+
+        // Validity window
+        let start = payload.requestValidity.startTimestamp;
+        let now = U256::from(Utc::now().timestamp() as u64);
+        let end = start.saturating_add(payload.requestValidity.durationSeconds);
+        if now < start {
+            return Err(ProcessingError::Recoverable(anyhow!(
+                "RFC016 user decryption request not yet valid: now {now} < startTimestamp {start}",
+            )));
+        }
+        if now > end {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "RFC016 user decryption request validity window expired: now {now} > end {end}"
+            )));
+        }
+
+        // `userAddress` must not appear in a non-empty `allowedContracts` list.
+        if payload.allowedContracts.contains(&payload.userAddress) {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "userAddress {} is listed in allowedContracts — request rejected",
+                payload.userAddress
+            )));
+        }
+
+        let acl_contract = self.acl_contracts.get(&chain_id).ok_or_else(|| {
+            ProcessingError::Recoverable(anyhow!(
+                "No ACL contract config found for chain id {chain_id}"
+            ))
+        })?;
+
+        // RFC-012: EIP-712 signature verification with ecrecover → ERC-1271 fallback.
+        // The domain takes name/version/verifyingContract from `self.domain` (already validated
+        // at startup) but substitutes the host `contractsChainId` for the Gateway chain id —
+        // `self.domain` targets KMS gRPC requests, the user-decryption signature targets the
+        // host chain.
+        let domain = Eip712Domain {
+            name: Some(self.domain.name.clone().into()),
+            version: Some(self.domain.version.clone().into()),
+            chain_id: Some(U256::from(chain_id)),
+            verifying_contract: Some(*self.decryption_contract.address()),
+            salt: None,
+        };
+        let digest = compute_user_decrypt_digest(payload, &domain);
+
+        // Signature verification, invalidation, and per-handle ACL checks are all independent
+        // host-chain reads. Fire them concurrently so the smart-account happy path is faster.
+        // `biased;` polls branches in order so tests can deterministically craft the mock-queue
+        // order.
+        tokio::try_join!(
+            biased;
+            async {
+                verify_signature(
+                    acl_contract.provider(),
+                    payload.userAddress,
+                    digest,
+                    payload.signature.as_ref(),
+                    self.erc1271_gas_limit,
+                )
+                .await
+                .map_err(ProcessingError::from)
+            },
+            self.inner_invalidation_check_for_user_decryption_v2(
+                acl_contract,
+                payload.userAddress,
+                start,
+            ),
+            try_join_all(request.handles.iter().map(|handle_entry| async move {
+                tokio::try_join!(
+                    biased;
+                    self.inner_ownership_check_for_user_decryption_v2(
+                        acl_contract,
+                        handle_entry,
+                        payload.userAddress,
+                    ),
+                    self.inner_allowed_contracts_check_for_user_decryption_v2(
+                        acl_contract,
+                        handle_entry.handle,
+                        &payload.allowedContracts,
+                    ),
+                )
+            })),
+        )?;
+
+        info!(
+            "RFC016 ACL check passed for {} handles!",
+            request.handles.len()
+        );
+        Ok(())
+    }
+
+    /// RFC016 per-handle ownership check. Direct path (`ownerAddress == userAddress`) calls
+    /// `isAllowed(handle, userAddress)`; delegated path calls
+    /// `isHandleDelegatedForUserDecryption(ownerAddress, userAddress, contractAddress, handle)`.
+    async fn inner_ownership_check_for_user_decryption_v2(
+        &self,
+        acl_contract: &ACLInstance<HP>,
+        entry: &HandleEntry,
+        user_address: Address,
+    ) -> Result<(), ProcessingError> {
+        let handle_hex = hex::encode(entry.handle);
+        if entry.ownerAddress == user_address {
+            let user_allowed = acl_contract
+                .isAllowed(entry.handle, user_address)
+                .call()
+                .await
+                .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
+            if !user_allowed {
+                return Err(ProcessingError::Recoverable(anyhow!(
+                    "{user_address} is not allowed to decrypt {handle_hex}",
+                )));
+            }
+        } else {
+            let is_delegated = acl_contract
+                .isHandleDelegatedForUserDecryption(
+                    entry.ownerAddress,
+                    user_address,
+                    entry.contractAddress,
+                    entry.handle,
+                )
+                .call()
+                .await
+                .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
+            if !is_delegated {
+                return Err(ProcessingError::Recoverable(anyhow!(
+                    "{user_address} is not a delegate of {} for contract {} and handle {handle_hex}",
+                    entry.ownerAddress,
+                    entry.contractAddress,
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// RFC016 per-handle `allowedContracts` check — succeeds if at least one contract in the list
+    /// has `isAllowed(handle, contract)` returning true. Returns `Ok(())` without any RPC call in
+    /// permissive mode (empty list) so callers can invoke it unconditionally.
+    async fn inner_allowed_contracts_check_for_user_decryption_v2(
+        &self,
+        acl_contract: &ACLInstance<HP>,
+        handle: FixedBytes<32>,
+        allowed_contracts: &[Address],
+    ) -> Result<(), ProcessingError> {
+        if allowed_contracts.is_empty() {
+            return Ok(());
+        }
+
+        let calls = allowed_contracts
+            .iter()
+            .map(|c| async move { acl_contract.isAllowed(handle, *c).call().await });
+        let results = join_all(calls).await;
+
+        // Short-circuit on first positive. Individual transport errors are tolerated as long as at
+        // least one contract returns true.
+        if results.iter().any(|r| matches!(r, Ok(true))) {
+            Ok(())
+        } else {
+            Err(ProcessingError::Recoverable(anyhow!(
+                "No contract in allowedContracts is allowed to decrypt handle {} ({:?})",
+                hex::encode(handle),
+                results,
+            )))
+        }
+    }
+
+    /// RFC016 signature invalidation check. Rejects if `startTimestamp < invalidationTs`, meaning
+    /// the user has invalidated all signatures issued before `invalidationTs`.
+    async fn inner_invalidation_check_for_user_decryption_v2(
+        &self,
+        acl_contract: &ACLInstance<HP>,
+        user_address: Address,
+        start_timestamp: U256,
+    ) -> Result<(), ProcessingError> {
+        let invalidation_ts = acl_contract
+            .decryptionSignatureInvalidatedBefore(user_address)
+            .call()
+            .await
+            .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
+        if start_timestamp < invalidation_ts {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "RFC016 signature invalidated: startTimestamp {start_timestamp} < \
+                 invalidatedBefore {invalidation_ts} for userAddress {user_address}"
+            )));
+        }
+        Ok(())
+    }
+
     async fn inner_acl_check_for_user_decryption(
         &self,
         acl_contract: &ACLInstance<HP>,
@@ -230,7 +502,7 @@ where
         let contract_allowed_call = acl_contract.isAllowed(handle, contract_address);
 
         let (user_allowed, contract_allowed) =
-            tokio::try_join!(user_allowed_call.call(), contract_allowed_call.call())
+            tokio::try_join!(biased; user_allowed_call.call(), contract_allowed_call.call())
                 .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
 
         if !user_allowed {
@@ -373,19 +645,56 @@ mod tests {
     use super::*;
     use alloy::{
         providers::{ProviderBuilder, mock::Asserter},
+        signers::{SignerSync, local::PrivateKeySigner},
         sol_types::SolValue,
         transports::http::reqwest,
     };
-    use connector_utils::tests::rand::{rand_address, rand_sns_ct};
-    use fhevm_gateway_bindings::decryption::Decryption::CtHandleContractPair;
+    use connector_utils::tests::rand::{rand_address, rand_public_key, rand_sns_ct, rand_u256};
+    use fhevm_gateway_bindings::decryption::{
+        Decryption::CtHandleContractPair,
+        IDecryption::{RequestValiditySeconds, UserDecryptionRequestPayload},
+    };
     use fhevm_host_bindings::acl::ACL;
     use rstest::rstest;
+    use user_decryption_signature::{
+        ERC1271_MAGIC_VALUE, compute_user_decrypt_digest, default_user_decrypt_domain,
+    };
 
     enum ExpectedOutcome {
         Ok,
         Recoverable,
-        #[allow(unused)]
         Irrecoverable,
+    }
+
+    struct MockContextManager;
+
+    impl ContextManager for MockContextManager {
+        async fn validate_context(&self, _context_id: U256) -> Result<(), ProcessingError> {
+            Ok(())
+        }
+    }
+
+    fn setup_test_processor(
+        asserter: Asserter,
+        sns_ct: &SnsCiphertextMaterial,
+    ) -> DecryptionProcessor<impl Provider + use<>, impl Provider + use<>, MockContextManager> {
+        let mock_provider = ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .connect_mocked_client(asserter);
+        let chain_id = extract_chain_id_from_handle(sns_ct.ctHandle.as_slice()).unwrap();
+        let acl_contracts = HashMap::from([(
+            chain_id,
+            ACL::new(Address::default(), mock_provider.clone()),
+        )]);
+        let config = Config::default();
+        let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
+        DecryptionProcessor::new(
+            &config,
+            MockContextManager,
+            mock_provider,
+            acl_contracts,
+            s3_service,
+        )
     }
 
     enum PubDecryptACLMock {
@@ -406,25 +715,9 @@ mod tests {
         #[case] expected: ExpectedOutcome,
     ) {
         let asserter = Asserter::new();
-        let mock_provider = ProviderBuilder::new()
-            .disable_recommended_fillers()
-            .connect_mocked_client(asserter.clone());
         let sns_ct = rand_sns_ct();
-        let acl_contracts_mock = HashMap::from([(
-            extract_chain_id_from_handle(sns_ct.ctHandle.as_slice()).unwrap(),
-            ACL::new(Address::default(), mock_provider.clone()),
-        )]);
-
+        let decryption_processor = setup_test_processor(asserter.clone(), &sns_ct);
         let sns_ciphertexts = vec![sns_ct];
-        let config = Config::default();
-        let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
-        let decryption_processor = DecryptionProcessor::new(
-            &config,
-            MockContextManager,
-            mock_provider,
-            acl_contracts_mock,
-            s3_service,
-        );
 
         match mock_response {
             PubDecryptACLMock::Failure(msg) => asserter.push_failure_msg(msg),
@@ -481,15 +774,8 @@ mod tests {
         #[case] expected: ExpectedOutcome,
     ) {
         let asserter = Asserter::new();
-        let mock_provider = ProviderBuilder::new()
-            .disable_recommended_fillers()
-            .connect_mocked_client(asserter.clone());
-
         let sns_ct = rand_sns_ct();
-        let acl_contracts_mock = HashMap::from([(
-            extract_chain_id_from_handle(sns_ct.ctHandle.as_slice()).unwrap(),
-            ACL::new(Address::default(), mock_provider.clone()),
-        )]);
+        let decryption_processor = setup_test_processor(asserter.clone(), &sns_ct);
 
         // Use non-delegated userDecryptionRequestCall (requires only 2 ACL checks)
         let calldata = userDecryptionRequestCall {
@@ -502,15 +788,6 @@ mod tests {
         .abi_encode();
         let sns_ciphertexts = vec![sns_ct];
         let user_address = Address::default();
-        let config = Config::default();
-        let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
-        let decryption_processor = DecryptionProcessor::new(
-            &config,
-            MockContextManager,
-            mock_provider,
-            acl_contracts_mock,
-            s3_service,
-        );
 
         match mock_response {
             UserDecryptACLMock::Failure(msg) => asserter.push_failure_msg(msg),
@@ -566,15 +843,8 @@ mod tests {
         #[case] expected_error_msg: Option<&str>,
     ) {
         let asserter = Asserter::new();
-        let mock_provider = ProviderBuilder::new()
-            .disable_recommended_fillers()
-            .connect_mocked_client(asserter.clone());
-
         let sns_ct = rand_sns_ct();
-        let acl_contracts_mock = HashMap::from([(
-            extract_chain_id_from_handle(sns_ct.ctHandle.as_slice()).unwrap(),
-            ACL::new(Address::default(), mock_provider.clone()),
-        )]);
+        let decryption_processor = setup_test_processor(asserter.clone(), &sns_ct);
 
         let calldata = delegatedUserDecryptionRequestCall {
             ctHandleContractPairs: vec![CtHandleContractPair {
@@ -586,15 +856,6 @@ mod tests {
         .abi_encode();
         let sns_ciphertexts = vec![sns_ct];
         let user_address = Address::default();
-        let config = Config::default();
-        let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
-        let decryption_processor = DecryptionProcessor::new(
-            &config,
-            MockContextManager,
-            mock_provider,
-            acl_contracts_mock,
-            s3_service,
-        );
 
         match mock_response {
             DelegatedUserDecryptACLMock::Failure(msg) => asserter.push_failure_msg(msg),
@@ -625,11 +886,379 @@ mod tests {
         }
     }
 
-    struct MockContextManager;
+    /// Builds a `UserDecryptionRequestV2` whose payload carries a valid 65-byte ECDSA signature
+    /// over the EIP-712 digest.
+    ///
+    /// `user_address` and `signing_key` are intentionally decoupled: the EOA-direct case
+    /// passes `signing_key.address()` for both, and the smart-account case passes the
+    /// contract address as `user_address` while `signing_key` plays the role of the wallet's
+    /// owner EOA — its signature recovers to a different address, forcing the ERC-1271
+    /// fallback in `verify_signature`.
+    ///
+    /// The digest is computed against `Config::default().decryption_contract.address` — the
+    /// same gateway address `setup_test_processor` configures the processor with.
+    fn make_v2_request(
+        sns_ct: &SnsCiphertextMaterial,
+        owner_address: Address,
+        user_address: Address,
+        signing_key: &PrivateKeySigner,
+        allowed_contracts: Vec<Address>,
+        start_offset_secs: i64,
+        duration_secs: u64,
+    ) -> UserDecryptionRequestV2 {
+        let start = (Utc::now().timestamp() + start_offset_secs) as u64;
+        let mut payload = UserDecryptionRequestPayload {
+            userAddress: user_address,
+            publicKey: Bytes::from(rand_public_key()),
+            allowedContracts: allowed_contracts,
+            requestValidity: RequestValiditySeconds {
+                startTimestamp: U256::from(start),
+                durationSeconds: U256::from(duration_secs),
+            },
+            extraData: Bytes::default(),
+            signature: Bytes::default(),
+        };
 
-    impl ContextManager for MockContextManager {
-        async fn validate_context(&self, _context_id: U256) -> Result<(), ProcessingError> {
-            Ok(())
+        let chain_id = extract_chain_id_from_handle(sns_ct.ctHandle.as_slice()).unwrap();
+        let gateway_addr = Config::default().decryption_contract.address;
+        let domain = default_user_decrypt_domain(chain_id, gateway_addr);
+        let digest = compute_user_decrypt_digest(&payload, &domain);
+        let sig = signing_key.sign_hash_sync(&digest).unwrap();
+        payload.signature = Bytes::from(sig.as_bytes().to_vec());
+
+        UserDecryptionRequestV2 {
+            decryptionId: rand_u256(),
+            snsCtMaterials: vec![sns_ct.clone()],
+            handles: vec![HandleEntry {
+                handle: sns_ct.ctHandle,
+                contractAddress: rand_address(),
+                ownerAddress: owner_address,
+            }],
+            payload,
         }
+    }
+
+    #[rstest]
+    #[case::not_yet_valid(3600_i64, 86400_u64, ExpectedOutcome::Recoverable)]
+    #[case::expired(-(2 * 3600_i64), 3600_u64, ExpectedOutcome::Irrecoverable)]
+    #[tokio::test]
+    async fn check_user_decryption_request_v2_validity_window(
+        #[case] start_offset_secs: i64,
+        #[case] duration_secs: u64,
+        #[case] expected: ExpectedOutcome,
+    ) {
+        let sns_ct = rand_sns_ct();
+        let user_signer = PrivateKeySigner::random();
+        let user_address = user_signer.address();
+        let processor = setup_test_processor(Asserter::new(), &sns_ct);
+        let request = make_v2_request(
+            &sns_ct,
+            user_address,
+            user_address,
+            &user_signer,
+            vec![],
+            start_offset_secs,
+            duration_secs,
+        );
+
+        let result = processor.check_user_decryption_request_v2(&request).await;
+
+        match expected {
+            ExpectedOutcome::Ok => result.unwrap(),
+            ExpectedOutcome::Recoverable => {
+                assert!(matches!(result, Err(ProcessingError::Recoverable(_))))
+            }
+            ExpectedOutcome::Irrecoverable => {
+                assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))))
+            }
+        }
+    }
+
+    // Test userAddress ∈ allowedContracts
+    #[tokio::test]
+    async fn check_user_decryption_request_v2_user_in_allowed_contracts() {
+        let sns_ct = rand_sns_ct();
+        let user_signer = PrivateKeySigner::random();
+        let user_address = user_signer.address();
+        let processor = setup_test_processor(Asserter::new(), &sns_ct);
+        let request = make_v2_request(
+            &sns_ct,
+            user_address,
+            user_address,
+            &user_signer,
+            vec![user_address],
+            -3600,
+            86400,
+        );
+
+        let result = processor.check_user_decryption_request_v2(&request).await;
+        assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))));
+    }
+
+    // -------------------------------------------------------------------------
+    // Invalidation check (validity window passes, empty allowedContracts, direct ownership)
+    // -------------------------------------------------------------------------
+    enum InvalidationMock {
+        Zero,         // invalidation_ts = 0 → start (≈ now-3600) >= 0 → passes
+        AboveStart,   // invalidation_ts = u64::MAX → start < u64::MAX → fails
+        EqualToStart, // invalidation_ts = start → start < start is false → passes
+        TransportError,
+    }
+
+    #[rstest]
+    #[case::not_invalidated(InvalidationMock::Zero, ExpectedOutcome::Ok)]
+    #[case::invalidated(InvalidationMock::AboveStart, ExpectedOutcome::Irrecoverable)]
+    #[case::boundary_passes(InvalidationMock::EqualToStart, ExpectedOutcome::Ok)]
+    #[case::transport_error(InvalidationMock::TransportError, ExpectedOutcome::Recoverable)]
+    #[tokio::test]
+    async fn check_user_decryption_request_v2_invalidation(
+        #[case] mock: InvalidationMock,
+        #[case] expected: ExpectedOutcome,
+    ) {
+        let asserter = Asserter::new();
+        let sns_ct = rand_sns_ct();
+        let user_signer = PrivateKeySigner::random();
+        let processor = setup_test_processor(asserter.clone(), &sns_ct);
+
+        const START_OFFSET_SECS: i64 = -3600;
+        let start = U256::from((Utc::now().timestamp() + START_OFFSET_SECS) as u64);
+
+        let passes = match mock {
+            InvalidationMock::Zero => {
+                asserter.push_success(&U256::ZERO.abi_encode());
+                true
+            }
+            InvalidationMock::AboveStart => {
+                asserter.push_success(&U256::from(u64::MAX).abi_encode());
+                false
+            }
+            InvalidationMock::EqualToStart => {
+                asserter.push_success(&start.abi_encode());
+                true
+            }
+            InvalidationMock::TransportError => {
+                asserter.push_failure_msg("transport error");
+                false
+            }
+        };
+
+        if passes {
+            asserter.push_success(&true.abi_encode()); // ownership: direct path passes
+        }
+
+        let request = make_v2_request(
+            &sns_ct,
+            user_signer.address(),
+            user_signer.address(),
+            &user_signer,
+            vec![],
+            START_OFFSET_SECS,
+            86400,
+        );
+        let result = processor.check_user_decryption_request_v2(&request).await;
+
+        match expected {
+            ExpectedOutcome::Ok => result.unwrap(),
+            ExpectedOutcome::Recoverable => {
+                assert!(matches!(result, Err(ProcessingError::Recoverable(_))))
+            }
+            ExpectedOutcome::Irrecoverable => {
+                assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))))
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Ownership check (empty allowedContracts → 1 RPC per test)
+    // -------------------------------------------------------------------------
+    enum OwnershipMock {
+        DirectPath(Option<bool>),
+        DelegatedPath(Option<bool>),
+    }
+
+    #[rstest]
+    #[case::direct_transport_error(OwnershipMock::DirectPath(None), ExpectedOutcome::Recoverable)]
+    #[case::direct_allowed(OwnershipMock::DirectPath(Some(true)), ExpectedOutcome::Ok)]
+    #[case::direct_not_allowed(
+        OwnershipMock::DirectPath(Some(false)),
+        ExpectedOutcome::Recoverable
+    )]
+    #[case::delegated_transport_error(
+        OwnershipMock::DelegatedPath(None),
+        ExpectedOutcome::Recoverable
+    )]
+    #[case::delegated_yes(OwnershipMock::DelegatedPath(Some(true)), ExpectedOutcome::Ok)]
+    #[case::delegated_no(
+        OwnershipMock::DelegatedPath(Some(false)),
+        ExpectedOutcome::Recoverable
+    )]
+    #[tokio::test]
+    async fn check_user_decryption_request_v2_ownership(
+        #[case] mock: OwnershipMock,
+        #[case] expected: ExpectedOutcome,
+    ) {
+        let asserter = Asserter::new();
+        let sns_ct = rand_sns_ct();
+        let user_signer = PrivateKeySigner::random();
+        let user_address = user_signer.address();
+        let processor = setup_test_processor(asserter.clone(), &sns_ct);
+
+        let (owner_address, acl_response) = match mock {
+            OwnershipMock::DirectPath(r) => (user_address, r),
+            OwnershipMock::DelegatedPath(r) => (rand_address(), r),
+        };
+        asserter.push_success(&U256::ZERO.abi_encode()); // invalidation check: not invalidated
+        match acl_response {
+            Some(v) => asserter.push_success(&v.abi_encode()),
+            None => asserter.push_failure_msg("transport error"),
+        }
+
+        let request = make_v2_request(
+            &sns_ct,
+            owner_address,
+            user_address,
+            &user_signer,
+            vec![],
+            -3600,
+            86400,
+        );
+        let result = processor.check_user_decryption_request_v2(&request).await;
+
+        match expected {
+            ExpectedOutcome::Ok => result.unwrap(),
+            ExpectedOutcome::Recoverable => {
+                assert!(matches!(result, Err(ProcessingError::Recoverable(_))))
+            }
+            ExpectedOutcome::Irrecoverable => {
+                assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))))
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Allowed contracts check (direct ownership always passes → 2 RPCs)
+    //
+    // Two `isAllowed` calls are made concurrently via `tokio::try_join!`. The Asserter
+    // serves responses in FIFO order, and poll ordering between the two futures is
+    // guaranteed by the `biased` annotation.
+    // -------------------------------------------------------------------------
+    #[rstest]
+    #[case::transport_error(None, ExpectedOutcome::Recoverable)]
+    #[case::at_least_one_allowed(Some(true), ExpectedOutcome::Ok)]
+    #[case::none_allowed(Some(false), ExpectedOutcome::Recoverable)]
+    #[tokio::test]
+    async fn check_user_decryption_request_v2_allowed_contracts(
+        #[case] contract_response: Option<bool>,
+        #[case] expected: ExpectedOutcome,
+    ) {
+        let asserter = Asserter::new();
+        let sns_ct = rand_sns_ct();
+        let user_signer = PrivateKeySigner::random();
+        let processor = setup_test_processor(asserter.clone(), &sns_ct);
+
+        asserter.push_success(&U256::ZERO.abi_encode()); // invalidation check: not invalidated
+        asserter.push_success(&true.abi_encode()); // ownership always passes
+        match contract_response {
+            Some(v) => asserter.push_success(&v.abi_encode()),
+            None => asserter.push_failure_msg("transport error"),
+        }
+
+        let request = make_v2_request(
+            &sns_ct,
+            user_signer.address(),
+            user_signer.address(),
+            &user_signer,
+            vec![rand_address()],
+            -3600,
+            86400,
+        );
+        let result = processor.check_user_decryption_request_v2(&request).await;
+
+        match expected {
+            ExpectedOutcome::Ok => result.unwrap(),
+            ExpectedOutcome::Recoverable => {
+                assert!(matches!(result, Err(ProcessingError::Recoverable(_))))
+            }
+            ExpectedOutcome::Irrecoverable => {
+                assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))))
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // RFC-012: signature verification wired into check_user_decryption_request_v2
+    // -------------------------------------------------------------------------
+
+    /// A flipped byte in `payload.signature` makes ecrecover return some other address; with
+    /// no contract code at `userAddress`, the ERC-1271 fallback rejects with Irrecoverable.
+    /// No invalidation/ACL RPC is reached.
+    #[tokio::test]
+    async fn check_user_decryption_request_v2_signature_mismatch() {
+        let asserter = Asserter::new();
+        let sns_ct = rand_sns_ct();
+        let user_signer = PrivateKeySigner::random();
+        let processor = setup_test_processor(asserter.clone(), &sns_ct);
+
+        // STATICCALL to a no-code address returns empty returndata at the EVM level →
+        // `EoaMismatchNoCode` rejection.
+        asserter.push_success(&Bytes::default());
+
+        let mut request = make_v2_request(
+            &sns_ct,
+            user_signer.address(),
+            user_signer.address(),
+            &user_signer,
+            vec![],
+            -3600,
+            86400,
+        );
+        // Flip a byte in the signature
+        let mut sig = request.payload.signature.to_vec();
+        sig[0] ^= 0xFF;
+        request.payload.signature = Bytes::from(sig);
+
+        let result = processor.check_user_decryption_request_v2(&request).await;
+        assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))));
+    }
+
+    /// A smart-account user (Safe-style) whose contract returns the ERC-1271 magic value
+    /// passes the signature check, then the rest of the pipeline (invalidation + ownership)
+    /// proceeds normally.
+    #[tokio::test]
+    async fn check_user_decryption_request_v2_smart_account_accepts() {
+        let asserter = Asserter::new();
+        let sns_ct = rand_sns_ct();
+        let processor = setup_test_processor(asserter.clone(), &sns_ct);
+
+        // Random "smart account" address; no off-chain key controls it, so ecrecover will
+        // never match — verification only succeeds via the ERC-1271 fallback.
+        let smart_account = rand_address();
+        // The wallet's owner EOA: produces real 65-byte signature bytes whose recovered
+        // address is *not* `smart_account`, forcing the ERC-1271 path.
+        let owner = PrivateKeySigner::random();
+        let request = make_v2_request(
+            &sns_ct,
+            smart_account, // owner == userAddress: direct path
+            smart_account,
+            &owner,
+            vec![],
+            -3600,
+            86400,
+        );
+
+        // Mock the host RPC sequence:
+        //   1. isValidSignature → magic value (left-aligned in a 32-byte word)
+        //   2. invalidation → 0
+        //   3. ownership: isAllowed → true
+        let mut magic_word = [0u8; 32];
+        magic_word[..4].copy_from_slice(&ERC1271_MAGIC_VALUE);
+        asserter.push_success(&magic_word); // isValidSignature
+        asserter.push_success(&U256::ZERO.abi_encode()); // invalidation
+        asserter.push_success(&true.abi_encode()); // ownership
+
+        processor
+            .check_user_decryption_request_v2(&request)
+            .await
+            .unwrap();
     }
 }

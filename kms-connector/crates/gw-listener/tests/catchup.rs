@@ -1,21 +1,22 @@
 mod common;
 
 use crate::common::{mock_event_on_gw, poll_db_for_event, start_test_listener};
-use connector_utils::{tests::setup::TestInstanceBuilder, types::db::EventType};
+use connector_utils::tests::{db::requests::TestEventType, setup::TestInstanceBuilder};
 use rstest::rstest;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 #[rstest]
-#[case::public_decryption(EventType::PublicDecryptionRequest)]
-#[case::user_decryption(EventType::UserDecryptionRequest)]
-#[case::prep_keygen(EventType::PrepKeygenRequest)]
-#[case::keygen(EventType::KeygenRequest)]
-#[case::crsgen(EventType::CrsgenRequest)]
+#[case::public_decryption(TestEventType::PublicDecryption)]
+#[case::user_decryption(TestEventType::UserDecryption)]
+#[case::user_decryption_v2(TestEventType::UserDecryptionV2)]
+#[case::prep_keygen(TestEventType::PrepKeygen)]
+#[case::keygen(TestEventType::Keygen)]
+#[case::crsgen(TestEventType::Crsgen)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_catchup_from_block(#[case] event_type: EventType) -> anyhow::Result<()> {
+async fn test_catchup_from_block(#[case] event_type: TestEventType) -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
 
