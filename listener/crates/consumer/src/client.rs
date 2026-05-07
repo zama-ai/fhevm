@@ -7,6 +7,7 @@ use primitives::routing;
 use primitives::utils::chain_id_to_namespace;
 use std::future::Future;
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::warn;
 
 pub use crate::error::ConsumerError;
@@ -103,12 +104,20 @@ impl ListenerConsumer {
     fn broker_consumer(&self) -> Result<Consumer, BrokerError> {
         let topic = self.consumer_topic();
         let cancel = self.cancel_token.clone();
-        self.broker
+        let builder = self
+            .broker
             .consumer(&topic)
             .group(topic.to_string())
-            .prefetch(10)
-            .with_cancellation(cancel)
-            .build()
+            .prefetch(1)
+            .max_retries(3)
+            .circuit_breaker(3, Duration::from_secs(30))
+            .with_cancellation(cancel);
+
+        match &self.broker {
+            Broker::Redis { .. } => builder.redis_claim_min_idle(60).redis_claim_interval(1),
+            Broker::Amqp { .. } => builder,
+        }
+        .build()
     }
 
     /// Publish filters registration command to watch contracts.
