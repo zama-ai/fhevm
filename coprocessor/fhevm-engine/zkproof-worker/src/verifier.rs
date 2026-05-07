@@ -113,7 +113,7 @@ impl ZkProofService {
     }
 
     pub fn pool(&self) -> PgPool {
-        self.pool_mngr.pool().clone()
+        self.pool_mngr.pool()
     }
 
     pub async fn run(&self) -> Result<(), ExecutionError> {
