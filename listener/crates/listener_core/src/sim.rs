@@ -25,10 +25,7 @@ const TETHER_CONTRACT: &str = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 /// Returns the same `(name, result)` shape used by the production arms of
 /// the top-level `tokio::select!` in `main.rs`, so the call site stays a
 /// single select branch.
-pub async fn run(
-    broker: Broker,
-    publisher: Publisher,
-) -> (&'static str, Result<(), BrokerError>) {
+pub async fn run(broker: Broker, publisher: Publisher) -> (&'static str, Result<(), BrokerError>) {
     let new_event_routing = format!("coprocessor.{}", routing::NEW_EVENT);
     let test_consumer_lib = match broker
         .consumer(&Topic::new(new_event_routing.clone()).with_namespace(namespace::EMPTY_NAMESPACE))
@@ -57,11 +54,7 @@ pub async fn run(
     let watch_tether_contract: FilterCommand = FilterCommand {
         consumer_id: "coprocessor".to_string(),
         from: None,
-        log_address: Some(
-            TETHER_CONTRACT
-                .parse::<Address>()
-                .expect("Invalid address"),
-        ),
+        log_address: Some(TETHER_CONTRACT.parse::<Address>().expect("Invalid address")),
         to: None,
     };
 
@@ -76,8 +69,7 @@ pub async fn run(
     let catchup_event_routing = format!("coprocessor.{}", routing::CATCHUP_EVENT);
     let test_consumer_lib_catchup = match broker
         .consumer(
-            &Topic::new(catchup_event_routing.clone())
-                .with_namespace(namespace::EMPTY_NAMESPACE),
+            &Topic::new(catchup_event_routing.clone()).with_namespace(namespace::EMPTY_NAMESPACE),
         )
         .group(catchup_event_routing.clone())
         .prefetch(20)
