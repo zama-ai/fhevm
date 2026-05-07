@@ -16,12 +16,35 @@ pub use crate::error::ConsumerError;
 ///
 /// Downstream services instantiate this once with their broker connection and
 /// target chain, then call instance methods for watch/unwatch operations.
+///
+/// # Cancellation
+///
+/// Three tokens cooperate:
+///
+/// - [`cancel_token`](Self::cancel_token) — parent. Cancelling it stops both
+///   the live and catchup flows.
+/// - `live_cancel` — child of `cancel_token`. Wired into the live consumer
+///   and the live handler. Cancel via [`cancel_live`](Self::cancel_live) to
+///   stop only the live flow.
+/// - `catchup_cancel` — child of `cancel_token`. Wired into the catchup
+///   consumer and the catchup handler. Cancel via
+///   [`cancel_catchup`](Self::cancel_catchup) to stop only catchup
+///   (typical use: stop the bounded backfill once it has drained while the
+///   live stream keeps running).
+///
+/// Cancelling a child does *not* propagate up — the parent and the sibling
+/// keep going. Cancelling the parent cancels every child.
 #[derive(Clone)]
 pub struct ListenerConsumer {
     broker: Broker,
     chain_id: u64,
     consumer_id: String,
+    /// Parent cancellation token. Cancelling this stops both flows.
     pub cancel_token: CancellationToken,
+    /// Child token: cancels only the live flow.
+    live_cancel: CancellationToken,
+    /// Child token: cancels only the catchup flow.
+    catchup_cancel: CancellationToken,
 }
 
 impl ListenerConsumer {
@@ -33,18 +56,34 @@ impl ListenerConsumer {
                 "Consumer ID has leading or trailing whitespace, which may cause issues with routing. Consider trimming it before passing to ListenerConsumer::new."
             );
         }
+        let cancel_token = CancellationToken::new();
+        let live_cancel = cancel_token.child_token();
+        let catchup_cancel = cancel_token.child_token();
         Self {
             broker: broker.clone(),
             chain_id,
             consumer_id: consumer_id_trimmed.into(),
-            cancel_token: CancellationToken::new(),
+            cancel_token,
+            live_cancel,
+            catchup_cancel,
         }
     }
 
-    /// Cancel via the cancel token passed to new
-    /// This is useful for stopping the consumer from another task.
+    /// Cancel both the live and catchup flows.
+    ///
+    /// Equivalent to cancelling [`cancel_token`](Self::cancel_token) directly.
     pub fn cancel(&self) {
         self.cancel_token.cancel();
+    }
+
+    /// Cancel only the live flow. The catchup flow keeps running.
+    pub fn cancel_live(&self) {
+        self.live_cancel.cancel();
+    }
+
+    /// Cancel only the catchup flow. The live flow keeps running.
+    pub fn cancel_catchup(&self) {
+        self.catchup_cancel.cancel();
     }
 
     /// Return the chain ID this client publishes into.
@@ -108,7 +147,7 @@ impl ListenerConsumer {
 
     fn broker_consumer(&self) -> Result<Consumer, BrokerError> {
         let topic = self.consumer_topic();
-        let cancel = self.cancel_token.clone();
+        let cancel = self.live_cancel.clone();
         let builder = self
             .broker
             .consumer(&topic)
@@ -127,7 +166,7 @@ impl ListenerConsumer {
 
     fn broker_catchup_consumer(&self) -> Result<Consumer, BrokerError> {
         let topic = self.catchup_consumer_topic();
-        let cancel = self.cancel.clone();
+        let cancel = self.catchup_cancel.clone();
         self.broker
             .consumer(&topic)
             .group(topic.to_string())
@@ -192,7 +231,7 @@ impl ListenerConsumer {
             let consumer = client.broker_consumer()?;
             let handler = ConsumerHandler {
                 call: Arc::new(f),
-                cancel: client.cancel_token.clone(),
+                cancel: client.live_cancel.clone(),
             };
             consumer.run(handler).await?;
             Ok(())
@@ -217,7 +256,7 @@ impl ListenerConsumer {
             let consumer = client.broker_catchup_consumer()?;
             let handler = ConsumerHandler {
                 call: Arc::new(f),
-                cancel: client.cancel.clone(),
+                cancel: client.catchup_cancel.clone(),
             };
             consumer.run(handler).await?;
             Ok(())
@@ -384,5 +423,26 @@ mod tests {
             routing::consumer_new_event_routing(consumer_id.into()),
             "catchup and new-event routings must not collide",
         );
+    }
+
+    /// Locks in the parent/child cancellation contract that `ListenerConsumer`
+    /// relies on. If `tokio_util` ever changes child-token semantics, this
+    /// test fails before any consumer-lib regression reaches a user.
+    #[test]
+    fn parent_child_cancellation_semantics() {
+        let parent = CancellationToken::new();
+        let live = parent.child_token();
+        let catchup = parent.child_token();
+
+        // Cancelling a child must not propagate to siblings or to the parent.
+        live.cancel();
+        assert!(live.is_cancelled());
+        assert!(!catchup.is_cancelled(), "live cancel must not stop catchup");
+        assert!(!parent.is_cancelled(), "child cancel must not stop parent");
+
+        // Cancelling the parent must cascade to every remaining child.
+        parent.cancel();
+        assert!(parent.is_cancelled());
+        assert!(catchup.is_cancelled(), "parent cancel must stop catchup");
     }
 }
