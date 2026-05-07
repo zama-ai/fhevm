@@ -20,6 +20,7 @@ import { deployEncryptedERC20Fixture } from "./EncryptedERC20.fixture";
 // Minimal ABI for HCULimit — the contract is deployed by the host-sc stack
 // but not compiled in the E2E test suite.
 const HCU_LIMIT_ABI = [
+  "function getVersion() view returns (string)",
   "function getBlockMeter() view returns (uint48, uint48)",
   "function getGlobalHCUCapPerBlock() view returns (uint48)",
   "function getMaxHCUPerTx() view returns (uint48)",
@@ -35,6 +36,7 @@ const HCU_LIMIT_ABI = [
 
 type HcuLimitContract = {
   connect(runner: ContractRunner): HcuLimitContract;
+  getVersion(): Promise<string>;
   getBlockMeter(overrides?: ReadAtBlock): Promise<[bigint, bigint]>;
   getGlobalHCUCapPerBlock(): Promise<bigint>;
   getMaxHCUPerTx(): Promise<bigint>;
@@ -325,6 +327,13 @@ describe("EncryptedERC20:HCU", function () {
           this.skip();
         }
         const hcuLimit = requireHcuLimit(this.hcuLimit, LOCAL_HCU_LIMIT_ERROR);
+        // Per-block cap (setHCUPerBlock, getMaxHCUPerTx, …) was added in HCULimit v0.2.0.
+        // Skip on v0.1.x deployments (protocol v0.11 and earlier).
+        // getVersion() returns e.g. "HCULimit v0.1.0".
+        const version = await hcuLimit.getVersion();
+        if (version.includes(" v0.1.")) {
+          this.skip();
+        }
         const deployer = requireDeployer(this.deployer);
         [savedHCUPerBlock, savedMaxHCUPerTx, savedMaxHCUDepthPerTx, wasWhitelisted] = await Promise.all([
           hcuLimit.getGlobalHCUCapPerBlock(),
@@ -341,6 +350,10 @@ describe("EncryptedERC20:HCU", function () {
 
       afterEach(async function () {
         if (isLiveNetwork()) {
+          return;
+        }
+        // beforeEach skipped (live network or HCULimit v0.1.x) — nothing to restore.
+        if (savedHCUPerBlock === undefined) {
           return;
         }
         await ethers.provider.send("evm_setAutomine", [true]);
