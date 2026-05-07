@@ -3,18 +3,15 @@ import { task } from 'hardhat/config';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
 import {
-  buildKmsNodes,
-  buildKmsThresholds,
   deployEmptyUUPS,
   ensureAddressesDirectoryExists,
   readExistingHostEnv,
   readHostEnv,
+  waitForProtocolConfigUpgradeLanded,
 } from './taskDeploy';
-import {
-  type KmsGenerationMigrationState,
-  buildKMSGenerationMigrationStateFromEnv,
-} from './utils/kmsGenerationMigrationEnv';
+import { buildKMSGenerationMigrationStateFromEnv } from './utils/kmsGenerationMigrationEnv';
 import { getRequiredEnvVar } from './utils/loadVariables';
+import { buildProtocolConfigMigrationStateFromEnv } from './utils/protocolConfigMigrationEnv';
 
 ////////////////////////////////////////////////////////////////////////////////
 // Proposal artifact helpers
@@ -112,50 +109,6 @@ function printPreparedDaoUpgrade(data: PreparedDaoUpgrade): void {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Decoded-args builders
-////////////////////////////////////////////////////////////////////////////////
-
-function buildProtocolConfigMigrationArgs(
-  migrationContextId: bigint,
-  kmsNodes: ReturnType<typeof buildKmsNodes>,
-  thresholds: ReturnType<typeof buildKmsThresholds>,
-): unknown[] {
-  return [
-    migrationContextId,
-    kmsNodes.map((node) => [node.txSenderAddress, node.signerAddress, node.ipAddress, node.storageUrl]),
-    [thresholds.publicDecryption, thresholds.userDecryption, thresholds.kmsGen, thresholds.mpc],
-  ];
-}
-
-function buildKMSGenerationMigrationArgs(migrationState: KmsGenerationMigrationState) {
-  return [
-    [
-      migrationState.prepKeygenCounter,
-      migrationState.keyCounter,
-      migrationState.crsCounter,
-      migrationState.activeKeyId,
-      migrationState.activeCrsId,
-      migrationState.activePrepKeygenId,
-      migrationState.activeKeyDigests.map((digest: { keyType: number; digest: string }) => [
-        digest.keyType,
-        digest.digest,
-      ]),
-      migrationState.activeCrsDigest,
-      migrationState.keyConsensusTxSenders,
-      migrationState.keyConsensusDigest,
-      migrationState.crsConsensusTxSenders,
-      migrationState.crsConsensusDigest,
-      migrationState.prepKeygenConsensusTxSenders,
-      migrationState.prepKeygenConsensusDigest,
-      migrationState.crsMaxBitLength,
-      migrationState.prepKeygenParamsType,
-      migrationState.crsParamsType,
-      migrationState.contextId,
-    ],
-  ];
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Migration empty-proxy bootstrap
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -198,14 +151,12 @@ task(
   'task:prepareDeployProtocolConfigFromMigration',
   'Deploys a ProtocolConfig migration implementation and prints DAO upgrade calldata without mutating the proxy',
 ).setAction(async function (_, hre) {
-  const initialKmsNodes = buildKmsNodes();
-  const thresholds = buildKmsThresholds();
-  const migrationContextId = BigInt(getRequiredEnvVar('MIGRATION_CONTEXT_ID'));
+  const migrationState = buildProtocolConfigMigrationStateFromEnv();
   const parsedEnv = readHostEnv();
   const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
   // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild
   await hre.run('compile:specific', { contract: 'contracts' });
-  const decodedArgs = buildProtocolConfigMigrationArgs(migrationContextId, initialKmsNodes, thresholds);
+  const decodedArgs = [migrationState.migrationContextId, migrationState.kmsNodes, migrationState.thresholds];
   const artifact = await hre.artifacts.readArtifact('ProtocolConfig');
   const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
   const preparedUpgrade = await prepareDaoUpgrade(hre, {
@@ -217,6 +168,35 @@ task(
 
   printPreparedDaoUpgrade(preparedUpgrade);
   return preparedUpgrade;
+});
+
+task(
+  'task:deployProtocolConfigFromMigration',
+  'Upgrades the ProtocolConfig proxy to a migration implementation initialized via initializeFromMigration',
+).setAction(async function (_, hre) {
+  const { ethers, upgrades } = hre;
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  await hre.run('compile:specific', { contract: 'contracts' });
+  const newImplem = await ethers.getContractFactory('ProtocolConfig', deployer);
+  const parsedEnv = readHostEnv();
+  const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+  const migrationState = buildProtocolConfigMigrationStateFromEnv();
+  const decodedArgs = [migrationState.migrationContextId, migrationState.kmsNodes, migrationState.thresholds];
+
+  await upgrades.upgradeProxy(proxy, newImplem, {
+    call: {
+      fn: 'initializeFromMigration',
+      args: decodedArgs,
+    },
+  });
+  // upgrades.upgradeProxy can return before the upgradeToAndCall tx is mined on interval-mining
+  // networks; poll a state-dependent view so the task only returns once the new implementation
+  // is live (mirrors task:deployProtocolConfig).
+  await waitForProtocolConfigUpgradeLanded(hre, proxyAddress);
+  console.log('ProtocolConfig migration code set successfully at address:', proxyAddress);
 });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -231,7 +211,7 @@ task(
   const proxyAddress = parsedEnv.KMS_GENERATION_CONTRACT_ADDRESS;
   // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild
   await hre.run('compile:specific', { contract: 'contracts' });
-  const decodedArgs = buildKMSGenerationMigrationArgs(buildKMSGenerationMigrationStateFromEnv());
+  const decodedArgs = [buildKMSGenerationMigrationStateFromEnv()];
   const artifact = await hre.artifacts.readArtifact('KMSGeneration');
   const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
   const preparedUpgrade = await prepareDaoUpgrade(hre, {
@@ -243,4 +223,28 @@ task(
 
   printPreparedDaoUpgrade(preparedUpgrade);
   return preparedUpgrade;
+});
+
+task(
+  'task:deployKMSGenerationFromMigration',
+  'Upgrades the KMSGeneration proxy to a migration implementation initialized via initializeFromMigration from MIGRATION_* env',
+).setAction(async function (_, hre) {
+  const { ethers, upgrades } = hre;
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  await hre.run('compile:specific', { contract: 'contracts' });
+  const newImplem = await ethers.getContractFactory('KMSGeneration', deployer);
+  const parsedEnv = readHostEnv();
+  const proxyAddress = parsedEnv.KMS_GENERATION_CONTRACT_ADDRESS;
+  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+  const decodedArgs = [buildKMSGenerationMigrationStateFromEnv()];
+
+  await upgrades.upgradeProxy(proxy, newImplem, {
+    call: {
+      fn: 'initializeFromMigration',
+      args: decodedArgs,
+    },
+  });
+  console.log('KMSGeneration migration code set successfully at address:', proxyAddress);
 });

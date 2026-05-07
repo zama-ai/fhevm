@@ -4,6 +4,7 @@ import fs from 'fs';
 import { ethers, run, upgrades } from 'hardhat';
 
 import { UPGRADE_TO_AND_CALL_INTERFACE } from '../../tasks/taskMigrate';
+import { buildKmsNodes, buildKmsThresholds } from '../../tasks/taskDeploy';
 import {
   CRS_COUNTER_BASE,
   KEY_COUNTER_BASE,
@@ -18,6 +19,13 @@ import {
   snapshotKmsGenerationMigrationEnv,
 } from '../../tasks/utils/kmsGenerationMigrationEnv';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
+import {
+  type ProtocolConfigMigrationEnv,
+  type ProtocolConfigMigrationEnvSnapshot,
+  applyProtocolConfigMigrationEnv,
+  restoreProtocolConfigMigrationEnv,
+  snapshotProtocolConfigMigrationEnv,
+} from '../../tasks/utils/protocolConfigMigrationEnv';
 import { deployEmptyProxy } from '../utils/deploymentHelpers';
 import { HOST_ENV_FILE, buildProtocolConfigNodes, buildProtocolConfigThresholds, readHostAddress } from './taskHelpers';
 
@@ -55,6 +63,7 @@ describe('Migration prepare tasks', function () {
   const deployer = new ethers.Wallet(deployerPrivateKey).connect(ethers.provider);
   let originalEnvHost: string;
   let originalMigrationEnv: KmsGenerationMigrationEnvSnapshot;
+  let originalProtocolConfigMigrationEnv: ProtocolConfigMigrationEnvSnapshot;
 
   before(function () {
     originalEnvHost = fs.readFileSync(HOST_ENV_FILE, 'utf-8');
@@ -62,12 +71,14 @@ describe('Migration prepare tasks', function () {
 
   beforeEach(function () {
     originalMigrationEnv = snapshotKmsGenerationMigrationEnv();
+    originalProtocolConfigMigrationEnv = snapshotProtocolConfigMigrationEnv();
   });
 
   afterEach(async function () {
     // Restore .env.host so other tests are unaffected.
     fs.writeFileSync(HOST_ENV_FILE, originalEnvHost);
     restoreKmsGenerationMigrationEnv(originalMigrationEnv);
+    restoreProtocolConfigMigrationEnv(originalProtocolConfigMigrationEnv);
   });
 
   // ---------------------------------------------------------------------------
@@ -80,7 +91,12 @@ describe('Migration prepare tasks', function () {
       patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', proxyAddress);
 
       const migratedContextId = KMS_CONTEXT_COUNTER_BASE + BigInt(3);
-      process.env.MIGRATION_CONTEXT_ID = migratedContextId.toString();
+      const protocolConfigMigrationEnv: ProtocolConfigMigrationEnv = {
+        MIGRATION_CONTEXT_ID: migratedContextId.toString(),
+        MIGRATION_KMS_NODES: JSON.stringify(buildKmsNodes()),
+        MIGRATION_KMS_THRESHOLDS: JSON.stringify(buildKmsThresholds()),
+      };
+      applyProtocolConfigMigrationEnv(protocolConfigMigrationEnv);
 
       const implementationSlotBefore = await readImplementationSlot(proxyAddress);
       const preparedUpgrade = await run('task:prepareDeployProtocolConfigFromMigration');

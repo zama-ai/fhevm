@@ -71,7 +71,10 @@ async function assertContractMatchesVersionPrefix(
 // OZ upgrades' upgradeProxy can return before the upgradeToAndCall tx is mined on
 // interval-mining networks. Poll until the new implementation answers a
 // state-dependent view.
-async function waitForProtocolConfigUpgradeLanded(hre: HardhatRuntimeEnvironment, proxyAddress: string): Promise<void> {
+export async function waitForProtocolConfigUpgradeLanded(
+  hre: HardhatRuntimeEnvironment,
+  proxyAddress: string,
+): Promise<void> {
   const proxy = new hre.ethers.Contract(
     proxyAddress,
     ['function getCurrentKmsContextId() view returns (uint256)'],
