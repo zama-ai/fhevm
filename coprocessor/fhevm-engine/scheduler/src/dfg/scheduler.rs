@@ -70,10 +70,10 @@ impl<'a> Scheduler<'a> {
             graph,
             edges,
             #[cfg(not(feature = "gpu"))]
-            sks: sks.clone(),
-            cpk: cpk.clone(),
+            sks,
+            cpk,
             #[cfg(feature = "gpu")]
-            csks: csks.clone(),
+            csks,
             activity_heartbeat,
         }
     }

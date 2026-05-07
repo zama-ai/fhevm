@@ -495,7 +495,7 @@ pub async fn query_sns_tasks(
                 // (e.g., via gateway coordination) to keep ciphertext_digest consistent.
                 key_id_gw: key_id_gw.clone(),
                 host_chain_id,
-                handle: handle.clone(),
+                handle,
                 ct64_compressed: Arc::new(ciphertext),
                 ct128: Arc::new(BigCiphertext::default()), // to be computed
                 span: task_span,
