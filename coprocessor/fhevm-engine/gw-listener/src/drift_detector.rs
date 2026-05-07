@@ -124,6 +124,14 @@ impl DriftDetector {
         self.replaying = replaying;
     }
 
+    pub(crate) fn finish_replay(&mut self) {
+        self.open_handles.clear();
+        self.deferred_drift_detected = 0;
+        self.deferred_consensus_timeout = 0;
+        self.deferred_missing_submission = 0;
+        self.replaying = false;
+    }
+
     pub(crate) fn set_current_expected_senders(&mut self, expected_senders: Vec<Address>) {
         self.current_expected_senders = expected_senders;
     }
@@ -556,6 +564,9 @@ impl DriftDetector {
     /// Finalize a normal log-polling batch: check deferred consensus results,
     /// alert on completed-without-consensus handles, and evict stale handles.
     pub(crate) async fn end_of_batch(&mut self, db_pool: &Pool<Postgres>) -> anyhow::Result<()> {
+        if self.replaying {
+            return Ok(());
+        }
         self.refresh_pending_consensus_checks(db_pool).await?;
         self.finalize_completed_without_consensus();
         self.evict_stale(Instant::now());
@@ -1485,6 +1496,42 @@ mod tests {
 
         detector.flush_metrics();
 
+        assert_eq!(detector.deferred_drift_detected, 0);
+        assert_eq!(detector.deferred_consensus_timeout, 0);
+        assert_eq!(detector.deferred_missing_submission, 0);
+    }
+
+    #[test]
+    fn finish_replay_drops_replayed_state_without_emitting_metrics() {
+        let mut detector = detector();
+        let handle = FixedBytes::from([7u8; 32]);
+        let senders = senders();
+
+        detector.set_replaying(true);
+        submit_digest_event_and_drift_check(
+            &mut detector,
+            handle,
+            [8u8; 32],
+            [9u8; 32],
+            senders[0],
+            10,
+        );
+        submit_digest_event_and_drift_check(
+            &mut detector,
+            handle,
+            [10u8; 32],
+            [11u8; 32],
+            senders[1],
+            11,
+        );
+        detector.deferred_drift_detected = 1;
+        detector.deferred_consensus_timeout = 2;
+        detector.deferred_missing_submission = 3;
+
+        detector.finish_replay();
+
+        assert!(!detector.replaying);
+        assert!(detector.open_handles.is_empty());
         assert_eq!(detector.deferred_drift_detected, 0);
         assert_eq!(detector.deferred_consensus_timeout, 0);
         assert_eq!(detector.deferred_missing_submission, 0);

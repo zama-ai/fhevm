@@ -175,18 +175,18 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             self.conf.drift_no_consensus_timeout,
             self.conf.drift_post_consensus_grace,
         );
-        if replay_from_block.is_none() {
-            if let Err(e) = self
-                .rebuild_drift_detector(
-                    db_pool,
-                    &mut drift_detector,
-                    progress.earliest_open_ct_commits_block,
-                    last_processed_block_num,
-                )
-                .await
-            {
-                error!(error = %e, "Failed to rebuild drift detector; continuing with partial state");
-            }
+        if replay_from_block.is_some() {
+            drift_detector.set_replaying(true);
+        } else if let Err(e) = self
+            .rebuild_drift_detector(
+                db_pool,
+                &mut drift_detector,
+                progress.earliest_open_ct_commits_block,
+                last_processed_block_num,
+            )
+            .await
+        {
+            error!(error = %e, "Failed to rebuild drift detector; continuing with partial state");
         }
 
         let filter_addresses = {
@@ -350,6 +350,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                         if to_block == current_block {
                             info!("Replay finished");
                             *replay_from_block = None;
+                            drift_detector.finish_replay();
                         } else {
                             // if an error happens replay will restart here
                             *replay_from_block = Some(to_block as i64 + 1);
