@@ -311,8 +311,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             from_block,
             to_block, "Rebuilding drift detector from persisted watermark"
         );
-        drift_detector.set_replaying(true);
-
+        let mut replay = ReplayGuard::new(drift_detector);
         let mut batch_from = from_block;
         while batch_from <= to_block {
             let batch_to = std::cmp::min(
@@ -344,10 +343,10 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
 
             for log in logs {
                 if log.address() == ciphertext_commits_address {
-                    self.process_ciphertext_commits_log(drift_detector, log, batch_to, db_pool)
+                    self.process_ciphertext_commits_log(replay.detector(), log, batch_to, db_pool)
                         .await?;
                 } else if Some(log.address()) == self.conf.gateway_config_address {
-                    self.process_gateway_config_log(drift_detector, log)?;
+                    self.process_gateway_config_log(replay.detector(), log)?;
                 } else {
                     error!(log = ?log, "Unexpected log address while rebuilding drift detector");
                 }
@@ -355,7 +354,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
 
             batch_from = batch_to.saturating_add(1);
         }
-        drift_detector.set_replaying(false);
+        drop(replay);
         drift_detector.end_of_rebuild(db_pool).await?;
         drift_detector.flush_metrics();
         Ok(())
@@ -603,5 +602,67 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                 error_details.join("; "),
             )
         }
+    }
+}
+
+struct ReplayGuard<'a> {
+    detector: &'a mut DriftDetector,
+}
+
+impl<'a> ReplayGuard<'a> {
+    fn new(detector: &'a mut DriftDetector) -> Self {
+        detector.set_replaying(true);
+        Self { detector }
+    }
+
+    fn detector(&mut self) -> &mut DriftDetector {
+        self.detector
+    }
+}
+
+impl Drop for ReplayGuard<'_> {
+    fn drop(&mut self) {
+        self.detector.set_replaying(false);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::{providers::ProviderBuilder, transports::mock::Asserter};
+
+    #[tokio::test]
+    async fn rebuild_error_clears_replay_mode() {
+        let mut conf = ConfigSettings {
+            ciphertext_commits_address: Some(Address::from([1; 20])),
+            ..ConfigSettings::default()
+        };
+        conf.get_logs_block_batch_size = 1;
+
+        let asserter = Asserter::new();
+        asserter.push_failure_msg("get_logs failed");
+        let provider = ProviderBuilder::new().connect_mocked_client(asserter);
+        let listener = GatewayListener::new(
+            Address::from([2; 20]),
+            conf.clone(),
+            CancellationToken::new(),
+            provider,
+        );
+        let mut detector = DriftDetector::new(
+            Vec::new(),
+            conf.drift_no_consensus_timeout,
+            conf.drift_post_consensus_grace,
+            conf.drift_auto_revert_enabled,
+        );
+        let pool = PgPoolOptions::new()
+            .connect_lazy("postgres://test:test@localhost:5432/test")
+            .unwrap();
+
+        let result = listener
+            .rebuild_drift_detector(&pool, &mut detector, Some(1), Some(1))
+            .await;
+
+        assert!(result.is_err());
+        assert!(!detector.is_replaying());
     }
 }

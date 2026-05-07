@@ -123,6 +123,11 @@ impl DriftDetector {
         self.replaying = replaying;
     }
 
+    #[cfg(test)]
+    pub(crate) fn is_replaying(&self) -> bool {
+        self.replaying
+    }
+
     pub(crate) fn set_current_expected_senders(&mut self, expected_senders: Vec<Address>) {
         self.current_expected_senders = expected_senders;
     }
