@@ -372,13 +372,17 @@ export const waitForBootstrap = async (state: State, attempts = 120) => {
 };
 
 /** Waits for the kms-connector runtime services to become ready. */
-export const waitForKmsConnector = async () => {
+export const waitForKmsConnector = async (state: State) => {
   await waitForContainer("kms-connector-db-migration", "complete");
   await waitForContainer("kms-connector-gw-listener", "running");
   await waitForContainer("kms-connector-kms-worker", "running");
   await waitForContainer("kms-connector-tx-sender", "running");
-  await waitForLog("kms-connector-gw-listener", /Started Decryption polling from block/);
-  await waitForLog("kms-connector-gw-listener", /Started KMSGeneration polling from block/);
+  // v0.11.0 connector uses "✓ Subscribed to ... events" log format; the
+  // "Started * polling from block" lines were introduced in v0.13.0+.
+  if (requiresModernHostAddressArtifacts(state)) {
+    await waitForLog("kms-connector-gw-listener", /Started Decryption polling from block/);
+    await waitForLog("kms-connector-gw-listener", /Started KMSGeneration polling from block/);
+  }
 };
 
 /** Waits for the e2e test-suite container to reach running state. */

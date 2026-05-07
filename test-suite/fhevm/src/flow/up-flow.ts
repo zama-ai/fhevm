@@ -643,7 +643,7 @@ export const runStep = async (state: State, step: StepName) => {
     }
     case "kms-connector":
       await stepComposeUp("kms-connector", state);
-      await waitForKmsConnector();
+      await waitForKmsConnector(state);
       await postBootHealthGate(KMS_CONNECTOR_HEALTH_CONTAINERS);
       break;
     case "bootstrap": {
@@ -1219,7 +1219,7 @@ export const upgrade = async (groupValue: string | undefined) => {
     await waitForCoprocessor(state);
     await postBootHealthGate([...coprocessorHealthContainers(state), ...extraTargets.flatMap((target) => target.services)]);
   } else if (group === "kms-connector") {
-    await waitForKmsConnector();
+    await waitForKmsConnector(state);
     await postBootHealthGate(KMS_CONNECTOR_HEALTH_CONTAINERS);
   } else {
     await waitForContainer(TEST_SUITE_CONTAINER, "running");
