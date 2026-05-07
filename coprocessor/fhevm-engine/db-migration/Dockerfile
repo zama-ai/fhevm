@@ -27,6 +27,19 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     mkdir -p /out && \
     cp target/release/resolve_database_url /out/
 
+# Stage 1b: Build pg_repack client binary from upstream PGDG packages.
+#
+# pg_repack drives the online table rewrite invoked by
+# /reclaim_ciphertexts_storage.sh. The Chainguard postgres:17 prod image does
+# not bundle it, so we install via apt on the upstream Debian postgres image
+# and copy the binary out. The binary is dynamically linked against libpq and
+# glibc, both of which the Chainguard postgres image already provides.
+FROM postgres:17-bookworm AS pgrepack-builder
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-17-repack \
+    && rm -rf /var/lib/apt/lists/*
+
 # Stage 2: Runtime image
 FROM cgr.dev/zama.ai/postgres:17 AS prod
 
@@ -38,6 +51,8 @@ COPY  --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/db-migrat
 COPY  --from=builder --chown=fhevm:fhevm /app/migrations /migrations
 COPY  --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/db-migration/db-scripts /db-scripts
 COPY  --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/db-migration/revert_coprocessor_db_state.sh /revert_coprocessor_db_state.sh
+COPY  --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/db-migration/reclaim_ciphertexts_storage.sh /reclaim_ciphertexts_storage.sh
+COPY  --from=pgrepack-builder --chown=fhevm:fhevm /usr/lib/postgresql/17/bin/pg_repack /usr/local/bin/pg_repack
 COPY  --from=builder /etc/group /etc/group
 COPY  --from=builder /etc/passwd /etc/passwd
 
