@@ -3,8 +3,8 @@ import { Wallet } from 'ethers';
 import fs from 'fs';
 import { ethers, run, upgrades } from 'hardhat';
 
-import { UPGRADE_TO_AND_CALL_INTERFACE } from '../../tasks/taskMigrate';
 import { buildKmsNodes, buildKmsThresholds } from '../../tasks/taskDeploy';
+import { UPGRADE_TO_AND_CALL_INTERFACE } from '../../tasks/taskMigrate';
 import {
   CRS_COUNTER_BASE,
   KEY_COUNTER_BASE,
