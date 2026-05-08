@@ -1,4 +1,4 @@
-# User decryption delegation
+# Decrypt on behalf of another user
 
 Delegation lets one account (the **delegator**) authorize another account (the **delegate**) to perform user decryption on its behalf, in the context of a specific contract. The ACL stores user decryption permissions as `(user, contractAddress)` pairs; delegation transfers the rights of `(delegator, contractAddress)` to `(delegate, contractAddress)`.
 

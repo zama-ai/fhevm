@@ -97,8 +97,8 @@ contract EncryptedSimpleVoting is ZamaEthereumConfig {
     }
 
     /// @notice Marks the vote totals as publicly decryptable. Anyone can then call
-    /// the off-chain `relayer-sdk.publicDecrypt` to obtain the cleartexts and a
-    /// decryption proof.
+    /// the off-chain `publicDecrypt` (via the Zama SDK) to obtain the cleartexts
+    /// and a decryption proof.
     function requestVoteDecryption() public {
         require(block.timestamp > voteDeadline, "Voting is not finished");
         require(status == VotingStatus.Open, "Decryption already requested");
@@ -139,7 +139,7 @@ Adjust your contract's code to accept and return encrypted data where necessary.
 
 - The `vote` function now takes two parameters: an encrypted `support` handle and its `inputProof`.
 - After the deadline, anyone calls `requestVoteDecryption()` to mark the encrypted totals as publicly decryptable.
-- An off-chain client then calls the relayer-sdk `publicDecrypt([yesHandle, noHandle])` to obtain the cleartexts and a KMS-signed proof, and submits them via `revealResults(...)`. `FHE.checkSignatures` cryptographically guarantees the cleartexts are authentic before the contract trusts them.
+- An off-chain client then calls `publicDecrypt([yesHandle, noHandle])` via the Zama SDK to obtain the cleartexts and a KMS-signed proof, and submits them via `revealResults(...)`. `FHE.checkSignatures` cryptographically guarantees the cleartexts are authentic before the contract trusts them.
 - `getResults()` only returns once the cleartexts have been verified on-chain.
 
 However, this is far from being the main change. As this example illustrates, working with FHEVM often requires re-architecting the original logic to support privacy.

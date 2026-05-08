@@ -399,7 +399,7 @@ These functions support the three-step public decryption workflow. For a complet
 function makePubliclyDecryptable(T value) internal returns (T)
 ```
 
-Marks an encrypted value as publicly decryptable. Once called, any entity can request the off-chain decryption of this value via the relayer SDK. Supported for all encrypted types (T can be ebool, euintX, eaddress). The calling contract must have ACL permission to access the handle.
+Marks an encrypted value as publicly decryptable. Once called, any entity can request the off-chain decryption of this value via the Zama SDK. Supported for all encrypted types (T can be ebool, euintX, eaddress). The calling contract must have ACL permission to access the handle.
 
 ### Check if publicly decryptable
 

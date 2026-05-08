@@ -31,7 +31,7 @@
   - [Branching](logics/conditions.md)
   - [Dealing with branches and conditions](logics/loop.md)
   - [Error handling](logics/error_handling.md)
-- [Decryption](decryption/oracle.md)
+- [Public Decryption](decryption/oracle.md)
 - [FHEVM API reference](functions.md)
 
 ## Development Guide
@@ -49,5 +49,4 @@
   - [Deploy contracts](foundry/deploy.md)
   - [forge-fhevm API reference](foundry/api.md)
 - [HCU](hcu.md)
-- [Migrate to v0.9](migration.md)
 - [How to Transform Your Smart Contract into a FHEVM Smart Contract?](transform_smart_contract_with_fhevm.md)
