@@ -43,6 +43,26 @@ function formatError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+export async function waitForTaskReady(
+  hre: HardhatRuntimeEnvironment,
+  taskName: string,
+  timeoutMs = 60_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (true) {
+    try {
+      await hre.run(taskName);
+      return;
+    } catch (err) {
+      if (Date.now() >= deadline) {
+        throw new Error(`${taskName} did not become ready after ${timeoutMs}ms: ${formatError(err)}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+}
+
 async function assertContractMatchesVersionPrefix(
   hre: HardhatRuntimeEnvironment,
   address: string,
@@ -489,6 +509,8 @@ task('task:deployProtocolConfig').setAction(async function (_taskArguments: Task
       args: [initialKmsNodes, thresholds],
     },
   });
+  // On interval-mining networks, upgradeProxy can return before the tx is mined.
+  await waitForTaskReady(hre, 'task:assertProtocolConfigReady');
   console.log('ProtocolConfig code set successfully at address:', proxyAddress);
 });
 

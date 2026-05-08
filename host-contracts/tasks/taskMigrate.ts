@@ -2,7 +2,13 @@ import { FunctionFragment, Interface, type InterfaceAbi } from 'ethers';
 import { task } from 'hardhat/config';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
-import { deployEmptyUUPS, ensureAddressesDirectoryExists, readExistingHostEnv, readHostEnv } from './taskDeploy';
+import {
+  deployEmptyUUPS,
+  ensureAddressesDirectoryExists,
+  readExistingHostEnv,
+  readHostEnv,
+  waitForTaskReady,
+} from './taskDeploy';
 import { buildKMSGenerationInitializeFromMigrationArgs } from './utils/kmsGenerationMigrationEnv';
 import { getRequiredEnvVar } from './utils/loadVariables';
 import { buildProtocolConfigInitializeFromMigrationArgs } from './utils/protocolConfigMigrationEnv';
@@ -184,6 +190,7 @@ task(
       args: decodedArgs,
     },
   });
+  await waitForTaskReady(hre, 'task:assertProtocolConfigReady');
   console.log('ProtocolConfig migration code set successfully at address:', proxyAddress);
 });
 
