@@ -25,6 +25,14 @@ contract SupportedTypesConstants {
 
     uint256 internal supportedTypesFheSub = supportedTypesFheAdd;
     uint256 internal supportedTypesFheSum = supportedTypesFheAdd;
+    uint256 internal supportedTypesFheIsIn =
+        (1 << uint8(FheType.Uint8)) +
+            (1 << uint8(FheType.Uint16)) +
+            (1 << uint8(FheType.Uint32)) +
+            (1 << uint8(FheType.Uint64)) +
+            (1 << uint8(FheType.Uint128)) +
+            (1 << uint8(FheType.Uint160)) +
+            (1 << uint8(FheType.Uint256));
     uint256 internal supportedTypesFheMul = supportedTypesFheSub;
     uint256 internal supportedTypesFheDiv = supportedTypesFheMul;
     uint256 internal supportedTypesFheRem = supportedTypesFheDiv;
@@ -398,6 +406,23 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
             )
         );
         result = _appendMetadataToPrehandle(middleFheType, result, block.chainid, HANDLE_VERSION);
+    }
+
+    function _computeExpectedResultFheIsIn(bytes32 value, bytes32[] memory set) internal view returns (bytes32 result) {
+        result = keccak256(
+            abi.encodePacked(
+                COMPUTATION_DOMAIN_SEPARATOR,
+                FHEVMExecutor.Operators.fheIsIn,
+                set.length,
+                value,
+                set,
+                acl,
+                block.chainid,
+                blockhash(block.number - 1),
+                block.timestamp
+            )
+        );
+        result = _appendMetadataToPrehandle(FheType.Bool, result, block.chainid, HANDLE_VERSION);
     }
 
     function _computeExpectedResultFheSum(
@@ -2059,6 +2084,124 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         vm.expectEmit(true, true, true, true);
         emit FHEEvents.FheSum(sender, empty, expectedResult);
         bytes32 result = fhevmExecutor.fheSum(empty, FheType.Uint8);
+        assertEq(result, expectedResult);
+    }
+
+    function test_FheIsInSupportedTypesWorkAsExpected(uint8 fheType) public {
+        vm.assume(fheType <= uint8(FheType.Int248));
+        vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheIsIn));
+        address sender = address(123);
+
+        bytes32 value = _generateMockHandle(FheType(fheType));
+        _approveHandleInACL(value, sender);
+        bytes32[] memory set = new bytes32[](2);
+        set[0] = _generateMockHandle(FheType(fheType));
+        set[1] = _generateMockHandle(FheType(fheType));
+        _approveHandleInACL(set[0], sender);
+        _approveHandleInACL(set[1], sender);
+
+        bytes32 expectedResult = _computeExpectedResultFheIsIn(value, set);
+
+        vm.prank(sender);
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheIsIn(sender, value, set, expectedResult);
+        bytes32 result = fhevmExecutor.fheIsIn(value, set, FheType(fheType));
+        assertEq(result, expectedResult);
+    }
+
+    function test_FheIsInNonSupportedTypesRevertAsExpected(uint8 fheType) public {
+        vm.assume(fheType <= uint8(FheType.Int248));
+        vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheIsIn));
+        bytes32[] memory set = new bytes32[](1);
+        set[0] = bytes32(uint256(1));
+
+        vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
+        fhevmExecutor.fheIsIn(bytes32(0), set, FheType(fheType));
+    }
+
+    function test_RevertsIfACLNotAllowed_FheIsIn() public {
+        address account = address(123);
+        bytes32 value = _generateMockHandle(FheType.Uint32);
+        // value is NOT approved in ACL
+
+        bytes32[] memory set = new bytes32[](2);
+        set[0] = bytes32(uint256(1));
+        set[1] = bytes32(uint256(2));
+
+        vm.expectPartialRevert(FHEVMExecutor.ACLNotAllowed.selector);
+        vm.prank(account);
+        fhevmExecutor.fheIsIn(value, set, FheType.Uint32);
+    }
+
+    function test_FheIsInEmptySetSucceeds() public {
+        address sender = address(123);
+        bytes32 value = _generateMockHandle(FheType.Uint8);
+        _approveHandleInACL(value, sender);
+
+        bytes32[] memory emptySet = new bytes32[](0);
+        bytes32 expectedResult = _computeExpectedResultFheIsIn(value, emptySet);
+
+        vm.prank(sender);
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheIsIn(sender, value, emptySet, expectedResult);
+        bytes32 result = fhevmExecutor.fheIsIn(value, emptySet, FheType.Uint8);
+        assertEq(result, expectedResult);
+    }
+
+    function test_RevertsIfFheIsInTooManyElementsNarrow() public {
+        // Uint8/16/32 max = 100; 101 elements should revert
+        address sender = address(123);
+        bytes32 value = _generateMockHandle(FheType.Uint8);
+        _approveHandleInACL(value, sender);
+        bytes32[] memory set = new bytes32[](101);
+
+        vm.expectPartialRevert(FHEVMExecutor.FHECollectionSizeInvalid.selector);
+        vm.prank(sender);
+        fhevmExecutor.fheIsIn(value, set, FheType.Uint8);
+    }
+
+    function test_RevertsIfFheIsInTooManyElementsWide() public {
+        // Uint64/128/160/256 max = 60; 61 elements should revert
+        address sender = address(123);
+        bytes32 value = _generateMockHandle(FheType.Uint64);
+        _approveHandleInACL(value, sender);
+        bytes32[] memory set = new bytes32[](61);
+
+        vm.expectPartialRevert(FHEVMExecutor.FHECollectionSizeInvalid.selector);
+        vm.prank(sender);
+        fhevmExecutor.fheIsIn(value, set, FheType.Uint64);
+    }
+
+    function test_FheIsInIncompatibleType() public {
+        address sender = address(123);
+        bytes32 value = _generateMockHandle(FheType.Uint32);
+        _approveHandleInACL(value, sender);
+        bytes32[] memory set = new bytes32[](1);
+        set[0] = bytes32(uint256(1));
+
+        // Handle is Uint32 but passing Uint8 as valueType → IncompatibleTypes
+        vm.expectRevert(FHEVMExecutor.IncompatibleTypes.selector);
+        vm.prank(sender);
+        fhevmExecutor.fheIsIn(value, set, FheType.Uint8);
+    }
+
+    function test_FheIsInSingleElementSet(uint8 fheType) public {
+        vm.assume(fheType <= uint8(FheType.Int248));
+        vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheIsIn));
+        address sender = address(123);
+
+        bytes32 value = _generateMockHandle(FheType(fheType));
+        _approveHandleInACL(value, sender);
+        bytes32[] memory set = new bytes32[](1);
+        set[0] = _generateMockHandle(FheType(fheType));
+        _approveHandleInACL(set[0], sender);
+
+        bytes32 expectedResult = _computeExpectedResultFheIsIn(value, set);
+
+        vm.prank(sender);
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheIsIn(sender, value, set, expectedResult);
+        bytes32 result = fhevmExecutor.fheIsIn(value, set, FheType(fheType));
         assertEq(result, expectedResult);
     }
 }

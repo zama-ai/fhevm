@@ -242,6 +242,17 @@ impl Broker {
         topology.as_ref().clone()
     }
 
+    pub async fn from_url(url: &str) -> Result<Self, BrokerError> {
+        let url = url.trim();
+        if url.starts_with("redis://") {
+            Broker::redis(url).await
+        } else if url.starts_with("amqp://") {
+            Broker::amqp(url).build().await
+        } else {
+            Err(BrokerError::UnknownUrlSchema(url.to_string()))
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // Publishing
     // ═══════════════════════════════════════════════════════════════════════════

@@ -68,7 +68,7 @@ pub struct Chain {
     pub before_size: u64,
     pub new_chain: bool,
 }
-pub type ChainCache = RwLock<lru::LruCache<Handle, ChainHash>>;
+pub type ChainCache = Arc<RwLock<lru::LruCache<Handle, ChainHash>>>;
 pub type OrderedChains = Vec<Chain>;
 
 const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
@@ -117,6 +117,7 @@ pub fn retry_on_sqlx_error(err: &SqlxError, retry_count: &mut usize) -> bool {
 }
 
 // A pool of connection with some cached information and automatic reconnection
+#[derive(Clone)]
 pub struct Database {
     url: DatabaseURL,
     pub pool: Arc<RwLock<sqlx::Pool<Postgres>>>,
@@ -148,13 +149,14 @@ impl Database {
         dependence_cache_size: u16,
     ) -> Result<Self> {
         let (pool, pool_refresh_handle) = Self::new_pool(url).await;
-        let bucket_cache = tokio::sync::RwLock::new(lru::LruCache::new(
-            std::num::NonZeroU16::new(
-                dependence_cache_size.max(MINIMUM_BUCKET_CACHE_SIZE),
-            )
-            .unwrap()
-            .into(),
-        ));
+        let bucket_cache =
+            Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
+                std::num::NonZeroU16::new(
+                    dependence_cache_size.max(MINIMUM_BUCKET_CACHE_SIZE),
+                )
+                .unwrap()
+                .into(),
+            )));
         Ok(Database {
             url: url.clone(),
             chain_id,
@@ -509,6 +511,12 @@ impl Database {
 
             E::FheSum(C::FheSum { values, result, .. }) => {
                 let deps: Vec<&Handle> = values.iter().collect();
+                insert_computation(tx, result, &deps, &NO_SCALAR).await
+            }
+
+            E::FheIsIn(C::FheIsIn { value, values, result, .. }) => {
+                let mut deps: Vec<&Handle> = vec![value];
+                deps.extend(values.iter());
                 insert_computation(tx, result, &deps, &NO_SCALAR).await
             }
 
@@ -1043,6 +1051,7 @@ fn event_to_op_int(op: &TfheContractEvents) -> FheOperation {
         E::FheRand(_) => O::FheRand as i32,
         E::FheRandBounded(_) => O::FheRandBounded as i32,
         E::FheSum(_) => O::FheSum as i32,
+        E::FheIsIn(_) => O::FheIsIn as i32,
         // Not tfhe ops
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => -1,
     }
@@ -1079,6 +1088,7 @@ pub fn event_name(op: &TfheContractEvents) -> &'static str {
         E::FheRand(_) => "FheRand",
         E::FheRandBounded(_) => "FheRandBounded",
         E::FheSum(_) => "FheSum",
+        E::FheIsIn(_) => "FheIsIn",
         E::Initialized(_) => "Initialized",
         E::Upgraded(_) => "Upgraded",
         E::VerifyInput(_) => "VerifyInput",
@@ -1116,7 +1126,8 @@ pub fn tfhe_result_handle(op: &TfheContractEvents) -> Option<Handle> {
         | E::FheRand(C::FheRand { result, .. })
         | E::FheRandBounded(C::FheRandBounded { result, .. })
         | E::TrivialEncrypt(C::TrivialEncrypt { result, .. })
-        | E::FheSum(C::FheSum { result, .. }) => Some(*result),
+        | E::FheSum(C::FheSum { result, .. })
+        | E::FheIsIn(C::FheIsIn { result, .. }) => Some(*result),
 
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => None,
     }
@@ -1289,6 +1300,12 @@ pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
         E::FheRand(_) | E::FheRandBounded(_) | E::TrivialEncrypt(_) => vec![],
 
         E::FheSum(C::FheSum { values, .. }) => values.clone(),
+
+        E::FheIsIn(C::FheIsIn { value, values, .. }) => {
+            let mut handles = vec![*value];
+            handles.extend(values.iter().copied());
+            handles
+        }
 
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
     }

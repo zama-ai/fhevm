@@ -502,10 +502,7 @@ pub async fn run_all(
             interval_secs = interval_secs,
             "Starting gauge update routine"
         );
-        spawn_gauge_update_routine(
-            Duration::from_secs(interval_secs.into()),
-            pg_mngr.pool().clone(),
-        );
+        spawn_gauge_update_routine(Duration::from_secs(interval_secs.into()), pg_mngr.pool());
     }
 
     // Build the service.

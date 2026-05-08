@@ -5,9 +5,9 @@ services:
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/host-sc.env
     command:
-      - npx hardhat task:deployAllHostContracts
+      - npx hardhat task:deployAllHostContracts $${HOST_SC_DEPLOY_KMS_GENERATION_ARGS}
     volumes:
-      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/${HOST_ADDRESS_DIR:-host}:/app/addresses  # workdir in host's Dockerfile is /app
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/${HOST_ADDRESS_DIR:-host}:/app/addresses # workdir in host's Dockerfile is /app
 
   host-sc-add-pausers:
     container_name: host-sc-add-pausers
@@ -22,14 +22,14 @@ services:
     # Addresses needs to be mounted even though we don't use them in the task because the PauserSet
     # contract is compiled, and it imports these addresses.
     volumes:
-      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/${HOST_ADDRESS_DIR:-host}:/app/addresses  # workdir in host's Dockerfile is /app
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/${HOST_ADDRESS_DIR:-host}:/app/addresses # workdir in host's Dockerfile is /app
 
   host-sc-trigger-keygen:
     container_name: host-sc-trigger-keygen
     image: ghcr.io/zama-ai/fhevm/host-contracts:${HOST_VERSION}
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/host-sc.env
-    # Using test parameters (--params-type 1) is currently not possible at it can make the random
+    # Using test parameters (--params-type 1) is currently not possible as it can make the random
     # tests fail with a high probability (1/2 chance), so we instead use default parameters (--params-type 0).
     # See https://github.com/zama-ai/fhevm-internal/issues/685
     command:
@@ -45,8 +45,7 @@ services:
     image: ghcr.io/zama-ai/fhevm/host-contracts:${HOST_VERSION}
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/host-sc.env
-    # Using test parameters (--params-type 1) is currently not possible for keygen (see above), and
-    # CRS parameters must be of the same type as the keygen parameters.
+    # CRS parameters must match the same params type as the keygen request.
     # See https://github.com/zama-ai/fhevm-internal/issues/685
     command:
       - npx hardhat task:triggerCrsgen --params-type 0 --max-bit-length 2048 --use-internal-proxy-address true

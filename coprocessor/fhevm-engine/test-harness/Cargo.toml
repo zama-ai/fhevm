@@ -32,3 +32,6 @@ fhevm-engine-common = { path = "../fhevm-engine-common" }
 
 [features]
 gpu = []
+
+[lints]
+workspace = true

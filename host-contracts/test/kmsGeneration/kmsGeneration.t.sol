@@ -13,7 +13,10 @@ import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUU
 import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
 import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/UUPSUpgradeableEmptyProxy.sol";
 import {protocolConfigAdd, kmsGenerationAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
-import {HostContractsDeployerTestUtils, DeployableERC1967Proxy} from "@fhevm-host-contracts/fhevm-foundry/HostContractsDeployerTestUtils.sol";
+import {
+    HostContractsDeployerTestUtils,
+    DeployableERC1967Proxy
+} from "@fhevm-host-contracts/fhevm-foundry/HostContractsDeployerTestUtils.sol";
 import {KMSGenerationUpgradedExample} from "@fhevm-host-contracts/examples/KMSGenerationUpgradedExample.sol";
 
 contract KMSGenerationHarness is KMSGeneration {
@@ -560,6 +563,43 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         vm.prank(kmsTxSender0);
         vm.expectRevert(IKMSGeneration.KeyManagementRequestPending.selector);
         kmsGeneration.keygenResponse(KEY_COUNTER_BASE + 1, _mockKeyDigests(), hex"");
+    }
+
+    function test_pendingKeygenCannotCompleteAfterContextRotationAndCanBeAborted() public {
+        vm.prank(owner);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+
+        uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
+        uint256 keyId = KEY_COUNTER_BASE + 1;
+        bytes memory oldExtraData = _buildExtraData();
+        bytes32 oldPrepDigest = _hashPrepKeygen(prepKeygenId, oldExtraData);
+        bytes memory oldPrepSig = _computeSignature(kmsPk0, oldPrepDigest);
+
+        KmsNode[] memory rotatedNodes = _makeKmsNodes(2);
+        rotatedNodes[0].signerAddress = kmsSigner1;
+        rotatedNodes[1].signerAddress = kmsSigner2;
+
+        vm.prank(owner);
+        protocolConfig.defineNewKmsContext(rotatedNodes, _defaultThresholds());
+
+        vm.prank(kmsTxSender0);
+        vm.expectRevert(
+            abi.encodeWithSelector(IKMSGeneration.KmsSignerDoesNotMatchTxSender.selector, kmsSigner0, kmsTxSender0)
+        );
+        kmsGeneration.prepKeygenResponse(prepKeygenId, oldPrepSig);
+
+        vm.prank(owner);
+        kmsGeneration.abortKeygen(prepKeygenId);
+        assertTrue(kmsGeneration.isRequestDone(prepKeygenId));
+        assertTrue(kmsGeneration.isRequestDone(keyId));
+
+        vm.prank(owner);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        uint256 nextPrepKeygenId = PREP_KEYGEN_COUNTER_BASE + 2;
+        uint256 nextKeyId = KEY_COUNTER_BASE + 2;
+        _doPrepKeygenResponse(nextPrepKeygenId, kmsPk1, kmsTxSender0);
+        _doKeygenResponse(nextPrepKeygenId, nextKeyId, kmsPk1, kmsTxSender0);
+        assertTrue(kmsGeneration.isRequestDone(nextKeyId));
     }
 
     function test_revertPrepKeygenResponseSignedWithStaleContextExtraData() public {

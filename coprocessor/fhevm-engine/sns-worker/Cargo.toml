@@ -62,3 +62,6 @@ test-harness = { path = "../test-harness" }
 [dev-dependencies.sns-worker]
 path = "."
 features = ["test_decrypt_128", "test_s3_use_handle_as_key"]
+
+[lints]
+workspace = true
