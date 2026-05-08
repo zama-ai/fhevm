@@ -8,7 +8,7 @@ It depends on which API you call:
 
 | Caller | API | Delegator (`msg.sender` to ACL) |
 | --- | --- | --- |
-| **EOA** | `IACL.delegateForUserDecryption` directly on the ACL contract | the EOA itself |
+| **EOA** (Externally Owned Account) | `IACL.delegateForUserDecryption` directly on the ACL contract | the EOA itself |
 | **Smart contract** | `FHE.delegateUserDecryption` from inside a contract function | `address(this)` |
 
 `FHE.delegateUserDecryption` cannot be used by an EOA to delegate its own rights — the EOA must call the ACL directly.
@@ -59,7 +59,7 @@ contract Aggregator is ZamaEthereumConfig {
 ```
 
 {% hint style="warning" %}
-A common mistake is calling `FHE.delegateUserDecryption(relayer, address(this), expiration)` from inside a contract, hoping to delegate the caller user's rights. This always reverts (`msg.sender == contractAddress`). Use Pattern 1 instead — the user must call the ACL directly.
+**Common mistake:** calling `FHE.delegateUserDecryption(relayer, address(this), expiration)` from inside a contract, hoping to delegate the caller user's rights. This always reverts because `msg.sender == contractAddress` violates one of the constraints listed above. Use Pattern 1 instead — the user must call the ACL directly.
 {% endhint %}
 
 ## API summary

@@ -27,6 +27,14 @@ RPC_URL=https://sepolia.infura.io/v3/<key>
 source .env
 ```
 
+{% hint style="info" %}
+If you only have a mnemonic / seed phrase, derive the private key with Foundry's `cast`:
+
+```bash
+cast wallet private-key "your twelve or twenty four words here"
+```
+{% endhint %}
+
 {% endstep %}
 
 {% step %}

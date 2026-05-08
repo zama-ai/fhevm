@@ -444,7 +444,9 @@ function isPublicDecryptionResultValid(
 A `view` variant of `checkSignatures`. Returns `true` if the KMS signatures are valid, `false` otherwise (or reverts on malformed input). Unlike `checkSignatures`, this function does not emit events or cache results.
 
 {% hint style="info" %}
-Prefer `checkSignatures` over this function in most cases. `checkSignatures` provides better safety (replay protection via events), is optimized for gas via caching, and is the standard approach for on-chain verification. Use `isPublicDecryptionResultValid` only when you need a read-only validation check (for example, in off-chain simulations).
+Prefer `checkSignatures` over this function in most cases. `checkSignatures` is optimized for gas via signature caching, emits a `PublicDecryptionVerified` event for indexers, and is the standard approach for on-chain verification. Use `isPublicDecryptionResultValid` only when you need a read-only validation check (for example, in off-chain simulations).
+
+Neither function provides replay protection on its own — emitting an event does not prevent the same `(handles, cleartexts, proof)` triple from being submitted twice. The callback that consumes the cleartexts must implement its own replay/state guard (see [Public Decryption](decryption/oracle.md)).
 {% endhint %}
 
 ### Convert to bytes32
