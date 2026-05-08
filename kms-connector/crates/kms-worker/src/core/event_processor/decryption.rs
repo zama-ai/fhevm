@@ -265,15 +265,17 @@ where
             })?;
         info!("Extracted key_id {key_id} from snsCtMaterials[0]");
 
-        let context_id = parse_extra_data(extra_data)
-            .map_err(ProcessingError::Irrecoverable)?
-            .context_id;
+        let parsed_extra_data =
+            parse_extra_data(extra_data).map_err(ProcessingError::Irrecoverable)?;
+        if let Some(context_id) = parsed_extra_data.context_id {
+            self.context_manager.validate_context(context_id).await?;
+        }
         // TODO: validation of epoch_id during RFC-005 implementation
-        self.context_manager.validate_context(context_id).await?;
 
         let ciphertexts = self.prepare_ciphertexts(&key_id, sns_materials).await?;
 
         let request_id = Some(u256_to_request_id(decryption_id));
+        let kms_extra_data = kms_decryption_extra_data(extra_data);
 
         if let Some(user_decrypt_data) = user_decrypt_data {
             let client_address = user_decrypt_data.user_address.to_checksum(None);
@@ -285,9 +287,9 @@ where
                 domain: Some(self.domain.clone()),
                 enc_key,
                 typed_ciphertexts: ciphertexts,
-                extra_data: extra_data.to_vec(),
+                extra_data: kms_extra_data,
                 epoch_id: None,
-                context_id: Some(u256_to_request_id(context_id)),
+                context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             };
 
             Ok(user_decryption_request.into())
@@ -297,9 +299,9 @@ where
                 ciphertexts,
                 key_id: Some(RequestId { request_id: key_id }),
                 domain: Some(self.domain.clone()),
-                extra_data: extra_data.to_vec(),
+                extra_data: kms_extra_data,
                 epoch_id: None,
-                context_id: Some(u256_to_request_id(context_id)),
+                context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             };
             Ok(public_decryption_request.into())
         }
@@ -354,6 +356,15 @@ where
     }
 }
 
+fn kms_decryption_extra_data(extra_data: &Bytes) -> Vec<u8> {
+    // relayer-sdk <=0.4.2 sends 0x00 but verifies the KMS signature against empty extraData.
+    if extra_data.as_ref() == [0x00] {
+        Vec::new()
+    } else {
+        extra_data.to_vec()
+    }
+}
+
 pub struct UserDecryptionExtraData {
     pub user_address: Address,
     pub public_key: Bytes,
@@ -386,6 +397,23 @@ mod tests {
         Recoverable,
         #[allow(unused)]
         Irrecoverable,
+    }
+
+    #[test]
+    fn kms_decryption_extra_data_normalizes_legacy_zero_marker() {
+        assert_eq!(
+            kms_decryption_extra_data(&Bytes::from_static(&[0x00])),
+            Vec::<u8>::new()
+        );
+    }
+
+    #[test]
+    fn kms_decryption_extra_data_keeps_empty_and_versioned_values() {
+        assert_eq!(kms_decryption_extra_data(&Bytes::new()), Vec::<u8>::new());
+        assert_eq!(
+            kms_decryption_extra_data(&Bytes::from_static(&[0x01, 0x02])),
+            vec![0x01, 0x02]
+        );
     }
 
     enum PubDecryptACLMock {
