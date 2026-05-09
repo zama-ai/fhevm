@@ -216,15 +216,22 @@ task("task:exportKmsMigrationState", "Exports Gateway KMSGeneration migration st
       contextId: toBeHex(contextId),
     };
 
+    const thresholds = {
+      publicDecryption: publicDecryptionThreshold.toString(),
+      userDecryption: userDecryptionThreshold.toString(),
+      kmsGen: kmsGenThreshold.toString(),
+      mpc: mpcThreshold.toString(),
+    };
+    const migrationEnv = {
+      ...buildMigrationEnv(hostKmsGenerationMigrationState),
+      MIGRATION_KMS_NODES: JSON.stringify(kmsNodes),
+      MIGRATION_KMS_THRESHOLDS: JSON.stringify(thresholds),
+    };
+
     const migrationStateJson = {
       contextId: contextId.toString(),
       kmsNodes,
-      thresholds: {
-        publicDecryption: publicDecryptionThreshold.toString(),
-        userDecryption: userDecryptionThreshold.toString(),
-        kmsGen: kmsGenThreshold.toString(),
-        mpc: mpcThreshold.toString(),
-      },
+      thresholds,
       hostKmsGenerationMigrationState,
       metadata: {
         exportBlockNumber,
@@ -233,7 +240,7 @@ task("task:exportKmsMigrationState", "Exports Gateway KMSGeneration migration st
         gatewayConfigProxy: gatewayConfigAddress,
         legacyHostKmsVerifierProxy: legacyHostKmsVerifierAddress,
       },
-      export: buildMigrationEnv(hostKmsGenerationMigrationState),
+      export: migrationEnv,
     };
 
     // These assertions check that the gateway snapshot can be consumed by host KMSGeneration.initializeFromMigration(...).
