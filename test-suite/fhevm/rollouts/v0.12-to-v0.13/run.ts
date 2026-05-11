@@ -168,6 +168,9 @@ export default async function run(ctx: RolloutRunContext) {
   await testPhase(ctx, "kms", testMode);
 
   logPhase("04 listener-core: upgrade listener-core before coprocessor");
+  // No test gate here: old coprocessor listeners do not consume listener-core.
+  // The compatibility boundary is the coprocessor upgrade, where consumers
+  // switch to the new listener path.
   await ctx.upgradeRuntime("listener-core", { lockFile: listenerCoreLock });
   logPhase("05 coprocessor: upgrade coprocessor");
   await ctx.upgradeRuntime("coprocessor", { lockFile: coprocessorLock });
