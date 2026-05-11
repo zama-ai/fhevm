@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use anchor_lang::{InstructionData, ToAccountMetas};
+use anchor_lang::{AccountDeserialize, InstructionData, ToAccountMetas};
 use anchor_spl::token::spl_token;
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheCiphertexts};
 use host_listener::{
@@ -23,7 +23,7 @@ use solana_sdk::{
 };
 use tfhe::prelude::FheTryEncrypt;
 use time::{Date, Month, PrimitiveDateTime, Time};
-use zama_host::AclPermission;
+use zama_host::{AclPermission, AclRecord};
 
 use crate::tests::{
     event_helpers::{decrypt_handles, setup_event_harness, wait_until_computed},
@@ -95,6 +95,32 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
     assert_eq!(stats.acl_events, 4);
 
     wait_until_computed(&harness.app).await?;
+    assert!(kms_like_user_decrypt_check(
+        &fixture.svm,
+        &signed_user_decrypt_request(
+            &fixture.alice,
+            vec![fixture.alice_token],
+            vec![UserDecryptHandleEntry {
+                handle: new_alice_handle,
+                app_context: fixture.alice_token,
+                owner: fixture.alice.pubkey(),
+                acl_record: output.alice_owner,
+            }],
+        ),
+    ));
+    assert!(kms_like_user_decrypt_check(
+        &fixture.svm,
+        &signed_user_decrypt_request(
+            &fixture.bob,
+            vec![fixture.bob_token],
+            vec![UserDecryptHandleEntry {
+                handle: new_bob_handle,
+                app_context: fixture.bob_token,
+                owner: fixture.bob.pubkey(),
+                acl_record: output.bob_owner,
+            }],
+        ),
+    ));
     let decrypted = decrypt_handles(
         &harness.pool,
         &[Handle::from(new_alice_handle), Handle::from(new_bob_handle)],
@@ -184,6 +210,32 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
 
     insert_host_events(&harness.listener_db, transfer_events, signature, 2).await?;
     wait_until_computed(&harness.app).await?;
+    assert!(kms_like_user_decrypt_check(
+        &fixture.svm,
+        &signed_user_decrypt_request(
+            &fixture.alice,
+            vec![fixture.alice_token],
+            vec![UserDecryptHandleEntry {
+                handle: new_alice_handle,
+                app_context: fixture.alice_token,
+                owner: fixture.alice.pubkey(),
+                acl_record: output.alice_owner,
+            }],
+        ),
+    ));
+    assert!(kms_like_user_decrypt_check(
+        &fixture.svm,
+        &signed_user_decrypt_request(
+            &fixture.bob,
+            vec![fixture.bob_token],
+            vec![UserDecryptHandleEntry {
+                handle: new_bob_handle,
+                app_context: fixture.bob_token,
+                owner: fixture.bob.pubkey(),
+                acl_record: output.bob_owner,
+            }],
+        ),
+    ));
     let decrypted = decrypt_handles(
         &harness.pool,
         &[Handle::from(new_alice_handle), Handle::from(new_bob_handle)],
@@ -238,6 +290,94 @@ async fn solana_fhe_rand_creates_ciphertext_and_decrypts() -> Result<(), Box<dyn
     Ok(())
 }
 
+#[test]
+#[ignore = "requires built Solana PoC programs; validates user-decrypt ACL semantics without running the worker"]
+fn solana_user_decrypt_acl_invariants_match_evm_semantics() {
+    let mut fixture = token_fixture();
+    let amount_handle = typed_fast_handle(0x39);
+    let new_alice_handle = typed_fast_handle(0x3a);
+    let new_bob_handle = typed_fast_handle(0x3b);
+    let output = transfer_output_accounts(&fixture, 1);
+    let transfer_ix = transfer_ix(
+        &fixture,
+        output,
+        amount_handle,
+        new_alice_handle,
+        new_bob_handle,
+    );
+    send_with_meta(&mut fixture.svm, &fixture.alice, transfer_ix);
+
+    let valid = signed_user_decrypt_request(
+        &fixture.alice,
+        vec![fixture.alice_token],
+        vec![UserDecryptHandleEntry {
+            handle: new_alice_handle,
+            app_context: fixture.alice_token,
+            owner: fixture.alice.pubkey(),
+            acl_record: output.alice_owner,
+        }],
+    );
+    assert!(kms_like_user_decrypt_check(&fixture.svm, &valid));
+
+    let missing_user_acl = signed_user_decrypt_request(
+        &fixture.alice,
+        vec![fixture.alice_token],
+        vec![UserDecryptHandleEntry {
+            handle: new_alice_handle,
+            app_context: fixture.alice_token,
+            owner: fixture.alice.pubkey(),
+            acl_record: output.alice_compute,
+        }],
+    );
+    assert!(!kms_like_user_decrypt_check(
+        &fixture.svm,
+        &missing_user_acl
+    ));
+
+    let missing_app_scope = signed_user_decrypt_request(
+        &fixture.alice,
+        vec![fixture.bob_token],
+        valid.handles.clone(),
+    );
+    assert!(!kms_like_user_decrypt_check(
+        &fixture.svm,
+        &missing_app_scope
+    ));
+
+    let wrong_app_context = signed_user_decrypt_request(
+        &fixture.alice,
+        vec![fixture.bob_token],
+        vec![UserDecryptHandleEntry {
+            app_context: fixture.bob_token,
+            ..valid.handles[0]
+        }],
+    );
+    assert!(!kms_like_user_decrypt_check(
+        &fixture.svm,
+        &wrong_app_context
+    ));
+
+    let wrong_owner = signed_user_decrypt_request(
+        &fixture.bob,
+        vec![fixture.alice_token],
+        valid.handles.clone(),
+    );
+    assert!(!kms_like_user_decrypt_check(&fixture.svm, &wrong_owner));
+
+    let user_equals_app_context = signed_user_decrypt_request(
+        &fixture.alice,
+        vec![fixture.alice.pubkey()],
+        vec![UserDecryptHandleEntry {
+            app_context: fixture.alice.pubkey(),
+            ..valid.handles[0]
+        }],
+    );
+    assert!(!kms_like_user_decrypt_check(
+        &fixture.svm,
+        &user_equals_app_context
+    ));
+}
+
 struct TokenFixture {
     svm: LiteSVM,
     host_program_id: Pubkey,
@@ -266,6 +406,31 @@ struct TransferOutputAccounts {
     alice_compute: Pubkey,
     bob_owner: Pubkey,
     bob_compute: Pubkey,
+}
+
+#[derive(Clone)]
+struct UserDecryptAuthorizationPayload {
+    user: Pubkey,
+    reencryption_public_key: [u8; 32],
+    allowed_accounts: Vec<Pubkey>,
+    start_timestamp: i64,
+    duration_seconds: u64,
+    extra_data: Vec<u8>,
+}
+
+#[derive(Clone)]
+struct UserDecryptRequest {
+    authorization: UserDecryptAuthorizationPayload,
+    signature: Signature,
+    handles: Vec<UserDecryptHandleEntry>,
+}
+
+#[derive(Clone, Copy)]
+struct UserDecryptHandleEntry {
+    handle: [u8; 32],
+    app_context: Pubkey,
+    owner: Pubkey,
+    acl_record: Pubkey,
 }
 
 fn host_fixture() -> HostFixture {
@@ -723,6 +888,82 @@ fn count_acl_events(events: &[SolanaHostEvent]) -> usize {
         .iter()
         .filter(|event| matches!(event, SolanaHostEvent::AclAllowed(_)))
         .count()
+}
+
+fn signed_user_decrypt_request(
+    signer: &Keypair,
+    allowed_accounts: Vec<Pubkey>,
+    handles: Vec<UserDecryptHandleEntry>,
+) -> UserDecryptRequest {
+    let authorization = UserDecryptAuthorizationPayload {
+        user: signer.pubkey(),
+        reencryption_public_key: [7; 32],
+        allowed_accounts,
+        start_timestamp: 1,
+        duration_seconds: 300,
+        extra_data: b"zama-solana-poc".to_vec(),
+    };
+    let signature = signer.sign_message(&authorization_payload_bytes(&authorization));
+
+    UserDecryptRequest {
+        authorization,
+        signature,
+        handles,
+    }
+}
+
+fn authorization_payload_bytes(authorization: &UserDecryptAuthorizationPayload) -> Vec<u8> {
+    let mut bytes = b"Zama Solana UserDecrypt v0".to_vec();
+    bytes.extend_from_slice(authorization.user.as_ref());
+    bytes.extend_from_slice(&authorization.reencryption_public_key);
+    bytes.extend_from_slice(&(authorization.allowed_accounts.len() as u32).to_le_bytes());
+    for account in &authorization.allowed_accounts {
+        bytes.extend_from_slice(account.as_ref());
+    }
+    bytes.extend_from_slice(&authorization.start_timestamp.to_le_bytes());
+    bytes.extend_from_slice(&authorization.duration_seconds.to_le_bytes());
+    bytes.extend_from_slice(&(authorization.extra_data.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&authorization.extra_data);
+    bytes
+}
+
+fn kms_like_user_decrypt_check(svm: &LiteSVM, request: &UserDecryptRequest) -> bool {
+    let authorization = &request.authorization;
+    let signed_payload = authorization_payload_bytes(authorization);
+    if !request
+        .signature
+        .verify(authorization.user.as_ref(), &signed_payload)
+        || authorization.reencryption_public_key == [0; 32]
+        || authorization.duration_seconds == 0
+        || authorization.extra_data.is_empty()
+        || authorization.start_timestamp < 0
+        || request.handles.is_empty()
+    {
+        return false;
+    }
+
+    request.handles.iter().all(|entry| {
+        if authorization.user != entry.owner
+            || authorization.user == entry.app_context
+            || !authorization.allowed_accounts.contains(&entry.app_context)
+        {
+            return false;
+        }
+
+        let Some(record) = read_acl_record(svm, entry.acl_record) else {
+            return false;
+        };
+        record.scope == entry.app_context
+            && record.handle == entry.handle
+            && record.subject == authorization.user
+            && record.permission == AclPermission::UserDecrypt
+    })
+}
+
+fn read_acl_record(svm: &LiteSVM, address: Pubkey) -> Option<AclRecord> {
+    let account = svm.get_account(&address)?;
+    let mut data = account.data.as_slice();
+    AclRecord::try_deserialize(&mut data).ok()
 }
 
 fn typed_fast_handle(seed: u8) -> [u8; 32] {
