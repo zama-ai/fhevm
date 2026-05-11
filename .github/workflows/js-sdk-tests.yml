@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       release:
-        description: "Set to true for release tagging"
+        description: 'Set to true for release tagging'
         required: false
         default: false
 
@@ -26,8 +26,8 @@ jobs:
       run:
         working-directory: ./sdk/js-sdk
     permissions:
-      contents: "read" # Required to checkout repository code
-      id-token: "write" # Required for OIDC / npm provenance attestation
+      contents: 'read' # Required to checkout repository code
+      id-token: 'write' # Required for OIDC / npm provenance attestation
     steps:
       # -----------------------------------------------------------------------
       # 1. Checkout
@@ -38,7 +38,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
-          persist-credentials: "false"
+          persist-credentials: 'false'
 
       # -----------------------------------------------------------------------
       # 2. Node.js setup
@@ -113,9 +113,6 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Setup Forge Soldeer
         run: cd contracts && forge soldeer install
-
-      #- name: Set .env.localhost
-      #  run: echo 'RPC_URL="http://127.0.0.1:8545"' > test/.env.localhost
 
       - name: Set .env
         run: |
