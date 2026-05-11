@@ -88,7 +88,7 @@ describe.runIf(!isCleartext(getEthersTestConfig().chainName))(
 
         console.log(`setE${fheType.substring(1)}(${inputHandle})...`);
 
-        switch (fheType) {
+        switch (`e${fheType}`) {
           case 'ebool':
             tx = await fheTest.setEbool!(inputHandle, inputProof, ct, makePublic);
             break;
@@ -114,7 +114,7 @@ describe.runIf(!isCleartext(getEthersTestConfig().chainName))(
             tx = await fheTest.setEaddress!(inputHandle, inputProof, ct, makePublic);
             break;
           default:
-            throw new Error(`Unsupported fheType`);
+            throw new Error(`Unsupported type: ${fheType}`);
         }
 
         const receipt = await tx.wait();

@@ -25,7 +25,7 @@
     "test:fast:devnet": "CHAIN=devnet npx vitest run --config test/fheTest/vitest.config.ts --exclude '**/**.slow.test.ts' test/fheTest/ethers test/fheTest/viem",
     "test:full:testnet": "CHAIN=sepolia npx vitest run --config test/fheTest/vitest.config.ts test/fheTest/ethers test/fheTest/viem",
     "test:full:devnet": "CHAIN=devnet npx vitest run --config test/fheTest/vitest.config.ts test/fheTest/ethers test/fheTest/viem",
-    "test:localhostFhevm": "npm run fhevm:restart && CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts test/fheTest/viem && CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts test/fheTest/ethers && npm run fhevm:stop",
+    "test:localhostFhevm": "./test/scripts/run-localhostFhevm.sh",
     "test:localhost:v12": "./test/scripts/run-cleartext-anvil.sh --profile=v12",
     "test:localhost:v13": "./test/scripts/run-cleartext-anvil.sh --profile=v13",
     "test:localhost": "./test/scripts/run-cleartext-anvil.sh",

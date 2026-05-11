@@ -90,7 +90,7 @@ describe.runIf(isV2(getViemTestConfig().chainName) && !isCleartext(getViemTestCo
         const makePublic = true;
 
         // Compute function name from fheType: ebool → setEbool, euint8 → setEuint8, etc.
-        const functionName = `set${fheType.charAt(0).toUpperCase()}${fheType.slice(1)}`;
+        const functionName = `setE${fheType}`;
         console.log(`${functionName}(${inputHandle})...`);
 
         const hash = await walletClient.writeContract({
