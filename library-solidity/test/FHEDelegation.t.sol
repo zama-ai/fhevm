@@ -84,7 +84,6 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
     address internal constant PAUSER = address(0xBB22);
     address internal constant GATEWAY_SOURCE = address(0xCC33);
     uint64 internal constant GATEWAY_CHAIN_ID = 31337;
-
     function setUp() public {
         vm.warp(1_000_000);
 

@@ -4,7 +4,9 @@ import fs from "fs";
 import { task, types } from "hardhat/config";
 import path from "path";
 
-const KMS_GENERATION_STORAGE_LOCATION = BigInt(calculateERC7201StorageLocation("fhevm_gateway.storage.KMSGeneration"));
+const KMS_GENERATION_STORAGE_LOCATION = BigInt(
+  calculateERC7201StorageLocation("fhevm_gateway.storage.KMSGeneration"),
+);
 
 function storageSlot(offset: bigint): string {
   return toBeHex(KMS_GENERATION_STORAGE_LOCATION + offset, 32);
@@ -84,9 +86,7 @@ async function readKmsStorageState(
     readWord(mappingSlot(activeCrsId, KMS_GENERATION_SLOT.consensusDigest)),
   ]);
 
-  const prepKeygenConsensusDigest = await readWord(
-    mappingSlot(activePrepKeygenId, KMS_GENERATION_SLOT.consensusDigest),
-  );
+  const prepKeygenConsensusDigest = await readWord(mappingSlot(activePrepKeygenId, KMS_GENERATION_SLOT.consensusDigest));
 
   return {
     prepKeygenCounter,

@@ -10,9 +10,6 @@ import { type HardhatUserConfig, extendProvider } from 'hardhat/config';
 import type { NetworkUserConfig } from 'hardhat/types';
 import { resolve } from 'path';
 
-export const ADDRESSES_DIR = resolve(__dirname, 'addresses');
-export const HOST_ADDRESSES_ENV_FILE_NAME = '.env.host';
-
 import CustomProvider from './CustomProvider';
 import './tasks/accounts';
 import './tasks/addPausers';

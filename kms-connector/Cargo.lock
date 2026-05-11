@@ -1827,7 +1827,7 @@ checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
 [[package]]
 name = "bc2wrap"
 version = "2.0.1"
-source = "git+https://github.com/zama-ai/kms.git?tag=v0.13.20-0#92f85350dc2b11f3b5551a85168d4d1c9ca27f80"
+source = "git+https://github.com/zama-ai/kms.git?tag=v0.13.20-0#07b2a8fc2f7a50fb234f19a2a1dd8cda06e9ef8a"
 dependencies = [
  "bincode 2.0.1",
  "serde",
@@ -3849,7 +3849,7 @@ dependencies = [
 [[package]]
 name = "kms-grpc"
 version = "0.13.20-0"
-source = "git+https://github.com/zama-ai/kms.git?tag=v0.13.20-0#92f85350dc2b11f3b5551a85168d4d1c9ca27f80"
+source = "git+https://github.com/zama-ai/kms.git?tag=v0.13.20-0#07b2a8fc2f7a50fb234f19a2a1dd8cda06e9ef8a"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-primitives",
@@ -5377,9 +5377,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.10"
+version = "0.103.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df33b2b81ac578cabaf06b89b0631153a3f416b0a886e8a7a1707fb51abbd1ef"
+checksum = "61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e"
 dependencies = [
  "aws-lc-rs",
  "ring",
@@ -6393,7 +6393,7 @@ dependencies = [
 [[package]]
 name = "threshold-hashing"
 version = "0.13.20-0"
-source = "git+https://github.com/zama-ai/kms.git?tag=v0.13.20-0#92f85350dc2b11f3b5551a85168d4d1c9ca27f80"
+source = "git+https://github.com/zama-ai/kms.git?tag=v0.13.20-0#07b2a8fc2f7a50fb234f19a2a1dd8cda06e9ef8a"
 dependencies = [
  "anyhow",
  "bc2wrap",
@@ -6404,7 +6404,7 @@ dependencies = [
 [[package]]
 name = "threshold-types"
 version = "0.13.20-0"
-source = "git+https://github.com/zama-ai/kms.git?tag=v0.13.20-0#92f85350dc2b11f3b5551a85168d4d1c9ca27f80"
+source = "git+https://github.com/zama-ai/kms.git?tag=v0.13.20-0#07b2a8fc2f7a50fb234f19a2a1dd8cda06e9ef8a"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6671,9 +6671,9 @@ dependencies = [
 
 [[package]]
 name = "tonic-build"
-version = "0.14.6"
+version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c68f61875ac5293cf72e6c8cf0158086428c82c37229e98c840878f1706b0322"
+checksum = "1882ac3bf5ef12877d7ed57aad87e75154c11931c2ba7e6cde5e22d63522c734"
 dependencies = [
  "prettyplease",
  "proc-macro2",

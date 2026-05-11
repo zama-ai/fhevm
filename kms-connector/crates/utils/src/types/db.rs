@@ -208,18 +208,6 @@ impl EventType {
             EventType::CrsgenRequest => CrsgenRequest::SIGNATURE_HASH,
         }
     }
-
-    pub fn signature_hash(&self) -> B256 {
-        match self {
-            EventType::PublicDecryptionRequest => PublicDecryptionRequest::SIGNATURE_HASH,
-            EventType::UserDecryptionRequest => UserDecryptionRequest::SIGNATURE_HASH,
-            EventType::PrepKeygenRequest => PrepKeygenRequest::SIGNATURE_HASH,
-            EventType::KeygenRequest => KeygenRequest::SIGNATURE_HASH,
-            EventType::CrsgenRequest => CrsgenRequest::SIGNATURE_HASH,
-            EventType::PrssInit => PRSSInit::SIGNATURE_HASH,
-            EventType::KeyReshareSameSet => KeyReshareSameSet::SIGNATURE_HASH,
-        }
-    }
 }
 
 // Postgres notifications
