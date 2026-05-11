@@ -200,6 +200,7 @@ C2: Runtime transfer events are decoded from Anchor self-CPI bytes.
 C3: Mapped events can be inserted through the existing host-listener DB methods.
 C4: ACL PDA design is tested with a minimal confidential-token transfer.
 C5: User decrypt references the same app context / ACL subject shape.
+C6: Real encrypted inputs flow through Solana events, the existing DB model, the real TFHE worker, and local test-key decrypt.
 ```
 
 ## Commands
@@ -215,6 +216,36 @@ cargo test --workspace
 ```bash
 cd coprocessor/fhevm-engine
 cargo test -p host-listener solana_adapter --lib
+```
+
+The worker-backed smoke test is ignored by default because it starts disposable Postgres, runs migrations, creates test keys, loads the Solana programs in LiteSVM, inserts decoded Solana events through `host-listener`, runs the real `tfhe-worker`, and decrypts the result with the local test key:
+
+```bash
+cd coprocessor/fhevm-engine
+SQLX_OFFLINE=true cargo test -p tfhe-worker \
+  solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypts \
+  --lib -- --ignored --nocapture
+```
+
+That test uses small real `FheUint8` ciphertexts for speed. The Solana programs only see opaque handles, so this still exercises the real cross-component path:
+
+```text
+Enc(125) = hA0     Enc(20) = hB0     Enc(100) = hX
+
+LiteSVM confidential_transfer(hX)
+  -> emits FHE.sub(hA0, hX) -> hA1
+  -> emits FHE.add(hB0, hX) -> hB1
+  -> emits output ACL events for hA1/hB1
+
+host-listener::solana_adapter
+  -> inserts computations + allowed handles
+
+tfhe-worker
+  -> computes real ciphertexts for hA1/hB1
+
+test decrypt
+  -> hA1 = 25
+  -> hB1 = 120
 ```
 
 ## Deliberate Non-Goals For This Slice
