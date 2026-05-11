@@ -99,12 +99,15 @@ describe('Migration prepare tasks', function () {
       applyProtocolConfigMigrationEnv(protocolConfigMigrationEnv);
 
       const implementationSlotBefore = await readImplementationSlot(proxyAddress);
-      const preparedUpgrade = await run('task:prepareDeployProtocolConfigFromMigration');
+      const preparedUpgrade = await run('task:prepareDeployProtocolConfigFromMigration', {
+        verifyContract: false,
+      });
       const implementationSlotAfter = await readImplementationSlot(proxyAddress);
 
       expect(implementationSlotAfter).to.equal(implementationSlotBefore);
 
       const { newImplementationAddress, innerFunctionSignature, innerCalldata, outerCalldata } = preparedUpgrade;
+      expect(preparedUpgrade.proxyAddress).to.equal(proxyAddress);
       const iface = new ethers.Interface([`function ${innerFunctionSignature}`]);
       const decoded = iface.decodeFunctionData('initializeFromMigration', innerCalldata);
 
@@ -115,6 +118,35 @@ describe('Migration prepare tasks', function () {
       expect(decoded[2][0]).to.equal(BigInt(getRequiredEnvVar('PUBLIC_DECRYPTION_THRESHOLD')));
       expect(outerCalldata).to.equal(
         UPGRADE_TO_AND_CALL_INTERFACE.encodeFunctionData('upgradeToAndCall', [newImplementationAddress, innerCalldata]),
+      );
+    });
+
+    it('executes the devnet direct upgrade and initializes ProtocolConfig from migration state', async function () {
+      const proxyAddress = await deployEmptyUUPSProxy(deployer);
+      patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', proxyAddress);
+
+      const migratedContextId = KMS_CONTEXT_COUNTER_BASE + BigInt(4);
+      const protocolConfigMigrationEnv: ProtocolConfigMigrationEnv = {
+        MIGRATION_CONTEXT_ID: migratedContextId.toString(),
+        MIGRATION_KMS_NODES: JSON.stringify(buildKmsNodes()),
+        MIGRATION_KMS_THRESHOLDS: JSON.stringify(buildKmsThresholds()),
+      };
+      applyProtocolConfigMigrationEnv(protocolConfigMigrationEnv);
+
+      const implementationSlotBefore = await readImplementationSlot(proxyAddress);
+      await run('task:deployProtocolConfigFromMigration');
+      const protocolConfig = await ethers.getContractAt('ProtocolConfig', proxyAddress);
+
+      expect(await readImplementationSlot(proxyAddress)).to.not.equal(implementationSlotBefore);
+      expect(await protocolConfig.getVersion()).to.equal('ProtocolConfig v0.1.0');
+      expect(await protocolConfig.getCurrentKmsContextId()).to.equal(migratedContextId);
+      expect(await protocolConfig.getPublicDecryptionThreshold()).to.equal(
+        BigInt(getRequiredEnvVar('PUBLIC_DECRYPTION_THRESHOLD')),
+      );
+
+      const kmsNodes = await protocolConfig.getKmsNodesForContext(migratedContextId);
+      expect(kmsNodes.map((node) => node.txSenderAddress)).to.deep.equal(
+        getKmsTxSenderAddresses(+getRequiredEnvVar('NUM_KMS_NODES')),
       );
     });
   });
@@ -158,7 +190,7 @@ describe('Migration prepare tasks', function () {
         MIGRATION_CRS_PARAMS_TYPE: '0',
         MIGRATION_CONTEXT_ID: contextId.toString(),
       };
-      return { activeKeyId, activeCrsId, consensusTxSenders, migrationEnv };
+      return { activeKeyId, activeCrsId, activePrepKeygenId, consensusTxSenders, migrationEnv };
     }
 
     it('prepares DAO calldata from MIGRATION_* env without mutating the empty proxy implementation', async function () {
@@ -169,12 +201,15 @@ describe('Migration prepare tasks', function () {
       applyKmsGenerationMigrationEnv(migrationEnv);
 
       const implementationSlotBefore = await readImplementationSlot(proxyAddress);
-      const preparedUpgrade = await run('task:prepareDeployKMSGenerationFromMigration');
+      const preparedUpgrade = await run('task:prepareDeployKMSGenerationFromMigration', {
+        verifyContract: false,
+      });
       const implementationSlotAfter = await readImplementationSlot(proxyAddress);
 
       expect(implementationSlotAfter).to.equal(implementationSlotBefore);
 
       const { newImplementationAddress, innerFunctionSignature, innerCalldata, outerCalldata } = preparedUpgrade;
+      expect(preparedUpgrade.proxyAddress).to.equal(proxyAddress);
       const iface = new ethers.Interface([`function ${innerFunctionSignature}`]);
       const decoded = iface.decodeFunctionData('initializeFromMigration', innerCalldata);
 
@@ -185,6 +220,61 @@ describe('Migration prepare tasks', function () {
       expect(outerCalldata).to.equal(
         UPGRADE_TO_AND_CALL_INTERFACE.encodeFunctionData('upgradeToAndCall', [newImplementationAddress, innerCalldata]),
       );
+    });
+
+    it('executes the devnet direct upgrade and initializes KMSGeneration from MIGRATION_* env', async function () {
+      const proxyAddress = await deployEmptyUUPSProxy(deployer);
+      patchHostEnv('KMS_GENERATION_CONTRACT_ADDRESS', proxyAddress);
+
+      const { activeKeyId, activeCrsId, activePrepKeygenId, consensusTxSenders, migrationEnv } =
+        buildKmsGenerationMigrationFixture();
+      applyKmsGenerationMigrationEnv(migrationEnv);
+
+      const implementationSlotBefore = await readImplementationSlot(proxyAddress);
+      await run('task:deployKMSGenerationFromMigration');
+      const kmsGeneration = await ethers.getContractAt('KMSGeneration', proxyAddress);
+
+      expect(await readImplementationSlot(proxyAddress)).to.not.equal(implementationSlotBefore);
+      expect(await kmsGeneration.getVersion()).to.equal('KMSGeneration v0.1.0');
+      expect(await kmsGeneration.getKeyCounter()).to.equal(activeKeyId);
+      expect(await kmsGeneration.getCrsCounter()).to.equal(activeCrsId);
+      expect(await kmsGeneration.getActiveKeyId()).to.equal(activeKeyId);
+      expect(await kmsGeneration.getActiveCrsId()).to.equal(activeCrsId);
+      expect(await kmsGeneration.isRequestDone(activePrepKeygenId)).to.equal(true);
+      expect(await kmsGeneration.isRequestDone(activeKeyId)).to.equal(true);
+      expect(await kmsGeneration.isRequestDone(activeCrsId)).to.equal(true);
+      expect(await kmsGeneration.getConsensusTxSenders(activeKeyId)).to.deep.equal(consensusTxSenders);
+
+      const [, activeKeyDigests] = await kmsGeneration.getKeyMaterials(activeKeyId);
+      const [, activeCrsDigest] = await kmsGeneration.getCrsMaterials(activeCrsId);
+      expect(activeKeyDigests.map((digest) => [Number(digest.keyType), digest.digest])).to.deep.equal([
+        [0, '0xabcdef0123456789'],
+        [1, '0x9876543210fedcba'],
+      ]);
+      expect(activeCrsDigest).to.equal('0xdeadbeefcafe0123');
+    });
+
+    it('asserts the live host migration state matches MIGRATION_* env', async function () {
+      const protocolConfigProxyAddress = await deployEmptyUUPSProxy(deployer);
+      const kmsGenerationProxyAddress = await deployEmptyUUPSProxy(deployer);
+      const kmsVerifierProxyAddress = await deployEmptyUUPSProxy(deployer);
+
+      patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', protocolConfigProxyAddress);
+      patchHostEnv('KMS_GENERATION_CONTRACT_ADDRESS', kmsGenerationProxyAddress);
+      patchHostEnv('KMS_VERIFIER_CONTRACT_ADDRESS', kmsVerifierProxyAddress);
+
+      const { migrationEnv } = buildKmsGenerationMigrationFixture();
+      applyKmsGenerationMigrationEnv(migrationEnv);
+      applyProtocolConfigMigrationEnv({
+        MIGRATION_CONTEXT_ID: contextId.toString(),
+        MIGRATION_KMS_NODES: JSON.stringify(buildKmsNodes()),
+        MIGRATION_KMS_THRESHOLDS: JSON.stringify(buildKmsThresholds()),
+      });
+
+      await run('task:deployProtocolConfigFromMigration');
+      await run('task:deployKMSVerifier');
+      await run('task:deployKMSGenerationFromMigration');
+      await run('task:assertKmsMigrationSucceeded');
     });
   });
 
@@ -237,6 +327,20 @@ describe('Migration prepare tasks', function () {
       await expect(run('task:deployKMSVerifier')).to.be.rejectedWith(
         `Cannot deploy KMSVerifier: Contract at ${protocolConfigProxyAddress} does not expose getVersion(); it is not a ProtocolConfig proxy.`,
       );
+
+      expect(await upgrades.erc1967.getImplementationAddress(kmsVerifierProxyAddress)).to.equal(kmsVerifierImplBefore);
+    });
+
+    it('prepares KMSVerifier upgrade calldata without mutating the proxy implementation', async function () {
+      const kmsVerifierProxyAddress = readHostAddress('KMS_VERIFIER_CONTRACT_ADDRESS');
+      const kmsVerifierImplBefore = await upgrades.erc1967.getImplementationAddress(kmsVerifierProxyAddress);
+
+      await run('task:prepareUpgradeKMSVerifier', {
+        currentImplementation: 'contracts/KMSVerifier.sol:KMSVerifier',
+        newImplementation: 'contracts/KMSVerifier.sol:KMSVerifier',
+        useInternalProxyAddress: true,
+        verifyContract: false,
+      });
 
       expect(await upgrades.erc1967.getImplementationAddress(kmsVerifierProxyAddress)).to.equal(kmsVerifierImplBefore);
     });

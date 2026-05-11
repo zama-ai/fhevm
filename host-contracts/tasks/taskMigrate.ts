@@ -1,8 +1,9 @@
-import { FunctionFragment, Interface, type InterfaceAbi } from 'ethers';
-import { task } from 'hardhat/config';
+import { FunctionFragment, Interface, type InterfaceAbi, getAddress } from 'ethers';
+import { task, types } from 'hardhat/config';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
 import {
+  assertContractMatchesVersionPrefix,
   deployEmptyUUPS,
   ensureAddressesDirectoryExists,
   readExistingHostEnv,
@@ -11,7 +12,10 @@ import {
 } from './taskDeploy';
 import { buildKMSGenerationInitializeFromMigrationArgs } from './utils/kmsGenerationMigrationEnv';
 import { getRequiredEnvVar } from './utils/loadVariables';
-import { buildProtocolConfigInitializeFromMigrationArgs } from './utils/protocolConfigMigrationEnv';
+import {
+  type ProtocolConfigMigrationKmsNode,
+  buildProtocolConfigInitializeFromMigrationArgs,
+} from './utils/protocolConfigMigrationEnv';
 
 ////////////////////////////////////////////////////////////////////////////////
 // Proposal artifact helpers
@@ -85,6 +89,20 @@ async function prepareDaoUpgrade(
   };
 }
 
+async function verifyPreparedImplementation(
+  hre: HardhatRuntimeEnvironment,
+  data: PreparedDaoUpgrade,
+  contract: string,
+): Promise<void> {
+  console.log('Waiting 2 minutes before contract verification... Please wait...');
+  await new Promise((resolve) => setTimeout(resolve, 2 * 60 * 1000));
+  await hre.run('verify:verify', {
+    address: data.newImplementationAddress,
+    contract,
+    constructorArguments: [],
+  });
+}
+
 function printPreparedDaoUpgrade(data: PreparedDaoUpgrade): void {
   console.log('proxyAddress:', data.proxyAddress);
   console.log('newImplementationAddress:', data.newImplementationAddress);
@@ -106,6 +124,75 @@ function printPreparedDaoUpgrade(data: PreparedDaoUpgrade): void {
   console.log(
     `Cast command: cast calldata 'upgradeToAndCall(address,bytes)' ${data.newImplementationAddress} ${data.innerCalldata}`,
   );
+}
+
+function assertEqual(label: string, actual: string | number | boolean, expected: string | number | boolean): void {
+  if (actual !== expected) {
+    throw new Error(`${label} mismatch: expected ${expected}, got ${actual}.`);
+  }
+}
+
+function assertBigIntEqual(label: string, actual: bigint, expected: bigint): void {
+  if (actual !== expected) {
+    throw new Error(`${label} mismatch: expected ${expected.toString()}, got ${actual.toString()}.`);
+  }
+}
+
+function assertJsonEqual(label: string, actual: unknown, expected: unknown): void {
+  const actualJson = stringifyForProposal(actual);
+  const expectedJson = stringifyForProposal(expected);
+  if (actualJson !== expectedJson) {
+    throw new Error(`${label} mismatch: expected ${expectedJson}, got ${actualJson}.`);
+  }
+}
+
+function normalizeAddresses(addresses: readonly string[]): string[] {
+  return addresses.map((address) => getAddress(address));
+}
+
+type KmsNodeLike = {
+  txSenderAddress: string;
+  signerAddress: string;
+  ipAddress: string;
+  storageUrl: string;
+};
+
+function normalizeKmsNode(node: KmsNodeLike): ProtocolConfigMigrationKmsNode {
+  return {
+    txSenderAddress: getAddress(node.txSenderAddress),
+    signerAddress: getAddress(node.signerAddress),
+    ipAddress: node.ipAddress,
+    storageUrl: node.storageUrl,
+  };
+}
+
+type KeyDigestLike = {
+  keyType: number | bigint;
+  digest: string;
+};
+
+function normalizeKeyDigest(digest: KeyDigestLike): { keyType: number; digest: string } {
+  return {
+    keyType: Number(digest.keyType),
+    digest: digest.digest.toLowerCase(),
+  };
+}
+
+function storageUrlsForSenders(
+  nodes: readonly ProtocolConfigMigrationKmsNode[],
+  txSenders: readonly string[],
+): string[] {
+  const storageUrlsByTxSender = new Map(
+    nodes.map((node) => [getAddress(node.txSenderAddress), node.storageUrl] as const),
+  );
+
+  return txSenders.map((txSender) => {
+    const storageUrl = storageUrlsByTxSender.get(getAddress(txSender));
+    if (storageUrl === undefined) {
+      throw new Error(`Migration snapshot has consensus tx sender ${txSender} without a matching KMS node.`);
+    }
+    return storageUrl;
+  });
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -150,24 +237,34 @@ task('task:deployEmptyProxiesProtocolConfigKMSGeneration').setAction(async funct
 task(
   'task:prepareDeployProtocolConfigFromMigration',
   'Deploys a ProtocolConfig migration implementation and prints DAO upgrade calldata without mutating the proxy',
-).setAction(async function (_, hre) {
-  const parsedEnv = readHostEnv();
-  const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
-  // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild
-  await hre.run('compile:specific', { contract: 'contracts' });
-  const decodedArgs = buildProtocolConfigInitializeFromMigrationArgs();
-  const artifact = await hre.artifacts.readArtifact('ProtocolConfig');
-  const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
-  const preparedUpgrade = await prepareDaoUpgrade(hre, {
-    proxyAddress,
-    contractName: 'ProtocolConfig',
-    innerFunctionSignature,
-    decodedArgs,
-  });
+)
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(async function ({ verifyContract }, hre) {
+    const parsedEnv = readHostEnv();
+    const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+    // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild
+    await hre.run('compile:specific', { contract: 'contracts' });
+    const decodedArgs = buildProtocolConfigInitializeFromMigrationArgs();
+    const artifact = await hre.artifacts.readArtifact('ProtocolConfig');
+    const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
+    const preparedUpgrade = await prepareDaoUpgrade(hre, {
+      proxyAddress,
+      contractName: 'ProtocolConfig',
+      innerFunctionSignature,
+      decodedArgs,
+    });
 
-  printPreparedDaoUpgrade(preparedUpgrade);
-  return preparedUpgrade;
-});
+    printPreparedDaoUpgrade(preparedUpgrade);
+    if (verifyContract) {
+      await verifyPreparedImplementation(hre, preparedUpgrade, 'contracts/ProtocolConfig.sol:ProtocolConfig');
+    }
+    return preparedUpgrade;
+  });
 
 task(
   'task:deployProtocolConfigFromMigration',
@@ -201,24 +298,34 @@ task(
 task(
   'task:prepareDeployKMSGenerationFromMigration',
   'Deploys a KMSGeneration migration implementation from MIGRATION_* env and prints DAO upgrade calldata without mutating the proxy',
-).setAction(async function (_, hre) {
-  const parsedEnv = readHostEnv();
-  const proxyAddress = parsedEnv.KMS_GENERATION_CONTRACT_ADDRESS;
-  // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild
-  await hre.run('compile:specific', { contract: 'contracts' });
-  const decodedArgs = buildKMSGenerationInitializeFromMigrationArgs();
-  const artifact = await hre.artifacts.readArtifact('KMSGeneration');
-  const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
-  const preparedUpgrade = await prepareDaoUpgrade(hre, {
-    proxyAddress,
-    contractName: 'KMSGeneration',
-    innerFunctionSignature,
-    decodedArgs,
-  });
+)
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(async function ({ verifyContract }, hre) {
+    const parsedEnv = readHostEnv();
+    const proxyAddress = parsedEnv.KMS_GENERATION_CONTRACT_ADDRESS;
+    // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild
+    await hre.run('compile:specific', { contract: 'contracts' });
+    const decodedArgs = buildKMSGenerationInitializeFromMigrationArgs();
+    const artifact = await hre.artifacts.readArtifact('KMSGeneration');
+    const innerFunctionSignature = getFunctionFragment(artifact.abi, 'initializeFromMigration').format('sighash');
+    const preparedUpgrade = await prepareDaoUpgrade(hre, {
+      proxyAddress,
+      contractName: 'KMSGeneration',
+      innerFunctionSignature,
+      decodedArgs,
+    });
 
-  printPreparedDaoUpgrade(preparedUpgrade);
-  return preparedUpgrade;
-});
+    printPreparedDaoUpgrade(preparedUpgrade);
+    if (verifyContract) {
+      await verifyPreparedImplementation(hre, preparedUpgrade, 'contracts/KMSGeneration.sol:KMSGeneration');
+    }
+    return preparedUpgrade;
+  });
 
 task(
   'task:deployKMSGenerationFromMigration',
@@ -242,4 +349,202 @@ task(
     },
   });
   console.log('KMSGeneration migration code set successfully at address:', proxyAddress);
+});
+
+////////////////////////////////////////////////////////////////////////////////
+// Post-execution verification
+////////////////////////////////////////////////////////////////////////////////
+
+task(
+  'task:assertKmsMigrationSucceeded',
+  'Asserts the live host migration state matches the MIGRATION_* snapshot env',
+).setAction(async function (_, hre) {
+  const parsedEnv = readHostEnv();
+  const protocolConfigAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+  const kmsGenerationAddress = parsedEnv.KMS_GENERATION_CONTRACT_ADDRESS;
+  const kmsVerifierAddress = parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS;
+  if (!protocolConfigAddress) {
+    throw new Error('PROTOCOL_CONFIG_CONTRACT_ADDRESS is missing from addresses/.env.host.');
+  }
+  if (!kmsGenerationAddress) {
+    throw new Error('KMS_GENERATION_CONTRACT_ADDRESS is missing from addresses/.env.host.');
+  }
+  if (!kmsVerifierAddress) {
+    throw new Error('KMS_VERIFIER_CONTRACT_ADDRESS is missing from addresses/.env.host.');
+  }
+
+  const [expectedContextId, expectedNodes, expectedThresholds] = buildProtocolConfigInitializeFromMigrationArgs();
+  const [expectedKmsGenerationState] = buildKMSGenerationInitializeFromMigrationArgs();
+
+  await assertContractMatchesVersionPrefix(hre, protocolConfigAddress, 'ProtocolConfig');
+  const protocolConfig = await hre.ethers.getContractAt('ProtocolConfig', protocolConfigAddress);
+
+  assertBigIntEqual(
+    'ProtocolConfig current KMS context ID',
+    await protocolConfig.getCurrentKmsContextId(),
+    expectedContextId,
+  );
+  assertEqual(
+    'ProtocolConfig migrated context validity',
+    await protocolConfig.isValidKmsContext(expectedContextId),
+    true,
+  );
+  assertJsonEqual(
+    'ProtocolConfig KMS nodes',
+    (await protocolConfig.getKmsNodesForContext(expectedContextId)).map(normalizeKmsNode),
+    expectedNodes.map(normalizeKmsNode),
+  );
+  assertJsonEqual(
+    'ProtocolConfig KMS signers',
+    normalizeAddresses(await protocolConfig.getKmsSignersForContext(expectedContextId)),
+    normalizeAddresses(expectedNodes.map((node) => node.signerAddress)),
+  );
+  assertBigIntEqual(
+    'ProtocolConfig public decryption threshold',
+    await protocolConfig.getPublicDecryptionThresholdForContext(expectedContextId),
+    BigInt(expectedThresholds.publicDecryption),
+  );
+  assertBigIntEqual(
+    'ProtocolConfig user decryption threshold',
+    await protocolConfig.getUserDecryptionThresholdForContext(expectedContextId),
+    BigInt(expectedThresholds.userDecryption),
+  );
+  assertBigIntEqual(
+    'ProtocolConfig KMS generation threshold',
+    await protocolConfig.getKmsGenThreshold(),
+    BigInt(expectedThresholds.kmsGen),
+  );
+  assertBigIntEqual(
+    'ProtocolConfig MPC threshold',
+    await protocolConfig.getMpcThreshold(),
+    BigInt(expectedThresholds.mpc),
+  );
+
+  await assertContractMatchesVersionPrefix(hre, kmsGenerationAddress, 'KMSGeneration');
+  const kmsGeneration = await hre.ethers.getContractAt('KMSGeneration', kmsGenerationAddress);
+
+  assertBigIntEqual(
+    'KMSGeneration key counter',
+    await kmsGeneration.getKeyCounter(),
+    expectedKmsGenerationState.keyCounter,
+  );
+  assertBigIntEqual(
+    'KMSGeneration CRS counter',
+    await kmsGeneration.getCrsCounter(),
+    expectedKmsGenerationState.crsCounter,
+  );
+  assertBigIntEqual(
+    'KMSGeneration active key ID',
+    await kmsGeneration.getActiveKeyId(),
+    expectedKmsGenerationState.activeKeyId,
+  );
+  assertBigIntEqual(
+    'KMSGeneration active CRS ID',
+    await kmsGeneration.getActiveCrsId(),
+    expectedKmsGenerationState.activeCrsId,
+  );
+
+  const requestDoneChecks = [
+    {
+      label: 'prep keygen',
+      requestId: expectedKmsGenerationState.activePrepKeygenId,
+    },
+    {
+      label: 'key',
+      requestId: expectedKmsGenerationState.activeKeyId,
+    },
+    {
+      label: 'CRS',
+      requestId: expectedKmsGenerationState.activeCrsId,
+    },
+  ];
+
+  for (const { label, requestId } of requestDoneChecks) {
+    assertEqual(`KMSGeneration ${label} request done`, await kmsGeneration.isRequestDone(requestId), true);
+  }
+
+  const consensusTxSenderChecks = [
+    {
+      label: 'key',
+      requestId: expectedKmsGenerationState.activeKeyId,
+      expectedTxSenders: expectedKmsGenerationState.keyConsensusTxSenders,
+    },
+    {
+      label: 'CRS',
+      requestId: expectedKmsGenerationState.activeCrsId,
+      expectedTxSenders: expectedKmsGenerationState.crsConsensusTxSenders,
+    },
+    {
+      label: 'prep keygen',
+      requestId: expectedKmsGenerationState.activePrepKeygenId,
+      expectedTxSenders: expectedKmsGenerationState.prepKeygenConsensusTxSenders,
+    },
+  ];
+
+  for (const { label, requestId, expectedTxSenders } of consensusTxSenderChecks) {
+    assertJsonEqual(
+      `KMSGeneration ${label} consensus tx senders`,
+      normalizeAddresses(await kmsGeneration.getConsensusTxSenders(requestId)),
+      normalizeAddresses(expectedTxSenders),
+    );
+  }
+
+  assertBigIntEqual(
+    'KMSGeneration active key params type',
+    BigInt(await kmsGeneration.getKeyParamsType(expectedKmsGenerationState.activeKeyId)),
+    BigInt(expectedKmsGenerationState.prepKeygenParamsType),
+  );
+  assertBigIntEqual(
+    'KMSGeneration active CRS params type',
+    BigInt(await kmsGeneration.getCrsParamsType(expectedKmsGenerationState.activeCrsId)),
+    BigInt(expectedKmsGenerationState.crsParamsType),
+  );
+
+  const [activeKeyStorageUrls, activeKeyDigests] = await kmsGeneration.getKeyMaterials(
+    expectedKmsGenerationState.activeKeyId,
+  );
+  assertJsonEqual(
+    'KMSGeneration active key storage URLs',
+    Array.from(activeKeyStorageUrls),
+    storageUrlsForSenders(expectedNodes, expectedKmsGenerationState.keyConsensusTxSenders),
+  );
+  assertJsonEqual(
+    'KMSGeneration active key digests',
+    activeKeyDigests.map(normalizeKeyDigest),
+    expectedKmsGenerationState.activeKeyDigests.map(normalizeKeyDigest),
+  );
+
+  const [activeCrsStorageUrls, activeCrsDigest] = await kmsGeneration.getCrsMaterials(
+    expectedKmsGenerationState.activeCrsId,
+  );
+  assertJsonEqual(
+    'KMSGeneration active CRS storage URLs',
+    Array.from(activeCrsStorageUrls),
+    storageUrlsForSenders(expectedNodes, expectedKmsGenerationState.crsConsensusTxSenders),
+  );
+  assertEqual(
+    'KMSGeneration active CRS digest',
+    activeCrsDigest.toLowerCase(),
+    expectedKmsGenerationState.activeCrsDigest.toLowerCase(),
+  );
+
+  await assertContractMatchesVersionPrefix(hre, kmsVerifierAddress, 'KMSVerifier');
+  const kmsVerifier = await hre.ethers.getContractAt('KMSVerifier', kmsVerifierAddress);
+  assertBigIntEqual(
+    'KMSVerifier current KMS context ID',
+    await kmsVerifier.getCurrentKmsContextId(),
+    expectedContextId,
+  );
+  assertBigIntEqual(
+    'KMSVerifier public decryption threshold',
+    await kmsVerifier.getThreshold(),
+    BigInt(expectedThresholds.publicDecryption),
+  );
+  assertJsonEqual(
+    'KMSVerifier KMS signers',
+    normalizeAddresses(await kmsVerifier.getKmsSigners()),
+    normalizeAddresses(expectedNodes.map((node) => node.signerAddress)),
+  );
+
+  console.log('KMS migration verification succeeded.');
 });
