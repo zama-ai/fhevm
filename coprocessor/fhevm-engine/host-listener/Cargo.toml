@@ -43,6 +43,7 @@ prometheus = { workspace = true }
 rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = "0.10"
 sha3 = { workspace = true }
 sqlx = { workspace = true }
 tfhe = { workspace = true }

@@ -4292,6 +4292,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
+ "sha2",
  "sha3",
  "sqlx",
  "test-harness",

@@ -1,0 +1,20 @@
+[toolchain]
+anchor_version = "0.31.1"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+confidential_token = "5GKzUSfqBSNjoVW83w3xPtTnAe84srZcDTBstpSoBCR4"
+zama_host = "EMhXFu68v61bQV4GrF6ZhZhWNVbH6bHPnTdLtXK8meqn"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "Localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "cargo test --workspace"
