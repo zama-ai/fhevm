@@ -60,7 +60,9 @@ jobs:
     steps:
       - name: Skip unchanged package
         if: env.PACKAGE_CHANGED != 'true'
-        run: echo "${{ matrix.package }} did not change."
+        env:
+          PACKAGE: ${{ matrix.package }}
+        run: echo "$PACKAGE did not change."
 
       - name: Checkout PR branch
         if: env.PACKAGE_CHANGED == 'true'
