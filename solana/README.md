@@ -18,6 +18,7 @@ Anchor instruction
 
 ```text
 trivial_encrypt(...)
+fhe_rand(...)
 fhe_binary_op(...)
 allow_handle(...)
 input_verified(...)
@@ -201,6 +202,7 @@ C3: Mapped events can be inserted through the existing host-listener DB methods.
 C4: ACL PDA design is tested with a minimal confidential-token transfer.
 C5: User decrypt references the same app context / ACL subject shape.
 C6: Real encrypted inputs flow through Solana events, the existing DB model, the real TFHE worker, and local test-key decrypt.
+C7: Solana-born ciphertexts are created by worker computations from trivial_encrypt and fhe_rand events, not only by direct DB seeding.
 ```
 
 ## Commands
@@ -225,6 +227,14 @@ cd coprocessor/fhevm-engine
 SQLX_OFFLINE=true cargo test -p tfhe-worker \
   solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypts \
   --lib -- --ignored --nocapture
+
+SQLX_OFFLINE=true cargo test -p tfhe-worker \
+  solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts \
+  --lib -- --ignored --nocapture
+
+SQLX_OFFLINE=true cargo test -p tfhe-worker \
+  solana_fhe_rand_creates_ciphertext_and_decrypts \
+  --lib -- --ignored --nocapture
 ```
 
 That test uses small real `FheUint8` ciphertexts for speed. The Solana programs only see opaque handles, so this still exercises the real cross-component path:
@@ -248,6 +258,39 @@ test decrypt
   -> hB1 = 120
 ```
 
+The second worker-backed transfer test removes direct input seeding for the happy path:
+
+```text
+LiteSVM emits:
+  trivial_encrypt(125) -> hA0
+  trivial_encrypt(20)  -> hB0
+  trivial_encrypt(100) -> hX
+
+tfhe-worker
+  -> creates real ciphertexts for hA0, hB0, hX
+
+LiteSVM confidential_transfer(hX)
+  -> emits FHE.sub(hA0, hX) -> hA1
+  -> emits FHE.add(hB0, hX) -> hB1
+
+test decrypt
+  -> hA1 = 25
+  -> hB1 = 120
+```
+
+The `fhe_rand` worker-backed test proves the same event boundary for random ciphertext creation:
+
+```text
+LiteSVM emits:
+  fhe_rand(seed, Uint8) -> hRand
+
+tfhe-worker
+  -> creates a real random ciphertext for hRand
+
+test decrypt
+  -> hRand is a Uint8 plaintext
+```
+
 ## Deliberate Non-Goals For This Slice
 
 ```text
@@ -255,7 +298,8 @@ No TypeScript client yet.
 No web3.js.
 No KMS payload migration yet.
 No ZK proof metadata migration yet.
-No real encryption / decryption yet.
+No private SDK input / InputVerifier path yet.
+No KMS quorum decrypt path yet.
 ```
 
 Those pieces come after the host-chain event boundary is validated.

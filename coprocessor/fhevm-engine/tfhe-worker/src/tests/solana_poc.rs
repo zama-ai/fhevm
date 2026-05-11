@@ -109,6 +109,135 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
     Ok(())
 }
 
+#[tokio::test]
+#[serial(db)]
+#[ignore = "runs LiteSVM plus the real TFHE worker against a disposable Postgres DB"]
+async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let harness = setup_event_harness().await?;
+    let mut fixture = token_fixture();
+
+    let amount_handle = typed_fast_handle(0x19);
+    let new_alice_handle = typed_fast_handle(0x1a);
+    let new_bob_handle = typed_fast_handle(0x1b);
+
+    let initial_ixs = vec![
+        trivial_encrypt_ix(
+            fixture.host_program_id,
+            fixture.fhe_authority,
+            125,
+            fixture.alice_initial,
+        ),
+        allow_handle_ix(
+            fixture.host_program_id,
+            fixture.alice_initial,
+            fixture.fhe_authority,
+            AclPermission::Compute,
+        ),
+        trivial_encrypt_ix(
+            fixture.host_program_id,
+            fixture.fhe_authority,
+            20,
+            fixture.bob_initial,
+        ),
+        allow_handle_ix(
+            fixture.host_program_id,
+            fixture.bob_initial,
+            fixture.fhe_authority,
+            AclPermission::Compute,
+        ),
+        trivial_encrypt_ix(
+            fixture.host_program_id,
+            fixture.fhe_authority,
+            100,
+            amount_handle,
+        ),
+        allow_handle_ix(
+            fixture.host_program_id,
+            amount_handle,
+            fixture.fhe_authority,
+            AclPermission::Compute,
+        ),
+    ];
+    let (meta, account_keys, signature) =
+        send_many_with_meta(&mut fixture.svm, &fixture.alice, initial_ixs);
+    let initial_events = host_events(&meta, &account_keys, fixture.host_program_id);
+    assert_eq!(count_tfhe_events(&initial_events), 3);
+    assert_eq!(count_acl_events(&initial_events), 3);
+
+    insert_host_events(&harness.listener_db, initial_events, signature, 1).await?;
+    wait_until_computed(&harness.app).await?;
+
+    let output = transfer_output_accounts(&fixture, 1);
+    let transfer_ix = transfer_ix(
+        &fixture,
+        output,
+        amount_handle,
+        new_alice_handle,
+        new_bob_handle,
+    );
+    let (meta, account_keys, signature) =
+        send_with_meta(&mut fixture.svm, &fixture.alice, transfer_ix);
+    let transfer_events = host_events(&meta, &account_keys, fixture.host_program_id);
+    assert_eq!(count_tfhe_events(&transfer_events), 2);
+    assert_eq!(count_acl_events(&transfer_events), 4);
+
+    insert_host_events(&harness.listener_db, transfer_events, signature, 2).await?;
+    wait_until_computed(&harness.app).await?;
+    let decrypted = decrypt_handles(
+        &harness.pool,
+        &[Handle::from(new_alice_handle), Handle::from(new_bob_handle)],
+    )
+    .await?;
+
+    assert_eq!(decrypted[0].output_type, FAST_REAL_FHE_TYPE as i16);
+    assert_eq!(decrypted[0].value, "25");
+    assert_eq!(decrypted[1].output_type, FAST_REAL_FHE_TYPE as i16);
+    assert_eq!(decrypted[1].value, "120");
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+#[ignore = "runs LiteSVM plus the real TFHE worker against a disposable Postgres DB"]
+async fn solana_fhe_rand_creates_ciphertext_and_decrypts() -> Result<(), Box<dyn std::error::Error>>
+{
+    let harness = setup_event_harness().await?;
+    let mut fixture = host_fixture();
+    let rand_handle = typed_fast_handle(0x29);
+
+    let ixs = vec![
+        fhe_rand_ix(
+            fixture.host_program_id,
+            fixture.payer.pubkey(),
+            [7_u8; 16],
+            rand_handle,
+        ),
+        allow_handle_ix(
+            fixture.host_program_id,
+            rand_handle,
+            fixture.payer.pubkey(),
+            AclPermission::UserDecrypt,
+        ),
+    ];
+    let (meta, account_keys, signature) =
+        send_many_with_meta(&mut fixture.svm, &fixture.payer, ixs);
+    let events = host_events(&meta, &account_keys, fixture.host_program_id);
+    assert_eq!(count_tfhe_events(&events), 1);
+    assert_eq!(count_acl_events(&events), 1);
+
+    insert_host_events(&harness.listener_db, events, signature, 1).await?;
+    wait_until_computed(&harness.app).await?;
+
+    let decrypted = decrypt_handles(&harness.pool, &[Handle::from(rand_handle)]).await?;
+    assert_eq!(decrypted[0].output_type, FAST_REAL_FHE_TYPE as i16);
+    let value = decrypted[0].value.parse::<u16>()?;
+    assert!(value <= u8::MAX as u16);
+
+    Ok(())
+}
+
 struct TokenFixture {
     svm: LiteSVM,
     host_program_id: Pubkey,
@@ -125,12 +254,40 @@ struct TokenFixture {
     bob_current_compute_acl: Pubkey,
 }
 
+struct HostFixture {
+    svm: LiteSVM,
+    host_program_id: Pubkey,
+    payer: Keypair,
+}
+
 #[derive(Clone, Copy)]
 struct TransferOutputAccounts {
     alice_owner: Pubkey,
     alice_compute: Pubkey,
     bob_owner: Pubkey,
     bob_compute: Pubkey,
+}
+
+fn host_fixture() -> HostFixture {
+    let host_program_id = host::id();
+    let host_program_path = host_program_so_path();
+    assert!(
+        host_program_path.exists(),
+        "missing {}; run `cd solana && NO_DNA=1 anchor build` before this test",
+        host_program_path.display()
+    );
+
+    let mut svm = LiteSVM::new();
+    svm.add_program_from_file(host_program_id, &host_program_path)
+        .unwrap();
+    let payer = Keypair::new();
+    svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
+
+    HostFixture {
+        svm,
+        host_program_id,
+        payer,
+    }
 }
 
 fn token_fixture() -> TokenFixture {
@@ -370,6 +527,74 @@ fn transfer_ix(
     }
 }
 
+fn trivial_encrypt_ix(
+    program_id: Pubkey,
+    subject: Pubkey,
+    value: u64,
+    result: [u8; 32],
+) -> Instruction {
+    Instruction {
+        program_id,
+        accounts: host::accounts::EmitProtocolEvent {
+            event_authority: event_authority(program_id),
+            program: program_id,
+        }
+        .to_account_metas(None),
+        data: host::instruction::TrivialEncrypt {
+            subject,
+            plaintext: amount_to_plaintext(value),
+            fhe_type: FAST_REAL_FHE_TYPE,
+            result,
+        }
+        .data(),
+    }
+}
+
+fn allow_handle_ix(
+    program_id: Pubkey,
+    handle: [u8; 32],
+    subject: Pubkey,
+    permission: AclPermission,
+) -> Instruction {
+    Instruction {
+        program_id,
+        accounts: host::accounts::EmitProtocolEvent {
+            event_authority: event_authority(program_id),
+            program: program_id,
+        }
+        .to_account_metas(None),
+        data: host::instruction::AllowHandle {
+            handle,
+            subject,
+            permission,
+        }
+        .data(),
+    }
+}
+
+fn fhe_rand_ix(
+    program_id: Pubkey,
+    subject: Pubkey,
+    seed: [u8; 16],
+    result: [u8; 32],
+) -> Instruction {
+    Instruction {
+        program_id,
+        accounts: host::accounts::EmitProtocolEvent {
+            event_authority: event_authority(program_id),
+            program: program_id,
+        }
+        .to_account_metas(None),
+        data: host::instruction::FheRand {
+            subject,
+            seed,
+            fhe_type: FAST_REAL_FHE_TYPE,
+            result,
+        }
+        .data(),
+    }
+}
+
 fn create_spl_mint(svm: &mut LiteSVM, payer: &Keypair, mint: &Keypair, decimals: u8) {
     let rent = svm.minimum_balance_for_rent_exemption(spl_token::state::Mint::LEN);
     send_many_with_signers(
@@ -446,6 +671,26 @@ async fn seed_real_fast_ciphertexts(
     Ok(())
 }
 
+async fn insert_host_events(
+    listener_db: &host_listener::database::tfhe_event_propagate::Database,
+    host_events: Vec<SolanaHostEvent>,
+    signature: Signature,
+    block_number: u64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let transaction_id = solana_transaction_id(signature.as_ref());
+    let block = SolanaBlockMeta {
+        block_number,
+        block_timestamp: PrimitiveDateTime::new(
+            Date::from_calendar_date(2026, Month::May, 11)?,
+            Time::MIDNIGHT,
+        ),
+    };
+    let mut db_tx = listener_db.new_transaction().await?;
+    insert_solana_events(listener_db, &mut db_tx, host_events, transaction_id, block).await?;
+    db_tx.commit().await?;
+    Ok(())
+}
+
 fn host_events(
     meta: &TransactionMetadata,
     account_keys: &[Pubkey],
@@ -465,7 +710,9 @@ fn count_tfhe_events(events: &[SolanaHostEvent]) -> usize {
         .filter(|event| {
             matches!(
                 event,
-                SolanaHostEvent::FheBinaryOp(_) | SolanaHostEvent::TrivialEncrypt(_)
+                SolanaHostEvent::FheBinaryOp(_)
+                    | SolanaHostEvent::TrivialEncrypt(_)
+                    | SolanaHostEvent::FheRand(_)
             )
         })
         .count()
@@ -482,6 +729,12 @@ fn typed_fast_handle(seed: u8) -> [u8; 32] {
     let mut handle = [seed; 32];
     handle[30] = FAST_REAL_FHE_TYPE;
     handle
+}
+
+fn amount_to_plaintext(amount: u64) -> [u8; 32] {
+    let mut plaintext = [0_u8; 32];
+    plaintext[24..].copy_from_slice(&amount.to_be_bytes());
+    plaintext
 }
 
 fn host_program_so_path() -> PathBuf {
@@ -534,6 +787,18 @@ fn send_with_meta(
 ) -> (TransactionMetadata, Vec<Pubkey>, Signature) {
     let message =
         Message::new_with_blockhash(&[ix], Some(&payer.pubkey()), &svm.latest_blockhash());
+    let account_keys = message.account_keys.clone();
+    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(message), &[payer]).unwrap();
+    let signature = tx.signatures[0];
+    (svm.send_transaction(tx).unwrap(), account_keys, signature)
+}
+
+fn send_many_with_meta(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    ixs: Vec<Instruction>,
+) -> (TransactionMetadata, Vec<Pubkey>, Signature) {
+    let message = Message::new_with_blockhash(&ixs, Some(&payer.pubkey()), &svm.latest_blockhash());
     let account_keys = message.account_keys.clone();
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(message), &[payer]).unwrap();
     let signature = tx.signatures[0];

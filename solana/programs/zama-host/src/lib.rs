@@ -107,6 +107,24 @@ pub mod zama_host {
         Ok(())
     }
 
+    pub fn fhe_rand(
+        ctx: Context<EmitProtocolEvent>,
+        subject: Pubkey,
+        seed: [u8; 16],
+        fhe_type: u8,
+        result: [u8; 32],
+    ) -> Result<()> {
+        emit_cpi!(FheRandEvent {
+            version: EVENT_VERSION,
+            subject,
+            seed,
+            fhe_type,
+            result,
+        });
+        drop(ctx);
+        Ok(())
+    }
+
     pub fn input_verified(
         ctx: Context<EmitProtocolEvent>,
         input_handle: [u8; 32],
@@ -183,6 +201,15 @@ pub struct TrivialEncryptEvent {
     pub version: u8,
     pub subject: Pubkey,
     pub plaintext: [u8; 32],
+    pub fhe_type: u8,
+    pub result: [u8; 32],
+}
+
+#[event]
+pub struct FheRandEvent {
+    pub version: u8,
+    pub subject: Pubkey,
+    pub seed: [u8; 16],
     pub fhe_type: u8,
     pub result: [u8; 32],
 }
