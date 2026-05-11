@@ -97,6 +97,7 @@ charts/
 # -----------------------------------------------------------------------------
 # Git-related (keep .git/ for build metadata, exclude others)
 # -----------------------------------------------------------------------------
+.git/lfs/
 .gitignore
 .gitattributes
 **/.gitkeep

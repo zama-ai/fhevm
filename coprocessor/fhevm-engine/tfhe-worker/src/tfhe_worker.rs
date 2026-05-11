@@ -1,5 +1,6 @@
 use crate::dependence_chain::{self};
 use crate::types::CoprocessorError;
+use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
 use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
@@ -84,11 +85,13 @@ async fn tfhe_worker_cycle(
     worker_id: Uuid,
     health_check: crate::health_check::HealthCheck,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let db_url = args.database_url.clone().unwrap_or_default();
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(args.pg_pool_max_connections)
-        .connect(db_url.as_str())
-        .await?;
+    let db_url = resolve_database_url_from_option(args.database_url.clone())?;
+    let (pool, _pool_refresh_handle) = connect_pool_with_options(
+        &db_url,
+        sqlx::postgres::PgPoolOptions::new().max_connections(args.pg_pool_max_connections),
+        None,
+    )
+    .await?;
 
     let db_key_cache = DbKeyCache::new(args.key_cache_size)?;
     let mut listener = PgListener::connect_with(&pool).await?;
@@ -110,7 +113,7 @@ async fn tfhe_worker_cycle(
 
     #[cfg(feature = "bench")]
     {
-        let _ = db_key_cache.fetch_latest(&pool).await?;
+        let _ = db_key_cache.fetch_latest_from_pool(&pool).await?;
     }
     let mut immediately_poll_more_work = false;
     let mut no_progress_cycles = 0;
@@ -263,11 +266,8 @@ async fn query_ciphertexts<'a>(
     // index ciphertexts in hashmap
     let mut ciphertext_map: HashMap<Vec<u8>, (i16, Vec<u8>)> =
         HashMap::with_capacity(ciphertexts_rows.len());
-    for row in &ciphertexts_rows {
-        let _ = ciphertext_map.insert(
-            row.handle.clone(),
-            (row.ciphertext_type, row.ciphertext.clone()),
-        );
+    for row in ciphertexts_rows {
+        let _ = ciphertext_map.insert(row.handle, (row.ciphertext_type, row.ciphertext));
     }
     Ok(ciphertext_map)
 }
@@ -557,8 +557,9 @@ async fn upload_transaction_graph_results<'a>(
                         CoprocessorError::FhevmError(swap_val).into()
                     } else {
                         CoprocessorError::SchedulerError(
-                            *err.downcast_ref::<SchedulerError>()
-                                .unwrap_or(&SchedulerError::SchedulerError),
+                            err.downcast_ref::<SchedulerError>()
+                                .cloned()
+                                .unwrap_or(SchedulerError::SchedulerError),
                         )
                         .into()
                     };

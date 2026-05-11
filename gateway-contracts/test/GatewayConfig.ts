@@ -58,26 +58,6 @@ describe("GatewayConfig", function () {
   const fakeTxSender = createRandomWallet();
   const fakeSigner = createRandomWallet();
 
-  let gatewayConfig: GatewayConfig;
-  let owner: Wallet;
-  let pauser: Wallet;
-  let nKmsNodes: number;
-  let kmsNodes: KmsNodeStruct[];
-  let kmsTxSenders: HardhatEthersSigner[];
-  let kmsSigners: HardhatEthersSigner[];
-  let coprocessors: CoprocessorStruct[];
-  let nCoprocessors: number;
-  let coprocessorTxSenders: HardhatEthersSigner[];
-  let coprocessorSigners: HardhatEthersSigner[];
-  let custodians: CustodianStruct[];
-  let custodianTxSenders: HardhatEthersSigner[];
-  let custodianSigners: HardhatEthersSigner[];
-  let highMpcThreshold: number;
-  let highPublicDecryptionThreshold: number;
-  let highUserDecryptionThreshold: number;
-  let highKmsGenThreshold: number;
-  let highCoprocessorThreshold: number;
-
   async function getInputsForDeployFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
     const {
@@ -97,7 +77,7 @@ describe("GatewayConfig", function () {
     } = fixtureData;
 
     // Create KMS nodes with the tx sender and signer addresses
-    kmsNodes = [];
+    const kmsNodes: KmsNodeStruct[] = [];
     for (let i = 0; i < nKmsNodes; i++) {
       kmsNodes.push({
         txSenderAddress: kmsTxSenders[i].address,
@@ -108,7 +88,7 @@ describe("GatewayConfig", function () {
     }
 
     // Create coprocessors with the tx sender and signer addresses
-    coprocessors = [];
+    const coprocessors: CoprocessorStruct[] = [];
     for (let i = 0; i < nCoprocessors; i++) {
       coprocessors.push({
         txSenderAddress: coprocessorTxSenders[i].address,
@@ -118,7 +98,7 @@ describe("GatewayConfig", function () {
     }
 
     // Create custodians with the tx sender addresses
-    custodians = [];
+    const custodians: CustodianStruct[] = [];
     for (let i = 0; i < nCustodians; i++) {
       custodians.push({
         txSenderAddress: custodianTxSenders[i].address,
@@ -127,34 +107,42 @@ describe("GatewayConfig", function () {
       });
     }
 
-    return fixtureData;
+    return { ...fixtureData, kmsNodes, coprocessors, custodians };
   }
 
-  before(async function () {
-    // Initialize globally used variables before each test
-    const fixtureData = await loadFixture(getInputsForDeployFixture);
-    gatewayConfig = fixtureData.gatewayConfig;
-    owner = fixtureData.owner;
-    pauser = fixtureData.pauser;
-    nKmsNodes = fixtureData.nKmsNodes;
-    kmsTxSenders = fixtureData.kmsTxSenders;
-    kmsSigners = fixtureData.kmsSigners;
-    nCoprocessors = fixtureData.nCoprocessors;
-    coprocessorTxSenders = fixtureData.coprocessorTxSenders;
-    coprocessorSigners = fixtureData.coprocessorSigners;
-
-    highMpcThreshold = nKmsNodes;
-    highPublicDecryptionThreshold = nKmsNodes + 1;
-    highUserDecryptionThreshold = nKmsNodes + 1;
-    highKmsGenThreshold = nKmsNodes + 1;
-    highCoprocessorThreshold = nCoprocessors + 1;
-  });
-
   describe("Deployment", function () {
+    let gatewayConfig: GatewayConfig;
+    let owner: Wallet;
+    let kmsNodes: KmsNodeStruct[];
+    let coprocessors: CoprocessorStruct[];
+    let custodians: CustodianStruct[];
+    let nKmsNodes: number;
+    let nCoprocessors: number;
+    let highMpcThreshold: number;
+    let highPublicDecryptionThreshold: number;
+    let highUserDecryptionThreshold: number;
+    let highKmsGenThreshold: number;
+    let highCoprocessorThreshold: number;
     let proxyContract: EmptyUUPSProxyGatewayConfig;
     let newGatewayConfigFactory: ContractFactory;
 
     beforeEach(async function () {
+      // Load fixture data locally
+      const fixtureData = await loadFixture(getInputsForDeployFixture);
+      gatewayConfig = fixtureData.gatewayConfig;
+      owner = fixtureData.owner;
+      kmsNodes = fixtureData.kmsNodes;
+      coprocessors = fixtureData.coprocessors;
+      custodians = fixtureData.custodians;
+      nKmsNodes = fixtureData.nKmsNodes;
+      nCoprocessors = fixtureData.nCoprocessors;
+
+      highMpcThreshold = nKmsNodes;
+      highPublicDecryptionThreshold = nKmsNodes + 1;
+      highUserDecryptionThreshold = nKmsNodes + 1;
+      highKmsGenThreshold = nKmsNodes + 1;
+      highCoprocessorThreshold = nCoprocessors + 1;
+
       // Deploy a new proxy contract for the GatewayConfig contract
       const proxyImplementation = await hre.ethers.getContractFactory("EmptyUUPSProxyGatewayConfig", owner);
       proxyContract = await hre.upgrades.deployProxy(proxyImplementation, [owner.address], {
@@ -570,15 +558,48 @@ describe("GatewayConfig", function () {
   });
 
   describe("After deployment", function () {
+    let gatewayConfig: GatewayConfig;
+    let owner: Wallet;
+    let pauser: Wallet;
+    let nKmsNodes: number;
+    let kmsNodes: KmsNodeStruct[];
+    let kmsTxSenders: HardhatEthersSigner[];
+    let kmsSigners: HardhatEthersSigner[];
+    let nCoprocessors: number;
+    let coprocessors: CoprocessorStruct[];
+    let coprocessorTxSenders: HardhatEthersSigner[];
+    let coprocessorSigners: HardhatEthersSigner[];
+    let custodians: CustodianStruct[];
+    let custodianTxSenders: HardhatEthersSigner[];
+    let custodianSigners: HardhatEthersSigner[];
+    let highMpcThreshold: number;
+    let highPublicDecryptionThreshold: number;
+    let highUserDecryptionThreshold: number;
+    let highKmsGenThreshold: number;
+    let highCoprocessorThreshold: number;
+
     beforeEach(async function () {
-      const fixture = await loadFixture(loadTestVariablesFixture);
+      const fixture = await loadFixture(getInputsForDeployFixture);
       gatewayConfig = fixture.gatewayConfig;
+      owner = fixture.owner;
       pauser = fixture.pauser;
+      nKmsNodes = fixture.nKmsNodes;
+      kmsNodes = fixture.kmsNodes;
       kmsTxSenders = fixture.kmsTxSenders;
       kmsSigners = fixture.kmsSigners;
+      nCoprocessors = fixture.nCoprocessors;
+      coprocessors = fixture.coprocessors;
       coprocessorTxSenders = fixture.coprocessorTxSenders;
+      coprocessorSigners = fixture.coprocessorSigners;
+      custodians = fixture.custodians;
       custodianTxSenders = fixture.custodianTxSenders;
       custodianSigners = fixture.custodianSigners;
+
+      highMpcThreshold = nKmsNodes;
+      highPublicDecryptionThreshold = nKmsNodes + 1;
+      highUserDecryptionThreshold = nKmsNodes + 1;
+      highKmsGenThreshold = nKmsNodes + 1;
+      highCoprocessorThreshold = nCoprocessors + 1;
     });
 
     describe("Operators updates", function () {
@@ -1454,6 +1475,10 @@ describe("GatewayConfig", function () {
   });
 
   describe("Pause", async function () {
+    let gatewayConfig: GatewayConfig;
+    let owner: Wallet;
+    let pauser: Wallet;
+
     const fakeOwner = createRandomWallet();
     const fakePauser = createRandomWallet();
 
@@ -1488,6 +1513,39 @@ describe("GatewayConfig", function () {
         expect(await inputVerification.paused()).to.be.true;
       });
 
+      it("Should pause contracts not yet paused even when some contract is already paused", async function () {
+        await decryption.connect(pauser).pause();
+
+        // Check that the decryption contract is paused and the input verification contract is not paused
+        expect(await decryption.paused()).to.be.true;
+        expect(await inputVerification.paused()).to.be.false;
+
+        const txResponse = await gatewayConfig.connect(pauser).pauseAllGatewayContracts();
+
+        await expect(txResponse).to.emit(gatewayConfig, "PauseAllGatewayContracts");
+
+        // Check that the pausable contracts are paused
+        expect(await decryption.paused()).to.be.true;
+        expect(await inputVerification.paused()).to.be.true;
+      });
+
+      it("Should unpause contracts not yet unpaused even when some contract is already unpaused", async function () {
+        await gatewayConfig.connect(pauser).pauseAllGatewayContracts();
+        await decryption.connect(owner).unpause();
+
+        // Check that the decryption contract is unpaused and the input verification contract is paused
+        expect(await decryption.paused()).to.be.false;
+        expect(await inputVerification.paused()).to.be.true;
+
+        const txResponse = await gatewayConfig.connect(owner).unpauseAllGatewayContracts();
+
+        await expect(txResponse).to.emit(gatewayConfig, "UnpauseAllGatewayContracts");
+
+        // Check that the pausable contracts are unpaused
+        expect(await decryption.paused()).to.be.false;
+        expect(await inputVerification.paused()).to.be.false;
+      });
+
       it("Should revert on pause all gateway contracts because the sender is not the pauser", async function () {
         await expect(gatewayConfig.connect(fakePauser).pauseAllGatewayContracts()).to.be.revertedWithCustomError(
           gatewayConfig,
@@ -1513,6 +1571,21 @@ describe("GatewayConfig", function () {
         await expect(gatewayConfig.connect(fakeOwner).unpauseAllGatewayContracts()).to.be.revertedWithCustomError(
           gatewayConfig,
           "OwnableUnauthorizedAccount",
+        );
+      });
+
+      it("Should revert on pause all gateway contracts because they are already paused", async function () {
+        await gatewayConfig.connect(pauser).pauseAllGatewayContracts();
+        await expect(gatewayConfig.connect(pauser).pauseAllGatewayContracts()).to.be.revertedWithCustomError(
+          gatewayConfig,
+          "AllGatewayContractsAlreadyPaused",
+        );
+      });
+
+      it("Should revert on unpause all gateway contracts because they are already unpaused", async function () {
+        await expect(gatewayConfig.connect(owner).unpauseAllGatewayContracts()).to.be.revertedWithCustomError(
+          gatewayConfig,
+          "AllGatewayContractsAlreadyUnpaused",
         );
       });
     });

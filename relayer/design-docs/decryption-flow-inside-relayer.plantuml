@@ -1,0 +1,70 @@
+@startuml Decryption Flow
+
+participant "Host L1\n(Ethereum)" as EthereumL1
+
+box Relayer #LightGray
+participant "Event Listener\nHost L1" as EthereumListener
+participant "Decryption Handler\nHost L1" as EthereumHostL1Handler
+participant "Decryption Handler\nGateway L2" as ArbitrumGwL2Handler
+participant "Event Listenern\nGateway L2" as RollupListener
+participant Orchestrator as "Orchestrator"
+end box
+
+participant "Gateway L2\n(Arbitrum)" as ArbitrumL2
+
+EthereumL1 -> EthereumListener: Emit\n"DecryptionRequest" Event
+
+EthereumListener -> EthereumListener: Generate\nOrchestrator Request ID
+EthereumListener -> Orchestrator: Dispatch\nEventLogFromHostL1 event
+
+Orchestrator -> EthereumHostL1Handler: Handle\nEventLogFromHostL1 event
+
+opt #LightGreen topic matches DecryptionRequest Event
+EthereumHostL1Handler -> EthereumHostL1Handler: Decode event
+EthereumHostL1Handler -> EthereumHostL1Handler: Store to context data\n(Orchestrator Request ID,\nCallback selector, address)
+EthereumHostL1Handler -> Orchestrator: Dispatch\nDecryptionRequestEventLogRcvd event
+else #White topic does not match
+EthereumHostL1Handler -> EthereumHostL1Handler: Ignore the event log
+end
+
+Orchestrator -> ArbitrumGwL2Handler: Handle\nDecryptRequestRcvd event
+ArbitrumGwL2Handler -> ArbitrumL2: Send "PublicDecryptionRequest" transaction to\nDecryption Manager contract
+
+ArbitrumL2 -> ArbitrumGwL2Handler: Receive Transaction receipt\ncontaining Public Decryption ID
+
+ArbitrumGwL2Handler -> ArbitrumGwL2Handler: Store (Public Decryption ID, Orchestrator Request ID)\nmapping in context data
+ArbitrumGwL2Handler -> Orchestrator: Dispatch\nDecryptionReqToGwL2Sent event\n(for status update)
+
+==Wait until request is picked up by "k" KMS Parties (threshold defined in Decryption Manager),\nprocessed and result is posted back.==
+
+opt #LightGreen 
+ArbitrumL2 -> RollupListener: Send Result (Success)
+RollupListener -> Orchestrator: Dispatch\nEventLogFromGwL2 event
+else #LightPink Result not available within timeout
+note over ArbitrumL2, Orchestrator: Yet to define how this should be handled\nMaybe do nothing and Ethereum sends\n"timed out" error to user.
+end
+
+Orchestrator -> ArbitrumGwL2Handler: Handle\nEventLogFromGwL2 event
+opt #LightGreen topic matches PublicDecryptionResponse Event
+ArbitrumGwL2Handler -> ArbitrumGwL2Handler: Decode event
+ArbitrumGwL2Handler -> ArbitrumGwL2Handler: Retrieve from context data\n(Orchestrator Request ID for\nPublic Decryption ID in Event Log)
+ArbitrumGwL2Handler -> Orchestrator: Dispatch\nDecryptionResponseRcvdFromGwL2 event
+else #White topic does not match
+ArbitrumGwL2Handler -> ArbitrumGwL2Handler: Ignore the event log
+end
+
+Orchestrator -> EthereumHostL1Handler: Handle\nDecryptionResponseRcvdFromGwL2 event
+
+EthereumHostL1Handler -> EthereumHostL1Handler: Retrieve from context data\n(Callback selector, address for\nOrchestrator Request ID)
+EthereumHostL1Handler -> EthereumL1: Send "Callback transaction"\nto the Dapp contract address
+EthereumL1 -> EthereumHostL1Handler: Transaction result
+
+opt #LightGreen Transaction Succeeded
+EthereumHostL1Handler -> Orchestrator: Send\nDecryptResponseSentToHostL1 event
+EthereumL1 -> EthereumL1: Process callback\n(Read plaintext & verify signatures)
+else #LightPink Transaction failed
+EthereumHostL1Handler -> Orchestrator: Send\nDecryptionFailed event
+end
+
+
+@enduml

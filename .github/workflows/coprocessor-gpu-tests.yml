@@ -153,24 +153,6 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Login to GitHub Chainguard Registry
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
-        with:
-          registry: cgr.dev
-          username: ${{ secrets.CGR_USERNAME }}
-          password: ${{ secrets.CGR_PASSWORD }}
-
-      - name: Init database
-        run: make init_db
-        working-directory: coprocessor/fhevm-engine/tfhe-worker
-
       - name: Use Node.js
         uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
         with:
@@ -183,16 +165,24 @@ jobs:
           HARDHAT_NETWORK: hardhat
 
       - name: Run GPU tests for the worker services.
+        env:
+          IS_MERGE_QUEUE: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') && '1' || '0' }}
         run: |
           export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor
+          export SQLX_OFFLINE=true
+          # Merge queue: leave unset so supported_types() defaults to full matrix.
+          # PR CI: run only FHEUint64 for faster feedback.
+          if [ "$IS_MERGE_QUEUE" != "1" ]; then
+            export TFHE_WORKER_EVENT_TYPE_MATRIX=uint64
+          fi
           cargo test \
-          -p tfhe-worker \
-          -p sns-worker \
-          -p zkproof-worker \
-          --release \
-          --features=gpu \
-          -- \
-          --test-threads=1
+            -p tfhe-worker \
+            -p sns-worker \
+            -p zkproof-worker \
+            --release \
+            --features=gpu \
+            -- \
+            --test-threads=1
         working-directory: coprocessor/fhevm-engine
 
   teardown-instance:

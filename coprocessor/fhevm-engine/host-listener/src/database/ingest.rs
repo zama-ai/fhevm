@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::future::Future;
 
 use alloy::primitives::Address;
 use alloy::rpc::types::Log;
@@ -8,13 +9,15 @@ use fhevm_engine_common::types::Handle;
 use sqlx::types::time::{OffsetDateTime, PrimitiveDateTime};
 use tracing::{error, info};
 
-use crate::cmd::block_history::BlockSummary;
+use crate::cmd::block_history::{BlockHash, BlockSummary};
 use crate::cmd::InfiniteLogIter;
-use crate::contracts::{AclContract, TfheContract};
+use crate::contracts::{AclContract, KMSGeneration, TfheContract};
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
     acl_result_handles, tfhe_result_handle, Chain, ChainHash, Database, LogTfhe,
 };
+use crate::kms_generation::insert_kms_generation_events_tx;
+use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
 
 pub struct BlockLogs<T> {
     pub logs: Vec<T>,
@@ -145,11 +148,13 @@ pub async fn ingest_block_logs(
     block_logs: &BlockLogs<Log>,
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
+    kms_generation_contract_address: &Option<Address>,
     options: IngestOptions,
 ) -> Result<(), sqlx::Error> {
     let mut tx = db.new_transaction().await?;
     let mut is_allowed = HashSet::<Handle>::new();
     let mut tfhe_event_log = vec![];
+    let mut kms_gen_events = vec![];
     let block_hash = block_logs.summary.hash;
     let block_number = block_logs.summary.number;
     let mut catchup_insertion = 0;
@@ -220,7 +225,20 @@ pub async fn ingest_block_logs(
             }
         }
 
-        if is_acl_address || is_tfhe_address {
+        let is_kms_gen_address =
+            &current_address == kms_generation_contract_address;
+        if kms_generation_contract_address.is_none() || is_kms_gen_address {
+            if let Ok(event) =
+                KMSGeneration::KMSGenerationEvents::decode_log(&log.inner)
+            {
+                kms_gen_events.push((event.data, log.clone()));
+                continue;
+            } else {
+                KMS_EVENT_DECODE_FAIL_COUNTER.inc()
+            }
+        }
+
+        if is_acl_address || is_tfhe_address || is_kms_gen_address {
             error!(
                 event_address = ?log.inner.address,
                 acl_contract_address = ?acl_contract_address,
@@ -311,6 +329,14 @@ pub async fn ingest_block_logs(
             info!(block_number, catchup_insertion, "Catchup inserted events");
         }
     }
+    insert_kms_generation_events_tx(
+        &mut tx,
+        kms_gen_events,
+        chain_id,
+        block_hash.as_ref(),
+        block_number,
+    )
+    .await?;
     db.mark_block_as_valid(&mut tx, &block_logs.summary, block_logs.finalized)
         .await?;
     if at_least_one_insertion {
@@ -332,6 +358,30 @@ pub async fn update_finalized_blocks(
     last_block_number: u64,
     finality_lag: u64,
 ) {
+    let log_iter = &*log_iter;
+    update_finalized_blocks_aux(
+        db,
+        last_block_number,
+        finality_lag,
+        |block_number| async move {
+            log_iter
+                .get_block_by_number(block_number)
+                .await
+                .map(|block| block.header.hash)
+        },
+    )
+    .await;
+}
+
+pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
+    db: &mut Database,
+    last_block_number: u64,
+    finality_lag: u64,
+    mut get_block_hash_by_number: GetBlockHash,
+) where
+    GetBlockHash: FnMut(u64) -> GetBlockHashFuture,
+    GetBlockHashFuture: Future<Output = anyhow::Result<BlockHash>>,
+{
     info!(last_block_number, finality_lag, "Updating finalized blocks");
     let mut tx = match db.new_transaction().await {
         Ok(tx) => tx,
@@ -343,7 +393,7 @@ pub async fn update_finalized_blocks(
             return;
         }
     };
-    let last_finalized_block = last_block_number - finality_lag;
+    let last_finalized_block = last_block_number.saturating_sub(finality_lag);
     let blocks_number = match Database::get_finalized_blocks_number(
         &mut tx,
         last_finalized_block as i64,
@@ -362,9 +412,9 @@ pub async fn update_finalized_blocks(
     };
     info!(?blocks_number, "Finalizing blocks");
     for block_number in blocks_number {
-        let block =
-            match log_iter.get_block_by_number(block_number as u64).await {
-                Ok(block) => block,
+        let block_hash =
+            match get_block_hash_by_number(block_number as u64).await {
+                Ok(block_hash) => block_hash,
                 Err(err) => {
                     error!(
                         block_number,
@@ -375,11 +425,7 @@ pub async fn update_finalized_blocks(
                 }
             };
         if let Err(err) = db
-            .update_block_as_finalized(
-                &mut tx,
-                block_number,
-                &block.header.hash,
-            )
+            .update_block_as_finalized(&mut tx, block_number, &block_hash)
             .await
         {
             error!(block_number, ?err, "Failed to update block as finalized");
@@ -464,5 +510,91 @@ mod tests {
         assert!(slow_dep_chain_ids.contains(&chains[1].hash));
         assert!(slow_dep_chain_ids.contains(&chains[2].hash));
         assert!(!slow_dep_chain_ids.contains(&chains[3].hash));
+    }
+
+    // 4 independent chains each with exactly max_per_chain ops.
+    // Since they are disconnected, each represents its own component.
+    #[test]
+    fn classify_slow_disconnected_components_at_threshold_are_fast() {
+        let chains = vec![
+            fixture_chain(1, &[]),
+            fixture_chain(2, &[]),
+            fixture_chain(3, &[]),
+            fixture_chain(4, &[]),
+        ];
+        let max = 64_u64;
+        let dependent_ops_by_chain = HashMap::from([
+            (chains[0].hash, max),
+            (chains[1].hash, max),
+            (chains[2].hash, max),
+            (chains[3].hash, max),
+        ]);
+
+        let slow = classify_slow_by_split_dependency_closure(
+            &chains,
+            &dependent_ops_by_chain,
+            max,
+        );
+
+        assert!(
+            slow.is_empty(),
+            "no chain should be slow at exactly the threshold"
+        );
+    }
+
+    // Single chain with exactly max_per_chain ops is not slow.
+    // One more dep makes it fast.
+    #[test]
+    fn classify_slow_single_chain_at_boundary() {
+        let chains = vec![fixture_chain(1, &[])];
+        let max = 64_u64;
+
+        let at_boundary = classify_slow_by_split_dependency_closure(
+            &chains,
+            &HashMap::from([(chains[0].hash, max)]),
+            max,
+        );
+        assert!(
+            at_boundary.is_empty(),
+            "exactly at threshold should be fast"
+        );
+
+        let over_boundary = classify_slow_by_split_dependency_closure(
+            &chains,
+            &HashMap::from([(chains[0].hash, max + 1)]),
+            max,
+        );
+        assert!(
+            over_boundary.contains(&chains[0].hash),
+            "one over threshold should be slow"
+        );
+    }
+
+    // Non linear: A -> B, A -> C, B -> D, C -> D
+    // Mark A slow, verify B, C, D all become slow via propagate_slow_lane_to_dependents.
+    #[test]
+    fn propagate_slow_lane_non_linear_dependency() {
+        let chain_a = fixture_chain(1, &[]);
+        let chain_b = fixture_chain(2, &[1]);
+        let chain_c = fixture_chain(3, &[1]);
+        let chain_d = fixture_chain(4, &[2, 3]);
+        let chains = vec![chain_a, chain_b, chain_c, chain_d];
+
+        let mut slow = HashSet::from([chains[0].hash]);
+        propagate_slow_lane_to_dependents(&chains, &mut slow);
+
+        assert!(slow.contains(&chains[0].hash), "A should be slow");
+        assert!(
+            slow.contains(&chains[1].hash),
+            "B should be slow (depends on A)"
+        );
+        assert!(
+            slow.contains(&chains[2].hash),
+            "C should be slow (depends on A)"
+        );
+        assert!(
+            slow.contains(&chains[3].hash),
+            "D should be slow (depends on B and C)"
+        );
     }
 }

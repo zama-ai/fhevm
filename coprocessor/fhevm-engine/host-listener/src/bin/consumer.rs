@@ -1,0 +1,133 @@
+use std::time::Duration;
+
+use alloy::primitives::Address;
+use clap::Parser;
+use tokio_util::sync::CancellationToken;
+use tracing::Level;
+
+use fhevm_engine_common::utils::DatabaseURL;
+use fhevm_engine_common::{metrics_server, telemetry};
+use host_listener::cmd::{
+    DEFAULT_DEPENDENCE_BY_CONNEXITY, DEFAULT_DEPENDENCE_CACHE_SIZE,
+    DEFAULT_DEPENDENCE_CROSS_BLOCK,
+};
+use host_listener::consumer::{run_consumer, ConsumerConfig};
+
+#[derive(Parser, Debug, Clone)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[arg(
+        long = "url",
+        alias = "broker-url",
+        help = "Broker (Redis or Rabbit)"
+    )]
+    url: String,
+
+    #[arg(long, help = "ACL contract address to monitor")]
+    acl_contract_address: Address,
+
+    #[arg(long, help = "TFHE contract address to monitor")]
+    tfhe_contract_address: Address,
+
+    #[arg(long, help = "KMS generation contract address to monitor")]
+    kms_generation_address: Address,
+
+    #[arg(long, help = "PostgreSQL connection URL")]
+    database_url: DatabaseURL,
+
+    #[arg(
+        long,
+        default_value_t = 1000,
+        help = "Backoff between retry attempts for DB failures in milliseconds"
+    )]
+    database_retry_interval: u64,
+
+    #[arg(
+        long,
+        help = "Address for Prometheus metrics HTTP server (e.g. 0.0.0.0:9100); if unset, metrics server is disabled"
+    )]
+    metrics_addr: Option<String>,
+
+    #[arg(long, default_value_t = 8080, help = "Health check port")]
+    health_port: u16,
+
+    #[arg(
+        long,
+        value_parser = clap::value_parser!(Level),
+        default_value_t = Level::INFO
+    )]
+    log_level: Level,
+
+    #[arg(long, default_value = "host-listener-consumer")]
+    service_name: String,
+
+    #[arg(
+        long,
+        default_value_t = DEFAULT_DEPENDENCE_CACHE_SIZE,
+        help = "Pre-computation dependence chain cache size"
+    )]
+    pub dependence_cache_size: u16,
+
+    #[arg(
+        long,
+        default_value_t = DEFAULT_DEPENDENCE_BY_CONNEXITY,
+        help = "Dependence chain are connected components"
+    )]
+    pub dependence_by_connexity: bool,
+
+    #[arg(
+        long,
+        default_value_t = DEFAULT_DEPENDENCE_CROSS_BLOCK,
+        help = "Dependence chain are across blocks"
+    )]
+    pub dependence_cross_block: bool,
+
+    #[arg(
+        long,
+        default_value_t = 0,
+        help = "Max dependent ops per chain before slow-lane (0 disables; startup promotes all chains to fast)"
+    )]
+    pub dependent_ops_max_per_chain: u32,
+
+    #[arg(long)]
+    pub chain_id: String,
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+
+    let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
+        args.log_level,
+        &args.service_name,
+        "otlp-layer",
+    );
+
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
+    let cancel_token = CancellationToken::new();
+    metrics_server::spawn(
+        args.metrics_addr.clone(),
+        cancel_token.child_token(),
+    );
+
+    let config = ConsumerConfig {
+        url: args.url,
+        acl_address: args.acl_contract_address,
+        tfhe_address: args.tfhe_contract_address,
+        kms_generation_address: args.kms_generation_address,
+        database_url: args.database_url,
+        database_retry_interval: Duration::from_millis(
+            args.database_retry_interval,
+        ),
+        service_name: args.service_name,
+        health_port: args.health_port,
+        dependence_cache_size: args.dependence_cache_size,
+        dependence_by_connexity: args.dependence_by_connexity,
+        dependence_cross_block: args.dependence_cross_block,
+        dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
+        chain_id: args.chain_id,
+    };
+
+    run_consumer(config).await
+}

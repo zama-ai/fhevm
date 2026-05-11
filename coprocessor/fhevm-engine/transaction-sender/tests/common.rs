@@ -11,8 +11,8 @@ use alloy::{
     sol,
     transports::http::reqwest::Url,
 };
-use fhevm_engine_common::utils::DatabaseURL;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
+use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
 use test_harness::localstack::{
     create_aws_aws_kms_client, create_localstack_kms_signing_key, start_localstack,
     LocalstackContainer, LOCALSTACK_PORT,
@@ -53,6 +53,7 @@ pub struct TestEnvironment {
     pub user_address: Address,
     anvil: Option<AnvilInstance>,
     pub wallet: EthereumWallet,
+    _db_instance: DBInstance,
     // Just keep the handle to destroy the container when it is dropped.
     _localstack: Option<LocalstackContainer>,
 }
@@ -80,9 +81,12 @@ impl TestEnvironment {
             .with_test_writer()
             .try_init();
 
+        let db_instance = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
         let db_pool = PgPoolOptions::new()
             .max_connections(10)
-            .connect(DatabaseURL::default().as_str())
+            .connect(db_instance.db_url())
             .await?;
 
         Self::truncate_tables(
@@ -141,6 +145,7 @@ impl TestEnvironment {
             user_address: PrivateKeySigner::random().address(),
             anvil: Some(anvil),
             wallet,
+            _db_instance: db_instance,
             _localstack: localstack,
         })
     }

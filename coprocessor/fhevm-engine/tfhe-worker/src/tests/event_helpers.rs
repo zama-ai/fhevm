@@ -51,6 +51,13 @@ pub fn next_handle() -> Handle {
     Handle::from(out)
 }
 
+/// Like `next_handle()` but encodes `fhe_type` in byte 30 (read by `get_ct_type`).
+pub fn next_handle_with_type(fhe_type: i32) -> Handle {
+    let mut h = next_handle();
+    h[30] = fhe_type as u8;
+    h
+}
+
 pub fn zero_address() -> Address {
     "0x0000000000000000000000000000000000000000"
         .parse()

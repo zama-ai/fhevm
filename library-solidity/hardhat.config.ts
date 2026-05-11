@@ -57,8 +57,8 @@ task('test', async (_taskArgs, hre, runSuper) => {
 
   // Run modified test task
   if (hre.network.name === 'hardhat') {
-    await hre.run('task:deployAllHostContracts');
-    await hre.run('task:addHostPausers', { useInternalPauserSetAddress: true });
+    await hre.run('task:deployAllHostContracts', { withKmsGeneration: true });
+    await hre.run('task:addHostPausers', { useInternalProxyAddress: true });
   }
 
   await runSuper();

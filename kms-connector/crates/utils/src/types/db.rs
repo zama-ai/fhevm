@@ -4,16 +4,12 @@ use alloy::{
     sol_types::SolEvent,
 };
 use anyhow::anyhow;
-use fhevm_gateway_bindings::{
-    decryption::Decryption::{
-        PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
-    },
-    kms_generation::{
-        IKMSGeneration::KeyDigest,
-        KMSGeneration::{
-            CrsgenRequest, KeyReshareSameSet, KeygenRequest, PRSSInit, PrepKeygenRequest,
-        },
-    },
+use fhevm_gateway_bindings::decryption::Decryption::{
+    PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
+};
+use fhevm_host_bindings::kms_generation::{
+    IKMSGeneration::KeyDigest,
+    KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
 };
 use sqlx::postgres::PgNotification;
 use std::{fmt::Display, str::FromStr};
@@ -141,8 +137,6 @@ pub enum EventType {
     PrepKeygenRequest,
     KeygenRequest,
     CrsgenRequest,
-    PrssInit,
-    KeyReshareSameSet,
 }
 
 impl Display for EventType {
@@ -153,8 +147,6 @@ impl Display for EventType {
             EventType::PrepKeygenRequest => write!(f, "PrepKeygenRequest"),
             EventType::KeygenRequest => write!(f, "KeygenRequest"),
             EventType::CrsgenRequest => write!(f, "CrsgenRequest"),
-            EventType::PrssInit => write!(f, "PrssInit"),
-            EventType::KeyReshareSameSet => write!(f, "KeyReshareSameSet"),
         }
     }
 }
@@ -167,8 +159,6 @@ impl From<&ProtocolEventKind> for EventType {
             ProtocolEventKind::PrepKeygen(_) => Self::PrepKeygenRequest,
             ProtocolEventKind::Keygen(_) => Self::KeygenRequest,
             ProtocolEventKind::Crsgen(_) => Self::CrsgenRequest,
-            ProtocolEventKind::PrssInit(_) => Self::PrssInit,
-            ProtocolEventKind::KeyReshareSameSet(_) => Self::KeyReshareSameSet,
         }
     }
 }
@@ -183,8 +173,6 @@ impl TryFrom<PgNotification> for EventType {
             PREP_KEYGEN_REQUEST_NOTIFICATION => Ok(Self::PrepKeygenRequest),
             KEYGEN_REQUEST_NOTIFICATION => Ok(Self::KeygenRequest),
             CRSGEN_REQUEST_NOTIFICATION => Ok(Self::CrsgenRequest),
-            PRSS_INIT_NOTIFICATION => Ok(Self::PrssInit),
-            KEY_RESHARE_SAME_SET_NOTIFICATION => Ok(Self::KeyReshareSameSet),
             s => Err(anyhow!("Unknown notification channel: {s}")),
         }
     }
@@ -198,8 +186,6 @@ impl EventType {
             Self::PrepKeygenRequest => PREP_KEYGEN_REQUEST_NOTIFICATION,
             Self::KeygenRequest => KEYGEN_REQUEST_NOTIFICATION,
             Self::CrsgenRequest => CRSGEN_REQUEST_NOTIFICATION,
-            Self::PrssInit => PRSS_INIT_NOTIFICATION,
-            Self::KeyReshareSameSet => KEY_RESHARE_SAME_SET_NOTIFICATION,
         }
     }
 
@@ -210,8 +196,16 @@ impl EventType {
             EventType::PrepKeygenRequest => "prep_keygen_request",
             EventType::KeygenRequest => "keygen_request",
             EventType::CrsgenRequest => "crsgen_request",
-            EventType::PrssInit => "prss_init",
-            EventType::KeyReshareSameSet => "key_reshare_same_set",
+        }
+    }
+
+    pub fn signature_hash(&self) -> B256 {
+        match self {
+            EventType::PublicDecryptionRequest => PublicDecryptionRequest::SIGNATURE_HASH,
+            EventType::UserDecryptionRequest => UserDecryptionRequest::SIGNATURE_HASH,
+            EventType::PrepKeygenRequest => PrepKeygenRequest::SIGNATURE_HASH,
+            EventType::KeygenRequest => KeygenRequest::SIGNATURE_HASH,
+            EventType::CrsgenRequest => CrsgenRequest::SIGNATURE_HASH,
         }
     }
 
@@ -234,9 +228,6 @@ pub const USER_DECRYPT_REQUEST_NOTIFICATION: &str = "user_decryption_request_ava
 pub const PREP_KEYGEN_REQUEST_NOTIFICATION: &str = "prep_keygen_request_available";
 pub const KEYGEN_REQUEST_NOTIFICATION: &str = "keygen_request_available";
 pub const CRSGEN_REQUEST_NOTIFICATION: &str = "crsgen_request_available";
-pub const PRSS_INIT_NOTIFICATION: &str = "prss_init_available";
-pub const KEY_RESHARE_SAME_SET_NOTIFICATION: &str = "key_reshare_same_set_available";
-
 #[derive(sqlx::Type, Copy, Clone, Debug, PartialEq)]
 #[sqlx(type_name = "operation_status", rename_all = "lowercase")]
 pub enum OperationStatus {

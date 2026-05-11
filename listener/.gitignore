@@ -1,0 +1,10 @@
+.vscode
+tmp
+target
+.cursor
+_erpc
+.env
+
+# Helm
+charts/*/charts/
+charts/*/Chart.lock

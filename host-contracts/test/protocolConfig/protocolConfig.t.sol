@@ -1,0 +1,545 @@
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+pragma solidity ^0.8.24;
+
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {HostContractsDeployerTestUtils} from "@fhevm-foundry/HostContractsDeployerTestUtils.sol";
+import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
+import {ProtocolConfigUpgradedExample} from "@fhevm-host-contracts/examples/ProtocolConfigUpgradedExample.sol";
+import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
+import {KmsNode} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
+import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
+import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/UUPSUpgradeableEmptyProxy.sol";
+import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
+import {KMS_CONTEXT_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
+import {protocolConfigAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
+
+contract ProtocolConfigTest is HostContractsDeployerTestUtils {
+    ProtocolConfig internal protocolConfig;
+
+    address internal constant owner = address(456);
+
+    function _deployEmptyProtocolConfigProxy() internal {
+        address emptyProxyImpl = address(new EmptyUUPSProxy());
+        deployCodeTo(
+            "fhevm-foundry/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
+            abi.encode(emptyProxyImpl, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
+            protocolConfigAdd
+        );
+    }
+
+    function _setupEmptyProxy() internal {
+        _deployACL(owner);
+        _deployEmptyProtocolConfigProxy();
+    }
+
+    function _setupDefault() internal {
+        _deployACL(owner);
+        /// @dev Distinct per-field values so each getter proves it reads the correct storage slot.
+        IProtocolConfig.KmsThresholds memory thresholds = IProtocolConfig.KmsThresholds({
+            publicDecryption: 1,
+            userDecryption: 2,
+            kmsGen: 3,
+            mpc: 4
+        });
+        (ProtocolConfig pc, ) = _deployProtocolConfig(owner, _makeKmsNodes(4), thresholds);
+        protocolConfig = pc;
+    }
+
+    function _setupMigration(uint256 migratedContextId) internal {
+        _setupEmptyProxy();
+        address impl = address(new ProtocolConfig());
+        vm.prank(owner);
+        EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
+            impl,
+            abi.encodeCall(
+                ProtocolConfig.initializeFromMigration,
+                (migratedContextId, _makeKmsNodes(2), _defaultThresholds())
+            )
+        );
+        protocolConfig = ProtocolConfig(protocolConfigAdd);
+    }
+
+    function _upgradeProxyExpectRevert(
+        KmsNode[] memory nodes,
+        IProtocolConfig.KmsThresholds memory thresholds,
+        bytes memory expectedRevert
+    ) internal {
+        address impl = address(new ProtocolConfig());
+        vm.prank(owner);
+        vm.expectRevert(expectedRevert);
+        EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
+            impl,
+            abi.encodeCall(ProtocolConfig.initializeFromEmptyProxy, (nodes, thresholds))
+        );
+    }
+
+    function _revertThreshold(IProtocolConfig.KmsThresholds memory t, bytes memory expectedRevert) internal {
+        _setupEmptyProxy();
+        _upgradeProxyExpectRevert(_makeKmsNodes(1), t, expectedRevert);
+    }
+
+    /// @dev Asserts all seven context-guarded view functions revert for the given context ID.
+    function _expectAllViewsRevertForContext(uint256 contextId) internal {
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
+        protocolConfig.getKmsSignersForContext(contextId);
+
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
+        protocolConfig.isKmsSignerForContext(contextId, address(0xDEAD));
+
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
+        protocolConfig.getKmsNodesForContext(contextId);
+
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
+        protocolConfig.isKmsTxSenderForContext(contextId, address(0xDEAD));
+
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
+        protocolConfig.getKmsNodeForContext(contextId, address(0xDEAD));
+
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
+        protocolConfig.getUserDecryptionThresholdForContext(contextId);
+
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
+        protocolConfig.getPublicDecryptionThresholdForContext(contextId);
+    }
+
+    // -----------------------------------------------------------------------
+    // Init tests
+    // -----------------------------------------------------------------------
+
+    function test_initSuccess() public {
+        _setupDefault();
+
+        // Version and current context.
+        assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.1.0");
+        uint256 contextId = protocolConfig.getCurrentKmsContextId();
+        assertEq(contextId, KMS_CONTEXT_COUNTER_BASE + 1);
+        assertTrue(protocolConfig.isValidKmsContext(contextId));
+
+        // Thresholds.
+        assertEq(protocolConfig.getPublicDecryptionThreshold(), 1);
+        assertEq(protocolConfig.getUserDecryptionThreshold(), 2);
+        assertEq(protocolConfig.getKmsGenThreshold(), 3);
+        assertEq(protocolConfig.getMpcThreshold(), 4);
+
+        // Context node arrays and registered signer/tx sender mappings.
+        KmsNode[] memory expectedNodes = _makeKmsNodes(4);
+        KmsNode[] memory nodes = protocolConfig.getKmsNodesForContext(contextId);
+        address[] memory signers = protocolConfig.getKmsSignersForContext(contextId);
+        assertEq(nodes.length, expectedNodes.length);
+        assertEq(signers.length, expectedNodes.length);
+        for (uint256 i = 0; i < expectedNodes.length; i++) {
+            assertEq(nodes[i].txSenderAddress, expectedNodes[i].txSenderAddress);
+            assertEq(nodes[i].signerAddress, expectedNodes[i].signerAddress);
+            assertEq(nodes[i].ipAddress, expectedNodes[i].ipAddress);
+            assertEq(nodes[i].storageUrl, expectedNodes[i].storageUrl);
+            assertEq(signers[i], expectedNodes[i].signerAddress);
+            assertTrue(protocolConfig.isKmsSignerForContext(contextId, expectedNodes[i].signerAddress));
+            assertTrue(protocolConfig.isKmsTxSenderForContext(contextId, expectedNodes[i].txSenderAddress));
+
+            // Direct node lookup by tx sender.
+            KmsNode memory node = protocolConfig.getKmsNodeForContext(contextId, expectedNodes[i].txSenderAddress);
+            assertEq(node.txSenderAddress, expectedNodes[i].txSenderAddress);
+            assertEq(node.signerAddress, expectedNodes[i].signerAddress);
+            assertEq(node.ipAddress, expectedNodes[i].ipAddress);
+            assertEq(node.storageUrl, expectedNodes[i].storageUrl);
+        }
+        // Negative: unregistered addresses must return false.
+        assertFalse(protocolConfig.isKmsSignerForContext(contextId, address(0xDEAD)));
+        assertFalse(protocolConfig.isKmsTxSenderForContext(contextId, address(0xDEAD)));
+    }
+
+    // -----------------------------------------------------------------------
+    // Validation error tests
+    // -----------------------------------------------------------------------
+
+    function test_revertEmptyNodes() public {
+        _setupEmptyProxy();
+        KmsNode[] memory emptyNodes = new KmsNode[](0);
+        _upgradeProxyExpectRevert(
+            emptyNodes,
+            _defaultThresholds(),
+            abi.encodeWithSelector(IProtocolConfig.EmptyKmsNodes.selector)
+        );
+    }
+
+    function test_revertNullTxSender() public {
+        _setupEmptyProxy();
+        KmsNode[] memory nodes = _makeKmsNodes(1);
+        nodes[0].txSenderAddress = address(0);
+        _upgradeProxyExpectRevert(
+            nodes,
+            _defaultThresholds(),
+            abi.encodeWithSelector(IProtocolConfig.KmsNodeNullTxSender.selector)
+        );
+    }
+
+    function test_revertNullSigner() public {
+        _setupEmptyProxy();
+        KmsNode[] memory nodes = _makeKmsNodes(1);
+        nodes[0].signerAddress = address(0);
+        _upgradeProxyExpectRevert(
+            nodes,
+            _defaultThresholds(),
+            abi.encodeWithSelector(IProtocolConfig.KmsNodeNullSigner.selector)
+        );
+    }
+
+    function test_revertDuplicateTxSender() public {
+        _setupEmptyProxy();
+        KmsNode[] memory nodes = _makeKmsNodes(2);
+        nodes[1].txSenderAddress = nodes[0].txSenderAddress;
+        _upgradeProxyExpectRevert(
+            nodes,
+            _defaultThresholds(),
+            abi.encodeWithSelector(IProtocolConfig.KmsTxSenderAlreadyRegistered.selector, nodes[0].txSenderAddress)
+        );
+    }
+
+    function test_revertDuplicateSigner() public {
+        _setupEmptyProxy();
+        KmsNode[] memory nodes = _makeKmsNodes(2);
+        nodes[1].signerAddress = nodes[0].signerAddress;
+        _upgradeProxyExpectRevert(
+            nodes,
+            _defaultThresholds(),
+            abi.encodeWithSelector(IProtocolConfig.KmsSignerAlreadyRegistered.selector, nodes[0].signerAddress)
+        );
+    }
+
+    function test_revertNullPublicDecryptionThreshold() public {
+        IProtocolConfig.KmsThresholds memory t = _defaultThresholds();
+        t.publicDecryption = 0;
+        _revertThreshold(t, abi.encodeWithSelector(IProtocolConfig.InvalidNullThreshold.selector, "publicDecryption"));
+    }
+
+    function test_revertHighPublicDecryptionThreshold() public {
+        IProtocolConfig.KmsThresholds memory t = _defaultThresholds();
+        t.publicDecryption = 5;
+        _revertThreshold(
+            t,
+            abi.encodeWithSelector(IProtocolConfig.InvalidHighThreshold.selector, "publicDecryption", 5, 1)
+        );
+    }
+
+    function test_revertNullUserDecryptionThreshold() public {
+        IProtocolConfig.KmsThresholds memory t = _defaultThresholds();
+        t.userDecryption = 0;
+        _revertThreshold(t, abi.encodeWithSelector(IProtocolConfig.InvalidNullThreshold.selector, "userDecryption"));
+    }
+
+    function test_revertHighUserDecryptionThreshold() public {
+        IProtocolConfig.KmsThresholds memory t = _defaultThresholds();
+        t.userDecryption = 5;
+        _revertThreshold(
+            t,
+            abi.encodeWithSelector(IProtocolConfig.InvalidHighThreshold.selector, "userDecryption", 5, 1)
+        );
+    }
+
+    function test_revertNullKmsGenThreshold() public {
+        IProtocolConfig.KmsThresholds memory t = _defaultThresholds();
+        t.kmsGen = 0;
+        _revertThreshold(t, abi.encodeWithSelector(IProtocolConfig.InvalidNullThreshold.selector, "kmsGen"));
+    }
+
+    function test_revertHighKmsGenThreshold() public {
+        IProtocolConfig.KmsThresholds memory t = _defaultThresholds();
+        t.kmsGen = 5;
+        _revertThreshold(t, abi.encodeWithSelector(IProtocolConfig.InvalidHighThreshold.selector, "kmsGen", 5, 1));
+    }
+
+    function test_revertNullMpcThreshold() public {
+        IProtocolConfig.KmsThresholds memory t = _defaultThresholds();
+        t.mpc = 0;
+        _revertThreshold(t, abi.encodeWithSelector(IProtocolConfig.InvalidNullThreshold.selector, "mpc"));
+    }
+
+    function test_revertHighMpcThreshold() public {
+        IProtocolConfig.KmsThresholds memory t = _defaultThresholds();
+        t.mpc = 5;
+        _revertThreshold(t, abi.encodeWithSelector(IProtocolConfig.InvalidHighThreshold.selector, "mpc", 5, 1));
+    }
+
+    // -----------------------------------------------------------------------
+    // Context lifecycle tests
+    // -----------------------------------------------------------------------
+
+    function test_defineNewContext() public {
+        _setupDefault();
+
+        KmsNode[] memory newNodes = _makeKmsNodes(1);
+
+        IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
+        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        emit IProtocolConfig.NewKmsContext(KMS_CONTEXT_COUNTER_BASE + 2, newNodes, thresholds);
+        vm.prank(owner);
+        protocolConfig.defineNewKmsContext(newNodes, thresholds);
+
+        uint256 newContextId = protocolConfig.getCurrentKmsContextId();
+        assertEq(newContextId, KMS_CONTEXT_COUNTER_BASE + 2);
+        assertTrue(protocolConfig.isValidKmsContext(newContextId));
+        assertTrue(protocolConfig.isKmsSignerForContext(newContextId, newNodes[0].signerAddress));
+        assertEq(protocolConfig.getKmsNodesForContext(newContextId).length, 1);
+    }
+
+    function test_historicalContextReadable() public {
+        _setupDefault();
+        uint256 firstContextId = protocolConfig.getCurrentKmsContextId();
+
+        KmsNode[] memory newNodes = _makeKmsNodes(1);
+
+        vm.prank(owner);
+        protocolConfig.defineNewKmsContext(newNodes, _defaultThresholds());
+
+        uint256 currentId = protocolConfig.getCurrentKmsContextId();
+        assertTrue(currentId != firstContextId);
+        assertTrue(protocolConfig.isValidKmsContext(firstContextId));
+        address[] memory oldSigners = protocolConfig.getKmsSignersForContext(firstContextId);
+        assertEq(oldSigners.length, 4);
+    }
+
+    function test_destroyContext() public {
+        _setupDefault();
+        uint256 firstContextId = protocolConfig.getCurrentKmsContextId();
+
+        KmsNode[] memory newNodes = _makeKmsNodes(1);
+        vm.prank(owner);
+        protocolConfig.defineNewKmsContext(newNodes, _defaultThresholds());
+
+        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        emit IProtocolConfig.KmsContextDestroyed(firstContextId);
+        vm.prank(owner);
+        protocolConfig.destroyKmsContext(firstContextId);
+        assertFalse(protocolConfig.isValidKmsContext(firstContextId));
+    }
+
+    function test_revertDestroyCurrentContext() public {
+        _setupDefault();
+        uint256 currentId = protocolConfig.getCurrentKmsContextId();
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.CurrentKmsContextCannotBeDestroyed.selector, currentId));
+        protocolConfig.destroyKmsContext(currentId);
+    }
+
+    function testFuzz_revertDestroyInvalidContext(uint256 invalidContextId) public {
+        _setupDefault();
+        vm.assume(invalidContextId != protocolConfig.getCurrentKmsContextId());
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidContextId));
+        protocolConfig.destroyKmsContext(invalidContextId);
+    }
+
+    function test_revertDestroyAlreadyDestroyedContext() public {
+        _setupDefault();
+        uint256 firstContextId = protocolConfig.getCurrentKmsContextId();
+
+        KmsNode[] memory newNodes = _makeKmsNodes(1);
+        vm.prank(owner);
+        protocolConfig.defineNewKmsContext(newNodes, _defaultThresholds());
+
+        vm.prank(owner);
+        protocolConfig.destroyKmsContext(firstContextId);
+
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, firstContextId));
+        protocolConfig.destroyKmsContext(firstContextId);
+    }
+
+    // -----------------------------------------------------------------------
+    // Migration initializer
+    // -----------------------------------------------------------------------
+
+    function test_migrationInitializer() public {
+        uint256 migratedContextId = KMS_CONTEXT_COUNTER_BASE + 3;
+        _setupMigration(migratedContextId);
+
+        assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.1.0");
+        assertEq(protocolConfig.getCurrentKmsContextId(), migratedContextId);
+        assertTrue(protocolConfig.isValidKmsContext(migratedContextId));
+        assertEq(protocolConfig.getKmsSignersForContext(migratedContextId).length, 2);
+        assertEq(protocolConfig.getPublicDecryptionThreshold(), 1);
+        assertEq(protocolConfig.getUserDecryptionThreshold(), 1);
+        assertEq(protocolConfig.getKmsGenThreshold(), 1);
+        assertEq(protocolConfig.getMpcThreshold(), 1);
+    }
+
+    function test_revertMigrationInitializerInvalidContextId() public {
+        _setupEmptyProxy();
+
+        address impl = address(new ProtocolConfig());
+        KmsNode[] memory nodes = _makeKmsNodes(2);
+        IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
+        uint256 invalidContextId = KMS_CONTEXT_COUNTER_BASE;
+
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidContextId));
+        EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
+            impl,
+            abi.encodeCall(ProtocolConfig.initializeFromMigration, (invalidContextId, nodes, thresholds))
+        );
+    }
+
+    function test_migrationGapContextsRemainInvalid() public {
+        _setupMigration(KMS_CONTEXT_COUNTER_BASE + 3);
+
+        uint256 gapContextId = KMS_CONTEXT_COUNTER_BASE + 1;
+        assertFalse(protocolConfig.isValidKmsContext(gapContextId));
+
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, gapContextId));
+        protocolConfig.getKmsNodesForContext(gapContextId);
+    }
+
+    // -----------------------------------------------------------------------
+    // View-function guards (invalid & destroyed contexts)
+    // -----------------------------------------------------------------------
+
+    function testFuzz_revertViewFunctionsForInvalidContext(uint256 invalidContextId) public {
+        _setupDefault();
+        vm.assume(invalidContextId != protocolConfig.getCurrentKmsContextId());
+        _expectAllViewsRevertForContext(invalidContextId);
+    }
+
+    function test_revertViewFunctionsForDestroyedContext() public {
+        _setupDefault();
+        uint256 firstContextId = protocolConfig.getCurrentKmsContextId();
+
+        vm.prank(owner);
+        protocolConfig.defineNewKmsContext(_makeKmsNodes(1), _defaultThresholds());
+
+        vm.prank(owner);
+        protocolConfig.destroyKmsContext(firstContextId);
+
+        _expectAllViewsRevertForContext(firstContextId);
+    }
+
+    // -----------------------------------------------------------------------
+    // Threshold getters after context rotation
+    // -----------------------------------------------------------------------
+
+    function test_getUserDecryptionThresholdForContext() public {
+        _setupDefault();
+        uint256 firstContextId = protocolConfig.getCurrentKmsContextId();
+        // _setupDefault uses userDecryption = 2
+        assertEq(protocolConfig.getUserDecryptionThresholdForContext(firstContextId), 2);
+
+        // Rotate to a new context with userDecryption = 1
+        IProtocolConfig.KmsThresholds memory newThresholds = IProtocolConfig.KmsThresholds({
+            publicDecryption: 1,
+            userDecryption: 1,
+            kmsGen: 1,
+            mpc: 1
+        });
+        vm.prank(owner);
+        protocolConfig.defineNewKmsContext(_makeKmsNodes(2), newThresholds);
+        uint256 secondContextId = protocolConfig.getCurrentKmsContextId();
+
+        // New context returns its own threshold
+        assertEq(protocolConfig.getUserDecryptionThresholdForContext(secondContextId), 1);
+        // Old context still returns the original threshold
+        assertEq(protocolConfig.getUserDecryptionThresholdForContext(firstContextId), 2);
+    }
+
+    function test_getPublicDecryptionThresholdForContext() public {
+        _setupDefault();
+        uint256 firstContextId = protocolConfig.getCurrentKmsContextId();
+        assertEq(protocolConfig.getPublicDecryptionThresholdForContext(firstContextId), 1);
+
+        IProtocolConfig.KmsThresholds memory newThresholds = IProtocolConfig.KmsThresholds({
+            publicDecryption: 2,
+            userDecryption: 1,
+            kmsGen: 2,
+            mpc: 1
+        });
+        vm.prank(owner);
+        protocolConfig.defineNewKmsContext(_makeKmsNodes(2), newThresholds);
+        uint256 secondContextId = protocolConfig.getCurrentKmsContextId();
+
+        assertEq(protocolConfig.getPublicDecryptionThresholdForContext(secondContextId), 2);
+        assertEq(protocolConfig.getPublicDecryptionThresholdForContext(firstContextId), 1);
+
+        uint256 invalidId = KMS_CONTEXT_COUNTER_BASE + 999;
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidId));
+        protocolConfig.getPublicDecryptionThresholdForContext(invalidId);
+    }
+
+    function test_thresholdsAfterContextRotation() public {
+        _setupDefault();
+        // Initial context uses thresholds {1, 2, 3, 4}.
+        // Define a new context with different thresholds.
+        IProtocolConfig.KmsThresholds memory newThresholds = IProtocolConfig.KmsThresholds({
+            publicDecryption: 2,
+            userDecryption: 1,
+            kmsGen: 2,
+            mpc: 1
+        });
+
+        vm.prank(owner);
+        protocolConfig.defineNewKmsContext(_makeKmsNodes(2), newThresholds);
+
+        assertEq(protocolConfig.getPublicDecryptionThreshold(), 2);
+        assertEq(protocolConfig.getUserDecryptionThreshold(), 1);
+        assertEq(protocolConfig.getKmsGenThreshold(), 2);
+        assertEq(protocolConfig.getMpcThreshold(), 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // Re-initialization protection
+    // -----------------------------------------------------------------------
+
+    function test_revertDoubleInit() public {
+        _setupDefault();
+
+        // onlyFromEmptyProxy fires first (version is 2, not 1) before reinitializer.
+        vm.prank(owner);
+        vm.expectRevert(UUPSUpgradeableEmptyProxy.NotInitializingFromEmptyProxy.selector);
+        protocolConfig.initializeFromEmptyProxy(_makeKmsNodes(1), _defaultThresholds());
+    }
+
+    function test_revertMigrationAfterInit() public {
+        _setupDefault();
+
+        uint256 migratedId = KMS_CONTEXT_COUNTER_BASE + 5;
+        vm.prank(owner);
+        vm.expectRevert(UUPSUpgradeableEmptyProxy.NotInitializingFromEmptyProxy.selector);
+        protocolConfig.initializeFromMigration(migratedId, _makeKmsNodes(1), _defaultThresholds());
+    }
+
+    // -----------------------------------------------------------------------
+    // Access control
+    // -----------------------------------------------------------------------
+
+    function test_revertDefineContextNotOwner() public {
+        _setupDefault();
+        vm.prank(address(0x999));
+        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
+        protocolConfig.defineNewKmsContext(_makeKmsNodes(1), _defaultThresholds());
+    }
+
+    function test_revertDestroyContextNotOwner() public {
+        _setupDefault();
+        vm.prank(address(0x999));
+        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
+        protocolConfig.destroyKmsContext(KMS_CONTEXT_COUNTER_BASE + 1);
+    }
+
+    function test_revertUpgradeNotOwner() public {
+        _setupDefault();
+
+        address newImpl = address(new ProtocolConfigUpgradedExample());
+        vm.prank(address(0x999));
+        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
+        protocolConfig.upgradeToAndCall(newImpl, "");
+    }
+
+    function test_upgradeSuccess() public {
+        _setupDefault();
+
+        address newImpl = address(new ProtocolConfigUpgradedExample());
+        vm.prank(owner);
+        protocolConfig.upgradeToAndCall(newImpl, "");
+
+        assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.2.0");
+        // State preserved across upgrade.
+        assertTrue(protocolConfig.isValidKmsContext(protocolConfig.getCurrentKmsContextId()));
+    }
+}

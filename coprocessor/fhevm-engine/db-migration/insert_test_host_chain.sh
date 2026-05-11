@@ -1,9 +1,17 @@
 #!/bin/bash
-set -e
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ -f /prepare_database_url.sh ]]; then
+  source /prepare_database_url.sh
+else
+  source "${script_dir}/prepare_database_url.sh"
+fi
 
 CHAIN_ID=${CHAIN_ID:-"12345"}
 
-if [[ -z "$DATABASE_URL" || -z "$ACL_CONTRACT_ADDRESS" ]]; then
+if [[ -z "${DATABASE_URL:-}" || -z "${ACL_CONTRACT_ADDRESS:-}" ]]; then
     echo "Error: One or more required environment variables are missing."; exit 1;
 fi
 

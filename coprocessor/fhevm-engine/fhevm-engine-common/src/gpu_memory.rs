@@ -53,10 +53,6 @@ impl SupportedFheCiphertexts {
     }
 }
 
-pub fn get_supported_ct_size_on_gpu(ct_type: i16) -> u64 {
-    trivial_encrypt_be_bytes(ct_type, &[1u8]).get_size_on_gpu()
-}
-
 // Reserving GPU memory happens in two stages:
 //  - we add the amount we need atomically to the GPU's reservation pool
 //  - we check that the new pool fits on GPU
@@ -80,6 +76,53 @@ pub fn release_memory_on_gpu(amount: u64, idx: usize) {
     let current_pool_size = gpu_mem_reservation[idx].load(std::sync::atomic::Ordering::SeqCst);
     assert!(current_pool_size >= amount);
     let _ = gpu_mem_reservation[idx].fetch_sub(amount, std::sync::atomic::Ordering::SeqCst);
+}
+
+fn get_fhe_sum_size_on_gpu(
+    _fhe_operation: i16,
+    input_operands: &[SupportedFheCiphertexts],
+) -> Result<u64, FhevmError> {
+    if input_operands.is_empty() {
+        return Ok(0);
+    }
+    let n = input_operands.len() as u64;
+    // No dedicated get_sum_size_on_gpu API exists in tfhe-rs; using N * ciphertext_size
+    // as an approximation.
+    match &input_operands[0] {
+        SupportedFheCiphertexts::FheUint8(v) => Ok(v.get_size_on_gpu().saturating_mul(n)),
+        SupportedFheCiphertexts::FheUint16(v) => Ok(v.get_size_on_gpu().saturating_mul(n)),
+        SupportedFheCiphertexts::FheUint32(v) => Ok(v.get_size_on_gpu().saturating_mul(n)),
+        SupportedFheCiphertexts::FheUint64(v) => Ok(v.get_size_on_gpu().saturating_mul(n)),
+        SupportedFheCiphertexts::FheUint128(v) => Ok(v.get_size_on_gpu().saturating_mul(n)),
+        _ => Err(FhevmError::UnsupportedFheTypes {
+            fhe_operation: format!("{:?}", _fhe_operation),
+            input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+        }),
+    }
+}
+
+fn get_fhe_is_in_size_on_gpu(
+    _fhe_operation: i16,
+    input_operands: &[SupportedFheCiphertexts],
+) -> Result<u64, FhevmError> {
+    if input_operands.is_empty() {
+        return Ok(0);
+    }
+    let n = input_operands.len() as u64;
+    // No dedicated API exists; using N * ciphertext_size as an approximation.
+    match &input_operands[0] {
+        SupportedFheCiphertexts::FheUint8(v) => Ok(v.get_size_on_gpu().saturating_mul(n)),
+        SupportedFheCiphertexts::FheUint16(v) => Ok(v.get_size_on_gpu().saturating_mul(n)),
+        SupportedFheCiphertexts::FheUint32(v) => Ok(v.get_size_on_gpu().saturating_mul(n)),
+        SupportedFheCiphertexts::FheUint64(v) => Ok(v.get_size_on_gpu().saturating_mul(n)),
+        SupportedFheCiphertexts::FheUint128(v) => Ok(v.get_size_on_gpu().saturating_mul(n)),
+        SupportedFheCiphertexts::FheUint160(v) => Ok(v.get_size_on_gpu().saturating_mul(n)),
+        SupportedFheCiphertexts::FheUint256(v) => Ok(v.get_size_on_gpu().saturating_mul(n)),
+        _ => Err(FhevmError::UnsupportedFheTypes {
+            fhe_operation: format!("{:?}", _fhe_operation),
+            input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+        }),
+    }
 }
 
 pub fn get_op_size_on_gpu(
@@ -1724,11 +1767,10 @@ pub fn get_op_size_on_gpu(
         }
         SupportedFheOperations::FheTrivialEncrypt | SupportedFheOperations::FheCast => {
             match (&input_operands[0], &input_operands[1]) {
-                (_, SupportedFheCiphertexts::Scalar(op)) => Ok(trivial_encrypt_be_bytes(
-                    to_be_u16_bit(op) as i16,
-                    &[1u8],
-                )
-                .get_size_on_gpu()),
+                (_, SupportedFheCiphertexts::Scalar(op)) => {
+                    Ok(trivial_encrypt_be_bytes(to_be_u16_bit(op) as i16, &[1u8])?
+                        .get_size_on_gpu())
+                }
                 (_, _) => Err(FhevmError::UnsupportedFheTypes {
                     fhe_operation: format!("{:?}", fhe_operation),
                     input_types: input_operands.iter().map(|i| i.type_name()).collect(),
@@ -1800,6 +1842,12 @@ pub fn get_op_size_on_gpu(
                     input_types: input_operands.iter().map(|i| i.type_name()).collect(),
                 }),
             }
+        }
+        SupportedFheOperations::FheSum => {
+            get_fhe_sum_size_on_gpu(fhe_operation_int, input_operands)
+        }
+        SupportedFheOperations::FheIsIn => {
+            get_fhe_is_in_size_on_gpu(fhe_operation_int, input_operands)
         }
         _ => Err(FhevmError::UnknownFheOperation(fhe_operation_int.into())),
     }

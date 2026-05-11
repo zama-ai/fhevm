@@ -165,6 +165,17 @@ where
                     );
                     self.remove_proof_by_id(txn_request.0).await?;
                     return Ok(());
+                } else if let Some(InputVerificationErrors::VerifyProofNotRequested(_)) =
+                    e.as_error_resp().and_then(|payload| {
+                        payload.as_decoded_interface_error::<InputVerificationErrors>()
+                    })
+                {
+                    warn!(
+                        zk_proof_id = txn_request.0,
+                        "Verify proof was not requested, removing from DB"
+                    );
+                    self.remove_proof_by_id(txn_request.0).await?;
+                    return Ok(());
                 } else if let Some(non_retryable_config_error) =
                     try_extract_non_retryable_config_error(&e)
                 {

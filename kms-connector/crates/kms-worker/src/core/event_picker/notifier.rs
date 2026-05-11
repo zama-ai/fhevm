@@ -1,9 +1,9 @@
 use crate::core::Config;
 use anyhow::anyhow;
 use connector_utils::types::db::{
-    CRSGEN_REQUEST_NOTIFICATION, EventType, KEY_RESHARE_SAME_SET_NOTIFICATION,
-    KEYGEN_REQUEST_NOTIFICATION, PREP_KEYGEN_REQUEST_NOTIFICATION, PRSS_INIT_NOTIFICATION,
-    PUBLIC_DECRYPT_REQUEST_NOTIFICATION, USER_DECRYPT_REQUEST_NOTIFICATION,
+    CRSGEN_REQUEST_NOTIFICATION, EventType, KEYGEN_REQUEST_NOTIFICATION,
+    PREP_KEYGEN_REQUEST_NOTIFICATION, PUBLIC_DECRYPT_REQUEST_NOTIFICATION,
+    USER_DECRYPT_REQUEST_NOTIFICATION,
 };
 use sqlx::{Pool, Postgres, postgres::PgListener};
 use std::time::Duration;
@@ -75,10 +75,7 @@ impl DbEventNotifier {
             .await?;
         self.db_listener.listen(KEYGEN_REQUEST_NOTIFICATION).await?;
         self.db_listener.listen(CRSGEN_REQUEST_NOTIFICATION).await?;
-        self.db_listener.listen(PRSS_INIT_NOTIFICATION).await?;
-        self.db_listener
-            .listen(KEY_RESHARE_SAME_SET_NOTIFICATION)
-            .await
+        Ok(())
     }
 
     pub async fn start(mut self) {
@@ -93,9 +90,6 @@ impl DbEventNotifier {
             EventTicker::new(db_long_event_polling, EventType::PrepKeygenRequest);
         let mut keygen_ticker = EventTicker::new(db_long_event_polling, EventType::KeygenRequest);
         let mut crsgen_ticker = EventTicker::new(db_long_event_polling, EventType::CrsgenRequest);
-        let mut prss_init_ticker = EventTicker::new(db_long_event_polling, EventType::PrssInit);
-        let mut key_reshare_ticker =
-            EventTicker::new(db_long_event_polling, EventType::KeyReshareSameSet);
 
         loop {
             let notification = select! {
@@ -104,8 +98,6 @@ impl DbEventNotifier {
                 _ = prep_keygen_ticker.tick() => prep_keygen_ticker.deliver(),
                 _ = keygen_ticker.tick() => keygen_ticker.deliver(),
                 _ = crsgen_ticker.tick() => crsgen_ticker.deliver(),
-                _ = prss_init_ticker.tick() => prss_init_ticker.deliver(),
-                _ = key_reshare_ticker.tick() => key_reshare_ticker.deliver(),
                 result = self.db_listener.recv() => match result.map(EventType::try_from) {
                     Ok(Ok(notif)) => {
                         info!("Received Postgres notification: {}", notif.pg_notification());
@@ -128,8 +120,6 @@ impl DbEventNotifier {
                 EventType::PrepKeygenRequest => prep_keygen_ticker.reset(),
                 EventType::KeygenRequest => keygen_ticker.reset(),
                 EventType::CrsgenRequest => crsgen_ticker.reset(),
-                EventType::PrssInit => prss_init_ticker.reset(),
-                EventType::KeyReshareSameSet => key_reshare_ticker.reset(),
             }
 
             if self.notif_sender.send(notification).await.is_err() {

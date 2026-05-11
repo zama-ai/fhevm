@@ -68,7 +68,9 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         implementation = address(new MockHCULimit());
         vm.startPrank(owner);
         UnsafeUpgrades.upgradeProxy(
-            proxy, implementation, abi.encodeCall(hcuLimit.initializeFromEmptyProxy, (type(uint48).max, 5_000_000, 20_000_000))
+            proxy,
+            implementation,
+            abi.encodeCall(hcuLimit.initializeFromEmptyProxy, (type(uint48).max, 5_000_000, 20_000_000))
         );
         vm.stopPrank();
         hcuLimit = MockHCULimit(proxy);
@@ -95,7 +97,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
      * It checks that the version is correct and the owner is set to the expected address.
      */
     function test_PostProxyUpgradeCheck() public view {
-        assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.2.0")));
+        assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.3.0")));
         assertEq(hcuLimit.getFHEVMExecutorAddress(), fhevmExecutorAdd);
     }
 
@@ -1312,13 +1314,27 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         assertEq(usedAfterWhitelisted, 0);
 
         // Then switch to non-whitelisted caller in the same tx: meter should apply.
-        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(uint256(0x1002)), nonWhitelistedCaller);
+        hcuLimit.checkHCUForFheAdd(
+            FheType.Uint8,
+            0x01,
+            mockLHS,
+            mockRHS,
+            bytes32(uint256(0x1002)),
+            nonWhitelistedCaller
+        );
         (, uint48 usedAfterNonWhitelisted) = hcuLimit.getBlockMeter();
         assertEq(usedAfterNonWhitelisted, 84_000);
 
         // A second non-whitelisted op in same block should exceed cap.
         vm.expectRevert(HCULimit.HCUBlockLimitExceeded.selector);
-        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(uint256(0x1003)), nonWhitelistedCaller);
+        hcuLimit.checkHCUForFheAdd(
+            FheType.Uint8,
+            0x01,
+            mockLHS,
+            mockRHS,
+            bytes32(uint256(0x1003)),
+            nonWhitelistedCaller
+        );
 
         vm.stopPrank();
     }
@@ -1335,20 +1351,127 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         assertEq(usedHCU, 0);
     }
 
-    function test_reinitializeV2SetsBlockCapOnUpgradePathWithoutInitCall() public {
-        address proxyWithoutInitCall =
-            UnsafeUpgrades.deployUUPSProxy(address(new EmptyUUPSProxy()), abi.encodeCall(EmptyUUPSProxy.initialize, ()));
+    function test_reinitializeV3SucceedsOnUpgradePath() public {
+        address proxyWithoutInitCall = UnsafeUpgrades.deployUUPSProxy(
+            address(new EmptyUUPSProxy()),
+            abi.encodeCall(EmptyUUPSProxy.initialize, ())
+        );
 
         address implementationWithoutInitCall = address(new MockHCULimit());
         vm.startPrank(owner);
         UnsafeUpgrades.upgradeProxy(proxyWithoutInitCall, implementationWithoutInitCall, "");
 
         MockHCULimit upgraded = MockHCULimit(proxyWithoutInitCall);
-        assertEq(upgraded.getGlobalHCUCapPerBlock(), 0);
-
-        upgraded.reinitializeV2(type(uint48).max, 5_000_000, 20_000_000);
-        assertEq(upgraded.getGlobalHCUCapPerBlock(), type(uint48).max);
+        upgraded.reinitializeV3();
         vm.stopPrank();
+    }
+
+    function test_checkHCUForFheIsInWorksAsExpectedForSupportedTypes(uint8 resultType, uint8 count) public {
+        vm.assume(resultType <= uint8(FheType.Int248));
+        vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheIsIn));
+        count = uint8(bound(count, 1, 10));
+
+        bytes32[] memory set = new bytes32[](count);
+        for (uint256 i = 0; i < count; i++) {
+            set[i] = bytes32(i + 1);
+        }
+
+        vm.prank(fhevmExecutor);
+        hcuLimit.checkHCUForFheIsIn(FheType(resultType), mockLHS, set, mockResult, fhevmExecutor);
+
+        uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
+        vm.assertGe(totalTransactionHCU, 60000);
+        vm.assertLe(totalTransactionHCU, 1_300_000);
+    }
+
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheIsIn(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        bytes32[] memory set = new bytes32[](2);
+        set[0] = bytes32(uint256(1));
+        set[1] = bytes32(uint256(2));
+        vm.prank(randomAccount);
+        vm.expectRevert(HCULimit.CallerMustBeFHEVMExecutorContract.selector);
+        hcuLimit.checkHCUForFheIsIn(FheType.Uint8, mockLHS, set, mockResult, fhevmExecutor);
+    }
+
+    function test_checkHCUForFheIsInRevertsForUnsupportedTypes(uint8 fheType) public {
+        vm.assume(fheType <= uint8(FheType.Int248));
+        vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheIsIn));
+        bytes32[] memory set = new bytes32[](2);
+        set[0] = bytes32(uint256(1));
+        set[1] = bytes32(uint256(2));
+        vm.expectRevert(HCULimit.UnsupportedOperation.selector);
+        vm.prank(fhevmExecutor);
+        hcuLimit.checkHCUForFheIsIn(FheType(fheType), mockLHS, set, mockResult, fhevmExecutor);
+    }
+
+    function test_checkHCUForFheIsInRevertsIfHCUTransactionIsAboveHCUTransactionLimit(uint8 resultType) public {
+        vm.assume(resultType <= uint8(FheType.Int248));
+        vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheIsIn));
+
+        hcuLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
+
+        bytes32[] memory set = new bytes32[](2);
+        set[0] = bytes32(uint256(1));
+        set[1] = bytes32(uint256(2));
+        vm.prank(fhevmExecutor);
+        vm.expectRevert(HCULimit.HCUTransactionLimitExceeded.selector);
+        hcuLimit.checkHCUForFheIsIn(FheType(resultType), mockLHS, set, mockResult, fhevmExecutor);
+    }
+
+    function test_checkHCUForFheSumWorksAsExpectedForSupportedTypes(uint8 resultType, uint8 count) public {
+        vm.assume(resultType <= uint8(FheType.Int248));
+        vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheSum));
+        // Bound count in [2, 10] to stay well within per-type size limits and HCU budget.
+        // Use bound() instead of assume() to avoid excessive fuzz input rejections.
+        count = uint8(bound(count, 2, 10));
+
+        bytes32[] memory values = new bytes32[](count);
+        for (uint256 i = 0; i < count; i++) {
+            values[i] = bytes32(uint256(i + 1));
+        }
+
+        vm.prank(fhevmExecutor);
+        hcuLimit.checkHCUForFheSum(FheType(resultType), values, mockResult, fhevmExecutor);
+
+        uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
+        vm.assertGe(totalTransactionHCU, 88000);
+        vm.assertLe(totalTransactionHCU, 259000);
+    }
+
+    function test_OnlyFHEVMExecutorCanCallcheckHCUForFheSum(address randomAccount) public {
+        vm.assume(randomAccount != fhevmExecutor);
+        bytes32[] memory values = new bytes32[](2);
+        values[0] = mockLHS;
+        values[1] = mockRHS;
+        vm.prank(randomAccount);
+        vm.expectRevert(HCULimit.CallerMustBeFHEVMExecutorContract.selector);
+        hcuLimit.checkHCUForFheSum(FheType.Uint8, values, mockResult, fhevmExecutor);
+    }
+
+    function test_checkHCUForFheSumRevertsForUnsupportedTypes(uint8 fheType) public {
+        vm.assume(fheType <= uint8(FheType.Int248));
+        vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheSum));
+        bytes32[] memory values = new bytes32[](2);
+        values[0] = mockLHS;
+        values[1] = mockRHS;
+        vm.expectRevert(HCULimit.UnsupportedOperation.selector);
+        vm.prank(fhevmExecutor);
+        hcuLimit.checkHCUForFheSum(FheType(fheType), values, mockResult, fhevmExecutor);
+    }
+
+    function test_checkHCUForFheSumRevertsIfHCUTransactionIsAboveHCUTransactionLimit(uint8 resultType) public {
+        vm.assume(resultType <= uint8(FheType.Int248));
+        vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheSum));
+
+        hcuLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
+
+        bytes32[] memory values = new bytes32[](2);
+        values[0] = mockLHS;
+        values[1] = mockRHS;
+        vm.prank(fhevmExecutor);
+        vm.expectRevert(HCULimit.HCUTransactionLimitExceeded.selector);
+        hcuLimit.checkHCUForFheSum(FheType(resultType), values, mockResult, fhevmExecutor);
     }
 
     /**

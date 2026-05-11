@@ -1,4 +1,5 @@
 {{- if .Values.zkProofWorker.enabled -}}
+{{- $disabled := default (list) .Values.zkProofWorker.disabledArgs -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -23,6 +24,9 @@ spec:
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+        {{- with .Values.zkProofWorker.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       {{- with .Values.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
@@ -31,13 +35,17 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
-      {{- if and .Values.zkProofWorker.affinity .Values.zkProofWorker.affinity.enabled }}
-      affinity:
-{{ toYaml (omit .Values.zkProofWorker.affinity "enabled") | indent 8 }}
+      {{- with .Values.zkProofWorker.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if and .Values.zkProofWorker.tolerations .Values.zkProofWorker.tolerations.enabled }}
+      {{- with .Values.zkProofWorker.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.zkProofWorker.tolerations }}
       tolerations:
-{{ toYaml .Values.zkProofWorker.tolerations.items | indent 8 }}
+        {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- if .Values.zkProofWorker.serviceAccountName }}
       serviceAccountName: {{ .Values.zkProofWorker.serviceAccountName }}
@@ -47,9 +55,92 @@ spec:
           image: {{ .Values.zkProofWorker.image.name }}:{{ .Values.zkProofWorker.image.tag }}
           command: ["zkproof_worker"]
           args:
-{{ toYaml .Values.zkProofWorker.args | nindent 12 }}
+            {{- if not (has "database-url" $disabled) }}
+            - --database-url=$(DATABASE_URL)
+            {{- end }}
+            {{- if not (has "metrics-addr" $disabled) }}
+            - --metrics-addr=0.0.0.0:{{ .Values.zkProofWorker.ports.metrics }}
+            {{- end }}
+            {{- if not (has "health-check-port" $disabled) }}
+            - --health-check-port={{ .Values.zkProofWorker.ports.healthcheck }}
+            {{- end }}
+            {{- with .Values.zkProofWorker.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           env:
-{{ toYaml .Values.zkProofWorker.env | nindent 12 }}
+            {{- with .Values.commonConfig.databaseUser }}
+            - name: DATABASE_USER
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.databaseEndpoint }}
+            - name: DATABASE_ENDPOINT
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if eq (include "coprocessorDatabaseAuthMode" .) "password" }}
+            {{- with .Values.commonConfig.databasePassword }}
+            - name: DATABASE_PASSWORD
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.databaseUrl }}
+            - name: DATABASE_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if eq (include "coprocessorDatabaseAuthMode" .) "iam" }}
+            - name: DATABASE_IAM_AUTH_ENABLED
+              value: "true"
+            {{- with .Values.commonConfig.databaseIamRegion }}
+            - name: DATABASE_IAM_REGION
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.databaseSslRootCertPath }}
+            - name: DATABASE_SSL_ROOT_CERT_PATH
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- end }}
+          {{- if default .Values.commonConfig.tracing.enabled .Values.zkProofWorker.tracing.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.commonConfig.tracing.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              {{- if .Values.zkProofWorker.tracing.service }}
+              value: {{ .Values.zkProofWorker.tracing.service | quote }}
+              {{- else }}
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+              {{- end }}
+          {{- end }}
+          {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.zkProofWorker.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.zkProofWorker.ports }}
             - name: {{ $portName }}
@@ -65,10 +156,10 @@ spec:
               memory: {{ .Values.zkProofWorker.resources.limits.memory | default "512Mi" }}
           {{- if and .Values.zkProofWorker.probes .Values.zkProofWorker.probes.liveness.enabled }}
           livenessProbe:
-{{ toYaml (omit .Values.zkProofWorker.probes.liveness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.zkProofWorker.probes.liveness "enabled") | nindent 12 }}
           {{- end }}
           {{- if and .Values.zkProofWorker.probes .Values.zkProofWorker.probes.readiness.enabled }}
           readinessProbe:
-{{ toYaml (omit .Values.zkProofWorker.probes.readiness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.zkProofWorker.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
 {{- end -}}

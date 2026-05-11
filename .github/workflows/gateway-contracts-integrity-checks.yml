@@ -32,6 +32,8 @@ jobs:
             gw-contracts:
               - .github/workflows/gateway-contracts-integrity-checks.yml
               - gateway-contracts/**
+              - ci/check_spdx_licenses.sh
+              - ci/contracts_bindings_update.py
   contract-integrity-checks:
     name: gateway-contracts-integrity-checks/contract-integrity-checks (bpr)
     needs: check-changes
@@ -71,6 +73,10 @@ jobs:
       - name: Check mock contracts are up-to-date
         working-directory: gateway-contracts
         run: make check-mocks
+
+      - name: Check SPDX license headers
+        working-directory: gateway-contracts
+        run: make check-spdx-headers
 
       - name: Check licenses compliance
         working-directory: gateway-contracts

@@ -1,5 +1,13 @@
 #!/bin/bash
-set -e
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ -f /prepare_database_url.sh ]]; then
+  source /prepare_database_url.sh
+else
+  source "${script_dir}/prepare_database_url.sh"
+fi
 
 # Default to using absolute paths needed for Docker containers
 # Using arg --no-absolute-paths is needed for local DB initialization
@@ -14,7 +22,7 @@ done
 if [ "$USE_ABSOLUTE_PATHS" = true ]; then
   MIGRATION_DIR="/migrations"
 else
-  MIGRATION_DIR="./migrations"
+  MIGRATION_DIR="${script_dir}/migrations"
 fi
 
 REMOVE_TENANTS_PREVIOUS_VERSION=20260120102002
@@ -66,7 +74,7 @@ precreate_index() {
 
 run_remove_tenants_prerequisites() {
   echo "Running online migrations before remove_tenants..."
-  sqlx migrate run --source $MIGRATION_DIR --target-version $REMOVE_TENANTS_PREVIOUS_VERSION || { echo "Failed to run migrations."; exit 1; }
+  sqlx migrate run --source "$MIGRATION_DIR" --target-version $REMOVE_TENANTS_PREVIOUS_VERSION || { echo "Failed to run migrations."; exit 1; }
 
   # These indexes are required by remove_tenants-era tenant-free queries. Build
   # them concurrently while 0.11 services are still running; the blocking
@@ -93,10 +101,10 @@ echo "Creating database..."
 sqlx database create || { echo "Failed to create database."; exit 1; }
 
 echo "Running migrations..."
-if [ "$RUN_MIGRATIONS_UNTIL_REMOVE_TENANTS" = "true" ]; then
+if [ "${RUN_MIGRATIONS_UNTIL_REMOVE_TENANTS:-}" = "true" ]; then
   run_remove_tenants_prerequisites
 else
-  sqlx migrate run --source $MIGRATION_DIR || { echo "Failed to run migrations."; exit 1; }
+  sqlx migrate run --source "$MIGRATION_DIR" || { echo "Failed to run migrations."; exit 1; }
 fi
 
 echo "Database initialization completed successfully."

@@ -1,0 +1,16 @@
+version: 1
+kind: coprocessor-consensus
+name: Two Of Two
+description: Smallest multi-coprocessor consensus setup for drift and quorum testing.
+topology:
+  count: 2
+  threshold: 2
+instances:
+  - index: 0
+    args:
+      host-listener-consumer:
+        - --service-name=coprocessor-host-listener-consumer
+  - index: 1
+    args:
+      host-listener-consumer:
+        - --service-name=coprocessor1-host-listener-consumer

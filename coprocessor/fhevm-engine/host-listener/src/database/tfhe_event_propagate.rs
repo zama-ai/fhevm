@@ -5,6 +5,9 @@ use alloy_primitives::Uint;
 use anyhow::Result;
 use bigdecimal::BigDecimal;
 use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::database::{
+    connect_pool_with_options_and_connect_options, PoolRefreshHandle,
+};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::AllowEvents;
 use fhevm_engine_common::types::SchedulePriority;
@@ -65,7 +68,7 @@ pub struct Chain {
     pub before_size: u64,
     pub new_chain: bool,
 }
-pub type ChainCache = RwLock<lru::LruCache<Handle, ChainHash>>;
+pub type ChainCache = Arc<RwLock<lru::LruCache<Handle, ChainHash>>>;
 pub type OrderedChains = Vec<Chain>;
 
 const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
@@ -79,6 +82,12 @@ const RECONNECTION_DELAY: Duration = Duration::from_millis(100);
 
 type DbErrorCode = std::borrow::Cow<'static, str>;
 const STATEMENT_CANCELLED: DbErrorCode = DbErrorCode::Borrowed("57014"); // SQLSTATE code for statement cancelled
+
+fn apply_connection_options(options: PgConnectOptions) -> PgConnectOptions {
+    options.options([
+        ("statement_timeout", "10000"), // 10 seconds
+    ])
+}
 
 fn slow_lane_reset_advisory_lock_key(chain_id: ChainId) -> i64 {
     SLOW_LANE_RESET_ADVISORY_LOCK_KEY_BASE.saturating_add(chain_id.as_i64())
@@ -108,9 +117,11 @@ pub fn retry_on_sqlx_error(err: &SqlxError, retry_count: &mut usize) -> bool {
 }
 
 // A pool of connection with some cached information and automatic reconnection
+#[derive(Clone)]
 pub struct Database {
     url: DatabaseURL,
     pub pool: Arc<RwLock<sqlx::Pool<Postgres>>>,
+    pool_refresh_handle: Arc<RwLock<PoolRefreshHandle>>,
     pub chain_id: ChainId,
     pub dependence_chain: ChainCache,
     pub tick: HeartBeat,
@@ -137,18 +148,20 @@ impl Database {
         chain_id: ChainId,
         dependence_cache_size: u16,
     ) -> Result<Self> {
-        let pool = Self::new_pool(url).await;
-        let bucket_cache = tokio::sync::RwLock::new(lru::LruCache::new(
-            std::num::NonZeroU16::new(
-                dependence_cache_size.max(MINIMUM_BUCKET_CACHE_SIZE),
-            )
-            .unwrap()
-            .into(),
-        ));
+        let (pool, pool_refresh_handle) = Self::new_pool(url).await;
+        let bucket_cache =
+            Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
+                std::num::NonZeroU16::new(
+                    dependence_cache_size.max(MINIMUM_BUCKET_CACHE_SIZE),
+                )
+                .unwrap()
+                .into(),
+            )));
         Ok(Database {
             url: url.clone(),
             chain_id,
             pool: Arc::new(RwLock::new(pool)),
+            pool_refresh_handle: Arc::new(RwLock::new(pool_refresh_handle)),
             dependence_chain: bucket_cache,
             tick: HeartBeat::default(),
         })
@@ -254,18 +267,18 @@ impl Database {
         Ok(slow_dep_chain_ids)
     }
 
-    async fn new_pool(url: &DatabaseURL) -> PgPool {
-        let options: PgConnectOptions = url.parse().expect("bad url");
-        let options = options.options([
-            ("statement_timeout", "10000"), // 5 seconds
-        ]);
+    async fn new_pool(url: &DatabaseURL) -> (PgPool, PoolRefreshHandle) {
         let connect = || {
-            PgPoolOptions::new()
-                .min_connections(2)
-                .max_lifetime(Duration::from_secs(10 * 60))
-                .max_connections(8)
-                .acquire_timeout(Duration::from_secs(5))
-                .connect_with(options.clone())
+            connect_pool_with_options_and_connect_options(
+                url,
+                PgPoolOptions::new()
+                    .min_connections(2)
+                    .max_lifetime(Duration::from_secs(10 * 60))
+                    .max_connections(8)
+                    .acquire_timeout(Duration::from_secs(5)),
+                None,
+                apply_connection_options,
+            )
         };
         let mut pool = connect().await;
         while let Err(err) = pool {
@@ -289,13 +302,22 @@ impl Database {
 
     pub async fn reconnect(&mut self) {
         tokio::time::sleep(RECONNECTION_DELAY).await;
-        let old_pool = {
-            let new_pool = Self::new_pool(&self.url).await;
+        let (old_pool, old_refresh_handle) = {
+            let (new_pool, new_refresh_handle) =
+                Self::new_pool(&self.url).await;
             let mut pool = self.pool.write().await;
-            std::mem::replace(&mut *pool, new_pool)
+            let mut pool_refresh_handle =
+                self.pool_refresh_handle.write().await;
+            let old_pool = std::mem::replace(&mut *pool, new_pool);
+            let old_refresh_handle = std::mem::replace(
+                &mut *pool_refresh_handle,
+                new_refresh_handle,
+            );
+            (old_pool, old_refresh_handle)
         };
         // doing the close outside out of lock
         old_pool.close().await;
+        drop(old_refresh_handle);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -486,6 +508,17 @@ impl Database {
 
             | E::TrivialEncrypt(C::TrivialEncrypt {pt, toType, result, ..})
             => insert_computation_bytes(tx, result, &[], &[as_bytes(pt), ty(toType)], &HAS_SCALAR).await,
+
+            E::FheSum(C::FheSum { values, result, .. }) => {
+                let deps: Vec<&Handle> = values.iter().collect();
+                insert_computation(tx, result, &deps, &NO_SCALAR).await
+            }
+
+            E::FheIsIn(C::FheIsIn { value, values, result, .. }) => {
+                let mut deps: Vec<&Handle> = vec![value];
+                deps.extend(values.iter());
+                insert_computation(tx, result, &deps, &NO_SCALAR).await
+            }
 
             | E::Initialized(_)
             | E::Upgraded(_)
@@ -1017,6 +1050,8 @@ fn event_to_op_int(op: &TfheContractEvents) -> FheOperation {
         E::FheIfThenElse(_) => O::FheIfThenElse as i32,
         E::FheRand(_) => O::FheRand as i32,
         E::FheRandBounded(_) => O::FheRandBounded as i32,
+        E::FheSum(_) => O::FheSum as i32,
+        E::FheIsIn(_) => O::FheIsIn as i32,
         // Not tfhe ops
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => -1,
     }
@@ -1052,6 +1087,8 @@ pub fn event_name(op: &TfheContractEvents) -> &'static str {
         E::FheIfThenElse(_) => "FheIfThenElse",
         E::FheRand(_) => "FheRand",
         E::FheRandBounded(_) => "FheRandBounded",
+        E::FheSum(_) => "FheSum",
+        E::FheIsIn(_) => "FheIsIn",
         E::Initialized(_) => "Initialized",
         E::Upgraded(_) => "Upgraded",
         E::VerifyInput(_) => "VerifyInput",
@@ -1088,7 +1125,9 @@ pub fn tfhe_result_handle(op: &TfheContractEvents) -> Option<Handle> {
         | E::FheNot(C::FheNot { result, .. })
         | E::FheRand(C::FheRand { result, .. })
         | E::FheRandBounded(C::FheRandBounded { result, .. })
-        | E::TrivialEncrypt(C::TrivialEncrypt { result, .. }) => Some(*result),
+        | E::TrivialEncrypt(C::TrivialEncrypt { result, .. })
+        | E::FheSum(C::FheSum { result, .. })
+        | E::FheIsIn(C::FheIsIn { result, .. }) => Some(*result),
 
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => None,
     }
@@ -1259,6 +1298,14 @@ pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
         }
 
         E::FheRand(_) | E::FheRandBounded(_) | E::TrivialEncrypt(_) => vec![],
+
+        E::FheSum(C::FheSum { values, .. }) => values.clone(),
+
+        E::FheIsIn(C::FheIsIn { value, values, .. }) => {
+            let mut handles = vec![*value];
+            handles.extend(values.iter().copied());
+            handles
+        }
 
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
     }

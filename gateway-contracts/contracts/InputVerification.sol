@@ -18,6 +18,7 @@ import { Coprocessor } from "./shared/Structs.sol";
  * @title InputVerification smart contract
  * @notice See {IInputVerification}
  */
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract InputVerification is
     IInputVerification,
     EIP712Upgradeable,
@@ -282,9 +283,7 @@ contract InputVerification is
         }
     }
 
-    /**
-     * @notice See {IInputVerification-rejectProofResponse}.
-     */
+    /// @notice See {IInputVerification-rejectProofResponse}.
     function rejectProofResponse(uint256 zkProofId, bytes calldata extraData) external virtual onlyCoprocessorTxSender {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 

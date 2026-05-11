@@ -34,6 +34,7 @@ impl HttpChainClient {
         rpc_url: &str,
         acl_address: Address,
         tfhe_address: Address,
+        kms_generation_address: Address,
         retry_interval: Duration,
         max_retries: u32,
         compute_units_per_second: u64,
@@ -57,7 +58,7 @@ impl HttpChainClient {
         let client = RpcClient::builder().layer(retry_layer).http(url);
         let provider = ProviderBuilder::new().connect_client(client);
 
-        let addresses = vec![acl_address, tfhe_address];
+        let addresses = vec![acl_address, tfhe_address, kms_generation_address];
 
         Ok(Self {
             provider: Box::new(provider),

@@ -13,6 +13,8 @@ use alloy::{
 use anyhow::Context;
 use aws_config::BehaviorVersion;
 use clap::{Parser, ValueEnum};
+use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
+use fhevm_engine_common::drift_revert;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Level};
@@ -73,9 +75,6 @@ struct Conf {
     #[arg(long, default_value = "event_ciphertexts_uploaded")]
     add_ciphertexts_database_channel: String,
 
-    #[arg(long, default_value = "event_allowed_handle")]
-    allow_handle_database_channel: String,
-
     #[arg(long, default_value_t = 128)]
     verify_proof_resp_batch_limit: u32,
 
@@ -87,13 +86,6 @@ struct Conf {
 
     #[arg(long, default_value_t = 10)]
     add_ciphertexts_batch_limit: u32,
-
-    #[arg(long, default_value_t = 10)]
-    allow_handle_batch_limit: u32,
-
-    // For now, use i32 as that's what we have in the DB as integer type.
-    #[arg(long, default_value_t = i32::MAX, value_parser = clap::value_parser!(i32).range(0..))]
-    allow_handle_max_retries: i32,
 
     // For now, use i32 as that's what we have in the DB as integer type.
     #[arg(long, default_value_t = i32::MAX, value_parser = clap::value_parser!(i32).range(0..))]
@@ -309,7 +301,6 @@ async fn main() -> anyhow::Result<()> {
     let config = ConfigSettings {
         verify_proof_resp_db_channel: conf.verify_proof_resp_database_channel,
         add_ciphertexts_db_channel: conf.add_ciphertexts_database_channel,
-        allow_handle_db_channel: conf.allow_handle_database_channel,
         verify_proof_resp_batch_limit: conf.verify_proof_resp_batch_limit,
         verify_proof_resp_max_retries: conf.verify_proof_resp_max_retries,
         verify_proof_remove_after_max_retries: conf.verify_proof_remove_after_max_retries,
@@ -318,8 +309,6 @@ async fn main() -> anyhow::Result<()> {
         error_sleep_initial_secs: conf.error_sleep_initial_secs,
         error_sleep_max_secs: conf.error_sleep_max_secs,
         add_ciphertexts_max_retries: conf.add_ciphertexts_max_retries,
-        allow_handle_batch_limit: conf.allow_handle_batch_limit,
-        allow_handle_max_retries: conf.allow_handle_max_retries,
         send_txn_sync_timeout_secs: conf.send_txn_sync_timeout_secs,
         review_after_unlimited_retries: conf.review_after_unlimited_retries,
         health_check_port: conf.health_check_port,
@@ -328,10 +317,13 @@ async fn main() -> anyhow::Result<()> {
         graceful_shutdown_timeout: conf.graceful_shutdown_timeout,
     };
 
-    let db_pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(conf.database_pool_size)
-        .connect(conf.database_url.unwrap_or_default().as_str())
-        .await?;
+    let database_url = resolve_database_url_from_option(conf.database_url)?;
+    let (db_pool, _pool_refresh_handle) = connect_pool_with_options(
+        &database_url,
+        sqlx::postgres::PgPoolOptions::new().max_connections(conf.database_pool_size),
+        Some(&cancel_token),
+    )
+    .await?;
 
     let transaction_sender = std::sync::Arc::new(
         TransactionSender::new(
@@ -359,12 +351,12 @@ async fn main() -> anyhow::Result<()> {
         "Transaction sender and HTTP health check server starting"
     );
 
-    // Run both services in parallel. Here we assume that if transaction sender stops without an error, HTTP server should also stop.
-    let transaction_sender_fut = tokio::spawn(async move { transaction_sender.run().await });
     let http_server_fut = tokio::spawn(async move { http_server.start().await });
-
-    // Start metrics server.
     metrics_server::spawn(conf.metrics_addr.clone(), cancel_token.child_token());
+
+    drift_revert::init(db_pool.clone(), cancel_token.clone(), None).await?;
+
+    let transaction_sender_fut = tokio::spawn(async move { transaction_sender.run().await });
 
     // Start gauge update routine.
     spawn_gauge_update_routine(

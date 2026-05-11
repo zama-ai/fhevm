@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                DELETE FROM user_decrypt_share\n                WHERE updated_at < NOW() - make_interval(secs => $1)\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "311ee023be8261ecafbb205ccb420cc033555236b05411e0d64cea68d2898903"
+}

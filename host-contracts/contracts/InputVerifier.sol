@@ -17,6 +17,11 @@ import {ACLOwnable} from "./shared/ACLOwnable.sol";
  *           This contract is called by the FHEVMExecutor inside verifyInput function
  * @dev      The contract uses EIP712UpgradeableCrossChain for cryptographic operations.
  */
+/// @dev This contract was migrated from Ownable2StepUpgradeable to ACLOwnable.
+/// Deployed proxies retain residual `_owner` and `_pendingOwner` values in the
+/// Ownable2StepUpgradeable EIP-7201 storage namespace. These slots are unused
+/// by ACLOwnable and have no effect on contract behavior.
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, ACLOwnable {
     /// @notice Returned if the deserializing of the input proof fails.
     error DeserializingInputProofFail();
@@ -122,7 +127,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
     uint64 private constant REINITIALIZER_VERSION = 3;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.InputVerifier")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant InputVerifierStorageLocation =
+    bytes32 private constant INPUT_VERIFIER_STORAGE_LOCATION =
         0x3f7d7a96c8c7024e92d37afccfc9b87773a33b9bc22e23134b683e74a50ace00;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -542,7 +547,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
      */
     function _getInputVerifierStorage() internal pure returns (InputVerifierStorage storage $) {
         assembly {
-            $.slot := InputVerifierStorageLocation
+            $.slot := INPUT_VERIFIER_STORAGE_LOCATION
         }
     }
 

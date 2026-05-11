@@ -8791,6 +8791,183 @@ library FHE {
     }
 
     /**
+     * @dev Evaluates sum(euint8[] values) and returns the result.
+     */
+    function sum(euint8[] memory values) internal returns (euint8) {
+        bytes32[] memory handles = new bytes32[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            euint8 v = values[i];
+            if (!isInitialized(v)) v = asEuint8(0);
+            handles[i] = euint8.unwrap(v);
+        }
+        return euint8.wrap(Impl.sum(handles, FheType.Uint8));
+    }
+
+    /**
+     * @dev Evaluates sum(euint16[] values) and returns the result.
+     */
+    function sum(euint16[] memory values) internal returns (euint16) {
+        bytes32[] memory handles = new bytes32[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            euint16 v = values[i];
+            if (!isInitialized(v)) v = asEuint16(0);
+            handles[i] = euint16.unwrap(v);
+        }
+        return euint16.wrap(Impl.sum(handles, FheType.Uint16));
+    }
+
+    /**
+     * @dev Evaluates sum(euint32[] values) and returns the result.
+     */
+    function sum(euint32[] memory values) internal returns (euint32) {
+        bytes32[] memory handles = new bytes32[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            euint32 v = values[i];
+            if (!isInitialized(v)) v = asEuint32(0);
+            handles[i] = euint32.unwrap(v);
+        }
+        return euint32.wrap(Impl.sum(handles, FheType.Uint32));
+    }
+
+    /**
+     * @dev Evaluates sum(euint64[] values) and returns the result.
+     */
+    function sum(euint64[] memory values) internal returns (euint64) {
+        bytes32[] memory handles = new bytes32[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            euint64 v = values[i];
+            if (!isInitialized(v)) v = asEuint64(0);
+            handles[i] = euint64.unwrap(v);
+        }
+        return euint64.wrap(Impl.sum(handles, FheType.Uint64));
+    }
+
+    /**
+     * @dev Evaluates sum(euint128[] values) and returns the result.
+     */
+    function sum(euint128[] memory values) internal returns (euint128) {
+        bytes32[] memory handles = new bytes32[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            euint128 v = values[i];
+            if (!isInitialized(v)) v = asEuint128(0);
+            handles[i] = euint128.unwrap(v);
+        }
+        return euint128.wrap(Impl.sum(handles, FheType.Uint128));
+    }
+
+    /**
+     * @dev Evaluates isIn(euint8 value, uint8[] memory set) and returns the result.
+     */
+    function isIn(euint8 value, euint8[] memory values) internal returns (ebool) {
+        euint8 v = value;
+        if (!isInitialized(v)) v = asEuint8(0);
+        bytes32 handle = euint8.unwrap(v);
+        bytes32[] memory handles = new bytes32[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            euint8 elem = values[i];
+            if (!isInitialized(elem)) elem = asEuint8(0);
+            handles[i] = euint8.unwrap(elem);
+        }
+        return ebool.wrap(Impl.isIn(handle, handles, FheType.Uint8));
+    }
+
+    /**
+     * @dev Evaluates isIn(euint16 value, euint16[] memory values) and returns the result.
+     */
+    function isIn(euint16 value, euint16[] memory values) internal returns (ebool) {
+        euint16 v = value;
+        if (!isInitialized(v)) v = asEuint16(0);
+        bytes32 handle = euint16.unwrap(v);
+        bytes32[] memory handles = new bytes32[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            euint16 elem = values[i];
+            if (!isInitialized(elem)) elem = asEuint16(0);
+            handles[i] = euint16.unwrap(elem);
+        }
+        return ebool.wrap(Impl.isIn(handle, handles, FheType.Uint16));
+    }
+
+    /**
+     * @dev Evaluates isIn(euint32 value, euint32[] memory values) and returns the result.
+     */
+    function isIn(euint32 value, euint32[] memory values) internal returns (ebool) {
+        euint32 v = value;
+        if (!isInitialized(v)) v = asEuint32(0);
+        bytes32 handle = euint32.unwrap(v);
+        bytes32[] memory handles = new bytes32[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            euint32 elem = values[i];
+            if (!isInitialized(elem)) elem = asEuint32(0);
+            handles[i] = euint32.unwrap(elem);
+        }
+        return ebool.wrap(Impl.isIn(handle, handles, FheType.Uint32));
+    }
+
+    /**
+     * @dev Evaluates isIn(euint64 value, euint64[] memory values) and returns the result.
+     */
+    function isIn(euint64 value, euint64[] memory values) internal returns (ebool) {
+        euint64 v = value;
+        if (!isInitialized(v)) v = asEuint64(0);
+        bytes32 handle = euint64.unwrap(v);
+        bytes32[] memory handles = new bytes32[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            euint64 elem = values[i];
+            if (!isInitialized(elem)) elem = asEuint64(0);
+            handles[i] = euint64.unwrap(elem);
+        }
+        return ebool.wrap(Impl.isIn(handle, handles, FheType.Uint64));
+    }
+
+    /**
+     * @dev Evaluates isIn(euint128 value, euint128[] memory values) and returns the result.
+     */
+    function isIn(euint128 value, euint128[] memory values) internal returns (ebool) {
+        euint128 v = value;
+        if (!isInitialized(v)) v = asEuint128(0);
+        bytes32 handle = euint128.unwrap(v);
+        bytes32[] memory handles = new bytes32[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            euint128 elem = values[i];
+            if (!isInitialized(elem)) elem = asEuint128(0);
+            handles[i] = euint128.unwrap(elem);
+        }
+        return ebool.wrap(Impl.isIn(handle, handles, FheType.Uint128));
+    }
+
+    /**
+     * @dev Evaluates isIn(eaddress value, eaddress[] memory values) and returns the result.
+     */
+    function isIn(eaddress value, eaddress[] memory values) internal returns (ebool) {
+        eaddress v = value;
+        if (!isInitialized(v)) v = asEaddress(address(0));
+        bytes32 handle = eaddress.unwrap(v);
+        bytes32[] memory handles = new bytes32[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            eaddress elem = values[i];
+            if (!isInitialized(elem)) elem = asEaddress(address(0));
+            handles[i] = eaddress.unwrap(elem);
+        }
+        return ebool.wrap(Impl.isIn(handle, handles, FheType.Uint160));
+    }
+
+    /**
+     * @dev Evaluates isIn(euint256 value, euint256[] memory values) and returns the result.
+     */
+    function isIn(euint256 value, euint256[] memory values) internal returns (ebool) {
+        euint256 v = value;
+        if (!isInitialized(v)) v = asEuint256(0);
+        bytes32 handle = euint256.unwrap(v);
+        bytes32[] memory handles = new bytes32[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            euint256 elem = values[i];
+            if (!isInitialized(elem)) elem = asEuint256(0);
+            handles[i] = euint256.unwrap(elem);
+        }
+        return ebool.wrap(Impl.isIn(handle, handles, FheType.Uint256));
+    }
+
+    /**
      * @dev This function cleans the transient storage for the ACL (accounts) and the InputVerifier
      *      (input proofs).
      *      This could be useful for integration with Account Abstraction when bundling several

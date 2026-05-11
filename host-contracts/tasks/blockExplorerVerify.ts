@@ -1,7 +1,6 @@
-import dotenv from 'dotenv';
 import { task, types } from 'hardhat/config';
 
-import { getRequiredEnvVar } from './utils/loadVariables';
+import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 
 task('task:verifyACL')
   .addOptionalParam(
@@ -12,7 +11,7 @@ task('task:verifyACL')
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: 'addresses/.env.host', override: true });
+      loadHostAddresses();
     }
     const proxyAddress = getRequiredEnvVar('ACL_CONTRACT_ADDRESS');
     const implementationACLAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
@@ -35,7 +34,7 @@ task('task:verifyFHEVMExecutor')
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: 'addresses/.env.host', override: true });
+      loadHostAddresses();
     }
     const proxyAddress = getRequiredEnvVar('FHEVM_EXECUTOR_CONTRACT_ADDRESS');
     const implementationFHEVMExecutorAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
@@ -58,7 +57,7 @@ task('task:verifyKMSVerifier')
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: 'addresses/.env.host', override: true });
+      loadHostAddresses();
     }
     const proxyAddress = getRequiredEnvVar('KMS_VERIFIER_CONTRACT_ADDRESS');
     const implementationKMSVerifierAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
@@ -81,7 +80,7 @@ task('task:verifyInputVerifier')
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: 'addresses/.env.host', override: true });
+      loadHostAddresses();
     }
     const proxyAddress = getRequiredEnvVar('INPUT_VERIFIER_CONTRACT_ADDRESS');
     const implementationInputVerifierAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
@@ -104,7 +103,7 @@ task('task:verifyHCULimit')
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: 'addresses/.env.host', override: true });
+      loadHostAddresses();
     }
     const proxyAddress = getRequiredEnvVar('HCU_LIMIT_CONTRACT_ADDRESS');
     const implementationHCULimitAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
@@ -125,13 +124,59 @@ task('task:verifyPauserSet')
     false,
     types.boolean,
   )
-  .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
+  .setAction(async function ({ useInternalProxyAddress }, { run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: 'addresses/.env.host', override: true });
+      loadHostAddresses();
     }
     const implementationPauserSetAddress = getRequiredEnvVar('PAUSER_SET_CONTRACT_ADDRESS');
     await run('verify:verify', {
       address: implementationPauserSetAddress,
+      constructorArguments: [],
+    });
+  });
+
+task('task:verifyProtocolConfig')
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
+    if (useInternalProxyAddress) {
+      loadHostAddresses();
+    }
+    const proxyAddress = getRequiredEnvVar('PROTOCOL_CONFIG_CONTRACT_ADDRESS');
+    const implementationProtocolConfigAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
+    await run('verify:verify', {
+      address: implementationProtocolConfigAddress,
+      constructorArguments: [],
+    });
+    await run('verify:verify', {
+      address: proxyAddress,
+      constructorArguments: [],
+    });
+  });
+
+task('task:verifyKMSGeneration')
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
+    if (useInternalProxyAddress) {
+      loadHostAddresses();
+    }
+    const proxyAddress = getRequiredEnvVar('KMS_GENERATION_CONTRACT_ADDRESS');
+    const implementationKMSGenerationAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
+    await run('verify:verify', {
+      address: implementationKMSGenerationAddress,
+      constructorArguments: [],
+    });
+    await run('verify:verify', {
+      address: proxyAddress,
       constructorArguments: [],
     });
   });
@@ -188,6 +233,22 @@ task('task:verifyAllHostContracts')
       // to not panic if Etherscan throws an error due to already verified implementation
       console.log('Verify PauserSet contract:');
       await hre.run('task:verifyPauserSet', { useInternalProxyAddress });
+    } catch (error) {
+      console.error('An error occurred:', error);
+    }
+
+    try {
+      // to not panic if Etherscan throws an error due to already verified implementation
+      console.log('Verify ProtocolConfig contract:');
+      await hre.run('task:verifyProtocolConfig', { useInternalProxyAddress });
+    } catch (error) {
+      console.error('An error occurred:', error);
+    }
+
+    try {
+      // to not panic if Etherscan throws an error due to already verified implementation
+      console.log('Verify KMSGeneration contract:');
+      await hre.run('task:verifyKMSGeneration', { useInternalProxyAddress });
     } catch (error) {
       console.error('An error occurred:', error);
     }

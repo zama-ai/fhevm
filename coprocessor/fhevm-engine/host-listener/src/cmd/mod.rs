@@ -9,6 +9,7 @@ use clap::Parser;
 use futures_util::stream::StreamExt;
 use rustls;
 use tokio::sync::RwLock;
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn, Level};
 
@@ -17,15 +18,21 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use fhevm_engine_common::database::connect_pool_with_options;
+use fhevm_engine_common::drift_revert;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::types::BlockchainProvider;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
+use sqlx::postgres::PgPoolOptions;
 
 use crate::database::ingest::{
     ingest_block_logs, update_finalized_blocks, BlockLogs, IngestOptions,
 };
 use crate::database::tfhe_event_propagate::Database;
 use crate::health_check::HealthCheck;
+use crate::kms_generation::aws_s3::AwsS3Client;
+use crate::kms_generation::process_kms_generation_activations;
+
 use fhevm_engine_common::chain_id::ChainId;
 
 pub mod block_history;
@@ -54,6 +61,9 @@ pub struct Args {
 
     #[arg(long)]
     pub tfhe_contract_address: String,
+
+    #[arg(long)]
+    pub kms_generation_address: String,
 
     #[arg(
         long,
@@ -235,6 +245,10 @@ impl InfiniteLogIter {
         if !args.tfhe_contract_address.is_empty() {
             contract_addresses
                 .push(Address::from_str(&args.tfhe_contract_address).unwrap());
+        };
+        if !args.kms_generation_address.is_empty() {
+            contract_addresses
+                .push(Address::from_str(&args.kms_generation_address).unwrap());
         };
         Self {
             url: args.url.clone(),
@@ -939,6 +953,7 @@ async fn db_insert_block(
     block_logs: &BlockLogs<Log>,
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
+    kms_generation_address: &Option<Address>,
     args: &Args,
 ) -> anyhow::Result<()> {
     info!(
@@ -955,6 +970,7 @@ async fn db_insert_block(
             block_logs,
             acl_contract_address,
             tfhe_contract_address,
+            kms_generation_address,
             IngestOptions {
                 dependence_by_connexity: args.dependence_by_connexity,
                 dependence_cross_block: args.dependence_cross_block,
@@ -1036,9 +1052,21 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             })?,
         )
     };
+    let kms_generation_address = if args.kms_generation_address.is_empty() {
+        None
+    } else {
+        Some(Address::from_str(&args.kms_generation_address).map_err(
+            |err| {
+                error!(error = %err, "Invalid KMSGeneration contract address");
+                anyhow!("Invalid KMSGeneration contract address: {err}")
+            },
+        )?)
+    };
+    let aws_s3_client = AwsS3Client {};
 
     let mut log_iter = InfiniteLogIter::new(&args);
     let chain_id = log_iter.get_chain_id().await?;
+
     info!(chain_id = %chain_id, "Chain ID");
     if args.database_url.as_str().is_empty() {
         error!("Database URL is required");
@@ -1047,6 +1075,42 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     let mut db =
         Database::new(&args.database_url, chain_id, args.dependence_cache_size)
             .await?;
+
+    let health_check = HealthCheck {
+        blockchain_timeout_tick: log_iter.tick_timeout.clone(),
+        blockchain_tick: log_iter.tick_block.clone(),
+        blockchain_provider: log_iter.provider.clone(),
+        database_pool: db.pool.clone(),
+        database_tick: db.tick.clone(),
+    };
+
+    let cancel_token = CancellationToken::new();
+
+    // Start health check before drift-revert init so the service stays
+    // healthy while waiting for a revert to complete.
+    let health_check_server = HealthHttpServer::new(
+        Arc::new(health_check),
+        args.health_port,
+        cancel_token.clone(),
+    );
+    tokio::spawn(async move {
+        if let Err(err) = health_check_server.start().await {
+            error!(error = %err, "Health check server failed");
+        }
+    });
+
+    let mut background_tasks = JoinSet::new();
+
+    // Drift-revert: must run before any DB state reads so we don't read
+    // pre-revert state.
+    let (drift_revert_pool, _pool_refresh_handle) = connect_pool_with_options(
+        &args.database_url,
+        PgPoolOptions::new().max_connections(1),
+        Some(&cancel_token),
+    )
+    .await?;
+    drift_revert::init(drift_revert_pool, cancel_token.clone(), None).await?;
+
     if args.dependent_ops_max_per_chain == 0 {
         let promoted = db.promote_all_dep_chains_to_fast_priority().await?;
         if promoted > 0 {
@@ -1056,21 +1120,6 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             );
         }
     }
-
-    let health_check = HealthCheck {
-        blockchain_timeout_tick: log_iter.tick_timeout.clone(),
-        blockchain_tick: log_iter.tick_block.clone(),
-        blockchain_provider: log_iter.provider.clone(),
-        database_pool: db.pool.clone(),
-        database_tick: db.tick.clone(),
-    };
-    let cancel_token = CancellationToken::new();
-    let health_check_server = HealthHttpServer::new(
-        Arc::new(health_check),
-        args.health_port,
-        cancel_token.clone(),
-    );
-    tokio::spawn(async move { health_check_server.start().await });
 
     if log_iter.start_at_block.is_none() {
         log_iter.start_at_block = db
@@ -1095,6 +1144,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                 &block_logs,
                 &acl_contract_address,
                 &tfhe_contract_address,
+                &kms_generation_address,
                 &args,
             )
             .await;
@@ -1117,6 +1167,10 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                 )
                 .await;
             }
+            background_tasks.spawn(process_kms_generation_activations(
+                db.pool.read().await.clone(),
+                aws_s3_client,
+            ));
         }
 
         if !args.only_catchup_loop {
@@ -1134,5 +1188,148 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         log_iter.reset_for_catchup_loop();
     }
     cancel_token.cancel();
+    for t in background_tasks.join_all().await.iter() {
+        if let Err(err) = t {
+            error!(error = %err, "Error in background task");
+        }
+    }
     anyhow::Result::Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::VecDeque;
+    use std::sync::Arc;
+
+    use alloy::node_bindings::Anvil;
+    use alloy::providers::ext::AnvilApi;
+    use alloy::providers::{Provider, ProviderBuilder, WsConnect};
+    use tokio::sync::RwLock;
+
+    use fhevm_engine_common::utils::HeartBeat;
+
+    use super::*;
+
+    fn new_test_iter(reorg_max: u64) -> InfiniteLogIter {
+        InfiniteLogIter {
+            url: String::new(),
+            block_time: 12,
+            contract_addresses: vec![],
+            catchup_blocks: None,
+            next_blocklogs: VecDeque::new(),
+            stream: None,
+            provider: Arc::new(RwLock::new(None)),
+            last_valid_block: None,
+            start_at_block: None,
+            end_at_block: None,
+            absolute_end_at_block: None,
+            catchup_margin: 5,
+            catchup_paging: 100,
+            tick_timeout: HeartBeat::new(),
+            tick_block: HeartBeat::new(),
+            reorg_maximum_duration_in_blocks: reorg_max,
+            block_history: BlockHistory::new(reorg_max as usize),
+            catchup_finalization_in_blocks: 20,
+            timeout_request_websocket: 15,
+        }
+    }
+
+    async fn setup_iter_with_chain(
+        num_blocks: u64,
+        reorg_max: u64,
+        known: std::ops::RangeInclusive<usize>,
+    ) -> (
+        alloy::node_bindings::AnvilInstance,
+        InfiniteLogIter,
+        Vec<BlockSummary>,
+    ) {
+        let anvil = Anvil::new().spawn();
+        let ws = WsConnect::new(anvil.ws_endpoint());
+        let provider = ProviderBuilder::new().connect_ws(ws).await.unwrap();
+        provider.anvil_mine(Some(num_blocks), None).await.unwrap();
+        let mut blocks = Vec::with_capacity((num_blocks + 1) as usize);
+        for i in 0..=num_blocks {
+            let b = provider
+                .get_block_by_number(i.into())
+                .await
+                .unwrap()
+                .unwrap();
+            blocks.push(BlockSummary::from(b));
+        }
+        let mut iter = new_test_iter(reorg_max);
+        for b in &blocks[known] {
+            iter.block_history.add_block(*b);
+        }
+        *iter.provider.write().await = Some(provider);
+        (anvil, iter, blocks)
+    }
+
+    // Walks back 2 blocks before finding a known ancestor in history.
+    // Tests the common case where only a few blocks were missed.
+    #[tokio::test]
+    async fn test_get_missing_ancestors_shallow_reorg() {
+        let (_anvil, iter, blocks) = setup_iter_with_chain(5, 50, 0..=2).await;
+
+        let missing = iter.get_missing_ancestors(blocks[5]).await;
+
+        assert_eq!(missing.len(), 2);
+        assert_eq!(missing[0].number, 3);
+        assert_eq!(missing[1].number, 4);
+        assert_eq!(missing[0].parent_hash, blocks[2].hash);
+    }
+
+    // Walks back 13 blocks through a long gap before hitting a known ancestor.
+    // Tests that the walk handles a long gap correctly.
+    #[tokio::test]
+    async fn test_get_missing_ancestors_deep_reorg() {
+        let (_anvil, iter, blocks) = setup_iter_with_chain(15, 50, 0..=1).await;
+
+        let missing = iter.get_missing_ancestors(blocks[15]).await;
+
+        assert_eq!(missing.len(), 13);
+        assert_eq!(missing[0].number, 2);
+        assert_eq!(missing.last().unwrap().number, 14);
+    }
+
+    // Stops walking at reorg_maximum_duration_in_blocks even if more unknown ancestors remain.
+    // Tests that the function doesn't walk forever and respects the configured max depth.
+    #[tokio::test]
+    async fn test_get_missing_ancestors_beyond_max_depth() {
+        let (_anvil, iter, blocks) = setup_iter_with_chain(10, 3, 0..=0).await;
+
+        let missing = iter.get_missing_ancestors(blocks[10]).await;
+
+        assert_eq!(missing.len(), 3);
+        assert_eq!(missing[0].number, 7);
+        assert_eq!(missing[1].number, 8);
+        assert_eq!(missing[2].number, 9);
+    }
+
+    // Skips reorg detection when history has fewer than 2 blocks and just adds the block.
+    // Tests that the guard condition prevents false reorg detection.
+    #[tokio::test]
+    async fn test_check_missing_ancestors_not_ready() {
+        let mut iter = new_test_iter(50);
+        assert!(!iter.block_history.is_ready_to_detect_reorg());
+
+        let block_a = BlockSummary {
+            number: 100,
+            hash: BlockHash::with_last_byte(0xAA),
+            parent_hash: BlockHash::with_last_byte(0x99),
+            timestamp: 1000,
+        };
+        iter.check_missing_ancestors(block_a).await;
+        assert!(iter.block_history.is_known(&block_a.hash));
+        assert!(!iter.block_history.is_ready_to_detect_reorg());
+
+        let block_b = BlockSummary {
+            number: 101,
+            hash: BlockHash::with_last_byte(0xBB),
+            parent_hash: BlockHash::with_last_byte(0xAA),
+            timestamp: 1012,
+        };
+        iter.check_missing_ancestors(block_b).await;
+        assert!(iter.block_history.is_known(&block_b.hash));
+        assert!(iter.block_history.is_ready_to_detect_reorg());
+    }
 }

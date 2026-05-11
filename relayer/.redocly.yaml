@@ -1,0 +1,10 @@
+apis:
+  main:
+    root: openapi.yml
+extends:
+  - recommended
+rules:
+  info-license: off
+  no-server-example.com: off
+  operation-4xx-response: off
+  security-defined: error

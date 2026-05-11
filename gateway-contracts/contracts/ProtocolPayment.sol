@@ -15,6 +15,7 @@ import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
  * @title Payment smart contract
  * @notice See {IProtocolPayment}
  */
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract ProtocolPayment is IProtocolPayment, UUPSUpgradeableEmptyProxy, GatewayOwnable {
     /**
      * @notice The address of the FeesSenderToBurner contract to send the fees to.

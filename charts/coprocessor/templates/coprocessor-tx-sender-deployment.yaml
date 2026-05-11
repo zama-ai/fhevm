@@ -1,4 +1,5 @@
 {{- if .Values.txSender.enabled -}}
+{{- $disabled := default (list) .Values.txSender.disabledArgs -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -23,6 +24,9 @@ spec:
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+        {{- with .Values.txSender.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       {{- with .Values.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
@@ -31,13 +35,17 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
-      {{- if and .Values.txSender.affinity .Values.txSender.affinity.enabled }}
-      affinity:
-{{ toYaml (omit .Values.txSender.affinity "enabled") | indent 8 }}
+      {{- with .Values.txSender.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if and .Values.txSender.tolerations .Values.txSender.tolerations.enabled }}
+      {{- with .Values.txSender.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.txSender.tolerations }}
       tolerations:
-{{ toYaml .Values.txSender.tolerations.items | indent 8 }}
+        {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- if .Values.txSender.serviceAccountName }}
       serviceAccountName: {{ .Values.txSender.serviceAccountName }}
@@ -47,9 +55,180 @@ spec:
           image: {{ .Values.txSender.image.name }}:{{ .Values.txSender.image.tag }}
           command: ["transaction_sender"]
           args:
-{{ toYaml .Values.txSender.args | nindent 12 }}
+            {{- if not (has "database-url" $disabled) }}
+            - --database-url=$(DATABASE_URL)
+            {{- end }}
+            {{- if not (has "gateway-url" $disabled) }}
+            - --gateway-url=$(GATEWAY_URL)
+            {{- end }}
+            {{- with .Values.txSender.config.hostChainUrl }}
+            {{- if and (or .value .valueFrom) (not (has "host-chain-url" $disabled)) }}
+            - --host-chain-url=$(HOST_CHAIN_URL)
+            {{- end }}
+            {{- end }}
+            {{- if not (has "input-verification-address" $disabled) }}
+            - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
+            {{- end }}
+            {{- if not (has "ciphertext-commits-address" $disabled) }}
+            - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
+            {{- end }}
+            {{- if not (has "multichain-acl-address" $disabled) }}
+            - --multichain-acl-address=$(MULTICHAIN_ACL_ADDRESS)
+            {{- end }}
+            {{- if not (has "signer-type" $disabled) }}
+            {{- if .Values.txSender.wallet.awsKms.enabled }}
+            - --signer-type=aws-kms
+            {{- else }}
+            - --signer-type=private-key
+            {{- end }}
+            {{- end }}
+            {{- if and (not .Values.txSender.wallet.awsKms.enabled) (not (has "private-key" $disabled)) }}
+            - --private-key=$(TX_SENDER_PRIVATE_KEY)
+            {{- end }}
+            {{- if not (has "health-check-port" $disabled) }}
+            - --health-check-port={{ .Values.txSender.ports.healthcheck }}
+            {{- end }}
+            {{- if not (has "metrics-addr" $disabled) }}
+            - --metrics-addr=0.0.0.0:{{ .Values.txSender.ports.metrics }}
+            {{- end }}
+            {{- with .Values.txSender.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           env:
-{{ toYaml .Values.txSender.env | nindent 12 }}
+            {{- with .Values.commonConfig.databaseUser }}
+            - name: DATABASE_USER
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.databaseEndpoint }}
+            - name: DATABASE_ENDPOINT
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if eq (include "coprocessorDatabaseAuthMode" .) "password" }}
+            {{- with .Values.commonConfig.databasePassword }}
+            - name: DATABASE_PASSWORD
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.databaseUrl }}
+            - name: DATABASE_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if eq (include "coprocessorDatabaseAuthMode" .) "iam" }}
+            - name: DATABASE_IAM_AUTH_ENABLED
+              value: "true"
+            {{- with .Values.commonConfig.databaseIamRegion }}
+            - name: DATABASE_IAM_REGION
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.databaseSslRootCertPath }}
+            - name: DATABASE_SSL_ROOT_CERT_PATH
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.gatewayUrl }}
+            - name: GATEWAY_URL
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.txSender.config.hostChainUrl }}
+            - name: HOST_CHAIN_URL
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.gatewayContractAddresses.inputVerification }}
+            - name: INPUT_VERIFICATION_ADDRESS
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.gatewayContractAddresses.ciphertextCommits }}
+            - name: CIPHERTEXT_COMMITS_ADDRESS
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.gatewayContractAddresses.multichainAcl }}
+            - name: MULTICHAIN_ACL_ADDRESS
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if .Values.txSender.wallet.awsKms.enabled }}
+            - name: AWS_KEY_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.txSender.wallet.awsKms.configmap.name | quote }}
+                  key: {{ .Values.txSender.wallet.awsKms.configmap.key | quote }}
+            {{- else if .Values.txSender.wallet.secret.value }}
+            - name: TX_SENDER_PRIVATE_KEY
+              value: {{ .Values.txSender.wallet.secret.value | quote }}
+            {{- else }}
+            - name: TX_SENDER_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.txSender.wallet.secret.name | quote }}
+                  key: {{ .Values.txSender.wallet.secret.key | quote }}
+            {{- end }}
+          {{- if default .Values.commonConfig.tracing.enabled .Values.txSender.tracing.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.commonConfig.tracing.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              {{- if .Values.txSender.tracing.service }}
+              value: {{ .Values.txSender.tracing.service | quote }}
+              {{- else }}
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+              {{- end }}
+          {{- end }}
+          {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.txSender.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.txSender.ports }}
             - name: {{ $portName }}
@@ -65,10 +244,10 @@ spec:
               memory: {{ .Values.txSender.resources.limits.memory | default "512Mi" }}
           {{- if and .Values.txSender.probes .Values.txSender.probes.liveness.enabled }}
           livenessProbe:
-{{ toYaml (omit .Values.txSender.probes.liveness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.txSender.probes.liveness "enabled") | nindent 12 }}
           {{- end }}
           {{- if and .Values.txSender.probes .Values.txSender.probes.readiness.enabled }}
           readinessProbe:
-{{ toYaml (omit .Values.txSender.probes.readiness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.txSender.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
 {{- end -}}

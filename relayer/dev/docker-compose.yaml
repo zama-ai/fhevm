@@ -1,0 +1,30 @@
+
+services:
+  postgres:
+    build: 
+      context: .
+      dockerfile: Dockerfile.postgres.dev
+    environment:
+      POSTGRES_DB: relayer_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_HOST_AUTH_METHOD: trust
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5433:5432"
+    networks:
+      - relayer-network
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # - ./create-database.sql:/docker-entrypoint-initdb.d/create-database.sql
+    command: ["postgres", "-c", "shared_preload_libraries=pg_cron", "-c", "cron.database_name=relayer_db"]
+
+networks:
+  relayer-network:
+    driver: bridge
+volumes:
+  postgres_data:

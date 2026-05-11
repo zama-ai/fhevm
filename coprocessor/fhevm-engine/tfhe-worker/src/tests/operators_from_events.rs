@@ -6,14 +6,16 @@ use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::Handle;
 
 use crate::tests::event_helpers::{
-    allow_handle, as_scalar_uint, insert_event, next_handle, setup_event_harness, to_ty,
-    zero_address, EventHarness,
+    allow_handle, as_scalar_uint, insert_event, insert_trivial_encrypt, next_handle,
+    next_handle_with_type, setup_event_harness, to_ty, zero_address, EventHarness,
 };
 use crate::tests::test_cases::{
-    generate_binary_test_cases, generate_unary_test_cases, BinaryOperatorTestCase,
-    UnaryOperatorTestCase,
+    generate_binary_test_cases, generate_panic_binary_test_cases, generate_unary_test_cases,
+    BinaryOperatorTestCase, UnaryOperatorTestCase,
 };
-use crate::tests::utils::{decrypt_ciphertexts, wait_until_all_allowed_handles_computed};
+use crate::tests::utils::{
+    decrypt_ciphertexts, errors_on_allowed_handles, wait_until_all_allowed_handles_computed,
+};
 
 const LOCAL_SUPPORTED_TYPES: &[i32] = &[
     0, // bool
@@ -39,9 +41,14 @@ const FULL_SUPPORTED_TYPES: &[i32] = &[
     11, // 2048 bit
 ];
 
+const UINT64_ONLY: &[i32] = &[
+    5, // 64 bit
+];
+
 pub fn supported_types() -> &'static [i32] {
     match std::env::var("TFHE_WORKER_EVENT_TYPE_MATRIX") {
         Ok(mode) if mode.eq_ignore_ascii_case("local") => LOCAL_SUPPORTED_TYPES,
+        Ok(mode) if mode.eq_ignore_ascii_case("uint64") => UINT64_ONLY,
         _ => FULL_SUPPORTED_TYPES,
     }
 }
@@ -316,6 +323,93 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
         );
     }
 
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_fhe_binary_operands_events_panic() -> Result<(), Box<dyn std::error::Error>> {
+    let EventHarness {
+        app,
+        pool: _,
+        listener_db,
+    } = setup_event_harness().await?;
+
+    let mut cases = vec![];
+    for op in generate_panic_binary_test_cases() {
+        if !supported_types().contains(&op.input_types) {
+            continue;
+        }
+        // TrivialEncrypt test setup uses ClearConst (up to 256-bit payloads).
+        if op.bits > 256 {
+            continue;
+        }
+        let lhs_handle = next_handle();
+        let rhs_handle = next_handle();
+        let output_handle = next_handle();
+        let transaction_id = next_handle();
+
+        let lhs_bytes = as_scalar_uint(&op.lhs);
+        let rhs_bytes = as_scalar_uint(&op.rhs);
+
+        println!(
+            "Operations for binary test bits:{} op:{} is_scalar:{} lhs:{} rhs:{}",
+            op.bits, op.operator, op.is_scalar, op.lhs, op.rhs
+        );
+        let caller = zero_address();
+
+        let mut tx = listener_db.new_transaction().await?;
+        insert_event(
+            &listener_db,
+            &mut tx,
+            transaction_id,
+            TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                caller,
+                pt: lhs_bytes,
+                toType: to_ty(op.input_types),
+                result: lhs_handle,
+            }),
+            true,
+        )
+        .await?;
+        allow_handle(&listener_db, &mut tx, &lhs_handle).await?;
+        if !op.is_scalar {
+            insert_event(
+                &listener_db,
+                &mut tx,
+                transaction_id,
+                TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                    caller,
+                    pt: rhs_bytes,
+                    toType: to_ty(op.input_types),
+                    result: rhs_handle,
+                }),
+                true,
+            )
+            .await?;
+            allow_handle(&listener_db, &mut tx, &rhs_handle).await?;
+        }
+        let op_event = binary_op_to_event(&op, &lhs_handle, &rhs_handle, &op.rhs, &output_handle);
+        insert_event(&listener_db, &mut tx, transaction_id, op_event, true).await?;
+        allow_handle(&listener_db, &mut tx, &output_handle).await?;
+        tx.commit().await?;
+
+        cases.push((op, output_handle));
+    }
+
+    wait_until_all_allowed_handles_computed(&app).await?;
+    let errors = errors_on_allowed_handles(&app).await?;
+    for msg in &errors {
+        assert!(
+            msg.contains("ExecutionPanic"),
+            "Expected error message to contain 'ExecutionPanic', but got: {msg}"
+        );
+    }
+    assert_eq!(
+        errors.len(),
+        cases.len(),
+        "Expected all computations to have errors, but some succeeded"
+    );
     Ok(())
 }
 
@@ -750,6 +844,162 @@ async fn test_op_trivial_encrypt() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(
             decrypted[0].value, expected,
             "value mismatch for fhe_type={fhe_type}"
+        );
+    }
+
+    Ok(())
+}
+
+// Uint8 through Uint128 — the types FheSum supports.
+const FHE_SUM_SUPPORTED_TYPES: &[i32] = &[2, 3, 4, 5, 6];
+
+#[tokio::test]
+#[serial(db)]
+async fn test_fhe_sum_events() -> Result<(), Box<dyn std::error::Error>> {
+    let EventHarness {
+        app,
+        pool,
+        listener_db,
+    } = setup_event_harness().await?;
+
+    let enabled = supported_types();
+    let types: Vec<i32> = FHE_SUM_SUPPORTED_TYPES
+        .iter()
+        .copied()
+        .filter(|t| enabled.contains(t))
+        .collect();
+
+    let mut cases: Vec<(Handle, i32)> = vec![];
+
+    for &fhe_type in &types {
+        let tx_id = next_handle();
+        let handle_a = next_handle_with_type(fhe_type);
+        let handle_b = next_handle_with_type(fhe_type);
+        let output = next_handle();
+
+        let mut tx = listener_db.new_transaction().await?;
+        insert_trivial_encrypt(&listener_db, &mut tx, tx_id, 5, fhe_type, handle_a, true).await?;
+        allow_handle(&listener_db, &mut tx, &handle_a).await?;
+        insert_trivial_encrypt(&listener_db, &mut tx, tx_id, 7, fhe_type, handle_b, true).await?;
+        allow_handle(&listener_db, &mut tx, &handle_b).await?;
+        insert_event(
+            &listener_db,
+            &mut tx,
+            tx_id,
+            TfheContractEvents::FheSum(TfheContract::FheSum {
+                caller: zero_address(),
+                values: vec![handle_a, handle_b],
+                result: output,
+            }),
+            true,
+        )
+        .await?;
+        allow_handle(&listener_db, &mut tx, &output).await?;
+        tx.commit().await?;
+
+        cases.push((output, fhe_type));
+    }
+
+    wait_until_all_allowed_handles_computed(&app).await?;
+
+    for (output, expected_type) in cases {
+        let resp = decrypt_ciphertexts(&pool, vec![output.to_vec()]).await?;
+        assert_eq!(
+            resp[0].output_type, expected_type as i16,
+            "FheSum type mismatch for fhe_type={expected_type}"
+        );
+        assert_eq!(
+            resp[0].value, "12",
+            "FheSum value mismatch for fhe_type={expected_type}"
+        );
+    }
+
+    Ok(())
+}
+
+// Uint8 through Uint256 — the types FheIsIn supports.
+const FHE_IS_IN_SUPPORTED_TYPES: &[i32] = &[2, 3, 4, 5, 6, 7, 8];
+
+#[tokio::test]
+#[serial(db)]
+async fn test_fhe_is_in_events() -> Result<(), Box<dyn std::error::Error>> {
+    let EventHarness {
+        app,
+        pool,
+        listener_db,
+    } = setup_event_harness().await?;
+
+    let enabled = supported_types();
+    let types: Vec<i32> = FHE_IS_IN_SUPPORTED_TYPES
+        .iter()
+        .copied()
+        .filter(|t| enabled.contains(t))
+        .collect();
+
+    let set_plaintext = [10u64, 42u64, 100u64];
+    // (plaintext value, expected decrypt string when checked against the set above)
+    let test_values: &[(u64, &str)] = &[(42, "true"), (7, "false")];
+
+    let mut cases: Vec<(Handle, &str)> = vec![];
+
+    for &fhe_type in &types {
+        for &(value, expected) in test_values {
+            let tx_id = next_handle();
+            let value_handle = next_handle_with_type(fhe_type);
+            let output = next_handle();
+
+            let mut tx = listener_db.new_transaction().await?;
+            insert_trivial_encrypt(
+                &listener_db,
+                &mut tx,
+                tx_id,
+                value,
+                fhe_type,
+                value_handle,
+                true,
+            )
+            .await?;
+            allow_handle(&listener_db, &mut tx, &value_handle).await?;
+
+            let mut set_handles: Vec<Handle> = Vec::new();
+            for &v in &set_plaintext {
+                let sh = next_handle_with_type(fhe_type);
+                insert_trivial_encrypt(&listener_db, &mut tx, tx_id, v, fhe_type, sh, true).await?;
+                allow_handle(&listener_db, &mut tx, &sh).await?;
+                set_handles.push(sh);
+            }
+
+            insert_event(
+                &listener_db,
+                &mut tx,
+                tx_id,
+                TfheContractEvents::FheIsIn(TfheContract::FheIsIn {
+                    caller: zero_address(),
+                    value: value_handle,
+                    values: set_handles,
+                    result: output,
+                }),
+                true,
+            )
+            .await?;
+            allow_handle(&listener_db, &mut tx, &output).await?;
+            tx.commit().await?;
+
+            cases.push((output, expected));
+        }
+    }
+
+    wait_until_all_allowed_handles_computed(&app).await?;
+
+    for (output, expected_value) in cases {
+        let resp = decrypt_ciphertexts(&pool, vec![output.to_vec()]).await?;
+        assert_eq!(
+            resp[0].output_type, 0,
+            "FheIsIn result must be Bool (type 0)"
+        );
+        assert_eq!(
+            resp[0].value, expected_value,
+            "FheIsIn result value mismatch"
         );
     }
 

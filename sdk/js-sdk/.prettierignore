@@ -1,0 +1,6 @@
+contracts
+docs
+*.md
+src/wasm
+test/fheTest/.keys
+test/standalone/relayer-sdk-test

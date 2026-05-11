@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE public_decrypt_req\n            SET req_status = 'processing'::req_status\n            WHERE req_status = 'tx_in_flight'::req_status\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "4aea780eb9885ee2bbdc0615971995b389b56a12c264215ed0df55298b390e49"
+}

@@ -111,7 +111,17 @@ export type FheOperatorName =
   | 'trivialEncrypt'
   | 'ifThenElse'
   | 'fheRand'
-  | 'fheRandBounded';
+  | 'fheRandBounded'
+  | 'fheSum'
+  | 'fheIsIn';
+
+export type NBucketedCost = {
+  le10: number;
+  le30?: number;
+  le60?: number;
+  le100?: number;
+  le128?: number;
+};
 
 export type PriceData = Record<
   FheOperatorName,
@@ -121,6 +131,7 @@ export type PriceData = Record<
     scalar?: Partial<Record<FheTypeName, number>>;
     nonScalar?: Partial<Record<FheTypeName, number>>;
     types?: Partial<Record<FheTypeName, number>>;
+    nBucketed?: Partial<Record<FheTypeName, NBucketedCost>>;
   }
 >;
 

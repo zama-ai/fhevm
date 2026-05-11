@@ -1,0 +1,28 @@
+[package]
+name = "relayer-migrate"
+version = "0.9.0-rc.3"
+edition = "2024"
+
+[[bin]]
+name = "down-migrate-v0_8_8-to-v0_8_7"
+path = "src/bin/down_migrate_from_v0_8_8_to_v0_8_7.rs"
+
+[dependencies]
+anyhow = "1.0.102"
+dotenvy = "0.15.7"
+envy = "0.4.2"
+serde = "1.0.228"
+sqlx = { version = "0.8.6", features = [
+  "chrono",
+  "macros",
+  "postgres",
+  "runtime-tokio",
+  "uuid",
+] }
+tokio = { version = "1.49.0", features = [
+  "macros",
+  "rt-multi-thread",
+  "signal",
+] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }

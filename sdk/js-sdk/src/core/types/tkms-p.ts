@@ -1,0 +1,5 @@
+export declare const TkmsPrivateKeyBrand: unique symbol;
+
+export type TkmsPrivateKey = {
+  readonly [TkmsPrivateKeyBrand]: never;
+};

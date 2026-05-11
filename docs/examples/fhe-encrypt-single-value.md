@@ -48,7 +48,7 @@ contract EncryptSingleValue is ZamaEthereumConfig {
 
 {% tab title="EncryptSingleValue.ts" %}
 
-```ts
+```typescript
 import { EncryptSingleValue, EncryptSingleValue__factory } from "../../../types";
 import type { Signers } from "../../types";
 import { FhevmType, HardhatFhevmRuntimeEnvironment } from "@fhevm/hardhat-plugin";

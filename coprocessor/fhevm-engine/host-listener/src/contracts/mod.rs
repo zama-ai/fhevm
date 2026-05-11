@@ -15,3 +15,10 @@ sol!(
     TfheContract,
     "./../../../host-contracts/artifacts/contracts/FHEVMExecutor.sol/FHEVMExecutor.json"
 );
+
+sol!(
+    #[sol(rpc)]
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    KMSGeneration,
+    "./../../../host-contracts/artifacts/contracts/KMSGeneration.sol/KMSGeneration.json"
+);

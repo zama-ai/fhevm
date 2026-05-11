@@ -1,4 +1,5 @@
 {{- if .Values.snsWorker.enabled -}}
+{{- $disabled := default (list) .Values.snsWorker.disabledArgs -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -11,9 +12,9 @@ spec:
   selector:
     matchLabels:
       app: coprocessor-sns-worker
-  {{- if .Values.tfheWorker.updateStrategy }}
+  {{- if .Values.snsWorker.updateStrategy }}
   strategy:
-    {{- toYaml .Values.tfheWorker.updateStrategy | nindent 4 }}
+    {{- toYaml .Values.snsWorker.updateStrategy | nindent 4 }}
   {{- end }}
   template:
     metadata:
@@ -21,6 +22,9 @@ spec:
         app: coprocessor-sns-worker
         app.kubernetes.io/name: {{ include "snsWorkerName" . }}
         {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.snsWorker.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       {{- with .Values.podAnnotations }}
@@ -31,13 +35,17 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
-      {{- if and .Values.snsWorker.affinity .Values.snsWorker.affinity.enabled }}
-      affinity:
-{{ toYaml (omit .Values.snsWorker.affinity "enabled") | indent 8 }}
+      {{- with .Values.snsWorker.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if and .Values.snsWorker.tolerations .Values.snsWorker.tolerations.enabled }}
+      {{- with .Values.snsWorker.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.snsWorker.tolerations }}
       tolerations:
-{{ toYaml .Values.snsWorker.tolerations.items | indent 8 }}
+        {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- if .Values.snsWorker.serviceAccountName }}
       serviceAccountName: {{ .Values.snsWorker.serviceAccountName }}
@@ -47,9 +55,121 @@ spec:
           image: {{ .Values.snsWorker.image.name }}:{{ .Values.snsWorker.image.tag }}
           command: ["sns_worker"]
           args:
-{{ toYaml .Values.snsWorker.args | nindent 12 }}
+            {{- if not (has "database-url" $disabled) }}
+            - --database-url=$(DATABASE_URL)
+            {{- end }}
+            {{- with .Values.commonConfig.tenantApiKey }}
+            {{- if and (or .value .valueFrom) (not (has "tenant-api-key" $disabled)) }}
+            - --tenant-api-key=$(TENANT_API_KEY)
+            {{- end }}
+            {{- end }}
+            {{- if not (has "bucket-name-ct64" $disabled) }}
+            - --bucket-name-ct64=$(S3_BUCKET_NAME)
+            {{- end }}
+            {{- if not (has "bucket-name-ct128" $disabled) }}
+            - --bucket-name-ct128=$(S3_BUCKET_NAME)
+            {{- end }}
+            {{- if not (has "metrics-addr" $disabled) }}
+            - --metrics-addr=0.0.0.0:{{ .Values.snsWorker.ports.metrics }}
+            {{- end }}
+            {{- if not (has "health-check-port" $disabled) }}
+            - --health-check-port={{ .Values.snsWorker.ports.healthcheck }}
+            {{- end }}
+            {{- with .Values.snsWorker.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           env:
-{{ toYaml .Values.snsWorker.env | nindent 12 }}
+            {{- with .Values.commonConfig.databaseUser }}
+            - name: DATABASE_USER
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.databaseEndpoint }}
+            - name: DATABASE_ENDPOINT
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if eq (include "coprocessorDatabaseAuthMode" .) "password" }}
+            {{- with .Values.commonConfig.databasePassword }}
+            - name: DATABASE_PASSWORD
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.databaseUrl }}
+            - name: DATABASE_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if eq (include "coprocessorDatabaseAuthMode" .) "iam" }}
+            - name: DATABASE_IAM_AUTH_ENABLED
+              value: "true"
+            {{- with .Values.commonConfig.databaseIamRegion }}
+            - name: DATABASE_IAM_REGION
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.databaseSslRootCertPath }}
+            - name: DATABASE_SSL_ROOT_CERT_PATH
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.tenantApiKey }}
+            - name: TENANT_API_KEY
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.snsWorker.config.s3BucketName }}
+            - name: S3_BUCKET_NAME
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+          {{- if default .Values.commonConfig.tracing.enabled .Values.snsWorker.tracing.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.commonConfig.tracing.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              {{- if .Values.snsWorker.tracing.service }}
+              value: {{ .Values.snsWorker.tracing.service | quote }}
+              {{- else }}
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+              {{- end }}
+          {{- end }}
+          {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.snsWorker.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.snsWorker.ports }}
             - name: {{ $portName }}
@@ -65,10 +185,10 @@ spec:
               memory: {{ .Values.snsWorker.resources.limits.memory | default "512Mi" }}
           {{- if and .Values.snsWorker.probes .Values.snsWorker.probes.liveness.enabled }}
           livenessProbe:
-{{ toYaml (omit .Values.snsWorker.probes.liveness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.snsWorker.probes.liveness "enabled") | nindent 12 }}
           {{- end }}
           {{- if and .Values.snsWorker.probes .Values.snsWorker.probes.readiness.enabled }}
           readinessProbe:
-{{ toYaml (omit .Values.snsWorker.probes.readiness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.snsWorker.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
 {{- end -}}

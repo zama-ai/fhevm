@@ -1,0 +1,56 @@
+groups:
+- name: eRPC_Alerts
+  rules:
+  - alert: HighErrorRate
+    expr: sum(rate(erpc_upstream_request_errors_total[5m])) by (upstream) / sum(rate(erpc_upstream_request_total[5m])) by (upstream) > 0.05
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High error rate for upstream {{ $labels.upstream }}"
+      description: "Error rate for upstream {{ $labels.upstream }} is {{ $value | humanizePercentage }} over the last 5 minutes"
+
+  - alert: SlowRequests
+    expr: histogram_quantile(0.95, sum(rate(erpc_upstream_request_duration_seconds_budget[5m])) by (le, upstream)) > 1
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Slow requests for upstream {{ $labels.upstream }}"
+      description: "95th percentile of request duration for upstream {{ $labels.upstream }} is {{ $value | humanizeDuration }} over the last 5 minutes"
+
+  - alert: HighRateLimiting
+    expr: sum(rate(erpc_upstream_request_self_rate_limited_total[5m])) by (upstream) / sum(rate(erpc_upstream_request_total[5m])) by (upstream) > 0.1
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High rate limiting for upstream {{ $labels.upstream }}"
+      description: "Rate limiting for upstream {{ $labels.upstream }} is {{ $value | humanizePercentage }} over the last 5 minutes"
+
+  - alert: NetworkRateLimiting
+    expr: sum(rate(erpc_network_request_self_rate_limited_total[5m])) by (network) > 10
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High network rate limiting for {{ $labels.network }}"
+      description: "Network rate limiting for {{ $labels.network }} is {{ $value | humanize }} requests/second over the last 5 minutes"
+
+  - alert: HighRequestRate
+    expr: sum(rate(erpc_upstream_request_total[5m])) by (upstream) > 1000
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High request rate for upstream {{ $labels.upstream }}"
+      description: "Request rate for upstream {{ $labels.upstream }} is {{ $value | humanize }} requests/second over the last 5 minutes"
+
+  - alert: LowRequestRate
+    expr: sum(rate(erpc_upstream_request_total[5m])) by (upstream) < 1
+    for: 15m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Low request rate for upstream {{ $labels.upstream }}"
+      description: "Request rate for upstream {{ $labels.upstream }} is {{ $value | humanize }} requests/second over the last 15 minutes"

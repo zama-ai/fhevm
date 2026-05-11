@@ -18,35 +18,14 @@ services:
   kms-connector-db-migration:
     container_name: kms-connector-db-migration
     image: ghcr.io/zama-ai/fhevm/kms-connector/db-migration:${CONNECTOR_DB_MIGRATION_VERSION}
-    build:
-      context: ../../..
-      dockerfile: kms-connector/connector-db/Dockerfile
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
-        RUST_IMAGE_VERSION: 1.91.0
-      cache_from:
-        - ${FHEVM_CACHE_FROM_KMS_CONNECTOR_DB_MIGRATION:-type=gha}
-      cache_to:
-        - ${FHEVM_CACHE_TO_KMS_CONNECTOR_DB_MIGRATION:-type=gha,mode=max}
     env_file:
-      - ../env/staging/.env.kms-connector.local
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/kms-connector.env
 
   kms-connector-gw-listener:
     container_name: kms-connector-gw-listener
     image: ghcr.io/zama-ai/fhevm/kms-connector/gw-listener:${CONNECTOR_GW_LISTENER_VERSION}
-    build:
-      context: ../../..
-      dockerfile: kms-connector/Dockerfile.workspace
-      target: gw-listener
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
-        RUST_IMAGE_VERSION: 1.91.0
-      cache_from:
-        - ${FHEVM_CACHE_FROM_KMS_CONNECTOR:-type=gha}
-      cache_to:
-        - ${FHEVM_CACHE_TO_KMS_CONNECTOR:-type=gha,mode=max}
     env_file:
-      - ../env/staging/.env.kms-connector.local
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/kms-connector.env
     depends_on:
       kms-connector-db-migration:
         condition: service_completed_successfully
@@ -54,17 +33,8 @@ services:
   kms-connector-kms-worker:
     container_name: kms-connector-kms-worker
     image: ghcr.io/zama-ai/fhevm/kms-connector/kms-worker:${CONNECTOR_KMS_WORKER_VERSION}
-    build:
-      context: ../../..
-      dockerfile: kms-connector/Dockerfile.workspace
-      target: kms-worker
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
-        RUST_IMAGE_VERSION: 1.91.0
-      cache_from:
-        - ${FHEVM_CACHE_FROM_KMS_CONNECTOR:-type=gha}
     env_file:
-      - ../env/staging/.env.kms-connector.local
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/kms-connector.env
     depends_on:
       kms-connector-db-migration:
         condition: service_completed_successfully
@@ -72,17 +42,8 @@ services:
   kms-connector-tx-sender:
     container_name: kms-connector-tx-sender
     image: ghcr.io/zama-ai/fhevm/kms-connector/tx-sender:${CONNECTOR_TX_SENDER_VERSION}
-    build:
-      context: ../../..
-      dockerfile: kms-connector/Dockerfile.workspace
-      target: tx-sender
-      args:
-        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
-        RUST_IMAGE_VERSION: 1.91.0
-      cache_from:
-        - ${FHEVM_CACHE_FROM_KMS_CONNECTOR:-type=gha}
     env_file:
-      - ../env/staging/.env.kms-connector.local
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/kms-connector.env
     depends_on:
       kms-connector-db-migration:
         condition: service_completed_successfully

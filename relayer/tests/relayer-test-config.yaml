@@ -1,0 +1,259 @@
+# tests/relayer-test-config.yaml
+# Relayer configuration dedicated to integration tests.
+
+host_chains:
+  - chain_id: 8009
+    url: "http://localhost:8545"
+    acl_address: "0x339EBB773A9bC1deCFfD5ef4BC7c907e26C1f836"
+
+protocol_config:
+  ethereum_http_rpc_url: "http://localhost:8545"
+  address: "0x1234567890123456789012345678901234567890"
+  retry:
+    max_attempts: 3
+    retry_interval_ms: 100
+
+gateway:
+  blockchain_rpc:
+    # MUST support method eth_sendRawTransactionSync
+    http_url: "http://localhost:8757"
+    # Useful to spread the load between two nodes for reading to a full node instead
+    read_http_url: "http://localhost:8757"
+    chain_id: 654321
+    ws_health_check_timeout_secs: 5
+    http_health_check_timeout_secs: 5
+  # Unified listener pool configuration
+  # Supports multiple listener types with shared deduplication and staggered recycling
+  listener_pool:
+    # Optional: set the starting block number for all listeners
+    # last_block_number: null
+    # Reconnection configuration for WebSocket connection failures
+    reconnect_config:
+      max_attempts: 20
+      retry_interval_ms: 500
+    # Max consecutive poll failures before giving up (polling listeners only)
+    # Higher than reconnect_config.max_attempts to tolerate transient errors (503, 429)
+    polling_max_attempts: 40
+    # Connection recycle interval in minutes
+    # Staggered across all listeners to avoid simultaneous reconnections
+    recycle_interval_mins: 30
+    # Polling interval in milliseconds (for polling type listeners)
+    poll_interval_ms: 2000
+    # TTL for event deduplication cache in seconds (1-10)
+    dedup_ttl_seconds: 5
+    # Maximum capacity for deduplication cache
+    #
+    # Sizing formula: events_per_second * num_listeners * dedup_ttl_seconds * 1.2 (safety buffer)
+    #
+    # Recommended values (with 3 listeners, 5s TTL, 1.2x buffer):
+    #   100 events/sec → 1,800
+    #   300 events/sec → 5,400
+    #   1000 events/sec → 18,000
+    #   5000 events/sec → 90,000
+    #
+    # Current setting: 100,000 (suitable for ~5500 events/sec)
+    dedup_max_capacity: 100000
+    # List of listeners in the pool
+    # Each listener has a type (subscription or polling) and URL
+    # Instance ID is assigned by position (0-indexed) for stagger calculation
+    # In production, use different URLs for redundancy
+    listeners:
+      - type: subscription
+        url: "ws://localhost:8757"
+      - type: subscription
+        url: "ws://localhost:8757"
+      - type: subscription
+        url: "ws://localhost:8757"
+  tx_engine:
+    signer:
+      type: "private_key"
+      private_key: "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"
+      # Alternative: AWS KMS signer (for deployment)
+      # type: "aws_kms"
+      # key_id: "arn:aws:kms:us-east-1:123456789012:key/your-key-id"
+      # region: "us-east-1"
+      # endpoint: "http://localhost:4566"  # optional, for LocalStack
+    max_concurrency: 100
+    retry:
+      max_attempts: 100
+      retry_interval_ms: 500
+    tx_throttlers:
+      input_proof:
+        per_seconds: 20
+        capacity: 11000
+        safety_margin: 1000
+      user_decrypt:
+        per_seconds: 20
+        capacity: 11000
+        safety_margin: 1000
+      public_decrypt:
+        per_seconds: 20
+        capacity: 11000
+        safety_margin: 1000
+  readiness_checker:
+    host_acl_check:
+      retry:
+        max_attempts: 3
+        retry_interval_ms: 1000
+    gw_ciphertext_check:
+      retry:
+        max_attempts: 75
+        retry_interval_ms: 3000
+    public_decrypt:
+      max_concurrency: 250
+      capacity: 11000
+      safety_margin: 1000
+    user_decrypt:
+      max_concurrency: 250
+      capacity: 11000
+      safety_margin: 1000
+    delegated_user_decrypt:
+      max_concurrency: 250
+      capacity: 11000
+      safety_margin: 1000
+  contracts:
+    decryption_address: "0xB8Ae44365c45A7C5256b14F607CaE23BC040c354"
+    input_verification_address: "0xE61cff9C581c7c91AEF682c2C10e8632864339ab"
+    user_decrypt_shares_threshold: 9
+  # Retry configuration for gateway events arriving before gw_reference_id is stored.
+  # This is a workaround for the race condition where send_raw_transaction_sync has high latency.
+  # TODO: Replace with proper event buffering solution.
+  gw_event_not_found_retry:
+    max_retries: 3
+    retry_delay_ms: 1000
+log:
+  format: "pretty" # compact, pretty, or json
+  show_file_line: false
+  show_thread_ids: false
+  show_timestamp: true
+  show_target: true
+
+keyurl:
+  fhe_public_key:
+    data_id: "fhe-public-key-data-id"
+    url: "http://0.0.0.0:3001/publicKey.bin"
+  crs:
+    data_id: "crs-data-id"
+    url: "http://0.0.0.0:3001/crs2048.bin"
+
+http:
+  endpoint: "0.0.0.0:3000"
+  metrics:
+    histogram_buckets:
+      [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+  api_retry_after_seconds: 4 # Default retry-after seconds for queued API responses
+  # Enable admin endpoints for runtime configuration updates (default: false)
+  # NOTE: Authentication and rate limiting should be handled by Kong in production
+  enable_admin_endpoint: false
+
+  # Dynamic retry-after configuration for V2 handlers
+  # Computes Retry-After based on queue size, drain rate, and processing stage
+  retry_after:
+    # Minimum retry interval in seconds (floor)
+    min_seconds: 1
+    # Maximum retry interval in seconds (ceiling/cap)
+    # Use this to limit the maximum retry-after value (e.g., 60s or 120s for tighter bounds)
+    max_seconds: 300
+
+    # Safety margin: multiplier applied to computed ETA
+    # Formula: final_eta = computed_eta * (1 + safety_margin)
+    # Range: 0.0 to 1.0 (0% to 100% buffer)
+    # Example: 0.2 = 20% buffer, so 10s ETA becomes 12s
+    safety_margin: 0.2
+
+    # Nominal processing times per stage (used for ETA computation)
+    # These are admin-updatable at runtime via /admin/config
+    # All fields are required - no defaults in code
+    nominal_times:
+      # Expected time for readiness check (user/public decrypt only)
+      readiness_check_seconds: 4
+      # Expected processing time for input proof requests
+      input_proof_processing_seconds: 2
+      # Expected processing time for user decrypt requests
+      user_decrypt_processing_seconds: 6
+      # Expected processing time for public decrypt requests
+      public_decrypt_processing_seconds: 6
+      # Expected time for blockchain TX confirmation (in milliseconds)
+      tx_confirmation_ms: 250
+
+    # Backoff intervals for ReceiptReceived state ONLY
+    # This is the only state where we can't compute a dynamic ETA because
+    # Copro/KMS response time is unpredictable.
+    # Format: [elapsed_threshold_seconds, retry_interval_seconds]
+    # As time in ReceiptReceived increases, we back off polling frequency.
+    # NOTE: Safety margin is NOT applied to backoff intervals
+    copro_kms_backoff_intervals:
+      - [0, 4] # 0-60s: retry every 4s (expect response soon)
+      - [60, 10] # 60s-2m: retry every 10s
+      - [120, 30] # 2-5m: retry every 30s
+      - [300, 60] # 5-15m: retry every 60s
+      - [900, 300] # 15m+: retry every 5m (likely stuck)
+
+metrics:
+  endpoint: "0.0.0.0:9898"
+  query_duration_histogram_bucket:
+    [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+  request_status_duration_histogram_bucket:
+    [
+      0.1,
+      0.25,
+      0.5,
+      1.0,
+      2.5,
+      5.0,
+      10.0,
+      30.0,
+      60.0,
+      300.0,
+      600.0,
+      1800.0,
+      3600.0,
+    ]
+  transaction_duration_secs_histogram_bucket:
+    [0.01, 0.1, 0.25, 0.50, 0.75, 1.0, 1.25, 1.5, 2.0, 5.0, 10.0]
+  # Raw ETA histogram buckets (before safety margin and clamping) for POST requests only.
+  # Higher resolution at small values (1-30s) for typical requests with < 100 queue entries.
+  # Exponential (60-2400s) for full queue scenarios.
+  retry_after_raw_eta_histogram_bucket:
+    [1, 2, 5, 10, 20, 30, 60, 120, 300, 600, 1200, 2400]
+
+storage:
+  sql_database_url: "postgresql://postgres:postgres@localhost:5433/relayer_db"
+  app_pool:
+    max_connections: 10
+    min_connections: 2
+    acquire_timeout_secs: 10
+    idle_timeout_secs: 300
+    max_lifetime_secs: 900
+  cron_pool:
+    max_connections: 5
+    min_connections: 1
+    acquire_timeout_secs: 30
+    idle_timeout_secs: 600
+    max_lifetime_secs: 1800
+  sql_health_check_timeout_secs: 5
+  cron:
+    # Duration units: d, h, m, s, ms
+
+    # --- Timeout worker (always enabled) ---
+    # Marks requests for which responses are not received within this duration as timed out.
+    timeout_cron_interval: "60s"
+    public_decrypt_timeout: "30m"
+    user_decrypt_timeout: "30m"
+    input_proof_timeout: "30m"
+
+    # --- Expiry worker (opt-in) ---
+    # Deletes resolved requests (completed or failed) once the configured retention duration has passed.
+    expiry_enabled: false
+    expiry_cron_interval: "5m"
+
+    # Retention Policies
+    public_decrypt_expiry: "365d"
+    user_decrypt_expiry: "7d"
+    input_proof_expiry: "7d"
+
+    # Delay before starting cron workers after recovery completes.
+    # Gives recovered requests time to finish processing before automated
+    # timeout checks begin, preventing false positives.
+    # VALIDATION: Must be less than 10% of minimum timeout duration AND minimum expiry duration.
+    cron_startup_delay_after_recovery: "0s"

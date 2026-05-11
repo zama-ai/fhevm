@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {FheType} from "./shared/FheType.sol";
 
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract FHEEvents {
     event FheAdd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
     event FheSub(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
@@ -39,4 +40,6 @@ contract FHEEvents {
     event FheIfThenElse(address indexed caller, bytes32 control, bytes32 ifTrue, bytes32 ifFalse, bytes32 result);
     event FheRand(address indexed caller, FheType randType, bytes16 seed, bytes32 result);
     event FheRandBounded(address indexed caller, uint256 upperBound, FheType randType, bytes16 seed, bytes32 result);
+    event FheSum(address indexed caller, bytes32[] values, bytes32 result);
+    event FheIsIn(address indexed caller, bytes32 value, bytes32[] values, bytes32 result);
 }

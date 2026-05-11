@@ -18,6 +18,7 @@ import { ProtocolMetadata, HostChain, Coprocessor, Custodian, KmsNode } from "./
  * @dev Add/remove methods will be added in the future for KMS nodes, coprocessors and host chains.
  * See https://github.com/zama-ai/fhevm-gateway/issues/98 for more details.
  */
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeableEmptyProxy {
     /**
      * @notice The maximum chain ID.
@@ -35,7 +36,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     string private constant CONTRACT_NAME = "GatewayConfig";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 5;
+    uint256 private constant MINOR_VERSION = 6;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -44,7 +45,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 6;
+    uint64 private constant REINITIALIZER_VERSION = 7;
 
     /**
      * @notice The address of the all gateway contracts
@@ -225,40 +226,12 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice Re-initializes the contract from V4.
-     * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
+     * @notice Re-initializes the contract from V5.
+     * @dev No storage migration is required for the post-v0.12.1 behavior change.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV5(uint256 initialKmsContextId) public virtual reinitializer(REINITIALIZER_VERSION) {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-
-        if (initialKmsContextId == 0) {
-            revert InvalidNullKmsContextId();
-        }
-
-        // Migrate existing global KMS nodes to the initial KMS context ID
-        uint256 nKmsNodes = $.kmsTxSenderAddresses.length;
-        for (uint256 i = 0; i < nKmsNodes; i++) {
-            address txSenderAddr = $.kmsTxSenderAddresses[i];
-            address signerAddr = $.kmsSignerAddresses[i];
-
-            $.isKmsTxSenderForContext[initialKmsContextId][txSenderAddr] = true;
-            $.isKmsSignerForContext[initialKmsContextId][signerAddr] = true;
-            $.kmsNodesForContext[initialKmsContextId][txSenderAddr] = $.kmsNodes[txSenderAddr];
-            $.kmsTxSenderAddressesForContext[initialKmsContextId].push(txSenderAddr);
-            $.kmsSignerAddressesForContext[initialKmsContextId].push(signerAddr);
-        }
-
-        // Migrate all thresholds
-        _setMpcThreshold(initialKmsContextId, $.mpcThreshold);
-        _setPublicDecryptionThreshold(initialKmsContextId, $.publicDecryptionThreshold);
-        _setUserDecryptionThreshold(initialKmsContextId, $.userDecryptionThreshold);
-        _setKmsGenThreshold(initialKmsContextId, $.kmsGenThreshold);
-
-        // Set the current context ID
-        $.currentKmsContextId = initialKmsContextId;
-    }
+    function reinitializeV6() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IGatewayConfig-isPauser}.
@@ -429,21 +402,47 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /**
      * @notice See {IGatewayConfig-pauseAllGatewayContracts}.
      * Contracts that are technically pausable but do not provide any pausable functions are not
-     * paused. If at least one of the contracts is already paused, the function will revert.
+     * paused. If all of the contracts are already paused, the function will revert.
      */
     function pauseAllGatewayContracts() external virtual onlyPauser {
-        DECRYPTION.pause();
-        INPUT_VERIFICATION.pause();
+        bool isDecryptionPaused = DECRYPTION.paused();
+        bool isInputVerificationPaused = INPUT_VERIFICATION.paused();
+
+        if (isDecryptionPaused && isInputVerificationPaused) {
+            revert AllGatewayContractsAlreadyPaused();
+        }
+
+        if (!isDecryptionPaused) {
+            DECRYPTION.pause();
+        }
+
+        if (!isInputVerificationPaused) {
+            INPUT_VERIFICATION.pause();
+        }
+
         emit PauseAllGatewayContracts();
     }
 
     /**
      * @notice See {IGatewayConfig-unpauseAllGatewayContracts}.
-     * If at least one of the contracts is not paused, the function will revert.
+     * If none of the contracts are paused, the function will revert.
      */
     function unpauseAllGatewayContracts() external virtual onlyOwner {
-        DECRYPTION.unpause();
-        INPUT_VERIFICATION.unpause();
+        bool isDecryptionPaused = DECRYPTION.paused();
+        bool isInputVerificationPaused = INPUT_VERIFICATION.paused();
+
+        if (!isDecryptionPaused && !isInputVerificationPaused) {
+            revert AllGatewayContractsAlreadyUnpaused();
+        }
+
+        if (isDecryptionPaused) {
+            DECRYPTION.unpause();
+        }
+
+        if (isInputVerificationPaused) {
+            INPUT_VERIFICATION.unpause();
+        }
+
         emit UnpauseAllGatewayContracts();
     }
 

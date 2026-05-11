@@ -632,11 +632,15 @@ mod tests {
         result
     }
 
+    fn new_cache() -> ChainCache {
+        ChainCache::new(tokio::sync::RwLock::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(100).unwrap(),
+        )))
+    }
+
     #[tokio::test]
     async fn test_dependence_chains_1_local_chain() {
-        let cache = ChainCache::new(lru::LruCache::new(
-            std::num::NonZeroUsize::new(100).unwrap(),
-        ));
+        let cache = new_cache();
         let mut logs = vec![];
         let tx1 = TransactionHash::with_last_byte(0);
         let v0 = input_handle(&mut logs, tx1);
@@ -649,9 +653,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_dependence_chains_2_local_chain() {
-        let cache = ChainCache::new(lru::LruCache::new(
-            std::num::NonZeroUsize::new(100).unwrap(),
-        ));
+        let cache = new_cache();
         let mut logs = vec![];
         let tx1 = TransactionHash::with_last_byte(0);
         let tx2 = TransactionHash::with_last_byte(1);
@@ -669,9 +671,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_dependence_chains_2_local_chain_mixed() {
-        let cache = ChainCache::new(lru::LruCache::new(
-            std::num::NonZeroUsize::new(100).unwrap(),
-        ));
+        let cache = new_cache();
         let mut logs = vec![];
         let tx1 = TransactionHash::with_last_byte(0);
         let tx2 = TransactionHash::with_last_byte(1);
@@ -692,9 +692,7 @@ mod tests {
     #[tokio::test]
     #[tracing_test::traced_test]
     async fn test_dependence_chains_2_local_chain_mixed_bis() {
-        let cache = ChainCache::new(lru::LruCache::new(
-            std::num::NonZeroUsize::new(100).unwrap(),
-        ));
+        let cache = new_cache();
         let mut logs = vec![];
         let tx1 = TransactionHash::with_last_byte(0);
         let tx2 = TransactionHash::with_last_byte(1);
@@ -743,9 +741,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_dependence_chains_1_known_past_handle() {
-        let cache = ChainCache::new(lru::LruCache::new(
-            std::num::NonZeroUsize::new(100).unwrap(),
-        ));
+        let cache = new_cache();
         let mut logs = vec![];
         let past_handle = new_handle();
         let past_chain = past_chain(0);
@@ -764,9 +760,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_dependence_chains_1_unknown_past_handle() {
-        let cache = ChainCache::new(lru::LruCache::new(
-            std::num::NonZeroUsize::new(100).unwrap(),
-        ));
+        let cache = new_cache();
         let mut logs = vec![];
         let past_handle = new_handle();
         let tx1 = TransactionHash::with_last_byte(1);
@@ -780,9 +774,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_dependence_chains_1_local_and_known_past_handle() {
-        let cache = ChainCache::new(lru::LruCache::new(
-            std::num::NonZeroUsize::new(100).unwrap(),
-        ));
+        let cache = new_cache();
         let past_handle = new_handle();
         let past_chain = past_chain(0);
         let past_chain_hash = past_chain.hash;
@@ -802,9 +794,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_dependence_chains_2_local_duplicated_handle() {
-        let cache = ChainCache::new(lru::LruCache::new(
-            std::num::NonZeroUsize::new(100).unwrap(),
-        ));
+        let cache = new_cache();
         let mut logs = vec![];
         let tx1 = TransactionHash::with_last_byte(1);
         let tx2 = TransactionHash::with_last_byte(2);
@@ -819,9 +809,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_dependence_chains_duplicated_trivial_encrypt() {
-        let cache = ChainCache::new(lru::LruCache::new(
-            std::num::NonZeroUsize::new(100).unwrap(),
-        ));
+        let cache = new_cache();
         let mut logs = vec![];
         let tx1 = TransactionHash::with_last_byte(1);
         let tx2 = TransactionHash::with_last_byte(2);
@@ -835,9 +823,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_dependence_chains_dep_with_bad_order() {
-        let cache = ChainCache::new(lru::LruCache::new(
-            std::num::NonZeroUsize::new(100).unwrap(),
-        ));
+        let cache = new_cache();
         let mut logs = vec![];
         let tx1 = TransactionHash::with_last_byte(1);
         let tx2 = TransactionHash::with_last_byte(2);
@@ -855,9 +841,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_dependence_chains_2_local_non_allowed_handle() {
-        let cache = ChainCache::new(lru::LruCache::new(
-            std::num::NonZeroUsize::new(100).unwrap(),
-        ));
+        let cache = new_cache();
         let mut logs = vec![];
         let tx1 = TransactionHash::with_last_byte(1);
         let tx2 = TransactionHash::with_last_byte(2);
@@ -874,9 +858,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_dependence_chains_auction() {
-        let cache = ChainCache::new(lru::LruCache::new(
-            std::num::NonZeroUsize::new(100).unwrap(),
-        ));
+        let cache = new_cache();
         let mut logs = vec![];
         let mut past_handles = vec![];
         let shared_handle = new_handle();
@@ -916,9 +898,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_dependence_chains_2_local_chain_connex() {
-        let cache = ChainCache::new(lru::LruCache::new(
-            std::num::NonZeroUsize::new(100).unwrap(),
-        ));
+        let cache = new_cache();
         let mut logs = vec![];
         let tx1 = TransactionHash::with_last_byte(0);
         let tx2 = TransactionHash::with_last_byte(1);
@@ -936,9 +916,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_dependence_chains_2_local_chain_mixed_connex() {
-        let cache = ChainCache::new(lru::LruCache::new(
-            std::num::NonZeroUsize::new(100).unwrap(),
-        ));
+        let cache = new_cache();
         let mut logs = vec![];
         let tx1 = TransactionHash::with_last_byte(0);
         let tx2 = TransactionHash::with_last_byte(1);
@@ -956,9 +934,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_dependence_chains_2_local_chain_mixed_1_past_connex() {
-        let cache = ChainCache::new(lru::LruCache::new(
-            std::num::NonZeroUsize::new(100).unwrap(),
-        ));
+        let cache = new_cache();
         let past_chain = past_chain(0);
         let past_chain_hash = past_chain.hash;
         cache
@@ -983,9 +959,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_dependence_chains_2_local_chain_mixed_2_past_connex() {
-        let cache = ChainCache::new(lru::LruCache::new(
-            std::num::NonZeroUsize::new(100).unwrap(),
-        ));
+        let cache = new_cache();
         let past_chain1 = past_chain(100);
         let past_chain_hash1 = past_chain1.hash;
         let past_chain2 = past_chain(101);
@@ -1009,9 +983,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_past_chain_fork() {
-        let cache = ChainCache::new(lru::LruCache::new(
-            std::num::NonZeroUsize::new(100).unwrap(),
-        ));
+        let cache = new_cache();
         let past_chain1 = past_chain(100);
         let past_chain_hash1 = past_chain1.hash;
         let past_handle1 = new_handle();
@@ -1030,9 +1002,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_current_block_fork() {
-        let cache = ChainCache::new(lru::LruCache::new(
-            std::num::NonZeroUsize::new(100).unwrap(),
-        ));
+        let cache = new_cache();
         let past_handle1 = new_handle();
         let mut logs = vec![];
         let tx1 = TransactionHash::with_last_byte(2);
@@ -1046,6 +1016,62 @@ mod tests {
         assert!(logs[0].dependence_chain == tx1);
         assert!(logs[1].dependence_chain == tx2);
         assert!(logs[2].dependence_chain == tx3);
+        assert_eq!(cache.read().await.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_dependence_chains_empty_logs() {
+        let cache = new_cache();
+        let mut logs: Vec<LogTfhe> = vec![];
+
+        let chains = dependence_chains(&mut logs, &cache, false, true).await;
+
+        assert!(chains.is_empty());
+        assert_eq!(cache.read().await.len(), 0);
+    }
+
+    // Known past handle with across_blocks=false should not extent a past chain.
+    // This verifies that cross-block dependency tracking is disabled when the flag is off.
+    #[tokio::test]
+    async fn test_dependence_chains_across_blocks_false() {
+        let cache = new_cache();
+        let past_handle = new_handle();
+        let past_chain_hash = past_chain(0).hash;
+        cache.write().await.put(past_handle, past_chain_hash);
+
+        let mut logs = vec![];
+        let tx1 = TransactionHash::with_last_byte(1);
+        let _v = op1(past_handle, &mut logs, tx1);
+
+        let chains = dependence_chains(&mut logs, &cache, false, false).await;
+
+        assert_eq!(chains.len(), 1);
+        // Chain is local (tx1), not the past chain
+        assert_eq!(chains[0].hash, tx1);
+        assert!(logs.iter().all(|log| log.dependence_chain == tx1));
+        // Cache not updated when across_blocks is false
+        assert_eq!(cache.read().await.len(), 1);
+    }
+
+    // Connex mode: 2 past chains feed into 1 tx, producing a single component.
+    #[tokio::test]
+    async fn test_dependence_chains_connex_two_past_chains_merge() {
+        let cache = new_cache();
+        let past_handle1 = new_handle();
+        let past_handle2 = new_handle();
+        let past_chain_hash1 = past_chain(100).hash;
+        let past_chain_hash2 = past_chain(101).hash;
+        cache.write().await.put(past_handle1, past_chain_hash1);
+        cache.write().await.put(past_handle2, past_chain_hash2);
+
+        let mut logs = vec![];
+        let tx1 = TransactionHash::with_last_byte(2);
+        let _v = op2(past_handle1, past_handle2, &mut logs, tx1);
+
+        let chains = dependence_chains(&mut logs, &cache, true, true).await;
+
+        assert_eq!(chains.len(), 1);
+        assert_eq!(chains[0].hash, tx1);
         assert_eq!(cache.read().await.len(), 3);
     }
 }

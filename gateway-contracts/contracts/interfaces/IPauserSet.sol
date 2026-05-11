@@ -58,6 +58,14 @@ interface IPauserSet {
     function removePauser(address account) external;
 
     /**
+     * @notice Swaps an existing pauser with a new one.
+     * @param oldAccount The address of the pauser to be removed.
+     * @param newAccount The address of the new pauser to be added.
+     * @dev Should be callable only by GatewayConfig owner.
+     */
+    function swapPauser(address oldAccount, address newAccount) external;
+
+    /**
      * @notice Returns wether specified account is in the set of pausers.
      * @param account The address of the account.
      */

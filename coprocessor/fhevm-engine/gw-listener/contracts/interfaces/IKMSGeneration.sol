@@ -1,1 +1,0 @@
-../../../../../gateway-contracts/contracts/interfaces/IKMSGeneration.sol

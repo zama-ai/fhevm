@@ -7,13 +7,6 @@ contract CiphertextCommits {
     error CoprocessorAlreadyAdded(bytes32 ctHandle, address coprocessorTxSenderAddress);
     error NotCoprocessorTxSender(address txSenderAddress);
 
-    event AddCiphertextMaterial(
-        bytes32 indexed ctHandle,
-        bytes32 ciphertextDigest,
-        bytes32 snsCiphertextDigest,
-        address[] coprocessorTxSenderAddresses
-    );
-
     bool alreadyAddedRevert;
     ConfigErrorMode configErrorMode;
 
@@ -44,11 +37,5 @@ contract CiphertextCommits {
             revert CoprocessorAlreadyAdded(ctHandle, msg.sender);
         }
 
-        emit AddCiphertextMaterial(
-            ctHandle,
-            ciphertextDigest,
-            snsCiphertextDigest,
-            new address[](0)
-        );
     }
 }

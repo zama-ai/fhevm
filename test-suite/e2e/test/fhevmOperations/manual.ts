@@ -1103,4 +1103,343 @@ describe('FHEVM manual operations', function () {
     };
     assert.deepEqual(res.clearValues, expectedRes);
   });
+
+  it('test operator "sum" euint16 - two elements', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add16(1000n);
+    input.add16(2000n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint16(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint16();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 3000n);
+  });
+
+  it('test operator "sum" euint32 - two elements', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add32(100000n);
+    input.add32(200000n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint32(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint32();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 300000n);
+  });
+
+  it('test operator "sum" euint8 - three elements', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add8(10n);
+    input.add8(20n);
+    input.add8(30n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint8(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.handles[2],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint8();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 60n);
+  });
+
+  it('test operator "sum" euint64 - two elements', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add64(1000000n);
+    input.add64(2000000n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint64(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint64();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 3000000n);
+  });
+
+  it('test operator "sum" euint128 - two elements', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add128(100000000000000000000n);
+    input.add128(200000000000000000000n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint128(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint128();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 300000000000000000000n);
+  });
+
+  it('test operator "sum" euint8 - duplicate handle counted twice', async function () {
+    const value = 7;
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add8(value);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint8_duplicate(
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint8();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], value * 2);
+  });
+
+  it('test operator "sum" euint8 - uninitialized element treated as 0', async function () {
+    const tx = await this.contract.test_sum_euint8_uninitialized();
+    await tx.wait();
+    const handle = await this.contract.resEuint8();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 5n);
+  });
+
+  it('test operator "sum" euint8 - empty array returns 0', async function () {
+    const tx = await this.contract.test_sum_euint8_empty();
+    await tx.wait();
+    const handle = await this.contract.resEuint8();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 0n);
+  });
+
+  it('test operator "sum" euint8 - single element returns fresh handle', async function () {
+    const value = 42;
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add8(value);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_sum_euint8_single(
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint8();
+    assert.notEqual(handle, encryptedAmount.handles[0]);
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], BigInt(value));
+  });
+
+  it('test operator "sum" euint8 - 100 elements at max array size', async function () {
+    const tx = await this.contract.test_sum_euint8_max_array();
+    await tx.wait();
+    const handle = await this.contract.resEuint8();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 100n);
+  });
+
+  it('test operator "isIn" euint8 - value found in set', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add8(20n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_isIn_euint8_found(
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEbool();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], true);
+  });
+
+  it('test operator "isIn" euint8 - value not found in set', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add8(99n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_isIn_euint8_not_found(
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEbool();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], false);
+  });
+
+  it('test operator "isIn" euint16 - value found in set', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add16(1000n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_isIn_euint16(
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEbool();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], true);
+  });
+
+  it('test operator "isIn" euint32 - value found in set', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add32(100000n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_isIn_euint32(
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEbool();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], true);
+  });
+
+  it('test operator "isIn" euint64 - value found in set', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add64(1000000000n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_isIn_euint64(
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEbool();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], true);
+  });
+
+  it('test operator "isIn" euint128 - value found in set', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add128(10000000000000000000n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_isIn_euint128(
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEbool();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], true);
+  });
+
+  it('test operator "isIn" euint8 - uninitialized value treated as 0 (found)', async function () {
+    const tx = await this.contract.test_isIn_euint8_uninitialized();
+    await tx.wait();
+    const handle = await this.contract.resEbool();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], true);
+  });
+
+  it('test operator "isIn" euint8 - single element set, found', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add8(42n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_isIn_euint8_single_element(
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEbool();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], true);
+  });
+
+  it('test operator "isIn" euint8 - 100 elements at max array size', async function () {
+    const tx = await this.contract.test_isIn_euint8_max_array();
+    await tx.wait();
+    const handle = await this.contract.resEbool();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], true);
+  });
+
+  it('test operator "isIn" euint8 - empty set returns false', async function () {
+    const tx = await this.contract.test_isIn_euint8_empty_set();
+    await tx.wait();
+    const handle = await this.contract.resEbool();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], false);
+  });
+
+  it('test operator "isIn" euint8 - zero-initialized set, enc(0) found', async function () {
+    const tx = await this.contract.test_isIn_euint8_zero_initialized_set();
+    await tx.wait();
+    const handle = await this.contract.resEbool();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], true);
+  });
+
+  it('test operator "isIn" euint8 - max type value (255) found in set', async function () {
+    const tx = await this.contract.test_isIn_euint8_max_value_found();
+    await tx.wait();
+    const handle = await this.contract.resEbool();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], true);
+  });
+
+  it('test operator "isIn" euint8 - single element set, not found', async function () {
+    const tx = await this.contract.test_isIn_euint8_single_element_not_found();
+    await tx.wait();
+    const handle = await this.contract.resEbool();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], false);
+  });
+
+  it('test operator "isIn" eaddress - value found in set', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.addAddress('0x2222222222222222222222222222222222222222');
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_isIn_eaddress_found(
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEbool();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], true);
+  });
+
+  it('test operator "isIn" eaddress - value not found in set', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.addAddress('0x4444444444444444444444444444444444444444');
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_isIn_eaddress_not_found(
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEbool();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], false);
+  });
+
+  it('test operator "isIn" euint256 - value found in set', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add256(42n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_isIn_euint256_found(
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEbool();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], true);
+  });
+
+  it('test operator "isIn" euint256 - value not found in set', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add256(99n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_isIn_euint256_not_found(
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEbool();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], false);
+  });
 });

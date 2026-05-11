@@ -249,6 +249,12 @@ function createMockContract(contractContent, interfaceContent, outputPath) {
   if (importsSharedStructs) imports.push(`import "../${SHARED_STRUCTS_FILE}";`);
   const importsLines = imports.join("\n");
 
+  // Skip contracts whose mock would have no functions (e.g. view-only contracts)
+  if (!mockFunctions.trim()) {
+    logInfo(`Skipping ${contractDefinition.name}: no mock functions generated.`);
+    return;
+  }
+
   // Build the mock contract
   const contractName = `${contractDefinition.name}Mock`;
   let mockContract = `${spdxLine}\n${pragmaLine}\n${importsLines}\n\ncontract ${contractName} {\n\n`;

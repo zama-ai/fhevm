@@ -1,0 +1,19 @@
+[profile.default]
+libs = ["dependencies"]
+src = "src"
+out = "out"
+allow_paths = ["../../.."]
+fs_permissions = [
+    { access = "read", path = "out" },
+    { access = "read", path = "../../.." },
+    { access = "write", path = "../test/fheTest" }
+]
+[rpc_endpoints]
+mainnet = "https://ethereum-rpc.publicnode.com"
+sepolia = "https://ethereum-sepolia-rpc.publicnode.com"
+
+[dependencies]
+forge-std = "1.11.0"
+"@encrypted-types" = "0.0.4"
+"@openzeppelin-contracts" = "5.1.0"
+"@openzeppelin-contracts-upgradeable" = "5.1.0"

@@ -4,6 +4,10 @@ version = "0.7.0"
 edition = "2021"
 license.workspace = true
 
+[features]
+default = []
+test_bypass_key_extraction = []
+
 [[bin]]
 path = "src/bin/main.rs"
 name = "host_listener"
@@ -16,11 +20,21 @@ name = "host_listener_poller"
 test = false
 bench = false
 
+[[bin]]
+path = "src/bin/consumer.rs"
+name = "host_listener_consumer"
+test = false
+bench = false
+
 [dependencies]
 # workspace dependencies
 anyhow = { workspace = true }
 alloy = { workspace = true }
 alloy-primitives = { workspace = true }
+async-trait = { workspace = true }
+aws-config = { workspace = true }
+aws-credential-types = { workspace = true }
+aws-sdk-s3 = { workspace = true }
 bigdecimal = { workspace = true }
 clap = { workspace = true }
 futures-util = { workspace = true }
@@ -29,7 +43,9 @@ prometheus = { workspace = true }
 rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha3 = { workspace = true }
 sqlx = { workspace = true }
+tfhe = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -37,15 +53,25 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 union-find = { workspace = true}
 
+url = "2.5.7"
+
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
+# TODO: integrate github or better path when available
+consumer = { path = "../../../listener/crates/consumer" }
 
 [dev-dependencies]
 alloy = { workspace = true, features = ["node-bindings"] }
 anyhow = { workspace = true }
+aws-smithy-mocks = "0.1.1"
 serial_test = { workspace = true }
 test-harness = { path = "../test-harness" }
 tracing-test = { workspace = true }
+
+# Enable test bypass features for integration tests
+[dev-dependencies.host-listener]
+path = "."
+features = ["test_bypass_key_extraction"]
 
 [build-dependencies]
 foundry-compilers = { workspace = true }

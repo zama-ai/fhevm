@@ -11,13 +11,11 @@ use alloy::{
 use anyhow::anyhow;
 use connector_utils::{
     monitoring::otlp::PropagationContext,
-    types::{ProtocolEvent, ProtocolEventKind, db::EventType},
+    types::{ProtocolEvent, db::EventType},
 };
-use fhevm_gateway_bindings::{
-    decryption::Decryption::DecryptionEvents, kms_generation::KMSGeneration::KMSGenerationEvents,
-};
-use sqlx::{Pool, Postgres, Row};
-use tokio::{select, task::JoinSet};
+use fhevm_gateway_bindings::decryption::Decryption::DecryptionEvents;
+use sqlx::{Pool, Postgres};
+use tokio::select;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, info_span, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
@@ -27,35 +25,7 @@ const DECRYPTION_EVENT_TYPES: [EventType; 2] = [
     EventType::UserDecryptionRequest,
 ];
 
-const KMS_GENERATION_EVENT_TYPES: [EventType; 5] = [
-    EventType::PrepKeygenRequest,
-    EventType::KeygenRequest,
-    EventType::CrsgenRequest,
-    EventType::PrssInit,
-    EventType::KeyReshareSameSet,
-];
-
-/// Identifies which contract is being polled.
-///
-/// **Note:** The kms-connector is designed to listen to a specific set of events/contracts,
-/// so listening to a new contract/event to monitor requires a code change and a new release.
-#[derive(Clone, Copy)]
-enum MonitoredContract {
-    Decryption,
-    KmsGeneration,
-}
-
-impl std::fmt::Display for MonitoredContract {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            MonitoredContract::Decryption => write!(f, "Decryption"),
-            MonitoredContract::KmsGeneration => write!(f, "KmsGeneration"),
-        }
-    }
-}
-
-/// Struct monitoring and storing Gateway's events.
-#[derive(Clone)]
+/// Struct monitoring and storing Gateway's decryption events.
 pub struct GatewayListener<P>
 where
     P: Provider,
@@ -94,50 +64,25 @@ where
 
     /// Starts the `GatewayListener`.
     ///
-    /// Spawns two polling tasks: one for Decryption events and one for KMSGeneration events.
+    /// Polls for Decryption events on the Gateway chain.
     pub async fn start(self) {
-        let mut tasks = JoinSet::new();
-        tasks.spawn(self.clone().poll_events(MonitoredContract::Decryption));
-        tasks.spawn(self.poll_events(MonitoredContract::KmsGeneration));
-
-        while let Some(res) = tasks.join_next().await {
-            if let Err(e) = res {
-                error!("{e}");
-            }
-        }
-        info!("GatewayListener stopped successfully!");
-    }
-
-    /// Polls a contract for events using `eth_getLogs`.
-    ///
-    /// Cancels all other tasks on failure.
-    async fn poll_events(self, contract: MonitoredContract) {
         select! {
             biased;
-            _ = self.cancel_token.cancelled() => info!("{contract} polling cancelled..."),
-            result = self.run_poll_loop(contract) => if let Err(e) = result {
-                error!("{contract} polling failed: {e}");
+            _ = self.cancel_token.cancelled() => info!("Decryption polling cancelled..."),
+            result = self.run_poll_loop() => if let Err(e) = result {
+                error!("Decryption polling failed: {e}");
             }
         }
         self.cancel_token.cancel();
+        info!("GatewayListener stopped successfully!");
     }
 
-    /// Polling loop to listen to both [`Decryption`] and [`KMSGeneration`] contracts.
-    async fn run_poll_loop(&self, contract: MonitoredContract) -> anyhow::Result<()> {
-        let (contract_address, poll_interval, from_block_config, event_types) = match contract {
-            MonitoredContract::Decryption => (
-                self.config.decryption_contract.address,
-                self.config.decryption_polling,
-                self.config.decryption_from_block_number,
-                DECRYPTION_EVENT_TYPES.as_slice(),
-            ),
-            MonitoredContract::KmsGeneration => (
-                self.config.kms_generation_contract.address,
-                self.config.key_management_polling,
-                self.config.kms_operation_from_block_number,
-                KMS_GENERATION_EVENT_TYPES.as_slice(),
-            ),
-        };
+    /// Polling loop to listen to [`Decryption`] contract events.
+    async fn run_poll_loop(&self) -> anyhow::Result<()> {
+        let contract_address = self.config.decryption_contract.address;
+        let poll_interval = self.config.decryption_polling;
+        let from_block_config = self.config.decryption_from_block_number;
+        let event_types = DECRYPTION_EVENT_TYPES.as_slice();
 
         let event_signatures = event_types
             .iter()
@@ -148,7 +93,11 @@ where
             .event_signature(event_signatures);
 
         let mut from_block = self.get_start_block(from_block_config, event_types).await?;
+<<<<<<< HEAD
         info!("Started {contract} polling from block {from_block}");
+=======
+        info!("Started Decryption polling from block {from_block}");
+>>>>>>> release/0.13.x
 
         let mut ticker = tokio::time::interval(poll_interval);
         let max_errors = self.config.max_consecutive_polling_errors;
@@ -156,7 +105,11 @@ where
         loop {
             ticker.tick().await;
             match self
+<<<<<<< HEAD
                 .fetch_and_publish(contract, base_filter.clone(), event_types, from_block)
+=======
+                .fetch_and_publish(base_filter.clone(), event_types, from_block)
+>>>>>>> release/0.13.x
                 .await
             {
                 Ok((new_from_block, has_more)) => {
@@ -168,12 +121,21 @@ where
                 }
                 Err(e) => {
                     EVENT_LISTENING_ERRORS
+<<<<<<< HEAD
                         .with_label_values(&[contract.to_string().to_lowercase()])
                         .inc();
                     consecutive_errors = consecutive_errors.saturating_add(1);
                     warn!("{contract} listening error: {e} ({consecutive_errors}/{max_errors})");
                     if consecutive_errors >= max_errors {
                         anyhow::bail!("Too many consecutive errors for {contract}");
+=======
+                        .with_label_values(&["decryption"])
+                        .inc();
+                    consecutive_errors = consecutive_errors.saturating_add(1);
+                    warn!("Decryption listening error: {e} ({consecutive_errors}/{max_errors})");
+                    if consecutive_errors >= max_errors {
+                        anyhow::bail!("Too many consecutive errors for Decryption");
+>>>>>>> release/0.13.x
                     }
                 }
             }
@@ -185,7 +147,10 @@ where
     /// Returns `(new_from_block, has_more_blocks)`.
     async fn fetch_and_publish(
         &self,
+<<<<<<< HEAD
         contract: MonitoredContract,
+=======
+>>>>>>> release/0.13.x
         base_filter: Filter,
         event_types: &[EventType],
         from_block: u64,
@@ -204,6 +169,7 @@ where
         let filter = base_filter.from_block(from_block).to_block(to_block);
 
         let logs = self.provider.get_logs(&filter).await?;
+<<<<<<< HEAD
         let events = Self::prepare_events(contract, logs)?;
         publish_batch(&self.db_pool, events, event_types, to_block).await?;
 
@@ -285,25 +251,63 @@ where
             Some(last_block_polled) => Ok(last_block_polled.saturating_add(1)),
             None => Ok(self.provider.get_block_number().await?),
         }
+=======
+        let events = Self::prepare_events(logs)?;
+        publish_batch(&self.db_pool, events, event_types, to_block).await?;
+
+        Ok((to_block.saturating_add(1), to_block < current_block))
+>>>>>>> release/0.13.x
     }
 
-    async fn get_last_block_polled_from_db(
-        &self,
-        event_type: EventType,
-    ) -> anyhow::Result<Option<u64>> {
-        info!("Fetching last block polled from DB for {event_type}...");
-        let query_result =
-            sqlx::query("SELECT block_number FROM last_block_polled WHERE event_type = $1")
-                .bind(event_type)
-                .fetch_one(&self.db_pool)
-                .await?
-                .try_get::<Option<i64>, _>("block_number")?;
+    /// Decodes logs and prepares `ProtocolEvent` structs with OTLP context and metrics.
+    fn prepare_events(logs: Vec<Log>) -> anyhow::Result<Vec<ProtocolEvent>> {
+        let mut events = Vec::with_capacity(logs.len());
+        for log in logs {
+            let event_kind = DecryptionEvents::decode_log(&log.inner)
+                .map_err(|e| anyhow!("Failed to decode Decryption event: {e}"))?
+                .data
+                .try_into()?;
+            EVENT_RECEIVED_COUNTER
+                .with_label_values(&[EventType::from(&event_kind).as_str()])
+                .inc();
 
-        let Some(block_number) = query_result else {
-            info!("No block number stored in DB yet for {event_type}");
-            return Ok(None);
-        };
-        Ok(Some(block_number as u64))
+            let span = info_span!("handle_gateway_event", event = %event_kind);
+            let otlp_ctx = PropagationContext::inject(&span.context());
+            events.push(ProtocolEvent::new(
+                event_kind,
+                log.transaction_hash,
+                otlp_ctx,
+            ));
+        }
+        Ok(events)
+    }
+
+    /// Determines the block to start event listening from.
+    async fn get_start_block(
+        &self,
+        from_block_config: Option<u64>,
+        event_types: &[EventType],
+    ) -> anyhow::Result<u64> {
+        if let Some(from_block) = from_block_config {
+            info!("Found configured from_block_number ({from_block}) for polling");
+            return Ok(from_block);
+        }
+
+        info!("Fetching min last block polled from DB for {event_types:?}...");
+        let min_block = sqlx::query_scalar!(
+            "SELECT MIN(block_number) FROM last_block_polled WHERE event_type = ANY($1::event_type[])",
+            event_types as &[EventType],
+        )
+        .fetch_one(&self.db_pool)
+        .await?;
+
+        match min_block {
+            Some(last_block_polled) => Ok(last_block_polled as u64 + 1),
+            None => {
+                info!("No block polled yet. Listening from latest block number instead...");
+                Ok(self.provider.get_block_number().await?)
+            }
+        }
     }
 }
 
@@ -340,7 +344,11 @@ mod tests {
             });
         }
 
+<<<<<<< HEAD
         gw_listener.poll_events(MonitoredContract::Decryption).await;
+=======
+        gw_listener.start().await;
+>>>>>>> release/0.13.x
     }
 
     #[rstest::rstest]
@@ -368,7 +376,7 @@ mod tests {
     const MAX_CONSECUTIVE_POLLING_ERRORS: usize = 2;
 
     async fn test_setup(
-        kms_operation_from_block_number: Option<u64>,
+        decryption_from_block_number: Option<u64>,
     ) -> (TestInstance, Asserter, GatewayListener<MockProvider>) {
         let test_instance = TestInstanceBuilder::db_setup().await.unwrap();
 
@@ -377,8 +385,12 @@ mod tests {
 
         let config = Config {
             decryption_polling: Duration::from_millis(500),
+<<<<<<< HEAD
             key_management_polling: Duration::from_millis(500),
             kms_operation_from_block_number,
+=======
+            decryption_from_block_number,
+>>>>>>> release/0.13.x
             max_consecutive_polling_errors: MAX_CONSECUTIVE_POLLING_ERRORS,
             ..Default::default()
         };

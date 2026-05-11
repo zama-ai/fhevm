@@ -1,4 +1,9 @@
-This example demonstrates how to wrap between the ERC20 token into a ERC7984 token using OpenZeppelin's smart contract library powered by ZAMA's FHEVM.
+Swapping from a non-confidential ERC-20 to a confidential ERC-7984 is simple and actually done within the `ERC7984ERC20Wrapper`. The wrapper operates in two steps:
+
+1. **Token transfer**: The ERC-20 tokens are transferred in from the caller using `SafeERC20.safeTransferFrom()`, reverting automatically if unsuccessful.
+2. **Confidential minting**: The contract mints equivalent ERC-7984 tokens to the recipient, which is guaranteed to succeed.
+
+This example demonstrates how to deploy and test the wrapper using OpenZeppelin's smart contract library powered by ZAMA's FHEVM.
 
 {% hint style="info" %}
 To run this example correctly, make sure the files are placed in the following directories:
@@ -29,6 +34,57 @@ contract ERC7984ERC20WrapperExample is ERC7984ERC20Wrapper, ZamaEthereumConfig {
         string memory uri
     ) ERC7984ERC20Wrapper(token) ERC7984(name, symbol, uri) {}
 }
+
 ```
+
 {% endtab %}
+
+{% tab title="ERC7984Wrapper.test.ts" %}
+
+```typescript
+import { expect } from 'chai';
+import { ethers, fhevm } from 'hardhat';
+
+describe('ERC7984ERC20WrapperExample', function () {
+  let wrapper: any;
+  let erc20: any;
+  let owner: any;
+  let user: any;
+
+  const WRAP_AMOUNT = 1000;
+
+  beforeEach(async function () {
+    [owner, user] = await ethers.getSigners();
+
+    // Deploy a mock ERC20 token (OZ ERC20Mock takes name, symbol, decimals)
+    erc20 = await ethers.deployContract('ERC20Mock', ['Test ERC20', 'TERC', 18]);
+
+    // Deploy the wrapper
+    wrapper = await ethers.deployContract('ERC7984ERC20WrapperExample', [
+      await erc20.getAddress(),
+      'Confidential Token',
+      'cTKN',
+      'https://example.com/wrapped'
+    ]);
+  });
+
+  describe('Initialization', function () {
+    it('should set the correct name', async function () {
+      expect(await wrapper.name()).to.equal('Confidential Token');
+    });
+
+    it('should set the correct symbol', async function () {
+      expect(await wrapper.symbol()).to.equal('cTKN');
+    });
+
+    it('should reference the correct underlying token', async function () {
+      expect(await wrapper.underlying()).to.equal(await erc20.getAddress());
+    });
+  });
+});
+
+```
+
+{% endtab %}
+
 {% endtabs %}

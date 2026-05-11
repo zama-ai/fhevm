@@ -26,7 +26,7 @@ scDeploy:
 
   image:
     name: ghcr.io/zama-ai/fhevm/host-contracts
-    tag: v0.9.0
+    tag: v0.13.0
 
   # ConfigMap to store deployed contract addresses
   configmap:
@@ -38,14 +38,6 @@ scDeploy:
     # =========================================================================
     # ==========================  GATEWAY =====================================
     # =========================================================================
-
-    # KMS generation threshold
-    - name: KMS_GENERATION_THRESHOLD
-      value: 7
-
-    # S3 URL for KMS core storage (replace x with sequential number starting from 0)
-    - name: KMS_NODE_STORAGE_URL_x
-      value: ""
 
     # Deployer's private key
     - name: DEPLOYER_PRIVATE_KEY
@@ -66,16 +58,11 @@ scDeploy:
     - name: PAUSER_ADDRESS_x
       value: ""
 
-    # Initial KMS Context ID
-    # This initial value must match with the value returned from the host-contract KMSVerifier.getCurrentKmsContextId()
-    - name: KMS_CONTEXT_ID
-      value: "3166189940082864718613269121331309980362851143201109172953918312716374638593"
-
     # =========================================================================
     # ==========================  HOST    =====================================
     # =========================================================================
 
-      # Deployer's private key
+    # Deployer's private key
     - name: DEPLOYER_PRIVATE_KEY
       value: ""
 
@@ -92,6 +79,59 @@ scDeploy:
     # Pauser addresses (replace x with sequential number starting from 0 up to NUM_PAUSERS - 1)
     # Each operator has its own hot wallet address used as pauser
     - name: PAUSER_ADDRESS_x
+      value: ""
+
+    # -------------------------------------------------------------------------
+    # ProtocolConfig (KMS node identity, context, thresholds)
+    # -------------------------------------------------------------------------
+    - name: NUM_KMS_NODES
+      value: 13
+
+    # KMS node fields, indexed from 0 up to NUM_KMS_NODES - 1
+    - name: KMS_TX_SENDER_ADDRESS_x
+      value: ""
+
+    - name: KMS_SIGNER_ADDRESS_x
+      value: ""
+
+    - name: KMS_NODE_IP_x
+      value: ""
+
+    - name: KMS_NODE_STORAGE_URL_x
+      value: ""
+
+    - name: PUBLIC_DECRYPTION_THRESHOLD
+      value: 7
+    - name: USER_DECRYPTION_THRESHOLD
+      value: 7
+    - name: KMS_GEN_THRESHOLD
+      value: 7
+    - name: MPC_THRESHOLD
+      value: 3
+
+    # -------------------------------------------------------------------------
+    # KMSVerifier / InputVerifier (references to gateway contracts)
+    # -------------------------------------------------------------------------
+    - name: CHAIN_ID_GATEWAY
+      value: ""
+
+    - name: DECRYPTION_ADDRESS
+      value: ""
+
+    - name: INPUT_VERIFICATION_ADDRESS
+      value: ""
+
+    # -------------------------------------------------------------------------
+    # InputVerifier (coprocessor signer set)
+    # -------------------------------------------------------------------------
+    - name: NUM_COPROCESSORS
+      value: 5
+
+    - name: COPROCESSOR_THRESHOLD
+      value: 3
+
+    # Coprocessor signer addresses, indexed from 0 up to NUM_COPROCESSORS - 1
+    - name: COPROCESSOR_SIGNER_ADDRESS_x
       value: ""
 
   resources:
@@ -125,8 +165,10 @@ scDeploy:
     # =========================================================================
     # ==========================  HOST    =====================================
     # =========================================================================
-    # Deploy all host contracts
-    - npx hardhat task:deployAllHostContracts
+    # Deploy all host contracts, including KMSGeneration. KMSGeneration belongs
+    # only on the canonical host chain in the multi-chain model.
+    # See host-contracts/README.md#host-deployment-role.
+    - npx hardhat task:deployAllHostContracts --with-kms-generation true
 
     # Add pausers to the host contracts
     - npx hardhat task:addHostPausers
@@ -145,7 +187,7 @@ scUpgrade:
   oldContracts:
     image:
       name: ghcr.io/zama-ai/fhevm/host-contracts
-      tag: v0.8.1
+      tag: v0.10.0
 
   # Note: The upgrade process uses the new contracts image from scDeploy.image
 
@@ -161,10 +203,12 @@ scUpgrade:
 
     - npx hardhat task:upgradeDecryption
 
+    - npx hardhat task:upgradeKMSGeneration
+
     # =========================================================================
     # ==========================  HOST    =====================================
     # =========================================================================
-    - npx hardhat task:upgradeKmsVerifier
+    - npx hardhat task:upgradeKMSVerifier
 
 
 # -----------------------------------------------------------------------------
@@ -211,6 +255,14 @@ persistence:
     create: true
     storageClassName: ""
     storageCapacity: 1Gi
+    # Restore the PVC from a CSI VolumeSnapshot.
+    # storageCapacity must be >= snapshot restoreSize.
+    # See https://kubernetes.io/docs/concepts/storage/volume-snapshots/
+    dataSource:
+      enabled: false
+      name: ""
+      kind: VolumeSnapshot
+      apiGroup: snapshot.storage.k8s.io
 
 # -----------------------------------------------------------------------------
 # Global Pod Configuration

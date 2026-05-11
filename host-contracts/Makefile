@@ -5,7 +5,7 @@ FORGE_DAPP_OUT=out
 
 # Deploy the empty proxy addresses.
 deploy-empty-proxies:
-	DOTENV_CONFIG_PATH=$(ENV_PATH) HARDHAT_NETWORK=hardhat npx hardhat task:deployEmptyUUPSProxies
+	DOTENV_CONFIG_PATH=$(ENV_PATH) HARDHAT_NETWORK=hardhat npx hardhat task:deployEmptyUUPSProxies --with-kms-generation true
 
 # Deploy the pauser set contract.
 deploy-pauser-set:
@@ -59,6 +59,11 @@ lint-bindings:
 
 # Update auto-generated files for conformance checks
 update-conformance: update-bindings update-selectors
+
+# Make sure all Solidity contracts use the expected SPDX license identifier (BSD-3-Clause-Clear)
+# We also check lib/ but exclude external dependencies (forge-std, OpenZeppelin-derived FhevmECDSA).
+check-spdx-headers:
+	bash ../ci/check_spdx_licenses.sh contracts lib --exclude forge-std --exclude cryptography/FhevmECDSA.sol
 
 # Conform to pre-commit checks
 conformance: prettier update-conformance

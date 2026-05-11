@@ -1,0 +1,35 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/consumer",
+    "crates/listener_core",
+    "crates/shared/broker",
+    "crates/shared/telemetry",
+    "crates/test-support",
+]
+
+[workspace.package]
+authors = ["Zama"]
+edition = "2024"
+license = "BSD-3-Clause-Clear"
+
+[workspace.dependencies]
+alloy        = { version = "=1.1.2", features = ["full", "trie", "rpc-types", "network", "consensus", "rlp"] }
+alloy-json-rpc     = "=1.1.2"
+alloy-primitives = { version = "=1.5.2", features = ["serde"] }
+alloy-transport-ipc = "=1.1.2"
+async-trait  = "0.1.88"
+axum         = { version = "0.8", default-features = false }
+serde        = "1.0.225"
+serde_json   = "1.0.140"
+thiserror    = "2.0.12"
+tokio        = { version = "1.45.0", features = ["rt-multi-thread", "sync", "time"] }
+tokio-util   = "0.7.15"
+tracing      = "0.1.41"
+futures      = "0.3.31"
+metrics      = "0.24"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

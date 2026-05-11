@@ -41,6 +41,7 @@ pub fn extract_server_key_without_ns(src_path: String, dest_path: &String) -> bo
         noise_squashing_key,
         _noise_squashing_compression_key,
         re_randomization_keyswitching_key,
+        _oprf_key,
         tag,
     ) = server_key.into_raw_parts();
     if noise_squashing_key.is_none() {
@@ -58,6 +59,7 @@ pub fn extract_server_key_without_ns(src_path: String, dest_path: &String) -> bo
         None, // noise squashing key excluded
         None, // noise squashing compression key excluded
         re_randomization_keyswitching_key,
+        None, // oprf key excluded
         tag,
     ));
 

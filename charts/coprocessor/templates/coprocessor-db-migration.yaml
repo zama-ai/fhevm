@@ -18,17 +18,27 @@ spec:
       labels:
         app: coprocessor-db-migration
         app.kubernetes.io/name: {{ .Release.Name }}-db-migration
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.dbMigration.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Never
-      {{- if and .Values.dbMigration.affinity .Values.dbMigration.affinity.enabled }}
-      affinity:
-{{ toYaml (omit .Values.dbMigration.affinity "enabled") | indent 8 }}
+      {{- with .Values.dbMigration.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if and .Values.dbMigration.tolerations .Values.dbMigration.tolerations.enabled }}
+      {{- with .Values.dbMigration.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.dbMigration.tolerations }}
       tolerations:
-{{ toYaml .Values.dbMigration.tolerations.items | indent 8 }}
+        {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- if .Values.dbMigration.serviceAccountName }}
       serviceAccountName: {{ .Values.dbMigration.serviceAccountName }}
@@ -36,9 +46,105 @@ spec:
       containers:
       - name: db-migration
         image: {{ .Values.dbMigration.image.name }}:{{ .Values.dbMigration.image.tag }}
+        {{- with .Values.dbMigration.command }}
+        command:
+          {{- toYaml . | nindent 10 }}
+        {{- else }}
         command: ["/initialize_db.sh"]
+        {{- end }}
         env:
-{{ toYaml .Values.dbMigration.env | nindent 12 }}
+          {{- with .Values.commonConfig.databaseUser }}
+          - name: DATABASE_USER
+            {{- if .value }}
+            value: {{ .value | quote }}
+            {{- else if .valueFrom }}
+            valueFrom:
+              {{- toYaml .valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
+          {{- with .Values.commonConfig.databaseEndpoint }}
+          - name: DATABASE_ENDPOINT
+            {{- if .value }}
+            value: {{ .value | quote }}
+            {{- else if .valueFrom }}
+            valueFrom:
+              {{- toYaml .valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
+          {{- if eq (include "coprocessorDatabaseAuthMode" .) "password" }}
+          {{- with .Values.commonConfig.databasePassword }}
+          - name: DATABASE_PASSWORD
+            {{- if .value }}
+            value: {{ .value | quote }}
+            {{- else if .valueFrom }}
+            valueFrom:
+              {{- toYaml .valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
+          {{- end }}
+          {{- with .Values.commonConfig.databaseUrl }}
+          - name: DATABASE_URL
+            value: {{ . | quote }}
+          {{- end }}
+          {{- with .Values.commonConfig.tenantApiKey }}
+          - name: TENANT_API_KEY
+            {{- if .value }}
+            value: {{ .value | quote }}
+            {{- else if .valueFrom }}
+            valueFrom:
+              {{- toYaml .valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
+          {{- with .Values.dbMigration.config.chainId }}
+          - name: CHAIN_ID
+            value: {{ . | quote }}
+          {{- end }}
+          {{- with .Values.dbMigration.config.aclContractAddress }}
+          - name: ACL_CONTRACT_ADDRESS
+            {{- if .value }}
+            value: {{ .value | quote }}
+            {{- else if .valueFrom }}
+            valueFrom:
+              {{- toYaml .valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
+          {{- with .Values.dbMigration.config.inputVerifierAddress }}
+          - name: INPUT_VERIFIER_ADDRESS
+            {{- if .value }}
+            value: {{ .value | quote }}
+            {{- else if .valueFrom }}
+            valueFrom:
+              {{- toYaml .valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
+          {{- if eq (include "coprocessorDatabaseAuthMode" .) "iam" }}
+          - name: DATABASE_IAM_AUTH_ENABLED
+            value: "true"
+          {{- with .Values.commonConfig.databaseIamRegion }}
+          - name: DATABASE_IAM_REGION
+            {{- if .value }}
+            value: {{ .value | quote }}
+            {{- else if .valueFrom }}
+            valueFrom:
+              {{- toYaml .valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
+          {{- with .Values.commonConfig.databaseSslRootCertPath }}
+          - name: DATABASE_SSL_ROOT_CERT_PATH
+            {{- if .value }}
+            value: {{ .value | quote }}
+            {{- else if .valueFrom }}
+            valueFrom:
+              {{- toYaml .valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
+          {{- end }}
+        {{- with .Values.commonConfig.env }}
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.dbMigration.env }}
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
         resources:
           requests:
             cpu: {{ .Values.dbMigration.resources.requests.cpu | default "100m" }}
