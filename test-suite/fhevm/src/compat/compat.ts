@@ -128,7 +128,10 @@ const parseCompatVersion = (version: string) => {
   };
 };
 
-const usesModernRelayerRepository = (version: string) => !parseCompatVersion(version);
+const usesModernRelayerRepository = (version: string) => {
+  const parsed = parseCompatVersion(version);
+  return !parsed || parsed.parts[0] > 0 || parsed.parts[1] >= 13;
+};
 
 const sameCompatBase = (version: string, target: CompatSemver) => {
   const parsed = parseCompatVersion(version);
