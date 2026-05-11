@@ -78,6 +78,9 @@ pub mod zama_host {
         scalar: bool,
         result: [u8; 32],
     ) -> Result<()> {
+        // Match the EVM executor boundary: no compute event is emitted until
+        // the host program verifies that the compute subject can use the
+        // operand handles in their declared scopes.
         assert_record(
             &ctx.accounts.lhs_acl_record,
             lhs_scope,

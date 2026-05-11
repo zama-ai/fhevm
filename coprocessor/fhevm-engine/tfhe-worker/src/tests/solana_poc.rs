@@ -671,6 +671,8 @@ fn input_compute_acl_address(fixture: &TokenFixture, handle: [u8; 32]) -> Pubkey
 }
 
 fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
+    // Temporary PoC stand-in for the future Solana InputVerifier/transient
+    // authorization path. It lets host::fhe_binary_op enforce both operands.
     let acl_record = input_compute_acl_address(fixture, handle);
     send(
         &mut fixture.svm,
