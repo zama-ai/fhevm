@@ -6,6 +6,11 @@ on:
       - published
   workflow_call:
     inputs:
+      path-filter-base-commit:
+        description: "Optional commit SHA used only as the docker change-detection diff base"
+        type: string
+        default: ""
+        required: false
       is_workflow_call:
         description: "Indicates if the workflow is called from another workflow"
         type: boolean
@@ -101,6 +106,7 @@ jobs:
     with:
       caller-workflow-event-name: ${{ github.event_name }}
       caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
       docker-image: fhevm/coprocessor/db-migration
       filters: |
         db-migration:
@@ -115,6 +121,7 @@ jobs:
     with:
       caller-workflow-event-name: ${{ github.event_name }}
       caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
       docker-image: fhevm/coprocessor/gw-listener
       filters: |
         gw-listener:
@@ -130,6 +137,7 @@ jobs:
     with:
       caller-workflow-event-name: ${{ github.event_name }}
       caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
       docker-image: fhevm/coprocessor/host-listener
       filters: |
         host-listener:
@@ -147,6 +155,7 @@ jobs:
     with:
       caller-workflow-event-name: ${{ github.event_name }}
       caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
       docker-image: fhevm/coprocessor/sns-worker
       filters: |
         sns-worker:
@@ -162,6 +171,7 @@ jobs:
     with:
       caller-workflow-event-name: ${{ github.event_name }}
       caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
       docker-image: fhevm/coprocessor/tfhe-worker
       filters: |
         tfhe-worker:
@@ -177,6 +187,7 @@ jobs:
     with:
       caller-workflow-event-name: ${{ github.event_name }}
       caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
       docker-image: fhevm/coprocessor/tx-sender
       filters: |
         tx-sender:
@@ -192,6 +203,7 @@ jobs:
     with:
       caller-workflow-event-name: ${{ github.event_name }}
       caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
       docker-image: fhevm/coprocessor/zkproof-worker
       filters: |
         zkproof-worker:

@@ -14,6 +14,11 @@ on:
         description: "The github.event.before sha of the caller workflow"
         type: string
         required: true
+      path-filter-base-commit:
+        description: "Optional commit SHA used only as the dorny/paths-filter base"
+        type: string
+        default: ""
+        required: false
       docker-image:
         description: "The name of the docker image of the service"
         type: string
@@ -110,7 +115,7 @@ jobs:
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         id: filter
         with:
-          base: ${{ steps.set-base-commit.outputs.base-commit }}
+          base: ${{ inputs.path-filter-base-commit || steps.set-base-commit.outputs.base-commit }}
           filters: ${{ inputs.filters }}
 
       - id: set-changes-output
