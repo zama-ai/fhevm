@@ -32,13 +32,18 @@ COPY sdk/js-sdk/src/package.json ./sdk/js-sdk/src/
 RUN npm ci && \
     npm prune && \
     if [ -n "$RELAYER_SDK_VERSION" ]; then \
-      npm install --prefix test-suite/e2e --no-save "@zama-fhe/relayer-sdk@${RELAYER_SDK_VERSION}"; \
+      npm install -w test-suite/e2e --no-save "@zama-fhe/relayer-sdk@${RELAYER_SDK_VERSION}"; \
     fi
 
 # Copy sources after deps are cached
 COPY library-solidity ./library-solidity
 COPY test-suite/e2e ./test-suite/e2e
 COPY sdk/js-sdk ./sdk/js-sdk
+
+# Patch sources: emit requested relayer-sdk version into
+# test/_relayer_sdk_version.ts so the e2e tests can branch on it at runtime.
+RUN printf '// Auto-generated at Docker build time. Do not edit.\nexport const relayer_sdk_version = "%s";\n' \
+      "$RELAYER_SDK_VERSION" > test-suite/e2e/test/_relayer_sdk_version.ts
 
 # Compile js-sdk
 WORKDIR /app/sdk/js-sdk
@@ -53,6 +58,13 @@ RUN npx hardhat compile
 
 # --- Runtime Stage ---
 FROM node:${NODE_VERSION} AS prod
+ARG RELAYER_SDK_VERSION=""
+
+# Propagate the build ARG into the container's runtime env. instance.ts gates
+# on this:
+#   process.env.RELAYER_SDK_VERSION === ""   → use @fhevm/sdk (default)
+#   process.env.RELAYER_SDK_VERSION === "x"  → use @zama-fhe/relayer-sdk@x
+ENV RELAYER_SDK_VERSION=${RELAYER_SDK_VERSION}
 
 COPY --from=builder /lib/ /lib/
 COPY --from=builder /bin/ /bin/

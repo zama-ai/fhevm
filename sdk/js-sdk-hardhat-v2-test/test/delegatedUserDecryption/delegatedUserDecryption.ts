@@ -59,7 +59,7 @@ async function safeDelegateUserDecryption(parameters: {
   const tx = await (smartWallet.connect(signer) as Contract).delegateUserDecryption(
     delegate,
     contractAddress,
-    expirationDate
+    expirationDate,
   );
   await tx.wait();
 }
@@ -95,11 +95,9 @@ describe('Delegated user decryption', function () {
 
     const transferTx = await this.token
       .connect(this.signers.alice)
-      ['transfer(address,bytes32,bytes)'](
-        this.smartWalletAddress,
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof
-      );
+      [
+        'transfer(address,bytes32,bytes)'
+      ](this.smartWalletAddress, encryptedTransferAmount.handles[0], encryptedTransferAmount.inputProof);
     await transferTx.wait();
   });
 
@@ -136,7 +134,7 @@ describe('Delegated user decryption', function () {
       this.signers.bob.address,
       this.signers.bob,
       privateKey,
-      publicKey
+      publicKey,
     );
 
     // Verify the decrypted balance matches what was transferred.
@@ -176,7 +174,7 @@ describe('Delegated user decryption', function () {
       this.signers.carol.address,
       this.signers.carol,
       privateKey,
-      publicKey
+      publicKey,
     );
 
     // Verify the decrypted balance matches what was transferred.
@@ -213,7 +211,7 @@ describe('Delegated user decryption', function () {
       this.signers.bob.address,
       this.signers.bob,
       skBefore,
-      pkBefore
+      pkBefore,
     );
 
     // Bob proposes a transaction from the smartWallet to transfer tokens to Carol.
@@ -252,7 +250,7 @@ describe('Delegated user decryption', function () {
       this.signers.bob.address,
       this.signers.bob,
       skAfter,
-      pkAfter
+      pkAfter,
     );
 
     // The smartWallet balance should have decreased by the transfer amount.
@@ -304,12 +302,12 @@ describe('Delegated user decryption', function () {
           this.signers.bob.address, //delegate
           this.signers.bob,
           privateKey,
-          publicKey
+          publicKey,
         );
         expect.fail('Expected delegated user decrypt to be rejected after revocation');
       } catch (error: unknown) {
         expect((error as { message: string }).message).contains(
-          `Delegate ${this.signers.bob.address} is not delegated by ${this.smartWalletAddress} to user decrypt handle ${balanceHandle} on contract ${this.tokenAddress}`
+          `Delegate ${this.signers.bob.address} is not delegated by ${this.smartWalletAddress} to user decrypt handle ${balanceHandle} on contract ${this.tokenAddress}`,
         );
       }
     });
@@ -327,12 +325,15 @@ describe('Delegated user decryption', function () {
           this.signers.dave.address, // delegate
           this.signers.dave,
           privateKey,
-          publicKey
+          publicKey,
         );
         expect.fail('Expected delegated user decrypt to be rejected without delegation');
       } catch (error: unknown) {
+        console.log('=================== A2 ======================');
+        console.log((error as { message: string }).message);
+        console.log('=========================================');
         expect((error as { message: string }).message).contains(
-          `Delegate ${this.signers.dave.address} is not delegated by ${this.smartWalletAddress} to user decrypt handle ${balanceHandle} on contract ${this.tokenAddress}`
+          `Delegate ${this.signers.dave.address} is not delegated by ${this.smartWalletAddress} to user decrypt handle ${balanceHandle} on contract ${this.tokenAddress}`,
         );
       }
     });
@@ -370,12 +371,12 @@ describe('Delegated user decryption', function () {
           this.signers.eve.address, // delegate
           this.signers.eve, //signer
           privateKey,
-          publicKey
+          publicKey,
         );
         expect.fail('Expected delegated user decrypt to be rejected for wrong contract');
       } catch (error: unknown) {
         expect((error as { message: string }).message).contains(
-          `Delegate ${this.signers.eve.address} is not delegated by ${this.smartWalletAddress} to user decrypt handle ${balanceHandle} on contract ${this.tokenAddress}`
+          `Delegate ${this.signers.eve.address} is not delegated by ${this.smartWalletAddress} to user decrypt handle ${balanceHandle} on contract ${this.tokenAddress}`,
         );
       }
     });
@@ -412,12 +413,12 @@ describe('Delegated user decryption', function () {
           this.signers.eve.address,
           this.signers.eve,
           privateKey,
-          publicKey
+          publicKey,
         );
         expect.fail('Expected delegated user decrypt to be rejected for expired delegation');
       } catch (error: unknown) {
         expect((error as { message: string }).message).contains(
-          `Delegate ${this.signers.eve.address} is not delegated by ${this.smartWalletAddress} to user decrypt handle ${balanceHandle} on contract ${this.tokenAddress}`
+          `Delegate ${this.signers.eve.address} is not delegated by ${this.smartWalletAddress} to user decrypt handle ${balanceHandle} on contract ${this.tokenAddress}`,
         );
       }
     });

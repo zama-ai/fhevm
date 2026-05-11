@@ -13,6 +13,7 @@ contract SmartWalletWithDelegation is E2ECoprocessorConfig {
 
     event ProposedTx(uint256 indexed txId, address target, bytes data);
 
+    euint64 cheatPublicUint64;
     uint256 public txCounter;
     address public owner;
     mapping(uint256 => Transaction) public transactions;
@@ -69,5 +70,18 @@ contract SmartWalletWithDelegation is E2ECoprocessorConfig {
     /// @param delegateContractAddress The contract address for which to revoke delegation.
     function revokeUserDecryptionDelegation(address delegate, address delegateContractAddress) external onlyOwner {
         FHE.revokeUserDecryptionDelegation(delegate, delegateContractAddress);
+    }
+
+    /// @notice cheat function. Does not make `value` publicly decryptable directly.
+    /// @dev Derives a separate publicly decryptable euint64 from `value` via `value + 0` so the
+    ///      original handle stays private; only the new derived handle is exposed.
+    function createCheatPublicUint64(euint64 value) external onlyOwner {
+        cheatPublicUint64 = FHE.add(value, uint64(0));
+        FHE.makePubliclyDecryptable(cheatPublicUint64);
+    }
+
+    /// @notice Returns the current cheat public euint64.
+    function getCheatPublicUint64() external view returns(euint64) {
+        return cheatPublicUint64;
     }
 }

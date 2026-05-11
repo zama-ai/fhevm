@@ -279,6 +279,7 @@ export class RelayerSdk implements SdkInstance {
     readonly contractAddress?: string | undefined;
     readonly delegatorAddress?: string | undefined;
   }): string {
-    return "not_allowed_on_host_acl";
+    //Not allowed on host ACL: ACL check failed for 1 handle(s): handle=0x0a082d5542aa39e21e0f0b3bb51a38ef5e2d2f7c36ff00000000000030390500 check=isHandleDelegatedForUserDecryption
+    return `Not allowed on host ACL: ACL check failed for 1 handle(s): handle=${parameters.handle} check=isHandleDelegatedForUserDecryption`;
   }
 }
