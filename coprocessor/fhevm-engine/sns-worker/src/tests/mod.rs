@@ -18,9 +18,9 @@ use std::{
 };
 
 use test_harness::{
+    containers::{TestContainer, MINIO_PORT},
     db_utils::truncate_tables,
     instance::{setup_test_db, DBInstance, ImportMode},
-    localstack::{LocalstackContainer, LOCALSTACK_PORT},
     s3_utils,
 };
 use tfhe::{
@@ -407,7 +407,7 @@ struct TestEnvironment {
     pub key_id_gw: DbKeyId,
     pub host_chain_id: i64,
     pub db_instance: DBInstance,
-    pub s3_instance: Option<Arc<LocalstackContainer>>, // If None, the global LocalStack is used
+    pub s3_instance: Option<Arc<TestContainer>>, // If None, the global MinIO is used
     pub s3_client: aws_sdk_s3::Client,
     pub conf: Config,
 }
@@ -436,7 +436,7 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
             aws_sdk_s3::Client::new(&aws_config::load_defaults(BehaviorVersion::latest()).await),
         )
     } else {
-        setup_localstack(&conf).await?
+        setup_minio(&conf).await?
     };
 
     let token = db_instance.parent_token.child_token();
@@ -473,29 +473,29 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
     })
 }
 
-/// Deploys a LocalStack instance and creates S3 buckets for ciphertext128 and ciphertext64
+/// Deploys a MinIO instance and creates S3 buckets for ciphertext128 and ciphertext64
 ///
 /// # Returns
-/// A tuple containing the LocalStack instance and the S3 client
-async fn setup_localstack(
+/// A tuple containing the MinIO instance and the S3 client
+async fn setup_minio(
     conf: &Config,
-) -> anyhow::Result<(Option<Arc<LocalstackContainer>>, aws_sdk_s3::Client)> {
-    let (localstack, host_port) =
-        if std::env::var("TEST_GLOBAL_LOCALSTACK").unwrap_or("0".to_string()) == "1" {
-            (None, LOCALSTACK_PORT)
-        } else {
-            let localstack_instance = Arc::new(test_harness::localstack::start_localstack().await?);
-            let host_port = localstack_instance.host_port;
-            (Some(localstack_instance), host_port)
-        };
+) -> anyhow::Result<(Option<Arc<TestContainer>>, aws_sdk_s3::Client)> {
+    let (minio, host_port) = if std::env::var("TEST_GLOBAL_MINIO").unwrap_or("0".to_string()) == "1"
+    {
+        (None, MINIO_PORT)
+    } else {
+        let minio_instance = Arc::new(test_harness::containers::start_minio().await?);
+        let host_port = minio_instance.host_port;
+        (Some(minio_instance), host_port)
+    };
 
-    tracing::info!("LocalStack started on port: {}", host_port);
+    tracing::info!("MinIO started on port: {}", host_port);
 
     let endpoint_url = format!("http://127.0.0.1:{}", host_port);
     std::env::set_var("AWS_ENDPOINT_URL", endpoint_url.clone());
     std::env::set_var("AWS_REGION", "us-east-1");
-    std::env::set_var("AWS_ACCESS_KEY_ID", "test");
-    std::env::set_var("AWS_SECRET_ACCESS_KEY", "test");
+    std::env::set_var("AWS_ACCESS_KEY_ID", "minioadmin");
+    std::env::set_var("AWS_SECRET_ACCESS_KEY", "minioadmin");
 
     let aws_conf = aws_config::load_defaults(BehaviorVersion::latest()).await;
     let client: aws_sdk_s3::Client = aws_sdk_s3::Client::new(&aws_conf);
@@ -503,7 +503,7 @@ async fn setup_localstack(
     recreate_bucket(&client, &conf.s3.bucket_ct128).await?;
     recreate_bucket(&client, &conf.s3.bucket_ct64).await?;
 
-    Ok((localstack, client))
+    Ok((minio, client))
 }
 
 async fn recreate_bucket(s3_client: &aws_sdk_s3::Client, bucket_name: &str) -> anyhow::Result<()> {

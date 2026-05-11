@@ -78,7 +78,7 @@ gateway:
       # type: "aws_kms"
       # key_id: "arn:aws:kms:us-east-1:123456789012:key/your-key-id"
       # region: "us-east-1"
-      # endpoint: "http://localhost:4566"  # optional, for LocalStack
+      # endpoint: "http://localhost:8080"  # optional, for local AWS KMS mock (e.g. nsmithuk/local-kms)
     max_concurrency: 100
     retry:
       max_attempts: 100
