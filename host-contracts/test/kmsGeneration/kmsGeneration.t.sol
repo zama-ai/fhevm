@@ -13,10 +13,7 @@ import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUU
 import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
 import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/UUPSUpgradeableEmptyProxy.sol";
 import {protocolConfigAdd, kmsGenerationAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
-import {
-    HostContractsDeployerTestUtils,
-    DeployableERC1967Proxy
-} from "@fhevm-host-contracts/fhevm-foundry/HostContractsDeployerTestUtils.sol";
+import {HostContractsDeployerTestUtils, DeployableERC1967Proxy} from "@fhevm-host-contracts/fhevm-foundry/HostContractsDeployerTestUtils.sol";
 import {KMSGenerationUpgradedExample} from "@fhevm-host-contracts/examples/KMSGenerationUpgradedExample.sol";
 
 contract KMSGenerationHarness is KMSGeneration {
