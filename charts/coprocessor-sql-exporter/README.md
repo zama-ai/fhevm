@@ -9,13 +9,19 @@ The exporter is configured via a YAML file: `config/queries.yml`.
 
 ## Install in Kubernetes
 
+Create the database connection Secret in the release namespace before installing
+or upgrading the chart:
+
+```bash
+kubectl -n coprocessor create secret generic sql-exporter-config \
+  --from-literal=DATA_SOURCE_NAME='postgres://coprocessor:<password>@<host>:5432/coprocessor' \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
 ```bash
 helm dependency update
 helm upgrade --install fhevm-sql-exporter . -n coprocessor
 ```
-
-The `database-credentials` Secret with keys `endpoint`, `username`, and
-`password` must already exist in the release namespace.
 
 ## Run locally
 
