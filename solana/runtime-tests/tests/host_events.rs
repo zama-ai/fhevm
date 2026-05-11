@@ -781,6 +781,8 @@ fn transfer_output_accounts(fixture: &TokenFixture, acl_nonce: u64) -> TransferO
 }
 
 fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
+    // Temporary PoC stand-in for the future Solana InputVerifier/transient
+    // authorization path. It lets host::fhe_binary_op enforce both operands.
     let acl_record = input_compute_acl_address(fixture, handle);
     let ix = Instruction {
         program_id: fixture.host_program_id,
