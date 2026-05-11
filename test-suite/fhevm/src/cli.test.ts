@@ -1,7 +1,14 @@
 import path from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_GATEWAY_RPC_PORT, DEFAULT_HOST_RPC_PORT, MINIO_PORT, STANDARD_TEST_PROFILES, TEST_SUITE_CONTAINER } from "./layout";
+import {
+  DEFAULT_GATEWAY_RPC_PORT,
+  DEFAULT_HOST_RPC_PORT,
+  MINIO_PORT,
+  ROLLOUT_STANDARD_TEST_PROFILES,
+  STANDARD_TEST_PROFILES,
+  TEST_SUITE_CONTAINER,
+} from "./layout";
 import {
   buildTestContainerArgs,
   dbRevertDeleteExpectations,
@@ -111,10 +118,27 @@ describe("cli", () => {
     expect(output).toContain("[TESTNAME]");
   });
 
+  test("prints upgrade help with version-lock flags", async () => {
+    const result = await execCli(["upgrade", "--help"]);
+    const output = normalizeCliOutput(result.stdout);
+    expect(result.code).toBe(0);
+    expect(output).toContain("fhevm-cli upgrade");
+    expect(output).toContain("--lock-file");
+  });
+
+  test("prints rollout help with runbook support", async () => {
+    const result = await execCli(["rollout", "--help"]);
+    const output = normalizeCliOutput(result.stdout);
+    expect(result.code).toBe(0);
+    expect(output).toContain("fhevm-cli rollout");
+    expect(output).toContain("--run");
+  });
+
   test("lists bundled test profiles", async () => {
     const result = await execCli(["test", "list"]);
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("standard");
+    expect(result.stdout).toContain("rollout-standard");
     expect(result.stdout).toContain("multi-chain-isolation");
     expect(result.stdout).toContain("ciphertext-drift - 2+ coprocessors");
     expect(result.stdout).toContain("ciphertext-drift-auto-recovery - standard");
@@ -122,6 +146,22 @@ describe("cli", () => {
 
   test("standard suite includes multi-chain isolation coverage", () => {
     expect(STANDARD_TEST_PROFILES).toContain("multi-chain-isolation");
+  });
+
+  test("rollout-standard keeps write coverage but excludes disruptive profiles", () => {
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).toContain("input-proof");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).toContain("input-proof-compute-decrypt");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).toContain("user-decryption");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).toContain("delegated-user-decryption");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).toContain("erc20");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).toContain("public-decrypt-http-ebool");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).toContain("public-decrypt-http-mixed");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).not.toContain("paused-host-contracts");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).not.toContain("paused-gateway-contracts");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).not.toContain("coprocessor-db-state-revert");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).not.toContain("ciphertext-drift-auto-recovery");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).not.toContain("multi-chain-isolation");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).not.toContain("hcu-block-cap");
   });
 
   test("lists bundled scenarios", async () => {

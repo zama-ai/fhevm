@@ -274,6 +274,16 @@ export const LIGHT_TEST_PROFILES = [
   "erc20",
 ] as const;
 
+export const ROLLOUT_STANDARD_TEST_PROFILES = [
+  "input-proof",
+  "input-proof-compute-decrypt",
+  "user-decryption",
+  "delegated-user-decryption",
+  "erc20",
+  "public-decrypt-http-ebool",
+  "public-decrypt-http-mixed",
+] as const;
+
 export const STANDARD_TEST_PROFILES = [
   "paused-host-contracts",
   "paused-gateway-contracts",

@@ -5,7 +5,10 @@ import {
   LEGACY_RELAYER_MIGRATE_IMAGE_REPOSITORY,
   MODERN_RELAYER_IMAGE_REPOSITORY,
   MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY,
+  bootstrapUsesHostKmsGeneration,
   compatPolicyForState,
+  coprocessorUsesHostKmsGeneration,
+  kmsConnectorUsesHostKmsGeneration,
   requiresGatewayKmsGenerationAddress,
   requiresLegacyGatewayKmsGenerationAddress,
   requiresLegacyKmsCoreConfig,
@@ -224,7 +227,7 @@ describe("compat", () => {
     expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
   });
 
-  test("keeps legacy pauser flags for v0.12 contract tags", () => {
+  test("renders mixed pauser flags for v0.12 contract tags", () => {
     const policy = compatPolicyForState({
       versions: {
         target: "latest-supported",
@@ -238,7 +241,7 @@ describe("compat", () => {
       overrides: [],
       scenario: testDefaultScenario(),
     });
-    expect(policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
+    expect(policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-proxy-address");
     expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
   });
 
@@ -318,6 +321,53 @@ describe("compat", () => {
     };
     expect(requiresModernHostAddressArtifacts(state)).toBe(true);
     expect(requiresGatewayKmsGenerationAddress(state)).toBe(false);
+  });
+
+  test("routes KMSGeneration consumption by consumer version during RFC013 rollout", () => {
+    const base = {
+      versions: {
+        target: "sha" as const,
+        lockName: "sha.json",
+        env: {
+          HOST_VERSION: "13a37bc",
+          CONNECTOR_GW_LISTENER_VERSION: "v0.12.2",
+          COPROCESSOR_HOST_LISTENER_VERSION: "v0.12.2",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    };
+    expect(kmsConnectorUsesHostKmsGeneration(base)).toBe(false);
+    expect(coprocessorUsesHostKmsGeneration(base)).toBe(false);
+    expect(bootstrapUsesHostKmsGeneration(base)).toBe(false);
+
+    const kmsUpgraded = {
+      ...base,
+      versions: {
+        ...base.versions,
+        env: {
+          ...base.versions.env,
+          CONNECTOR_GW_LISTENER_VERSION: "13a37bc",
+        },
+      },
+    };
+    expect(kmsConnectorUsesHostKmsGeneration(kmsUpgraded)).toBe(true);
+    expect(coprocessorUsesHostKmsGeneration(kmsUpgraded)).toBe(false);
+    expect(bootstrapUsesHostKmsGeneration(kmsUpgraded)).toBe(true);
+
+    const coprocessorUpgraded = {
+      ...kmsUpgraded,
+      versions: {
+        ...kmsUpgraded.versions,
+        env: {
+          ...kmsUpgraded.versions.env,
+          COPROCESSOR_HOST_LISTENER_VERSION: "13a37bc",
+        },
+      },
+    };
+    expect(kmsConnectorUsesHostKmsGeneration(coprocessorUpgraded)).toBe(true);
+    expect(coprocessorUsesHostKmsGeneration(coprocessorUpgraded)).toBe(true);
   });
 
   test("routes semver relayer images to the legacy console registry", () => {
