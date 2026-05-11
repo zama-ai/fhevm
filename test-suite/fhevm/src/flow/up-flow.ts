@@ -2,9 +2,12 @@
  * Orchestrates fhevm stack lifecycle commands such as up, down, resume, clean, upgrade, status, and logs.
  */
 
+import path from "node:path";
+
 import { ensureLockSnapshot, previewBundle, resolveBundle } from "../resolve/bundle-store";
 import {
   assertSupportedBundleScenario,
+  bootstrapUsesHostKmsGeneration,
   requiresGatewayKmsGenerationAddress,
   requiresMultichainAclAddress,
   requiresModernHostAddressArtifacts,
@@ -86,6 +89,7 @@ import {
   hostReachableRpcUrl,
   predictedCrsId,
   predictedKeyId,
+  readJson,
   readEnvFile,
   remove,
   withHexPrefix,
@@ -124,6 +128,7 @@ import {
   multiChainCoprocessorUpgradeTargets,
   resolveUpgradePlan,
   resumeRepairStep,
+  type UpgradeGroup,
 } from "./repair";
 import {
   composeDown,
@@ -433,16 +438,6 @@ const assertSchemaCompatibility = async (
   }
 };
 
-const assertUpgradeSchemaStable = async (bundle: VersionBundle, group: OverrideGroup) =>
-  assertSchemaRepoStable(
-    group,
-    bundle,
-    (ref) => `Cannot compare local ${group} migrations against ${ref}; local git ref is missing. Run \`git fetch --tags\` or do a fresh \`fhevm-cli up\`.`,
-    () =>
-      `${group}: local DB migrations changed. \`fhevm-cli upgrade ${group}\` only supports runtime rebuilds; do a fresh \`fhevm-cli up\` for schema changes.`,
-  );
-
-
 /** Checks whether the coprocessor database already contains seeded runtime data. */
 const coprocessorDbSeeded = async (database: string) => {
   const result = await postgresExec(database, ["-tAc", "select 1 from host_chains limit 1"]);
@@ -726,7 +721,7 @@ export const runStep = async (state: State, step: StepName) => {
         );
         await waitForContainer("gateway-sc-add-pausers", "complete");
       }
-      if (requiresModernHostAddressArtifacts(state)) {
+      if (bootstrapUsesHostKmsGeneration(state)) {
         await timed("[bootstrap] trigger-keygen", () =>
           stepComposeTask("host-sc", state, ["host-sc-trigger-keygen"], { noDeps: true }),
         );
@@ -1204,25 +1199,131 @@ export const listScenarios = async () => {
   }
 };
 
-/** Rebuilds and restarts one active local runtime override group in place. */
-export const upgrade = async (groupValue: string | undefined) => {
-  const state = await loadState();
-  if (!state || !(await projectContainers()).length) {
+type UpgradeOptions = {
+  lockFile?: string;
+};
+
+export const changedVersionKeys = (current: VersionBundle, next: VersionBundle) =>
+  [...new Set([...Object.keys(current.env), ...Object.keys(next.env)])]
+    .filter((key) => (current.env[key] ?? "") !== (next.env[key] ?? ""))
+    .sort();
+
+export const assertVersionLockChanges = (label: string, allowedVersionKeys: readonly string[], changedKeys: string[]) => {
+  const disallowed = changedKeys.filter((key) => !allowedVersionKeys.includes(key));
+  if (disallowed.length) {
     throw new PreflightError(
-      "Stack is not running; start one with `fhevm-cli up --override ...` or `fhevm-cli up --scenario ...` first",
+      `${label} lock changes unrelated version keys: ${disallowed.join(", ")}. Allowed: ${allowedVersionKeys.join(", ")}`,
     );
   }
-  await ensureRuntimeArtifacts(state, "upgrade");
-  const { component, group, runtimeServices, step } = resolveUpgradePlan(state, groupValue);
-  if (!state.completedSteps.includes(step)) {
-    throw new PreflightError(`upgrade requires a stack that has completed the ${step} step`);
+};
+
+const applyRuntimeUpgradeLock = async (
+  state: State,
+  group: UpgradeGroup,
+  allowedVersionKeys: readonly string[],
+  lockFile: string,
+) => {
+  const lockPath = path.resolve(lockFile);
+  const next = await readJson<VersionBundle>(lockPath);
+  if (!next.env || typeof next.env !== "object") {
+    throw new PreflightError(`Invalid upgrade lock ${lockFile}: missing env map`);
   }
-  await assertSchemaCompatibility(state.versions, state.overrides, state.scenario, false);
-  await assertUpgradeSchemaStable(state.versions, group);
-  console.log(`[upgrade] ${group}`);
+  const changedKeys = changedVersionKeys(state.versions, next);
+  assertVersionLockChanges(`upgrade ${group}`, allowedVersionKeys, changedKeys);
+  const nextState = {
+    ...state,
+    target: next.target,
+    lockPath,
+    requiresGitHub: targetNeedsGitHub({ target: next.target, lockFile }),
+    versions: next,
+    updatedAt: new Date().toISOString(),
+  } satisfies State;
+  assertSupportedTargetScenario(nextState.target, nextState.scenario);
+  assertSupportedBundleScenario({ versions: nextState.versions, overrides: nextState.overrides, scenario: nextState.scenario });
+  const incompatibilities = validateBundleCompatibility(nextState);
+  if (incompatibilities.length) {
+    throw new IncompatibleVersions(incompatibilities.map((item) => item.message));
+  }
+  return { changedKeys, state: nextState };
+};
+
+const mergeLocalOverrides = (current: LocalOverride[], additions: LocalOverride[] = []) => {
+  const seen = new Set(current.map((override) => JSON.stringify(override)));
+  const next = [...current];
+  for (const override of additions) {
+    const key = JSON.stringify(override);
+    if (!seen.has(key)) {
+      seen.add(key);
+      next.push(override);
+    }
+  }
+  return next;
+};
+
+/** Applies an ordered rollout version lock without restarting runtime services. */
+export const applyVersionLock = async (
+  label: string,
+  lockFile: string,
+  allowedVersionKeys: readonly string[],
+  options: { overrides?: LocalOverride[] } = {},
+) => {
+  const state = await loadState();
+  if (!state || !(await projectContainers()).length) {
+    throw new PreflightError("Stack is not running; start one with `fhevm-cli up` first");
+  }
+  await ensureRuntimeArtifacts(state, "rollout version lock");
+  const lockPath = path.resolve(lockFile);
+  const next = await readJson<VersionBundle>(lockPath);
+  if (!next.env || typeof next.env !== "object") {
+    throw new PreflightError(`Invalid rollout lock ${lockFile}: missing env map`);
+  }
+  const changedKeys = changedVersionKeys(state.versions, next);
+  assertVersionLockChanges(label, allowedVersionKeys, changedKeys);
+  const nextState = {
+    ...state,
+    target: next.target,
+    lockPath,
+    requiresGitHub: targetNeedsGitHub({ target: next.target, lockFile }),
+    overrides: mergeLocalOverrides(state.overrides, options.overrides),
+    versions: next,
+    updatedAt: new Date().toISOString(),
+  } satisfies State;
+  assertSupportedTargetScenario(nextState.target, nextState.scenario);
+  assertSupportedBundleScenario({ versions: nextState.versions, overrides: nextState.overrides, scenario: nextState.scenario });
+  const incompatibilities = validateBundleCompatibility(nextState);
+  if (incompatibilities.length) {
+    throw new IncompatibleVersions(incompatibilities.map((item) => item.message));
+  }
+  await assertSchemaCompatibility(nextState.versions, nextState.overrides, nextState.scenario, false);
+  await saveState(nextState);
+  await generateRuntime(nextState, stackSpecForState(nextState));
+  console.log(`[rollout] ${label} versions=${changedKeys.join(", ") || "(none)"}`);
+};
+
+/** Re-reads deployed contract addresses after contract runbook tasks mutate proxies. */
+export const refreshDiscovery = async () => {
+  const state = await loadState();
+  if (!state || !(await projectContainers()).length) {
+    throw new PreflightError("Stack is not running; start one with `fhevm-cli up` first");
+  }
+  await ensureRuntimeArtifacts(state, "rollout discovery");
+  const contracts = await discoverContracts(state);
+  const discovery = await ensureDiscovery(state);
+  discovery.gateway = contracts.gateway;
+  discovery.hosts = { ...discovery.hosts, ...contracts.hosts };
+  validateDiscovery(state);
+  await saveState(state);
   await generateRuntime(state, stackSpecForState(state));
-  await maybeBuild(component, state, { force: true });
-  await composeUp(component, runtimeServices, { noDeps: true });
+  console.log("[rollout] discovery refreshed");
+};
+
+const waitForRelayer = async () => {
+  await waitForContainer("fhevm-relayer-db", "healthy");
+  await waitForContainer("fhevm-relayer", "running");
+  await waitForLog("fhevm-relayer", /All servers are ready and responding/);
+};
+
+const waitForUpgrade = async (state: State, group: UpgradeGroup, runtimeServices: string[]) => {
   if (group === "coprocessor") {
     const extraTargets = multiChainCoprocessorUpgradeTargets(state, runtimeServices);
     for (const target of extraTargets) {
@@ -1233,13 +1334,74 @@ export const upgrade = async (groupValue: string | undefined) => {
     }
     await waitForCoprocessor(state);
     await postBootHealthGate([...coprocessorHealthContainers(state), ...extraTargets.flatMap((target) => target.services)]);
-  } else if (group === "kms-connector") {
+    return;
+  }
+  if (group === "kms-connector" || group === "kms") {
+    await waitForContainer(KMS_CORE_CONTAINER, "running");
     await waitForKmsConnector();
     await postBootHealthGate(KMS_CONNECTOR_HEALTH_CONTAINERS);
-  } else {
-    await waitForContainer(TEST_SUITE_CONTAINER, "running");
+    return;
   }
-  await markStep(state, step);
+  if (group === "kms-core") {
+    await waitForContainer(KMS_CORE_CONTAINER, "running");
+    return;
+  }
+  if (group === "listener-core") {
+    await waitForContainer("listener-redis", "running");
+    await waitForContainer("listener-publisher-for-anvil", "running");
+    return;
+  }
+  if (group === "relayer") {
+    await waitForRelayer();
+    return;
+  }
+  await waitForTestSuite();
+};
+
+/** Upgrades one runtime group in place, including allowed migrations and optional version-lock application. */
+export const upgradeRuntimeGroup = async (groupValue: string | undefined, options: UpgradeOptions = {}) => {
+  const state = await loadState();
+  if (!state || !(await projectContainers()).length) {
+    throw new PreflightError(
+      "Stack is not running; start one with `fhevm-cli up --override ...` or `fhevm-cli up --scenario ...` first",
+    );
+  }
+  await ensureRuntimeArtifacts(state, "upgrade");
+  const plan = resolveUpgradePlan(state, groupValue, { lockFile: !!options.lockFile });
+  for (const step of plan.steps) {
+    if (!state.completedSteps.includes(step)) {
+      throw new PreflightError(`upgrade requires a stack that has completed the ${step} step`);
+    }
+  }
+  const nextState = options.lockFile
+    ? (await applyRuntimeUpgradeLock(state, plan.group, plan.versionKeys, options.lockFile)).state
+    : state;
+  await assertSchemaCompatibility(nextState.versions, nextState.overrides, nextState.scenario, false);
+  console.log(`[upgrade] ${plan.group}`);
+  await saveState(nextState);
+  await generateRuntime(nextState, stackSpecForState(nextState));
+  if (plan.group === "listener-core") {
+    await postgresExec("", ["-c", "CREATE DATABASE listener;"]);
+  }
+  for (const component of plan.components) {
+    await maybeBuild(component.component, nextState, { force: true });
+  }
+  for (const component of plan.components) {
+    if (!component.migrationServices.length) {
+      continue;
+    }
+    await composeUp(component.component, component.migrationServices, { forceRecreate: true });
+    for (const service of component.migrationServices) {
+      await waitForContainer(service, "complete");
+    }
+  }
+  for (const component of plan.components) {
+    await composeUp(component.component, component.runtimeServices, { noDeps: true });
+  }
+  await waitForUpgrade(nextState, plan.group, plan.runtimeServices);
+  for (const step of plan.steps) {
+    await markStep(nextState, step);
+  }
 };
 
 const RESUME_HINT_BLOCKERS = new Set([

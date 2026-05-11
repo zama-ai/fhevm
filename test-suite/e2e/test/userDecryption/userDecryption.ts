@@ -3,7 +3,7 @@ import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { userDecryptSingleHandle } from '../utils';
+import { getRelayerSdkExtraData, userDecryptSingleHandle } from '../utils';
 
 describe('User decryption', function () {
   before(async function () {
@@ -167,8 +167,7 @@ describe('User decryption', function () {
         const durationDays = 10;
         const contractAddresses = [this.signers.alice.address];
 
-        // Build the extraData field
-        const extraData = await this.instances.alice.getExtraData();
+        const extraData = await getRelayerSdkExtraData(this.instances.alice);
 
         const eip712 = this.instances.alice.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays, extraData);
 
@@ -213,8 +212,7 @@ describe('User decryption', function () {
       const durationDays = 10;
       const contractAddresses = [wrongContractAddress];
 
-      // Build the extraData field
-      const extraData = await this.instances.alice.getExtraData();
+      const extraData = await getRelayerSdkExtraData(this.instances.alice);
 
       const eip712 = this.instances.alice.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays, extraData);
       const signature = await this.signers.alice.signTypedData(
@@ -254,8 +252,7 @@ describe('User decryption', function () {
       const durationDays = 10;
       const contractAddresses = [this.contractAddress];
 
-      // Build the extraData field
-      const extraData = await this.instances.alice.getExtraData();
+      const extraData = await getRelayerSdkExtraData(this.instances.alice);
 
       const eip712 = this.instances.alice.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays, extraData);
 

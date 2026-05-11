@@ -19,6 +19,7 @@ import {
   HEAVY_TEST_PROFILES,
   LIGHT_TEST_PROFILES,
   POSTGRES_HOST,
+  ROLLOUT_STANDARD_TEST_PROFILES,
   STANDARD_TEST_PROFILES,
   TEST_GREP,
   TEST_PARALLEL,
@@ -47,7 +48,16 @@ const CIPHERTEXT_DRIFT_FORBIDDEN_NETWORKS = new Set(["sepolia", "mainnet", "zwsD
 const timedLabel = (label: string, started: number) =>
   `${label} (${Math.round((Date.now() - started) / 1000)}s)`;
 
-const TEST_PROFILE_NAMES = [...Object.keys(TEST_GREP), "ciphertext-drift", "ciphertext-drift-auto-recovery", "coprocessor-db-state-revert", "heavy", "light", "standard"].sort();
+const TEST_PROFILE_NAMES = [
+  ...Object.keys(TEST_GREP),
+  "ciphertext-drift",
+  "ciphertext-drift-auto-recovery",
+  "coprocessor-db-state-revert",
+  "heavy",
+  "light",
+  "rollout-standard",
+  "standard",
+].sort();
 const ZERO_TESTS_RE = /\b0 passing\b/;
 const PAUSE_PROFILE_SCOPE: Record<string, string> = {
   "paused-host-contracts": "host",
@@ -55,6 +65,7 @@ const PAUSE_PROFILE_SCOPE: Record<string, string> = {
 };
 const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[number], string>> = {
   light: "Run the lightweight smoke suite.",
+  "rollout-standard": "Run rollout-safe write-path coverage without pause, DB revert, or drift recovery.",
   standard: "Run the default CI suite for the active topology.",
   heavy: "Run the long operators suite.",
   "paused-host-contracts": "Run pause-mode checks with host contracts paused.",
@@ -100,6 +111,9 @@ export const listTestProfiles = () => {
     ].filter(Boolean);
     const suiteTags = [
       LIGHT_TEST_PROFILES.includes(name as (typeof LIGHT_TEST_PROFILES)[number]) ? "light" : undefined,
+      ROLLOUT_STANDARD_TEST_PROFILES.includes(name as (typeof ROLLOUT_STANDARD_TEST_PROFILES)[number])
+        ? "rollout-standard"
+        : undefined,
       STANDARD_TEST_PROFILES.includes(name as (typeof STANDARD_TEST_PROFILES)[number]) ? "standard" : undefined,
       HEAVY_TEST_PROFILES.includes(name as (typeof HEAVY_TEST_PROFILES)[number]) ? "heavy" : undefined,
       ...topologyTags,
@@ -1109,6 +1123,23 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     const started = Date.now();
     await runLogged("light", started, async () => {
       for (const profile of LIGHT_TEST_PROFILES) {
+        await runProfile(profile);
+      }
+    });
+    return;
+  }
+
+  if (testName === "rollout-standard") {
+    if (options.grep) {
+      throw new PreflightError("`fhevm-cli test rollout-standard` does not accept `--grep`; run a named profile instead");
+    }
+    if (options.parallel === true) {
+      throw new PreflightError("`fhevm-cli test rollout-standard` does not accept `--parallel`; suite members choose their own mode");
+    }
+    console.log(`[test] rollout-standard (${options.network})`);
+    const started = Date.now();
+    await runLogged("rollout-standard", started, async () => {
+      for (const profile of ROLLOUT_STANDARD_TEST_PROFILES) {
         await runProfile(profile);
       }
     });

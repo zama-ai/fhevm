@@ -206,7 +206,10 @@ export const requiresLegacyGatewayKmsGenerationAddress = (state: Pick<CompatStat
   versionLt(state.versions.env.GATEWAY_VERSION ?? "", [0, 13, 0], { unparsed: "modern" });
 
 /** Detects when contract tasks still expect the legacy internal PauserSet flag name. */
-const requiresLegacyPauserTaskFlag = (version: string) =>
+const requiresLegacyHostPauserTaskFlag = (version: string) =>
+  versionLt(version, [0, 12, 0], { unparsed: "modern" });
+
+const requiresLegacyGatewayPauserTaskFlag = (version: string) =>
   versionLt(version, [0, 13, 0], { unparsed: "modern" });
 
 /** Detects when host address artifacts include ProtocolConfig and KMSGeneration proxy addresses. */
@@ -218,6 +221,21 @@ export const requiresModernHostAddressArtifacts = (state: CompatState) =>
 export const requiresGatewayKmsGenerationAddress = (state: CompatState) =>
   requiresLegacyGatewayKmsGenerationAddress(state) && !requiresModernHostAddressArtifacts(state);
 
+/** Detects when kms-connector consumes the canonical host KMSGeneration contract. */
+export const kmsConnectorUsesHostKmsGeneration = (state: CompatState) =>
+  requiresModernHostAddressArtifacts(state) &&
+  (effectiveCompatOverrides(state).some((override) => override.group === "kms-connector") ||
+    !versionLt(state.versions.env.CONNECTOR_GW_LISTENER_VERSION ?? "", [0, 13, 0], { unparsed: "modern" }));
+
+/** Detects when coprocessor listeners consume the canonical host KMSGeneration contract. */
+export const coprocessorUsesHostKmsGeneration = (state: CompatState) =>
+  requiresModernHostAddressArtifacts(state) &&
+  (effectiveCompatOverrides(state).some((override) => override.group === "coprocessor") ||
+    !versionLt(state.versions.env.COPROCESSOR_HOST_LISTENER_VERSION ?? "", [0, 13, 0], { unparsed: "modern" }));
+
+/** Detects the KMSGeneration source used for key/CRS bootstrap probes and trigger tasks. */
+export const bootstrapUsesHostKmsGeneration = kmsConnectorUsesHostKmsGeneration;
+
 type BundleIncompatibility = { severity: "error"; code: string; message: string };
 
 /** Detects whether the resolved bundle supports multi-chain listener/database topology. */
@@ -225,7 +243,7 @@ const requiresLegacySingleChainCoprocessor = (state: CompatState) =>
   versionLt(state.versions.env.COPROCESSOR_HOST_LISTENER_VERSION ?? "", [0, 12, 0], { unparsed: "modern" }) ||
   versionLt(state.versions.env.COPROCESSOR_HOST_LISTENER_POLLER_VERSION ?? "", [0, 12, 0], { unparsed: "modern" });
 
-/** Evaluates the compatibility matrix against a resolved bundle. */
+/** Evaluates compatibility rules against a resolved bundle. */
 export const validateBundleCompatibility = (state: Pick<CompatState, "versions">): BundleIncompatibility[] => {
   const issues: BundleIncompatibility[] = [];
   for (const rule of COMPAT_MATRIX.incompatibilities) {
@@ -281,12 +299,12 @@ export const compatPolicyForState = (state: CompatState): CompatPolicy => {
     }
     Object.assign(policy.connectorEnv, profile.connectorEnv);
   }
-  policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG = requiresLegacyPauserTaskFlag(
+  policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG = requiresLegacyHostPauserTaskFlag(
     state.versions.env.HOST_VERSION ?? "",
   )
     ? "--use-internal-pauser-set-address"
     : "--use-internal-proxy-address";
-  policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG = requiresLegacyPauserTaskFlag(
+  policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG = requiresLegacyGatewayPauserTaskFlag(
     state.versions.env.GATEWAY_VERSION ?? "",
   )
     ? "--use-internal-pauser-set-address"

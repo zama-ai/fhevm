@@ -4,7 +4,7 @@
 import { defineCommand, renderUsage, runCommand } from "citty";
 
 import { formatCliError, PreflightError } from "./errors";
-import { printRolloutMatrix, rollout, rolloutStep } from "./commands/rollout";
+import { runRolloutRunbook } from "./commands/rollout-run";
 import { listTestProfiles, test } from "./commands/test";
 import { resolveBundle } from "./resolve/bundle-store";
 import { STEP_NAMES } from "./types";
@@ -19,7 +19,7 @@ import {
   unpause,
   up,
   upDryRun,
-  upgrade,
+  upgradeRuntimeGroup,
 } from "./flow/up-flow";
 import { parseUpInput } from "./input/up";
 import { asBool, asString } from "./input/shared";
@@ -233,12 +233,15 @@ const root = defineCommand({
       },
     }),
     upgrade: defineCommand({
-      meta: { name: "upgrade", description: "Rebuild and restart an active local runtime override group." },
+      meta: { name: "upgrade", description: "Upgrade one runtime group in place, including migrations." },
       args: {
         group: { type: "positional", description: "Local override group to rebuild in-place." },
+        "lock-file": { type: "string", description: "Move this group to the versions from a lock file before restarting." },
       },
       async run({ args }) {
-        await upgrade(asString(args.group));
+        await upgradeRuntimeGroup(asString(args.group), {
+          lockFile: asString(args["lock-file"]),
+        });
       },
     }),
     resolve: defineCommand({
@@ -259,32 +262,12 @@ const root = defineCommand({
       },
     }),
     rollout: defineCommand({
-      meta: { name: "rollout", description: "Generate cumulative mixed-version rollout lock files from a compat-test definition." },
+      meta: { name: "rollout", description: "Execute a TypeScript rollout runbook against one stateful stack." },
       args: {
-        "compat-test": { type: "string", description: "Compat-test JSON path." },
-        out: { type: "string", description: "Output directory for generated lock files, or file path when --step is set." },
-        step: { type: "string", description: "Render only one rollout step index instead of the full directory." },
-        matrix: { type: "boolean", description: "Print the rollout matrix JSON instead of writing lock files." },
+        run: { type: "string", description: "Execute a TypeScript rollout runbook." },
       },
       async run({ args }) {
-        const compatTest = asString(args["compat-test"]) ?? "";
-        if (asBool(args.matrix)) {
-          if (args.out !== undefined || args.step !== undefined) {
-            throw new PreflightError("rollout --matrix only supports --compat-test");
-          }
-          await printRolloutMatrix({ compatTest });
-          return;
-        }
-        const step = asString(args.step);
-        if (step !== undefined) {
-          await rolloutStep({
-            compatTest,
-            out: asString(args.out) ?? "",
-            step: Number(step),
-          });
-          return;
-        }
-        await rollout({ compatTest, out: asString(args.out) ?? "" });
+        await runRolloutRunbook(asString(args.run) ?? "");
       },
     }),
     test: defineCommand({

@@ -111,7 +111,7 @@ if [ "$VERBOSE" = true ]; then
   HARDHAT_OPTS+=" --verbose "
 fi
 if [ "$NO_COMPILE" = true ]; then
-  HARDHAT_OPTS+=" --no-hardhat-compile "
+  HARDHAT_OPTS+=" --no-compile "
 fi
 
 echo hardhat test ${HARDHAT_OPTS} --grep "$GREP_TEXT" --network "$NETWORK"

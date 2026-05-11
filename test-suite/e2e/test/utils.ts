@@ -122,6 +122,9 @@ export const bigIntToBytes256 = (value: bigint) => {
   return new Uint8Array(toBufferBE(value, 256));
 };
 
+export const getRelayerSdkExtraData = async (instance: any) =>
+  typeof instance.getExtraData === 'function' ? instance.getExtraData() : undefined;
+
 export const userDecryptSingleHandle = async (
   handle: string,
   contractAddress: string,
@@ -140,8 +143,7 @@ export const userDecryptSingleHandle = async (
   const durationDays = 10; // Relayer-sdk expects numbers from now on
   const contractAddresses = [contractAddress];
 
-  // Build the extraData field
-  const extraData = await instance.getExtraData();
+  const extraData = await getRelayerSdkExtraData(instance);
 
   // Use the new createEIP712 function
   const eip712 = instance.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays, extraData);
@@ -192,8 +194,7 @@ export const delegatedUserDecryptSingleHandle = async (
   const durationDays = 10;
   const contractAddresses = [contractAddress];
 
-  // Build the extraData field
-  const extraData = await instance.getExtraData();
+  const extraData = await getRelayerSdkExtraData(instance);
 
   // The `delegate` creates a EIP712 with the `delegator` address
   const eip712 = instance.createDelegatedUserDecryptEIP712(

@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
 
-import { generateComposeOverrides, loadMergedComposeDoc } from "./generate/compose";
+import { generateComposeOverrides, loadMergedComposeDoc, serviceNameList } from "./generate/compose";
 import { TEMPLATE_COMPOSE_DIR, composePath, envPath } from "./layout";
 import { presetBundle } from "./resolve/target";
 import { parseCoprocessorScenario, resolveScenarioFile } from "./scenario/resolve";
@@ -129,6 +129,13 @@ describe("render-compose", () => {
     });
   });
 
+  test("persists kms-core private vault across container recreates", async () => {
+    const doc = await loadMergedComposeDoc("core");
+    const volumes = doc.services["kms-core"]?.volumes as string[] | undefined;
+    expect(doc.services["kms-core"]?.user).toBe("root");
+    expect(volumes).toContain("fhevm_kms_core_keys:/app/kms/core/service/keys");
+  });
+
   test("renders multi-instance coprocessor overrides with local poller siblings", async () => {
     await withTempStateDir(async () => {
       await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
@@ -146,6 +153,23 @@ describe("render-compose", () => {
         "/initialize_db.sh && ( [ ! -x /insert_test_host_chain.sh ] || /insert_test_host_chain.sh )",
       );
     });
+  });
+
+  test("does not request host-listener consumer services for legacy coprocessor bundles", () => {
+    const legacyState: State = {
+      ...state,
+      versions: {
+        ...state.versions,
+        env: {
+          ...state.versions.env,
+          COPROCESSOR_HOST_LISTENER_VERSION: "v0.12.2",
+        },
+      },
+    };
+
+    const services = serviceNameList(legacyState, "coprocessor");
+    expect(services).not.toContain("coprocessor-host-listener-consumer");
+    expect(services).not.toContain("coprocessor1-host-listener-consumer");
   });
 
   test("renders inherited two-of-two instances with local build tags when coprocessor build is active", async () => {

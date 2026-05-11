@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { DEFAULT_EXTRA_HOST_RPC_PORT } from "./layout";
-import { previewStateFromBundle, resolveUpgradePlan } from "./flow/up-flow";
+import { assertVersionLockChanges, changedVersionKeys, previewStateFromBundle, resolveUpgradePlan } from "./flow/up-flow";
 import { presetBundle } from "./resolve/target";
 import { testDefaultScenario } from "./test-fixtures";
 import type { State } from "./types";
@@ -63,6 +63,7 @@ describe("stack", () => {
 
   test("upgrade plan restarts runtime services for a full kms-connector override", () => {
     const plan = resolveUpgradePlan({ overrides: [{ group: "kms-connector" }], scenario: defaultScenario }, "kms-connector");
+    expect(plan.migrationServices).toEqual(["kms-connector-db-migration"]);
     expect(plan.runtimeServices).toEqual([
       "kms-connector-gw-listener",
       "kms-connector-kms-worker",
@@ -78,7 +79,57 @@ describe("stack", () => {
       },
       "kms-connector",
     );
+    expect(plan.migrationServices).toEqual([]);
     expect(plan.runtimeServices).toEqual(["kms-connector-gw-listener"]);
+  });
+
+  test("upgrade plan supports relayer version locks without a local override", () => {
+    const plan = resolveUpgradePlan({ overrides: [], scenario: defaultScenario }, "relayer", { lockFile: true });
+    expect(plan.versionKeys).toEqual(["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"]);
+    expect(plan.migrationServices).toEqual(["relayer-db-migration"]);
+    expect(plan.runtimeServices).toEqual(["relayer"]);
+  });
+
+  test("upgrade plan links kms-core and connector for version-lock upgrades", () => {
+    const plan = resolveUpgradePlan({ overrides: [], scenario: defaultScenario }, "kms", { lockFile: true });
+    expect(plan.versionKeys).toEqual([
+      "CORE_VERSION",
+      "CONNECTOR_DB_MIGRATION_VERSION",
+      "CONNECTOR_GW_LISTENER_VERSION",
+      "CONNECTOR_KMS_WORKER_VERSION",
+      "CONNECTOR_TX_SENDER_VERSION",
+    ]);
+    expect(plan.migrationServices).toEqual(["kms-connector-db-migration"]);
+    expect(plan.runtimeServices).toEqual([
+      "kms-core",
+      "kms-connector-gw-listener",
+      "kms-connector-kms-worker",
+      "kms-connector-tx-sender",
+    ]);
+  });
+
+  test("upgrade plan supports listener-core version-lock upgrades", () => {
+    const plan = resolveUpgradePlan({ overrides: [], scenario: defaultScenario }, "listener-core", { lockFile: true });
+    expect(plan.versionKeys).toEqual(["LISTENER_CORE_VERSION"]);
+    expect(plan.migrationServices).toEqual([]);
+    expect(plan.runtimeServices).toEqual(["listener-redis", "listener-publisher-for-anvil"]);
+  });
+
+  test("version lock checks reject unrelated version keys", () => {
+    const base = presetBundle("latest-main", "abcdef0", "base.json");
+    const next = {
+      ...base,
+      env: {
+        ...base.env,
+        RELAYER_VERSION: "next-relayer",
+        HOST_VERSION: "next-host",
+      },
+    };
+    const changed = changedVersionKeys(base, next);
+    expect(changed).toEqual(["HOST_VERSION", "RELAYER_VERSION"]);
+    expect(() => assertVersionLockChanges("relayer", ["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"], changed)).toThrow(
+      "HOST_VERSION",
+    );
   });
 
   test("upgrade treats inherited multi-instance coprocessor build overrides as an active local runtime path", () => {
@@ -96,6 +147,24 @@ describe("stack", () => {
       },
       "coprocessor",
     );
+    expect(plan.runtimeServices).toContain("coprocessor-host-listener");
+    expect(plan.runtimeServices).toContain("coprocessor1-host-listener");
+  });
+
+  test("coprocessor release upgrade restarts inherited registry services", () => {
+    const plan = resolveUpgradePlan(
+      {
+        overrides: [{ group: "test-suite" }],
+        scenario: {
+          ...defaultScenario,
+          topology: { count: 2, threshold: 2 },
+          instances: [],
+        },
+      },
+      "coprocessor",
+      { lockFile: true },
+    );
+    expect(plan.migrationServices).toContain("coprocessor-db-migration");
     expect(plan.runtimeServices).toContain("coprocessor-host-listener");
     expect(plan.runtimeServices).toContain("coprocessor1-host-listener");
   });
