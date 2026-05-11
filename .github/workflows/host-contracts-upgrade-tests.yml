@@ -130,7 +130,7 @@ jobs:
 
       - name: Bootstrap host contracts missing from UPGRADE_FROM_TAG
         working-directory: current-fhevm/host-contracts
-        run: npx hardhat task:ensureMigrationProxyAddresses
+        run: npx hardhat task:deployEmptyProxiesProtocolConfigKMSGeneration
 
       - name: Run prepare-only upgrades
         working-directory: current-fhevm/host-contracts

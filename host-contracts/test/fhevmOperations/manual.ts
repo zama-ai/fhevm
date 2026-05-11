@@ -873,5 +873,4 @@ describe('FHEVM manual operations', function () {
     const res = await decryptBool(await this.contract.resEbool());
     expect(res).to.equal(true);
   });
-
 });

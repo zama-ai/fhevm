@@ -334,5 +334,4 @@ contract FHEVMManualTestSuite {
         FHE.allowThis(result);
         resEbool = result;
     }
-
 }
