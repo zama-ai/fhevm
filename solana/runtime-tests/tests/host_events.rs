@@ -480,6 +480,37 @@ fn confidential_transfer_rejects_wrong_fhe_authority() {
     assert!(try_send(&mut fixture.svm, &fixture.alice, ix).is_err());
 }
 
+#[test]
+fn confidential_transfer_rejects_wrong_amount_acl() {
+    let mut fixture = token_fixture();
+    let amount_handle = [9; 32];
+    let wrong_amount_handle = [8; 32];
+    authorize_input_compute_acl(&mut fixture, wrong_amount_handle);
+
+    let output = transfer_output_accounts(&fixture, 1);
+    let ix = transfer_ix_with_amount_acl(
+        &fixture,
+        fixture.alice_current_compute_acl,
+        fixture.bob_current_compute_acl,
+        input_compute_acl_address(&fixture, wrong_amount_handle),
+        output,
+        amount_handle,
+        [3; 32],
+        [4; 32],
+    );
+
+    assert!(try_send(&mut fixture.svm, &fixture.alice, ix).is_err());
+    assert_eq!(
+        token_account(&fixture.svm, fixture.alice_token).balance_handle,
+        fixture.alice_initial
+    );
+    assert_eq!(
+        token_account(&fixture.svm, fixture.bob_token).balance_handle,
+        fixture.bob_initial
+    );
+    assert_eq!(created_acl_count(&fixture.svm, output), 0);
+}
+
 struct TokenFixture {
     svm: LiteSVM,
     host_program_id: Pubkey,
@@ -851,6 +882,28 @@ fn transfer_ix_with_current_acl(
     new_from_handle: [u8; 32],
     new_to_handle: [u8; 32],
 ) -> Instruction {
+    transfer_ix_with_amount_acl(
+        fixture,
+        from_current_compute_acl,
+        to_current_compute_acl,
+        input_compute_acl_address(fixture, amount_handle),
+        output,
+        amount_handle,
+        new_from_handle,
+        new_to_handle,
+    )
+}
+
+fn transfer_ix_with_amount_acl(
+    fixture: &TokenFixture,
+    from_current_compute_acl: Pubkey,
+    to_current_compute_acl: Pubkey,
+    amount_compute_acl: Pubkey,
+    output: TransferOutputAccounts,
+    amount_handle: [u8; 32],
+    new_from_handle: [u8; 32],
+    new_to_handle: [u8; 32],
+) -> Instruction {
     Instruction {
         program_id: fixture.token_program_id,
         accounts: token::accounts::ConfidentialTransfer {
@@ -860,7 +913,7 @@ fn transfer_ix_with_current_acl(
             to_account: fixture.bob_token,
             from_current_compute_acl,
             to_current_compute_acl,
-            amount_compute_acl: input_compute_acl_address(fixture, amount_handle),
+            amount_compute_acl,
             from_owner_output_acl: output.alice_owner,
             from_compute_output_acl: output.alice_compute,
             to_owner_output_acl: output.bob_owner,
