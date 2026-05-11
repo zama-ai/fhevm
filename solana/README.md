@@ -33,6 +33,63 @@ coprocessor/fhevm-engine/tfhe-worker/src/tests/solana_poc.rs
   Worker-backed end-to-end tests with real small TFHE ciphertexts.
 ```
 
+## Global Flow
+
+One picture for the whole PoC:
+
+```text
+Solana transaction
+  |
+  v
+confidential-token program
+  app state:
+    ConfidentialMint
+    ConfidentialTokenAccount
+  |
+  | CPI
+  v
+zama-host program
+  protocol state:
+    ACL record PDAs
+  events:
+    trivial_encrypt
+    fhe_rand
+    fhe_binary_op
+    bind_acl_record
+  |
+  | Anchor self-CPI event bytes
+  v
+host-listener Solana adapter
+  converts:
+    SolanaHostEvent
+      -> existing TFHE event / ACL DB model
+  |
+  v
+coprocessor DB
+  stores:
+    computations
+    allowed handles
+  |
+  v
+tfhe-worker
+  computes real ciphertexts
+  |
+  v
+test decrypt / future KMS path
+  reads result handles
+  verifies ACL-shaped user decrypt model
+```
+
+Boundary rule of thumb:
+
+```text
+confidential-token decides app semantics.
+zama-host enforces FHEVM host semantics.
+host-listener normalizes Solana events into the existing coprocessor model.
+tfhe-worker computes ciphertexts from DB work items.
+KMS-style verification must combine signed authorization + handle entry + ACL state.
+```
+
 ## Vocabulary
 
 Use these words consistently when discussing this PoC:
