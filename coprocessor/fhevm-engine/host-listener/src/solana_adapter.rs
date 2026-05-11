@@ -38,6 +38,13 @@ pub struct SolanaTrivialEncryptEvent {
     pub result: Handle,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SolanaFheRandEvent {
+    pub seed: [u8; 16],
+    pub fhe_type: u8,
+    pub result: Handle,
+}
+
 #[derive(Clone, Debug)]
 pub struct SolanaAclAllowedEvent {
     pub handle: Handle,
@@ -49,6 +56,7 @@ pub struct SolanaAclAllowedEvent {
 pub enum SolanaHostEvent {
     FheBinaryOp(SolanaFheBinaryOpEvent),
     TrivialEncrypt(SolanaTrivialEncryptEvent),
+    FheRand(SolanaFheRandEvent),
     AclAllowed(SolanaAclAllowedEvent),
 }
 
@@ -91,6 +99,9 @@ pub fn decode_anchor_cpi_event(data: &[u8]) -> Option<SolanaHostEvent> {
         return decode_trivial_encrypt_event(payload)
             .map(SolanaHostEvent::TrivialEncrypt);
     }
+    if discriminator == event_discriminator("FheRandEvent") {
+        return decode_fhe_rand_event(payload).map(SolanaHostEvent::FheRand);
+    }
     if discriminator == event_discriminator("AclAllowedEvent") {
         return decode_acl_allowed_event(payload)
             .map(SolanaHostEvent::AclAllowed);
@@ -106,6 +117,9 @@ pub fn map_solana_event(event: SolanaHostEvent) -> SolanaMappedEvent {
         }
         SolanaHostEvent::TrivialEncrypt(event) => {
             SolanaMappedEvent::Tfhe(to_trivial_encrypt_event(event))
+        }
+        SolanaHostEvent::FheRand(event) => {
+            SolanaMappedEvent::Tfhe(to_fhe_rand_event(event))
         }
         SolanaHostEvent::AclAllowed(event) => {
             SolanaMappedEvent::AclAllowed(event)
@@ -232,6 +246,17 @@ fn decode_trivial_encrypt_event(
     })
 }
 
+fn decode_fhe_rand_event(payload: &[u8]) -> Option<SolanaFheRandEvent> {
+    let mut cursor = Cursor::new(payload);
+    read_version(&mut cursor)?;
+    let _subject = cursor.read_bytes()?;
+    Some(SolanaFheRandEvent {
+        seed: cursor.read_seed()?,
+        fhe_type: cursor.read_u8()?,
+        result: Handle::from(cursor.read_bytes()?),
+    })
+}
+
 fn decode_acl_allowed_event(payload: &[u8]) -> Option<SolanaAclAllowedEvent> {
     let mut cursor = Cursor::new(payload);
     read_version(&mut cursor)?;
@@ -286,6 +311,13 @@ impl<'a> Cursor<'a> {
 
     fn read_bytes(&mut self) -> Option<[u8; 32]> {
         let end = self.offset.checked_add(32)?;
+        let bytes = self.bytes.get(self.offset..end)?;
+        self.offset = end;
+        bytes.try_into().ok()
+    }
+
+    fn read_seed(&mut self) -> Option<[u8; 16]> {
+        let end = self.offset.checked_add(16)?;
         let bytes = self.bytes.get(self.offset..end)?;
         self.offset = end;
         bytes.try_into().ok()
@@ -361,6 +393,19 @@ pub fn to_trivial_encrypt_event(
                 result: event.result,
             },
         ),
+    }
+}
+
+pub fn to_fhe_rand_event(event: SolanaFheRandEvent) -> Log<TfheContractEvents> {
+    let caller = Address::ZERO;
+    Log {
+        address: caller,
+        data: TfheContractEvents::FheRand(TfheContract::FheRand {
+            caller,
+            randType: event.fhe_type,
+            seed: FixedBytes::<16>::from(event.seed),
+            result: event.result,
+        }),
     }
 }
 
