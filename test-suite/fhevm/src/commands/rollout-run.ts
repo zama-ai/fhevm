@@ -6,6 +6,8 @@ import { pathToFileURL } from "node:url";
 
 import { PreflightError } from "../errors";
 import { runContractTask, snapshotContractSources } from "../flow/contracts";
+import { waitForTestSuite } from "../flow/readiness";
+import { composeUp } from "../flow/runtime-compose";
 import {
   applyVersionLock as applyStackVersionLock,
   refreshDiscovery as refreshStackDiscovery,
@@ -75,6 +77,12 @@ const upOptions = (options: RolloutUpOptions): UpOptions => ({
   reset: false,
 });
 
+const refreshTestSuiteContainer = async () => {
+  console.log("[test-suite] recreate container to load current generated env");
+  await composeUp("test-suite", ["test-suite-e2e-debug"], { noDeps: true, forceRecreate: true });
+  await waitForTestSuite();
+};
+
 export const createRolloutContext = (receipt: RolloutReceipt = createRolloutReceipt()): RolloutRunContext => ({
   async applyVersionLock(label, options) {
     await applyStackVersionLock(label, options.lockFile, options.allowedVersionKeys, { overrides: options.overrides });
@@ -120,6 +128,11 @@ export const createRolloutContext = (receipt: RolloutReceipt = createRolloutRece
     return STATE_DIR;
   },
   async test(profile = "rollout-standard", options = {}) {
+    await refreshTestSuiteContainer();
+    await receipt.record("refresh-test-suite", "recreated test-suite container with current env", {
+      details: { profile },
+      docker: true,
+    });
     await runTest(profile, {
       network: options.network ?? "staging",
       verbose: false,
