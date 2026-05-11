@@ -1,0 +1,21 @@
+[toolchain]
+package_manager = "yarn"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+acl = "GorNJjGrLdmZmxLvVvdNdAcdomhfErpsqoCeY9F7ZBYH"
+mock-external = "GA6G4AuaU95aeu47j2tGkm8UzCqQus9ztPssnQt9PcJ9"
+mock-fhe = "ASRovdJLXRnaZ387RMY57QHYcqGVjvwrzHijQLEoYBat"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""
