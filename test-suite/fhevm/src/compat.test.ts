@@ -405,4 +405,22 @@ describe("compat", () => {
     expect(policy.composeEnv.RELAYER_IMAGE_REPOSITORY).toBe(MODERN_RELAYER_IMAGE_REPOSITORY);
     expect(policy.composeEnv.RELAYER_MIGRATE_IMAGE_REPOSITORY).toBe(MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY);
   });
+
+  test("routes v0.13 prerelease relayer images to the fhevm registry", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-main",
+        lockName: "v0.13.0-1.json",
+        env: {
+          RELAYER_VERSION: "v0.13.0-1",
+          RELAYER_MIGRATE_VERSION: "v0.13.0-1",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.composeEnv.RELAYER_IMAGE_REPOSITORY).toBe(MODERN_RELAYER_IMAGE_REPOSITORY);
+    expect(policy.composeEnv.RELAYER_MIGRATE_IMAGE_REPOSITORY).toBe(MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY);
+  });
 });
