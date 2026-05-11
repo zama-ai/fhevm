@@ -157,18 +157,24 @@ Run e2e tests using @zama-fhe/relayer-sdk:
 edit : `/Users/alex/src/me/zama-ai/fhevm/test-suite/e2e/test/instance.ts`
 set `const useFhevmSdk = false;`
 
+## Init
+
 ```
 cd <root>/test-suite/fhevm
 
 # install fhevm-cli (if needed)
 bun install
+```
 
+## Regular start
+
+```
 ./fhevm-cli up --help
 
 # Use local test suite
 ./fhevm-cli up --override test-suite
 
-# Rebuild test suite
+# Rebuild test suite (if needed)
 ./fhevm-cli upgrade test-suite
 
 # With a specific old relayer-sdk
@@ -180,10 +186,26 @@ RELAYER_SDK_VERSION=0.5.0-rc.1 ./fhevm-cli upgrade test-suite
 ./fhevm-cli test erc20
 
 # Run specific test
-./fhevm-cli test --grep BBB
-
-./fhevm-cli up --target latest-supported
+./fhevm-cli test --grep "test delegated user decrypt"
 ```
+
+## Test agains protocol v0.11
+
+```
+# Use local test suite and v0.11 profile
+./fhevm-cli up --override test-suite --lock-file profiles/v0.11.json
+
+# Rebuild test suite (if needed)
+./fhevm-cli upgrade test-suite
+
+# Run full test suite
+./fhevm-cli test standard
+
+# Run specific test
+./fhevm-cli test --grep "test delegated user decrypt"
+```
+
+## Profile
 
 ```json
 {
