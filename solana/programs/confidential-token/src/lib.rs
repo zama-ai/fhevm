@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self as spl_token, Mint as SplMint, Token, TokenAccount, TransferChecked};
 use zama_host::{
     self, cpi,
-    cpi::accounts::{AssertAclRecord, BindAclRecord, EmitProtocolEvent},
+    cpi::accounts::{BindAclRecord, EmitProtocolEvent, FheBinaryOp},
     program::ZamaHost,
     AclPermission, FheBinaryOpCode,
 };
@@ -115,19 +115,16 @@ pub mod confidential_token {
             5,
             amount_handle,
         )?;
-        assert_compute_acl(
-            &ctx.accounts.zama_program,
-            ctx.accounts.current_compute_acl.to_account_info(),
-            token_account_key,
-            token_account.balance_handle,
-            fhe_authority,
-        )?;
         emit_binary_op(
             &ctx.accounts.zama_event_authority,
             &ctx.accounts.zama_program,
+            ctx.accounts.current_compute_acl.to_account_info(),
+            token_account_key,
             FheBinaryOpCode::Add,
             fhe_authority,
             token_account.balance_handle,
+            ctx.accounts.amount_compute_acl.to_account_info(),
+            ctx.accounts.owner.key(),
             amount_handle,
             new_balance_handle,
         )?;
@@ -187,36 +184,29 @@ pub mod confidential_token {
         require_keys_eq!(from.mint, mint.key(), ConfidentialTokenError::MintMismatch);
         require_keys_eq!(to.mint, mint.key(), ConfidentialTokenError::MintMismatch);
 
-        assert_compute_acl(
-            &ctx.accounts.zama_program,
-            ctx.accounts.from_current_compute_acl.to_account_info(),
-            from_key,
-            from.balance_handle,
-            fhe_authority,
-        )?;
-        assert_compute_acl(
-            &ctx.accounts.zama_program,
-            ctx.accounts.to_current_compute_acl.to_account_info(),
-            to_key,
-            to.balance_handle,
-            fhe_authority,
-        )?;
-
         emit_binary_op(
             &ctx.accounts.zama_event_authority,
             &ctx.accounts.zama_program,
+            ctx.accounts.from_current_compute_acl.to_account_info(),
+            from_key,
             FheBinaryOpCode::Sub,
             fhe_authority,
             from.balance_handle,
+            ctx.accounts.amount_compute_acl.to_account_info(),
+            ctx.accounts.owner.key(),
             amount_handle,
             new_from_handle,
         )?;
         emit_binary_op(
             &ctx.accounts.zama_event_authority,
             &ctx.accounts.zama_program,
+            ctx.accounts.to_current_compute_acl.to_account_info(),
+            to_key,
             FheBinaryOpCode::Add,
             fhe_authority,
             to.balance_handle,
+            ctx.accounts.amount_compute_acl.to_account_info(),
+            ctx.accounts.owner.key(),
             amount_handle,
             new_to_handle,
         )?;
@@ -350,6 +340,7 @@ pub struct WrapUsdc<'info> {
     #[account(seeds = [b"vault-authority", mint.key().as_ref()], bump)]
     pub vault_authority: UncheckedAccount<'info>,
     pub current_compute_acl: Account<'info, zama_host::AclRecord>,
+    pub amount_compute_acl: Account<'info, zama_host::AclRecord>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
     pub owner_output_acl: UncheckedAccount<'info>,
@@ -374,6 +365,7 @@ pub struct ConfidentialTransfer<'info> {
     pub to_account: Account<'info, ConfidentialTokenAccount>,
     pub from_current_compute_acl: Account<'info, zama_host::AclRecord>,
     pub to_current_compute_acl: Account<'info, zama_host::AclRecord>,
+    pub amount_compute_acl: Account<'info, zama_host::AclRecord>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
     pub from_owner_output_acl: UncheckedAccount<'info>,
@@ -438,45 +430,34 @@ fn current_acl_nonce(token_account: &ConfidentialTokenAccount) -> Result<u64> {
         .ok_or(ConfidentialTokenError::AclNonceOverflow.into())
 }
 
-fn assert_compute_acl<'info>(
-    zama_program: &Program<'info, ZamaHost>,
-    acl_record: AccountInfo<'info>,
-    scope: Pubkey,
-    handle: [u8; 32],
-    subject: Pubkey,
-) -> Result<()> {
-    cpi::assert_acl_record(
-        CpiContext::new(
-            zama_program.to_account_info(),
-            AssertAclRecord { acl_record },
-        ),
-        scope,
-        handle,
-        subject,
-        AclPermission::Compute,
-    )
-}
-
 fn emit_binary_op<'info>(
     zama_event_authority: &UncheckedAccount<'info>,
     zama_program: &Program<'info, ZamaHost>,
+    lhs_acl_record: AccountInfo<'info>,
+    lhs_scope: Pubkey,
     op: FheBinaryOpCode,
     subject: Pubkey,
     lhs: [u8; 32],
+    rhs_acl_record: AccountInfo<'info>,
+    rhs_scope: Pubkey,
     rhs: [u8; 32],
     result: [u8; 32],
 ) -> Result<()> {
     cpi::fhe_binary_op(
         CpiContext::new(
             zama_program.to_account_info(),
-            EmitProtocolEvent {
+            FheBinaryOp {
+                lhs_acl_record,
+                rhs_acl_record,
                 event_authority: zama_event_authority.to_account_info(),
                 program: zama_program.to_account_info(),
             },
         ),
         op,
         subject,
+        lhs_scope,
         lhs,
+        rhs_scope,
         rhs,
         false,
         result,

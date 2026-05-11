@@ -197,11 +197,13 @@ fn bind_acl_record_rejects_scope_without_matching_authority() {
 #[test]
 fn confidential_transfer_rotates_balance_handles_and_binds_output_acl() {
     let mut fixture = token_fixture();
+    let amount_handle = [9; 32];
+    authorize_input_compute_acl(&mut fixture, amount_handle);
     let new_alice = [3; 32];
     let new_bob = [4; 32];
     let output = transfer_output_accounts(&fixture, 1);
-    let transfer_ix = transfer_ix(&fixture, output, [9; 32], new_alice, new_bob);
-    assert_eq!(transfer_ix.accounts.len(), 13);
+    let transfer_ix = transfer_ix(&fixture, output, amount_handle, new_alice, new_bob);
+    assert_eq!(transfer_ix.accounts.len(), 14);
     let (meta, account_keys) = send_with_meta(&mut fixture.svm, &fixture.alice, transfer_ix);
     let events = binary_op_events(&meta, &account_keys, fixture.host_program_id);
     assert_eq!(events.len(), 2);
@@ -268,9 +270,11 @@ fn confidential_transfer_rotates_balance_handles_and_binds_output_acl() {
 #[test]
 fn user_decrypt_model_uses_scope_as_app_context() {
     let mut fixture = token_fixture();
+    let amount_handle = [9; 32];
+    authorize_input_compute_acl(&mut fixture, amount_handle);
     let new_alice = [3; 32];
     let output = transfer_output_accounts(&fixture, 1);
-    let transfer_ix = transfer_ix(&fixture, output, [9; 32], new_alice, [4; 32]);
+    let transfer_ix = transfer_ix(&fixture, output, amount_handle, new_alice, [4; 32]);
     send(&mut fixture.svm, &fixture.alice, transfer_ix);
 
     let request =
@@ -313,6 +317,7 @@ fn wrap_usdc_escrows_spl_tokens_and_rotates_confidential_balance() {
     let mut fixture = token_fixture();
     let amount = 100_000_000;
     let amount_handle = [9; 32];
+    authorize_input_compute_acl(&mut fixture, amount_handle);
     let new_alice = [5; 32];
     let output = wrap_output_accounts(&fixture, 1);
     let ix = wrap_usdc_ix(&fixture, output, amount, amount_handle, new_alice);
@@ -370,6 +375,7 @@ fn wrap_usdc_escrows_spl_tokens_and_rotates_confidential_balance() {
 #[test]
 fn confidential_transfer_budget_snapshot() {
     let mut fixture = token_fixture();
+    authorize_input_compute_acl(&mut fixture, [9; 32]);
     let output = transfer_output_accounts(&fixture, 1);
     let transfer_ix = transfer_ix(&fixture, output, [9; 32], [3; 32], [4; 32]);
     let top_level_metas = transfer_ix.accounts.len();
@@ -389,11 +395,11 @@ fn confidential_transfer_budget_snapshot() {
     let host_events = binary_op_events(&meta, &account_keys, fixture.host_program_id).len();
     let max_cpi_depth = max_cpi_depth(&meta);
 
-    assert_eq!(top_level_metas, 13);
-    assert_eq!(account_keys.len(), 14);
+    assert_eq!(top_level_metas, 14);
+    assert_eq!(account_keys.len(), 15);
     assert_eq!(writable_metas, 7);
     assert_eq!(signer_metas, 1);
-    assert_eq!(inner_instructions, 18);
+    assert_eq!(inner_instructions, 16);
     assert_eq!(host_events, 2);
     assert_eq!(created_acl_count(&fixture.svm, output), 4);
     assert!(
@@ -407,10 +413,12 @@ fn confidential_transfer_budget_snapshot() {
 #[test]
 fn confidential_transfer_rejects_stale_current_acl() {
     let mut fixture = token_fixture();
+    authorize_input_compute_acl(&mut fixture, [9; 32]);
     let first_output = transfer_output_accounts(&fixture, 1);
     let first_ix = transfer_ix(&fixture, first_output, [9; 32], [3; 32], [4; 32]);
     send(&mut fixture.svm, &fixture.alice, first_ix);
 
+    authorize_input_compute_acl(&mut fixture, [8; 32]);
     let stale_ix = transfer_ix(
         &fixture,
         transfer_output_accounts(&fixture, 2),
@@ -424,6 +432,7 @@ fn confidential_transfer_rejects_stale_current_acl() {
 #[test]
 fn confidential_transfer_rejects_wrong_acl_scope() {
     let mut fixture = token_fixture();
+    authorize_input_compute_acl(&mut fixture, [9; 32]);
     let ix = transfer_ix_with_current_acl(
         &fixture,
         fixture.bob_current_compute_acl,
@@ -439,6 +448,7 @@ fn confidential_transfer_rejects_wrong_acl_scope() {
 #[test]
 fn confidential_transfer_rejects_wrong_fhe_authority() {
     let mut fixture = token_fixture();
+    authorize_input_compute_acl(&mut fixture, [9; 32]);
     let wrong_authority = Pubkey::new_unique();
     let wrong_authority_acl = acl_record_address(
         fixture.host_program_id,
@@ -732,6 +742,15 @@ fn acl_record_address(
     .0
 }
 
+fn input_compute_acl_address(fixture: &TokenFixture, handle: [u8; 32]) -> Pubkey {
+    acl_record_address(
+        fixture.host_program_id,
+        fixture.alice.pubkey(),
+        fixture.fhe_authority,
+        u64::from(handle[0]),
+    )
+}
+
 fn transfer_output_accounts(fixture: &TokenFixture, acl_nonce: u64) -> TransferOutputAccounts {
     TransferOutputAccounts {
         alice_owner: acl_record_address(
@@ -759,6 +778,31 @@ fn transfer_output_accounts(fixture: &TokenFixture, acl_nonce: u64) -> TransferO
             acl_nonce,
         ),
     }
+}
+
+fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
+    let acl_record = input_compute_acl_address(fixture, handle);
+    let ix = Instruction {
+        program_id: fixture.host_program_id,
+        accounts: host::accounts::BindAclRecord {
+            payer: fixture.alice.pubkey(),
+            scope_authority: fixture.alice.pubkey(),
+            acl_record,
+            system_program: system_program::ID,
+            event_authority: event_authority(fixture.host_program_id),
+            program: fixture.host_program_id,
+        }
+        .to_account_metas(None),
+        data: host::instruction::BindAclRecord {
+            acl_nonce: u64::from(handle[0]),
+            scope: fixture.alice.pubkey(),
+            handle,
+            subject: fixture.fhe_authority,
+            permission: AclPermission::Compute,
+        }
+        .data(),
+    };
+    send(&mut fixture.svm, &fixture.alice, ix);
 }
 
 fn wrap_output_accounts(fixture: &TokenFixture, acl_nonce: u64) -> WrapOutputAccounts {
@@ -814,6 +858,7 @@ fn transfer_ix_with_current_acl(
             to_account: fixture.bob_token,
             from_current_compute_acl,
             to_current_compute_acl,
+            amount_compute_acl: input_compute_acl_address(fixture, amount_handle),
             from_owner_output_acl: output.alice_owner,
             from_compute_output_acl: output.alice_compute,
             to_owner_output_acl: output.bob_owner,
@@ -853,6 +898,7 @@ fn wrap_usdc_ix(
                 fixture.mint.pubkey(),
             ),
             current_compute_acl: fixture.alice_current_compute_acl,
+            amount_compute_acl: input_compute_acl_address(fixture, amount_handle),
             owner_output_acl: output.owner,
             compute_output_acl: output.compute,
             zama_event_authority: event_authority(fixture.host_program_id),
