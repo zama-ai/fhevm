@@ -55,14 +55,15 @@ Alice token account: hA0, next_acl_nonce = 1
 Bob token account:   hB0, next_acl_nonce = 1
 
 transfer(amount = hX)
-  CPI -> zama-host: checks compute ACL for hA0 and hB0
-  CPI -> zama-host: emits hA1 = FHE.sub(hA0, hX)
-  CPI -> zama-host: emits hB1 = FHE.add(hB0, hX)
+  CPI -> zama-host: checks compute ACL for hA0 and hX, then emits hA1 = FHE.sub(hA0, hX)
+  CPI -> zama-host: checks compute ACL for hB0 and hX, then emits hB1 = FHE.add(hB0, hX)
   stores hA1 and hB1 as the new balance handles
   CPI -> zama-host: binds owner decrypt + FHE compute ACL records for hA1 and hB1
 ```
 
 Here `scope_pubkey` is the token account whose balance handle is being rotated. This keeps app/FHE-authority ACL records from sharing one global nonce lane.
+
+The compute ACL check lives inside `zama-host::fhe_binary_op`, matching the EVM boundary where `FHEVMExecutor` validates ACL before an operation is emitted. `confidential-token` does not pre-check ACL as app logic; it supplies the operand ACL accounts and the host program rejects the operation if either operand is not allowed for the FHE authority.
 
 The LiteSVM transfer test loads both programs, sends the transfer to `confidential-token`, decodes the actual `zama-host` Anchor self-CPI event bytes, and asserts the emitted FHE operations:
 
@@ -80,27 +81,28 @@ vault owner = PDA("vault-authority", ConfidentialMint)
 
 then the confidential balance is updated:
   CPI -> zama-host: emits hDeposit = trivial_encrypt(amount)
-  CPI -> zama-host: checks compute ACL for hA0
-  CPI -> zama-host: emits hA1 = FHE.add(hA0, hDeposit)
+  CPI -> zama-host: checks compute ACL for hA0 and hDeposit, then emits hA1 = FHE.add(hA0, hDeposit)
   stores hA1 as Alice's new cUSDC balance handle
   CPI -> zama-host: binds owner decrypt + FHE compute ACL records for hA1
 ```
 
 This deliberately models a wrapper first, not a Token-2022 extension. The deposit amount is public in this slice because it uses `trivial_encrypt(amount)`; the later encrypted-input path should replace that step with `input_verified(...)` and the real ZKPoK/input verifier boundary.
 
+Temporary PoC boundary: input/trivial amount handles are pre-bound under Alice's wallet scope with `permission = Compute` so `fhe_binary_op` can enforce both operands today. The real design still needs the Solana equivalent of transient input authorization from the input verifier path.
+
 Current transfer budget snapshot:
 
 | Metric | Current |
 | --- | ---: |
-| Instruction account metas | 13 |
-| Compiled transaction account keys | 14 |
+| Instruction account metas | 14 |
+| Compiled transaction account keys | 15 |
 | Writable instruction metas | 7 |
 | Signer instruction metas | 1 |
-| Inner instructions | 18 |
+| Inner instructions | 16 |
 | Max CPI depth | 3 |
 | Host compute events | 2 |
 | Output ACL accounts created | 4 |
-| Compute units consumed in LiteSVM | 122,431 |
+| Compute units consumed in LiteSVM | 126,349 |
 
 Open optimization question: event emission mode.
 

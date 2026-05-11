@@ -68,14 +68,33 @@ pub mod zama_host {
     }
 
     pub fn fhe_binary_op(
-        ctx: Context<EmitProtocolEvent>,
+        ctx: Context<FheBinaryOp>,
         op: FheBinaryOpCode,
         subject: Pubkey,
+        lhs_scope: Pubkey,
         lhs: [u8; 32],
+        rhs_scope: Pubkey,
         rhs: [u8; 32],
         scalar: bool,
         result: [u8; 32],
     ) -> Result<()> {
+        assert_record(
+            &ctx.accounts.lhs_acl_record,
+            lhs_scope,
+            lhs,
+            subject,
+            AclPermission::Compute,
+        )?;
+        if !scalar {
+            assert_record(
+                &ctx.accounts.rhs_acl_record,
+                rhs_scope,
+                rhs,
+                subject,
+                AclPermission::Compute,
+            )?;
+        }
+
         emit_cpi!(FheBinaryOpEvent {
             version: EVENT_VERSION,
             op,
@@ -169,6 +188,13 @@ pub struct BindAclRecord<'info> {
 #[derive(Accounts)]
 pub struct AssertAclRecord<'info> {
     pub acl_record: Account<'info, AclRecord>,
+}
+
+#[derive(Accounts)]
+#[event_cpi]
+pub struct FheBinaryOp<'info> {
+    pub lhs_acl_record: Account<'info, AclRecord>,
+    pub rhs_acl_record: Account<'info, AclRecord>,
 }
 
 #[account]

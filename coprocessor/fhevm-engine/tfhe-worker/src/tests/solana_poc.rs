@@ -58,6 +58,7 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
     )
     .await?;
 
+    authorize_input_compute_acl(&mut fixture, amount_handle);
     let output = transfer_output_accounts(&fixture, 1);
     let transfer_ix = transfer_ix(
         &fixture,
@@ -194,6 +195,7 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
     insert_host_events(&harness.listener_db, initial_events, signature, 1).await?;
     wait_until_computed(&harness.app).await?;
 
+    authorize_input_compute_acl(&mut fixture, amount_handle);
     let output = transfer_output_accounts(&fixture, 1);
     let transfer_ix = transfer_ix(
         &fixture,
@@ -295,6 +297,7 @@ async fn solana_fhe_rand_creates_ciphertext_and_decrypts() -> Result<(), Box<dyn
 fn solana_user_decrypt_acl_invariants_match_evm_semantics() {
     let mut fixture = token_fixture();
     let amount_handle = typed_fast_handle(0x39);
+    authorize_input_compute_acl(&mut fixture, amount_handle);
     let new_alice_handle = typed_fast_handle(0x3a);
     let new_bob_handle = typed_fast_handle(0x3b);
     let output = transfer_output_accounts(&fixture, 1);
@@ -658,6 +661,43 @@ fn transfer_output_accounts(fixture: &TokenFixture, acl_nonce: u64) -> TransferO
     }
 }
 
+fn input_compute_acl_address(fixture: &TokenFixture, handle: [u8; 32]) -> Pubkey {
+    acl_record_address(
+        fixture.host_program_id,
+        fixture.alice.pubkey(),
+        fixture.fhe_authority,
+        u64::from(handle[0]),
+    )
+}
+
+fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
+    let acl_record = input_compute_acl_address(fixture, handle);
+    send(
+        &mut fixture.svm,
+        &fixture.alice,
+        Instruction {
+            program_id: fixture.host_program_id,
+            accounts: host::accounts::BindAclRecord {
+                payer: fixture.alice.pubkey(),
+                scope_authority: fixture.alice.pubkey(),
+                acl_record,
+                system_program: system_program::ID,
+                event_authority: event_authority(fixture.host_program_id),
+                program: fixture.host_program_id,
+            }
+            .to_account_metas(None),
+            data: host::instruction::BindAclRecord {
+                acl_nonce: u64::from(handle[0]),
+                scope: fixture.alice.pubkey(),
+                handle,
+                subject: fixture.fhe_authority,
+                permission: AclPermission::Compute,
+            }
+            .data(),
+        },
+    );
+}
+
 fn transfer_ix(
     fixture: &TokenFixture,
     output: TransferOutputAccounts,
@@ -674,6 +714,7 @@ fn transfer_ix(
             to_account: fixture.bob_token,
             from_current_compute_acl: fixture.alice_current_compute_acl,
             to_current_compute_acl: fixture.bob_current_compute_acl,
+            amount_compute_acl: input_compute_acl_address(fixture, amount_handle),
             from_owner_output_acl: output.alice_owner,
             from_compute_output_acl: output.alice_compute,
             to_owner_output_acl: output.bob_owner,
