@@ -113,7 +113,8 @@ export type FheOperatorName =
   | 'fheRand'
   | 'fheRandBounded'
   | 'fheSum'
-  | 'fheIsIn';
+  | 'fheIsIn'
+  | 'fheMulDiv';
 
 export type NBucketedCost = {
   le10: number;

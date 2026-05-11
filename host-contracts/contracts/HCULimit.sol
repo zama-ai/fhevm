@@ -1597,6 +1597,56 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
+     * @notice Check the homomorphic complexity units limit for FheMulDiv.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param lhs The left-hand side operand.
+     * @param rhs The right-hand side operand.
+     * @param result Result.
+     * @param caller Original dapp caller address from FHEVMExecutor.
+     */
+    function checkHCUForFheMulDiv(
+        FheType resultType,
+        bytes1 scalarByte,
+        bytes32 lhs,
+        bytes32 rhs,
+        bytes32 result,
+        address caller
+    ) external virtual {
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
+        uint256 opHCU;
+        if (scalarByte == 0x01) {
+            if (resultType == FheType.Uint8) {
+                opHCU = 495000;
+            } else if (resultType == FheType.Uint16) {
+                opHCU = 703000;
+            } else if (resultType == FheType.Uint32) {
+                opHCU = 1080000;
+            } else if (resultType == FheType.Uint64) {
+                opHCU = 1921000;
+            } else {
+                revert UnsupportedOperation();
+            }
+
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
+        } else {
+            if (resultType == FheType.Uint8) {
+                opHCU = 524000;
+            } else if (resultType == FheType.Uint16) {
+                opHCU = 766000;
+            } else if (resultType == FheType.Uint32) {
+                opHCU = 1311000;
+            } else if (resultType == FheType.Uint64) {
+                opHCU = 2911000;
+            } else {
+                revert UnsupportedOperation();
+            }
+
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, lhs, rhs, result);
+        }
+    }
+
+    /**
      * @notice Sets the block-level HCU limit for non-whitelisted callers.
      * @param hcuPerBlock New block-level cap.
      */

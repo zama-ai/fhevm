@@ -11,8 +11,8 @@ use tfhe::{
         ciphertext::IntegerProvenCompactCiphertextListConformanceParams, U256,
     },
     prelude::{
-        CastInto, CiphertextList, FheEq, FheMax, FheMin, FheOrd, FheTryTrivialEncrypt, IfThenElse,
-        RotateLeft, RotateRight,
+        CastInto, CiphertextList, FheEq, FheMax, FheMin, FheOrd, FheTryTrivialEncrypt,
+        FusedMulScalarDiv, FusedScalarMulScalarDiv, IfThenElse, RotateLeft, RotateRight,
     },
     zk::CompactPkeCrs,
     CompactCiphertextListExpander, FheBool, FheUint1024, FheUint128, FheUint16, FheUint160,
@@ -804,6 +804,85 @@ pub fn check_fhe_operand_types(
 
                     Ok(())
                 }
+                SupportedFheOperations::FheMulDiv => {
+                    // Exactly 3 operands: [lhs(encrypted), rhs(encrypted or scalar), divisor(scalar)]
+                    let expected_operands = 3;
+                    if input_handles.len() != expected_operands {
+                        return Err(FhevmError::UnexpectedOperandCountForFheOperation {
+                            fhe_operation,
+                            fhe_operation_name: format!("{:?}", fhe_op),
+                            expected_operands,
+                            got_operands: input_handles.len(),
+                        });
+                    }
+                    // lhs must not be scalar
+                    if is_input_handle_scalar[0] {
+                        return Err(FhevmError::FheOperationOnlySecondOperandCanBeScalar {
+                            scalar_input_index: 0,
+                            only_allowed_scalar_input_index: 1,
+                        });
+                    }
+                    // divisor (idx=2) must be scalar
+                    if !is_input_handle_scalar[2] {
+                        return Err(FhevmError::UnsupportedFheTypes {
+                            fhe_operation: format!(
+                                "{:?}: divisor operand (index 2) must be a scalar",
+                                fhe_op
+                            ),
+                            input_types: vec![],
+                        });
+                    }
+                    // lhs must be a supported width: Uint8 (2), Uint16 (3), Uint32 (4), Uint64 (5).
+                    let lhs_type = get_ct_type(&input_handles[0])?;
+                    let lhs_width_bytes: usize = match lhs_type {
+                        2 => 1,
+                        3 => 2,
+                        4 => 4,
+                        5 => 8,
+                        _ => {
+                            return Err(FhevmError::UnsupportedFheTypes {
+                                fhe_operation: format!(
+                                    "{:?}: type {lhs_type} is not supported for FheMulDiv",
+                                    fhe_op
+                                ),
+                                input_types: vec![],
+                            })
+                        }
+                    };
+                    // When rhs is encrypted (not scalar) it must share the lhs type.
+                    if !is_input_handle_scalar[1] {
+                        let rhs_type = get_ct_type(&input_handles[1])?;
+                        if rhs_type != lhs_type {
+                            return Err(FhevmError::FheOperationDoesntHaveUniformTypesAsInput {
+                                fhe_operation,
+                                fhe_operation_name: format!("{:?}", fhe_op),
+                                operand_types: vec![lhs_type, rhs_type],
+                            });
+                        }
+                    }
+                    // Narrow the divisor to operand width (mirrors Solidity) so e.g.
+                    // `0x...0100` for a Uint8 op is rejected instead of crashing tfhe-rs.
+                    let start = input_handles[2]
+                        .len()
+                        .checked_sub(lhs_width_bytes)
+                        .ok_or_else(|| FhevmError::UnsupportedFheTypes {
+                            fhe_operation: format!(
+                                "{:?}: divisor operand is shorter than operand width",
+                                fhe_op
+                            ),
+                            input_types: vec![],
+                        })?;
+                    let divisor_low = &input_handles[2][start..];
+                    if divisor_low.iter().all(|b| *b == 0) {
+                        return Err(FhevmError::FheOperationScalarDivisionByZero {
+                            lhs_handle: format!("0x{}", hex::encode(&input_handles[0])),
+                            rhs_value: format!("0x{}", hex::encode(&input_handles[2])),
+                            fhe_operation,
+                            fhe_operation_name: format!("{:?}", fhe_op),
+                        });
+                    }
+                    Ok(())
+                }
                 other => Err(FhevmError::UnsupportedFheTypes {
                     fhe_operation: format!("Unexpected op_type branch: {:?}", other),
                     input_types: vec![],
@@ -831,6 +910,8 @@ pub fn does_fhe_operation_support_scalar(op: &SupportedFheOperations) -> bool {
             match op {
                 // second operand determines which type to cast to
                 SupportedFheOperations::FheCast => true,
+                // rhs may be encrypted or a scalar; divisor is always scalar
+                SupportedFheOperations::FheMulDiv => true,
                 _ => false,
             }
         }
@@ -3296,6 +3377,72 @@ pub fn perform_fhe_operation_impl(
                     })
                     .map(|refs| SupportedFheCiphertexts::FheUint128(refs.into_iter().sum()))
                 }
+                _ => Err(FhevmError::UnsupportedFheTypes {
+                    fhe_operation: format!("{:?}", fhe_operation),
+                    input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                }),
+            }
+        }
+        SupportedFheOperations::FheMulDiv => {
+            assert_eq!(input_operands.len(), 3);
+            // operands: [lhs(encrypted), rhs(encrypted or Scalar), divisor(Scalar)]
+            match (&input_operands[0], &input_operands[1], &input_operands[2]) {
+                (
+                    SupportedFheCiphertexts::FheUint8(a),
+                    SupportedFheCiphertexts::FheUint8(b),
+                    SupportedFheCiphertexts::Scalar(d),
+                ) => Ok(SupportedFheCiphertexts::FheUint8(
+                    a.fused_mul_scalar_div(b, to_be_u8_bit(d)),
+                )),
+                (
+                    SupportedFheCiphertexts::FheUint16(a),
+                    SupportedFheCiphertexts::FheUint16(b),
+                    SupportedFheCiphertexts::Scalar(d),
+                ) => Ok(SupportedFheCiphertexts::FheUint16(
+                    a.fused_mul_scalar_div(b, to_be_u16_bit(d)),
+                )),
+                (
+                    SupportedFheCiphertexts::FheUint32(a),
+                    SupportedFheCiphertexts::FheUint32(b),
+                    SupportedFheCiphertexts::Scalar(d),
+                ) => Ok(SupportedFheCiphertexts::FheUint32(
+                    a.fused_mul_scalar_div(b, to_be_u32_bit(d)),
+                )),
+                (
+                    SupportedFheCiphertexts::FheUint64(a),
+                    SupportedFheCiphertexts::FheUint64(b),
+                    SupportedFheCiphertexts::Scalar(d),
+                ) => Ok(SupportedFheCiphertexts::FheUint64(
+                    a.fused_mul_scalar_div(b, to_be_u64_bit(d)),
+                )),
+                (
+                    SupportedFheCiphertexts::FheUint8(a),
+                    SupportedFheCiphertexts::Scalar(b),
+                    SupportedFheCiphertexts::Scalar(d),
+                ) => Ok(SupportedFheCiphertexts::FheUint8(
+                    a.fused_scalar_mul_scalar_div(to_be_u8_bit(b), to_be_u8_bit(d)),
+                )),
+                (
+                    SupportedFheCiphertexts::FheUint16(a),
+                    SupportedFheCiphertexts::Scalar(b),
+                    SupportedFheCiphertexts::Scalar(d),
+                ) => Ok(SupportedFheCiphertexts::FheUint16(
+                    a.fused_scalar_mul_scalar_div(to_be_u16_bit(b), to_be_u16_bit(d)),
+                )),
+                (
+                    SupportedFheCiphertexts::FheUint32(a),
+                    SupportedFheCiphertexts::Scalar(b),
+                    SupportedFheCiphertexts::Scalar(d),
+                ) => Ok(SupportedFheCiphertexts::FheUint32(
+                    a.fused_scalar_mul_scalar_div(to_be_u32_bit(b), to_be_u32_bit(d)),
+                )),
+                (
+                    SupportedFheCiphertexts::FheUint64(a),
+                    SupportedFheCiphertexts::Scalar(b),
+                    SupportedFheCiphertexts::Scalar(d),
+                ) => Ok(SupportedFheCiphertexts::FheUint64(
+                    a.fused_scalar_mul_scalar_div(to_be_u64_bit(b), to_be_u64_bit(d)),
+                )),
                 _ => Err(FhevmError::UnsupportedFheTypes {
                     fhe_operation: format!("{:?}", fhe_operation),
                     input_types: input_operands.iter().map(|i| i.type_name()).collect(),
