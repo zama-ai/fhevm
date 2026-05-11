@@ -3,6 +3,11 @@ name: kms-connector-docker-build
 on:
   workflow_call:
     inputs:
+      path-filter-base-commit:
+        description: "Optional commit SHA used only as the docker change-detection diff base"
+        type: string
+        default: ""
+        required: false
       is_workflow_call:
         description: "Indicates if the workflow is called from another workflow"
         type: boolean
@@ -80,6 +85,7 @@ jobs:
     with:
       caller-workflow-event-name: ${{ github.event_name }}
       caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
       docker-image: fhevm/kms-connector/db-migration
       filters: |
         db-migration:
@@ -94,6 +100,7 @@ jobs:
     with:
       caller-workflow-event-name: ${{ github.event_name }}
       caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
       docker-image: fhevm/kms-connector/gw-listener
       filters: |
         gw-listener:
@@ -111,6 +118,7 @@ jobs:
     with:
       caller-workflow-event-name: ${{ github.event_name }}
       caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
       docker-image: fhevm/kms-connector/kms-worker
       filters: |
         kms-worker:
@@ -129,6 +137,7 @@ jobs:
     with:
       caller-workflow-event-name: ${{ github.event_name }}
       caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
       docker-image: fhevm/kms-connector/tx-sender
       filters: |
         tx-sender:
