@@ -64,7 +64,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_READ_TOKEN }} # zizmor: ignore[secrets-outside-env] Same-repository/manual rollout needs this read token for private images.
+          password: ${{ secrets.GHCR_READ_TOKEN || github.token }} # zizmor: ignore[secrets-outside-env] Same-repository/manual rollout needs this read token for private images.
 
       - name: Login to Chainguard Registry
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
@@ -97,7 +97,7 @@ jobs:
           if [ ! -f "$runbook" ]; then
             runbook="${GITHUB_WORKSPACE}/${ROLLOUT_RUNBOOK}"
           fi
-          ./fhevm-cli rollout --run "$runbook"
+          ./fhevm-cli rollout run "$runbook"
 
       - name: Show rollout receipt
         working-directory: test-suite/fhevm
@@ -118,16 +118,20 @@ jobs:
             local group="$1"
             local container="$2"
             local filter="${3:-}"
+            local output
             echo "::group::${group}"
             if ! docker ps -a --format '{{.Names}}' | grep -Fxq "$container"; then
               echo "container not present: ${container}"
               echo "::endgroup::"
               return
             fi
-            if [ -n "$filter" ]; then
-              docker logs --tail 120 "${container}" 2>&1 | grep -v "$filter" || true
+            if ! output="$(docker logs --tail 120 "${container}" 2>&1)"; then
+              echo "[warn] docker logs failed for ${container}"
+              [ -n "$output" ] && printf '%s\n' "$output"
+            elif [ -n "$filter" ]; then
+              printf '%s\n' "$output" | grep -v "$filter" || true
             else
-              docker logs --tail 120 "${container}" 2>&1 || true
+              printf '%s\n' "$output"
             fi
             echo "::endgroup::"
           }

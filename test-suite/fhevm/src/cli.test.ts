@@ -1,14 +1,8 @@
-import path from "node:path";
-import { mkdir, writeFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
-import {
-  DEFAULT_GATEWAY_RPC_PORT,
-  DEFAULT_HOST_RPC_PORT,
-  MINIO_PORT,
-  ROLLOUT_STANDARD_TEST_PROFILES,
-  STANDARD_TEST_PROFILES,
-  TEST_SUITE_CONTAINER,
-} from "./layout";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+
+import { resolveLogsFollow } from "./cli";
 import {
   buildTestContainerArgs,
   dbRevertDeleteExpectations,
@@ -18,9 +12,16 @@ import {
   waitForKeyBootstrap,
 } from "./commands/test";
 import { resumeOptionConflicts, shouldShowResumeHint } from "./flow/up-flow";
-import { resolveLogsFollow } from "./cli";
-import { withTempStateDir } from "./test-state";
+import {
+  DEFAULT_GATEWAY_RPC_PORT,
+  DEFAULT_HOST_RPC_PORT,
+  MINIO_PORT,
+  ROLLOUT_STANDARD_TEST_PROFILES,
+  STANDARD_TEST_PROFILES,
+  TEST_SUITE_CONTAINER,
+} from "./layout";
 import { testDefaultScenario } from "./test-fixtures";
+import { withTempStateDir } from "./test-state";
 import type { State } from "./types";
 
 const CLI_DIR = path.resolve(import.meta.dir, "..");
@@ -76,8 +77,13 @@ const bootstrappedState = (target: State["target"] = "latest-main"): State => ({
     gateway: {} as NonNullable<State["discovery"]>["gateway"],
     hosts: { host: {} as NonNullable<State["discovery"]>["hosts"][string] },
     endpoints: {
-      gateway: { http: `http://127.0.0.1:${DEFAULT_GATEWAY_RPC_PORT}`, ws: `ws://127.0.0.1:${DEFAULT_GATEWAY_RPC_PORT}` },
-      hosts: { host: { http: `http://127.0.0.1:${DEFAULT_HOST_RPC_PORT}`, ws: `ws://127.0.0.1:${DEFAULT_HOST_RPC_PORT}` } },
+      gateway: {
+        http: `http://127.0.0.1:${DEFAULT_GATEWAY_RPC_PORT}`,
+        ws: `ws://127.0.0.1:${DEFAULT_GATEWAY_RPC_PORT}`,
+      },
+      hosts: {
+        host: { http: `http://127.0.0.1:${DEFAULT_HOST_RPC_PORT}`, ws: `ws://127.0.0.1:${DEFAULT_HOST_RPC_PORT}` },
+      },
       minioExternal: `http://127.0.0.1:${MINIO_PORT}`,
       minioInternal: `http://minio:${MINIO_PORT}`,
     },
@@ -126,12 +132,13 @@ describe("cli", () => {
     expect(output).toContain("--lock-file");
   });
 
-  test("prints rollout help with runbook support", async () => {
+  test("prints rollout help with run and receipt subcommands", async () => {
     const result = await execCli(["rollout", "--help"]);
     const output = normalizeCliOutput(result.stdout);
     expect(result.code).toBe(0);
     expect(output).toContain("fhevm-cli rollout");
-    expect(output).toContain("--run");
+    expect(output).toContain("run");
+    expect(output).toContain("receipt");
   });
 
   test("lists bundled test profiles", async () => {
@@ -215,7 +222,9 @@ describe("cli", () => {
   test("lists valid overrides when override parsing fails", async () => {
     const result = await execCli(["up", "--override", "bogus"]);
     expect(result.code).toBe(1);
-    expect(result.stderr).toContain("Valid: all, coprocessor, kms-connector, relayer, gateway-contracts, host-contracts, test-suite");
+    expect(result.stderr).toContain(
+      "Valid: all, coprocessor, kms-connector, relayer, gateway-contracts, host-contracts, test-suite",
+    );
   });
 
   test("prints logs help with an optional service argument", async () => {
@@ -285,7 +294,14 @@ describe("cli", () => {
           ciphertexts128: 2,
         },
       ),
-    ).toEqual(["computationsDone", "computationsTotal", "allowedHandles", "pbsComputations", "ciphertextDigest", "ciphertexts"]);
+    ).toEqual([
+      "computationsDone",
+      "computationsTotal",
+      "allowedHandles",
+      "pbsComputations",
+      "ciphertextDigest",
+      "ciphertexts",
+    ]);
   });
 
   test("resume rejects any explicit target override", () => {

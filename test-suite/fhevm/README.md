@@ -195,8 +195,10 @@ The lock file replaces only the version resolution step — preflight, boot pipe
 Release rollouts are executable TypeScript runbooks under `rollouts/`. A runbook boots one baseline stack, performs each upgrade step in order, preserves chain/database/container state, and runs rollout-safe e2e coverage after each step:
 
 ```sh
-./fhevm-cli rollout --run ./rollouts/v0.12-to-v0.13/run.ts
+./fhevm-cli rollout run ./rollouts/v0.12-to-v0.13/run.ts
 ```
+
+Use `./fhevm-cli rollout receipt` to print the markdown receipt of the most recent rollout run.
 
 Runbooks use the same primitives an operator needs during a release:
 
@@ -204,7 +206,7 @@ Runbooks use the same primitives an operator needs during a release:
 - `ctx.writeVersionLock(...)` writes explicit version locks from the runbook.
 - `ctx.applyVersionLock(...)` applies version changes that do not restart runtime services, then regenerates env/compose.
 - `ctx.runHostContractTask(...)` and `ctx.runGatewayContractTask(...)` run contract migration/upgrade tasks from the selected deploy images.
-- `ctx.upgradeRuntime(...)` restarts selected runtime components in place and runs their DB migrations when present.
+- `ctx.upgradeRuntimeGroup(...)` restarts selected runtime components in place and runs their DB migrations when present.
 - `ctx.test(...)` runs the rollout-safe e2e profile after each state.
 
 `rollout-standard` is intentionally narrow: it covers encrypted input, FHE compute/write paths, user decrypt, delegated user decrypt, public decrypt, and ERC20 transfer coverage. Broader profiles such as `multi-chain-isolation`, HCU, pause/unpause, DB revert, and drift recovery stay available as explicit tests but are not part of the per-step rollout gate.

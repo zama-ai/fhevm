@@ -1,6 +1,7 @@
 /**
  * Encodes legacy runtime shims and incompatibility rules across supported fhevm component version combinations.
  */
+import { PreflightError } from "../errors";
 import { effectiveOverrides } from "../scenario/resolve";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import type { State } from "../types";
@@ -158,7 +159,11 @@ const parseCompatVersion = (version: string) => {
   };
 };
 
-const usesModernRelayerRepository = (version: string) => {
+const usesModernRelayerRepository = (label: string, version: string) => {
+  if (!version) {
+    throw new PreflightError(`${label} is unset; cannot select relayer image repository`);
+  }
+  // Non-semver tags (e.g. SHA-style tags built from main) belong to the modern registry.
   const parsed = parseCompatVersion(version);
   return !parsed || parsed.parts[0] > 0 || parsed.parts[1] >= 13;
 };
@@ -169,10 +174,12 @@ const sameCompatBase = (version: string, target: CompatSemver) => {
 };
 
 export const relayerImageRepository = (version: string) =>
-  usesModernRelayerRepository(version) ? MODERN_RELAYER_IMAGE_REPOSITORY : LEGACY_RELAYER_IMAGE_REPOSITORY;
+  usesModernRelayerRepository("RELAYER_VERSION", version)
+    ? MODERN_RELAYER_IMAGE_REPOSITORY
+    : LEGACY_RELAYER_IMAGE_REPOSITORY;
 
 export const relayerMigrateImageRepository = (version: string) =>
-  usesModernRelayerRepository(version)
+  usesModernRelayerRepository("RELAYER_MIGRATE_VERSION", version)
     ? MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY
     : LEGACY_RELAYER_MIGRATE_IMAGE_REPOSITORY;
 
@@ -211,11 +218,12 @@ const usesModernWorkspaceProtocol = (state: CompatState) =>
   );
 
 export const requiresMultichainAclAddress = (state: CompatState) =>
-  !usesModernWorkspaceProtocol(state) && versionLt(state.versions.env.COPROCESSOR_TX_SENDER_VERSION ?? "", [0, 12, 0]);
+  !usesModernWorkspaceProtocol(state) &&
+  versionBeforeReleaseFamily(state.versions.env.COPROCESSOR_TX_SENDER_VERSION ?? "", [0, 12, 0]);
 
 /** Detects when relayer readiness config must stay on the legacy shape. */
 export const requiresLegacyRelayerReadinessConfig = (state: Pick<CompatState, "versions">) =>
-  versionLt(state.versions.env.RELAYER_VERSION ?? "", [0, 10, 0]);
+  versionBeforeReleaseFamily(state.versions.env.RELAYER_VERSION ?? "", [0, 10, 0]);
 
 /** Detects when kms-core still expects the legacy config schema. */
 export const requiresLegacyKmsCoreConfig = (state: Pick<CompatState, "versions">) =>
@@ -223,7 +231,7 @@ export const requiresLegacyKmsCoreConfig = (state: Pick<CompatState, "versions">
 
 /** Detects when test-suite should use the legacy relayer base URL. */
 export const requiresLegacyRelayerUrl = (state: Pick<CompatState, "versions">) =>
-  versionLt(state.versions.env.TEST_SUITE_VERSION ?? "", [0, 11, 0]);
+  versionBeforeReleaseFamily(state.versions.env.TEST_SUITE_VERSION ?? "", [0, 11, 0]);
 
 /** Detects when the coprocessor schema supports DB state revert checks. */
 export const supportsCoprocessorDbStateRevert = (state: Pick<CompatState, "versions">) =>
@@ -353,9 +361,13 @@ export const compatPolicyForState = (state: CompatState): CompatPolicy => {
   )
     ? "--use-internal-pauser-set-address"
     : "--use-internal-proxy-address";
-  policy.composeEnv.RELAYER_IMAGE_REPOSITORY = relayerImageRepository(state.versions.env.RELAYER_VERSION ?? "");
-  policy.composeEnv.RELAYER_MIGRATE_IMAGE_REPOSITORY = relayerMigrateImageRepository(
-    state.versions.env.RELAYER_MIGRATE_VERSION ?? "",
-  );
+  if (state.versions.env.RELAYER_VERSION) {
+    policy.composeEnv.RELAYER_IMAGE_REPOSITORY = relayerImageRepository(state.versions.env.RELAYER_VERSION);
+  }
+  if (state.versions.env.RELAYER_MIGRATE_VERSION) {
+    policy.composeEnv.RELAYER_MIGRATE_IMAGE_REPOSITORY = relayerMigrateImageRepository(
+      state.versions.env.RELAYER_MIGRATE_VERSION,
+    );
+  }
   return policy;
 };

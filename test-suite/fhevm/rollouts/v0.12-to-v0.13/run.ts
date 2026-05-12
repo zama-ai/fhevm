@@ -159,19 +159,19 @@ export default async function run(ctx: RolloutRunContext) {
   await testPhase(ctx, "contracts", testMode);
 
   logPhase("02 relayer: upgrade relayer after contracts, before KMS connector consumes versioned extraData");
-  await ctx.upgradeRuntime("relayer", { lockFile: relayerLock });
+  await ctx.upgradeRuntimeGroup("relayer", { lockFile: relayerLock });
   await testPhase(ctx, "relayer", testMode);
 
   logPhase("03 kms: upgrade KMS core and connector together");
-  await ctx.upgradeRuntime("kms", { lockFile: kmsLock });
+  await ctx.upgradeRuntimeGroup("kms", { lockFile: kmsLock });
   await testPhase(ctx, "kms", testMode);
 
   logPhase("04 listener-core: upgrade listener-core before coprocessor");
   // No test gate here: old coprocessor listeners do not consume listener-core.
   // The compatibility boundary is the coprocessor upgrade, where consumers
   // switch to the new listener path.
-  await ctx.upgradeRuntime("listener-core", { lockFile: listenerCoreLock });
+  await ctx.upgradeRuntimeGroup("listener-core", { lockFile: listenerCoreLock });
   logPhase("05 coprocessor: upgrade coprocessor");
-  await ctx.upgradeRuntime("coprocessor", { lockFile: coprocessorLock });
+  await ctx.upgradeRuntimeGroup("coprocessor", { lockFile: coprocessorLock });
   await testPhase(ctx, "final", testMode);
 }

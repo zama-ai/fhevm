@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { PreflightError } from "../errors";
 import { projectContainers } from "../flow/runtime-compose";
 import { STATE_DIR } from "../layout";
 import type { VersionBundle } from "../types";
@@ -54,7 +55,14 @@ const versionChanges = (previous: Record<string, string> | undefined, next: Reco
     .filter((key) => previous?.[key] !== next[key])
     .map((key) => ({ key, from: previous?.[key], to: next[key] }));
 
-const inspectContainers = async () => {
+type InspectResult = { containers: ReceiptContainer[]; error?: string };
+
+const inspectFailed = (error: string): InspectResult => {
+  console.warn(`[receipt] docker inspect failed: ${error}`);
+  return { containers: [], error };
+};
+
+const inspectContainers = async (): Promise<InspectResult> => {
   try {
     const names = await projectContainers(true);
     if (!names.length) {
@@ -62,7 +70,7 @@ const inspectContainers = async () => {
     }
     const inspected = await run(["docker", "inspect", ...names], { allowFailure: true });
     if (inspected.code !== 0) {
-      return { containers: [], error: (inspected.stderr || inspected.stdout).trim() || "docker inspect failed" };
+      return inspectFailed((inspected.stderr || inspected.stdout).trim() || "docker inspect failed");
     }
     const values = JSON.parse(inspected.stdout) as DockerInspect[];
     return {
@@ -78,10 +86,7 @@ const inspectContainers = async () => {
         .sort((a, b) => (a.service ?? a.name).localeCompare(b.service ?? b.name)),
     };
   } catch (error) {
-    return {
-      containers: [],
-      error: error instanceof Error ? error.message : String(error),
-    };
+    return inspectFailed(error instanceof Error ? error.message : String(error));
   }
 };
 
@@ -187,3 +192,15 @@ export const createRolloutReceipt = () => {
 };
 
 export type RolloutReceipt = ReturnType<typeof createRolloutReceipt>;
+
+export const printRolloutReceipt = async () => {
+  const file = receiptMarkdownPath();
+  try {
+    process.stdout.write(await fs.readFile(file, "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new PreflightError(`No rollout receipt found at ${file}`);
+    }
+    throw error;
+  }
+};
