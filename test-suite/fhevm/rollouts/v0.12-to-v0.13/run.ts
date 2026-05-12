@@ -76,9 +76,7 @@ const parseGatewayMigrationEnv = (value: unknown): RolloutEnv => {
   );
 };
 
-export type LocalOneNodeNormalization = { env: RolloutEnv; patched: boolean };
-
-export const normalizeLocalOneNodeMpcThreshold = (env: RolloutEnv): LocalOneNodeNormalization => {
+export const normalizeLocalOneNodeMpcThreshold = (env: RolloutEnv): RolloutEnv => {
   const kmsNodes = JSON.parse(env.MIGRATION_KMS_NODES ?? "[]") as unknown[];
   const thresholds = JSON.parse(env.MIGRATION_KMS_THRESHOLDS ?? "{}") as Record<string, unknown>;
 
@@ -88,23 +86,22 @@ export const normalizeLocalOneNodeMpcThreshold = (env: RolloutEnv): LocalOneNode
   // thresholds, so normalize only this synthetic one-node migration case.
   if (kmsNodes.length === 1 && String(thresholds.mpc) === "0") {
     console.log("[contracts] local one-node migration: normalize ProtocolConfig mpc threshold 0 -> 1");
-    return {
-      env: {
-        ...env,
-        MIGRATION_KMS_THRESHOLDS: JSON.stringify({ ...thresholds, mpc: "1" }),
-      },
-      patched: true,
-    };
+    return { ...env, MIGRATION_KMS_THRESHOLDS: JSON.stringify({ ...thresholds, mpc: "1" }) };
   }
 
-  return { env, patched: false };
+  return env;
 };
+
+// True for the local rollout fixture (1 KMS node). The mpc patch above keys off the
+// same condition, and task:assertKmsMigrationSucceeded compares the patched ProtocolConfig
+// against the un-patched gateway view, which only diverges here.
+const isLocalOneKmsNodeFixture = (env: RolloutEnv) =>
+  (JSON.parse(env.MIGRATION_KMS_NODES ?? "[]") as unknown[]).length === 1;
 
 type GatewayMigrationContext = {
   kmsGenerationProxy: string;
   gatewayConfigProxy: string;
   migrationEnv: RolloutEnv;
-  syntheticMpcPatch: boolean;
 };
 
 const exportGatewayKmsMigrationEnv = async (ctx: RolloutRunContext): Promise<GatewayMigrationContext> => {
@@ -127,12 +124,10 @@ const exportGatewayKmsMigrationEnv = async (ctx: RolloutRunContext): Promise<Gat
 
   const stateFile = path.join(ctx.stateDir(), "runtime", "addresses", "gateway", output);
   const migrationState = JSON.parse(await Bun.file(stateFile).text()) as { export?: unknown };
-  const normalization = normalizeLocalOneNodeMpcThreshold(parseGatewayMigrationEnv(migrationState.export));
   return {
     kmsGenerationProxy: gateway.KMS_GENERATION_ADDRESS,
     gatewayConfigProxy: gateway.GATEWAY_CONFIG_ADDRESS,
-    migrationEnv: normalization.env,
-    syntheticMpcPatch: normalization.patched,
+    migrationEnv: normalizeLocalOneNodeMpcThreshold(parseGatewayMigrationEnv(migrationState.export)),
   };
 };
 
@@ -157,8 +152,7 @@ export default async function run(ctx: RolloutRunContext) {
   logPhase("01 contracts: execute the v0.13 migration runbook");
   await prepareV013ContractMigrationSources(ctx, contractsLock);
   // Export gateway state before making gateway KMSGeneration view-only.
-  const { kmsGenerationProxy, gatewayConfigProxy, migrationEnv, syntheticMpcPatch } =
-    await exportGatewayKmsMigrationEnv(ctx);
+  const { kmsGenerationProxy, gatewayConfigProxy, migrationEnv } = await exportGatewayKmsMigrationEnv(ctx);
   // Complete the gateway chain first, matching the v0.13 deployment runbook.
   await upgradeContract((command) => ctx.runGatewayContractTask(command), "task:upgradeGatewayConfig", "GatewayConfig");
   await upgradeContract((command) => ctx.runGatewayContractTask(command), "task:upgradeKMSGeneration", "KMSGeneration");
@@ -176,11 +170,11 @@ export default async function run(ctx: RolloutRunContext) {
   // task:assertKmsMigrationSucceeded (#2469) does not self-compile; do it explicitly so
   // hre.ethers.getContractAt("ProtocolConfig", ...) can resolve the artifact.
   //
-  // Skip when normalizeLocalOneNodeMpcThreshold rewrote mpc 0 -> 1 for the 1-KMS-node
-  // local fixture: the deployed ProtocolConfig will then diverge from the gateway export
-  // by construction, so the assertion always trips. Production runbooks (n=13, mpc=4)
-  // never hit the patch path and the assertion runs as designed.
-  if (syntheticMpcPatch) {
+  // Skip on the 1-KMS-node local fixture: normalizeLocalOneNodeMpcThreshold patches
+  // mpc 0 -> 1 so the v0.13 ProtocolConfig deploy can succeed, which makes the deployed
+  // config diverge from the un-patched gateway view by construction. Production runbooks
+  // (n=13, mpc=4) skip the patch and run the assertion as designed.
+  if (isLocalOneKmsNodeFixture(migrationEnv)) {
     console.log("[contracts] skipping task:assertKmsMigrationSucceeded for the synthetic 1-KMS-node fixture");
   } else {
     await ctx.runHostContractTask(
