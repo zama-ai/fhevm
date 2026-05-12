@@ -193,12 +193,20 @@ impl ListenerConsumer {
     fn broker_catchup_consumer(&self) -> Result<Consumer, BrokerError> {
         let topic = self.catchup_consumer_topic();
         let cancel = self.catchup_cancel.clone();
-        self.broker
+        let builder = self
+            .broker
             .consumer(&topic)
             .group(topic.to_string())
-            .prefetch(10)
-            .with_cancellation(cancel)
-            .build()
+            .prefetch(1)
+            .max_retries(5)
+            .circuit_breaker(5, Duration::from_secs(60))
+            .with_cancellation(cancel);
+
+        match &self.broker {
+            Broker::Redis { .. } => builder.redis_claim_min_idle(120).redis_claim_interval(5),
+            Broker::Amqp { .. } => builder,
+        }
+        .build()
     }
 
     /// Publish filters registration command to watch contracts.
