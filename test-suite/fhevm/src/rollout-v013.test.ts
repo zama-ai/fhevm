@@ -12,21 +12,24 @@ test("starts v0.12 without new v0.13 host chains", () => {
 });
 
 test("normalizes only the local one-node ProtocolConfig mpc migration threshold", () => {
-  const env = normalizeLocalOneNodeMpcThreshold({
+  const { env, patched } = normalizeLocalOneNodeMpcThreshold({
     MIGRATION_KMS_NODES: JSON.stringify([{ txSenderAddress: "0x1" }]),
     MIGRATION_KMS_THRESHOLDS: JSON.stringify({ publicDecryption: "1", userDecryption: "1", kmsGen: "1", mpc: "0" }),
   });
 
+  expect(patched).toBe(true);
   expect(JSON.parse(env.MIGRATION_KMS_THRESHOLDS).mpc).toBe("1");
 });
 
 test("keeps production-like mpc migration thresholds unchanged", () => {
-  const env = {
+  const input = {
     MIGRATION_KMS_NODES: JSON.stringify(Array.from({ length: 13 }, (_, index) => ({ txSenderAddress: String(index) }))),
     MIGRATION_KMS_THRESHOLDS: JSON.stringify({ publicDecryption: "7", userDecryption: "9", kmsGen: "7", mpc: "4" }),
   };
 
-  expect(normalizeLocalOneNodeMpcThreshold(env)).toBe(env);
+  const { env, patched } = normalizeLocalOneNodeMpcThreshold(input);
+  expect(patched).toBe(false);
+  expect(env).toBe(input);
 });
 
 test("splits listener-core from coprocessor rollout image changes", () => {
