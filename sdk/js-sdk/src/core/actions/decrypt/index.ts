@@ -31,10 +31,10 @@ export {
 } from './decryptValues.js';
 
 export {
-  type DecryptKmsSignedcryptedSharesParameters,
-  type DecryptKmsSignedcryptedSharesReturnType,
-  decryptKmsSignedcryptedShares,
-} from './decryptKmsSignedcryptedShares.js';
+  type DecryptKmsSigncryptedSharesParameters,
+  type DecryptKmsSigncryptedSharesReturnType,
+  decryptKmsSigncryptedShares,
+} from './decryptKmsSigncryptedShares.js';
 
 export {
   type CanDecryptValuesFromPairsWithUserAddressParameters,

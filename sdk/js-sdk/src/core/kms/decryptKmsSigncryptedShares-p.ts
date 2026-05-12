@@ -5,7 +5,7 @@ import type { TransportKeypair } from './TransportKeypair-p.js';
 import { transportKeypairToTkmsPrivateKey } from './TransportKeypair-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
-// decryptKmsSignedcryptedShares (with privateKey)
+// decryptKmsSigncryptedShares (with privateKey)
 ////////////////////////////////////////////////////////////////////////////////
 
 type Context = {
@@ -21,7 +21,7 @@ type ReturnType = readonly ClearValue[];
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export async function decryptKmsSignedcryptedShares(context: Context, parameters: Parameters): Promise<ReturnType> {
+export async function decryptKmsSigncryptedShares(context: Context, parameters: Parameters): Promise<ReturnType> {
   const { transportKeypair, kmsSigncryptedShares } = parameters;
 
   // also validates `transportKeypair`

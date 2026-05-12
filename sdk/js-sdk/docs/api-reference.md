@@ -145,12 +145,12 @@ Sends a ZK proof to the relayer, returns a verified input proof with coprocessor
 fetchVerifiedInputProof(fhevm, parameters: FetchVerifiedInputProofParameters): Promise<VerifiedInputProof>
 ```
 
-### `fetchKmsSignedcryptedShares(fhevm, parameters)`
+### `fetchKmsSigncryptedShares(fhevm, parameters)`
 
 Fetches KMS signcrypted shares for decryption.
 
 ```ts
-fetchKmsSignedcryptedShares(fhevm, parameters: FetchKmsSignedcryptedSharesParameters): Promise<KmsSigncryptedShares>
+fetchKmsSigncryptedShares(fhevm, parameters: FetchKmsSigncryptedSharesParameters): Promise<KmsSigncryptedShares>
 ```
 
 ### `isAllowedForDecryption(fhevm, parameters)`
@@ -200,12 +200,12 @@ Generates a new E2E transport key pair for decryption.
 generateE2eTransportKeypair(fhevm): Promise<E2eTransportKeypair>
 ```
 
-### `decryptKmsSignedcryptedShares(fhevm, parameters)`
+### `decryptKmsSigncryptedShares(fhevm, parameters)`
 
 Lower-level: decrypts KMS signcrypted shares locally using TKMS WASM.
 
 ```ts
-decryptKmsSignedcryptedShares(fhevm, parameters: DecryptKmsSignedcryptedSharesParameters): Promise<ClearValue[]>
+decryptKmsSigncryptedShares(fhevm, parameters: DecryptKmsSigncryptedSharesParameters): Promise<ClearValue[]>
 ```
 
 ---

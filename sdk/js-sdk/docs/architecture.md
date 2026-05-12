@@ -37,7 +37,7 @@ src/
 │   ├── actions/             # Standalone action functions
 │   │   ├── base/            # publicDecrypt, fetchVerifiedInputProof, ACL checks, signers
 │   │   ├── chain/           # EIP-712 creation, verification, signDecryptionPermit, keypair ops
-│   │   ├── decrypt/         # decrypt, generateE2eTransportKeypair, decryptKmsSignedcryptedShares
+│   │   ├── decrypt/         # decrypt, generateE2eTransportKeypair, decryptKmsSigncryptedShares
 │   │   ├── encrypt/         # encrypt, generateZkProof
 │   │   └── host/            # Contract reads (ACL, KMSVerifier, InputVerifier, FhevmExecutor)
 │   ├── base/                # Primitives (address, bytes, errors, trustedValue)
@@ -215,10 +215,10 @@ encrypt()
 signDecryptionPermit()       → Constructs EIP-712 + signs with wallet → SignedDecryptionPermit
 
 decrypt()
-  ├─ fetchKmsSignedcryptedShares()
+  ├─ fetchKmsSigncryptedShares()
   │    ├─ checkUserAllowedForDecryption() → ACL check via RPC
   │    └─ relayer.fetchUserDecrypt()      → HTTP to Zama Protocol → encrypted shares
-  └─ decryptKmsSignedcryptedShares()
+  └─ decryptKmsSigncryptedShares()
        └─ decrypt.decryptAndReconstruct() → TKMS WASM (reconstruct cleartext)
 ```
 
