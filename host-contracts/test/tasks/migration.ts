@@ -254,7 +254,64 @@ describe('Migration prepare tasks', function () {
       expect(activeCrsDigest).to.equal('0xdeadbeefcafe0123');
     });
 
-    it('asserts the live host migration state matches MIGRATION_* env', async function () {
+    // Deploy a mock Gateway pair on the same hardhat network and seed it with the same values
+    // that populate .env.host, so the assertion task has a real source of truth to compare against.
+    async function deploySeededMockGateway(fixture: ReturnType<typeof buildKmsGenerationMigrationFixture>) {
+      await run('compile:specific', { contract: 'test/mocks/MockGatewayView.sol' });
+      const mockConfig = await (await ethers.getContractFactory('MockGatewayConfigView', deployer)).deploy();
+      const mockKmsGen = await (await ethers.getContractFactory('MockGatewayKMSGenerationView', deployer)).deploy();
+
+      const kmsNodes = buildKmsNodes();
+      const thresholds = buildKmsThresholds();
+      await mockConfig.seedKmsContext(
+        contextId,
+        kmsNodes,
+        thresholds.publicDecryption,
+        thresholds.userDecryption,
+        thresholds.mpc,
+        thresholds.kmsGen,
+      );
+
+      const { activeKeyId, activeCrsId, activePrepKeygenId, consensusTxSenders, migrationEnv } = fixture;
+      const storageUrls = kmsNodes.map((node) => node.storageUrl);
+      // counter == active id is a migration precondition, so seed them as equal here.
+      await mockKmsGen.seedKmsGeneration(
+        activePrepKeygenId,
+        activeKeyId,
+        activeCrsId,
+        activeKeyId,
+        activeCrsId,
+        activePrepKeygenId,
+      );
+      await mockKmsGen.seedConsensusTxSenders(activeKeyId, consensusTxSenders);
+      await mockKmsGen.seedConsensusTxSenders(activeCrsId, consensusTxSenders);
+      await mockKmsGen.seedConsensusTxSenders(activePrepKeygenId, consensusTxSenders);
+      // Seed the consensus digests with the same bytes32 values that flowed into the host via
+      // MIGRATION_* env so the gateway-vs-host digest comparison passes.
+      await mockKmsGen.seedConsensusDigest(activeKeyId, migrationEnv.MIGRATION_KEY_CONSENSUS_DIGEST);
+      await mockKmsGen.seedConsensusDigest(activeCrsId, migrationEnv.MIGRATION_CRS_CONSENSUS_DIGEST);
+      await mockKmsGen.seedConsensusDigest(activePrepKeygenId, migrationEnv.MIGRATION_PREP_KEYGEN_CONSENSUS_DIGEST);
+      await mockKmsGen.seedKeyMaterials(
+        activeKeyId,
+        storageUrls,
+        [
+          { keyType: 0, digest: '0xabcdef0123456789' },
+          { keyType: 1, digest: '0x9876543210fedcba' },
+        ],
+        0,
+      );
+      await mockKmsGen.seedCrsMaterials(activeCrsId, storageUrls, '0xdeadbeefcafe0123', 0);
+
+      return {
+        gatewayConfigAddress: await mockConfig.getAddress(),
+        gatewayKmsGenerationAddress: await mockKmsGen.getAddress(),
+        mockConfig,
+        mockKmsGen,
+        kmsNodes,
+      };
+    }
+
+    async function deployHostMigrationStack() {
       const protocolConfigProxyAddress = await deployEmptyUUPSProxy(deployer);
       const kmsGenerationProxyAddress = await deployEmptyUUPSProxy(deployer);
       const kmsVerifierProxyAddress = await deployEmptyUUPSProxy(deployer);
@@ -263,8 +320,8 @@ describe('Migration prepare tasks', function () {
       patchHostEnv('KMS_GENERATION_CONTRACT_ADDRESS', kmsGenerationProxyAddress);
       patchHostEnv('KMS_VERIFIER_CONTRACT_ADDRESS', kmsVerifierProxyAddress);
 
-      const { migrationEnv } = buildKmsGenerationMigrationFixture();
-      applyKmsGenerationMigrationEnv(migrationEnv);
+      const fixture = buildKmsGenerationMigrationFixture();
+      applyKmsGenerationMigrationEnv(fixture.migrationEnv);
       applyProtocolConfigMigrationEnv({
         MIGRATION_CONTEXT_ID: contextId.toString(),
         MIGRATION_KMS_NODES: JSON.stringify(buildKmsNodes()),
@@ -274,7 +331,69 @@ describe('Migration prepare tasks', function () {
       await run('task:deployProtocolConfigFromMigration');
       await run('task:deployKMSVerifier');
       await run('task:deployKMSGenerationFromMigration');
-      await run('task:assertKmsMigrationSucceeded');
+
+      return fixture;
+    }
+
+    it('asserts the live host migration state matches the live Gateway snapshot', async function () {
+      const fixture = await deployHostMigrationStack();
+      const { gatewayConfigAddress, gatewayKmsGenerationAddress } = await deploySeededMockGateway(fixture);
+
+      await run('task:assertKmsMigrationSucceeded', {
+        gatewayConfigProxy: gatewayConfigAddress,
+        gatewayKmsGenerationProxy: gatewayKmsGenerationAddress,
+      });
+    });
+
+    it('rejects when the Gateway public decryption threshold diverges from the host', async function () {
+      const fixture = await deployHostMigrationStack();
+      const { gatewayConfigAddress, gatewayKmsGenerationAddress, mockConfig } = await deploySeededMockGateway(fixture);
+
+      const hostThreshold = BigInt(getRequiredEnvVar('PUBLIC_DECRYPTION_THRESHOLD'));
+      await (await mockConfig.overridePublicDecryptionThreshold(contextId, hostThreshold + 1n)).wait();
+
+      await expect(
+        run('task:assertKmsMigrationSucceeded', {
+          gatewayConfigProxy: gatewayConfigAddress,
+          gatewayKmsGenerationProxy: gatewayKmsGenerationAddress,
+        }),
+      ).to.be.rejectedWith(/ProtocolConfig public decryption threshold mismatch/);
+    });
+
+    it('rejects when a Gateway consensus digest diverges from the host', async function () {
+      const fixture = await deployHostMigrationStack();
+      const { gatewayConfigAddress, gatewayKmsGenerationAddress, mockKmsGen } = await deploySeededMockGateway(fixture);
+
+      // Flip the key consensus digest on the Gateway side; host keeps the migrated value.
+      await (await mockKmsGen.seedConsensusDigest(fixture.activeKeyId, nonZeroBytes32(0xdead))).wait();
+
+      await expect(
+        run('task:assertKmsMigrationSucceeded', {
+          gatewayConfigProxy: gatewayConfigAddress,
+          gatewayKmsGenerationProxy: gatewayKmsGenerationAddress,
+        }),
+      ).to.be.rejectedWith(/KMSGeneration key consensus digest mismatch/);
+    });
+
+    it('rejects when the Gateway has an extra phantom KMS node not present on the host', async function () {
+      const fixture = await deployHostMigrationStack();
+      const { gatewayConfigAddress, gatewayKmsGenerationAddress, mockConfig } = await deploySeededMockGateway(fixture);
+
+      await (
+        await mockConfig.pushPhantomNode(contextId, {
+          txSenderAddress: '0x000000000000000000000000000000000000beef',
+          signerAddress: '0x000000000000000000000000000000000000cafe',
+          ipAddress: '127.0.0.99',
+          storageUrl: 's3://phantom-bucket',
+        })
+      ).wait();
+
+      await expect(
+        run('task:assertKmsMigrationSucceeded', {
+          gatewayConfigProxy: gatewayConfigAddress,
+          gatewayKmsGenerationProxy: gatewayKmsGenerationAddress,
+        }),
+      ).to.be.rejectedWith(/ProtocolConfig KMS nodes mismatch/);
     });
   });
 

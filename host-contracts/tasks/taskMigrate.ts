@@ -1,6 +1,9 @@
-import { FunctionFragment, Interface, type InterfaceAbi, getAddress } from 'ethers';
+import { calculateERC7201StorageLocation } from '@openzeppelin/upgrades-core/dist/utils/erc7201';
+import { AbiCoder, FunctionFragment, Interface, type InterfaceAbi, getAddress, keccak256, toBeHex } from 'ethers';
+import fs from 'fs';
 import { task, types } from 'hardhat/config';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
+import path from 'path';
 
 import {
   assertContractMatchesVersionPrefix,
@@ -126,15 +129,9 @@ function printPreparedDaoUpgrade(data: PreparedDaoUpgrade): void {
   );
 }
 
-function assertEqual(label: string, actual: string | number | boolean, expected: string | number | boolean): void {
+function assertEqual<T>(label: string, actual: T, expected: NoInfer<T>): void {
   if (actual !== expected) {
     throw new Error(`${label} mismatch: expected ${expected}, got ${actual}.`);
-  }
-}
-
-function assertBigIntEqual(label: string, actual: bigint, expected: bigint): void {
-  if (actual !== expected) {
-    throw new Error(`${label} mismatch: expected ${expected.toString()}, got ${actual.toString()}.`);
   }
 }
 
@@ -176,23 +173,6 @@ function normalizeKeyDigest(digest: KeyDigestLike): { keyType: number; digest: s
     keyType: Number(digest.keyType),
     digest: digest.digest.toLowerCase(),
   };
-}
-
-function storageUrlsForSenders(
-  nodes: readonly ProtocolConfigMigrationKmsNode[],
-  txSenders: readonly string[],
-): string[] {
-  const storageUrlsByTxSender = new Map(
-    nodes.map((node) => [getAddress(node.txSenderAddress), node.storageUrl] as const),
-  );
-
-  return txSenders.map((txSender) => {
-    const storageUrl = storageUrlsByTxSender.get(getAddress(txSender));
-    if (storageUrl === undefined) {
-      throw new Error(`Migration snapshot has consensus tx sender ${txSender} without a matching KMS node.`);
-    }
-    return storageUrl;
-  });
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -355,196 +335,347 @@ task(
 // Post-execution verification
 ////////////////////////////////////////////////////////////////////////////////
 
+const HOST_KMS_GENERATION_NAMESPACE = 'fhevm.storage.KMSGeneration';
+const GATEWAY_KMS_GENERATION_NAMESPACE = 'fhevm_gateway.storage.KMSGeneration';
+
+const GATEWAY_CONFIG_VIEW_ABI = [
+  'function getCurrentKmsContextId() view returns (uint256)',
+  'function getKmsTxSendersForContext(uint256 contextId) view returns (address[])',
+  'function getKmsNodeForContext(uint256 contextId, address kmsTxSenderAddress) view returns (tuple(address txSenderAddress, address signerAddress, string ipAddress, string storageUrl))',
+  'function getPublicDecryptionThresholdForContext(uint256 contextId) view returns (uint256)',
+  'function getUserDecryptionThresholdForContext(uint256 contextId) view returns (uint256)',
+  'function getMpcThreshold() view returns (uint256)',
+  'function getKmsGenThreshold() view returns (uint256)',
+];
+
+// Post-migration Gateway KMSGeneration is a view-only frozen stub: only the materials/consensus
+// getters below are exposed. Counters, active IDs and consensus digests are read via storage
+// slots (see KMS_GENERATION_FIELD_OFFSET).
+const GATEWAY_KMS_GENERATION_VIEW_ABI = [
+  'function getConsensusTxSenders(uint256 requestId) view returns (address[])',
+  'function getKeyParamsType(uint256 keyId) view returns (uint8)',
+  'function getCrsParamsType(uint256 crsId) view returns (uint8)',
+  'function getKeyMaterials(uint256 keyId) view returns (string[], tuple(uint8 keyType, bytes digest)[])',
+  'function getCrsMaterials(uint256 crsId) view returns (string[], bytes)',
+];
+
+function assertAddressSetsEqual(label: string, actual: readonly string[], expected: readonly string[]): void {
+  assertEqual(label, normalizeAddresses(actual).sort().join(','), normalizeAddresses(expected).sort().join(','));
+}
+
+// Field offsets within the `KMSGenerationStorage` struct — identical across host
+// (`fhevm.storage.KMSGeneration`) and Gateway (`fhevm_gateway.storage.KMSGeneration`).
+// Mirrors `KMS_GENERATION_SLOT` in `gateway-contracts/tasks/exportMigrationState.ts`.
+const KMS_GENERATION_FIELD_OFFSET = {
+  consensusDigest: 3n,
+  prepKeygenCounter: 4n,
+  keyCounter: 5n,
+  keygenIdPairs: 6n,
+  activeKeyId: 8n,
+  crsCounter: 9n,
+  activeCrsId: 12n,
+} as const;
+
+type StorageProvider = {
+  getStorage: (address: string, slot: string, blockTag?: number | string) => Promise<string>;
+};
+
+function kmsGenerationFieldSlot(namespace: string, offset: bigint): string {
+  return toBeHex(BigInt(calculateERC7201StorageLocation(namespace)) + offset, 32);
+}
+
+function kmsGenerationMappingSlot(namespace: string, offset: bigint, key: bigint): string {
+  const baseSlot = kmsGenerationFieldSlot(namespace, offset);
+  return keccak256(AbiCoder.defaultAbiCoder().encode(['uint256', 'uint256'], [key, baseSlot]));
+}
+
+// Returns a reader bound to one contract (host or Gateway side). Hides the
+// provider/address/namespace/blockTag tuple that's constant for an entire side.
+function makeKmsGenerationStorageReader(
+  provider: StorageProvider,
+  contractAddress: string,
+  namespace: string,
+  blockTag: number | string | undefined,
+) {
+  return {
+    readUint: async (offset: bigint): Promise<bigint> =>
+      BigInt(await provider.getStorage(contractAddress, kmsGenerationFieldSlot(namespace, offset), blockTag)),
+    readMappingUint: async (offset: bigint, key: bigint): Promise<bigint> =>
+      BigInt(await provider.getStorage(contractAddress, kmsGenerationMappingSlot(namespace, offset, key), blockTag)),
+    readMappingBytes32: async (offset: bigint, key: bigint): Promise<string> =>
+      (
+        await provider.getStorage(contractAddress, kmsGenerationMappingSlot(namespace, offset, key), blockTag)
+      ).toLowerCase(),
+  };
+}
+
 task(
   'task:assertKmsMigrationSucceeded',
-  'Asserts the live host migration state matches the MIGRATION_* snapshot env',
-).setAction(async function (_, hre) {
-  const parsedEnv = readHostEnv();
-  const protocolConfigAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
-  const kmsGenerationAddress = parsedEnv.KMS_GENERATION_CONTRACT_ADDRESS;
-  const kmsVerifierAddress = parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS;
-  if (!protocolConfigAddress) {
-    throw new Error('PROTOCOL_CONFIG_CONTRACT_ADDRESS is missing from addresses/.env.host.');
-  }
-  if (!kmsGenerationAddress) {
-    throw new Error('KMS_GENERATION_CONTRACT_ADDRESS is missing from addresses/.env.host.');
-  }
-  if (!kmsVerifierAddress) {
-    throw new Error('KMS_VERIFIER_CONTRACT_ADDRESS is missing from addresses/.env.host.');
-  }
+  'Asserts host ProtocolConfig + KMSGeneration + KMSVerifier match the live Gateway snapshot',
+)
+  .addParam('gatewayConfigProxy', 'Gateway GatewayConfig proxy address')
+  .addParam('gatewayKmsGenerationProxy', 'Gateway KMSGeneration proxy address')
+  .addOptionalParam(
+    'gatewayBlockTag',
+    'Gateway block to read at. Defaults to metadata.exportBlockNumber from gateway-contracts/migration-state.json if present; else latest with a warning.',
+    undefined,
+    types.int,
+  )
+  .setAction(async function (taskArgs, hre) {
+    const parsedEnv = readHostEnv();
+    const protocolConfigAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+    const kmsGenerationAddress = parsedEnv.KMS_GENERATION_CONTRACT_ADDRESS;
+    const kmsVerifierAddress = parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS;
 
-  const [expectedContextId, expectedNodes, expectedThresholds] = buildProtocolConfigInitializeFromMigrationArgs();
-  const [expectedKmsGenerationState] = buildKMSGenerationInitializeFromMigrationArgs();
+    const gatewayConfigProxy = getAddress(taskArgs.gatewayConfigProxy);
+    const gatewayKmsGenerationProxy = getAddress(taskArgs.gatewayKmsGenerationProxy);
 
-  await assertContractMatchesVersionPrefix(hre, protocolConfigAddress, 'ProtocolConfig');
-  const protocolConfig = await hre.ethers.getContractAt('ProtocolConfig', protocolConfigAddress);
+    // On hardhat the mock Gateway shares the in-process network; everywhere else require the URL.
+    const rpcUrl = hre.network.name === 'hardhat' ? process.env.GATEWAY_RPC_URL : getRequiredEnvVar('GATEWAY_RPC_URL');
+    const gatewayProvider = rpcUrl ? new hre.ethers.JsonRpcProvider(rpcUrl) : hre.ethers.provider;
 
-  assertBigIntEqual(
-    'ProtocolConfig current KMS context ID',
-    await protocolConfig.getCurrentKmsContextId(),
-    expectedContextId,
-  );
-  assertEqual(
-    'ProtocolConfig migrated context validity',
-    await protocolConfig.isValidKmsContext(expectedContextId),
-    true,
-  );
-  assertJsonEqual(
-    'ProtocolConfig KMS nodes',
-    (await protocolConfig.getKmsNodesForContext(expectedContextId)).map(normalizeKmsNode),
-    expectedNodes.map(normalizeKmsNode),
-  );
-  assertJsonEqual(
-    'ProtocolConfig KMS signers',
-    normalizeAddresses(await protocolConfig.getKmsSignersForContext(expectedContextId)),
-    normalizeAddresses(expectedNodes.map((node) => node.signerAddress)),
-  );
-  assertBigIntEqual(
-    'ProtocolConfig public decryption threshold',
-    await protocolConfig.getPublicDecryptionThresholdForContext(expectedContextId),
-    BigInt(expectedThresholds.publicDecryption),
-  );
-  assertBigIntEqual(
-    'ProtocolConfig user decryption threshold',
-    await protocolConfig.getUserDecryptionThresholdForContext(expectedContextId),
-    BigInt(expectedThresholds.userDecryption),
-  );
-  assertBigIntEqual(
-    'ProtocolConfig KMS generation threshold',
-    await protocolConfig.getKmsGenThreshold(),
-    BigInt(expectedThresholds.kmsGen),
-  );
-  assertBigIntEqual(
-    'ProtocolConfig MPC threshold',
-    await protocolConfig.getMpcThreshold(),
-    BigInt(expectedThresholds.mpc),
-  );
+    let gatewayBlockTag: number | 'latest' = taskArgs.gatewayBlockTag ?? 'latest';
+    if (gatewayBlockTag === 'latest') {
+      const snapshotPath = path.resolve(hre.config.paths.root, '..', 'gateway-contracts', 'migration-state.json');
+      const snapshotBlock = fs.existsSync(snapshotPath)
+        ? (JSON.parse(fs.readFileSync(snapshotPath, 'utf8')) as { metadata?: { exportBlockNumber?: number } }).metadata
+            ?.exportBlockNumber
+        : undefined;
+      // Reject snapshots from a different chain (dev runs against an in-process hardhat node at block 0).
+      if (snapshotBlock !== undefined && snapshotBlock <= (await gatewayProvider.getBlockNumber())) {
+        gatewayBlockTag = snapshotBlock;
+      } else {
+        console.warn(
+          'Gateway block tag defaulting to "latest" — pass --gateway-block-tag for deterministic verification.',
+        );
+      }
+    }
+    const gatewayCallOpts = { blockTag: gatewayBlockTag };
 
-  await assertContractMatchesVersionPrefix(hre, kmsGenerationAddress, 'KMSGeneration');
-  const kmsGeneration = await hre.ethers.getContractAt('KMSGeneration', kmsGenerationAddress);
-
-  assertBigIntEqual(
-    'KMSGeneration key counter',
-    await kmsGeneration.getKeyCounter(),
-    expectedKmsGenerationState.keyCounter,
-  );
-  assertBigIntEqual(
-    'KMSGeneration CRS counter',
-    await kmsGeneration.getCrsCounter(),
-    expectedKmsGenerationState.crsCounter,
-  );
-  assertBigIntEqual(
-    'KMSGeneration active key ID',
-    await kmsGeneration.getActiveKeyId(),
-    expectedKmsGenerationState.activeKeyId,
-  );
-  assertBigIntEqual(
-    'KMSGeneration active CRS ID',
-    await kmsGeneration.getActiveCrsId(),
-    expectedKmsGenerationState.activeCrsId,
-  );
-
-  const requestDoneChecks = [
-    {
-      label: 'prep keygen',
-      requestId: expectedKmsGenerationState.activePrepKeygenId,
-    },
-    {
-      label: 'key',
-      requestId: expectedKmsGenerationState.activeKeyId,
-    },
-    {
-      label: 'CRS',
-      requestId: expectedKmsGenerationState.activeCrsId,
-    },
-  ];
-
-  for (const { label, requestId } of requestDoneChecks) {
-    assertEqual(`KMSGeneration ${label} request done`, await kmsGeneration.isRequestDone(requestId), true);
-  }
-
-  const consensusTxSenderChecks = [
-    {
-      label: 'key',
-      requestId: expectedKmsGenerationState.activeKeyId,
-      expectedTxSenders: expectedKmsGenerationState.keyConsensusTxSenders,
-    },
-    {
-      label: 'CRS',
-      requestId: expectedKmsGenerationState.activeCrsId,
-      expectedTxSenders: expectedKmsGenerationState.crsConsensusTxSenders,
-    },
-    {
-      label: 'prep keygen',
-      requestId: expectedKmsGenerationState.activePrepKeygenId,
-      expectedTxSenders: expectedKmsGenerationState.prepKeygenConsensusTxSenders,
-    },
-  ];
-
-  for (const { label, requestId, expectedTxSenders } of consensusTxSenderChecks) {
-    assertJsonEqual(
-      `KMSGeneration ${label} consensus tx senders`,
-      normalizeAddresses(await kmsGeneration.getConsensusTxSenders(requestId)),
-      normalizeAddresses(expectedTxSenders),
+    const gatewayConfig = new hre.ethers.Contract(gatewayConfigProxy, GATEWAY_CONFIG_VIEW_ABI, gatewayProvider);
+    const gatewayKmsGeneration = new hre.ethers.Contract(
+      gatewayKmsGenerationProxy,
+      GATEWAY_KMS_GENERATION_VIEW_ABI,
+      gatewayProvider,
     );
-  }
 
-  assertBigIntEqual(
-    'KMSGeneration active key params type',
-    BigInt(await kmsGeneration.getKeyParamsType(expectedKmsGenerationState.activeKeyId)),
-    BigInt(expectedKmsGenerationState.prepKeygenParamsType),
-  );
-  assertBigIntEqual(
-    'KMSGeneration active CRS params type',
-    BigInt(await kmsGeneration.getCrsParamsType(expectedKmsGenerationState.activeCrsId)),
-    BigInt(expectedKmsGenerationState.crsParamsType),
-  );
+    const gatewayContextId: bigint = await gatewayConfig.getCurrentKmsContextId(gatewayCallOpts);
+    const gatewayKmsTxSenders: string[] = await gatewayConfig.getKmsTxSendersForContext(
+      gatewayContextId,
+      gatewayCallOpts,
+    );
+    const gatewayRawNodes = await Promise.all(
+      gatewayKmsTxSenders.map((txSender) =>
+        gatewayConfig.getKmsNodeForContext(gatewayContextId, txSender, gatewayCallOpts),
+      ),
+    );
+    const gatewayNodes: ProtocolConfigMigrationKmsNode[] = gatewayRawNodes.map(normalizeKmsNode);
 
-  const [activeKeyStorageUrls, activeKeyDigests] = await kmsGeneration.getKeyMaterials(
-    expectedKmsGenerationState.activeKeyId,
-  );
-  assertJsonEqual(
-    'KMSGeneration active key storage URLs',
-    Array.from(activeKeyStorageUrls),
-    storageUrlsForSenders(expectedNodes, expectedKmsGenerationState.keyConsensusTxSenders),
-  );
-  assertJsonEqual(
-    'KMSGeneration active key digests',
-    activeKeyDigests.map(normalizeKeyDigest),
-    expectedKmsGenerationState.activeKeyDigests.map(normalizeKeyDigest),
-  );
+    const [
+      gatewayPublicDecryptionThreshold,
+      gatewayUserDecryptionThreshold,
+      gatewayMpcThreshold,
+      gatewayKmsGenThreshold,
+    ] = (await Promise.all([
+      gatewayConfig.getPublicDecryptionThresholdForContext(gatewayContextId, gatewayCallOpts),
+      gatewayConfig.getUserDecryptionThresholdForContext(gatewayContextId, gatewayCallOpts),
+      gatewayConfig.getMpcThreshold(gatewayCallOpts),
+      gatewayConfig.getKmsGenThreshold(gatewayCallOpts),
+    ])) as [bigint, bigint, bigint, bigint];
 
-  const [activeCrsStorageUrls, activeCrsDigest] = await kmsGeneration.getCrsMaterials(
-    expectedKmsGenerationState.activeCrsId,
-  );
-  assertJsonEqual(
-    'KMSGeneration active CRS storage URLs',
-    Array.from(activeCrsStorageUrls),
-    storageUrlsForSenders(expectedNodes, expectedKmsGenerationState.crsConsensusTxSenders),
-  );
-  assertEqual(
-    'KMSGeneration active CRS digest',
-    activeCrsDigest.toLowerCase(),
-    expectedKmsGenerationState.activeCrsDigest.toLowerCase(),
-  );
+    const gatewayKmsStorage = makeKmsGenerationStorageReader(
+      gatewayProvider,
+      gatewayKmsGenerationProxy,
+      GATEWAY_KMS_GENERATION_NAMESPACE,
+      gatewayBlockTag,
+    );
+    const hostKmsStorage = makeKmsGenerationStorageReader(
+      hre.ethers.provider,
+      kmsGenerationAddress,
+      HOST_KMS_GENERATION_NAMESPACE,
+      undefined,
+    );
 
-  await assertContractMatchesVersionPrefix(hre, kmsVerifierAddress, 'KMSVerifier');
-  const kmsVerifier = await hre.ethers.getContractAt('KMSVerifier', kmsVerifierAddress);
-  assertBigIntEqual(
-    'KMSVerifier current KMS context ID',
-    await kmsVerifier.getCurrentKmsContextId(),
-    expectedContextId,
-  );
-  assertBigIntEqual(
-    'KMSVerifier public decryption threshold',
-    await kmsVerifier.getThreshold(),
-    BigInt(expectedThresholds.publicDecryption),
-  );
-  assertJsonEqual(
-    'KMSVerifier KMS signers',
-    normalizeAddresses(await kmsVerifier.getKmsSigners()),
-    normalizeAddresses(expectedNodes.map((node) => node.signerAddress)),
-  );
+    const gatewayCounterFields = [
+      'prepKeygenCounter',
+      'keyCounter',
+      'crsCounter',
+      'activeKeyId',
+      'activeCrsId',
+    ] as const;
+    const [gatewayPrepKeygenCounter, gatewayKeyCounter, gatewayCrsCounter, gatewayActiveKeyId, gatewayActiveCrsId] =
+      await Promise.all(gatewayCounterFields.map((f) => gatewayKmsStorage.readUint(KMS_GENERATION_FIELD_OFFSET[f])));
 
-  console.log('KMS migration verification succeeded.');
-});
+    const gatewayActivePrepKeygenId = await gatewayKmsStorage.readMappingUint(
+      KMS_GENERATION_FIELD_OFFSET.keygenIdPairs,
+      gatewayActiveKeyId,
+    );
+
+    const [
+      gatewayKeyConsensusTxSenders,
+      gatewayCrsConsensusTxSenders,
+      gatewayPrepKeygenConsensusTxSenders,
+      gatewayKeyParamsType,
+      gatewayCrsParamsType,
+    ] = (await Promise.all([
+      gatewayKmsGeneration.getConsensusTxSenders(gatewayActiveKeyId, gatewayCallOpts),
+      gatewayKmsGeneration.getConsensusTxSenders(gatewayActiveCrsId, gatewayCallOpts),
+      gatewayKmsGeneration.getConsensusTxSenders(gatewayActivePrepKeygenId, gatewayCallOpts),
+      gatewayKmsGeneration.getKeyParamsType(gatewayActiveKeyId, gatewayCallOpts),
+      gatewayKmsGeneration.getCrsParamsType(gatewayActiveCrsId, gatewayCallOpts),
+    ])) as [string[], string[], string[], number | bigint, number | bigint];
+
+    const [
+      [gatewayActiveKeyStorageUrls, gatewayActiveKeyDigests],
+      [gatewayActiveCrsStorageUrls, gatewayActiveCrsDigest],
+    ] = (await Promise.all([
+      gatewayKmsGeneration.getKeyMaterials(gatewayActiveKeyId, gatewayCallOpts),
+      gatewayKmsGeneration.getCrsMaterials(gatewayActiveCrsId, gatewayCallOpts),
+    ])) as [[string[], Array<{ keyType: number | bigint; digest: string }>], [string[], string]];
+
+    const gatewaySignerAddresses = gatewayNodes.map((node) => node.signerAddress);
+
+    await assertContractMatchesVersionPrefix(hre, protocolConfigAddress, 'ProtocolConfig');
+    const protocolConfig = await hre.ethers.getContractAt('ProtocolConfig', protocolConfigAddress);
+
+    assertEqual(
+      'ProtocolConfig current KMS context ID',
+      await protocolConfig.getCurrentKmsContextId(),
+      gatewayContextId,
+    );
+    assertEqual(
+      'ProtocolConfig migrated context validity',
+      await protocolConfig.isValidKmsContext(gatewayContextId),
+      true,
+    );
+
+    const sortByTxSender = (nodes: readonly ProtocolConfigMigrationKmsNode[]) =>
+      [...nodes].sort((a, b) => a.txSenderAddress.localeCompare(b.txSenderAddress));
+    const hostNodes = (await protocolConfig.getKmsNodesForContext(gatewayContextId)).map(normalizeKmsNode);
+    assertJsonEqual('ProtocolConfig KMS nodes', sortByTxSender(hostNodes), sortByTxSender(gatewayNodes));
+
+    assertAddressSetsEqual(
+      'ProtocolConfig KMS signers set',
+      await protocolConfig.getKmsSignersForContext(gatewayContextId),
+      gatewaySignerAddresses,
+    );
+
+    assertEqual(
+      'ProtocolConfig public decryption threshold',
+      await protocolConfig.getPublicDecryptionThresholdForContext(gatewayContextId),
+      gatewayPublicDecryptionThreshold,
+    );
+    assertEqual(
+      'ProtocolConfig user decryption threshold',
+      await protocolConfig.getUserDecryptionThresholdForContext(gatewayContextId),
+      gatewayUserDecryptionThreshold,
+    );
+    assertEqual(
+      'ProtocolConfig KMS generation threshold',
+      await protocolConfig.getKmsGenThreshold(),
+      gatewayKmsGenThreshold,
+    );
+    assertEqual('ProtocolConfig MPC threshold', await protocolConfig.getMpcThreshold(), gatewayMpcThreshold);
+
+    await assertContractMatchesVersionPrefix(hre, kmsGenerationAddress, 'KMSGeneration');
+    const kmsGeneration = await hre.ethers.getContractAt('KMSGeneration', kmsGenerationAddress);
+
+    assertEqual('KMSGeneration key counter', await kmsGeneration.getKeyCounter(), gatewayKeyCounter);
+    assertEqual('KMSGeneration CRS counter', await kmsGeneration.getCrsCounter(), gatewayCrsCounter);
+    assertEqual('KMSGeneration active key ID', await kmsGeneration.getActiveKeyId(), gatewayActiveKeyId);
+    assertEqual('KMSGeneration active CRS ID', await kmsGeneration.getActiveCrsId(), gatewayActiveCrsId);
+
+    const [hostActivePrepKeygenId, hostPrepKeygenCounter] = await Promise.all([
+      hostKmsStorage.readMappingUint(KMS_GENERATION_FIELD_OFFSET.keygenIdPairs, gatewayActiveKeyId),
+      hostKmsStorage.readUint(KMS_GENERATION_FIELD_OFFSET.prepKeygenCounter),
+    ]);
+    assertEqual('KMSGeneration active prep keygen ID', hostActivePrepKeygenId, gatewayActivePrepKeygenId);
+    assertEqual('KMSGeneration prep keygen counter', hostPrepKeygenCounter, gatewayPrepKeygenCounter);
+
+    const requestDoneChecks = [
+      { label: 'prep keygen', requestId: gatewayActivePrepKeygenId },
+      { label: 'key', requestId: gatewayActiveKeyId },
+      { label: 'CRS', requestId: gatewayActiveCrsId },
+    ];
+    for (const { label, requestId } of requestDoneChecks) {
+      assertEqual(`KMSGeneration ${label} request done`, await kmsGeneration.isRequestDone(requestId), true);
+    }
+
+    const consensusTxSenderChecks = [
+      { label: 'key', requestId: gatewayActiveKeyId, expectedTxSenders: gatewayKeyConsensusTxSenders },
+      { label: 'CRS', requestId: gatewayActiveCrsId, expectedTxSenders: gatewayCrsConsensusTxSenders },
+      {
+        label: 'prep keygen',
+        requestId: gatewayActivePrepKeygenId,
+        expectedTxSenders: gatewayPrepKeygenConsensusTxSenders,
+      },
+    ];
+    for (const { label, requestId, expectedTxSenders } of consensusTxSenderChecks) {
+      assertJsonEqual(
+        `KMSGeneration ${label} consensus tx senders`,
+        normalizeAddresses(await kmsGeneration.getConsensusTxSenders(requestId)),
+        normalizeAddresses(expectedTxSenders),
+      );
+    }
+
+    const consensusDigestChecks = [
+      { label: 'prep keygen', requestId: gatewayActivePrepKeygenId },
+      { label: 'key', requestId: gatewayActiveKeyId },
+      { label: 'CRS', requestId: gatewayActiveCrsId },
+    ];
+    const consensusDigestPairs = await Promise.all(
+      consensusDigestChecks.map(({ requestId }) =>
+        Promise.all([
+          hostKmsStorage.readMappingBytes32(KMS_GENERATION_FIELD_OFFSET.consensusDigest, requestId),
+          gatewayKmsStorage.readMappingBytes32(KMS_GENERATION_FIELD_OFFSET.consensusDigest, requestId),
+        ]),
+      ),
+    );
+    for (const [i, { label }] of consensusDigestChecks.entries()) {
+      const [hostDigest, gatewayDigest] = consensusDigestPairs[i];
+      assertEqual(`KMSGeneration ${label} consensus digest`, hostDigest, gatewayDigest);
+    }
+
+    assertEqual(
+      'KMSGeneration active key params type',
+      BigInt(await kmsGeneration.getKeyParamsType(gatewayActiveKeyId)),
+      BigInt(gatewayKeyParamsType),
+    );
+    assertEqual(
+      'KMSGeneration active CRS params type',
+      BigInt(await kmsGeneration.getCrsParamsType(gatewayActiveCrsId)),
+      BigInt(gatewayCrsParamsType),
+    );
+
+    const [activeKeyStorageUrls, activeKeyDigests] = await kmsGeneration.getKeyMaterials(gatewayActiveKeyId);
+    assertJsonEqual(
+      'KMSGeneration active key storage URLs',
+      Array.from(activeKeyStorageUrls),
+      gatewayActiveKeyStorageUrls,
+    );
+    assertJsonEqual(
+      'KMSGeneration active key digests',
+      activeKeyDigests.map(normalizeKeyDigest),
+      gatewayActiveKeyDigests.map(normalizeKeyDigest),
+    );
+
+    const [activeCrsStorageUrls, activeCrsDigest] = await kmsGeneration.getCrsMaterials(gatewayActiveCrsId);
+    assertJsonEqual(
+      'KMSGeneration active CRS storage URLs',
+      Array.from(activeCrsStorageUrls),
+      gatewayActiveCrsStorageUrls,
+    );
+    assertEqual('KMSGeneration active CRS digest', activeCrsDigest.toLowerCase(), gatewayActiveCrsDigest.toLowerCase());
+
+    await assertContractMatchesVersionPrefix(hre, kmsVerifierAddress, 'KMSVerifier');
+    const kmsVerifier = await hre.ethers.getContractAt('KMSVerifier', kmsVerifierAddress);
+    assertEqual('KMSVerifier current KMS context ID', await kmsVerifier.getCurrentKmsContextId(), gatewayContextId);
+    assertEqual(
+      'KMSVerifier public decryption threshold',
+      await kmsVerifier.getThreshold(),
+      gatewayPublicDecryptionThreshold,
+    );
+    assertAddressSetsEqual('KMSVerifier KMS signers set', await kmsVerifier.getKmsSigners(), gatewaySignerAddresses);
+
+    console.log('KMS migration verification succeeded.');
+  });
