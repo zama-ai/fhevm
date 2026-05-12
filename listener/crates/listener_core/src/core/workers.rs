@@ -535,7 +535,6 @@ impl RangeCatchupHandler {
 #[async_trait]
 impl Handler for RangeCatchupHandler {
     async fn call(&self, msg: &Message) -> Result<AckDecision, HandlerError> {
-        info!("On rentre dans le handler.");
         let mut payload: CatchupPayload = match serde_json::from_slice(&msg.payload) {
             Ok(p) => p,
             Err(err) => {
