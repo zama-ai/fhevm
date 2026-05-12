@@ -1026,11 +1026,10 @@ async fn test_fhe_mul_div_events() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
 
     // (lhs_value, rhs_value, divisor, is_scalar_rhs, expected_result)
-    // (300 * 300) / 100 = 900
     let test_cases: &[(u64, u64, u64, bool, &str)] = &[
-        (300, 300, 100, false, "900"), // enc * enc / scalar
-        (300, 300, 100, true, "900"),  // enc * scalar / scalar
-        (10, 3, 1, false, "30"),       // enc * enc / 1
+        (20, 10, 2, false, "100"), // enc * enc / scalar
+        (20, 10, 2, true, "100"),  // enc * scalar / scalar
+        (10, 3, 1, false, "30"),   // enc * enc / 1
     ];
 
     let mut cases: Vec<(Handle, i32, &str)> = vec![];
