@@ -1,15 +1,15 @@
-import type { FheTypeInfo } from "@fhevm/solidity/lib-js/common";
-import { ALL_FHE_TYPE_INFOS } from "@fhevm/solidity/lib-js/fheTypeInfos";
-import { ALL_OPERATORS_PRICES } from "@fhevm/solidity/lib-js/operatorsPrices";
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { toBufferBE } from "bigint-buffer";
-import { ContractMethodArgs, Log, TransactionReceipt, Typed } from "ethers";
-import { Signer } from "ethers";
-import { ethers, network } from "hardhat";
-import hre from "hardhat";
+import type { FheTypeInfo } from '@fhevm/solidity/lib-js/common';
+import { ALL_FHE_TYPE_INFOS } from '@fhevm/solidity/lib-js/fheTypeInfos';
+import { ALL_OPERATORS_PRICES } from '@fhevm/solidity/lib-js/operatorsPrices';
+import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
+import { toBufferBE } from 'bigint-buffer';
+import { ContractMethodArgs, Log, TransactionReceipt, Typed } from 'ethers';
+import { Signer } from 'ethers';
+import { ethers, network } from 'hardhat';
+import hre from 'hardhat';
 
-import { TypedContractMethod } from "../types/common";
-import { coprocessorAddress } from "./instance";
+import { TypedContractMethod } from '../types/common';
+import { coprocessorAddress } from './instance';
 
 export async function checkIsHardhatSigner(signer: HardhatEthersSigner) {
   const signers: HardhatEthersSigner[] = await hre.ethers.getSigners();
@@ -22,7 +22,7 @@ export async function checkIsHardhatSigner(signer: HardhatEthersSigner) {
 }
 
 export const waitForBlock = (blockNumber: bigint | number) => {
-  if (network.name === "hardhat") {
+  if (network.name === 'hardhat') {
     return new Promise((resolve, reject) => {
       const intervalId = setInterval(async () => {
         try {
@@ -41,11 +41,11 @@ export const waitForBlock = (blockNumber: bigint | number) => {
     return new Promise((resolve, reject) => {
       const waitBlock = async (currentBlock: number) => {
         if (blockNumber <= BigInt(currentBlock)) {
-          await ethers.provider.off("block", waitBlock);
+          await ethers.provider.off('block', waitBlock);
           resolve(blockNumber);
         }
       };
-      ethers.provider.on("block", waitBlock).catch((err) => {
+      ethers.provider.on('block', waitBlock).catch((err) => {
         reject(err);
       });
     });
@@ -57,11 +57,11 @@ export const waitForBalance = async (address: string): Promise<void> => {
     const checkBalance = async () => {
       const balance = await ethers.provider.getBalance(address);
       if (balance > 0) {
-        await ethers.provider.off("block", checkBalance);
+        await ethers.provider.off('block', checkBalance);
         resolve();
       }
     };
-    ethers.provider.on("block", checkBalance).catch((err) => {
+    ethers.provider.on('block', checkBalance).catch((err) => {
       reject(err);
     });
   });
@@ -81,21 +81,21 @@ export const createTransaction = async <A extends [...{ [I in keyof A]-?: A[I] |
 
 export const mineNBlocks = async (n: number) => {
   for (let index = 0; index < n; index++) {
-    await ethers.provider.send("evm_mine");
+    await ethers.provider.send('evm_mine');
   }
 };
 
 export const waitForPendingTransactions = async (txHashes: string[], timeoutMs = 30_000): Promise<void> => {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    const pendingBlock = await ethers.provider.send("eth_getBlockByNumber", ["pending", false]);
+    const pendingBlock = await ethers.provider.send('eth_getBlockByNumber', ['pending', false]);
     const pendingTxHashes = new Set<string>(pendingBlock?.transactions ?? []);
     if (txHashes.every((txHash) => pendingTxHashes.has(txHash))) {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  throw new Error(`Timed out waiting for pending txs: ${txHashes.join(", ")}`);
+  throw new Error(`Timed out waiting for pending txs: ${txHashes.join(', ')}`);
 };
 
 export const waitForTransactionReceipt = async (txHash: string, timeoutMs = 30_000): Promise<TransactionReceipt> => {
@@ -275,7 +275,7 @@ export function getTxHCUFromTxReceipt(
   HCUDepthPerHandle: Record<string, number>;
 } {
   if (receipt.status === 0) {
-    throw new Error("Transaction reverted");
+    throw new Error('Transaction reverted');
   }
 
   function readFromHCUMap(handle: string): number {
@@ -298,7 +298,7 @@ export function getTxHCUFromTxReceipt(
         topics: log.topics,
         data: log.data,
       });
-      return abi.some((item) => item.startsWith(`event ${parsedLog!.name}`) && parsedLog!.name !== "VerifyInput");
+      return abi.some((item) => item.startsWith(`event ${parsedLog!.name}`) && parsedLog!.name !== 'VerifyInput');
     } catch {
       return false;
     }
@@ -325,35 +325,35 @@ export function getTxHCUFromTxReceipt(
     let hcuConsumed: number;
 
     switch (event.name) {
-      case "TrivialEncrypt":
+      case 'TrivialEncrypt':
         typeIndex = parseInt(event.args[2]);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
 
-        hcuConsumed = (ALL_OPERATORS_PRICES["trivialEncrypt"].types as Record<string, number>)[type];
+        hcuConsumed = (ALL_OPERATORS_PRICES['trivialEncrypt'].types as Record<string, number>)[type];
         totalHCUConsumed += hcuConsumed;
         handleResult = ethers.toBeHex(event.args[3], 32);
         hcuMap[handleResult] = hcuConsumed;
         handleSet.add(handleResult);
         break;
 
-      case "TrivialEncryptBytes":
+      case 'TrivialEncryptBytes':
         typeIndex = parseInt(event.args[2]);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
 
-        hcuConsumed = (ALL_OPERATORS_PRICES["trivialEncrypt"].types as Record<string, number>)[type];
+        hcuConsumed = (ALL_OPERATORS_PRICES['trivialEncrypt'].types as Record<string, number>)[type];
         totalHCUConsumed += hcuConsumed;
         handleResult = ethers.toBeHex(event.args[3], 32);
         hcuMap[handleResult] = hcuConsumed;
         handleSet.add(handleResult);
         break;
 
-      case "FheAdd":
+      case 'FheAdd':
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -362,11 +362,11 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
 
-        if (event.args[3] === "0x01") {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheAdd"].scalar as Record<string, number>)[type];
+        if (event.args[3] === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheAdd'].scalar as Record<string, number>)[type];
           hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheAdd"].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheAdd'].nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
             hcuConsumed +
             Math.max(
@@ -379,7 +379,7 @@ export function getTxHCUFromTxReceipt(
         totalHCUConsumed += hcuConsumed;
         break;
 
-      case "FheSub":
+      case 'FheSub':
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -388,11 +388,11 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
 
-        if (event.args[3] === "0x01") {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheSub"].scalar as Record<string, number>)[type];
+        if (event.args[3] === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheSub'].scalar as Record<string, number>)[type];
           hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheSub"].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheSub'].nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
             hcuConsumed +
             Math.max(
@@ -405,7 +405,7 @@ export function getTxHCUFromTxReceipt(
         totalHCUConsumed += hcuConsumed;
         break;
 
-      case "FheMul":
+      case 'FheMul':
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -414,11 +414,11 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
 
-        if (event.args[3] === "0x01") {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheMul"].scalar as Record<string, number>)[type];
+        if (event.args[3] === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheMul'].scalar as Record<string, number>)[type];
           hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheMul"].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheMul'].nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
             hcuConsumed +
             Math.max(
@@ -431,53 +431,53 @@ export function getTxHCUFromTxReceipt(
         totalHCUConsumed += hcuConsumed;
         break;
 
-      case "FheDiv":
+      case 'FheDiv':
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        if (event.args[3] === "0x01") {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheDiv"].scalar as Record<string, number>)[type];
+        if (event.args[3] === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheDiv'].scalar as Record<string, number>)[type];
           hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          throw new Error("Non-scalar div not implemented yet");
+          throw new Error('Non-scalar div not implemented yet');
         }
 
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
 
-      case "FheRem":
+      case 'FheRem':
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        if (event.args[3] === "0x01") {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheRem"].scalar as Record<string, number>)[type];
+        if (event.args[3] === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheRem'].scalar as Record<string, number>)[type];
           hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          throw new Error("Non-scalar rem not implemented yet");
+          throw new Error('Non-scalar rem not implemented yet');
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
 
-      case "FheBitAnd":
+      case 'FheBitAnd':
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        if (event.args[3] === "0x01") {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheBitAnd"].scalar as Record<string, number>)[type];
+        if (event.args[3] === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheBitAnd'].scalar as Record<string, number>)[type];
           hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheBitAnd"].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheBitAnd'].nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
             hcuConsumed +
             Math.max(
@@ -489,18 +489,18 @@ export function getTxHCUFromTxReceipt(
         totalHCUConsumed += hcuConsumed;
         break;
 
-      case "FheBitOr":
+      case 'FheBitOr':
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        if (event.args[3] === "0x01") {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheBitOr"].scalar as Record<string, number>)[type];
+        if (event.args[3] === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheBitOr'].scalar as Record<string, number>)[type];
           hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheBitOr"].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheBitOr'].nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
             hcuConsumed +
             Math.max(
@@ -512,18 +512,18 @@ export function getTxHCUFromTxReceipt(
         totalHCUConsumed += hcuConsumed;
         break;
 
-      case "FheBitXor":
+      case 'FheBitXor':
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        if (event.args[3] === "0x01") {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheBitXor"].scalar as Record<string, number>)[type];
+        if (event.args[3] === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheBitXor'].scalar as Record<string, number>)[type];
           hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheBitXor"].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheBitXor'].nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
             hcuConsumed +
             Math.max(
@@ -535,18 +535,18 @@ export function getTxHCUFromTxReceipt(
         totalHCUConsumed += hcuConsumed;
         break;
 
-      case "FheShl":
+      case 'FheShl':
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        if (event.args[3] === "0x01") {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheShl"].scalar as Record<string, number>)[type];
+        if (event.args[3] === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheShl'].scalar as Record<string, number>)[type];
           hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheShl"].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheShl'].nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
             hcuConsumed +
             Math.max(
@@ -558,18 +558,18 @@ export function getTxHCUFromTxReceipt(
         totalHCUConsumed += hcuConsumed;
         break;
 
-      case "FheShr":
+      case 'FheShr':
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        if (event.args[3] === "0x01") {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheShr"].scalar as Record<string, number>)[type];
+        if (event.args[3] === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheShr'].scalar as Record<string, number>)[type];
           hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheShr"].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheShr'].nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
             hcuConsumed +
             Math.max(
@@ -581,18 +581,18 @@ export function getTxHCUFromTxReceipt(
         totalHCUConsumed += hcuConsumed;
         break;
 
-      case "FheRotl":
+      case 'FheRotl':
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        if (event.args[3] === "0x01") {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheRotl"].scalar as Record<string, number>)[type];
+        if (event.args[3] === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheRotl'].scalar as Record<string, number>)[type];
           hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheRotl"].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheRotl'].nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
             hcuConsumed +
             Math.max(
@@ -604,18 +604,18 @@ export function getTxHCUFromTxReceipt(
         totalHCUConsumed += hcuConsumed;
         break;
 
-      case "FheRotr":
+      case 'FheRotr':
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        if (event.args[3] === "0x01") {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheRotr"].scalar as Record<string, number>)[type];
+        if (event.args[3] === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheRotr'].scalar as Record<string, number>)[type];
           hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheRotr"].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheRotr'].nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
             hcuConsumed +
             Math.max(
@@ -627,7 +627,7 @@ export function getTxHCUFromTxReceipt(
         totalHCUConsumed += hcuConsumed;
         break;
 
-      case "FheEq":
+      case 'FheEq':
         handleResult = ethers.toBeHex(event.args[4], 32);
         handle = ethers.toBeHex(event.args[1], 32);
         typeIndex = parseInt(handle.slice(-4, -2), 16);
@@ -636,11 +636,11 @@ export function getTxHCUFromTxReceipt(
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        if (event.args[3] === "0x01") {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheEq"].scalar as Record<string, number>)[type];
+        if (event.args[3] === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheEq'].scalar as Record<string, number>)[type];
           hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheEq"].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheEq'].nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
             hcuConsumed +
             Math.max(
@@ -652,7 +652,7 @@ export function getTxHCUFromTxReceipt(
         totalHCUConsumed += hcuConsumed;
         break;
 
-      case "FheEqBytes":
+      case 'FheEqBytes':
         handleResult = ethers.toBeHex(event.args[4], 32);
         handle = ethers.toBeHex(event.args[1], 32);
         typeIndex = parseInt(handle.slice(-4, -2), 16);
@@ -661,11 +661,11 @@ export function getTxHCUFromTxReceipt(
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        if (event.args[3] === "0x01") {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheEq"].scalar as Record<string, number>)[type];
+        if (event.args[3] === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheEq'].scalar as Record<string, number>)[type];
           hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheEq"].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheEq'].nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
             hcuConsumed +
             Math.max(
@@ -677,7 +677,7 @@ export function getTxHCUFromTxReceipt(
         totalHCUConsumed += hcuConsumed;
         break;
 
-      case "FheNe":
+      case 'FheNe':
         handleResult = ethers.toBeHex(event.args[4], 32);
         handle = ethers.toBeHex(event.args[1], 32);
         typeIndex = parseInt(handle.slice(-4, -2), 16);
@@ -686,11 +686,11 @@ export function getTxHCUFromTxReceipt(
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        if (event.args[3] === "0x01") {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheNe"].scalar as Record<string, number>)[type];
+        if (event.args[3] === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheNe'].scalar as Record<string, number>)[type];
           hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheNe"].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheNe'].nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
             hcuConsumed +
             Math.max(
@@ -702,7 +702,7 @@ export function getTxHCUFromTxReceipt(
         totalHCUConsumed += hcuConsumed;
         break;
 
-      case "FheNeBytes":
+      case 'FheNeBytes':
         handleResult = ethers.toBeHex(event.args[4], 32);
         handle = ethers.toBeHex(event.args[1], 32);
         typeIndex = parseInt(handle.slice(-4, -2), 16);
@@ -711,11 +711,11 @@ export function getTxHCUFromTxReceipt(
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        if (event.args[3] === "0x01") {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheNe"].scalar as Record<string, number>)[type];
+        if (event.args[3] === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheNe'].scalar as Record<string, number>)[type];
           hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheNe"].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheNe'].nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
             hcuConsumed +
             Math.max(
@@ -727,7 +727,7 @@ export function getTxHCUFromTxReceipt(
         totalHCUConsumed += hcuConsumed;
         break;
 
-      case "FheGe":
+      case 'FheGe':
         handleResult = ethers.toBeHex(event.args[4], 32);
         handle = ethers.toBeHex(event.args[1], 32);
         typeIndex = parseInt(handle.slice(-4, -2), 16);
@@ -736,11 +736,11 @@ export function getTxHCUFromTxReceipt(
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        if (event.args[3] === "0x01") {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheGe"].scalar as Record<string, number>)[type];
+        if (event.args[3] === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheGe'].scalar as Record<string, number>)[type];
           hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheGe"].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheGe'].nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
             hcuConsumed +
             Math.max(
@@ -752,7 +752,7 @@ export function getTxHCUFromTxReceipt(
         totalHCUConsumed += hcuConsumed;
         break;
 
-      case "FheGt":
+      case 'FheGt':
         handleResult = ethers.toBeHex(event.args[4], 32);
         handle = ethers.toBeHex(event.args[1], 32);
         typeIndex = parseInt(handle.slice(-4, -2), 16);
@@ -760,11 +760,11 @@ export function getTxHCUFromTxReceipt(
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        if (event.args[3] === "0x01") {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheGt"].scalar as Record<string, number>)[type];
+        if (event.args[3] === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheGt'].scalar as Record<string, number>)[type];
           hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheGt"].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheGt'].nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
             hcuConsumed +
             Math.max(
@@ -776,7 +776,7 @@ export function getTxHCUFromTxReceipt(
         totalHCUConsumed += hcuConsumed;
         break;
 
-      case "FheLe":
+      case 'FheLe':
         handleResult = ethers.toBeHex(event.args[4], 32);
         handle = ethers.toBeHex(event.args[1], 32);
         typeIndex = parseInt(handle.slice(-4, -2), 16);
@@ -784,11 +784,11 @@ export function getTxHCUFromTxReceipt(
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        if (event.args[3] === "0x01") {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheLe"].scalar as Record<string, number>)[type];
+        if (event.args[3] === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheLe'].scalar as Record<string, number>)[type];
           hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheLe"].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheLe'].nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
             hcuConsumed +
             Math.max(
@@ -800,7 +800,7 @@ export function getTxHCUFromTxReceipt(
         totalHCUConsumed += hcuConsumed;
         break;
 
-      case "FheLt":
+      case 'FheLt':
         handleResult = ethers.toBeHex(event.args[4], 32);
         handle = ethers.toBeHex(event.args[1], 32);
         typeIndex = parseInt(handle.slice(-4, -2), 16);
@@ -808,11 +808,11 @@ export function getTxHCUFromTxReceipt(
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        if (event.args[3] === "0x01") {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheLt"].scalar as Record<string, number>)[type];
+        if (event.args[3] === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheLt'].scalar as Record<string, number>)[type];
           hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheLt"].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheLt'].nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
             hcuConsumed +
             Math.max(
@@ -824,7 +824,7 @@ export function getTxHCUFromTxReceipt(
         totalHCUConsumed += hcuConsumed;
         break;
 
-      case "FheMax":
+      case 'FheMax':
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -833,11 +833,11 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
 
-        if (event.args[3] === "0x01") {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheMax"].scalar as Record<string, number>)[type];
+        if (event.args[3] === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheMax'].scalar as Record<string, number>)[type];
           hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheMax"].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheMax'].nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
             hcuConsumed +
             Math.max(
@@ -849,7 +849,7 @@ export function getTxHCUFromTxReceipt(
         totalHCUConsumed += hcuConsumed;
         break;
 
-      case "FheMin":
+      case 'FheMin':
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -858,11 +858,11 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
 
-        if (event.args[3] === "0x01") {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheMin"].scalar as Record<string, number>)[type];
+        if (event.args[3] === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheMin'].scalar as Record<string, number>)[type];
           hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES["fheMin"].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheMin'].nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
             hcuConsumed +
             Math.max(
@@ -875,7 +875,7 @@ export function getTxHCUFromTxReceipt(
         totalHCUConsumed += hcuConsumed;
         break;
 
-      case "Cast":
+      case 'Cast':
         handle = ethers.toBeHex(event.args[1], 32);
         typeIndex = parseInt(handle.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -885,13 +885,13 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
 
-        hcuConsumed = (ALL_OPERATORS_PRICES["cast"].types as Record<string, number>)[type];
+        hcuConsumed = (ALL_OPERATORS_PRICES['cast'].types as Record<string, number>)[type];
         hcuMap[handleResult] = hcuConsumed + readFromHCUMap(handle);
         totalHCUConsumed += hcuConsumed;
         handleSet.add(handleResult);
         break;
 
-      case "FheNot":
+      case 'FheNot':
         handle = ethers.toBeHex(event.args[1], 32);
         typeIndex = parseInt(handle.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -899,13 +899,13 @@ export function getTxHCUFromTxReceipt(
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        hcuConsumed = (ALL_OPERATORS_PRICES["fheNot"].types as Record<string, number>)[type];
+        hcuConsumed = (ALL_OPERATORS_PRICES['fheNot'].types as Record<string, number>)[type];
         hcuMap[handleResult] = hcuConsumed + readFromHCUMap(handle);
         totalHCUConsumed += hcuConsumed;
         handleSet.add(ethers.toBeHex(event.args[2], 32));
         break;
 
-      case "FheNeg":
+      case 'FheNeg':
         handle = ethers.toBeHex(event.args[1], 32);
         typeIndex = parseInt(handle.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -913,13 +913,13 @@ export function getTxHCUFromTxReceipt(
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        hcuConsumed = (ALL_OPERATORS_PRICES["fheNeg"].types as Record<string, number>)[type];
+        hcuConsumed = (ALL_OPERATORS_PRICES['fheNeg'].types as Record<string, number>)[type];
         hcuMap[handleResult] = hcuConsumed + readFromHCUMap(handle);
         totalHCUConsumed += hcuConsumed;
         handleSet.add(ethers.toBeHex(event.args[2], 32));
         break;
 
-      case "FheIfThenElse":
+      case 'FheIfThenElse':
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -928,7 +928,7 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
 
-        hcuConsumed = (ALL_OPERATORS_PRICES["ifThenElse"].types as Record<string, number>)[type];
+        hcuConsumed = (ALL_OPERATORS_PRICES['ifThenElse'].types as Record<string, number>)[type];
         hcuMap[handleResult] =
           hcuConsumed +
           Math.max(
@@ -940,27 +940,27 @@ export function getTxHCUFromTxReceipt(
         totalHCUConsumed += hcuConsumed;
         break;
 
-      case "FheRand":
+      case 'FheRand':
         handleResult = ethers.toBeHex(event.args[3], 32);
         typeIndex = parseInt(event.args[1]);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        hcuConsumed = (ALL_OPERATORS_PRICES["fheRand"].types as Record<string, number>)[type];
+        hcuConsumed = (ALL_OPERATORS_PRICES['fheRand'].types as Record<string, number>)[type];
         hcuMap[handleResult] = hcuConsumed;
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
 
-      case "FheRandBounded":
+      case 'FheRandBounded':
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(event.args[2]);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        hcuConsumed = (ALL_OPERATORS_PRICES["fheRandBounded"].types as Record<string, number>)[type];
+        hcuConsumed = (ALL_OPERATORS_PRICES['fheRandBounded'].types as Record<string, number>)[type];
         hcuMap[handleResult] = hcuConsumed;
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
@@ -973,17 +973,21 @@ export function getTxHCUFromTxReceipt(
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        const nBucketedPrices = (ALL_OPERATORS_PRICES['fheSum'].nBucketed as Record<string, { le10: number; le30?: number; le60?: number; le100?: number }>)[type];
+        const nBucketedPrices = (
+          ALL_OPERATORS_PRICES['fheSum'].nBucketed as Record<
+            string,
+            { le10: number; le30?: number; le60?: number; le100?: number }
+          >
+        )[type];
         const n = (event.args[1] as string[]).length;
         if (n <= 10) hcuConsumed = nBucketedPrices.le10;
         else if (n <= 30) hcuConsumed = nBucketedPrices.le30 ?? nBucketedPrices.le10;
         else if (n <= 60) hcuConsumed = nBucketedPrices.le60 ?? nBucketedPrices.le30 ?? nBucketedPrices.le10;
-        else hcuConsumed = nBucketedPrices.le100 ?? nBucketedPrices.le60 ?? nBucketedPrices.le30 ?? nBucketedPrices.le10;
+        else
+          hcuConsumed = nBucketedPrices.le100 ?? nBucketedPrices.le60 ?? nBucketedPrices.le30 ?? nBucketedPrices.le10;
         const inputValues = event.args[1] as string[];
         const maxInputHCU =
-          inputValues.length > 0
-            ? Math.max(...inputValues.map((v) => readFromHCUMap(ethers.toBeHex(v, 32))))
-            : 0;
+          inputValues.length > 0 ? Math.max(...inputValues.map((v) => readFromHCUMap(ethers.toBeHex(v, 32)))) : 0;
         hcuMap[handleResult] = hcuConsumed + maxInputHCU;
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
@@ -998,13 +1002,24 @@ export function getTxHCUFromTxReceipt(
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        const nBucketedIsInPrices = (ALL_OPERATORS_PRICES['fheIsIn'].nBucketed as Record<string, { le10: number; le30?: number; le60?: number; le100?: number }>)[type];
+        const nBucketedIsInPrices = (
+          ALL_OPERATORS_PRICES['fheIsIn'].nBucketed as Record<
+            string,
+            { le10: number; le30?: number; le60?: number; le100?: number }
+          >
+        )[type];
         const setHandles = event.args[2] as string[];
         const setSize = setHandles.length;
         if (setSize <= 10) hcuConsumed = nBucketedIsInPrices.le10;
         else if (setSize <= 30) hcuConsumed = nBucketedIsInPrices.le30 ?? nBucketedIsInPrices.le10;
-        else if (setSize <= 60) hcuConsumed = nBucketedIsInPrices.le60 ?? nBucketedIsInPrices.le30 ?? nBucketedIsInPrices.le10;
-        else hcuConsumed = nBucketedIsInPrices.le100 ?? nBucketedIsInPrices.le60 ?? nBucketedIsInPrices.le30 ?? nBucketedIsInPrices.le10;
+        else if (setSize <= 60)
+          hcuConsumed = nBucketedIsInPrices.le60 ?? nBucketedIsInPrices.le30 ?? nBucketedIsInPrices.le10;
+        else
+          hcuConsumed =
+            nBucketedIsInPrices.le100 ??
+            nBucketedIsInPrices.le60 ??
+            nBucketedIsInPrices.le30 ??
+            nBucketedIsInPrices.le10;
         const valueHandle = ethers.toBeHex(event.args[1], 32);
         const allInputHandles = [valueHandle, ...setHandles.map((h) => ethers.toBeHex(h, 32))];
         const maxInputHCU = Math.max(...allInputHandles.map((h) => readFromHCUMap(h)));

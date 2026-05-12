@@ -1,14 +1,14 @@
-import { createInstance as createFhevmInstance } from "@zama-fhe/relayer-sdk/node";
-import { ethers } from "ethers";
-import { ethers as hardhatEthers } from "hardhat";
-import { vars } from "hardhat/config";
+import { createInstance as createFhevmInstance } from '@zama-fhe/relayer-sdk/node';
+import { ethers } from 'ethers';
+import { ethers as hardhatEthers } from 'hardhat';
+import { vars } from 'hardhat/config';
 
-import { FhevmSdk } from "../sdk/fhevm-sdk/sdk";
-import { RelayerSdk } from "../sdk/relayer-sdk/sdk";
+import { FhevmSdk } from '../sdk/fhevm-sdk/sdk';
+import { RelayerSdk } from '../sdk/relayer-sdk/sdk';
 
 const defaultMnemonic =
-  "adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer";
-const mnemonic: string = process.env.MNEMONIC ?? vars.get("MNEMONIC", defaultMnemonic);
+  'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';
+const mnemonic: string = process.env.MNEMONIC ?? vars.get('MNEMONIC', defaultMnemonic);
 
 const decryptionAddress = process.env.DECRYPTION_ADDRESS!;
 const inputVerificationAddress = process.env.INPUT_VERIFICATION_ADDRESS!;
@@ -152,12 +152,12 @@ export async function deployContract(
 export async function evmSnapshot(provider: {
   send: (method: string, params: unknown[]) => Promise<unknown>;
 }): Promise<string> {
-  return provider.send("evm_snapshot", []) as Promise<string>;
+  return provider.send('evm_snapshot', []) as Promise<string>;
 }
 
 export async function evmRevert(
   provider: { send: (method: string, params: unknown[]) => Promise<unknown> },
   snapshotId: string,
 ): Promise<boolean> {
-  return provider.send("evm_revert", [snapshotId]) as Promise<boolean>;
+  return provider.send('evm_revert', [snapshotId]) as Promise<boolean>;
 }

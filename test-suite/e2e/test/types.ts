@@ -1,10 +1,10 @@
-import type { FhevmInstance } from "@zama-fhe/relayer-sdk/node";
+import type { FhevmInstance } from '@zama-fhe/relayer-sdk/node';
 
-import { EncryptedERC20, Rand } from "../types";
-import { SdkInstance } from "./sdk/types";
-import type { Signers } from "./signers";
+import { EncryptedERC20, Rand } from '../types';
+import { SdkInstance } from './sdk/types';
+import type { Signers } from './signers';
 
-declare module "mocha" {
+declare module 'mocha' {
   export interface Context {
     signers: Signers;
     contractAddress: string;

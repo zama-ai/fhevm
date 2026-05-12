@@ -1,11 +1,11 @@
-import { assert, expect } from "chai";
-import hre from "hardhat";
+import { assert, expect } from 'chai';
+import hre from 'hardhat';
 
-import { createInstances } from "../instance";
-import { getSigners, initSigners } from "../signers";
-import { deployEncryptedERC20Fixture } from "./EncryptedERC20.fixture";
+import { createInstances } from '../instance';
+import { getSigners, initSigners } from '../signers';
+import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
 
-describe("EncryptedERC20", function () {
+describe('EncryptedERC20', function () {
   before(async function () {
     await initSigners(2);
     this.signers = await getSigners();
@@ -18,7 +18,7 @@ describe("EncryptedERC20", function () {
     this.instances = await createInstances(this.signers);
   });
 
-  it("should mint the contract", async function () {
+  it('should mint the contract', async function () {
     const transaction = await this.erc20.mint(1000);
     await transaction.wait();
 
@@ -27,15 +27,15 @@ describe("EncryptedERC20", function () {
 
     // Balance handle is deterministic so we can verify the last bytes of the handle
     // Byte 21 was set to 0xff.
-    expect(balanceHandleAlice.slice(44, 46)).to.eq("ff");
+    expect(balanceHandleAlice.slice(44, 46)).to.eq('ff');
     // Bytes 22-29 must be the chainId
-    const chainId = process.env.SOLIDITY_COVERAGE === "true" ? 31337 : hre.network.config.chainId;
-    assert(chainId, "Host chainId not set");
-    expect(balanceHandleAlice.slice(46, 62)).to.eq(chainId.toString(16).padStart(16, "0"));
+    const chainId = process.env.SOLIDITY_COVERAGE === 'true' ? 31337 : hre.network.config.chainId;
+    assert(chainId, 'Host chainId not set');
+    expect(balanceHandleAlice.slice(46, 62)).to.eq(chainId.toString(16).padStart(16, '0'));
     // Byte30: type is euint64 (so position 5 in the FheType enum)
-    expect(balanceHandleAlice.slice(62, 64)).to.eq("05");
+    expect(balanceHandleAlice.slice(62, 64)).to.eq('05');
     // Byte31: handle version is 0
-    expect(balanceHandleAlice.slice(64, 66)).to.eq("00");
+    expect(balanceHandleAlice.slice(64, 66)).to.eq('00');
 
     const balanceAlice = await this.instances.alice.userDecryptSingleHandle({
       handle: balanceHandleAlice,
@@ -49,7 +49,7 @@ describe("EncryptedERC20", function () {
     expect(totalSupply).to.equal(1000n);
   });
 
-  it("should transfer tokens between two users.", async function () {
+  it('should transfer tokens between two users.', async function () {
     const transaction = await this.erc20.mint(10000);
     const t1 = await transaction.wait();
     expect(t1?.status).to.eq(1);
@@ -60,7 +60,7 @@ describe("EncryptedERC20", function () {
       userAddress: this.signers.alice.address,
     });
 
-    const tx = await this.erc20["transfer(address,bytes32,bytes)"](
+    const tx = await this.erc20['transfer(address,bytes32,bytes)'](
       this.signers.bob.address,
       encryptedTransferAmount.handles[0],
       encryptedTransferAmount.inputProof,
@@ -91,7 +91,7 @@ describe("EncryptedERC20", function () {
     expect(balanceBob).to.equal(1337);
   });
 
-  it("should not transfer tokens between two users", async function () {
+  it('should not transfer tokens between two users', async function () {
     const transaction = await this.erc20.mint(1000);
     await transaction.wait();
 
@@ -101,7 +101,7 @@ describe("EncryptedERC20", function () {
       userAddress: this.signers.alice.address,
     });
 
-    const tx = await this.erc20["transfer(address,bytes32,bytes)"](
+    const tx = await this.erc20['transfer(address,bytes32,bytes)'](
       this.signers.bob.address,
       encryptedTransferAmount.handles[0],
       encryptedTransferAmount.inputProof,
@@ -130,7 +130,7 @@ describe("EncryptedERC20", function () {
     expect(balanceBob).to.equal(0);
   });
 
-  it("should be able to transferFrom only if allowance is sufficient", async function () {
+  it('should be able to transferFrom only if allowance is sufficient', async function () {
     const transaction = await this.erc20.mint(10000);
     await transaction.wait();
 
@@ -140,7 +140,7 @@ describe("EncryptedERC20", function () {
       userAddress: this.signers.alice.address,
     });
 
-    const tx = await this.erc20["approve(address,bytes32,bytes)"](
+    const tx = await this.erc20['approve(address,bytes32,bytes)'](
       this.signers.bob.address,
       encryptedAllowanceAmount.handles[0],
       encryptedAllowanceAmount.inputProof,
@@ -155,7 +155,7 @@ describe("EncryptedERC20", function () {
       userAddress: this.signers.bob.address,
     });
 
-    const tx2 = await bobErc20["transferFrom(address,address,bytes32,bytes)"](
+    const tx2 = await bobErc20['transferFrom(address,address,bytes32,bytes)'](
       this.signers.alice.address,
       this.signers.bob.address,
       encryptedTransferAmount.handles[0],
@@ -191,7 +191,7 @@ describe("EncryptedERC20", function () {
       userAddress: this.signers.bob.address,
     });
 
-    const tx3 = await bobErc20["transferFrom(address,address,bytes32,bytes)"](
+    const tx3 = await bobErc20['transferFrom(address,address,bytes32,bytes)'](
       this.signers.alice.address,
       this.signers.bob.address,
       encryptedTransferAmount2.handles[0],
@@ -220,8 +220,8 @@ describe("EncryptedERC20", function () {
     expect(balanceBob2).to.equal(1337); // check that transfer did happen this time
   });
 
-  describe("negative-acl", function () {
-    it("should reject when user is not allowed for handle", async function () {
+  describe('negative-acl', function () {
+    it('should reject when user is not allowed for handle', async function () {
       const transaction = await this.erc20.mint(10000);
       await transaction.wait();
 
@@ -231,7 +231,7 @@ describe("EncryptedERC20", function () {
         userAddress: this.signers.alice.address,
       });
 
-      const tx = await this.erc20["transfer(address,bytes32,bytes)"](
+      const tx = await this.erc20['transfer(address,bytes32,bytes)'](
         this.signers.bob.address,
         encryptedTransferAmount.handles[0],
         encryptedTransferAmount.inputProof,
@@ -246,11 +246,11 @@ describe("EncryptedERC20", function () {
           contractAddress: this.contractAddress,
           signer: this.signers.bob,
         });
-        expect.fail("Expected an error to be thrown - Bob should not be able to user decrypt Alice balance");
+        expect.fail('Expected an error to be thrown - Bob should not be able to user decrypt Alice balance');
       } catch (error) {
         expect((error as { message: string }).message).to.contain(
           this.instances.bob.getUserDecryptErrorMessage({
-            type: "user-unauthorized",
+            type: 'user-unauthorized',
             signer: this.signers.bob,
             handle: balanceHandleAlice,
           }),
