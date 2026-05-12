@@ -1,10 +1,9 @@
-import type { TypedValue } from '../../../src/core/types/primitives.js';
+import type { EncryptedValue } from '@fhevm/sdk/types';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
-import { createTypedValueArray } from '../../../src/core/base/typedValue.js';
-import { isBytes32Hex } from '../../../src/core/base/bytes.js';
-import { toFhevmHandle } from '../../../src/core/handle/FhevmHandle.js';
+import { chainIdFromHandle, clearTypeFromHandle, encryptTestCases, isBytes32Hex, isCleartext } from '../setupCommon.js';
+import { asEncryptedValue } from '@fhevm/sdk/types';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -22,44 +21,7 @@ import { toFhevmHandle } from '../../../src/core/handle/FhevmHandle.js';
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-const encryptTestCases: TypedValue[] = createTypedValueArray([
-  {
-    value: true,
-    type: 'bool' as const,
-  },
-  {
-    type: 'uint8' as const,
-    value: 42,
-  },
-  {
-    type: 'uint16' as const,
-    value: 1234,
-  },
-  {
-    type: 'uint32' as const,
-    value: 123456,
-  },
-  {
-    type: 'uint64' as const,
-    value: 123456789n,
-  },
-  {
-    type: 'uint128' as const,
-    value: 123456789012345n,
-  },
-  {
-    type: 'uint256' as const,
-    value: 123456789012345678901234567890n,
-  },
-  {
-    type: 'address' as const,
-    value: '0x37AC010c1c566696326813b840319B58Bb5840E4',
-  },
-]);
-
-////////////////////////////////////////////////////////////////////////////////
-
-describe('Encrypt', () => {
+describe.runIf(!isCleartext(getEthersTestConfig().chainName))('Encrypt', () => {
   let config: FheTestEthersConfig;
 
   beforeAll(() => {
@@ -97,11 +59,11 @@ describe('Encrypt', () => {
     for (let i = 0; i < encryptTestCases.length; i++) {
       const tc = encryptTestCases[i]!;
       const ev = result.encryptedValues[i]!;
-      const handle = toFhevmHandle(ev);
+      const handle: EncryptedValue = asEncryptedValue(ev);
       expect(ev).toBeDefined();
       expect(isBytes32Hex(ev)).toBe(true);
-      expect(handle.chainId).toBe(BigInt(client.chain.id));
-      expect(handle.clearType).toBe(tc.type);
+      expect(chainIdFromHandle(handle)).toBe(BigInt(client.chain.id));
+      expect(clearTypeFromHandle(handle)).toBe(tc.type);
       console.log(`  ${tc.type}: handle=${ev.slice(0, 20)}...`);
     }
   });

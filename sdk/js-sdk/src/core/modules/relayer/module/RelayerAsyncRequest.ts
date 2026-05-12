@@ -1611,6 +1611,20 @@ export class RelayerAsyncRequest {
     });
   }
 
+  // private _throwRelayerResponseApiErrorLoose(params: { status: number; bodyJson: Record<string, unknown> }): never {
+  //   // body is considered ok if:
+  //   // body.error exists
+  //   // body.error.label is a string
+  //   // body.error.message is a string
+  //   // body.error.details is optional array of {field, issue}
+  //   // body.Json contains "error" ?
+  //   // error.label;
+  //   // error.message: string;
+  //   // error.details
+  //   // error.details[i].field
+  //   // error.details[i].issue
+  // }
+
   /**
    * Throws a relayer API error with the given status and error details.
    * @throws {RelayerResponseApiError} Always throws with the provided error details.

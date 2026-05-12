@@ -4,19 +4,19 @@ Encryption with FHE is heavier than a typical Ethereum transaction. The SDK is d
 
 ## What costs what
 
-| Operation | Time | Network | WASM loaded |
-| --- | --- | --- | --- |
-| `setFhevmRuntimeConfig()` | Instant | None | None |
-| `createFhevmClient()` | Instant | None | None |
-| `fetchFheEncryptionKeyBytes()` (first call) | 2-10s | ~50MB download | TFHE (~5MB) |
-| `fetchFheEncryptionKeyBytes()` (cached) | Instant | None | None |
-| `encrypt()` (first call) | 3-15s | Relayer call | TFHE init |
-| `encrypt()` (subsequent) | 1-5s | Relayer call | Already loaded |
-| `publicDecrypt()` | 1-3s | Relayer call + RPC | None |
-| `decrypt()` (first call) | 2-5s | Relayer call + RPC | TKMS (~600KB) |
-| `decrypt()` (subsequent) | 1-3s | Relayer call + RPC | Already loaded |
-| `signDecryptionPermit()` | <100ms | None | None |
-| `generateE2eTransportKeypair()` | <100ms | None | TKMS |
+| Operation                                   | Time    | Network            | WASM loaded    |
+| ------------------------------------------- | ------- | ------------------ | -------------- |
+| `setFhevmRuntimeConfig()`                   | Instant | None               | None           |
+| `createFhevmClient()`                       | Instant | None               | None           |
+| `fetchFheEncryptionKeyBytes()` (first call) | 2-10s   | ~50MB download     | TFHE (~5MB)    |
+| `fetchFheEncryptionKeyBytes()` (cached)     | Instant | None               | None           |
+| `encrypt()` (first call)                    | 3-15s   | Relayer call       | TFHE init      |
+| `encrypt()` (subsequent)                    | 1-5s    | Relayer call       | Already loaded |
+| `publicDecrypt()`                           | 1-3s    | Relayer call + RPC | None           |
+| `decrypt()` (first call)                    | 2-5s    | Relayer call + RPC | TKMS (~600KB)  |
+| `decrypt()` (subsequent)                    | 1-3s    | Relayer call + RPC | Already loaded |
+| `signDecryptionPermit()`                    | <100ms  | None               | None           |
+| `generateTransportKeyPair()`                | <100ms  | None               | TKMS           |
 
 Times are approximate and depend on network speed, device, and thread count.
 
@@ -31,9 +31,9 @@ Just call `encrypt()`. The SDK fetches the key from the Relayer on first use and
 ```ts
 // The public key is fetched automatically on the first call
 const result = await client.encrypt({
-  contractAddress: "0x...",
-  userAddress: "0x...",
-  values: [{ type: "uint32", value: 42 }],
+  contractAddress: '0x...',
+  userAddress: '0x...',
+  values: [{ type: 'uint32', value: 42 }],
 });
 ```
 
@@ -69,11 +69,11 @@ const result = await client.encrypt({ ... });
 
 Loading unnecessary WASM slows down your app. Use the lightest client for your page:
 
-| Page type | Client | What loads |
-| --- | --- | --- |
-| Submit form (encrypt only) | `createFhevmEncryptClient()` | TFHE only (~5MB) |
-| Results page (decrypt only) | `createFhevmDecryptClient()` | TKMS only (~600KB) |
-| Full app (both) | `createFhevmClient()` | TFHE + TKMS (~5.6MB) |
+| Page type                   | Client                       | What loads           |
+| --------------------------- | ---------------------------- | -------------------- |
+| Submit form (encrypt only)  | `createFhevmEncryptClient()` | TFHE only (~5MB)     |
+| Results page (decrypt only) | `createFhevmDecryptClient()` | TKMS only (~600KB)   |
+| Full app (both)             | `createFhevmClient()`        | TFHE + TKMS (~5.6MB) |
 
 A page that only shows decrypted results should never load the 5MB TFHE module.
 

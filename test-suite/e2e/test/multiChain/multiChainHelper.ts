@@ -1,7 +1,10 @@
-import { ethers as hardhatEthers } from 'hardhat';
-import { ethers } from 'ethers';
 import { createInstance as createFhevmInstance } from '@zama-fhe/relayer-sdk/node';
+import { ethers } from 'ethers';
+import { ethers as hardhatEthers } from 'hardhat';
 import { vars } from 'hardhat/config';
+
+import { FhevmSdk } from '../sdk/fhevm-sdk/sdk';
+import { RelayerSdk } from '../sdk/relayer-sdk/sdk';
 
 const defaultMnemonic =
   'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';
@@ -11,6 +14,9 @@ const decryptionAddress = process.env.DECRYPTION_ADDRESS!;
 const inputVerificationAddress = process.env.INPUT_VERIFICATION_ADDRESS!;
 const relayerUrl = process.env.RELAYER_URL!;
 const gatewayChainId = Number(process.env.CHAIN_ID_GATEWAY!);
+
+// True by default
+const useFhevmSdk = true;
 
 export interface ChainConfig {
   rpcUrl: string;
@@ -94,13 +100,8 @@ const signersCache = new Map<string, NamedSigners>();
 export function getSigners(chain: ChainConfig): NamedSigners {
   if (!signersCache.has(chain.rpcUrl)) {
     const provider = getProvider(chain);
-    const hdNode = ethers.HDNodeWallet.fromMnemonic(
-      ethers.Mnemonic.fromPhrase(mnemonic),
-      "m/44'/60'/0'/0",
-    );
-    const mkWallet = (i: number) => wrapWithNonceManager(
-      new ethers.Wallet(hdNode.deriveChild(i).privateKey, provider),
-    );
+    const hdNode = ethers.HDNodeWallet.fromMnemonic(ethers.Mnemonic.fromPhrase(mnemonic), "m/44'/60'/0'/0");
+    const mkWallet = (i: number) => wrapWithNonceManager(new ethers.Wallet(hdNode.deriveChild(i).privateKey, provider));
     signersCache.set(chain.rpcUrl, {
       alice: mkWallet(0),
       bob: mkWallet(1),
@@ -114,27 +115,26 @@ export function getSigners(chain: ChainConfig): NamedSigners {
 
 export function getWallet(chain: ChainConfig, index: number): ManagedWallet {
   const provider = getProvider(chain);
-  const hdNode = ethers.HDNodeWallet.fromMnemonic(
-    ethers.Mnemonic.fromPhrase(mnemonic),
-    "m/44'/60'/0'/0",
-  );
-  return wrapWithNonceManager(
-    new ethers.Wallet(hdNode.deriveChild(index).privateKey, provider),
-  );
+  const hdNode = ethers.HDNodeWallet.fromMnemonic(ethers.Mnemonic.fromPhrase(mnemonic), "m/44'/60'/0'/0");
+  return wrapWithNonceManager(new ethers.Wallet(hdNode.deriveChild(index).privateKey, provider));
 }
 
 export async function createInstance(chain: ChainConfig) {
-  return createFhevmInstance({
+  const cfg = {
     verifyingContractAddressDecryption: decryptionAddress,
     verifyingContractAddressInputVerification: inputVerificationAddress,
     kmsContractAddress: chain.kmsVerifierAddress,
     inputVerifierContractAddress: chain.inputVerifierAddress,
     aclContractAddress: chain.aclAddress,
-    network: chain.rpcUrl,
+    rpcUrl: chain.rpcUrl,
     relayerUrl,
     gatewayChainId,
     chainId: chain.chainId,
-  });
+  };
+  if (useFhevmSdk) {
+    return FhevmSdk.create(cfg);
+  }
+  return RelayerSdk.create(cfg);
 }
 
 export async function deployContract(
@@ -149,7 +149,9 @@ export async function deployContract(
   return contract as ethers.Contract;
 }
 
-export async function evmSnapshot(provider: { send: (method: string, params: unknown[]) => Promise<unknown> }): Promise<string> {
+export async function evmSnapshot(provider: {
+  send: (method: string, params: unknown[]) => Promise<unknown>;
+}): Promise<string> {
   return provider.send('evm_snapshot', []) as Promise<string>;
 }
 

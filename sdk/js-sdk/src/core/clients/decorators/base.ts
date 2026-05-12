@@ -5,9 +5,9 @@ import type {
   SignedDelegatedDecryptionPermit,
 } from '../../types/signedDecryptionPermit.js';
 import type {
-  SerializeTransportKeypairParameters,
-  SerializeTransportKeypairReturnType,
-} from '../../actions/chain/serializeTransportKeypair.js';
+  SerializeTransportKeyPairParameters,
+  SerializeTransportKeyPairReturnType,
+} from '../../actions/chain/serializeTransportKeyPair.js';
 import { assertIsFhevmBaseClient } from '../../runtime/CoreFhevm-p.js';
 import {
   signDecryptionPermit,
@@ -15,16 +15,16 @@ import {
   type SignDelegatedDecryptionPermitParameters,
 } from '../../actions/base/signDecryptionPermit.js';
 import {
-  parseTransportKeypair,
-  type ParseTransportKeypairParameters,
-  type ParseTransportKeypairReturnType,
-} from '../../actions/chain/parseTransportKeypair.js';
+  parseTransportKeyPair,
+  type ParseTransportKeyPairParameters,
+  type ParseTransportKeyPairReturnType,
+} from '../../actions/chain/parseTransportKeyPair.js';
 import {
   fetchFheEncryptionKeyBytes,
   type FetchFheEncryptionKeyBytesParameters,
   type FetchFheEncryptionKeyBytesReturnType,
 } from '../../actions/chain/fetchFheEncryptionKeyBytes.js';
-import { serializeTransportKeypair } from '../../actions/chain/serializeTransportKeypair.js';
+import { serializeTransportKeyPair } from '../../actions/chain/serializeTransportKeyPair.js';
 import {
   serializeSignedDecryptionPermit,
   type SerializeSignedDecryptionPermitParameters,
@@ -147,14 +147,14 @@ export type BaseActions = {
      */
     (parameters: SignDelegatedDecryptionPermitParameters): Promise<SignedDelegatedDecryptionPermit>;
   };
-  /** Deserializes a previously serialized e2e transport keypair back into a usable keypair. */
-  readonly parseTransportKeypair: (
-    parameters: ParseTransportKeypairParameters,
-  ) => Promise<ParseTransportKeypairReturnType>;
-  /** Serializes an e2e transport keypair to hex strings for storage. */
-  readonly serializeTransportKeypair: (
-    parameters: SerializeTransportKeypairParameters,
-  ) => SerializeTransportKeypairReturnType;
+  /** Deserializes a previously serialized e2e transport key pair back into a usable key pair. */
+  readonly parseTransportKeyPair: (
+    parameters: ParseTransportKeyPairParameters,
+  ) => Promise<ParseTransportKeyPairReturnType>;
+  /** Serializes an e2e transport key pair to hex strings for storage. */
+  readonly serializeTransportKeyPair: (
+    parameters: SerializeTransportKeyPairParameters,
+  ) => SerializeTransportKeyPairReturnType;
   /** Serializes a signed decryption permit to a plain object for storage or transmission. */
   readonly serializeSignedDecryptionPermit: (
     parameters: SerializeSignedDecryptionPermitParameters,
@@ -183,8 +183,8 @@ function _baseActions(fhevm: Fhevm<FhevmChain>): BaseActions {
         fhevm,
         parameters as SignSelfDecryptionPermitParameters,
       )) as BaseActions['signDecryptionPermit'],
-    parseTransportKeypair: (parameters) => parseTransportKeypair(fhevm, parameters),
-    serializeTransportKeypair: (parameters) => serializeTransportKeypair(fhevm, parameters),
+    parseTransportKeyPair: (parameters) => parseTransportKeyPair(fhevm, parameters),
+    serializeTransportKeyPair: (parameters) => serializeTransportKeyPair(fhevm, parameters),
     serializeSignedDecryptionPermit: (parameters) => serializeSignedDecryptionPermit(fhevm, parameters),
     parseSignedDecryptionPermit: (parameters) => parseSignedDecryptionPermit(fhevm, parameters),
     fetchFheEncryptionKeyBytes: (parameters) => fetchFheEncryptionKeyBytes(fhevm, parameters),

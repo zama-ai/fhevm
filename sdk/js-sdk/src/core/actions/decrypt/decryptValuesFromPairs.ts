@@ -1,14 +1,10 @@
-/* eslint-disable @typescript-eslint/unified-signatures */
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { TypedValue } from '../../types/primitives.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { RelayerDelegatedUserDecryptOptions, RelayerUserDecryptOptions } from '../../types/relayer.js';
-import type {
-  SignedDelegatedDecryptionPermit,
-  SignedSelfDecryptionPermit,
-} from '../../types/signedDecryptionPermit.js';
+import type { SignedDecryptionPermit } from '../../types/signedDecryptionPermit.js';
 import type { WithDecrypt } from '../../types/coreFhevmRuntime.js';
-import type { TransportKeypair } from '../../kms/TransportKeypair-p.js';
+import type { TransportKeyPair } from '../../kms/TransportKeyPair-p.js';
 import type { EncryptedValueLike } from '../../types/encryptedTypes.js';
 import { decryptValuesFromPairs as decryptValuesFromPairs_ } from '../../kms/decryptValuesFromPairs.js';
 import { addressToChecksummedAddress, assertIsAddress } from '../../base/address.js';
@@ -16,22 +12,14 @@ import { toFhevmHandle } from '../../handle/FhevmHandle.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type DecryptValuesFromPairsParametersBase = {
+export type DecryptValuesFromPairsParameters = {
   readonly pairs: ReadonlyArray<{
     readonly encryptedValue: EncryptedValueLike;
     readonly contractAddress: string;
   }>;
-  readonly transportKeypair: TransportKeypair;
-};
-
-export type DecryptSelfValuesFromPairsParameters = DecryptValuesFromPairsParametersBase & {
-  readonly signedPermit: SignedSelfDecryptionPermit;
-  readonly options?: RelayerUserDecryptOptions | undefined;
-};
-
-export type DecryptDelegatedValuesFromPairsParameters = DecryptValuesFromPairsParametersBase & {
-  readonly signedPermit: SignedDelegatedDecryptionPermit;
-  readonly options?: RelayerDelegatedUserDecryptOptions | undefined;
+  readonly transportKeyPair: TransportKeyPair;
+  readonly signedPermit: SignedDecryptionPermit;
+  readonly options?: RelayerUserDecryptOptions | RelayerDelegatedUserDecryptOptions | undefined;
 };
 
 export type DecryptValuesFromPairsReturnType = readonly TypedValue[];
@@ -40,17 +28,7 @@ export type DecryptValuesFromPairsReturnType = readonly TypedValue[];
 
 export async function decryptValuesFromPairs(
   fhevm: Fhevm<FhevmChain, WithDecrypt>,
-  parameters: DecryptSelfValuesFromPairsParameters,
-): Promise<DecryptValuesFromPairsReturnType>;
-
-export async function decryptValuesFromPairs(
-  fhevm: Fhevm<FhevmChain, WithDecrypt>,
-  parameters: DecryptDelegatedValuesFromPairsParameters,
-): Promise<DecryptValuesFromPairsReturnType>;
-
-export async function decryptValuesFromPairs(
-  fhevm: Fhevm<FhevmChain, WithDecrypt>,
-  parameters: DecryptSelfValuesFromPairsParameters | DecryptDelegatedValuesFromPairsParameters,
+  parameters: DecryptValuesFromPairsParameters,
 ): Promise<DecryptValuesFromPairsReturnType> {
   const { pairs, ...rest } = parameters;
 
@@ -62,5 +40,8 @@ export async function decryptValuesFromPairs(
     };
   });
 
-  return decryptValuesFromPairs_(fhevm, { ...rest, pairs: sanitizedPairs });
+  return decryptValuesFromPairs_(fhevm, {
+    ...rest,
+    pairs: sanitizedPairs,
+  } as Parameters<typeof decryptValuesFromPairs_>[1]);
 }

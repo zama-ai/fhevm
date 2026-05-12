@@ -2,7 +2,7 @@ import type { FhevmChain } from '@fhevm/sdk/chains';
 import { createPublicClient, http, type PublicClient, type Transport, type Chain } from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';
 import { sepolia as viemSepolia, mainnet as viemMainnet, anvil as viemAnvil } from 'viem/chains';
-import { getBaseEnv, type FheTestChainName } from '../setupCommon.js';
+import { getBaseEnv, type FheTestBaseEnv, type FheTestChainName } from '../setupCommon.js';
 
 // Re-export for convenience
 export type { FheTestChainName } from '../setupCommon.js';
@@ -31,21 +31,23 @@ export type FheTestViemConfig = {
 // ---------------------------------------------------------------------------
 
 function buildConfig(): FheTestViemConfig {
-  const env = getBaseEnv();
+  const env: FheTestBaseEnv = getBaseEnv();
 
   const viemChain =
     env.chainName === 'sepolia' || env.chainName === 'devnet'
       ? viemSepolia
       : env.chainName === 'mainnet'
         ? viemMainnet
-        : viemAnvil;
+        : env.chainName === 'localhostFhevm'
+          ? { ...viemAnvil, id: env.fhevmChain.id }
+          : viemAnvil;
 
   const account = mnemonicToAccount(env.mnemonic);
   const bobAccount = mnemonicToAccount(env.mnemonic, {
     path: "m/44'/60'/0'/0/1",
   });
 
-  const publicClient = createPublicClient({
+  const publicClient: PublicClient<Transport, Chain> = createPublicClient({
     chain: viemChain,
     transport: http(env.rpcUrl),
   });

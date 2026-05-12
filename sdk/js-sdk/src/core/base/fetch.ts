@@ -219,8 +219,8 @@ export async function fetchWithRetry(
 ): Promise<Response> {
   let lastError: unknown;
 
-  const retries = args.retries ?? 3;
-  const retryDelayMs = args.retryDelayMs ?? 1000;
+  const retries = Math.max(0, Math.min(1000, args.retries ?? 3));
+  const retryDelayMs = Math.max(100, args.retryDelayMs ?? 1000);
   const { url, init } = args;
 
   for (let attempt = 0; attempt <= retries; attempt++) {

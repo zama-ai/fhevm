@@ -631,6 +631,10 @@ type TypedValueLikeMap = Readonly<{
   address: AddressValueLike;
 }>;
 
+export type RawTypedValue = {
+  readonly type: string;
+  readonly value: boolean | bigint | number | string;
+};
 export type TypedValueLike = TypedValueLikeMap[ValueTypeName];
 
 /**

@@ -1,3 +1,10 @@
+import { resolveFhevmConfig } from '@fhevm/sdk/actions/host';
+import { createFhevmBaseClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { type FheTestEthersConfig, getEthersTestConfig } from './setup.js';
+import { isCleartext, safeJSONstringify } from '../setupCommon.js';
+
+////////////////////////////////////////////////////////////////////////////////
 //
 // Sepolia Testnet:
 // ----------------
@@ -11,13 +18,9 @@
 // ----------------
 // CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.chain.test.ts
 //
-import { resolveFhevmConfig } from '@fhevm/sdk/actions/host';
-import { createFhevmBaseClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import { beforeAll, describe, expect, it } from 'vitest';
-import { safeJSONstringify } from '../../../src/core/base/string.js';
-import { type FheTestEthersConfig, getEthersTestConfig } from './setup.js';
+////////////////////////////////////////////////////////////////////////////////
 
-describe('Base client — chain resolution', () => {
+describe.runIf(!isCleartext(getEthersTestConfig().chainName))('Base client — chain resolution', () => {
   let config: FheTestEthersConfig;
 
   beforeAll(() => {

@@ -3,7 +3,6 @@ import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { userDecryptSingleHandle } from '../utils';
 
 const ENFORCED_PAUSE_SELECTOR = '0xd93c0665';
 
@@ -33,28 +32,24 @@ describe('Paused gateway', function () {
 
   // The following test case should cover the InputVerification.verifyProofRequest method calling.
   it('test paused gateway user input (input verification request)', async function () {
-    const inputAlice = this.instances.alice.createEncryptedInput(
-      this.testInputContractAddress,
-      this.signers.alice.address,
-    );
-    inputAlice.add64(18446744073709550042n);
-
-    await expect(inputAlice.encrypt()).to.be.rejectedWith(new RegExp(ENFORCED_PAUSE_SELECTOR));
+    await expect(
+      this.instances.alice.encryptUint64({
+        value: 18446744073709550042n,
+        contractAddress: this.testInputContractAddress,
+        userAddress: this.signers.alice.address,
+      }),
+    ).to.be.rejectedWith(new RegExp(ENFORCED_PAUSE_SELECTOR));
   });
 
   // The following test case should cover the Decryption.userDecryptionRequest method calling.
   it('test paused gateway user decrypt (user decryption request)', async function () {
     const handle = await this.userDecryptContract.xBool();
-    const { publicKey, privateKey } = this.instances.alice.generateKeypair();
     await expect(
-      userDecryptSingleHandle(
+      this.instances.alice.userDecryptSingleHandle({
         handle,
-        this.userDecryptContractAddress,
-        this.instances.alice,
-        this.signers.alice,
-        privateKey,
-        publicKey,
-      ),
+        contractAddress: this.userDecryptContractAddress,
+        signer: this.signers.alice,
+      }),
     ).to.be.rejectedWith(new RegExp(ENFORCED_PAUSE_SELECTOR));
   });
 

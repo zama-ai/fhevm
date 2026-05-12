@@ -4,7 +4,6 @@ import { ethers, network } from 'hardhat';
 import assert from 'node:assert/strict';
 
 import { aclAddress, coprocessorAddress, createInstance, kmsVerifierAddress } from '../test/instance';
-import { userDecryptSingleHandle } from '../test/utils';
 import type { SmokeTestInput } from '../types';
 import type { SmokeContext } from './smoke-reporting';
 import { buildSmokeFailureReport, describeError } from './smoke-reporting';
@@ -81,8 +80,8 @@ const parseOptionalGweiEnv = (name: string): bigint | null => {
 
 const logTxReceipt = (params: { label: string; receipt: TransactionReceipt; nonce?: number; note?: string }): void => {
   const { label, receipt, nonce, note } = params;
-  const effectiveGasPrice = receipt.effectiveGasPrice ?? null;
-  const feePaid = effectiveGasPrice ? receipt.gasUsed * effectiveGasPrice : null;
+  const effectiveGasPrice = receipt.gasPrice;
+  const feePaid = receipt.fee;
   const parts = [
     `SMOKE_TX_MINED label=${label}`,
     nonce === undefined ? null : `nonce=${nonce}`,
@@ -90,8 +89,8 @@ const logTxReceipt = (params: { label: string; receipt: TransactionReceipt; nonc
     `block=${receipt.blockNumber}`,
     `status=${receipt.status}`,
     `gasUsed=${receipt.gasUsed}`,
-    effectiveGasPrice ? `effectiveGasPrice=${formatGwei(effectiveGasPrice)}` : null,
-    feePaid ? `fee=${formatEth(feePaid)}` : null,
+    `effectiveGasPrice=${formatGwei(effectiveGasPrice)}`,
+    `fee=${formatEth(feePaid)}`,
     note ? `note=${note}` : null,
   ]
     .filter(Boolean)
@@ -593,9 +592,13 @@ async function runSmoke(): Promise<void> {
     setSmokePhase('encrypt');
     const encryptStart = Date.now();
     const instance = await createInstance();
-    const input = instance.createEncryptedInput(contractAddress, signerAddress);
-    input.add64(7n);
-    const encryptedInput = await input.encrypt();
+
+    const encryptedInput = await instance.encryptUint64({
+      contractAddress,
+      userAddress: signerAddress,
+      value: 7n,
+    });
+
     const encryptMs = Date.now() - encryptStart;
 
     const callNonce = await provider.getTransactionCount(signerAddress, 'pending');
@@ -631,7 +634,6 @@ async function runSmoke(): Promise<void> {
     setSmokePhase('decrypt');
     const handle = await contract.resUint64();
     smokeContext.handle = String(handle);
-    const { publicKey, privateKey } = instance.generateKeypair();
 
     const decryptStart = Date.now();
     console.log(`SMOKE_DECRYPT_START handle=${handle} timeoutMs=${decryptTimeoutMs}`);
@@ -639,7 +641,7 @@ async function runSmoke(): Promise<void> {
     try {
       setSmokePhase('decrypt_user');
       const decryptedValue = await withTimeout(
-        userDecryptSingleHandle(handle, contractAddress, instance, signer, privateKey, publicKey),
+        instance.userDecryptSingleHandle({ handle, contractAddress, signer }),
         decryptTimeoutMs,
         'userDecryptSingleHandle',
       );

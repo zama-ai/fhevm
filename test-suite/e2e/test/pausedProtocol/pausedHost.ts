@@ -21,9 +21,11 @@ describe('Paused host', function () {
     const testInputContractAddress = await testInputContract.getAddress();
     await testInputContract.waitForDeployment();
 
-    const inputAlice = this.instances.alice.createEncryptedInput(testInputContractAddress, this.signers.alice.address);
-    inputAlice.add64(18446744073709550042n);
-    const encryptedAmount = await inputAlice.encrypt();
+    const encryptedAmount = await this.instances.alice.encryptUint64({
+      value: 18446744073709550042n,
+      contractAddress: testInputContractAddress,
+      userAddress: this.signers.alice.address,
+    });
 
     // The requestUint64NonTrivial call should fail because it calls to ACL.allow() which should be paused.
     await expect(
@@ -50,10 +52,18 @@ describe('Paused host', function () {
     const fhevmTestSuite1ContractAddress = await fhevmTestSuite1Contract.getAddress();
     await fhevmTestSuite1Contract.waitForDeployment();
 
-    const input = this.instances.alice.createEncryptedInput(fhevmTestSuite1ContractAddress, this.signers.alice.address);
-    input.add32(1488611147n);
-    input.add64(1488611147n);
-    const encryptedAmount = await input.encrypt();
+    const encryptedAmount = await this.instances.alice.encryptTypedValues({
+      contractAddress: fhevmTestSuite1ContractAddress,
+      userAddress: this.signers.alice.address,
+      values: [
+        { type: 'uint32', value: 1488611147n },
+        { type: 'uint64', value: 1488611147n },
+      ],
+    });
+    // const input = this.instances.alice.createEncryptedInput(fhevmTestSuite1ContractAddress, this.signers.alice.address);
+    // input.add32(1488611147n);
+    // input.add64(1488611147n);
+    // const encryptedAmount = await input.encrypt();
 
     // The sub_euint32_euint64 call should fail because it calls to ACL.allowTransient() which should be paused.
     await expect(
