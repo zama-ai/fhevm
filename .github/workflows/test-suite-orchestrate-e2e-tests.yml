@@ -57,6 +57,8 @@ jobs:
   coprocessor-docker-build:
     if: *build-trigger-condition
     uses: ./.github/workflows/coprocessor-docker-build.yml
+    with:
+      path-filter-base-commit: ${{ github.event.pull_request.base.sha }}
     permissions: &docker_permissions
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
@@ -74,31 +76,43 @@ jobs:
   listener-docker-build:
     if: *build-trigger-condition
     uses: ./.github/workflows/listener-docker-build.yml
+    with:
+      path-filter-base-commit: ${{ github.event.pull_request.base.sha }}
     permissions: *docker_permissions
     secrets: *docker_secrets
   gateway-contracts-docker-build:
     if: *build-trigger-condition
     uses: ./.github/workflows/gateway-contracts-docker-build.yml
+    with:
+      path-filter-base-commit: ${{ github.event.pull_request.base.sha }}
     permissions: *docker_permissions
     secrets: *docker_secrets
   host-contracts-docker-build:
     if: *build-trigger-condition
     uses: ./.github/workflows/host-contracts-docker-build.yml
+    with:
+      path-filter-base-commit: ${{ github.event.pull_request.base.sha }}
     permissions: *docker_permissions
     secrets: *docker_secrets
   kms-connector-docker-build:
     if: *build-trigger-condition
     uses: ./.github/workflows/kms-connector-docker-build.yml
+    with:
+      path-filter-base-commit: ${{ github.event.pull_request.base.sha }}
     permissions: *docker_permissions
     secrets: *docker_secrets
   relayer-docker-build:
     if: *build-trigger-condition
     uses: ./.github/workflows/relayer-docker-build.yml
+    with:
+      path-filter-base-commit: ${{ github.event.pull_request.base.sha }}
     permissions: *docker_permissions
     secrets: *docker_secrets
   test-suite-docker-build:
     if: *build-trigger-condition
     uses: ./.github/workflows/test-suite-docker-build.yml
+    with:
+      path-filter-base-commit: ${{ github.event.pull_request.base.sha }}
     permissions: *docker_permissions
     secrets: *docker_secrets
 

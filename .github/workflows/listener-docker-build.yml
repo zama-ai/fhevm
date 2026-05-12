@@ -3,6 +3,11 @@ name: listener-docker-build
 on:
   workflow_call:
     inputs:
+      path-filter-base-commit:
+        description: "Optional commit SHA used only as the docker change-detection diff base"
+        type: string
+        default: ""
+        required: false
       is_workflow_call:
         description: "Indicates if the workflow is called from another workflow"
         type: boolean
@@ -51,6 +56,7 @@ jobs:
     with:
       caller-workflow-event-name: ${{ github.event_name }}
       caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
       docker-image: fhevm/listener/listener-core
       filters: |
         listener:
