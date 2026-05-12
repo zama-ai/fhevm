@@ -564,10 +564,6 @@ async fn main() {
     // ── Run both consumers concurrently ─────────────────────────────────
     info!("Starting consumers");
 
-    // Comment out the next line and the matching `r = sim_fut => r,` arm
-    // below to disable the in-process consumer-lib simulation.
-    // let sim_fut = listener_core::sim::run(broker.clone(), seed_publisher.clone());
-
     let (consumer_name, result) = tokio::select! {
         r = fetch_consumer.run(fetch_handler) => ("Fetch", r),
         r = reorg_consumer.run(reorg_handler) => ("Reorg", r),
@@ -576,7 +572,6 @@ async fn main() {
         r = cleaner_consumer.run(cleaner_handler) => ("Cleaner", r),
         r = catchup_consumer.run(catchup_handler) => ("Catchup", r),
         r = range_catchup_consumer.run(range_catchup_handler) => ("RangeCatchup", r),
-        // r = sim_fut => r,
     };
 
     error!("{consumer_name} consumer exited: {result:?}");

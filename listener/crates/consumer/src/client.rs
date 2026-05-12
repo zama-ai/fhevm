@@ -2,7 +2,9 @@ use alloy_primitives::Address;
 use async_trait::async_trait;
 pub use broker::{AckDecision, Broker, HandlerError};
 use broker::{BrokerError, CancellationToken, Consumer, Handler, Message, Topic};
-use primitives::event::{BlockPayload, CatchupPayload, FilterCommand, FilterCommandValidationError};
+use primitives::event::{
+    BlockPayload, CatchupPayload, FilterCommand, FilterCommandValidationError,
+};
 use primitives::routing;
 use primitives::utils::chain_id_to_namespace;
 use std::future::Future;

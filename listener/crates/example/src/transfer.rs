@@ -8,7 +8,7 @@
 
 use alloy::sol;
 use alloy::sol_types::SolEvent;
-use alloy_primitives::{B256, Bytes, Log, LogData};
+use alloy_primitives::{B256, Log, LogData};
 use primitives::event::IndexedLog;
 
 sol! {
@@ -33,7 +33,7 @@ pub const TRANSFER_TOPIC0: B256 = IERC20::Transfer::SIGNATURE_HASH;
 pub fn decode_transfer(log: &IndexedLog) -> Option<IERC20::Transfer> {
     let log = Log {
         address: log.address,
-        data: LogData::new_unchecked(log.topics.clone(), Bytes::from(log.data.clone())),
+        data: LogData::new_unchecked(log.topics.clone(), log.data.clone()),
     };
     IERC20::Transfer::decode_log(&log).ok().map(|d| d.data)
 }
