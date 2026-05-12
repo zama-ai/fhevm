@@ -3,6 +3,11 @@ name: relayer-docker-build
 on:
   workflow_call:
     inputs:
+      path-filter-base-commit:
+        description: "Optional commit SHA used only as the docker change-detection diff base"
+        type: string
+        default: ""
+        required: false
       is_workflow_call:
         description: "Indicates if the workflow is called from another workflow"
         type: boolean
@@ -46,6 +51,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: relayer-build-${{ github.event_name == 'pull_request' && github.ref_name || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   ########################################################################
   #                        PRE-BUILD CHECKS                              #
@@ -66,6 +75,7 @@ jobs:
     with:
       caller-workflow-event-name: ${{ github.event_name }}
       caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
       docker-image: fhevm/relayer-migrate
       filters: |
         relayer-migrate:
@@ -81,6 +91,7 @@ jobs:
     with:
       caller-workflow-event-name: ${{ github.event_name }}
       caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
       docker-image: fhevm/relayer
       filters: |
         relayer:
@@ -147,9 +158,6 @@ jobs:
   ########################################################################
   build-relayer-migrate:
     needs: build-decisions
-    concurrency:
-      group: relayer-build-relayer-migrate-${{ github.ref_name }}
-      cancel-in-progress: true
     if: always() && needs.build-decisions.outputs.relayer_migrate == 'build'
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     secrets: &docker_secrets
@@ -192,9 +200,6 @@ jobs:
   ########################################################################
   build-relayer:
     needs: build-decisions
-    concurrency:
-      group: relayer-build-relayer-${{ github.ref_name }}
-      cancel-in-progress: true
     if: always() && needs.build-decisions.outputs.relayer == 'build'
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions

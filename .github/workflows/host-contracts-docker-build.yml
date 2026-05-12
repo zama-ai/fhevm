@@ -3,6 +3,11 @@ name: host-contracts-docker-build
 on:
   workflow_call:
     inputs:
+      path-filter-base-commit:
+        description: "Optional commit SHA used only as the docker change-detection diff base"
+        type: string
+        default: ""
+        required: false
       is_workflow_call:
         description: "Indicates if the workflow is called from another workflow"
         type: boolean
@@ -34,6 +39,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: host-contracts-build-${{ github.event_name == 'pull_request' && github.ref_name || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   is-latest-commit:
     uses: ./.github/workflows/is-latest-commit.yml
@@ -51,6 +60,7 @@ jobs:
     with:
       caller-workflow-event-name: ${{ github.event_name }}
       caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
       docker-image: fhevm/host-contracts
       filters: |
         host-contracts:
@@ -59,9 +69,6 @@ jobs:
 
   build:
     needs: [is-latest-commit, check-changes]
-    concurrency:
-      group: host-contracts-build-${{ github.ref_name }}
-      cancel-in-progress: true
     if: |
       always()
       && (

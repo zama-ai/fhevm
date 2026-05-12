@@ -175,40 +175,56 @@ describe('Multi-Chain State Isolation', function () {
       const erc20A = this.chainA.erc20 as unknown as EncryptedERC20;
       const erc20B = this.chainB.erc20 as unknown as EncryptedERC20;
 
-      const handleA = await erc20A.balanceOf(this.deployerA.address);
-      expect(handleA).to.not.eq(ethers.ZeroHash);
+      expect(this.deployerA.address).to.eq(this.deployerB.address);
+      expect(this.chainA.erc20Address).to.eq(this.chainB.erc20Address);
 
-      expect(handleA.slice(46, 62)).to.eq(this.chains[0].chainId.toString(16).padStart(16, '0'));
+      const instanceA = await createInstance(this.chains[0]);
+      const inputA = instanceA.createEncryptedInput(this.chainA.erc20Address, this.deployerA.address);
+      inputA.add64(125);
+      const encryptedA = await inputA.encrypt();
+
+      const txA = await (erc20A.connect(this.deployerA) as EncryptedERC20)['transfer(address,bytes32,bytes)'](
+        this.signersA.dave.address,
+        encryptedA.handles[0],
+        encryptedA.inputProof,
+        { gasLimit: 10_000_000 },
+      );
+      const receiptA = await txA.wait();
+      expect(receiptA?.status).to.eq(1);
+
+      const balanceHandleDaveA = await erc20A.balanceOf(this.signersA.dave.address);
+      expect(balanceHandleDaveA).to.not.eq(ethers.ZeroHash);
+      expect(balanceHandleDaveA.slice(46, 62)).to.eq(this.chains[0].chainId.toString(16).padStart(16, '0'));
 
       const handleB = await erc20B.balanceOf(this.deployerB.address);
       expect(handleB).to.not.eq(ethers.ZeroHash);
       expect(handleB.slice(46, 62)).to.eq(this.chains[1].chainId.toString(16).padStart(16, '0'));
-      expect(handleA).to.not.eq(handleB);
 
       let crossChainSucceeded = false;
       try {
         const crossChainTx = await (erc20B.connect(this.deployerB) as EncryptedERC20)[
           'transfer(address,bytes32,bytes)'
-        ](this.signersB.bob.address, handleA, '0x', { gasLimit: 10_000_000 });
+        ](this.signersB.bob.address, encryptedA.handles[0], encryptedA.inputProof, { gasLimit: 10_000_000 });
         await crossChainTx.wait();
         crossChainSucceeded = true;
       } catch {
-        // Expected: cross-chain handle should be rejected
+        // Expected: Chain A input should be rejected on Chain B.
       }
       expect(crossChainSucceeded).to.eq(false, 'cross-chain transfer should have reverted');
 
-      const handleAAfter = await erc20A.balanceOf(this.deployerA.address);
-      expect(handleAAfter).to.eq(handleA);
+      expect(await erc20B.balanceOf(this.deployerB.address)).to.eq(handleB);
     });
   });
 
   describe('ACL Permission Isolation', function () {
     it('ACL allow on Chain A does not grant access on Chain B', async function () {
       const erc20A = this.chainA.erc20 as unknown as EncryptedERC20;
-      const erc20B = this.chainB.erc20 as unknown as EncryptedERC20;
 
-      const instanceDeployerA = await createHardhatInstance();
-      const instanceBobA = await createHardhatInstance();
+      expect(this.signersA.bob.address).to.eq(this.signersB.bob.address);
+      expect(this.chainA.erc20Address).to.eq(this.chainB.erc20Address);
+
+      const instanceDeployerA = await createInstance(this.chains[0]);
+      const instanceBobA = await createInstance(this.chains[0]);
 
       // const inputA = instanceDeployerA.createEncryptedInput(this.chainA.erc20Address, this.deployerA.address);
       // inputA.add64(500);
@@ -238,8 +254,29 @@ describe('Multi-Chain State Isolation', function () {
       });
       expect(balanceBobA).to.equal(500n);
 
-      const balanceHandleBobB = await erc20B.balanceOf(this.signersB.bob.address);
-      expect(balanceHandleBobB).to.eq(ethers.ZeroHash);
+      const aclAbi = ['function isAllowed(bytes32 handle, address account) view returns (bool)'];
+      const aclA = new ethers.Contract(this.chains[0].aclAddress, aclAbi, getProvider(this.chains[0]));
+      const aclB = new ethers.Contract(this.chains[1].aclAddress, aclAbi, getProvider(this.chains[1]));
+      expect(await aclA.isAllowed(balanceHandleBobA, this.signersA.bob.address)).to.eq(true);
+      expect(await aclB.isAllowed(balanceHandleBobA, this.signersB.bob.address)).to.eq(false);
+
+      const instanceBobB = await createInstance(this.chains[1]);
+      const { publicKey: pubKeyBobB, privateKey: privKeyBobB } = instanceBobB.generateKeypair();
+      let crossChainDecryptSucceeded = false;
+      try {
+        await userDecryptSingleHandle(
+          balanceHandleBobA,
+          this.chainB.erc20Address,
+          instanceBobB,
+          this.signersB.bob,
+          privKeyBobB,
+          pubKeyBobB,
+        );
+        crossChainDecryptSucceeded = true;
+      } catch {
+        // Expected: Chain A ACL permission should not authorize Chain B decryption.
+      }
+      expect(crossChainDecryptSucceeded).to.eq(false, 'cross-chain user decrypt should have been rejected');
     });
   });
 
