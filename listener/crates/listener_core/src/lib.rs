@@ -4,7 +4,6 @@ pub mod core;
 pub mod health;
 pub mod logging;
 pub mod metrics;
-pub mod sim;
 pub mod store;
 
 // Re-export broker crate for convenience
