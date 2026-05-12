@@ -164,8 +164,11 @@ export default async function run(ctx: RolloutRunContext) {
   await upgradeContract((command) => ctx.runHostContractTask(command), "task:upgradeKMSVerifier", "KMSVerifier");
   // Assert the migrated ProtocolConfig, KMSGeneration, and KMSVerifier state against
   // the gateway export, matching the v0.13 devnet runbook before the remaining executor upgrades.
+  // task:assertKmsMigrationSucceeded (#2469) does not self-compile; do it explicitly so
+  // hre.ethers.getContractAt("ProtocolConfig", ...) can resolve the artifact.
   await ctx.runHostContractTask(
     [
+      "npx hardhat compile &&",
       "npx hardhat task:assertKmsMigrationSucceeded",
       `--gateway-config-proxy ${gatewayConfigProxy}`,
       `--gateway-kms-generation-proxy ${kmsGenerationProxy}`,
