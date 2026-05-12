@@ -1,17 +1,12 @@
 /**
  * Encodes legacy runtime shims and incompatibility rules across supported fhevm component version combinations.
  */
-import type { State } from "../types";
-import type { StackSpec } from "../stack-spec/stack-spec";
 import { effectiveOverrides } from "../scenario/resolve";
+import type { StackSpec } from "../stack-spec/stack-spec";
+import type { State } from "../types";
 
 type CompatSemver = readonly [number, number, number];
-type CompatService =
-  | "gw-listener"
-  | "host-listener"
-  | "host-listener-poller"
-  | "sns-worker"
-  | "transaction-sender";
+type CompatService = "gw-listener" | "host-listener" | "host-listener-poller" | "sns-worker" | "transaction-sender";
 type CompatArgValue = { env: string } | { value: string };
 
 export type CompatPolicy = {
@@ -32,13 +27,48 @@ export const COMPAT_MATRIX = {
     },
   ],
   legacyShims: [
-    { key: "COPROCESSOR_GW_LISTENER_VERSION", below: [0, 12, 0] as CompatSemver, profile: "legacy-gw-listener-no-drift-addresses", unparsed: "modern" as const },
-    { key: "COPROCESSOR_GW_LISTENER_VERSION", below: [0, 13, 0] as CompatSemver, profile: "legacy-gw-listener-kms-generation-address", unparsed: "modern" as const },
-    { key: "COPROCESSOR_HOST_LISTENER_VERSION", below: [0, 13, 0] as CompatSemver, profile: "legacy-host-listener-no-kms-generation-address", unparsed: "modern" as const },
-    { key: "COPROCESSOR_HOST_LISTENER_VERSION", below: [0, 12, 0] as CompatSemver, profile: "legacy-coprocessor-api-keys", unparsed: "modern" as const },
-    { key: "COPROCESSOR_TX_SENDER_VERSION", below: [0, 12, 0] as CompatSemver, profile: "legacy-tx-sender-gateway-flags", unparsed: "modern" as const },
-    { key: "COPROCESSOR_TX_SENDER_VERSION", below: [0, 11, 1] as CompatSemver, profile: "legacy-tx-sender-host-chain-url", unparsed: "modern" as const },
-    { key: "CONNECTOR_GW_LISTENER_VERSION", below: [0, 11, 0] as CompatSemver, profile: "legacy-connector-chain-id", unparsed: "modern" as const },
+    {
+      key: "COPROCESSOR_GW_LISTENER_VERSION",
+      below: [0, 12, 0] as CompatSemver,
+      profile: "legacy-gw-listener-no-drift-addresses",
+      unparsed: "modern" as const,
+    },
+    {
+      key: "COPROCESSOR_GW_LISTENER_VERSION",
+      below: [0, 13, 0] as CompatSemver,
+      profile: "legacy-gw-listener-kms-generation-address",
+      unparsed: "modern" as const,
+    },
+    {
+      key: "COPROCESSOR_HOST_LISTENER_VERSION",
+      below: [0, 13, 0] as CompatSemver,
+      profile: "legacy-host-listener-no-kms-generation-address",
+      unparsed: "modern" as const,
+    },
+    {
+      key: "COPROCESSOR_HOST_LISTENER_VERSION",
+      below: [0, 12, 0] as CompatSemver,
+      profile: "legacy-coprocessor-api-keys",
+      unparsed: "modern" as const,
+    },
+    {
+      key: "COPROCESSOR_TX_SENDER_VERSION",
+      below: [0, 12, 0] as CompatSemver,
+      profile: "legacy-tx-sender-gateway-flags",
+      unparsed: "modern" as const,
+    },
+    {
+      key: "COPROCESSOR_TX_SENDER_VERSION",
+      below: [0, 11, 1] as CompatSemver,
+      profile: "legacy-tx-sender-host-chain-url",
+      unparsed: "modern" as const,
+    },
+    {
+      key: "CONNECTOR_GW_LISTENER_VERSION",
+      below: [0, 11, 0] as CompatSemver,
+      profile: "legacy-connector-chain-id",
+      unparsed: "modern" as const,
+    },
   ],
   anchors: {
     SIMPLE_ACL_MIN_SHA: "803f1048727eabf6d8b3df618203e3c7dda77890",
@@ -142,14 +172,12 @@ export const relayerImageRepository = (version: string) =>
   usesModernRelayerRepository(version) ? MODERN_RELAYER_IMAGE_REPOSITORY : LEGACY_RELAYER_IMAGE_REPOSITORY;
 
 export const relayerMigrateImageRepository = (version: string) =>
-  usesModernRelayerRepository(version) ? MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY : LEGACY_RELAYER_MIGRATE_IMAGE_REPOSITORY;
+  usesModernRelayerRepository(version)
+    ? MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY
+    : LEGACY_RELAYER_MIGRATE_IMAGE_REPOSITORY;
 
 /** Compares a version string against a compatibility floor. */
-const versionLt = (
-  version: string,
-  target: CompatSemver,
-  options?: { unparsed?: "modern" | "legacy" },
-) => {
+const versionLt = (version: string, target: CompatSemver, options?: { unparsed?: "modern" | "legacy" }) => {
   const parsed = parseCompatVersion(version);
   if (!parsed) {
     return options?.unparsed === "legacy";
@@ -161,6 +189,12 @@ const versionLt = (
   }
   return parsed.prerelease;
 };
+
+const versionBeforeReleaseFamily = (
+  version: string,
+  target: CompatSemver,
+  options?: { unparsed?: "modern" | "legacy" },
+) => versionLt(version, target, options) && !sameCompatBase(version, target);
 
 type CompatState =
   | Pick<State, "versions" | "overrides" | "scenario">
@@ -177,8 +211,7 @@ const usesModernWorkspaceProtocol = (state: CompatState) =>
   );
 
 export const requiresMultichainAclAddress = (state: CompatState) =>
-  !usesModernWorkspaceProtocol(state) &&
-  versionLt(state.versions.env.COPROCESSOR_TX_SENDER_VERSION ?? "", [0, 12, 0]);
+  !usesModernWorkspaceProtocol(state) && versionLt(state.versions.env.COPROCESSOR_TX_SENDER_VERSION ?? "", [0, 12, 0]);
 
 /** Detects when relayer readiness config must stay on the legacy shape. */
 export const requiresLegacyRelayerReadinessConfig = (state: Pick<CompatState, "versions">) =>
@@ -186,8 +219,7 @@ export const requiresLegacyRelayerReadinessConfig = (state: Pick<CompatState, "v
 
 /** Detects when kms-core still expects the legacy config schema. */
 export const requiresLegacyKmsCoreConfig = (state: Pick<CompatState, "versions">) =>
-  versionLt(state.versions.env.CORE_VERSION ?? "", [0, 13, 10]) &&
-  !sameCompatBase(state.versions.env.CORE_VERSION ?? "", [0, 13, 10]);
+  versionBeforeReleaseFamily(state.versions.env.CORE_VERSION ?? "", [0, 13, 10]);
 
 /** Detects when test-suite should use the legacy relayer base URL. */
 export const requiresLegacyRelayerUrl = (state: Pick<CompatState, "versions">) =>
@@ -195,30 +227,31 @@ export const requiresLegacyRelayerUrl = (state: Pick<CompatState, "versions">) =
 
 /** Detects when the coprocessor schema supports DB state revert checks. */
 export const supportsCoprocessorDbStateRevert = (state: Pick<CompatState, "versions">) =>
-  !versionLt(state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION ?? "", [0, 12, 0], { unparsed: "modern" }) ||
-  sameCompatBase(state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION ?? "", [0, 12, 0]);
+  !versionBeforeReleaseFamily(state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION ?? "", [0, 12, 0], {
+    unparsed: "modern",
+  });
 
 /** Detects when the resolved host-listener bundle includes the listener-core consumer topology. */
 export const supportsHostListenerConsumer = (state: Pick<CompatState, "versions">) => {
   const version = state.versions.env.COPROCESSOR_HOST_LISTENER_VERSION ?? "";
-  return sameCompatBase(version, [0, 13, 0]) || !versionLt(version, [0, 13, 0], { unparsed: "modern" });
+  return !versionBeforeReleaseFamily(version, [0, 13, 0], { unparsed: "modern" });
 };
 
 /** Detects when gateway deployment still emits a gateway-side KMSGeneration address. */
 export const requiresLegacyGatewayKmsGenerationAddress = (state: Pick<CompatState, "versions">) =>
-  versionLt(state.versions.env.GATEWAY_VERSION ?? "", [0, 13, 0], { unparsed: "modern" });
+  versionBeforeReleaseFamily(state.versions.env.GATEWAY_VERSION ?? "", [0, 13, 0], { unparsed: "modern" });
 
 /** Detects when contract tasks still expect the legacy internal PauserSet flag name. */
 const requiresLegacyHostPauserTaskFlag = (version: string) =>
-  versionLt(version, [0, 12, 0], { unparsed: "modern" });
+  versionBeforeReleaseFamily(version, [0, 12, 0], { unparsed: "modern" });
 
 const requiresLegacyGatewayPauserTaskFlag = (version: string) =>
-  versionLt(version, [0, 13, 0], { unparsed: "modern" });
+  versionBeforeReleaseFamily(version, [0, 13, 0], { unparsed: "modern" });
 
 /** Detects when host address artifacts include ProtocolConfig and KMSGeneration proxy addresses. */
 export const requiresModernHostAddressArtifacts = (state: CompatState) =>
   effectiveCompatOverrides(state).some((override) => override.group === "host-contracts") ||
-  !versionLt(state.versions.env.HOST_VERSION ?? "", [0, 13, 0], { unparsed: "modern" });
+  !versionBeforeReleaseFamily(state.versions.env.HOST_VERSION ?? "", [0, 13, 0], { unparsed: "modern" });
 
 /** Detects when gateway discovery/runtime must require the legacy gateway KMSGeneration address. */
 export const requiresGatewayKmsGenerationAddress = (state: CompatState) =>
@@ -228,13 +261,17 @@ export const requiresGatewayKmsGenerationAddress = (state: CompatState) =>
 export const kmsConnectorUsesHostKmsGeneration = (state: CompatState) =>
   requiresModernHostAddressArtifacts(state) &&
   (effectiveCompatOverrides(state).some((override) => override.group === "kms-connector") ||
-    !versionLt(state.versions.env.CONNECTOR_GW_LISTENER_VERSION ?? "", [0, 13, 0], { unparsed: "modern" }));
+    !versionBeforeReleaseFamily(state.versions.env.CONNECTOR_GW_LISTENER_VERSION ?? "", [0, 13, 0], {
+      unparsed: "modern",
+    }));
 
 /** Detects when coprocessor listeners consume the canonical host KMSGeneration contract. */
 export const coprocessorUsesHostKmsGeneration = (state: CompatState) =>
   requiresModernHostAddressArtifacts(state) &&
   (effectiveCompatOverrides(state).some((override) => override.group === "coprocessor") ||
-    !versionLt(state.versions.env.COPROCESSOR_HOST_LISTENER_VERSION ?? "", [0, 13, 0], { unparsed: "modern" }));
+    !versionBeforeReleaseFamily(state.versions.env.COPROCESSOR_HOST_LISTENER_VERSION ?? "", [0, 13, 0], {
+      unparsed: "modern",
+    }));
 
 /** Detects the KMSGeneration source used for key/CRS bootstrap probes and trigger tasks. */
 export const bootstrapUsesHostKmsGeneration = kmsConnectorUsesHostKmsGeneration;
@@ -243,8 +280,12 @@ type BundleIncompatibility = { severity: "error"; code: string; message: string 
 
 /** Detects whether the resolved bundle supports multi-chain listener/database topology. */
 const requiresLegacySingleChainCoprocessor = (state: CompatState) =>
-  versionLt(state.versions.env.COPROCESSOR_HOST_LISTENER_VERSION ?? "", [0, 12, 0], { unparsed: "modern" }) ||
-  versionLt(state.versions.env.COPROCESSOR_HOST_LISTENER_POLLER_VERSION ?? "", [0, 12, 0], { unparsed: "modern" });
+  versionBeforeReleaseFamily(state.versions.env.COPROCESSOR_HOST_LISTENER_VERSION ?? "", [0, 12, 0], {
+    unparsed: "modern",
+  }) ||
+  versionBeforeReleaseFamily(state.versions.env.COPROCESSOR_HOST_LISTENER_POLLER_VERSION ?? "", [0, 12, 0], {
+    unparsed: "modern",
+  });
 
 /** Evaluates compatibility rules against a resolved bundle. */
 export const validateBundleCompatibility = (state: Pick<CompatState, "versions">): BundleIncompatibility[] => {
@@ -284,7 +325,7 @@ export const compatPolicyForState = (state: CompatState): CompatPolicy => {
     composeEnv: {},
   };
   for (const shim of COMPAT_MATRIX.legacyShims) {
-    if (!versionLt(state.versions.env[shim.key] ?? "", shim.below, { unparsed: shim.unparsed })) {
+    if (!versionBeforeReleaseFamily(state.versions.env[shim.key] ?? "", shim.below, { unparsed: shim.unparsed })) {
       continue;
     }
     const profile = SHIM_PROFILES[shim.profile];

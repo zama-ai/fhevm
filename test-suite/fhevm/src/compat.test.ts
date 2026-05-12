@@ -134,6 +134,23 @@ describe("compat", () => {
     expect(policy.coprocessorDropFlags["host-listener-poller"]).toContain("--kms-generation-address");
   });
 
+  test("keeps kms-generation-address for v0.13 prerelease host listener images", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-supported",
+        lockName: "latest-supported.json",
+        env: {
+          COPROCESSOR_HOST_LISTENER_VERSION: "v0.13.0-1",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.coprocessorDropFlags["host-listener"] ?? []).not.toContain("--kms-generation-address");
+    expect(policy.coprocessorDropFlags["host-listener-poller"] ?? []).not.toContain("--kms-generation-address");
+  });
+
   test("treats sha-style gateway bundles as modern kms-generation sourcing", () => {
     expect(
       requiresLegacyGatewayKmsGenerationAddress({
@@ -308,6 +325,22 @@ describe("compat", () => {
     expect(requiresGatewayKmsGenerationAddress(state)).toBe(false);
   });
 
+  test("treats v0.13 prerelease contract bundles as modern host address artifacts", () => {
+    const state = {
+      versions: {
+        target: "sha" as const,
+        lockName: "sha.json",
+        env: { GATEWAY_VERSION: "v0.13.0-1", HOST_VERSION: "v0.13.0-1" } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    };
+    expect(requiresLegacyGatewayKmsGenerationAddress(state)).toBe(false);
+    expect(requiresModernHostAddressArtifacts(state)).toBe(true);
+    expect(requiresGatewayKmsGenerationAddress(state)).toBe(false);
+  });
+
   test("requires modern host addresses when host-contracts is locally overridden", () => {
     const state = {
       versions: {
@@ -368,6 +401,26 @@ describe("compat", () => {
     };
     expect(kmsConnectorUsesHostKmsGeneration(coprocessorUpgraded)).toBe(true);
     expect(coprocessorUsesHostKmsGeneration(coprocessorUpgraded)).toBe(true);
+  });
+
+  test("routes v0.13 prerelease consumers to host KMSGeneration", () => {
+    const state = {
+      versions: {
+        target: "sha" as const,
+        lockName: "sha.json",
+        env: {
+          HOST_VERSION: "v0.13.0-1",
+          CONNECTOR_GW_LISTENER_VERSION: "v0.13.0-1",
+          COPROCESSOR_HOST_LISTENER_VERSION: "v0.13.0-1",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    };
+    expect(kmsConnectorUsesHostKmsGeneration(state)).toBe(true);
+    expect(coprocessorUsesHostKmsGeneration(state)).toBe(true);
+    expect(bootstrapUsesHostKmsGeneration(state)).toBe(true);
   });
 
   test("routes semver relayer images to the legacy console registry", () => {

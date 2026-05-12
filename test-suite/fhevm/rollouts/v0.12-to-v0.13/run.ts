@@ -137,25 +137,22 @@ export default async function run(ctx: RolloutRunContext) {
   await testPhase(ctx, "baseline", testMode);
 
   logPhase("01 contracts: execute the v0.13 migration runbook");
-  // Runbook dependencies: export gateway state before making gateway KMSGeneration
-  // view-only, initialize ProtocolConfig before host KMSGeneration/KMSVerifier,
-  // and upgrade HCULimit before FHEVMExecutor.
   await prepareV013ContractMigrationSources(ctx, contractsLock);
-  await ctx.runHostContractTask("npx hardhat task:deployEmptyProxiesProtocolConfigKMSGeneration");
-
+  // Export gateway state before making gateway KMSGeneration view-only.
   const gatewayMigrationEnv = await exportGatewayKmsMigrationEnv(ctx);
-  // ProtocolConfig is initialized before host KMSGeneration and KMSVerifier read it.
+  // Complete the gateway chain first, matching the v0.13 deployment runbook.
+  await upgradeContract((command) => ctx.runGatewayContractTask(command), "task:upgradeGatewayConfig", "GatewayConfig");
+  await upgradeContract((command) => ctx.runGatewayContractTask(command), "task:upgradeKMSGeneration", "KMSGeneration");
+  // Then complete the host chain migration. ProtocolConfig is initialized before
+  // host KMSGeneration and KMSVerifier read it; HCULimit moves before
+  // FHEVMExecutor because new executor ops call new HCU checks.
+  await ctx.runHostContractTask("npx hardhat task:deployEmptyProxiesProtocolConfigKMSGeneration");
   await ctx.runHostContractTask("npx hardhat task:deployProtocolConfigFromMigration", { env: gatewayMigrationEnv });
-  // Host KMSGeneration is initialized from the gateway snapshot exported above.
   await ctx.runHostContractTask("npx hardhat task:deployKMSGenerationFromMigration", { env: gatewayMigrationEnv });
-  // HCULimit must move before FHEVMExecutor because new executor ops call new HCU checks.
   await upgradeContract((command) => ctx.runHostContractTask(command), "task:upgradeHCULimit", "HCULimit");
   await upgradeContract((command) => ctx.runHostContractTask(command), "task:upgradeFHEVMExecutor", "FHEVMExecutor");
   await upgradeContract((command) => ctx.runHostContractTask(command), "task:upgradeKMSVerifier", "KMSVerifier");
   await upgradeContract((command) => ctx.runHostContractTask(command), "task:upgradeACL", "ACL");
-  // Gateway KMSGeneration becomes view-only only after the migration snapshot is exported.
-  await upgradeContract((command) => ctx.runGatewayContractTask(command), "task:upgradeGatewayConfig", "GatewayConfig");
-  await upgradeContract((command) => ctx.runGatewayContractTask(command), "task:upgradeKMSGeneration", "KMSGeneration");
   await ctx.refreshDiscovery();
   await testPhase(ctx, "contracts", testMode);
 
