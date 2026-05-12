@@ -95,7 +95,13 @@ export const normalizeLocalOneNodeMpcThreshold = (env: RolloutEnv): RolloutEnv =
   return env;
 };
 
-const exportGatewayKmsMigrationEnv = async (ctx: RolloutRunContext) => {
+type GatewayMigrationContext = {
+  kmsGenerationProxy: string;
+  gatewayConfigProxy: string;
+  migrationEnv: RolloutEnv;
+};
+
+const exportGatewayKmsMigrationEnv = async (ctx: RolloutRunContext): Promise<GatewayMigrationContext> => {
   const state = await ctx.readState();
   const gateway = state.discovery?.gateway;
   if (!gateway?.KMS_GENERATION_ADDRESS || !gateway.GATEWAY_CONFIG_ADDRESS) {
@@ -115,8 +121,17 @@ const exportGatewayKmsMigrationEnv = async (ctx: RolloutRunContext) => {
 
   const stateFile = path.join(ctx.stateDir(), "runtime", "addresses", "gateway", output);
   const migrationState = JSON.parse(await Bun.file(stateFile).text()) as { export?: unknown };
-  return normalizeLocalOneNodeMpcThreshold(parseGatewayMigrationEnv(migrationState.export));
+  return {
+    kmsGenerationProxy: gateway.KMS_GENERATION_ADDRESS,
+    gatewayConfigProxy: gateway.GATEWAY_CONFIG_ADDRESS,
+    migrationEnv: normalizeLocalOneNodeMpcThreshold(parseGatewayMigrationEnv(migrationState.export)),
+  };
 };
+
+// host-sc-deploy's templated env exposes RPC_URL for the host chain only; the
+// migration assertion task additionally needs GATEWAY_RPC_URL to reach the
+// gateway-node container on the same compose network.
+const GATEWAY_RPC_URL = "http://gateway-node:8546";
 
 export default async function run(ctx: RolloutRunContext) {
   const testMode = resolveRolloutTestMode(process.env.ROLLOUT_TEST_PROFILE);
@@ -134,7 +149,7 @@ export default async function run(ctx: RolloutRunContext) {
   logPhase("01 contracts: execute the v0.13 migration runbook");
   await prepareV013ContractMigrationSources(ctx, contractsLock);
   // Export gateway state before making gateway KMSGeneration view-only.
-  const gatewayMigrationEnv = await exportGatewayKmsMigrationEnv(ctx);
+  const { kmsGenerationProxy, gatewayConfigProxy, migrationEnv } = await exportGatewayKmsMigrationEnv(ctx);
   // Complete the gateway chain first, matching the v0.13 deployment runbook.
   await upgradeContract((command) => ctx.runGatewayContractTask(command), "task:upgradeGatewayConfig", "GatewayConfig");
   await upgradeContract((command) => ctx.runGatewayContractTask(command), "task:upgradeKMSGeneration", "KMSGeneration");
@@ -144,12 +159,19 @@ export default async function run(ctx: RolloutRunContext) {
   // path runs, then upgrade the remaining contracts. HCULimit moves before
   // FHEVMExecutor because new executor ops call new HCU checks.
   await ctx.runHostContractTask("npx hardhat task:deployEmptyProxiesProtocolConfigKMSGeneration");
-  await ctx.runHostContractTask("npx hardhat task:deployProtocolConfigFromMigration", { env: gatewayMigrationEnv });
-  await ctx.runHostContractTask("npx hardhat task:deployKMSGenerationFromMigration", { env: gatewayMigrationEnv });
+  await ctx.runHostContractTask("npx hardhat task:deployProtocolConfigFromMigration", { env: migrationEnv });
+  await ctx.runHostContractTask("npx hardhat task:deployKMSGenerationFromMigration", { env: migrationEnv });
   await upgradeContract((command) => ctx.runHostContractTask(command), "task:upgradeKMSVerifier", "KMSVerifier");
   // Assert the migrated ProtocolConfig, KMSGeneration, and KMSVerifier state against
   // the gateway export, matching the v0.13 devnet runbook before the remaining executor upgrades.
-  await ctx.runHostContractTask("npx hardhat task:assertKmsMigrationSucceeded");
+  await ctx.runHostContractTask(
+    [
+      "npx hardhat task:assertKmsMigrationSucceeded",
+      `--gateway-config-proxy ${gatewayConfigProxy}`,
+      `--gateway-kms-generation-proxy ${kmsGenerationProxy}`,
+    ].join(" "),
+    { env: { GATEWAY_RPC_URL } },
+  );
   await upgradeContract((command) => ctx.runHostContractTask(command), "task:upgradeHCULimit", "HCULimit");
   await upgradeContract((command) => ctx.runHostContractTask(command), "task:upgradeFHEVMExecutor", "FHEVMExecutor");
   await upgradeContract((command) => ctx.runHostContractTask(command), "task:upgradeACL", "ACL");
