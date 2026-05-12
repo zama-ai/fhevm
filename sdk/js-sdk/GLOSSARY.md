@@ -9,7 +9,7 @@ The following terms had multiple names in use across the codebase, docs, whitepa
 | Canonical name | Other names (deprecated) | Decision |
 | --- | --- | --- |
 | **FHE encryption key** | FHEVM public key, TFHE public key, Zama public key, global FHE key, GlobalFhePkeParams | Decided — SDK uses `fetchFheEncryptionKeyBytes()` |
-| **encrypted value** (prose) / `EncryptedValue` (code) | handle, fhevmHandle, fheHandle, FhevmHandle | Decided — `EncryptedValue` is the primary public type name. `Handle` is a secondary alias for FHE.sol familiarity. "Encrypted value" in prose. |
+| **encrypted value** (prose) / `EncryptedValue` (code) | handle, fhevmHandle, fheHandle, FhevmHandle | Decided — `EncryptedValue` is the primary public type name. `Handle` is a secondary alias for `FHE.sol` familiarity. "Encrypted value" in prose. |
 | **E2E transport key pair** / `E2eTransportKeypair` (code) | user decryption key pair, client decryption key pair, kms key pair, FhevmDecryptionKey | Decided — SDK uses `E2eTransportKeypair` (lowercase 'p' in keypair). Generate with `generateE2eTransportKeypair()`. |
 | **TKMS private key** | KMS private key | Decided — SDK uses `tkmsPrivateKey` as the internal field name |
 | **FHE gas** | fheGas, fhe-gas, HCU (homomorphic complexity unit) | Decided — "FHE gas" in prose; see §3 for the full definition. |
@@ -153,7 +153,7 @@ The user's private key used to decrypt KMS signcrypted shares during decryption.
 ## 5. Encryption and decryption
 
 **Encrypted value** (also: handle, fhevmHandle, fheHandle, FhevmHandle)
-A deterministic identifier (`bytes32`) representing an encrypted value in the FHEVM system. Encrypted values (called "handles" in FHE.sol and the FHEVM whitepaper) are used inside smart contracts instead of actual ciphertexts. Each one references exactly one ciphertext stored and processed by coprocessors. In the SDK, the primary public type is `EncryptedValue<T>`, with `Handle<T>` as a secondary alias. In developer-facing prose, prefer "encrypted value" over "handle". Subtypes: `ComputedEncryptedValue` (verified, on-chain result of FHE operations) and `ExternalEncryptedValue` (unverified input from `encrypt()`).
+A deterministic identifier (`bytes32`) representing an encrypted value in the FHEVM system. Encrypted values (called "handles" in `FHE.sol` and the FHEVM whitepaper) are used inside smart contracts instead of actual ciphertexts. Each one references exactly one ciphertext stored and processed by coprocessors. In the SDK, the primary public type is `EncryptedValue<T>`, with `Handle<T>` as a secondary alias. In developer-facing prose, prefer "encrypted value" over "handle". Subtypes: `ComputedEncryptedValue` (verified, on-chain result of FHE operations) and `ExternalEncryptedValue` (unverified input from `encrypt()`).
 *Source: fhevm-whitepaper, Solidity, SDK*
 
 **ZKProof** (also: ZKPoK — Zero-Knowledge Proof of Knowledge, the term used in the fhevm-whitepaper)
@@ -204,9 +204,9 @@ The result of decrypting an encrypted value. Pairs the original `EncryptedValue`
 
 ---
 
-## 7. Zama Protocol internals
+## 7. SDK Components
 
-Terms specific to the Zama Protocol.
+Terms specific to SDK components.
 
 **TFHE worker**
 A Web Worker (in browsers) or `worker_thread` (in Node.js) that runs the TFHE WASM module for multi-threaded encryption operations. The SDK spawns a pool of TFHE workers controlled by the `numberOfThreads` runtime config parameter. Workers share memory via `SharedArrayBuffer` (in browsers, this requires COOP/COEP headers).
@@ -219,16 +219,14 @@ A Web Worker (in browsers) or `worker_thread` (in Node.js) that runs the TFHE WA
 
 ## 8. General cryptography terms
 
-Commonly used cryptographic terms. Not defined by Zama, but included here for reference.
+Commonly used cryptographic terms.
+Not defined by Zama, but included here for reference.
 
 **FHE (Fully Homomorphic Encryption)**
 A cryptographic method allowing arbitrary, complex, and unlimited computations (both addition and multiplication) on encrypted data (ciphertext) without decrypting it first. The result, when decrypted, matches the output of operations performed on plaintext. This ensures data remains secure during processing, enabling privacy-preserving cloud computing.
 
-**Homomorphic encryption**
-A form of encryption that allows computations to be performed on encrypted data without first having to decrypt it. The resulting computations are left in an encrypted form which, when decrypted, result in an output that is identical to that of the operations performed on the unencrypted data.
-
 **Ciphertext**
-The unreadable, scrambled output produced when plaintext is encrypted using a cryptographic algorithm and a key. In the Zama Protocol context: the encrypted representation of a plaintext value produced using the FHE encryption key. Ciphertexts are stored off-chain by coprocessors and referenced by encrypted values (handles). There is a deterministic 1:1 mapping between an encrypted value and a ciphertext.
+The unreadable, scrambled output produced when plaintext is encrypted using a cryptographic algorithm and a key. In the Zama Protocol context: the encrypted representation of a plaintext value produced using the public FHE encryption key. Ciphertexts are stored off-chain by coprocessors and referenced by handles, which can be considered as unique pointers to the ciphertexts. There is a deterministic 1:1 mapping between an encrypted value and a ciphertext.
 
 **Plaintext**
 Unencrypted, human-readable data that serves as the original input for an encryption algorithm or the final output of a decryption process.
@@ -237,21 +235,21 @@ Unencrypted, human-readable data that serves as the original input for an encryp
 Unencrypted, human-readable data that is stored or transmitted without any cryptographic protection. Unlike plaintext (which may be intended for encryption), cleartext is generally not intended to be encrypted.
 
 **Trivial encryption**
-In general cryptography: an encryption scheme that offers no real security. In the FHEVM context: a special encryption operation that produces a valid ciphertext without requiring a zero-knowledge proof. Typically used for values that do not require secrecy (for example, constants).
+In general cryptography: an encryption scheme that offers no security. In the FHEVM context: a special encryption operation that produces a valid ciphertext without requiring a zero-knowledge proof, and without protecting the plaintext. Typically used for values that do not require secrecy (for example, constants).
 
 **Public key** *(in homomorphic encryption)*
-Used by the data owner to encrypt raw data before sending it to a server for computation.
+Used by the data owner to encrypt data before sending it to a server for computation.
 
 **Secret key** *(in homomorphic encryption)*
 Kept securely by the data owner to decrypt the final results returned by the server.
 
 **Evaluation key** *(in homomorphic encryption)*
-A public key, often derived from the secret key, that allows the server to perform homomorphic operations (addition/multiplication) on ciphertexts without needing to decrypt them.
+A public key, often derived from the secret key, that allows the server to perform homomorphic operations (e.g. addition/multiplication) on ciphertexts without needing to decrypt them.
 
 ---
 
 ## 9. General computing terms
 
 **Handle** *(general computing)*
-In computer programming, a handle is an abstract reference to a resource that is used when application software references blocks of memory or objects that are managed by another system like a database or an operating system. In the FHEVM context, "handle" is the FHE.sol / whitepaper term for what the SDK calls an `EncryptedValue` — see **Encrypted value** in section 5.
+In computer programming, a handle is an abstract reference to a resource that is used when application software references blocks of memory or objects that are managed by another system like a database or an operating system. In the FHEVM context, "handle" is the `FHE.sol` / whitepaper term for what the SDK calls an `EncryptedValue` — see **Encrypted value** in section 5.
 *Source: [Wikipedia](https://en.wikipedia.org/wiki/Handle_(computing))*
