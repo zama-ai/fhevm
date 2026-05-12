@@ -1,4 +1,5 @@
-import { getViemRuntime, PRIVATE_VIEM_TOKEN } from '../internal/viem-p.js';
+import { PRIVATE_VIEM_TOKEN } from '../internal/viem-p.js';
+import { getViemRuntime } from '../internal/runtime.js';
 import { initFhevmEncryptRuntime as initFhevmEncryptRuntime_ } from '../../core/runtime/initFhevmEncryptRuntime-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////

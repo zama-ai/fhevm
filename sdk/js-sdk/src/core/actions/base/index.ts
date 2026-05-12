@@ -52,6 +52,12 @@ export {
 } from './fetchVerifiedInputProof.js';
 
 export {
+  type FetchEncryptedValuesParameters,
+  type FetchEncryptedValuesReturnType,
+  fetchEncryptedValues,
+} from './fetchEncryptedValues.js';
+
+export {
   type VerifyZkProofCoprocessorSignaturesParameters,
   verifyZkProofCoprocessorSignatures,
 } from './verifyZkProofCoprocessorSignatures.js';

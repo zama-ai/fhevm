@@ -23,7 +23,3 @@ export function asEncryptedValue(value: unknown): EncryptedValue {
   assertIsEncryptedValue(value);
   return value;
 }
-
-export function toEncryptedValue(value: unknown): EncryptedValue {
-  return toFhevmHandle(value).bytes32Hex as unknown as EncryptedValue;
-}

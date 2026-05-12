@@ -16,12 +16,12 @@ Configures the global runtime. Must be called before creating any clients.
 setFhevmRuntimeConfig(config: FhevmRuntimeConfig): void
 ```
 
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `config.locateFile` | `(file: string) => URL` | Custom WASM file locator |
-| `config.logger` | `Logger` | Logger instance `{ debug, error }` |
-| `config.singleThread` | `boolean` | Force single-threaded WASM |
-| `config.numberOfThreads` | `number` | Number of WASM worker threads |
+| Parameter                | Type                    | Description                        |
+| ------------------------ | ----------------------- | ---------------------------------- |
+| `config.locateFile`      | `(file: string) => URL` | Custom WASM file locator           |
+| `config.logger`          | `Logger`                | Logger instance `{ debug, error }` |
+| `config.singleThread`    | `boolean`               | Force single-threaded WASM         |
+| `config.numberOfThreads` | `number`                | Number of WASM worker threads      |
 
 ### `createFhevmClient(parameters)`
 
@@ -89,26 +89,26 @@ encrypt(fhevm, parameters: EncryptSingleParameters): Promise<EncryptSingleReturn
 encrypt(fhevm, parameters: EncryptMultipleParameters): Promise<EncryptMultipleReturnType>
 ```
 
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `contractAddress` | `string` | Target contract address |
-| `userAddress` | `string` | User's Ethereum address |
-| `values` | `TypedValueLike \| readonly TypedValueLike[]` | Values to encrypt (single or array) |
-| `options?` | `RelayerInputProofOptions` | Optional relayer options |
+| Parameter         | Type                                          | Description                         |
+| ----------------- | --------------------------------------------- | ----------------------------------- |
+| `contractAddress` | `string`                                      | Target contract address             |
+| `userAddress`     | `string`                                      | User's Ethereum address             |
+| `values`          | `TypedValueLike \| readonly TypedValueLike[]` | Values to encrypt (single or array) |
+| `options?`        | `RelayerInputProofOptions`                    | Optional relayer options            |
 
 **Single value return** (`EncryptSingleReturnType`):
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `externalEncryptedValue` | `ExternalEncryptedValue` | The encrypted handle |
-| `inputProof` | `BytesHex` | Proof bytes to pass to contract |
+| Field                    | Type                     | Description                     |
+| ------------------------ | ------------------------ | ------------------------------- |
+| `externalEncryptedValue` | `ExternalEncryptedValue` | The encrypted handle            |
+| `inputProof`             | `BytesHex`               | Proof bytes to pass to contract |
 
 **Multiple values return** (`EncryptMultipleReturnType`):
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `externalEncryptedValues` | `readonly ExternalEncryptedValue[]` | Encrypted handles in input order |
-| `inputProof` | `BytesHex` | Shared proof bytes for all values |
+| Field                     | Type                                | Description                       |
+| ------------------------- | ----------------------------------- | --------------------------------- |
+| `externalEncryptedValues` | `readonly ExternalEncryptedValue[]` | Encrypted handles in input order  |
+| `inputProof`              | `BytesHex`                          | Shared proof bytes for all values |
 
 ### `generateZkProof(fhevm, parameters)`
 
@@ -132,10 +132,10 @@ Decrypts encrypted values that are publicly decryptable on-chain.
 publicDecrypt(fhevm, parameters: PublicDecryptParameters): Promise<PublicDecryptionProof>
 ```
 
-| Parameter | Type | Description |
-| --- | --- | --- |
+| Parameter         | Type                            | Description                                        |
+| ----------------- | ------------------------------- | -------------------------------------------------- |
 | `encryptedValues` | `readonly EncryptedValueLike[]` | Encrypted values to decrypt (min 1, max 2048 bits) |
-| `options?` | `RelayerPublicDecryptOptions` | Optional relayer options |
+| `options?`        | `RelayerPublicDecryptOptions`   | Optional relayer options                           |
 
 ### `fetchVerifiedInputProof(fhevm, parameters)`
 
@@ -183,21 +183,21 @@ Decrypts encrypted values using a transport key pair and signed permit.
 decrypt(fhevm, parameters: DecryptParameters): Promise<readonly ClearValue[]>
 ```
 
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `encryptedValues` | `EncryptedValueEntry \| readonly EncryptedValueEntry[]` | Encrypted values with their contract addresses |
-| `signedPermit` | `SignedSelfDecryptionPermit \| SignedDelegatedDecryptionPermit` | Signed permit from `signDecryptionPermit()` |
-| `e2eTransportKeypair` | `E2eTransportKeypair` | E2E transport key pair from `generateE2eTransportKeypair()` |
-| `options?` | `RelayerUserDecryptOptions \| RelayerDelegatedUserDecryptOptions` | Optional relayer options |
+| Parameter          | Type                                                              | Description                                              |
+| ------------------ | ----------------------------------------------------------------- | -------------------------------------------------------- |
+| `encryptedValues`  | `EncryptedValueEntry \| readonly EncryptedValueEntry[]`           | Encrypted values with their contract addresses           |
+| `signedPermit`     | `SignedSelfDecryptionPermit \| SignedDelegatedDecryptionPermit`   | Signed permit from `signDecryptionPermit()`              |
+| `transportKeyPair` | `TransportKeyPair`                                                | E2E transport key pair from `generateTransportKeyPair()` |
+| `options?`         | `RelayerUserDecryptOptions \| RelayerDelegatedUserDecryptOptions` | Optional relayer options                                 |
 
 Each `EncryptedValueEntry` has `{ encryptedValue: EncryptedValueLike, contractAddress: ChecksummedAddress }`.
 
-### `generateE2eTransportKeypair(fhevm)` / `client.generateE2eTransportKeypair()`
+### `generateTransportKeyPair(fhevm)` / `client.generateTransportKeyPair()`
 
 Generates a new E2E transport key pair for decryption.
 
 ```ts
-generateE2eTransportKeypair(fhevm): Promise<E2eTransportKeypair>
+generateTransportKeyPair(fhevm): Promise<TransportKeyPair>
 ```
 
 ### `decryptKmsSignedcryptedShares(fhevm, parameters)`
@@ -226,15 +226,15 @@ signDecryptionPermit(fhevm, parameters: SignSelfDecryptionPermitParameters): Pro
 signDecryptionPermit(fhevm, parameters: SignDelegatedDecryptionPermitParameters): Promise<SignedDelegatedDecryptionPermit>
 ```
 
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `contractAddresses` | `readonly string[]` | Allowed contracts (max 10) |
-| `startTimestamp` | `number` | Unix timestamp (seconds) |
-| `durationDays` | `number` | Validity period (max 365) |
-| `signerAddress` | `string` | Address of the signer |
-| `signer` | `NativeSigner` | Ethers Signer or viem WalletClient |
-| `e2eTransportKeypair` | `E2eTransportKeypair` | Transport key pair |
-| `onBehalfOf?` | `string` | Optional — address to decrypt on behalf of |
+| Parameter           | Type                | Description                                |
+| ------------------- | ------------------- | ------------------------------------------ |
+| `contractAddresses` | `readonly string[]` | Allowed contracts (max 10)                 |
+| `startTimestamp`    | `number`            | Unix timestamp (seconds)                   |
+| `durationDays`      | `number`            | Validity period (max 365)                  |
+| `signerAddress`     | `string`            | Address of the signer                      |
+| `signer`            | `NativeSigner`      | Ethers Signer or viem WalletClient         |
+| `transportKeyPair`  | `TransportKeyPair`  | Transport key pair                         |
+| `onBehalfOf?`       | `string`            | Optional — address to decrypt on behalf of |
 
 ### `createKmsUserDecryptEIP712(fhevm, parameters)` / `client.createUserDecryptEIP712(parameters)`
 
@@ -260,20 +260,20 @@ Verifies a decrypt permit EIP-712 signature. Throws on invalid signature.
 verifyKmsUserDecryptEIP712(fhevm, parameters: VerifyKmsUserDecryptEIP712Parameters): Promise<void>
 ```
 
-### `parseE2eTransportKeypair(fhevm, parameters)` / `client.parseE2eTransportKeypair(parameters)`
+### `parseTransportKeyPair(fhevm, parameters)` / `client.parseTransportKeyPair(parameters)`
 
 Restores a key pair from serialized bytes.
 
 ```ts
-parseE2eTransportKeypair(fhevm, parameters: ParseE2eTransportKeypairParameters): Promise<E2eTransportKeypair>
+parseTransportKeyPair(fhevm, parameters: ParseTransportKeyPairParameters): Promise<TransportKeyPair>
 ```
 
-### `serializeE2eTransportKeypair(fhevm, parameters)` / `client.serializeE2eTransportKeypair(parameters)`
+### `serializeTransportKeyPair(fhevm, parameters)` / `client.serializeTransportKeyPair(parameters)`
 
 Serializes a key pair for storage/persistence.
 
 ```ts
-serializeE2eTransportKeypair(fhevm, parameters: SerializeE2eTransportKeypairParameters): SerializeE2eTransportKeypairReturnType
+serializeTransportKeyPair(fhevm, parameters: SerializeTransportKeyPairParameters): SerializeTransportKeyPairReturnType
 ```
 
 ### `fetchFheEncryptionKeyBytes(fhevm, parameters?)` / `client.fetchFheEncryptionKeyBytes(parameters?)`
@@ -334,19 +334,19 @@ readKmsVerifierContractData(fhevm, parameters: ReadKmsVerifierContractDataParame
 
 ### Other host actions
 
-| Function | Description |
-| --- | --- |
-| `getACLAddress(fhevm, params)` | Gets the ACL contract address |
+| Function                                 | Description                             |
+| ---------------------------------------- | --------------------------------------- |
+| `getACLAddress(fhevm, params)`           | Gets the ACL contract address           |
 | `getFHEVMExecutorAddress(fhevm, params)` | Gets the FhevmExecutor contract address |
 | `getInputVerifierAddress(fhevm, params)` | Gets the InputVerifier contract address |
-| `getKmsSigners(fhevm, params)` | Gets KMS signer addresses |
-| `getCoprocessorSigners(fhevm, params)` | Gets coprocessor signer addresses |
-| `getThreshold(fhevm, params)` | Gets the signature threshold |
-| `getHandleVersion(fhevm, params)` | Gets the handle version |
-| `resolveChainId(fhevm, params)` | Resolves the chain ID |
-| `isAllowedForDecryption(fhevm, params)` | Checks ACL decryption permission |
-| `persistAllowed(fhevm, params)` | Checks persisted ACL permissions |
-| `eip712Domain(fhevm, params)` | Reads EIP-712 domain from contract |
+| `getKmsSigners(fhevm, params)`           | Gets KMS signer addresses               |
+| `getCoprocessorSigners(fhevm, params)`   | Gets coprocessor signer addresses       |
+| `getThreshold(fhevm, params)`            | Gets the signature threshold            |
+| `getHandleVersion(fhevm, params)`        | Gets the handle version                 |
+| `resolveChainId(fhevm, params)`          | Resolves the chain ID                   |
+| `isAllowedForDecryption(fhevm, params)`  | Checks ACL decryption permission        |
+| `persistAllowed(fhevm, params)`          | Checks persisted ACL permissions        |
+| `eip712Domain(fhevm, params)`            | Reads EIP-712 domain from contract      |
 
 ---
 
@@ -364,7 +364,7 @@ readKmsVerifierContractData(fhevm, parameters: ReadKmsVerifierContractDataParame
 
 **Proofs:** `VerifiedInputProof`, `InputProof`, `ZkProof`, `PublicDecryptionProof`
 
-**Permits:** `SignedSelfDecryptionPermit`, `SignedDelegatedDecryptionPermit`, `SignedDecryptionPermit`, `KmsUserDecryptEIP712`, `KmsDelegatedUserDecryptEIP712`, `KmsEIP712Domain`, `E2eTransportKeypair`
+**Permits:** `SignedSelfDecryptionPermit`, `SignedDelegatedDecryptionPermit`, `SignedDecryptionPermit`, `KmsUserDecryptEIP712`, `KmsDelegatedUserDecryptEIP712`, `KmsEIP712Domain`, `TransportKeyPair`
 
 **Chains:** `FhevmChain`
 

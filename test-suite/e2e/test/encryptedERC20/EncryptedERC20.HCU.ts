@@ -1,5 +1,11 @@
 import { expect } from 'chai';
-import type { ContractRunner, ContractTransactionResponse, TransactionReceipt, TransactionRequest, Wallet } from 'ethers';
+import type {
+  ContractRunner,
+  ContractTransactionResponse,
+  TransactionReceipt,
+  TransactionRequest,
+  Wallet,
+} from 'ethers';
 import { ethers } from 'hardhat';
 
 import type { EncryptedERC20 } from '../../types';
@@ -14,6 +20,7 @@ import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
 // Minimal ABI for HCULimit — the contract is deployed by the host-sc stack
 // but not compiled in the E2E test suite.
 const HCU_LIMIT_ABI = [
+  'function getVersion() view returns (string)',
   'function getBlockMeter() view returns (uint48, uint48)',
   'function getGlobalHCUCapPerBlock() view returns (uint48)',
   'function getMaxHCUPerTx() view returns (uint48)',
@@ -29,6 +36,7 @@ const HCU_LIMIT_ABI = [
 
 type HcuLimitContract = {
   connect(runner: ContractRunner): HcuLimitContract;
+  getVersion(): Promise<string>;
   getBlockMeter(overrides?: ReadAtBlock): Promise<[bigint, bigint]>;
   getGlobalHCUCapPerBlock(): Promise<bigint>;
   getMaxHCUPerTx(): Promise<bigint>;
@@ -91,7 +99,11 @@ describe('EncryptedERC20:HCU', function () {
     expect(BigInt(maxTxHCUDepth) <= maxDepth).to.eq(true, `${label} should stay within the deployed depth cap`);
   }
 
-  async function assertBlockMeterIncludesTransaction(hcuLimit: HcuLimitContract, receipt: TransactionReceipt, label: string) {
+  async function assertBlockMeterIncludesTransaction(
+    hcuLimit: HcuLimitContract,
+    receipt: TransactionReceipt,
+    label: string,
+  ) {
     const { globalTxHCU } = getTxHCUFromTxReceipt(receipt);
     const [[blockNumber, usedHCU], perBlock] = await Promise.all([
       hcuLimit.getBlockMeter({ blockTag: receipt.blockNumber }),
@@ -124,9 +136,12 @@ describe('EncryptedERC20:HCU', function () {
     const t1 = await transaction.wait();
     expect(t1?.status).to.eq(1);
 
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    input.add64(1337);
-    const encryptedTransferAmount = await input.encrypt();
+    const encryptedTransferAmount = await this.instances.alice.encryptUint64({
+      value: 1337,
+      contractAddress: this.contractAddress,
+      userAddress: this.signers.alice.address,
+    });
+
     const tx = await this.erc20['transfer(address,bytes32,bytes)'](
       this.signers.bob.address,
       encryptedTransferAmount.handles[0],
@@ -156,9 +171,12 @@ describe('EncryptedERC20:HCU', function () {
     const transaction = await this.erc20.mint(10000);
     await transaction.wait();
 
-    const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    inputAlice.add64(1337);
-    const encryptedAllowanceAmount = await inputAlice.encrypt();
+    const encryptedAllowanceAmount = await this.instances.alice.encryptUint64({
+      value: 1337,
+      contractAddress: this.contractAddress,
+      userAddress: this.signers.alice.address,
+    });
+
     const tx = await this.erc20['approve(address,bytes32,bytes)'](
       this.signers.bob.address,
       encryptedAllowanceAmount.handles[0],
@@ -167,9 +185,13 @@ describe('EncryptedERC20:HCU', function () {
     await tx.wait();
 
     const bobErc20 = this.erc20.connect(this.signers.bob);
-    const inputBob2 = this.instances.bob.createEncryptedInput(this.contractAddress, this.signers.bob.address);
-    inputBob2.add64(1337); // below allowance so next tx should send token
-    const encryptedTransferAmount2 = await inputBob2.encrypt();
+
+    const encryptedTransferAmount2 = await this.instances.bob.encryptUint64({
+      value: 1337, // below allowance so next tx should send token
+      contractAddress: this.contractAddress,
+      userAddress: this.signers.bob.address,
+    });
+
     const tx3 = await bobErc20['transferFrom(address,address,bytes32,bytes)'](
       this.signers.alice.address,
       this.signers.bob.address,
@@ -207,9 +229,11 @@ describe('EncryptedERC20:HCU', function () {
       overrides?: TransactionRequest,
     ) {
       const erc20 = ctx.erc20.connect(ctx.signers[sender]);
-      const input = ctx.instances[sender].createEncryptedInput(ctx.contractAddress, ctx.signers[sender].address);
-      input.add64(amount);
-      const enc = await input.encrypt();
+      const enc = await ctx.instances[sender].encryptUint64({
+        value: amount,
+        contractAddress: ctx.contractAddress,
+        userAddress: ctx.signers[sender].address,
+      });
       return erc20['transfer(address,bytes32,bytes)'](recipient, enc.handles[0], enc.inputProof, overrides ?? {});
     }
 
@@ -238,9 +262,11 @@ describe('EncryptedERC20:HCU', function () {
         const mintTx = await this.erc20.mint(10000);
         await mintTx.wait();
 
-        const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-        input.add64(1337);
-        const encryptedTransferAmount = await input.encrypt();
+        const encryptedTransferAmount = await this.instances.alice.encryptUint64({
+          value: 1337,
+          contractAddress: this.contractAddress,
+          userAddress: this.signers.alice.address,
+        });
         const tx = await this.erc20['transfer(address,bytes32,bytes)'](
           this.signers.bob.address,
           encryptedTransferAmount.handles[0],
@@ -256,9 +282,11 @@ describe('EncryptedERC20:HCU', function () {
         const mintTx = await this.erc20.mint(10000);
         await mintTx.wait();
 
-        const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-        inputAlice.add64(1337);
-        const encryptedAllowanceAmount = await inputAlice.encrypt();
+        const encryptedAllowanceAmount = await this.instances.alice.encryptUint64({
+          value: 1337,
+          contractAddress: this.contractAddress,
+          userAddress: this.signers.alice.address,
+        });
         const approveTx = await this.erc20['approve(address,bytes32,bytes)'](
           this.signers.bob.address,
           encryptedAllowanceAmount.handles[0],
@@ -267,9 +295,13 @@ describe('EncryptedERC20:HCU', function () {
         await approveTx.wait();
 
         const bobErc20 = this.erc20.connect(this.signers.bob);
-        const inputBob = this.instances.bob.createEncryptedInput(this.contractAddress, this.signers.bob.address);
-        inputBob.add64(1337);
-        const encryptedTransferAmount = await inputBob.encrypt();
+
+        const encryptedTransferAmount = await this.instances.bob.encryptUint64({
+          value: 1337,
+          contractAddress: this.contractAddress,
+          userAddress: this.signers.bob.address,
+        });
+
         const tx = await bobErc20['transferFrom(address,address,bytes32,bytes)'](
           this.signers.alice.address,
           this.signers.bob.address,
@@ -295,6 +327,13 @@ describe('EncryptedERC20:HCU', function () {
           this.skip();
         }
         const hcuLimit = requireHcuLimit(this.hcuLimit, LOCAL_HCU_LIMIT_ERROR);
+        // Per-block cap (setHCUPerBlock, getMaxHCUPerTx, …) was added in HCULimit v0.2.0.
+        // Skip on v0.1.x deployments (protocol v0.11 and earlier).
+        // getVersion() returns e.g. "HCULimit v0.1.0".
+        const version = await hcuLimit.getVersion();
+        if (version.includes(' v0.1.')) {
+          this.skip();
+        }
         const deployer = requireDeployer(this.deployer);
         [savedHCUPerBlock, savedMaxHCUPerTx, savedMaxHCUDepthPerTx, wasWhitelisted] = await Promise.all([
           hcuLimit.getGlobalHCUCapPerBlock(),
@@ -311,6 +350,10 @@ describe('EncryptedERC20:HCU', function () {
 
       afterEach(async function () {
         if (isLiveNetwork()) {
+          return;
+        }
+        // beforeEach skipped (live network or HCULimit v0.1.x) — nothing to restore.
+        if (savedHCUPerBlock === undefined) {
           return;
         }
         await ethers.provider.send('evm_setAutomine', [true]);
@@ -448,7 +491,7 @@ describe('EncryptedERC20:HCU', function () {
         const hcuLimit = requireHcuLimit(this.hcuLimit, LOCAL_HCU_LIMIT_ERROR);
         const aliceHcuLimit = hcuLimit.connect(this.signers.alice);
         await expect(aliceHcuLimit.setHCUPerBlock(1_000_000)).to.be.revertedWithCustomError(
-          hcuLimit,
+          hcuLimit as unknown as { interface: any },
           'NotHostOwner',
         );
       });

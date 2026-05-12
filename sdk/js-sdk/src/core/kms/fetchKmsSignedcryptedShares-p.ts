@@ -15,6 +15,7 @@ import { assertKmsDecryptionBitLimit } from './utils.js';
 import { checkPersistAllowed } from '../host-contracts/checkPersistAllowed.js';
 import { assertExtraDataMatchesKmsSingersContext } from '../host-contracts/KmsSignersContext-p.js';
 import { createKmsEip712Domain } from './createKmsEip712Domain.js';
+import { checkDelegation } from '../host-contracts/checkDelegation.js';
 
 /*
     See: in KMS (eip712Domain)
@@ -118,11 +119,20 @@ export async function fetchKmsSignedcryptedShares(context: Context, parameters: 
   signedPermit.assertNotExpired();
 
   // 7. Check: ACL permissions (user is signer or delegatorAddress)
-  await checkPersistAllowed(context, {
-    address: context.chain.fhevm.contracts.acl.address as ChecksummedAddress,
-    userAddress: encryptedDataOwnerAddress,
-    handleContractPairs,
-  });
+  if (signedPermit.isDelegated) {
+    await checkDelegation(context, {
+      address: context.chain.fhevm.contracts.acl.address as ChecksummedAddress,
+      delegate: signerAddress,
+      delegator: encryptedDataOwnerAddress,
+      handleContractPairs,
+    });
+  } else {
+    await checkPersistAllowed(context, {
+      address: context.chain.fhevm.contracts.acl.address as ChecksummedAddress,
+      userAddress: encryptedDataOwnerAddress,
+      handleContractPairs,
+    });
+  }
 
   // 8. Verify the EIP712 signature
   // Not required because a signedPermit is guaranteed to be verified.
@@ -157,36 +167,28 @@ export async function fetchKmsSignedcryptedShares(context: Context, parameters: 
   // Safe casts: the discriminated union on parameters guarantees
   // that options type matches signedPermit type, but TS can't prove
   // it after destructuring (nested discriminant limitation).
-  const relayerUrl = context.chain.fhevm.relayerUrl;
-
   let shares: readonly KmsSigncryptedShare[];
 
   if (signedPermit.isDelegated) {
-    shares = await context.runtime.relayer.fetchDelegatedUserDecrypt(
-      { relayerUrl, chainId: context.chain.id },
-      {
-        payload: {
-          handleContractPairs,
-          kmsDecryptEip712Signer: signerAddress,
-          kmsDecryptEip712Message: signedPermit.eip712.message,
-          kmsDecryptEip712Signature: signature,
-        },
-        options: relayerOptions as RelayerDelegatedUserDecryptOptions,
+    shares = await context.runtime.relayer.fetchDelegatedUserDecrypt(context, {
+      payload: {
+        handleContractPairs,
+        kmsDecryptEip712Signer: signerAddress,
+        kmsDecryptEip712Message: signedPermit.eip712.message,
+        kmsDecryptEip712Signature: signature,
       },
-    );
+      options: relayerOptions as RelayerDelegatedUserDecryptOptions,
+    });
   } else {
-    shares = await context.runtime.relayer.fetchUserDecrypt(
-      { relayerUrl, chainId: context.chain.id },
-      {
-        payload: {
-          handleContractPairs,
-          kmsDecryptEip712Signer: signerAddress,
-          kmsDecryptEip712Message: signedPermit.eip712.message,
-          kmsDecryptEip712Signature: signature,
-        },
-        options: relayerOptions as RelayerUserDecryptOptions,
+    shares = await context.runtime.relayer.fetchUserDecrypt(context, {
+      payload: {
+        handleContractPairs,
+        kmsDecryptEip712Signer: signerAddress,
+        kmsDecryptEip712Message: signedPermit.eip712.message,
+        kmsDecryptEip712Signature: signature,
       },
-    );
+      options: relayerOptions as RelayerUserDecryptOptions,
+    });
   }
 
   // 11. Build and verify the sealed validated `KmsSigncryptedShares` object

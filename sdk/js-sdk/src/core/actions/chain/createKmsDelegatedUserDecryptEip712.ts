@@ -1,7 +1,6 @@
 import type { Fhevm, OptionalNativeClient } from '../../types/coreFhevmClient.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
-import type { ChecksummedAddress } from '../../types/primitives.js';
 import type { KmsDelegatedUserDecryptEip712 } from '../../types/kms.js';
 import { createKmsDelegatedUserDecryptEip712 as createKmsDelegatedUserDecryptEip712_ } from '../../kms/createKmsDelegatedUserDecryptEip712.js';
 
@@ -23,7 +22,7 @@ export function createKmsDelegatedUserDecryptEip712(
   parameters: CreateKmsDelegatedUserDecryptEip712Parameters,
 ): CreateKmsDelegatedUserDecryptEip712ReturnType {
   return createKmsDelegatedUserDecryptEip712_({
-    verifyingContractAddressDecryption: fhevm.chain.fhevm.gateway.contracts.decryption.address as ChecksummedAddress,
+    verifyingContractAddressDecryption: fhevm.chain.fhevm.gateway.contracts.decryption.address,
     chainId: fhevm.chain.id,
     contractAddresses: parameters.contractAddresses,
     durationDays: parameters.durationDays,

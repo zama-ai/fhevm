@@ -12,6 +12,8 @@ import type { Bytes65Hex, BytesHex, ChecksummedAddress } from '../../types/primi
 import type { Prettify } from '../../types/utils.js';
 import type { ZkProof } from '../../types/zkProof-p.js';
 import type { Handle, InputHandle } from '../../types/encryptedTypes-p.js';
+import type { FhevmChain } from '../../types/fhevmChain.js';
+import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -22,6 +24,13 @@ import type { Handle, InputHandle } from '../../types/encryptedTypes-p.js';
 export type RelayerClient = {
   readonly relayerUrl: string;
   readonly chainId: number;
+};
+
+export type RelayerClientWithRuntime = {
+  readonly chain: FhevmChain;
+  readonly runtime: FhevmRuntime;
+  readonly client: NonNullable<object>;
+  readonly options: { readonly batchRpcCalls: boolean };
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -65,7 +74,6 @@ export type FetchFheEncryptionKeyBytesModuleFunction = {
 export type FetchCoprocessorSignaturesParameters = {
   readonly payload: {
     readonly zkProof: ZkProof;
-    readonly extraData: BytesHex;
   };
   readonly options?: RelayerInputProofOptions | undefined;
 };
@@ -78,7 +86,7 @@ export type FetchCoprocessorSignaturesReturnType = {
 
 export type FetchCoprocessorSignaturesModuleFunction = {
   fetchCoprocessorSignatures(
-    relayerClient: RelayerClient,
+    relayerClient: RelayerClientWithRuntime,
     parameters: FetchCoprocessorSignaturesParameters,
   ): Promise<FetchCoprocessorSignaturesReturnType>;
 };
@@ -103,7 +111,7 @@ export type FetchPublicDecryptReturnType = {
 
 export type FetchPublicDecryptModuleFunction = {
   fetchPublicDecrypt(
-    relayerClient: RelayerClient,
+    relayerClient: RelayerClientWithRuntime,
     parameters: FetchPublicDecryptParameters,
   ): Promise<FetchPublicDecryptReturnType>;
 };
@@ -129,7 +137,7 @@ export type FetchUserDecryptReturnType = readonly KmsSigncryptedShare[];
 
 export type FetchUserDecryptModuleFunction = {
   fetchUserDecrypt(
-    relayerClient: RelayerClient,
+    relayerClient: RelayerClientWithRuntime,
     parameters: FetchUserDecryptParameters,
   ): Promise<FetchUserDecryptReturnType>;
 };
@@ -155,7 +163,7 @@ export type FetchDelegatedUserDecryptReturnType = readonly KmsSigncryptedShare[]
 
 export type FetchDelegatedUserDecryptModuleFunction = {
   fetchDelegatedUserDecrypt(
-    relayerClient: RelayerClient,
+    relayerClient: RelayerClientWithRuntime,
     parameters: FetchDelegatedUserDecryptParameters,
   ): Promise<FetchDelegatedUserDecryptReturnType>;
 };

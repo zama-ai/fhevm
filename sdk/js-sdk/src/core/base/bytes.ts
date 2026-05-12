@@ -2058,3 +2058,11 @@ export function bytesHexSlice(bytesHex: BytesHex, position: Uint8Number, length:
   }
   return `0x${bytesHex.slice(index, index + 2 * length)}` as BytesHex;
 }
+
+export function createDeadbeefBytes(numBytes: number): Uint8Array {
+  const length = numBytes > 0 ? Math.ceil(numBytes / 4) * 4 : 0;
+  const buf = new ArrayBuffer(length);
+  const isLE = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
+  new Uint32Array(buf).fill(isLE ? 0xefbeadde : 0xdeadbeef);
+  return new Uint8Array(buf).subarray(0, numBytes);
+}

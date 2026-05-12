@@ -5,7 +5,7 @@ import type {
   SignedDelegatedDecryptionPermit,
   SignedSelfDecryptionPermit,
 } from '../../types/signedDecryptionPermit.js';
-import type { TransportKeypair } from '../../kms/TransportKeypair-p.js';
+import type { TransportKeyPair } from '../../kms/TransportKeyPair-p.js';
 import type { EncryptedValueLike } from '../../types/encryptedTypes.js';
 import { canDecryptValuesFromPairs as canDecryptValuesFromPairs_ } from '../../host-contracts/canDecryptValuesFromPairs.js';
 import { addressToChecksummedAddress, assertIsAddress } from '../../base/address.js';
@@ -26,7 +26,7 @@ export type CanDecryptValuesFromPairsWithUserAddressParameters = CanDecryptValue
 
 export type CanDecryptValuesFromPairsWithPermitParameters = CanDecryptValuesFromPairsParametersBase & {
   readonly signedPermit: SignedSelfDecryptionPermit | SignedDelegatedDecryptionPermit;
-  readonly transportKeypair?: TransportKeypair | undefined;
+  readonly transportKeyPair?: TransportKeyPair | undefined;
 };
 
 export type CanDecryptValuesFromPairsReturnType = {
