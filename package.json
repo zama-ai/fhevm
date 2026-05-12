@@ -10,8 +10,7 @@
     "library-solidity/codegen",
     "test-suite/e2e",
     "sdk/js-sdk",
-    "sdk/js-sdk/src",
-    "sdk/js-sdk-hardhat-v2-test"
+    "sdk/js-sdk/src"
   ],
   "devDependencies": {
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
