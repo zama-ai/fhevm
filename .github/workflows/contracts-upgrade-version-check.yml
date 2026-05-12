@@ -44,22 +44,35 @@ jobs:
   check:
     name: contracts-upgrade-version-check/${{ matrix.package }} (bpr)
     needs: check-changes
-    if: ${{ needs.check-changes.outputs.packages != '[]' }}
     permissions:
       contents: "read" # Required to checkout repository code
     runs-on: ubuntu-latest
+    env:
+      PACKAGE_CHANGED: ${{ contains(fromJSON(needs.check-changes.outputs.packages), matrix.package) }}
     strategy:
       fail-fast: false
       matrix:
-        package: ${{ fromJSON(needs.check-changes.outputs.packages) }}
+        include:
+          - package: host-contracts
+            extra-deps: forge soldeer install
+          - package: gateway-contracts
+            extra-deps: ''
     steps:
+      - name: Skip unchanged package
+        if: env.PACKAGE_CHANGED != 'true'
+        env:
+          PACKAGE: ${{ matrix.package }}
+        run: echo "$PACKAGE did not change."
+
       - name: Checkout PR branch
+        if: env.PACKAGE_CHANGED == 'true'
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
           persist-credentials: "false"
 
       - name: Resolve baseline release tag
+        if: env.PACKAGE_CHANGED == 'true'
         id: baseline
         env:
           GH_TOKEN: ${{ github.token }}
@@ -69,6 +82,7 @@ jobs:
           printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
 
       - name: Checkout baseline (latest stable release)
+        if: env.PACKAGE_CHANGED == 'true'
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ steps.baseline.outputs.tag }}
@@ -76,26 +90,34 @@ jobs:
           persist-credentials: "false"
 
       - name: Install Bun
+        if: env.PACKAGE_CHANGED == 'true'
         uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
 
       - name: Install Foundry
+        if: env.PACKAGE_CHANGED == 'true'
         uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
 
       - name: Install PR dependencies
+        if: env.PACKAGE_CHANGED == 'true'
         working-directory: ${{ matrix.package }}
         run: npm ci
 
       - name: Install baseline dependencies
+        if: env.PACKAGE_CHANGED == 'true'
         working-directory: baseline/${{ matrix.package }}
         run: npm ci
 
-      - name: Install host Forge dependencies
-        if: matrix.package == 'host-contracts'
+      - name: Install Forge dependencies
+        if: env.PACKAGE_CHANGED == 'true' && matrix.extra-deps != ''
+        env:
+          PACKAGE: ${{ matrix.package }}
+          EXTRA_DEPS: ${{ matrix.extra-deps }}
         run: |
-          (cd host-contracts && forge soldeer install)
-          (cd baseline/host-contracts && forge soldeer install)
+          (cd "$PACKAGE" && $EXTRA_DEPS)
+          (cd "baseline/$PACKAGE" && $EXTRA_DEPS)
 
       - name: Setup compilation
+        if: env.PACKAGE_CHANGED == 'true'
         env:
           PACKAGE: ${{ matrix.package }}
         run: |
@@ -113,6 +135,7 @@ jobs:
           cp "$PACKAGE/foundry.toml" "baseline/$PACKAGE/foundry.toml"
 
       - name: Run upgrade version check
+        if: env.PACKAGE_CHANGED == 'true'
         env:
           PACKAGE: ${{ matrix.package }}
           UPGRADE_CHECK_BASE_REF: ${{ steps.baseline.outputs.tag }}
