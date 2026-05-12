@@ -97,13 +97,9 @@ export const normalizeLocalOneNodeMpcThreshold = (env: RolloutEnv): RolloutEnv =
 
 const exportGatewayKmsMigrationEnv = async (ctx: RolloutRunContext) => {
   const state = await ctx.readState();
-  const hostKey = state.scenario.hostChains[0].key;
   const gateway = state.discovery?.gateway;
-  const host = state.discovery?.hosts[hostKey];
-  if (!gateway?.KMS_GENERATION_ADDRESS || !gateway.GATEWAY_CONFIG_ADDRESS || !host?.KMS_VERIFIER_CONTRACT_ADDRESS) {
-    throw new Error(
-      "gateway KMSGeneration, GatewayConfig, and host KMSVerifier addresses must be discovered before contract migration",
-    );
+  if (!gateway?.KMS_GENERATION_ADDRESS || !gateway.GATEWAY_CONFIG_ADDRESS) {
+    throw new Error("gateway KMSGeneration and GatewayConfig addresses must be discovered before contract migration");
   }
 
   const output = "kms-migration-state.json";
@@ -113,7 +109,6 @@ const exportGatewayKmsMigrationEnv = async (ctx: RolloutRunContext) => {
       "npx hardhat task:exportKmsMigrationState",
       `--kms-generation-proxy ${gateway.KMS_GENERATION_ADDRESS}`,
       `--gateway-config-proxy ${gateway.GATEWAY_CONFIG_ADDRESS}`,
-      `--legacy-host-kms-verifier ${host.KMS_VERIFIER_CONTRACT_ADDRESS}`,
       `--output /app/addresses/${output}`,
     ].join(" "),
   );
@@ -152,6 +147,9 @@ export default async function run(ctx: RolloutRunContext) {
   await ctx.runHostContractTask("npx hardhat task:deployProtocolConfigFromMigration", { env: gatewayMigrationEnv });
   await ctx.runHostContractTask("npx hardhat task:deployKMSGenerationFromMigration", { env: gatewayMigrationEnv });
   await upgradeContract((command) => ctx.runHostContractTask(command), "task:upgradeKMSVerifier", "KMSVerifier");
+  // Assert the migrated ProtocolConfig, KMSGeneration, and KMSVerifier state against
+  // the gateway export, matching the v0.13 devnet runbook before the remaining executor upgrades.
+  await ctx.runHostContractTask("npx hardhat task:assertKmsMigrationSucceeded");
   await upgradeContract((command) => ctx.runHostContractTask(command), "task:upgradeHCULimit", "HCULimit");
   await upgradeContract((command) => ctx.runHostContractTask(command), "task:upgradeFHEVMExecutor", "FHEVMExecutor");
   await upgradeContract((command) => ctx.runHostContractTask(command), "task:upgradeACL", "ACL");
