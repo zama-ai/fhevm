@@ -6,7 +6,7 @@ const fromTag = "v0.12.4";
 const targetTag = "v0.13.0-1";
 // Pre-RC validation pin for PR #2469 (KMS migration verification script, release/0.13.x merge).
 // Revert to targetTag once v0.13.0-2 (or its successor) is published.
-const targetContractsSha = "9f8332e0";
+const targetContractsSha = "9f8332e";
 const relayerSdkVersion = "0.4.2";
 
 export const from = {
