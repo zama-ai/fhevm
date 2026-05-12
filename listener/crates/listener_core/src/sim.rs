@@ -90,9 +90,9 @@ pub async fn run(broker: Broker, publisher: Publisher) -> (&'static str, Result<
     let consumer_lib_handler_test_catchup =
         AsyncHandlerPayloadOnly::new(move |event: BlockPayload| async move {
             info!("GETTING EVENT FROM CATCHUP BLOCK: {}", event.block_number);
-            for tx in event.transactions {
-                info!("transaction hash: {}", tx.hash);
-            }
+            // for tx in event.transactions {
+            //     info!("transaction hash: {}", tx.hash);
+            // }
             Ok::<(), EvmListenerError>(())
         });
 
