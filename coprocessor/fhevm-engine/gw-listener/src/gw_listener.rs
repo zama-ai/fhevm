@@ -118,17 +118,13 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             self.conf.drift_post_consensus_grace,
             self.conf.drift_auto_revert_enabled,
         );
-        if let Err(e) = self
-            .rebuild_drift_detector(
-                db_pool,
-                &mut drift_detector,
-                progress.earliest_open_ct_commits_block,
-                last_processed_block_num,
-            )
-            .await
-        {
-            error!(error = %e, "Failed to rebuild drift detector; continuing with partial state");
-        }
+        self.rebuild_drift_detector(
+            db_pool,
+            &mut drift_detector,
+            progress.earliest_open_ct_commits_block,
+            last_processed_block_num,
+        )
+        .await?;
 
         let filter_addresses = {
             let mut addrs = vec![self.input_verification_address];
