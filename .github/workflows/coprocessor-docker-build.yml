@@ -86,6 +86,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: coprocessor-build-${{ github.event_name == 'pull_request' && github.ref_name || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   ########################################################################
   #                        PRE-BUILD CHECKS                              #
@@ -286,9 +290,6 @@ jobs:
   ########################################################################
   build-db-migration:
     needs: build-decisions
-    concurrency:
-      group: coprocessor-build-db-migration-${{ github.ref_name }}
-      cancel-in-progress: true
     if: always() && needs.build-decisions.outputs.db_migration == 'build'
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     secrets: &docker_secrets
@@ -331,9 +332,6 @@ jobs:
   ########################################################################
   build-gw-listener:
     needs: build-decisions
-    concurrency:
-      group: coprocessor-build-gw-listener-${{ github.ref_name }}
-      cancel-in-progress: true
     if: always() && needs.build-decisions.outputs.gw_listener == 'build'
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
@@ -361,9 +359,6 @@ jobs:
   ########################################################################
   build-host-listener:
     needs: build-decisions
-    concurrency:
-      group: coprocessor-build-host-listener-${{ github.ref_name }}
-      cancel-in-progress: true
     if: always() && needs.build-decisions.outputs.host_listener == 'build'
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
@@ -391,9 +386,6 @@ jobs:
   ########################################################################
   build-sns-worker:
     needs: build-decisions
-    concurrency:
-      group: coprocessor-build-sns-worker-${{ github.ref_name }}
-      cancel-in-progress: true
     if: always() && needs.build-decisions.outputs.sns_worker == 'build'
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
@@ -421,9 +413,6 @@ jobs:
   ########################################################################
   build-tfhe-worker:
     needs: build-decisions
-    concurrency:
-      group: coprocessor-build-tfhe-worker-${{ github.ref_name }}
-      cancel-in-progress: true
     if: always() && needs.build-decisions.outputs.tfhe_worker == 'build'
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
@@ -451,9 +440,6 @@ jobs:
   ########################################################################
   build-tx-sender:
     needs: build-decisions
-    concurrency:
-      group: coprocessor-build-tx-sender-${{ github.ref_name }}
-      cancel-in-progress: true
     if: always() && needs.build-decisions.outputs.tx_sender == 'build'
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
@@ -481,9 +467,6 @@ jobs:
   ########################################################################
   build-zkproof-worker:
     needs: build-decisions
-    concurrency:
-      group: coprocessor-build-zkproof-worker-${{ github.ref_name }}
-      cancel-in-progress: true
     if: always() && needs.build-decisions.outputs.zkproof_worker == 'build'
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
