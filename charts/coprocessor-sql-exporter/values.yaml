@@ -1,38 +1,33 @@
-prometheus-sql-exporter:
+sql-exporter:
   replicaCount: 1
 
   image:
-    repository: ghcr.io/justwatchcom/sql_exporter
-    tag: "v0.9"
+    repository: hub.zama.org/zama-protocol/zama.ai/sql_exporter
+    tag: "0.23.0"
+  imagePullSecrets:
+    - name: registry-credentials
 
   serviceMonitor:
     enabled: true
     interval: 30s
 
-  extraEnvs:
-    - name: DATABASE_ENDPOINT
-      valueFrom:
-        secretKeyRef:
-          name: database-credentials
-          key: endpoint
-    - name: DATABASE_USERNAME
-      valueFrom:
-        secretKeyRef:
-          name: database-credentials
-          key: username
-    - name: DATABASE_PASSWORD
-      valueFrom:
-        secretKeyRef:
-          name: database-credentials
-          key: password
-    - name: DATABASE_NAME
-      value: "coprocessor"
+  # Disable inline config; we provide /etc/sql_exporter/sql_exporter.yml from
+  # the ConfigMap rendered by templates/configmap.yaml.
+  createConfig: false
+
+  env:
+    DATA_SOURCE_NAME:
+      from:
+        kind: Secret
+        name: sql-exporter-config
+        key: DATA_SOURCE_NAME
+
   extraVolumes:
-    - name: custom-config
-      configMap:
-        name: coprocessor-sql-exporter-config
-  extraVolumeMounts:
-    - name: custom-config
-      mountPath: /custom-config.yml
-      subPath: config
-  configFilePath: "/custom-config.yml"
+    - name: sql-exporter-config
+      volume:
+        configMap:
+          name: coprocessor-sql-exporter-config
+      mount:
+        readOnly: true
+        mountPath: /etc/sql_exporter/sql_exporter.yml
+        subPath: sql_exporter.yml
