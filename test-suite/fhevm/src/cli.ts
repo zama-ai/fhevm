@@ -3,11 +3,10 @@
  */
 import { defineCommand, renderUsage, runCommand } from "citty";
 
-import { formatCliError, PreflightError } from "./errors";
+import { printRolloutReceipt } from "./commands/rollout-receipt";
 import { runRolloutRunbook } from "./commands/rollout-run";
 import { listTestProfiles, test } from "./commands/test";
-import { resolveBundle } from "./resolve/bundle-store";
-import { STEP_NAMES } from "./types";
+import { PreflightError, formatCliError } from "./errors";
 import {
   clean,
   down,
@@ -21,8 +20,11 @@ import {
   upDryRun,
   upgradeRuntimeGroup,
 } from "./flow/up-flow";
-import { parseUpInput } from "./input/up";
 import { asBool, asString } from "./input/shared";
+import { parseUpInput } from "./input/up";
+import { resolveBundle } from "./resolve/bundle-store";
+import { STEP_NAMES } from "./types";
+
 const HELP_FLAGS = new Set(["--help", "-h"]);
 type CommandArg = { type?: string; alias?: string | string[] };
 type CliCommand = {
@@ -30,8 +32,7 @@ type CliCommand = {
   subCommands?: Record<string, CliCommand> | (() => Record<string, CliCommand> | Promise<Record<string, CliCommand>>);
 };
 
-const commandArgs = async (cmd: CliCommand) =>
-  typeof cmd.args === "function" ? await cmd.args() : (cmd.args ?? {});
+const commandArgs = async (cmd: CliCommand) => (typeof cmd.args === "function" ? await cmd.args() : (cmd.args ?? {}));
 
 /** Collects the accepted flag spellings for one command definition. */
 const commandOptionForms = async (cmd: CliCommand) => {
@@ -165,8 +166,15 @@ const upCommandDefinition = {
   args: {
     target: { type: "string", description: "Bundle source to boot." },
     sha: { type: "string", description: "Commit SHA to resolve when --target sha is used." },
-    override: { type: "string", description: "Build selected workspace groups locally. Use --override test-suite to run local e2e test changes.", alias: "o" },
-    "from-step": { type: "string", description: `Start from a specific pipeline step when resuming or previewing. Valid: ${STEP_NAMES.join(", ")}.` },
+    override: {
+      type: "string",
+      description: "Build selected workspace groups locally. Use --override test-suite to run local e2e test changes.",
+      alias: "o",
+    },
+    "from-step": {
+      type: "string",
+      description: `Start from a specific pipeline step when resuming or previewing. Valid: ${STEP_NAMES.join(", ")}.`,
+    },
     "lock-file": { type: "string", description: "Use an existing lock snapshot instead of resolving versions live." },
     scenario: { type: "string", description: "Scenario preset name or path." },
     resume: { type: "boolean", description: "Resume from persisted state." },
@@ -223,10 +231,17 @@ const root = defineCommand({
       },
     }),
     logs: defineCommand({
-      meta: { name: "logs", description: "Follow container logs for a specified service, or the first running fhevm container." },
+      meta: {
+        name: "logs",
+        description: "Follow container logs for a specified service, or the first running fhevm container.",
+      },
       args: {
         service: { type: "positional", description: "Container alias or service name to target.", required: false },
-        follow: { type: "boolean", default: true, description: "Follow logs; pass --no-follow to print recent logs and exit." },
+        follow: {
+          type: "boolean",
+          default: true,
+          description: "Follow logs; pass --no-follow to print recent logs and exit.",
+        },
       },
       async run({ args }) {
         await logs(asString(args.service), { follow: resolveLogsFollow(args) });
@@ -236,7 +251,10 @@ const root = defineCommand({
       meta: { name: "upgrade", description: "Upgrade one runtime group in place, including migrations." },
       args: {
         group: { type: "positional", description: "Local override group to rebuild in-place." },
-        "lock-file": { type: "string", description: "Move this group to the versions from a lock file before restarting." },
+        "lock-file": {
+          type: "string",
+          description: "Move this group to the versions from a lock file before restarting.",
+        },
       },
       async run({ args }) {
         await upgradeRuntimeGroup(asString(args.group), {
@@ -249,7 +267,10 @@ const root = defineCommand({
       args: {
         target: { type: "string", description: "Bundle source to resolve." },
         sha: { type: "string", description: "Commit SHA to resolve when --target sha is used." },
-        "lock-file": { type: "string", description: "Use an existing lock snapshot instead of resolving versions live." },
+        "lock-file": {
+          type: "string",
+          description: "Use an existing lock snapshot instead of resolving versions live.",
+        },
         reset: { type: "boolean", description: "Discard cached resolution and regenerate from scratch." },
       },
       async run({ args }) {
@@ -262,12 +283,23 @@ const root = defineCommand({
       },
     }),
     rollout: defineCommand({
-      meta: { name: "rollout", description: "Execute a TypeScript rollout runbook against one stateful stack." },
-      args: {
-        run: { type: "string", description: "Execute a TypeScript rollout runbook." },
-      },
-      async run({ args }) {
-        await runRolloutRunbook(asString(args.run) ?? "");
+      meta: { name: "rollout", description: "Execute and inspect stateful rollout runbooks." },
+      subCommands: {
+        run: defineCommand({
+          meta: { name: "run", description: "Execute a TypeScript rollout runbook against the local stack." },
+          args: {
+            runbook: { type: "positional", description: "Path to the rollout runbook script.", required: true },
+          },
+          async run({ args }) {
+            await runRolloutRunbook(asString(args.runbook) ?? "");
+          },
+        }),
+        receipt: defineCommand({
+          meta: { name: "receipt", description: "Print the markdown receipt of the most recent rollout run." },
+          async run() {
+            await printRolloutReceipt();
+          },
+        }),
       },
     }),
     test: defineCommand({
@@ -277,7 +309,10 @@ const root = defineCommand({
         grep: { type: "string", description: "Custom grep pattern passed through to the e2e runner." },
         network: { type: "string", description: "Hardhat network passed to the test suite.", default: "staging" },
         verbose: { type: "boolean", description: "Enable verbose output from the test command." },
-        "no-hardhat-compile": { type: "boolean", description: "Skip the Hardhat compilation step inside the test runner." },
+        "no-hardhat-compile": {
+          type: "boolean",
+          description: "Skip the Hardhat compilation step inside the test runner.",
+        },
         parallel: { type: "boolean", description: "Run supported test suites in parallel." },
       },
       async run({ args }) {

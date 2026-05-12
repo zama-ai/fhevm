@@ -47,7 +47,7 @@ const fakeContext = () => {
     async up(options) {
       calls.push(`up:${options.lockFile}`);
     },
-    async upgradeRuntime(group, options = {}) {
+    async upgradeRuntimeGroup(group, options = {}) {
       calls.push(`upgrade:${group}:${options.lockFile ?? ""}`);
     },
     async writeVersionLock(name, options) {
@@ -85,7 +85,7 @@ describe("rollout runbook", () => {
       [
         "export const run = async (ctx) => {",
         "  await ctx.up({ lockFile: '00-baseline.lock.json' });",
-        "  await ctx.upgradeRuntime('relayer', { lockFile: '01-relayer.lock.json' });",
+        "  await ctx.upgradeRuntimeGroup('relayer', { lockFile: '01-relayer.lock.json' });",
         "  await ctx.writeVersionLock('02-contracts', { versions: { RELAYER_VERSION: 'next-relayer' } });",
         "  await ctx.applyVersionLock('contracts', { lockFile: '02-contracts.lock.json', allowedVersionKeys: ['GATEWAY_VERSION', 'HOST_VERSION'] });",
         "  await ctx.runGatewayContractTask('npx hardhat task:exportKmsMigrationState');",
@@ -118,7 +118,7 @@ describe("rollout runbook", () => {
       });
       const lock = await readJson<VersionBundle>(file);
       expect(file).toBe(path.join(stateDir, "rollout", "01-relayer.lock.json"));
-      expect(lock.target).toBe("sha");
+      expect(lock.target).toBe("latest-main");
       expect(lock.lockName).toBe("01-relayer.lock.json");
       expect(lock.env.RELAYER_VERSION).toBe("next-relayer");
       expect(lock.sources).toEqual(["test"]);

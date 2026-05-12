@@ -12,7 +12,7 @@ import {
   applyVersionLock as applyStackVersionLock,
   refreshDiscovery as refreshStackDiscovery,
   up,
-  upgradeRuntimeGroup,
+  upgradeRuntimeGroup as upgradeStackRuntimeGroup,
 } from "../flow/up-flow";
 import { STATE_DIR } from "../layout";
 import { loadState } from "../state/state";
@@ -60,7 +60,7 @@ export type RolloutRunContext = {
   stateDir(): string;
   test(profile?: string, options?: RolloutTestOptions): Promise<void>;
   up(options: RolloutUpOptions): Promise<void>;
-  upgradeRuntime(group: string, options?: RolloutRuntimeUpgradeOptions): Promise<void>;
+  upgradeRuntimeGroup(group: string, options?: RolloutRuntimeUpgradeOptions): Promise<void>;
   writeVersionLock(name: string, options: RolloutLockOptions): Promise<string>;
 };
 
@@ -155,8 +155,8 @@ export const createRolloutContext = (receipt: RolloutReceipt = createRolloutRece
       lockFile: options.lockFile,
     });
   },
-  async upgradeRuntime(group, options = {}) {
-    await upgradeRuntimeGroup(group, options);
+  async upgradeRuntimeGroup(group, options = {}) {
+    await upgradeStackRuntimeGroup(group, options);
     await receipt.record("upgrade-runtime", group, { docker: true, lockFile: options.lockFile });
   },
   async writeVersionLock(name, options) {
@@ -164,7 +164,7 @@ export const createRolloutContext = (receipt: RolloutReceipt = createRolloutRece
     const file = path.join(STATE_DIR, "rollout", filename);
     await ensureDir(path.dirname(file));
     const bundle = {
-      target: options.target ?? "sha",
+      target: options.target ?? "latest-main",
       lockName: path.basename(file),
       env: options.versions,
       sources: options.sources ?? ["rollout-runbook"],
@@ -186,7 +186,7 @@ export const loadRolloutRunbook = async (script: string): Promise<RolloutRunbook
 
 export const runRolloutRunbook = async (script: string, ctx?: RolloutRunContext) => {
   if (!script) {
-    throw new PreflightError("rollout --run expects a runbook path");
+    throw new PreflightError("rollout run expects a runbook path");
   }
   const receipt = ctx ? undefined : createRolloutReceipt();
   const context = ctx ?? createRolloutContext(receipt);
@@ -197,10 +197,14 @@ export const runRolloutRunbook = async (script: string, ctx?: RolloutRunContext)
     )(context);
     await receipt?.record("complete", "runbook completed", { docker: true });
   } catch (error) {
-    await receipt?.record("failed", "runbook failed", {
-      details: { error: error instanceof Error ? error.message : String(error) },
-      docker: true,
-    });
+    try {
+      await receipt?.record("failed", "runbook failed", {
+        details: { error: error instanceof Error ? error.message : String(error) },
+        docker: true,
+      });
+    } catch (recordError) {
+      console.error("[receipt] failed to record runbook failure", recordError);
+    }
     throw error;
   }
 };

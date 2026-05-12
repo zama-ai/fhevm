@@ -195,8 +195,10 @@ The lock file replaces only the version resolution step — preflight, boot pipe
 Release rollouts are executable TypeScript runbooks under `rollouts/`. A runbook boots one baseline stack, performs each upgrade step in order, preserves chain/database/container state, and runs rollout-safe e2e coverage after each step:
 
 ```sh
-./fhevm-cli rollout --run ./rollouts/v0.12-to-v0.13/run.ts
+./fhevm-cli rollout run ./rollouts/v0.12-to-v0.13/run.ts
 ```
+
+Use `./fhevm-cli rollout receipt` to print the markdown receipt of the most recent rollout run.
 
 Runbooks use the same primitives an operator needs during a release:
 
@@ -204,7 +206,7 @@ Runbooks use the same primitives an operator needs during a release:
 - `ctx.writeVersionLock(...)` writes explicit version locks from the runbook.
 - `ctx.applyVersionLock(...)` applies version changes that do not restart runtime services, then regenerates env/compose.
 - `ctx.runHostContractTask(...)` and `ctx.runGatewayContractTask(...)` run contract migration/upgrade tasks from the selected deploy images.
-- `ctx.upgradeRuntime(...)` restarts selected runtime components in place and runs their DB migrations when present.
+- `ctx.upgradeRuntimeGroup(...)` restarts selected runtime components in place and runs their DB migrations when present.
 - `ctx.test(...)` runs the rollout-safe e2e profile after each state.
 
 `rollout-standard` is intentionally narrow: it covers encrypted input, FHE compute/write paths, user decrypt, delegated user decrypt, public decrypt, and ERC20 transfer coverage. Broader profiles such as `multi-chain-isolation`, HCU, pause/unpause, DB revert, and drift recovery stay available as explicit tests but are not part of the per-step rollout gate.
@@ -278,11 +280,11 @@ All version compatibility rules live in a single source of truth: `src/compat/co
 
 The rules have three sections:
 
-| Section | Purpose | Example |
-|---------|---------|---------|
-| `incompatibilities` | Version pairs that break at runtime | relayer v1 + test-suite v2 |
-| `legacyShims` | Old versions needing extra flags/env | coprocessor < 0.12.0 needs API key flags |
-| `anchors` | Git history reference points | simple-ACL cutover commit |
+| Section             | Purpose                              | Example                                  |
+| ------------------- | ------------------------------------ | ---------------------------------------- |
+| `incompatibilities` | Version pairs that break at runtime  | relayer v1 + test-suite v2               |
+| `legacyShims`       | Old versions needing extra flags/env | coprocessor < 0.12.0 needs API key flags |
+| `anchors`           | Git history reference points         | simple-ACL cutover commit                |
 
 Merge-queue e2e explicitly keeps `build=false`.
 For non-release PRs it boots `two-of-two-multi-chain` from the frozen base lock plus any successful head-image overrides.
@@ -297,6 +299,7 @@ Edit `MAINLINE_COMPANIONS` in `src/resolve/presets.ts`. `latest-main` and `sha` 
 Add an entry to `COMPAT_MATRIX.incompatibilities` with a unique `code`. The CLI validates all entries at boot.
 
 **Add a legacy shim for a breaking change:**
+
 1. Add a profile to `SHIM_PROFILES` describing the legacy flags/env
 2. Add an entry to `COMPAT_MATRIX.legacyShims` specifying which version key and threshold
 3. Run `bun test` to verify
@@ -356,6 +359,7 @@ When changing runtime flags, env contracts, target semantics, or external compan
 Use `--override` to run local code for one repo-owned group on top of an otherwise versioned stack.
 
 Important:
+
 - by default, the stack uses the published `test-suite` image
 - local e2e test changes are not picked up unless you use `--override test-suite` or `--build`
 - if you are validating newly added or edited tests in this branch, prefer `--override test-suite` for a surgical local test-suite rebuild
@@ -409,11 +413,11 @@ Example on a mainline baseline:
 
 Available runtime suffixes:
 
-| Group | Suffixes |
-|-------|----------|
-| `coprocessor` | `db-migration`, `host-listener`, `host-listener-poller`, `gw-listener`, `tfhe-worker`, `zkproof-worker`, `sns-worker`, `transaction-sender` |
-| `kms-connector` | `db-migration`, `gw-listener`, `kms-worker`, `tx-sender` |
-| `test-suite` | `e2e-debug` |
+| Group           | Suffixes                                                                                                                                    |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `coprocessor`   | `db-migration`, `host-listener`, `host-listener-poller`, `gw-listener`, `tfhe-worker`, `zkproof-worker`, `sns-worker`, `transaction-sender` |
+| `kms-connector` | `db-migration`, `gw-listener`, `kms-worker`, `tx-sender`                                                                                    |
+| `test-suite`    | `e2e-debug`                                                                                                                                 |
 
 ### Multiple overrides
 
