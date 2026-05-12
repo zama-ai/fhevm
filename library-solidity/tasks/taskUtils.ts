@@ -1,12 +1,24 @@
-import { exec as oldExec } from 'child_process';
+import { execFile as oldExecFile } from 'child_process';
 import { task } from 'hardhat/config';
 import { promisify } from 'util';
 
-const exec = promisify(oldExec);
+const execFile = promisify(oldExecFile);
+
+const validateContainerName = (containerName: string) => {
+  if (!/^[a-zA-Z0-9_.-]+$/.test(containerName)) {
+    throw new Error(`Invalid TEST_CONTAINER_NAME: ${containerName}`);
+  }
+};
+
 const getCoin = async (address: string) => {
   const containerName = process.env['TEST_CONTAINER_NAME'] || 'fhevm';
-  const response = await exec(`docker exec -i ${containerName} faucet ${address} | grep height`);
-  const res = JSON.parse(response.stdout);
+  validateContainerName(containerName);
+  const response = await execFile('docker', ['exec', '-i', containerName, 'faucet', address]);
+  const stdout = String(response.stdout);
+  const line = stdout
+    .split('\n')
+    .find((entry) => entry.includes('height'));
+  const res = JSON.parse(line ?? stdout);
   if (res.raw_log.match('account sequence mismatch')) await getCoin(address);
 };
 
@@ -40,7 +52,7 @@ task('task:faucetToPrivate')
 task('task:faucetToAddress')
   .addParam('address', 'The receiver address')
   .setAction(async function (taskArgs, hre) {
-    const receiverAddress = taskArgs.address;
+    const receiverAddress = hre.ethers.getAddress(taskArgs.address);
     if (hre.network.name === 'hardhat') {
       const bal = '0x1000000000000000000000000000000000000000';
       await hre.network.provider.send('hardhat_setBalance', [receiverAddress, bal]);

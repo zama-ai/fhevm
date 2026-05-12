@@ -8,6 +8,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   check-changes:
     name: host-contracts-slither-analysis/check-changes
@@ -33,7 +37,7 @@ jobs:
     name: host-contracts-slither-analysis/analyze (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-host-contracts == 'true' }}
-    runs-on: large_ubuntu_32
+    runs-on: ubuntu-latest
     env:
       HARDHAT_NETWORK: hardhat
     permissions:

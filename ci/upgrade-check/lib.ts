@@ -1,4 +1,4 @@
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 
@@ -31,8 +31,12 @@ export interface ContractCheckResult {
 }
 
 function execForgeInspect(contract: string, root: string, field: string): string | null {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(contract)) {
+    throw new Error(`Invalid Solidity contract name: ${contract}`);
+  }
+
   try {
-    return execSync(`forge inspect "contracts/${contract}.sol:${contract}" --root "${root}" ${field}`, {
+    return execFileSync("forge", ["inspect", `contracts/${contract}.sol:${contract}`, "--root", root, field], {
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env, NO_COLOR: "1" },
