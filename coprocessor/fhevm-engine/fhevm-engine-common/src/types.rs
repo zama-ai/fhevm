@@ -916,7 +916,15 @@ impl SupportedFheOperations {
         }
     }
 
-    /// Returns whether the operand at `idx` (out of `n_deps` total) is a plaintext scalar.
+    /// Returns `true` if the operand at `idx` is a plaintext value, `false` if it is
+    /// an encrypted ciphertext handle.
+    ///
+    /// Plaintext operands always come at the end of the operand list. Two things
+    /// can make an operand plaintext:
+    /// 1. The operation has a fixed plaintext tail. For example, `FheMulDiv` has
+    ///    operands `[lhs, rhs, divisor]` and `divisor` is always plaintext.
+    /// 2. The work item is marked scalar (`is_work_scalar == true`), which makes
+    ///    the rhs plaintext too — e.g. `fheAdd(encrypted, plaintext)`.
     pub fn is_operand_scalar(&self, is_work_scalar: bool, idx: usize, n_deps: usize) -> bool {
         let trailing = self.num_trailing_always_scalar_operands(n_deps) + is_work_scalar as usize;
         idx + trailing >= n_deps

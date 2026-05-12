@@ -805,7 +805,6 @@ pub fn check_fhe_operand_types(
                     Ok(())
                 }
                 SupportedFheOperations::FheMulDiv => {
-                    // Exactly 3 operands: [lhs(encrypted), rhs(encrypted or scalar), divisor(scalar)]
                     let expected_operands = 3;
                     if input_handles.len() != expected_operands {
                         return Err(FhevmError::UnexpectedOperandCountForFheOperation {
@@ -815,14 +814,12 @@ pub fn check_fhe_operand_types(
                             got_operands: input_handles.len(),
                         });
                     }
-                    // lhs must not be scalar
                     if is_input_handle_scalar[0] {
                         return Err(FhevmError::FheOperationOnlySecondOperandCanBeScalar {
                             scalar_input_index: 0,
                             only_allowed_scalar_input_index: 1,
                         });
                     }
-                    // divisor (idx=2) must be scalar
                     if !is_input_handle_scalar[2] {
                         return Err(FhevmError::UnsupportedFheTypes {
                             fhe_operation: format!(
@@ -832,7 +829,6 @@ pub fn check_fhe_operand_types(
                             input_types: vec![],
                         });
                     }
-                    // lhs must be a supported width: Uint8 (2), Uint16 (3), Uint32 (4), Uint64 (5).
                     let lhs_type = get_ct_type(&input_handles[0])?;
                     let lhs_width_bytes: usize = match lhs_type {
                         2 => 1,
@@ -849,7 +845,6 @@ pub fn check_fhe_operand_types(
                             })
                         }
                     };
-                    // When rhs is encrypted (not scalar) it must share the lhs type.
                     if !is_input_handle_scalar[1] {
                         let rhs_type = get_ct_type(&input_handles[1])?;
                         if rhs_type != lhs_type {
@@ -860,8 +855,6 @@ pub fn check_fhe_operand_types(
                             });
                         }
                     }
-                    // Narrow the divisor to operand width (mirrors Solidity) so e.g.
-                    // `0x...0100` for a Uint8 op is rejected instead of crashing tfhe-rs.
                     let start = input_handles[2]
                         .len()
                         .checked_sub(lhs_width_bytes)

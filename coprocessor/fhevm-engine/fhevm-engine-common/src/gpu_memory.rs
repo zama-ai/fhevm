@@ -1852,72 +1852,77 @@ pub fn get_op_size_on_gpu(
         SupportedFheOperations::FheMulDiv => {
             // MulDiv[T] ≈ Mul[2T] + Div[2T]; doubled blocks ⇒ ~4× narrow workspace.
             const WIDENING_FACTOR: u64 = 4;
+            let widened_workspace = |mul_size: u64, div_size: u64| -> u64 {
+                mul_size
+                    .saturating_add(div_size)
+                    .saturating_mul(WIDENING_FACTOR)
+            };
             assert_eq!(input_operands.len(), 3);
             match (&input_operands[0], &input_operands[1], &input_operands[2]) {
                 (
                     SupportedFheCiphertexts::FheUint8(a),
                     SupportedFheCiphertexts::FheUint8(b),
                     SupportedFheCiphertexts::Scalar(d),
-                ) => Ok((a
-                    .get_mul_size_on_gpu(b)
-                    .saturating_add(a.get_div_size_on_gpu(to_be_u8_bit(d))))
-                .saturating_mul(WIDENING_FACTOR)),
+                ) => Ok(widened_workspace(
+                    a.get_mul_size_on_gpu(b),
+                    a.get_div_size_on_gpu(to_be_u8_bit(d)),
+                )),
                 (
                     SupportedFheCiphertexts::FheUint16(a),
                     SupportedFheCiphertexts::FheUint16(b),
                     SupportedFheCiphertexts::Scalar(d),
-                ) => Ok((a
-                    .get_mul_size_on_gpu(b)
-                    .saturating_add(a.get_div_size_on_gpu(to_be_u16_bit(d))))
-                .saturating_mul(WIDENING_FACTOR)),
+                ) => Ok(widened_workspace(
+                    a.get_mul_size_on_gpu(b),
+                    a.get_div_size_on_gpu(to_be_u16_bit(d)),
+                )),
                 (
                     SupportedFheCiphertexts::FheUint32(a),
                     SupportedFheCiphertexts::FheUint32(b),
                     SupportedFheCiphertexts::Scalar(d),
-                ) => Ok((a
-                    .get_mul_size_on_gpu(b)
-                    .saturating_add(a.get_div_size_on_gpu(to_be_u32_bit(d))))
-                .saturating_mul(WIDENING_FACTOR)),
+                ) => Ok(widened_workspace(
+                    a.get_mul_size_on_gpu(b),
+                    a.get_div_size_on_gpu(to_be_u32_bit(d)),
+                )),
                 (
                     SupportedFheCiphertexts::FheUint64(a),
                     SupportedFheCiphertexts::FheUint64(b),
                     SupportedFheCiphertexts::Scalar(d),
-                ) => Ok((a
-                    .get_mul_size_on_gpu(b)
-                    .saturating_add(a.get_div_size_on_gpu(to_be_u64_bit(d))))
-                .saturating_mul(WIDENING_FACTOR)),
+                ) => Ok(widened_workspace(
+                    a.get_mul_size_on_gpu(b),
+                    a.get_div_size_on_gpu(to_be_u64_bit(d)),
+                )),
                 (
                     SupportedFheCiphertexts::FheUint8(a),
                     SupportedFheCiphertexts::Scalar(b),
                     SupportedFheCiphertexts::Scalar(d),
-                ) => Ok(a
-                    .get_mul_size_on_gpu(to_be_u8_bit(b))
-                    .saturating_add(a.get_div_size_on_gpu(to_be_u8_bit(d)))
-                    .saturating_mul(WIDENING_FACTOR)),
+                ) => Ok(widened_workspace(
+                    a.get_mul_size_on_gpu(to_be_u8_bit(b)),
+                    a.get_div_size_on_gpu(to_be_u8_bit(d)),
+                )),
                 (
                     SupportedFheCiphertexts::FheUint16(a),
                     SupportedFheCiphertexts::Scalar(b),
                     SupportedFheCiphertexts::Scalar(d),
-                ) => Ok(a
-                    .get_mul_size_on_gpu(to_be_u16_bit(b))
-                    .saturating_add(a.get_div_size_on_gpu(to_be_u16_bit(d)))
-                    .saturating_mul(WIDENING_FACTOR)),
+                ) => Ok(widened_workspace(
+                    a.get_mul_size_on_gpu(to_be_u16_bit(b)),
+                    a.get_div_size_on_gpu(to_be_u16_bit(d)),
+                )),
                 (
                     SupportedFheCiphertexts::FheUint32(a),
                     SupportedFheCiphertexts::Scalar(b),
                     SupportedFheCiphertexts::Scalar(d),
-                ) => Ok(a
-                    .get_mul_size_on_gpu(to_be_u32_bit(b))
-                    .saturating_add(a.get_div_size_on_gpu(to_be_u32_bit(d)))
-                    .saturating_mul(WIDENING_FACTOR)),
+                ) => Ok(widened_workspace(
+                    a.get_mul_size_on_gpu(to_be_u32_bit(b)),
+                    a.get_div_size_on_gpu(to_be_u32_bit(d)),
+                )),
                 (
                     SupportedFheCiphertexts::FheUint64(a),
                     SupportedFheCiphertexts::Scalar(b),
                     SupportedFheCiphertexts::Scalar(d),
-                ) => Ok(a
-                    .get_mul_size_on_gpu(to_be_u64_bit(b))
-                    .saturating_add(a.get_div_size_on_gpu(to_be_u64_bit(d)))
-                    .saturating_mul(WIDENING_FACTOR)),
+                ) => Ok(widened_workspace(
+                    a.get_mul_size_on_gpu(to_be_u64_bit(b)),
+                    a.get_div_size_on_gpu(to_be_u64_bit(d)),
+                )),
                 _ => Err(FhevmError::UnsupportedFheTypes {
                     fhe_operation: format!("{:?}", fhe_operation),
                     input_types: input_operands.iter().map(|i| i.type_name()).collect(),

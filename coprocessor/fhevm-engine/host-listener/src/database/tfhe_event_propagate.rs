@@ -522,10 +522,8 @@ impl Database {
 
             E::FheMulDiv(C::FheMulDiv { lhs, rhs, divisor, scalarByte, result, .. }) => {
                 if scalarByte.const_is_zero() {
-                    // scalarByte=0x00: lhs encrypted, rhs encrypted, divisor scalar
                     insert_computation_bytes(tx, result, &[lhs, rhs], &[divisor.to_vec()], &NO_SCALAR).await
                 } else {
-                    // scalarByte=0x01: lhs encrypted, rhs scalar, divisor scalar
                     insert_computation_bytes(tx, result, &[lhs], &[rhs.to_vec(), divisor.to_vec()], &HAS_SCALAR).await
                 }
             }
