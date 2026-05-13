@@ -11,8 +11,8 @@ use tfhe::{
         ciphertext::IntegerProvenCompactCiphertextListConformanceParams, U256,
     },
     prelude::{
-        CastInto, CiphertextList, FheEq, FheMax, FheMin, FheOrd, FheTryTrivialEncrypt, IfThenElse,
-        RotateLeft, RotateRight,
+        CastInto, CiphertextList, FheEq, FheMax, FheMin, FheOrd, FheTryTrivialEncrypt,
+        FusedMulScalarDiv, FusedScalarMulScalarDiv, IfThenElse, RotateLeft, RotateRight,
     },
     zk::CompactPkeCrs,
     CompactCiphertextListExpander, FheBool, FheUint1024, FheUint128, FheUint16, FheUint160,
@@ -431,6 +431,26 @@ pub fn extract_ct_list(
     Ok(res)
 }
 
+// returns the byte width of an FHE type code as accepted by `fheMulDiv`'s lhs.
+fn mul_div_lhs_width_bytes(
+    lhs_type: i16,
+    fhe_op: &SupportedFheOperations,
+) -> Result<usize, FhevmError> {
+    match lhs_type {
+        2 => Ok(1), // Uint8
+        3 => Ok(2), // Uint16
+        4 => Ok(4), // Uint32
+        5 => Ok(8), // Uint64
+        _ => Err(FhevmError::UnsupportedFheTypes {
+            fhe_operation: format!(
+                "{:?}: type {lhs_type} is not supported for FheMulDiv",
+                fhe_op
+            ),
+            input_types: vec![],
+        }),
+    }
+}
+
 // return output ciphertext type
 pub fn check_fhe_operand_types(
     fhe_operation: i32,
@@ -802,6 +822,55 @@ pub fn check_fhe_operand_types(
                         }
                     }
 
+                    Ok(())
+                }
+                SupportedFheOperations::FheMulDiv => {
+                    let expected_operands = 3;
+                    if input_handles.len() != expected_operands {
+                        return Err(FhevmError::UnexpectedOperandCountForFheOperation {
+                            fhe_operation,
+                            fhe_operation_name: format!("{:?}", fhe_op),
+                            expected_operands,
+                            got_operands: input_handles.len(),
+                        });
+                    }
+                    if is_input_handle_scalar[0] {
+                        return Err(FhevmError::FheOperationOnlySecondOperandCanBeScalar {
+                            scalar_input_index: 0,
+                            only_allowed_scalar_input_index: 1,
+                        });
+                    }
+                    let lhs_type = get_ct_type(&input_handles[0])?;
+                    let lhs_width_bytes = mul_div_lhs_width_bytes(lhs_type, &fhe_op)?;
+                    if !is_input_handle_scalar[1] {
+                        let rhs_type = get_ct_type(&input_handles[1])?;
+                        if rhs_type != lhs_type {
+                            return Err(FhevmError::FheOperationDoesntHaveUniformTypesAsInput {
+                                fhe_operation,
+                                fhe_operation_name: format!("{:?}", fhe_op),
+                                operand_types: vec![lhs_type, rhs_type],
+                            });
+                        }
+                    }
+                    if !is_input_handle_scalar[2] {
+                        return Err(FhevmError::UnsupportedFheTypes {
+                            fhe_operation: format!(
+                                "{:?}: divisor operand (index 2) must be a scalar",
+                                fhe_op
+                            ),
+                            input_types: vec![],
+                        });
+                    }
+                    let ignored_hsb = input_handles[2].len() - lhs_width_bytes;
+                    let divisor_low = &input_handles[2][ignored_hsb..];
+                    if divisor_low.iter().all(|b| *b == 0) {
+                        return Err(FhevmError::FheOperationScalarDivisionByZero {
+                            lhs_handle: format!("0x{}", hex::encode(&input_handles[0])),
+                            rhs_value: format!("0x{}", hex::encode(&input_handles[2])),
+                            fhe_operation,
+                            fhe_operation_name: format!("{:?}", fhe_op),
+                        });
+                    }
                     Ok(())
                 }
                 other => Err(FhevmError::UnsupportedFheTypes {
@@ -3302,6 +3371,80 @@ pub fn perform_fhe_operation_impl(
                 }),
             }
         }
+        SupportedFheOperations::FheMulDiv => {
+            // operands: [lhs(encrypted), rhs(encrypted or Scalar), divisor(Scalar)]
+            const EXPECTED_OPERANDS: usize = 3;
+            if input_operands.len() != EXPECTED_OPERANDS {
+                return Err(FhevmError::UnexpectedOperandCountForFheOperation {
+                    fhe_operation: fhe_operation_int as i32,
+                    fhe_operation_name: format!("{:?}", fhe_operation),
+                    expected_operands: EXPECTED_OPERANDS,
+                    got_operands: input_operands.len(),
+                });
+            }
+            match (&input_operands[0], &input_operands[1], &input_operands[2]) {
+                (
+                    SupportedFheCiphertexts::FheUint8(a),
+                    SupportedFheCiphertexts::FheUint8(b),
+                    SupportedFheCiphertexts::Scalar(d),
+                ) => Ok(SupportedFheCiphertexts::FheUint8(
+                    a.fused_mul_scalar_div(b, to_be_u8_bit(d)),
+                )),
+                (
+                    SupportedFheCiphertexts::FheUint16(a),
+                    SupportedFheCiphertexts::FheUint16(b),
+                    SupportedFheCiphertexts::Scalar(d),
+                ) => Ok(SupportedFheCiphertexts::FheUint16(
+                    a.fused_mul_scalar_div(b, to_be_u16_bit(d)),
+                )),
+                (
+                    SupportedFheCiphertexts::FheUint32(a),
+                    SupportedFheCiphertexts::FheUint32(b),
+                    SupportedFheCiphertexts::Scalar(d),
+                ) => Ok(SupportedFheCiphertexts::FheUint32(
+                    a.fused_mul_scalar_div(b, to_be_u32_bit(d)),
+                )),
+                (
+                    SupportedFheCiphertexts::FheUint64(a),
+                    SupportedFheCiphertexts::FheUint64(b),
+                    SupportedFheCiphertexts::Scalar(d),
+                ) => Ok(SupportedFheCiphertexts::FheUint64(
+                    a.fused_mul_scalar_div(b, to_be_u64_bit(d)),
+                )),
+                (
+                    SupportedFheCiphertexts::FheUint8(a),
+                    SupportedFheCiphertexts::Scalar(b),
+                    SupportedFheCiphertexts::Scalar(d),
+                ) => Ok(SupportedFheCiphertexts::FheUint8(
+                    a.fused_scalar_mul_scalar_div(to_be_u8_bit(b), to_be_u8_bit(d)),
+                )),
+                (
+                    SupportedFheCiphertexts::FheUint16(a),
+                    SupportedFheCiphertexts::Scalar(b),
+                    SupportedFheCiphertexts::Scalar(d),
+                ) => Ok(SupportedFheCiphertexts::FheUint16(
+                    a.fused_scalar_mul_scalar_div(to_be_u16_bit(b), to_be_u16_bit(d)),
+                )),
+                (
+                    SupportedFheCiphertexts::FheUint32(a),
+                    SupportedFheCiphertexts::Scalar(b),
+                    SupportedFheCiphertexts::Scalar(d),
+                ) => Ok(SupportedFheCiphertexts::FheUint32(
+                    a.fused_scalar_mul_scalar_div(to_be_u32_bit(b), to_be_u32_bit(d)),
+                )),
+                (
+                    SupportedFheCiphertexts::FheUint64(a),
+                    SupportedFheCiphertexts::Scalar(b),
+                    SupportedFheCiphertexts::Scalar(d),
+                ) => Ok(SupportedFheCiphertexts::FheUint64(
+                    a.fused_scalar_mul_scalar_div(to_be_u64_bit(b), to_be_u64_bit(d)),
+                )),
+                _ => Err(FhevmError::UnsupportedFheTypes {
+                    fhe_operation: format!("{:?}", fhe_operation),
+                    input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                }),
+            }
+        }
         SupportedFheOperations::FheIsIn => {
             if input_operands.is_empty() {
                 return Err(FhevmError::UnsupportedFheTypes {
@@ -3953,5 +4096,111 @@ mod fhe_is_in_tests {
             check_fhe_operand_types(FHE_IS_IN_OP, &[value, wrong_type_elem], &[false, false])
                 .is_err()
         );
+    }
+}
+
+#[cfg(test)]
+mod fhe_mul_div_tests {
+    use super::{check_fhe_operand_types, SupportedFheOperations};
+
+    const OP: i32 = SupportedFheOperations::FheMulDiv as i32;
+
+    fn handle_with_type(type_byte: u8) -> Vec<u8> {
+        let mut h = vec![0u8; 32];
+        h[30] = type_byte;
+        h
+    }
+
+    fn divisor(val: u64, width: usize) -> Vec<u8> {
+        let mut out = vec![0u8; 32];
+        let bytes = val.to_be_bytes();
+        out[32 - width..].copy_from_slice(&bytes[8 - width..]);
+        out
+    }
+
+    #[test]
+    fn enc_enc_uint8_through_uint64_accepted() {
+        for ty in 2u8..=5 {
+            let width = 1usize << (ty - 2);
+            let lhs = handle_with_type(ty);
+            let rhs = handle_with_type(ty);
+            let d = divisor(1, width);
+            let res = check_fhe_operand_types(OP, &[lhs, rhs, d], &[false, false, true]);
+            assert!(res.is_ok(), "type {ty} enc×enc should pass, got {res:?}");
+        }
+    }
+
+    #[test]
+    fn enc_scalar_uint8_through_uint64_accepted() {
+        for ty in 2u8..=5 {
+            let width = 1usize << (ty - 2);
+            let lhs = handle_with_type(ty);
+            let rhs = divisor(7, width);
+            let d = divisor(1, width);
+            let res = check_fhe_operand_types(OP, &[lhs, rhs, d], &[false, true, true]);
+            assert!(res.is_ok(), "type {ty} enc×scalar should pass, got {res:?}");
+        }
+    }
+
+    #[test]
+    fn rejects_unsupported_lhs_type() {
+        for ty in [0u8, 1, 6, 7, 8] {
+            let lhs = handle_with_type(ty);
+            let rhs = handle_with_type(ty);
+            let d = divisor(1, 1);
+            assert!(
+                check_fhe_operand_types(OP, &[lhs, rhs, d], &[false, false, true]).is_err(),
+                "type {ty} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_mismatched_encrypted_types() {
+        let lhs = handle_with_type(4); // Uint32
+        let rhs = handle_with_type(5); // Uint64
+        let d = divisor(1, 4);
+        assert!(check_fhe_operand_types(OP, &[lhs, rhs, d], &[false, false, true]).is_err());
+    }
+
+    #[test]
+    fn rejects_divisor_truncating_to_zero_per_operand_width() {
+        // `0x...0100` has non-zero bytes32 but zero u8 → Uint8 must reject.
+        let lhs = handle_with_type(2); // Uint8
+        let rhs = handle_with_type(2);
+        let mut d = vec![0u8; 32];
+        d[30] = 1; // byte 31 stays 0 → low u8 byte is zero
+        assert!(check_fhe_operand_types(OP, &[lhs, rhs, d], &[false, false, true]).is_err());
+    }
+
+    #[test]
+    fn rejects_divisor_all_zero_bytes() {
+        let lhs = handle_with_type(5); // Uint64
+        let rhs = handle_with_type(5);
+        let d = vec![0u8; 32];
+        assert!(check_fhe_operand_types(OP, &[lhs, rhs, d], &[false, false, true]).is_err());
+    }
+
+    #[test]
+    fn rejects_lhs_marked_scalar() {
+        let lhs = handle_with_type(2);
+        let rhs = handle_with_type(2);
+        let d = divisor(1, 1);
+        assert!(check_fhe_operand_types(OP, &[lhs, rhs, d], &[true, false, true]).is_err());
+    }
+
+    #[test]
+    fn rejects_non_scalar_divisor() {
+        let lhs = handle_with_type(2);
+        let rhs = handle_with_type(2);
+        let d = handle_with_type(2);
+        assert!(check_fhe_operand_types(OP, &[lhs, rhs, d], &[false, false, false]).is_err());
+    }
+
+    #[test]
+    fn rejects_wrong_operand_count() {
+        let lhs = handle_with_type(2);
+        let rhs = handle_with_type(2);
+        assert!(check_fhe_operand_types(OP, &[lhs, rhs], &[false, false]).is_err());
     }
 }

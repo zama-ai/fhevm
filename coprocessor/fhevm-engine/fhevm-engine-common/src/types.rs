@@ -405,6 +405,7 @@ pub enum SupportedFheOperations {
     FheRandBounded = 27,
     FheSum = 28,
     FheIsIn = 29,
+    FheMulDiv = 30,
     FheGetInputCiphertext = 32,
 }
 
@@ -876,9 +877,9 @@ impl SupportedFheOperations {
             | SupportedFheOperations::FheRand
             | SupportedFheOperations::FheRandBounded => FheOperationType::Other,
             SupportedFheOperations::FheGetInputCiphertext => FheOperationType::Other,
-            SupportedFheOperations::FheSum | SupportedFheOperations::FheIsIn => {
-                FheOperationType::Other
-            }
+            SupportedFheOperations::FheSum
+            | SupportedFheOperations::FheIsIn
+            | SupportedFheOperations::FheMulDiv => FheOperationType::Other,
         }
     }
 
@@ -900,7 +901,23 @@ impl SupportedFheOperations {
             SupportedFheOperations::FheRand
                 | SupportedFheOperations::FheRandBounded
                 | SupportedFheOperations::FheTrivialEncrypt
+                | SupportedFheOperations::FheMulDiv
         )
+    }
+
+    /// Returns `true` if the operand at `idx` is a plaintext value, `false` if it is
+    /// an encrypted ciphertext handle.
+    pub fn is_operand_scalar(&self, is_work_scalar: bool, idx: usize, _n_deps: usize) -> bool {
+        match self {
+            // All operands are plaintext.
+            SupportedFheOperations::FheRand
+            | SupportedFheOperations::FheRandBounded
+            | SupportedFheOperations::FheTrivialEncrypt => true,
+            // [lhs, rhs, divisor]: divisor is always plaintext; rhs is plaintext on the scalar path.
+            SupportedFheOperations::FheMulDiv => idx == 2 || (idx == 1 && is_work_scalar),
+            // Binary ops: rhs is plaintext on the scalar path.
+            _ => idx == 1 && is_work_scalar,
+        }
     }
 
     pub fn supports_bool_inputs(&self) -> bool {
@@ -946,7 +963,8 @@ impl SupportedFheOperations {
             | SupportedFheOperations::FheRem
             | SupportedFheOperations::FheGetInputCiphertext
             | SupportedFheOperations::FheSum
-            | SupportedFheOperations::FheIsIn => false,
+            | SupportedFheOperations::FheIsIn
+            | SupportedFheOperations::FheMulDiv => false,
         }
     }
 }
@@ -985,6 +1003,7 @@ impl TryFrom<i16> for SupportedFheOperations {
             27 => Ok(SupportedFheOperations::FheRandBounded),
             28 => Ok(SupportedFheOperations::FheSum),
             29 => Ok(SupportedFheOperations::FheIsIn),
+            30 => Ok(SupportedFheOperations::FheMulDiv),
             32 => Ok(SupportedFheOperations::FheGetInputCiphertext),
             _ => Err(FhevmError::UnknownFheOperation(value as i32)),
         };
@@ -1078,12 +1097,37 @@ pub type BlockchainProvider = FillProvider<
 
 #[cfg(test)]
 mod tests {
-    use super::{FhevmError, SupportedFheCiphertexts};
+    use super::{FhevmError, SupportedFheCiphertexts, SupportedFheOperations};
 
     #[test]
     fn compress_scalar_returns_error() {
         let scalar = SupportedFheCiphertexts::Scalar(vec![1, 2, 3]);
         let compressed = scalar.compress();
         assert!(matches!(compressed, Err(FhevmError::CannotCompressScalar)));
+    }
+
+    #[test]
+    fn is_operand_scalar_binary_add() {
+        let op = SupportedFheOperations::FheAdd;
+        // non-scalar: both operands encrypted
+        assert!(!op.is_operand_scalar(false, 0, 2));
+        assert!(!op.is_operand_scalar(false, 1, 2));
+        // scalar: only the last operand is the plaintext rhs
+        assert!(!op.is_operand_scalar(true, 0, 2));
+        assert!(op.is_operand_scalar(true, 1, 2));
+    }
+
+    #[test]
+    fn is_operand_scalar_fhe_mul_div() {
+        // [lhs(enc), rhs(enc or scalar), divisor(scalar)].
+        let op = SupportedFheOperations::FheMulDiv;
+        // Encrypted rhs path: only divisor is scalar.
+        assert!(!op.is_operand_scalar(false, 0, 3));
+        assert!(!op.is_operand_scalar(false, 1, 3));
+        assert!(op.is_operand_scalar(false, 2, 3));
+        // Scalar rhs path: rhs AND divisor are scalar.
+        assert!(!op.is_operand_scalar(true, 0, 3));
+        assert!(op.is_operand_scalar(true, 1, 3));
+        assert!(op.is_operand_scalar(true, 2, 3));
     }
 }

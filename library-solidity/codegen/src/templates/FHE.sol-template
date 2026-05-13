@@ -99,6 +99,74 @@ library FHE {
     //$$ -----------------------------------------------------------------------
 
     /**
+     * @dev Evaluates mulDiv(euint8 a, euint8 b, uint8 divisor): returns (a * b) / divisor with intermediate widening.
+     */
+    function mulDiv(euint8 a, euint8 b, uint8 divisor) internal returns (euint8) {
+        if (!isInitialized(a)) a = asEuint8(0);
+        if (!isInitialized(b)) b = asEuint8(0);
+        return euint8.wrap(Impl.mulDiv(euint8.unwrap(a), euint8.unwrap(b), bytes32(uint256(divisor)), false));
+    }
+
+    /**
+     * @dev Evaluates mulDiv(euint8 a, uint8 b, uint8 divisor): returns (a * b) / divisor with intermediate widening.
+     */
+    function mulDiv(euint8 a, uint8 b, uint8 divisor) internal returns (euint8) {
+        if (!isInitialized(a)) a = asEuint8(0);
+        return euint8.wrap(Impl.mulDiv(euint8.unwrap(a), bytes32(uint256(b)), bytes32(uint256(divisor)), true));
+    }
+
+    /**
+     * @dev Evaluates mulDiv(euint16 a, euint16 b, uint16 divisor): returns (a * b) / divisor with intermediate widening.
+     */
+    function mulDiv(euint16 a, euint16 b, uint16 divisor) internal returns (euint16) {
+        if (!isInitialized(a)) a = asEuint16(0);
+        if (!isInitialized(b)) b = asEuint16(0);
+        return euint16.wrap(Impl.mulDiv(euint16.unwrap(a), euint16.unwrap(b), bytes32(uint256(divisor)), false));
+    }
+
+    /**
+     * @dev Evaluates mulDiv(euint16 a, uint16 b, uint16 divisor): returns (a * b) / divisor with intermediate widening.
+     */
+    function mulDiv(euint16 a, uint16 b, uint16 divisor) internal returns (euint16) {
+        if (!isInitialized(a)) a = asEuint16(0);
+        return euint16.wrap(Impl.mulDiv(euint16.unwrap(a), bytes32(uint256(b)), bytes32(uint256(divisor)), true));
+    }
+
+    /**
+     * @dev Evaluates mulDiv(euint32 a, euint32 b, uint32 divisor): returns (a * b) / divisor with intermediate widening.
+     */
+    function mulDiv(euint32 a, euint32 b, uint32 divisor) internal returns (euint32) {
+        if (!isInitialized(a)) a = asEuint32(0);
+        if (!isInitialized(b)) b = asEuint32(0);
+        return euint32.wrap(Impl.mulDiv(euint32.unwrap(a), euint32.unwrap(b), bytes32(uint256(divisor)), false));
+    }
+
+    /**
+     * @dev Evaluates mulDiv(euint32 a, uint32 b, uint32 divisor): returns (a * b) / divisor with intermediate widening.
+     */
+    function mulDiv(euint32 a, uint32 b, uint32 divisor) internal returns (euint32) {
+        if (!isInitialized(a)) a = asEuint32(0);
+        return euint32.wrap(Impl.mulDiv(euint32.unwrap(a), bytes32(uint256(b)), bytes32(uint256(divisor)), true));
+    }
+
+    /**
+     * @dev Evaluates mulDiv(euint64 a, euint64 b, uint64 divisor): returns (a * b) / divisor with intermediate widening.
+     */
+    function mulDiv(euint64 a, euint64 b, uint64 divisor) internal returns (euint64) {
+        if (!isInitialized(a)) a = asEuint64(0);
+        if (!isInitialized(b)) b = asEuint64(0);
+        return euint64.wrap(Impl.mulDiv(euint64.unwrap(a), euint64.unwrap(b), bytes32(uint256(divisor)), false));
+    }
+
+    /**
+     * @dev Evaluates mulDiv(euint64 a, uint64 b, uint64 divisor): returns (a * b) / divisor with intermediate widening.
+     */
+    function mulDiv(euint64 a, uint64 b, uint64 divisor) internal returns (euint64) {
+        if (!isInitialized(a)) a = asEuint64(0);
+        return euint64.wrap(Impl.mulDiv(euint64.unwrap(a), bytes32(uint256(b)), bytes32(uint256(divisor)), true));
+    }
+
+    /**
      * @dev Evaluates sum(euint8[] values) and returns the result.
      */
     function sum(euint8[] memory values) internal returns (euint8) {
