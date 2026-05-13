@@ -33,6 +33,7 @@ jobs:
   docker-compose-tests:
     needs: check-changes
     name: host-contracts-docker-deployment-tests/docker-compose-tests (bpr)
+    environment: main
     if: ${{ needs.check-changes.outputs.changes-host-contracts == 'true' }}
     permissions:
       contents: 'read' # Required to checkout repository code

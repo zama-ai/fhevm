@@ -11,9 +11,14 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   publish:
     name: host-contracts-publish/publish
+    environment: main
     runs-on: ubuntu-latest
     defaults:
       run:

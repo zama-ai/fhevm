@@ -11,6 +11,7 @@ permissions: {}
 
 jobs:
   check:
+    name: is-latest-commit/check
     runs-on: ubuntu-latest
     outputs:
       is_latest: ${{ steps.check.outputs.is_latest }}

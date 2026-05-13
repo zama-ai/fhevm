@@ -25,6 +25,7 @@ concurrency:
 jobs:
   claude-review:
     name: claude-review
+    environment: main
     if: |
       contains(github.event.comment.body, '@claude') &&
       github.event.issue.pull_request &&

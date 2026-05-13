@@ -45,6 +45,7 @@ permissions: {}
 jobs:
   check-changes:
     name: check-changes
+    environment: main
     permissions:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code

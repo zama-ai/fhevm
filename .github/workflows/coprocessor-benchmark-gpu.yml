@@ -3,6 +3,10 @@ name: coprocessor-benchmark-gpu
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 on:
   workflow_dispatch:
     inputs:
@@ -91,6 +95,7 @@ jobs:
 
   setup-instance:
     name: coprocessor-benchmark-gpu/setup-instance
+    environment: main
     needs: parse-inputs
     runs-on: ubuntu-latest
     permissions:
@@ -111,6 +116,7 @@ jobs:
 
   benchmark:
     name: coprocessor-benchmark-gpu/benchmark-gpu (bpr)
+    environment: main
     needs: [ parse-inputs, setup-instance ]
     runs-on: ${{ needs.setup-instance.outputs.runner-name }}
     continue-on-error: true
@@ -176,9 +182,9 @@ jobs:
           } >> "${GITHUB_ENV}"
 
       - name: Install rust
-        uses: dtolnay/rust-toolchain@888c2e1ea69ab0d4330cbf0af1ecc7b68f368cc1
-        with:
-          toolchain: nightly
+        run: |
+          rustup toolchain install nightly --profile minimal
+          rustup default nightly
 
       - name: Install cargo dependencies
         run: |
@@ -295,6 +301,7 @@ jobs:
 
   teardown-instance:
     name: coprocessor-benchmark-gpu/teardown
+    environment: main
     if: ${{ always() && needs.setup-instance.result == 'success' }}
     needs: [ setup-instance, benchmark ]
     runs-on: ubuntu-latest

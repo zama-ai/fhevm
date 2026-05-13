@@ -44,6 +44,7 @@ jobs:
 
   start-runner:
     name: kms-connector-tests/start-runner
+    environment: main
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-connector == 'true' }}
     permissions:
@@ -68,6 +69,7 @@ jobs:
 
   test-connector:
     name: kms-connector-tests/test-connector (bpr)
+    environment: main
     needs: start-runner
     timeout-minutes: 50
     permissions:
@@ -102,10 +104,9 @@ jobs:
           password: ${{ secrets.GHCR_READ_TOKEN }}
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b
-        with:
-          toolchain: stable
-          components: rustfmt, clippy
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
 
       - name: Install Protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
@@ -132,6 +133,7 @@ jobs:
 
   stop-runner:
     name: kms-connector-tests/stop-runner
+    environment: main
     needs:
       - start-runner
       - test-connector

@@ -3,6 +3,10 @@ name: coprocessor-benchmarks-cpu
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 on:
   workflow_dispatch:
     inputs:
@@ -50,6 +54,7 @@ env:
 jobs:
   setup-instance:
     name: coprocessor-benchmarks-cpu/setup-instance
+    environment: main
     runs-on: ubuntu-latest
     permissions:
       contents: 'read' # Required to checkout repository code
@@ -69,6 +74,7 @@ jobs:
 
   benchmarks-cpu:
     name: coprocessor-benchmarks-cpu/benchmarks-cpu (bpr)
+    environment: main
     needs: setup-instance
     runs-on: ${{ needs.setup-instance.outputs.runner-name }}
     continue-on-error: true
@@ -116,9 +122,9 @@ jobs:
           } >> "${GITHUB_ENV}"
 
       - name: Install rust
-        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
-        with:
-          toolchain: nightly
+        run: |
+          rustup toolchain install nightly --profile minimal
+          rustup default nightly
 
       - name: Install cargo dependencies
         run: |
@@ -231,6 +237,7 @@ jobs:
 
   teardown-instance:
     name: coprocessor-benchmarks-cpu/teardown
+    environment: main
     if: ${{ always() && needs.setup-instance.result == 'success' }}
     needs: [ setup-instance, benchmarks-cpu ]
     runs-on: ubuntu-latest

@@ -10,6 +10,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   publish:
     name: library-solidity-publish/publish
@@ -66,6 +70,7 @@ jobs:
 
   publish-soldeer:
     name: library-solidity-publish/publish-soldeer
+    environment: main
     if: ${{ inputs.release == 'true' }}
     runs-on: ubuntu-latest
     defaults:

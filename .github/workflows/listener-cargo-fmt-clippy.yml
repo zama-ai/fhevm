@@ -45,10 +45,10 @@ jobs:
         with:
           persist-credentials: 'false'
 
-      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
-        with:
-          toolchain: 1.91.1
-          components: rustfmt, clippy
+      - name: Setup Rust
+        run: |
+          rustup toolchain install 1.91.1 --profile minimal --component rustfmt --component clippy
+          rustup default 1.91.1
 
       - uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
         with:

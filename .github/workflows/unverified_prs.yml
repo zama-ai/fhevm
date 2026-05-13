@@ -6,7 +6,9 @@ on:
 
 permissions: {}
 
-# zizmor: ignore[concurrency-limits] only GitHub can trigger this workflow
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
 
 jobs:
   stale:

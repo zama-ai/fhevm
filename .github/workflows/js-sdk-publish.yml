@@ -11,6 +11,10 @@ on:
 # No permissions at the workflow level — each job declares only what it needs.
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   publish:
     name: js-sdk-publish/publish

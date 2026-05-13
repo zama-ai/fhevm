@@ -3,6 +3,10 @@ name: coprocessor-gpu-tests
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 env:
   CARGO_TERM_COLOR: always
   ACTION_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -50,6 +54,7 @@ jobs:
 
   setup-instance:
     name: coprocessor-gpu-tests/setup-instance
+    environment: main
     needs: check-changes
     if: ${{ github.event_name == 'workflow_dispatch' || needs.check-changes.outputs.changes-coprocessor-gpu == 'true' }}
     runs-on: ubuntu-latest
@@ -126,9 +131,9 @@ jobs:
           echo "LD_LIBRARY_PATH=${CUDA_PATH}/lib64:${LD_LIBRARY_PATH}" >> "${GITHUB_ENV}"
 
       - name: Install latest stable
-        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
-        with:
-          toolchain: stable
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
 
       - name: Install cargo dependencies
         run: |
@@ -187,6 +192,7 @@ jobs:
 
   teardown-instance:
     name: coprocessor-gpu-tests/teardown
+    environment: main
     if: ${{ always() && needs.setup-instance.result == 'success' }}
     needs: [ setup-instance, coprocessor-gpu ]
     runs-on: ubuntu-latest

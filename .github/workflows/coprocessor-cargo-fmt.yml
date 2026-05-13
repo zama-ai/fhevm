@@ -5,6 +5,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   check-changes:
     name: trigger
@@ -43,10 +47,9 @@ jobs:
         lfs: true
 
     - name: Setup Rust
-      uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
-      with:
-        toolchain: 1.91.1
-        components: rustfmt
+      run: |
+        rustup toolchain install 1.91.1 --profile minimal --component rustfmt
+        rustup default 1.91.1
 
     - name: Run fmt
       run: |

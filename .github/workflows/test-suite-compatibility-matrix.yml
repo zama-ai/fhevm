@@ -26,6 +26,7 @@ concurrency:
 jobs:
   prepare_rollout:
     name: prepare-rollout
+    environment: main
     # On PRs, only same-repo heads with the `rollout` label may enter this
     # secreted compat path. Manual dispatch remains always available.
     if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'rollout')) }}

@@ -43,6 +43,7 @@ jobs:
               - host-contracts/**
   sc-upgrade:
     name: host-contracts-upgrade-tests/sc-upgrade (bpr)
+    environment: main
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-host-contracts == 'true' }}
     permissions:
