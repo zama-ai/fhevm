@@ -3374,8 +3374,16 @@ pub fn perform_fhe_operation_impl(
             }
         }
         SupportedFheOperations::FheMulDiv => {
-            assert_eq!(input_operands.len(), 3);
             // operands: [lhs(encrypted), rhs(encrypted or Scalar), divisor(Scalar)]
+            const EXPECTED_OPERANDS: usize = 3;
+            if input_operands.len() != EXPECTED_OPERANDS {
+                return Err(FhevmError::UnexpectedOperandCountForFheOperation {
+                    fhe_operation: fhe_operation_int as i32,
+                    fhe_operation_name: format!("{:?}", fhe_operation),
+                    expected_operands: EXPECTED_OPERANDS,
+                    got_operands: input_operands.len(),
+                });
+            }
             match (&input_operands[0], &input_operands[1], &input_operands[2]) {
                 (
                     SupportedFheCiphertexts::FheUint8(a),
