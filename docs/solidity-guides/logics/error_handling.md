@@ -30,6 +30,11 @@ euint8 internal NOT_ENOUGH_FUNDS;
 constructor() {
   NO_ERROR = FHE.asEuint8(0);           // Code 0: No error
   NOT_ENOUGH_FUNDS = FHE.asEuint8(1);   // Code 1: Insufficient funds
+
+  // Persist ACL permission so the contract can reuse these encrypted constants
+  // in later transactions (e.g. inside FHE.select calls).
+  FHE.allowThis(NO_ERROR);
+  FHE.allowThis(NOT_ENOUGH_FUNDS);
 }
 
 // Store the last error for each address
@@ -45,6 +50,12 @@ event ErrorChanged(address indexed user);
  */
 function setLastError(euint8 error, address addr) private {
   _lastErrors[addr] = LastError(error, block.timestamp);
+
+  // Grant ACL permissions so the contract can read this handle later
+  // and so the user can decrypt their own error off-chain.
+  FHE.allowThis(error);
+  FHE.allow(error, addr);
+
   emit ErrorChanged(addr);
 }
 
