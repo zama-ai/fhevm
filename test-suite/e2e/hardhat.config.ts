@@ -1,74 +1,74 @@
-import "@nomicfoundation/hardhat-toolbox";
-import "chai-as-promised";
-import dotenv from "dotenv";
-import type { HardhatUserConfig } from "hardhat/config";
-import { task, vars } from "hardhat/config";
-import type { NetworkUserConfig } from "hardhat/types";
-import { resolve } from "path";
+import '@nomicfoundation/hardhat-toolbox';
+import 'chai-as-promised';
+import dotenv from 'dotenv';
+import type { HardhatUserConfig } from 'hardhat/config';
+import { task, vars } from 'hardhat/config';
+import type { NetworkUserConfig } from 'hardhat/types';
+import { resolve } from 'path';
 
 const NUM_ACCOUNTS = 120;
-const DEFAULT_NETWORK = "staging";
+const DEFAULT_NETWORK = 'staging';
 
-task("compile:specific", "Compiles only the specified contract")
-  .addParam("contract", "The contract's path")
+task('compile:specific', 'Compiles only the specified contract')
+  .addParam('contract', "The contract's path")
   .setAction(async ({ contract }, hre) => {
     // Adjust the configuration to include only the specified contract
     hre.config.paths.sources = contract;
 
-    await hre.run("compile");
+    await hre.run('compile');
   });
 
-const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || "./.env";
+const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || './.env';
 dotenv.config({ path: resolve(__dirname, dotenvConfigPath) });
 
 const defaultMnemonic =
-  "adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer";
-const mnemonic: string = process.env.MNEMONIC ?? vars.get("MNEMONIC", defaultMnemonic);
+  'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';
+const mnemonic: string = process.env.MNEMONIC ?? vars.get('MNEMONIC', defaultMnemonic);
 
-task("coverage").setAction(async (taskArgs, hre, runSuper) => {
+task('coverage').setAction(async (taskArgs, hre, runSuper) => {
   hre.config.networks.hardhat.allowUnlimitedContractSize = true;
   hre.config.networks.hardhat.blockGasLimit = 1099511627775;
 
   await runSuper(taskArgs);
 });
 
-task("test", async (taskArgs, hre, runSuper) => {
+task('test', async (taskArgs, hre, runSuper) => {
   // Run modified test task
-  if (hre.network.name === "hardhat") {
+  if (hre.network.name === 'hardhat') {
     const privKeyFhevmDeployer = process.env.PRIVATE_KEY_FHEVM_DEPLOYER;
     // await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmDeployer });
     // await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmRelayer });
 
-    await hre.run("compile:specific", { contract: "contracts/emptyProxy" });
-    await hre.run("task:deployEmptyUUPSProxies", {
+    await hre.run('compile:specific', { contract: 'contracts/emptyProxy' });
+    await hre.run('task:deployEmptyUUPSProxies', {
       privateKey: privKeyFhevmDeployer,
       useCoprocessorAddress: false,
     });
 
-    await hre.run("compile:specific", { contract: "contracts" });
-    await hre.run("compile:specific", { contract: "lib" });
+    await hre.run('compile:specific', { contract: 'contracts' });
+    await hre.run('compile:specific', { contract: 'lib' });
 
-    await hre.run("task:deployACL", { privateKey: privKeyFhevmDeployer });
-    await hre.run("task:deployTFHEExecutor", {
+    await hre.run('task:deployACL', { privateKey: privKeyFhevmDeployer });
+    await hre.run('task:deployTFHEExecutor', {
       privateKey: privKeyFhevmDeployer,
     });
-    await hre.run("task:deployKMSVerifier", {
+    await hre.run('task:deployKMSVerifier', {
       privateKey: privKeyFhevmDeployer,
     });
-    await hre.run("task:deployInputVerifier", {
+    await hre.run('task:deployInputVerifier', {
       privateKey: privKeyFhevmDeployer,
     });
-    await hre.run("task:deployHCULimit", {
+    await hre.run('task:deployHCULimit', {
       privateKey: privKeyFhevmDeployer,
     });
 
-    await hre.run("task:addSigners", {
+    await hre.run('task:addSigners', {
       numSigners: process.env.NUM_KMS_SIGNERS!,
       privateKey: privKeyFhevmDeployer,
       useAddress: false,
     });
   }
-  await hre.run("compile:specific", { contract: "examples" });
+  await hre.run('compile:specific', { contract: 'examples' });
   await runSuper();
 });
 
@@ -89,10 +89,10 @@ const chainIds = {
 
 function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
   let jsonRpcUrl: string | undefined;
-  const defaultRpcUrl = "http://localhost:8545";
+  const defaultRpcUrl = 'http://localhost:8545';
   const requestedNetwork = (() => {
-    const idx = process.argv.indexOf("--network");
-    if (idx !== -1 && process.argv[idx + 1] && !process.argv[idx + 1].startsWith("-")) {
+    const idx = process.argv.indexOf('--network');
+    if (idx !== -1 && process.argv[idx + 1] && !process.argv[idx + 1].startsWith('-')) {
       return process.argv[idx + 1];
     }
     return process.env.HARDHAT_NETWORK;
@@ -100,51 +100,51 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
   const shouldWarn = requestedNetwork ? requestedNetwork === chain : chain === DEFAULT_NETWORK;
 
   switch (chain) {
-    case "staging":
-    case "zwsDev":
-      jsonRpcUrl = process.env.RPC_URL ?? vars.get("RPC_URL", defaultRpcUrl);
+    case 'staging':
+    case 'zwsDev':
+      jsonRpcUrl = process.env.RPC_URL ?? vars.get('RPC_URL', defaultRpcUrl);
       if (shouldWarn && jsonRpcUrl === defaultRpcUrl) {
         console.warn(`WARN: RPC_URL not set for network '${chain}'. Using default: ${defaultRpcUrl}`);
       }
       break;
-    case "sepolia":
-      jsonRpcUrl = process.env.SEPOLIA_ETH_RPC_URL || vars.get("SEPOLIA_ETH_RPC_URL", "") || process.env.RPC_URL;
+    case 'sepolia':
+      jsonRpcUrl = process.env.SEPOLIA_ETH_RPC_URL || vars.get('SEPOLIA_ETH_RPC_URL', '') || process.env.RPC_URL;
       if (!jsonRpcUrl) {
         if (shouldWarn) {
-          throw new Error("SEPOLIA_ETH_RPC_URL (or RPC_URL) is required for sepolia network");
+          throw new Error('SEPOLIA_ETH_RPC_URL (or RPC_URL) is required for sepolia network');
         }
-        jsonRpcUrl = "https://rpc.sepolia.org"; // placeholder for config validation
+        jsonRpcUrl = 'https://rpc.sepolia.org'; // placeholder for config validation
       }
       break;
-    case "mainnet":
-      jsonRpcUrl = process.env.MAINNET_ETH_RPC_URL || vars.get("MAINNET_ETH_RPC_URL", "") || process.env.RPC_URL;
+    case 'mainnet':
+      jsonRpcUrl = process.env.MAINNET_ETH_RPC_URL || vars.get('MAINNET_ETH_RPC_URL', '') || process.env.RPC_URL;
       if (!jsonRpcUrl) {
         if (shouldWarn) {
-          throw new Error("MAINNET_ETH_RPC_URL (or RPC_URL) is required for mainnet network");
+          throw new Error('MAINNET_ETH_RPC_URL (or RPC_URL) is required for mainnet network');
         }
-        jsonRpcUrl = "https://eth.llamarpc.com"; // placeholder for config validation
+        jsonRpcUrl = 'https://eth.llamarpc.com'; // placeholder for config validation
       }
       break;
-    case "localCoprocessor":
-      jsonRpcUrl = "http://localhost:8746";
+    case 'localCoprocessor':
+      jsonRpcUrl = 'http://localhost:8746';
       break;
-    case "localCoprocessorL1Input":
-      jsonRpcUrl = "http://localhost:8756";
+    case 'localCoprocessorL1Input':
+      jsonRpcUrl = 'http://localhost:8756';
       break;
-    case "localNative":
-      jsonRpcUrl = "http://localhost:8545";
+    case 'localNative':
+      jsonRpcUrl = 'http://localhost:8545';
       break;
-    case "localCoprocessorL1":
-      jsonRpcUrl = "http://localhost:8756";
+    case 'localCoprocessorL1':
+      jsonRpcUrl = 'http://localhost:8756';
       break;
-    case "localCoprocessorL2":
-      jsonRpcUrl = "http://localhost:8757";
+    case 'localCoprocessorL2':
+      jsonRpcUrl = 'http://localhost:8757';
       break;
-    case "composeCoprocessorL1":
-      jsonRpcUrl = "http://mock-httpz-1:8756";
+    case 'composeCoprocessorL1':
+      jsonRpcUrl = 'http://mock-httpz-1:8756';
       break;
-    case "composeCoprocessorL2":
-      jsonRpcUrl = "http://mock-gateway-1:8757";
+    case 'composeCoprocessorL2':
+      jsonRpcUrl = 'http://mock-gateway-1:8757';
       break;
     default:
       throw new Error(`unsupported chain: ${chain}`);
@@ -166,13 +166,13 @@ const config: HardhatUserConfig = {
   defaultNetwork: DEFAULT_NETWORK,
   mocha: {
     timeout: 300000,
-    rootHooks: require("./test/consensusWatchdog").mochaHooks,
+    rootHooks: require('./test/consensusWatchdog').mochaHooks,
   },
   gasReporter: {
-    currency: "USD",
+    currency: 'USD',
     enabled: process.env.REPORT_GAS ? true : false,
     excludeContracts: [],
-    src: "./contracts",
+    src: './contracts',
   },
   networks: {
     hardhat: {
@@ -187,31 +187,31 @@ const config: HardhatUserConfig = {
         interval: 1000,
       },
     },
-    staging: getChainConfig("staging"),
-    zwsDev: getChainConfig("zwsDev"),
-    sepolia: getChainConfig("sepolia"),
-    mainnet: getChainConfig("mainnet"),
-    localNative: getChainConfig("localNative"),
-    localCoprocessor: getChainConfig("localCoprocessor"),
-    localCoprocessorL1: getChainConfig("localCoprocessorL1"),
-    localCoprocessorL1Input: getChainConfig("localCoprocessorL1Input"),
-    localCoprocessorL2: getChainConfig("localCoprocessorL2"),
-    composeCoprocessorL1: getChainConfig("composeCoprocessorL1"),
-    composeCoprocessorL2: getChainConfig("composeCoprocessorL2"),
+    staging: getChainConfig('staging'),
+    zwsDev: getChainConfig('zwsDev'),
+    sepolia: getChainConfig('sepolia'),
+    mainnet: getChainConfig('mainnet'),
+    localNative: getChainConfig('localNative'),
+    localCoprocessor: getChainConfig('localCoprocessor'),
+    localCoprocessorL1: getChainConfig('localCoprocessorL1'),
+    localCoprocessorL1Input: getChainConfig('localCoprocessorL1Input'),
+    localCoprocessorL2: getChainConfig('localCoprocessorL2'),
+    composeCoprocessorL1: getChainConfig('composeCoprocessorL1'),
+    composeCoprocessorL2: getChainConfig('composeCoprocessorL2'),
   },
   paths: {
-    artifacts: "./artifacts",
-    cache: "./cache",
-    sources: "./contracts",
-    tests: "./test",
+    artifacts: './artifacts',
+    cache: './cache',
+    sources: './contracts',
+    tests: './test',
   },
   solidity: {
-    version: "0.8.24",
+    version: '0.8.24',
     settings: {
       metadata: {
         // Not including the metadata hash
         // https://github.com/paulrberg/hardhat-template/issues/31
-        bytecodeHash: "none",
+        bytecodeHash: 'none',
       },
       // Disable the optimizer when debugging
       // https://hardhat.org/hardhat-network/#solidity-optimizer-support
@@ -219,7 +219,7 @@ const config: HardhatUserConfig = {
         enabled: true,
         runs: 800,
       },
-      evmVersion: "cancun",
+      evmVersion: 'cancun',
       viaIR: false,
     },
   },
@@ -230,15 +230,15 @@ const config: HardhatUserConfig = {
     apiKey: {
       mainnet: process.env.ETHERSCAN_API_KEY!,
       sepolia: process.env.ETHERSCAN_API_KEY!,
-      zwsDev: "empty",
+      zwsDev: 'empty',
     },
     customChains: [
       {
-        network: "zwsDev",
+        network: 'zwsDev',
         chainId: 1337,
         urls: {
-          apiURL: "http://l1-blockscout-zws-dev-blockscout-stack-blockscout-svc.ethereum-blockchain/api",
-          browserURL: "https://l1-explorer-zws-dev.diplodocus-boa.ts.net",
+          apiURL: 'http://l1-blockscout-zws-dev-blockscout-stack-blockscout-svc.ethereum-blockchain/api',
+          browserURL: 'https://l1-explorer-zws-dev.diplodocus-boa.ts.net',
         },
       },
     ],
@@ -249,8 +249,8 @@ const config: HardhatUserConfig = {
   //   },
   // },
   typechain: {
-    outDir: "types",
-    target: "ethers-v6",
+    outDir: 'types',
+    target: 'ethers-v6',
   },
 };
 
