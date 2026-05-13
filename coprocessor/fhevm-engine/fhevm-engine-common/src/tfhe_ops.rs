@@ -840,15 +840,6 @@ pub fn check_fhe_operand_types(
                             only_allowed_scalar_input_index: 1,
                         });
                     }
-                    if !is_input_handle_scalar[2] {
-                        return Err(FhevmError::UnsupportedFheTypes {
-                            fhe_operation: format!(
-                                "{:?}: divisor operand (index 2) must be a scalar",
-                                fhe_op
-                            ),
-                            input_types: vec![],
-                        });
-                    }
                     let lhs_type = get_ct_type(&input_handles[0])?;
                     let lhs_width_bytes = mul_div_lhs_width_bytes(lhs_type, &fhe_op)?;
                     if !is_input_handle_scalar[1] {
@@ -860,6 +851,15 @@ pub fn check_fhe_operand_types(
                                 operand_types: vec![lhs_type, rhs_type],
                             });
                         }
+                    }
+                    if !is_input_handle_scalar[2] {
+                        return Err(FhevmError::UnsupportedFheTypes {
+                            fhe_operation: format!(
+                                "{:?}: divisor operand (index 2) must be a scalar",
+                                fhe_op
+                            ),
+                            input_types: vec![],
+                        });
                     }
                     let start = input_handles[2]
                         .len()
