@@ -431,6 +431,26 @@ pub fn extract_ct_list(
     Ok(res)
 }
 
+// returns the byte width of an FHE type code as accepted by `fheMulDiv`'s lhs.
+fn mul_div_lhs_width_bytes(
+    lhs_type: i16,
+    fhe_op: &SupportedFheOperations,
+) -> Result<usize, FhevmError> {
+    match lhs_type {
+        2 => Ok(1), // Uint8
+        3 => Ok(2), // Uint16
+        4 => Ok(4), // Uint32
+        5 => Ok(8), // Uint64
+        _ => Err(FhevmError::UnsupportedFheTypes {
+            fhe_operation: format!(
+                "{:?}: type {lhs_type} is not supported for FheMulDiv",
+                fhe_op
+            ),
+            input_types: vec![],
+        }),
+    }
+}
+
 // return output ciphertext type
 pub fn check_fhe_operand_types(
     fhe_operation: i32,
@@ -830,21 +850,7 @@ pub fn check_fhe_operand_types(
                         });
                     }
                     let lhs_type = get_ct_type(&input_handles[0])?;
-                    let lhs_width_bytes: usize = match lhs_type {
-                        2 => 1,
-                        3 => 2,
-                        4 => 4,
-                        5 => 8,
-                        _ => {
-                            return Err(FhevmError::UnsupportedFheTypes {
-                                fhe_operation: format!(
-                                    "{:?}: type {lhs_type} is not supported for FheMulDiv",
-                                    fhe_op
-                                ),
-                                input_types: vec![],
-                            })
-                        }
-                    };
+                    let lhs_width_bytes = mul_div_lhs_width_bytes(lhs_type, &fhe_op)?;
                     if !is_input_handle_scalar[1] {
                         let rhs_type = get_ct_type(&input_handles[1])?;
                         if rhs_type != lhs_type {
