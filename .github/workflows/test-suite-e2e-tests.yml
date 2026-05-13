@@ -173,6 +173,16 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
 
+      - name: Setup Node.js
+        if: ${{ inputs.compat-test == '' }}
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        with:
+          node-version: 20.x
+
+      - name: Install native e2e deps
+        if: ${{ inputs.compat-test == '' }}
+        run: npm ci --workspace test-suite/e2e --include-workspace-root=false
+
       - name: Install foundry
         uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
 
@@ -351,6 +361,12 @@ jobs:
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test "$TEST_PROFILE"
+
+      - name: Native e2e smoke
+        if: ${{ inputs.compat-test == '' && !inputs.orchestrated }}
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test input-proof --runner native
 
       - name: Host listener consumer only test without drift-revert tests
         if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' }}

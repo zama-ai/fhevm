@@ -1,15 +1,20 @@
 import path from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_GATEWAY_RPC_PORT, DEFAULT_HOST_RPC_PORT, MINIO_PORT, STANDARD_TEST_PROFILES, TEST_SUITE_CONTAINER } from "./layout";
+import { DEFAULT_GATEWAY_RPC_PORT, DEFAULT_HOST_RPC_PORT, envPath, MINIO_PORT, STANDARD_TEST_PROFILES, TEST_SUITE_CONTAINER } from "./layout";
 import {
   buildTestContainerArgs,
   dbRevertDeleteExpectations,
   dbRevertTargetBlock,
   keyBootstrapLogArgs,
+  nativeTestEnv,
+  parseTestRunner,
+  prepareNativeTestEnv,
   validateNamedProfileGrep,
   waitForKeyBootstrap,
 } from "./commands/test";
+import { readEnvFile } from "./utils/fs";
+import { REPLACE_TARGET_NAMES, parseBuildProfile, replaceBuildBinary, replaceBuildTargetDir, replaceTargetsForState } from "./commands/replace";
 import { resumeOptionConflicts, shouldShowResumeHint } from "./flow/up-flow";
 import { resolveLogsFollow } from "./cli";
 import { withTempStateDir } from "./test-state";
@@ -109,6 +114,7 @@ describe("cli", () => {
     expect(result.code).toBe(0);
     expect(output).toContain("fhevm-cli test");
     expect(output).toContain("[TESTNAME]");
+    expect(output).toContain("--runner");
   });
 
   test("lists bundled test profiles", async () => {
@@ -122,6 +128,54 @@ describe("cli", () => {
 
   test("standard suite includes multi-chain isolation coverage", () => {
     expect(STANDARD_TEST_PROFILES).toContain("multi-chain-isolation");
+  });
+
+  test("parses test runner backends", () => {
+    expect(parseTestRunner(undefined)).toBe("docker");
+    expect(parseTestRunner("docker")).toBe("docker");
+    expect(parseTestRunner("native")).toBe("native");
+    expect(() => parseTestRunner("container")).toThrow("Unsupported test runner container");
+  });
+
+  test("rejects invalid test runner before listing profiles", async () => {
+    const result = await execCli(["test", "list", "--runner", "container"]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("Unsupported test runner container");
+  });
+
+  test("rewrites generated test env URLs for native runs", () => {
+    expect(
+      nativeTestEnv({
+        RPC_URL: "http://host-node:8545",
+        GATEWAY_RPC_URL: "http://gateway-node:8546",
+        RELAYER_URL: "http://fhevm-relayer:3000/v2",
+        HOST_CHAIN_1_RPC_URL: "http://host-node-1:8547",
+        MAINNET_ETH_RPC_URL: "http://mainnet.example",
+      }),
+    ).toEqual({
+      RPC_URL: "http://localhost:8545",
+      GATEWAY_RPC_URL: "http://localhost:8546",
+      RELAYER_URL: "http://localhost:3000/v2",
+      HOST_CHAIN_1_RPC_URL: "http://localhost:8547",
+      MAINNET_ETH_RPC_URL: "http://mainnet.example",
+    });
+  });
+
+  test("native runner writes a host-reachable env and returns it as spawn vars", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("test-suite")), { recursive: true });
+      await writeFile(envPath("test-suite"), "RPC_URL=http://host-node:8545\nMAINNET_ETH_RPC_URL=http://mainnet.example\n");
+      await expect(prepareNativeTestEnv()).resolves.toEqual({
+        RPC_URL: "http://localhost:8545",
+        MAINNET_ETH_RPC_URL: "http://mainnet.example",
+        DOTENV_CONFIG_PATH: envPath("test-suite.native"),
+        FHEVM_NATIVE_RUNNER: "true",
+      });
+      await expect(readEnvFile(envPath("test-suite.native"))).resolves.toEqual({
+        RPC_URL: "http://localhost:8545",
+        MAINNET_ETH_RPC_URL: "http://mainnet.example",
+      });
+    });
   });
 
   test("lists bundled scenarios", async () => {
@@ -186,6 +240,88 @@ describe("cli", () => {
     expect(output).toContain("[SERVICE]");
     expect(output).toContain("--no-follow");
     expect(output).toContain("first running fhevm container");
+  });
+
+  test("prints replace help with valid targets", async () => {
+    const result = await execCli(["replace", "--help"]);
+    const output = normalizeCliOutput(result.stdout);
+    expect(result.code).toBe(0);
+    expect(output).toContain("fhevm-cli replace");
+    expect(output).toContain("coprocessor:tfhe-worker");
+    expect(output).toContain("kms-connector:gw-listener");
+    expect(output).toContain("--local-build");
+    expect(output).toContain("--build-profile");
+  });
+
+  test("lists replace targets without a running stack", async () => {
+    const result = await execCli(["replace", "list"]);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("coprocessor:tfhe-worker");
+    expect(result.stdout).toContain("default binary: coprocessor/fhevm-engine/target/release/tfhe_worker");
+    expect(result.stdout).toContain("local build: cached Linux cargo build for package tfhe-worker");
+    expect(result.stdout).toContain("kms-connector:tx-sender");
+  });
+
+  test("parses replace build profiles", () => {
+    expect(parseBuildProfile(undefined)).toBe("dev");
+    expect(parseBuildProfile("release")).toBe("release");
+    expect(parseBuildProfile("profiling.local")).toBe("profiling.local");
+    expect(() => parseBuildProfile("../release")).toThrow("Invalid build profile");
+    expect(() => parseBuildProfile("--release")).toThrow("Invalid build profile");
+  });
+
+  test("rejects combining replace --binary with --local-build", async () => {
+    const result = await execCli(["replace", "coprocessor:tfhe-worker", "--binary", "/tmp/tfhe_worker", "--local-build"]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("--binary cannot be combined with --local-build");
+  });
+
+  test("rejects replace --build-profile without --local-build", async () => {
+    const result = await execCli(["replace", "coprocessor:tfhe-worker", "--build-profile", "release"]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("--build-profile can only be used with --local-build");
+  });
+
+  test("accepts several replace targets at the CLI boundary", async () => {
+    const result = await execCli(["replace", "coprocessor:tfhe-worker", "coprocessor:zkproof-worker"]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("replace requires persisted stack state");
+    expect(result.stderr).not.toContain("Unexpected positional argument");
+  });
+
+  test("maps replace targets onto active topology containers", () => {
+    const state = bootstrappedState();
+    state.scenario = testDefaultScenario({
+      topology: { count: 2, threshold: 1 },
+      hostChains: [
+        { key: "host", chainId: "12345", rpcPort: 8545 },
+        { key: "side", chainId: "12346", rpcPort: 8547 },
+      ],
+    });
+    expect(replaceTargetsForState(state, "coprocessor:tfhe-worker").containers).toEqual([
+      "coprocessor-tfhe-worker",
+      "coprocessor1-tfhe-worker",
+    ]);
+    expect(replaceTargetsForState(state, "coprocessor:tfhe-worker").localBuild.package).toBe("tfhe-worker");
+    expect(replaceTargetsForState(state, "coprocessor:host-listener").containers).toEqual([
+      "coprocessor-host-listener",
+      "coprocessor1-host-listener",
+      "coprocessor-host-listener-side",
+      "coprocessor1-host-listener-side",
+    ]);
+    expect(REPLACE_TARGET_NAMES).toContain("kms-connector:kms-worker");
+  });
+
+  test("local replace builds share one cargo target cache per workspace", () => {
+    const state = bootstrappedState();
+    const tfhe = replaceTargetsForState(state, "coprocessor:tfhe-worker").localBuild;
+    const zkproof = replaceTargetsForState(state, "coprocessor:zkproof-worker").localBuild;
+    const kmsWorker = replaceTargetsForState(state, "kms-connector:kms-worker").localBuild;
+
+    expect(replaceBuildTargetDir(tfhe)).toBe(replaceBuildTargetDir(zkproof));
+    expect(replaceBuildTargetDir(tfhe)).not.toBe(replaceBuildTargetDir(kmsWorker));
+    expect(replaceBuildBinary(tfhe, "dev")).toContain("replace-build/coprocessor/target/debug/tfhe_worker");
+    expect(replaceBuildBinary(tfhe, "release")).toContain("replace-build/coprocessor/target/release/tfhe_worker");
   });
 
   test("prints clean help with keep-images semantics", async () => {

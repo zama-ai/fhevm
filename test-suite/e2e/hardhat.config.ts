@@ -11,14 +11,53 @@ const DEFAULT_NETWORK = 'staging';
 task('compile:specific', 'Compiles only the specified contract')
   .addParam('contract', "The contract's path")
   .setAction(async ({ contract }, hre) => {
-    // Adjust the configuration to include only the specified contract
+    const originalSources = hre.config.paths.sources;
     hre.config.paths.sources = contract;
-
-    await hre.run('compile');
+    try {
+      await hre.run('compile');
+    } finally {
+      hre.config.paths.sources = originalSources;
+    }
   });
 
 const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || './.env';
 dotenv.config({ path: resolve(__dirname, dotenvConfigPath) });
+
+// Native runner: KMS public key + CRS URLs come from on-chain reads as `http://<service>:9000/...`,
+// unreachable from the host. Rewrite to localhost so the relayer SDK can fetch them.
+if (process.env.FHEVM_NATIVE_RUNNER === 'true') {
+  const originalFetch = globalThis.fetch;
+  const nativeMaterialUrl = (href: string) => {
+    let parsed: URL;
+    try {
+      parsed = new URL(href);
+    } catch {
+      return undefined;
+    }
+    if (
+      parsed.protocol !== 'http:' ||
+      parsed.hostname !== 'minio' ||
+      parsed.port !== '9000' ||
+      !parsed.pathname.startsWith('/kms-public/')
+    ) {
+      return undefined;
+    }
+    parsed.hostname = 'localhost';
+    return parsed.toString();
+  };
+
+  globalThis.fetch = (input, init) => {
+    const href = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
+    const rewritten = nativeMaterialUrl(href);
+    if (!rewritten) {
+      return originalFetch(input, init);
+    }
+    if (input instanceof Request) {
+      return originalFetch(new Request(rewritten, input), init);
+    }
+    return originalFetch(rewritten, init);
+  };
+}
 
 const defaultMnemonic =
   'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';
