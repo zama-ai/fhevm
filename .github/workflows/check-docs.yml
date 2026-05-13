@@ -3,6 +3,12 @@ name: check-docs
 on:
   pull_request:
 
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check-changes:
     name: check-docs/check-changes
@@ -10,7 +16,6 @@ jobs:
     permissions:
       actions: read # Required to read workflow run information
       contents: read # Required to checkout repository code
-      id-token: write # Required for OIDC token generation
       pull-requests: read # Required to read pull request information
     runs-on: ubuntu-latest
     outputs:
