@@ -5,6 +5,9 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
     ACL: ["error ExpirationDateBeforeOneHour()"],
     // Note: initializeFromEmptyProxy signature change (4-param → 2-param) is excluded
     // by the /^initialize/ regex in config.ts and does not need an explicit exception.
+    // FHEVMExecutor declarations whose only revert sites were removed as unreachable
+    // dead code (see issue #1370). No deployed call path can emit these selectors.
+    FHEVMExecutor: ["error InvalidByteLength(uint8,uint256)", "error SecondOperandIsNotScalar()"],
     KMSVerifier: [
       "event NewContextSet(address[],uint256)",
       "function defineNewContext(address[],uint256)",
@@ -22,12 +25,19 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
     ],
   },
   "gateway-contracts": {
+    // The NotCustodian{Signer,TxSender} selectors were inherited from the GatewayConfigChecks
+    // base by every concrete consumer below. The base helper that emitted them was removed as
+    // unreachable dead code in issue #1370, so they disappear from each derived ABI.
+    CiphertextCommits: ["error NotCustodianSigner(address)", "error NotCustodianTxSender(address)"],
     Decryption: [
       "error AccountNotAllowedToUseCiphertext(bytes32,address)",
       "error PublicDecryptNotAllowed(bytes32)",
       "error UserDecryptionNotDelegated(uint256,address,address,address)",
       "function isDelegatedUserDecryptionReady((address,address),(bytes32,address)[],bytes) returns (bool)",
+      "error NotCustodianSigner(address)",
+      "error NotCustodianTxSender(address)",
     ],
+    InputVerification: ["error NotCustodianSigner(address)", "error NotCustodianTxSender(address)"],
     GatewayConfig: [
       "event InitializeGatewayConfig((string,string),(uint256,uint256,uint256,uint256,uint256),(address,address,string,string)[],(address,address,string)[],(address,address,bytes)[])",
       "event UpdateKmsNodes((address,address,string,string)[],uint256,uint256,uint256,uint256)",

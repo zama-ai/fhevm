@@ -47,9 +47,6 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     /// @notice Returned if two types are not compatible for this operation.
     error IncompatibleTypes();
 
-    /// @notice Returned if the length of the bytes is not as expected.
-    error InvalidByteLength(FheType typeOf, uint256 length);
-
     /// @notice Returned if the type is not the expected one.
     error InvalidType();
 
@@ -63,9 +60,6 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     /// @dev today used in all implemented binary operators, but could be useful in a future where `scalarByte`
     /// @dev could become bigger than a bool to act as a bitmask, if more than one operand can be scalar, eg in fheSub
     error ScalarByteIsNotBoolean();
-
-    /// @notice Returned if the second operand is not a scalar (for functions fheEq/fheNe).
-    error SecondOperandIsNotScalar();
 
     /// @notice Returned if the type is not supported for this operation.
     error UnsupportedType();

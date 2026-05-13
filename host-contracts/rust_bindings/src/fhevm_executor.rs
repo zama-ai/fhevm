@@ -13,7 +13,6 @@ interface FHEVMExecutor {
     error FHECollectionSizeInvalid(uint256 size, uint256 limit);
     error FailedCall();
     error IncompatibleTypes();
-    error InvalidByteLength(FheType typeOf, uint256 length);
     error InvalidInitialization();
     error InvalidType();
     error IsNotScalar();
@@ -22,7 +21,6 @@ interface FHEVMExecutor {
     error NotInitializingFromEmptyProxy();
     error NotPowerOfTwo();
     error ScalarByteIsNotBoolean();
-    error SecondOperandIsNotScalar();
     error UUPSUnauthorizedCallContext();
     error UUPSUnsupportedProxiableUUID(bytes32 slot);
     error UnsupportedType();
@@ -2220,22 +2218,6 @@ interface FHEVMExecutor {
   },
   {
     "type": "error",
-    "name": "InvalidByteLength",
-    "inputs": [
-      {
-        "name": "typeOf",
-        "type": "uint8",
-        "internalType": "enum FheType"
-      },
-      {
-        "name": "length",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "InvalidInitialization",
     "inputs": []
   },
@@ -2278,11 +2260,6 @@ interface FHEVMExecutor {
   {
     "type": "error",
     "name": "ScalarByteIsNotBoolean",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "SecondOperandIsNotScalar",
     "inputs": []
   },
   {
@@ -3127,95 +3104,6 @@ error IncompatibleTypes();
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `InvalidByteLength(uint8,uint256)` and selector `0xb30c0c57`.
-```solidity
-error InvalidByteLength(FheType typeOf, uint256 length);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct InvalidByteLength {
-        #[allow(missing_docs)]
-        pub typeOf: <FheType as alloy::sol_types::SolType>::RustType,
-        #[allow(missing_docs)]
-        pub length: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = (FheType, alloy::sol_types::sol_data::Uint<256>);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            <FheType as alloy::sol_types::SolType>::RustType,
-            alloy::sol_types::private::primitives::aliases::U256,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<InvalidByteLength> for UnderlyingRustTuple<'_> {
-            fn from(value: InvalidByteLength) -> Self {
-                (value.typeOf, value.length)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for InvalidByteLength {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {
-                    typeOf: tuple.0,
-                    length: tuple.1,
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for InvalidByteLength {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "InvalidByteLength(uint8,uint256)";
-            const SELECTOR: [u8; 4] = [179u8, 12u8, 12u8, 87u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <FheType as alloy_sol_types::SolType>::tokenize(&self.typeOf),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.length),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidInitialization()` and selector `0xf92ee8a9`.
 ```solidity
 error InvalidInitialization();
@@ -3788,81 +3676,6 @@ error ScalarByteIsNotBoolean();
             > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "ScalarByteIsNotBoolean()";
             const SELECTOR: [u8; 4] = [223u8, 123u8, 243u8, 37u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `SecondOperandIsNotScalar()` and selector `0x4dde0d98`.
-```solidity
-error SecondOperandIsNotScalar();
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct SecondOperandIsNotScalar;
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = ();
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = ();
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<SecondOperandIsNotScalar>
-        for UnderlyingRustTuple<'_> {
-            fn from(value: SecondOperandIsNotScalar) -> Self {
-                ()
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for SecondOperandIsNotScalar {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for SecondOperandIsNotScalar {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "SecondOperandIsNotScalar()";
-            const SELECTOR: [u8; 4] = [77u8, 222u8, 13u8, 152u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -16637,8 +16450,6 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
         #[allow(missing_docs)]
         IncompatibleTypes(IncompatibleTypes),
         #[allow(missing_docs)]
-        InvalidByteLength(InvalidByteLength),
-        #[allow(missing_docs)]
         InvalidInitialization(InvalidInitialization),
         #[allow(missing_docs)]
         InvalidType(InvalidType),
@@ -16654,8 +16465,6 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
         NotPowerOfTwo(NotPowerOfTwo),
         #[allow(missing_docs)]
         ScalarByteIsNotBoolean(ScalarByteIsNotBoolean),
-        #[allow(missing_docs)]
-        SecondOperandIsNotScalar(SecondOperandIsNotScalar),
         #[allow(missing_docs)]
         UUPSUnauthorizedCallContext(UUPSUnauthorizedCallContext),
         #[allow(missing_docs)]
@@ -16679,13 +16488,11 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
             [35u8, 211u8, 89u8, 163u8],
             [36u8, 232u8, 231u8, 66u8],
             [76u8, 156u8, 140u8, 227u8],
-            [77u8, 222u8, 13u8, 152u8],
             [79u8, 34u8, 78u8, 83u8],
             [111u8, 79u8, 115u8, 31u8],
             [153u8, 150u8, 179u8, 21u8],
             [157u8, 227u8, 57u8, 44u8],
             [170u8, 29u8, 73u8, 164u8],
-            [179u8, 12u8, 12u8, 87u8],
             [179u8, 152u8, 151u8, 159u8],
             [185u8, 104u8, 132u8, 97u8],
             [198u8, 222u8, 70u8, 106u8],
@@ -16702,7 +16509,7 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
     impl alloy_sol_types::SolInterface for FHEVMExecutorErrors {
         const NAME: &'static str = "FHEVMExecutorErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 22usize;
+        const COUNT: usize = 20usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -16730,9 +16537,6 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                 Self::IncompatibleTypes(_) => {
                     <IncompatibleTypes as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::InvalidByteLength(_) => {
-                    <InvalidByteLength as alloy_sol_types::SolError>::SELECTOR
-                }
                 Self::InvalidInitialization(_) => {
                     <InvalidInitialization as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -16756,9 +16560,6 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                 }
                 Self::ScalarByteIsNotBoolean(_) => {
                     <ScalarByteIsNotBoolean as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::SecondOperandIsNotScalar(_) => {
-                    <SecondOperandIsNotScalar as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::UUPSUnauthorizedCallContext(_) => {
                     <UUPSUnauthorizedCallContext as alloy_sol_types::SolError>::SELECTOR
@@ -16845,17 +16646,6 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     ERC1967InvalidImplementation
                 },
                 {
-                    fn SecondOperandIsNotScalar(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
-                        <SecondOperandIsNotScalar as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(FHEVMExecutorErrors::SecondOperandIsNotScalar)
-                    }
-                    SecondOperandIsNotScalar
-                },
-                {
                     fn IsNotScalar(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
@@ -16907,17 +16697,6 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                             .map(FHEVMExecutorErrors::UUPSUnsupportedProxiableUUID)
                     }
                     UUPSUnsupportedProxiableUUID
-                },
-                {
-                    fn InvalidByteLength(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
-                        <InvalidByteLength as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(FHEVMExecutorErrors::InvalidByteLength)
-                    }
-                    InvalidByteLength
                 },
                 {
                     fn ERC1967NonPayable(
@@ -17101,17 +16880,6 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                     ERC1967InvalidImplementation
                 },
                 {
-                    fn SecondOperandIsNotScalar(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
-                        <SecondOperandIsNotScalar as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(FHEVMExecutorErrors::SecondOperandIsNotScalar)
-                    }
-                    SecondOperandIsNotScalar
-                },
-                {
                     fn IsNotScalar(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
@@ -17165,17 +16933,6 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                             .map(FHEVMExecutorErrors::UUPSUnsupportedProxiableUUID)
                     }
                     UUPSUnsupportedProxiableUUID
-                },
-                {
-                    fn InvalidByteLength(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FHEVMExecutorErrors> {
-                        <InvalidByteLength as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(FHEVMExecutorErrors::InvalidByteLength)
-                    }
-                    InvalidByteLength
                 },
                 {
                     fn ERC1967NonPayable(
@@ -17337,11 +17094,6 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                         inner,
                     )
                 }
-                Self::InvalidByteLength(inner) => {
-                    <InvalidByteLength as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::InvalidInitialization(inner) => {
                     <InvalidInitialization as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -17371,11 +17123,6 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                 }
                 Self::ScalarByteIsNotBoolean(inner) => {
                     <ScalarByteIsNotBoolean as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::SecondOperandIsNotScalar(inner) => {
-                    <SecondOperandIsNotScalar as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -17449,12 +17196,6 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                         out,
                     )
                 }
-                Self::InvalidByteLength(inner) => {
-                    <InvalidByteLength as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
                 Self::InvalidInitialization(inner) => {
                     <InvalidInitialization as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -17499,12 +17240,6 @@ function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inpu
                 }
                 Self::ScalarByteIsNotBoolean(inner) => {
                     <ScalarByteIsNotBoolean as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::SecondOperandIsNotScalar(inner) => {
-                    <SecondOperandIsNotScalar as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
