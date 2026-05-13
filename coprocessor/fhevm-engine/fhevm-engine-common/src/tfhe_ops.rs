@@ -900,8 +900,6 @@ pub fn does_fhe_operation_support_scalar(op: &SupportedFheOperations) -> bool {
             match op {
                 // second operand determines which type to cast to
                 SupportedFheOperations::FheCast => true,
-                // rhs may be encrypted or a scalar; divisor is always scalar
-                SupportedFheOperations::FheMulDiv => true,
                 _ => false,
             }
         }
