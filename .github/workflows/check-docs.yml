@@ -41,4 +41,4 @@ jobs:
           persist-credentials: false
       - run: python3 -m pip install linkcheckmd
       - name: Check dead-link
-        run: python3 ci/scripts/local_docs_link_check.py
+        run: python3 ./ci/local_docs_link_check.py
