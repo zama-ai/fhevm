@@ -78,6 +78,7 @@ bun test
 ./fhevm-cli up --target latest-supported
 ./fhevm-cli up --target latest-main --build --dry-run
 ./fhevm-cli test erc20
+./fhevm-cli test input-proof --runner native
 ./fhevm-cli clean
 ```
 
@@ -88,7 +89,7 @@ bun test
 - `up --scenario <name-or-file>` applies an explicit coprocessor consensus scenario on top of the resolved bundle
 - `up --override coprocessor` is the fast local-dev shorthand for a one-instance local coprocessor scenario
 - `scenario list` prints the bundled scenario presets with their intent
-- `test` runs against the current stack and may recompile contracts through Hardhat by default. Pass `--no-hardhat-compile` to skip that step. `--parallel` runs tests in parallel (auto for `operators`). `test light` is the tiny smoke lane (`input-proof` + `erc20`), `test standard` runs the default CI lane including db revert and drift, `test multi-chain-isolation` is the dedicated multi-chain coverage lane, and `test heavy` is the operators lane
+- `test` runs against the current stack and may recompile contracts through Hardhat by default. Pass `--runner native` to run the checked-out `test-suite/e2e` workspace directly; Docker remains the default runner. Pass `--no-hardhat-compile` to skip that step. `--parallel` runs tests in parallel (auto for `operators`). `test light` is the tiny smoke lane (`input-proof` + `erc20`), `test standard` runs the default CI lane including db revert and drift, `test multi-chain-isolation` is the dedicated multi-chain coverage lane, and `test heavy` is the operators lane
 - `logs` follows container output; `--no-follow` prints the tail and exits
 - `pause` / `unpause` pauses or unpauses host or gateway contracts
 - `down` stops the stack, prunes `.fhevm/runtime`, and keeps resumable `.fhevm/state`
@@ -354,6 +355,9 @@ When changing runtime flags, env contracts, target semantics, or external compan
 ./fhevm-cli test standard
 ./fhevm-cli test heavy
 ./fhevm-cli test operators
+./fhevm-cli test input-proof --runner native
+./fhevm-cli replace list
+./fhevm-cli replace coprocessor:tfhe-worker --local-build
 ./fhevm-cli test --grep "oversized shift/rotate" --verbose
 ./fhevm-cli pause host
 ./fhevm-cli unpause host
@@ -368,8 +372,22 @@ Use `--override` to run local code for one repo-owned group on top of an otherwi
 
 Important:
 - by default, the stack uses the published `test-suite` image
-- local e2e test changes are not picked up unless you use `--override test-suite` or `--build`
-- if you are validating newly added or edited tests in this branch, prefer `--override test-suite` for a surgical local test-suite rebuild
+- local e2e test changes are picked up fastest with `./fhevm-cli test <profile> --runner native`
+- Docker-runner e2e test changes still require `--override test-suite` or `--build`
+- if you are validating newly added or edited tests in the test-suite image path, prefer `--override test-suite` for a surgical local test-suite rebuild
+
+### Fast local e2e iteration
+
+Use the native test runner when editing TypeScript tests in `test-suite/e2e`:
+
+```sh
+npm ci
+cd test-suite/fhevm
+./fhevm-cli up
+./fhevm-cli test input-proof --runner native
+```
+
+The stack still runs in Docker. Only `test-suite/e2e/run-tests.sh` and Hardhat run from the checked-out workspace, so edits and debug logs are picked up on the next test command without rebuilding or copying into the test-suite container.
 
 Use `--build` when you want the whole local workspace on the active baseline. On topology-only scenario runs, `--build` also applies local coprocessor images to inherited scenario instances. If a scenario explicitly pins coprocessor source, overlapping explicit coprocessor overrides fail fast instead.
 `--build` cannot be combined with `--override`.
@@ -466,6 +484,35 @@ If a runtime override is already active and you only want to rebuild and restart
 ```
 
 `upgrade` only supports active runtime override groups: `coprocessor`, `kms-connector`, and `test-suite`. It is a runtime rebuild/restart command, not a live schema migration command. For schema-coupled groups (`coprocessor`, `kms-connector`), if local DB migrations changed, `upgrade` fails fast and asks you to do a fresh `fhevm-cli up` instead of rerunning the initializer on a live database.
+
+## Replace Runtime Binaries
+
+Use `replace` for a narrow debug loop when the running stack should keep its current env, config, database state, and Docker image. With `--local-build`, the CLI runs a cached Linux Cargo build, copies the resulting binary into matching running containers, and restarts only those containers. Without `--local-build`, it copies an already-built binary from the default path.
+
+```sh
+./fhevm-cli replace list
+./fhevm-cli replace coprocessor:tfhe-worker --local-build
+./fhevm-cli replace coprocessor:tfhe-worker --local-build --build-profile release
+./fhevm-cli replace coprocessor:tfhe-worker
+./fhevm-cli replace coprocessor:tfhe-worker coprocessor:zkproof-worker
+./fhevm-cli replace kms-connector:gw-listener --binary ../../kms-connector/target/release/gw-listener
+```
+
+Valid targets:
+
+- `coprocessor:host-listener`
+- `coprocessor:host-listener-poller`
+- `coprocessor:host-listener-consumer`
+- `coprocessor:gw-listener`
+- `coprocessor:tfhe-worker`
+- `coprocessor:sns-worker`
+- `coprocessor:transaction-sender`
+- `coprocessor:zkproof-worker`
+- `kms-connector:gw-listener`
+- `kms-connector:kms-worker`
+- `kms-connector:tx-sender`
+
+`replace --local-build` owns a maintained target catalog: Cargo workspace, package, binary name, container path, and matching running containers. Builds run inside Docker's Linux VM with Cargo registry, git, and target caches under `.fhevm/runtime/replace-build`. The default build profile is `dev` for fast iteration; pass `--build-profile release` for optimized binaries. It does not rerender Compose, run migrations, or change versions. Use `upgrade` or a fresh `up --override ...` when env contracts, runtime args, dependencies, migrations, or image contents changed.
 
 ## Dropped Convenience Commands
 

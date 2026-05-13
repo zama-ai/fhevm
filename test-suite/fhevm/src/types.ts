@@ -178,4 +178,5 @@ export type TestOptions = {
   verbose: boolean;
   noHardhatCompile: boolean;
   parallel?: boolean;
+  runner?: "docker" | "native";
 };

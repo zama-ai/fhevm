@@ -1,12 +1,13 @@
 /**
  * Runs named e2e test profiles, standard/heavy CI suites, and topology-specific test flows.
  */
+import path from "node:path";
 import { compatPolicyForState, supportsCoprocessorDbStateRevert } from "../compat/compat";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, driftDatabaseName, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
 import { PreflightError, formatCliError } from "../errors";
 import { dockerInspect } from "../flow/readiness";
-import { pause, shellEscape, unpause } from "../flow/up-flow";
-import { hostReachableRpcUrl } from "../utils/fs";
+import { pause, unpause } from "../flow/up-flow";
+import { hostReachableRpcUrl, readEnvFile, writeEnvFile } from "../utils/fs";
 import { run, runWithHeartbeat } from "../utils/process";
 import { loadState } from "../state/state";
 import { topologyForState } from "../stack-spec/stack-spec";
@@ -16,9 +17,11 @@ import {
   DEFAULT_POSTGRES_DB,
   DEFAULT_POSTGRES_PASSWORD,
   DEFAULT_POSTGRES_USER,
+  envPath,
   HEAVY_TEST_PROFILES,
   LIGHT_TEST_PROFILES,
   POSTGRES_HOST,
+  REPO_ROOT,
   STANDARD_TEST_PROFILES,
   TEST_GREP,
   TEST_PARALLEL,
@@ -42,6 +45,9 @@ const KEY_BOOTSTRAP_LOG = /Fetched keyset/;
 const KEY_BOOTSTRAP_PROFILES = new Set(["input-proof", "input-proof-compute-decrypt"]);
 // Intentional ciphertext drift must never run on shared/live networks.
 const CIPHERTEXT_DRIFT_FORBIDDEN_NETWORKS = new Set(["sepolia", "mainnet", "zwsDev"]);
+const TEST_RUNNERS = new Set(["docker", "native"]);
+const NATIVE_TEST_URL_ENV = /^(RPC_URL|GATEWAY_RPC_URL|RELAYER_URL|HOST_CHAIN_\d+_RPC_URL)$/;
+const TEST_SUITE_E2E_DIR = path.join(REPO_ROOT, "test-suite", "e2e");
 
 /** Formats a progress label with elapsed wall-clock time. */
 const timedLabel = (label: string, started: number) =>
@@ -84,6 +90,15 @@ export const validateNamedProfileGrep = (testName: string | undefined, grep: str
   if (testName && grep && !(testName in TEST_GREP)) {
     throw new PreflightError(`\`fhevm-cli test ${testName}\` does not accept \`--grep\`; use either a named profile or a custom grep`);
   }
+};
+
+/** Parses the test runner backend while keeping docker as the compatibility default. */
+export const parseTestRunner = (runner: string | undefined): NonNullable<TestOptions["runner"]> => {
+  const value = runner ?? "docker";
+  if (TEST_RUNNERS.has(value)) {
+    return value as NonNullable<TestOptions["runner"]>;
+  }
+  throw new PreflightError(`Unsupported test runner ${value}. Valid: docker, native`);
 };
 
 /** Combines a named profile grep with an extra narrowing grep expression. */
@@ -394,28 +409,81 @@ const runTestsArgs = (
   options.grep,
 ].filter(Boolean);
 
-/** Builds a shell-safe run-tests.sh command string. */
-const runTestsCommand = (
-  options: Pick<TestOptions, "network" | "verbose" | "parallel" | "noHardhatCompile"> & { grep: string },
-) => runTestsArgs(options).map(shellEscape).join(" ");
+/** Rewrites generated container URLs so run-tests.sh can run from the workspace. */
+export const nativeTestEnv = (env: Record<string, string>) =>
+  Object.fromEntries(
+    Object.entries(env).map(([key, value]) => [
+      key,
+      NATIVE_TEST_URL_ENV.test(key) ? hostReachableRpcUrl(value) : value,
+    ]),
+  );
 
-/** Runs a narrow e2e grep inside the test-suite container. */
+const testExecEnv = (extraExecArgs: string[]) => {
+  const env: Record<string, string> = {};
+  for (let index = 0; index < extraExecArgs.length; index += 1) {
+    if (extraExecArgs[index] !== "-e" && extraExecArgs[index] !== "--env") {
+      continue;
+    }
+    const assignment = extraExecArgs[index + 1];
+    index += 1;
+    if (!assignment) {
+      continue;
+    }
+    const separator = assignment.indexOf("=");
+    const key = separator < 0 ? assignment : assignment.slice(0, separator);
+    env[key] = separator < 0 ? "" : assignment.slice(separator + 1);
+  }
+  return env;
+};
+
+/** Materializes a host-reachable copy of the test-suite env and returns it as spawn env vars. */
+export const prepareNativeTestEnv = async (): Promise<Record<string, string>> => {
+  const containerEnv = envPath("test-suite");
+  let rewritten: Record<string, string>;
+  try {
+    rewritten = nativeTestEnv(await readEnvFile(containerEnv));
+  } catch {
+    throw new PreflightError(
+      `native test runner requires generated test-suite env at ${containerEnv}; run \`fhevm-cli up\` first`,
+    );
+  }
+  const hostEnv = envPath("test-suite.native");
+  await writeEnvFile(hostEnv, rewritten);
+  return { ...rewritten, DOTENV_CONFIG_PATH: hostEnv, FHEVM_NATIVE_RUNNER: "true" };
+};
+
+/** Runs a narrow e2e grep with the selected test runner backend. */
+const runE2e = async (
+  options: Pick<TestOptions, "network" | "verbose" | "parallel" | "noHardhatCompile" | "runner"> & { grep: string },
+  label: string,
+  extraExecArgs: string[] = [],
+) => {
+  if ((options.runner ?? "docker") === "docker") {
+    return runWithHeartbeat(buildTestContainerArgs(runTestsArgs(options), extraExecArgs), label);
+  }
+  const env = {
+    ...(await prepareNativeTestEnv()),
+    npm_config_update_notifier: "false",
+    NPM_CONFIG_UPDATE_NOTIFIER: "false",
+    ...testExecEnv(extraExecArgs),
+  };
+  return runWithHeartbeat(runTestsArgs(options), label, { cwd: TEST_SUITE_E2E_DIR, env });
+};
+
+/** Asserts a narrow e2e grep selected at least one test. */
 const assertMatchedTests = (output: string, label: string) => {
   if (ZERO_TESTS_RE.test(output)) {
     throw new PreflightError(`${label} matched zero tests`);
   }
 };
 
-/** Runs a narrow e2e grep inside the test-suite container. */
+/** Runs a named e2e grep with the selected test runner backend. */
 const runNamedE2e = async (
-  options: Pick<TestOptions, "network" | "noHardhatCompile">,
+  options: Pick<TestOptions, "network" | "noHardhatCompile" | "runner">,
   grep: string,
   label: string,
 ) => {
-  const result = await runWithHeartbeat(
-    buildTestContainerArgs(runTestsArgs({ ...options, verbose: false, parallel: false, grep })),
-    label,
-  );
+  const result = await runE2e({ ...options, verbose: false, parallel: false, grep }, label);
   assertMatchedTests(result.stdout + result.stderr, label);
 };
 
@@ -749,6 +817,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     listTestProfiles();
     return;
   }
+  options = { ...options, runner: parseTestRunner(options.runner) };
   if (testName && !TEST_PROFILE_NAMES.includes(testName)) {
     throw new PreflightError(`Unknown test profile ${testName}. Valid: ${TEST_PROFILE_NAMES.join(", ")}`);
   }
@@ -841,12 +910,10 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           postgresUser: postgres.postgresUser,
           postgresPassword: postgres.postgresPassword,
         });
-        const result = await runWithHeartbeat(
-          buildTestContainerArgs(
-            runTestsArgs({ ...options, parallel: false, grep: grepPattern }),
-            ["-e", "GATEWAY_RPC_URL="],
-          ),
+        const result = await runE2e(
+          { ...options, parallel: false, grep: grepPattern },
           "test ciphertext-drift",
+          ["-e", "GATEWAY_RPC_URL="],
         );
         assertMatchedTests(result.stdout + result.stderr, "test ciphertext-drift");
         const injectedHandleHex = await injector;
@@ -915,12 +982,10 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         // Run the e2e tests that trigger the drift. This run may surface
         // errors due to the drift itself — we tolerate that and verify
         // recovery in the next step.
-        await runWithHeartbeat(
-          buildTestContainerArgs(
-            runTestsArgs({ ...options, parallel: false, grep: grepPattern }),
-            ["-e", "GATEWAY_RPC_URL="],
-          ),
+        await runE2e(
+          { ...options, parallel: false, grep: grepPattern },
           "test ciphertext-drift-auto-recovery (initial run)",
+          ["-e", "GATEWAY_RPC_URL="],
         ).catch((error) => {
           console.log(
             `[drift-auto-recovery] initial test run failed (expected due to drift): ${formatCliError(error) ?? "unknown error"}`,
@@ -1001,12 +1066,10 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         console.log(`[drift-auto-recovery] revert completed; computations caught up to ${caughtUp} (>= ${computationsBefore}); re-running tests to verify recovery`);
 
         // Re-run the e2e tests to verify the services have fully recovered.
-        const followUp = await runWithHeartbeat(
-          buildTestContainerArgs(
-            runTestsArgs({ ...options, parallel: false, grep: grepPattern }),
-            ["-e", "GATEWAY_RPC_URL="],
-          ),
+        const followUp = await runE2e(
+          { ...options, parallel: false, grep: grepPattern },
           "test ciphertext-drift-auto-recovery (post-recovery)",
+          ["-e", "GATEWAY_RPC_URL="],
         );
         assertMatchedTests(
           followUp.stdout + followUp.stderr,
@@ -1031,12 +1094,11 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       const grep = narrowedProfileGrep(filter, options.grep);
       console.log(`[test] ${name} (${options.network})`);
       const started = Date.now();
-      const command = runTestsCommand({ ...options, parallel: shouldParallel, grep });
       return runLogged(name, started, async () => {
         if (KEY_BOOTSTRAP_PROFILES.has(name)) {
           await waitForKeyBootstrap(state);
         }
-        const result = await runWithHeartbeat(buildTestContainerArgs(["sh", "-lc", command]), `test ${name}`);
+        const result = await runE2e({ ...options, parallel: shouldParallel, grep }, `test ${name}`);
         assertMatchedTests(result.stdout + result.stderr, `test ${name}`);
       });
     };
@@ -1133,11 +1195,11 @@ export const test = async (testName: string | undefined, options: TestOptions) =
   }
 
   if (options.grep) {
+    const grep = options.grep;
     console.log(`[test] custom (${options.network})`);
     const started = Date.now();
-    const command = runTestsCommand({ ...options, grep: options.grep });
     await runLogged("custom", started, async () => {
-      const result = await runWithHeartbeat(buildTestContainerArgs(["sh", "-lc", command]), "test custom");
+      const result = await runE2e({ ...options, grep }, "test custom");
       assertMatchedTests(result.stdout + result.stderr, "test custom");
     });
     return;

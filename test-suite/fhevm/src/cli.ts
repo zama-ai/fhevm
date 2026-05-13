@@ -4,8 +4,9 @@
 import { defineCommand, renderUsage, runCommand } from "citty";
 
 import { formatCliError, PreflightError } from "./errors";
+import { REPLACE_TARGET_NAMES, replace } from "./commands/replace";
 import { printRolloutMatrix, rollout, rolloutStep } from "./commands/rollout";
-import { listTestProfiles, test } from "./commands/test";
+import { listTestProfiles, parseTestRunner, test } from "./commands/test";
 import { resolveBundle } from "./resolve/bundle-store";
 import { STEP_NAMES } from "./types";
 import {
@@ -55,6 +56,11 @@ const commandOptionForms = async (cmd: CliCommand) => {
 
 const commandPositionalCount = async (cmd: CliCommand) =>
   Object.values(await commandArgs(cmd)).filter((arg) => arg.type === "positional").length;
+
+const commandAcceptsExtraPositionals = async (cmd: CliCommand) => {
+  const args = await commandArgs(cmd);
+  return args.targets?.type === "positional";
+};
 
 const positionalTokens = async (cmd: CliCommand, rawArgs: string[]) => {
   const args = await commandArgs(cmd);
@@ -152,7 +158,7 @@ const validateKnownArgs = async (cmd: CliCommand, rawArgs: string[]): Promise<vo
   }
   const positionals = await positionalTokens(cmd, rawArgs);
   const allowedPositionals = await commandPositionalCount(cmd);
-  if (positionals.length > allowedPositionals) {
+  if (!(await commandAcceptsExtraPositionals(cmd)) && positionals.length > allowedPositionals) {
     throw new PreflightError(`Unexpected positional argument ${positionals[allowedPositionals]}`);
   }
 };
@@ -241,6 +247,27 @@ const root = defineCommand({
         await upgrade(asString(args.group));
       },
     }),
+    replace: defineCommand({
+      meta: { name: "replace", description: "Build or copy local binaries into running stack containers and restart them." },
+      args: {
+        targets: {
+          type: "positional",
+          description: `Target to replace, or list. Valid: ${REPLACE_TARGET_NAMES.join(", ")}.`,
+          required: false,
+        },
+        binary: { type: "string", description: "Binary path to copy. Only valid with one target; otherwise default target paths are used." },
+        "local-build": { type: "boolean", description: "Run a cached Linux Cargo build before copying the built binary." },
+        "build-profile": { type: "string", description: "Cargo build profile for --local-build. Default: dev. Use release for optimized binaries." },
+      },
+      async run({ args }) {
+        const targets = (args._ as string[] | undefined)?.length ? (args._ as string[]) : asString(args.targets) ? [asString(args.targets)!] : [];
+        await replace(targets, {
+          binary: asString(args.binary),
+          localBuild: asBool(args["local-build"]),
+          buildProfile: asString(args["build-profile"]),
+        });
+      },
+    }),
     resolve: defineCommand({
       meta: { name: "resolve", description: "Resolve a version target and print the resulting lock path." },
       args: {
@@ -288,17 +315,19 @@ const root = defineCommand({
       },
     }),
     test: defineCommand({
-      meta: { name: "test", description: "Run e2e tests inside the fhevm test-suite container." },
+      meta: { name: "test", description: "Run e2e tests with the fhevm test-suite runner." },
       args: {
         testName: { type: "positional", description: "Named test profile to run.", required: false },
         grep: { type: "string", description: "Custom grep pattern passed through to the e2e runner." },
         network: { type: "string", description: "Hardhat network passed to the test suite.", default: "staging" },
+        runner: { type: "string", description: "Test runner backend: docker or native.", default: "docker" },
         verbose: { type: "boolean", description: "Enable verbose output from the test command." },
         "no-hardhat-compile": { type: "boolean", description: "Skip the Hardhat compilation step inside the test runner." },
         parallel: { type: "boolean", description: "Run supported test suites in parallel." },
       },
       async run({ args }) {
         const testName = asString(args.testName);
+        const runner = parseTestRunner(asString(args.runner));
         if (testName === "list") {
           listTestProfiles();
           return;
@@ -306,6 +335,7 @@ const root = defineCommand({
         await test(testName, {
           grep: asString(args.grep),
           network: asString(args.network) ?? "staging",
+          runner,
           verbose: asBool(args.verbose),
           noHardhatCompile: asBool(args["no-hardhat-compile"]),
           parallel: args.parallel === undefined ? undefined : asBool(args.parallel),
