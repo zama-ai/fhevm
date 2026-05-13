@@ -32,6 +32,9 @@ jobs:
         with:
           node-version: 20.x
 
+      - name: Install safe-chain
+        run: curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
+
       - name: Update npm # required by trusted publishing
         run: npm install -g npm@11.7.0
 

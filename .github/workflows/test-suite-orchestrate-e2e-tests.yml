@@ -34,6 +34,9 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
 
+      - name: Install safe-chain
+        run: curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
+
       - name: Install CLI deps
         working-directory: test-suite/fhevm
         run: bun install --frozen-lockfile

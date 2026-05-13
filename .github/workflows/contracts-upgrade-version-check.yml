@@ -93,6 +93,10 @@ jobs:
         if: env.PACKAGE_CHANGED == 'true'
         uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
 
+      - name: Install safe-chain
+        if: env.PACKAGE_CHANGED == 'true'
+        run: curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
+
       - name: Install Foundry
         if: env.PACKAGE_CHANGED == 'true'
         uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
