@@ -487,6 +487,46 @@ contract FHEVMManualTestSuite is E2ECoprocessorConfig {
         FHE.makePubliclyDecryptable(resEbool);
     }
 
+    function test_mulDiv_euint8_enc_enc(externalEuint8 a, externalEuint8 b, uint8 divisor, bytes calldata inputProof) external {
+        resEuint8 = FHE.mulDiv(FHE.fromExternal(a, inputProof), FHE.fromExternal(b, inputProof), divisor);
+        FHE.makePubliclyDecryptable(resEuint8);
+    }
+
+    function test_mulDiv_euint8_enc_scalar(externalEuint8 a, uint8 b, uint8 divisor, bytes calldata inputProof) external {
+        resEuint8 = FHE.mulDiv(FHE.fromExternal(a, inputProof), b, divisor);
+        FHE.makePubliclyDecryptable(resEuint8);
+    }
+
+    function test_mulDiv_euint16_enc_enc(externalEuint16 a, externalEuint16 b, uint16 divisor, bytes calldata inputProof) external {
+        resEuint16 = FHE.mulDiv(FHE.fromExternal(a, inputProof), FHE.fromExternal(b, inputProof), divisor);
+        FHE.makePubliclyDecryptable(resEuint16);
+    }
+
+    function test_mulDiv_euint16_enc_scalar(externalEuint16 a, uint16 b, uint16 divisor, bytes calldata inputProof) external {
+        resEuint16 = FHE.mulDiv(FHE.fromExternal(a, inputProof), b, divisor);
+        FHE.makePubliclyDecryptable(resEuint16);
+    }
+
+    function test_mulDiv_euint32_enc_enc(externalEuint32 a, externalEuint32 b, uint32 divisor, bytes calldata inputProof) external {
+        resEuint32 = FHE.mulDiv(FHE.fromExternal(a, inputProof), FHE.fromExternal(b, inputProof), divisor);
+        FHE.makePubliclyDecryptable(resEuint32);
+    }
+
+    function test_mulDiv_euint32_enc_scalar(externalEuint32 a, uint32 b, uint32 divisor, bytes calldata inputProof) external {
+        resEuint32 = FHE.mulDiv(FHE.fromExternal(a, inputProof), b, divisor);
+        FHE.makePubliclyDecryptable(resEuint32);
+    }
+
+    function test_mulDiv_euint64_enc_enc(externalEuint64 a, externalEuint64 b, uint64 divisor, bytes calldata inputProof) external {
+        resEuint64 = FHE.mulDiv(FHE.fromExternal(a, inputProof), FHE.fromExternal(b, inputProof), divisor);
+        FHE.makePubliclyDecryptable(resEuint64);
+    }
+
+    function test_mulDiv_euint64_enc_scalar(externalEuint64 a, uint64 b, uint64 divisor, bytes calldata inputProof) external {
+        resEuint64 = FHE.mulDiv(FHE.fromExternal(a, inputProof), b, divisor);
+        FHE.makePubliclyDecryptable(resEuint64);
+    }
+
     function test_isIn_euint256_found(externalEuint256 a, bytes calldata inputProof) external {
         euint256 value = FHE.fromExternal(a, inputProof);
         euint256[] memory set = new euint256[](3);

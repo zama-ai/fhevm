@@ -1,4 +1,4 @@
-import { assert } from 'chai';
+import { assert, expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import type { FHEVMManualTestSuite } from '../../types/contracts/operations/FHEVMManualTestSuite';
@@ -1441,5 +1441,238 @@ describe('FHEVM manual operations', function () {
     const handle = await this.contract.resEbool();
     const res = await this.instance.publicDecrypt([handle]);
     assert.equal(res.clearValues[handle], false);
+  });
+
+  // euint8: 200 * 200 / 200 = 200 (intermediate 40000 overflows uint8, widening required)
+  it('test operator "mulDiv" euint8 enc*enc: (200 * 200) / 200 = 200', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add8(200n);
+    input.add8(200n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_mulDiv_euint8_enc_enc(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      200n,
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint8();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 200n);
+  });
+
+  it('test operator "mulDiv" euint8 enc*scalar: (50 * 3) / 5 = 30', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add8(50n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_mulDiv_euint8_enc_scalar(
+      encryptedAmount.handles[0],
+      3n,
+      5n,
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint8();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 30n);
+  });
+
+  // euint16: 60000 * 60000 / 60000 = 60000 (intermediate overflows uint16)
+  it('test operator "mulDiv" euint16 enc*enc: (60000 * 60000) / 60000 = 60000', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add16(60000n);
+    input.add16(60000n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_mulDiv_euint16_enc_enc(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      60000n,
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint16();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 60000n);
+  });
+
+  it('test operator "mulDiv" euint16 enc*scalar: (1000 * 3) / 5 = 600', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add16(1000n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_mulDiv_euint16_enc_scalar(
+      encryptedAmount.handles[0],
+      3n,
+      5n,
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint16();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 600n);
+  });
+
+  it('test operator "mulDiv" euint32 enc*enc: (300000 * 300000) / 300000 = 300000', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add32(300000n);
+    input.add32(300000n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_mulDiv_euint32_enc_enc(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      300000n,
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint32();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 300000n);
+  });
+
+  it('test operator "mulDiv" euint32 enc*scalar: (1000000 * 3) / 5 = 600000', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add32(1000000n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_mulDiv_euint32_enc_scalar(
+      encryptedAmount.handles[0],
+      3n,
+      5n,
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint32();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 600000n);
+  });
+
+  // euint64: 10^10 * 10^10 / 10^10 = 10^10 (intermediate 10^20 overflows uint64)
+  it('test operator "mulDiv" euint64 enc*enc: (10^10 * 10^10) / 10^10 = 10^10', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add64(10000000000n);
+    input.add64(10000000000n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_mulDiv_euint64_enc_enc(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      10000000000n,
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint64();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 10000000000n);
+  });
+
+  it('test operator "mulDiv" euint64 enc*scalar: (10^9 * 3) / 5 = 6*10^8', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add64(1000000000n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_mulDiv_euint64_enc_scalar(
+      encryptedAmount.handles[0],
+      3n,
+      5n,
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint64();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 600000000n);
+  });
+
+  // Edge cases
+  it('test operator "mulDiv" - division by zero reverts', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add8(100n);
+    input.add8(100n);
+    const encryptedAmount = await input.encrypt();
+    // divisor = 0 -> FHEVMExecutor reverts with DivisionByZero()
+    const promise = this.contract.test_mulDiv_euint8_enc_enc(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      0n,
+      encryptedAmount.inputProof,
+    );
+    await expect(promise).to.be.reverted;
+  });
+
+  it('test operator "mulDiv" euint8 enc*enc: (0 * 100) / 50 = 0 (zero lhs)', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add8(0n);
+    input.add8(100n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_mulDiv_euint8_enc_enc(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      50n,
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint8();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 0n);
+  });
+
+  it('test operator "mulDiv" euint8 enc*enc: (100 * 0) / 50 = 0 (zero rhs encrypted)', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add8(100n);
+    input.add8(0n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_mulDiv_euint8_enc_enc(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      50n,
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint8();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 0n);
+  });
+
+  it('test operator "mulDiv" euint8 enc*scalar: (100 * 0) / 50 = 0 (zero rhs scalar)', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add8(100n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_mulDiv_euint8_enc_scalar(
+      encryptedAmount.handles[0],
+      0n, // scalar b = 0
+      50n,
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint8();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 0n);
+  });
+
+  it('test operator "mulDiv" euint8 enc*scalar: (7 * 3) / 4 = 5 (truncating division)', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add8(7n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_mulDiv_euint8_enc_scalar(
+      encryptedAmount.handles[0],
+      3n,
+      4n, // 21 / 4 = 5 (truncated, not 5.25)
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint8();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 5n);
+  });
+
+  it('test operator "mulDiv" euint8 enc*scalar: (1 * 1) / 2 = 0 (truncation to zero)', async function () {
+    const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+    input.add8(1n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract.test_mulDiv_euint8_enc_scalar(
+      encryptedAmount.handles[0],
+      1n,
+      2n, // 1 / 2 = 0 (integer truncation)
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract.resEuint8();
+    const res = await this.instance.publicDecrypt([handle]);
+    assert.equal(res.clearValues[handle], 0n);
   });
 });
