@@ -1,4 +1,19 @@
 queue_rules:
+  # Docs-only PRs (every changed file lives under docs/) skip the e2e gate.
+  # Mergify evaluates queue rules in order, so this must come before `main`.
+  # Aggressive batching — no e2e to amortize, so don't make docs PRs wait.
+  - name: docs-only
+    batch_size: 1
+    batch_max_wait_time: 1m
+    checks_timeout: 12h
+    merge_method: squash
+    update_method: rebase
+    merge_conditions: []
+    queue_conditions:
+      - base = main
+      - label!=do-not-merge
+      - -files~=^(?!docs/)
+
   - name: main
     batch_size: 3
     batch_max_wait_time: 1h
