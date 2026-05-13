@@ -99,7 +99,13 @@ pub async fn async_main(
         Some(&cancel_token),
     )
     .await?;
-    drift_revert::init(drift_revert_pool, cancel_token.clone(), None).await?;
+    drift_revert::init(
+        drift_revert_pool,
+        cancel_token.clone(),
+        None,
+        args.drift_revert_watcher_timeouts,
+    )
+    .await?;
 
     if args.run_bg_worker {
         let gpu_enabled = fhevm_engine_common::utils::log_backend();

@@ -766,9 +766,13 @@ async fn signal_watcher_reexecs_on_pending_signal() {
         .await
         .expect("create signal");
 
-    drift_revert::run_signal_watcher(&pool, cancel, &mock)
-        .await
-        .expect("run_signal_watcher");
+    drift_revert::run_signal_watcher(
+        &pool,
+        cancel,
+        &mock,
+        drift_revert::WatcherTimeouts::default(),
+    )
+    .await;
 
     assert!(mock.was_called(), "re_exec should have been called");
 }
@@ -783,9 +787,13 @@ async fn signal_watcher_exits_cleanly_on_cancel() {
 
     cancel.cancel();
 
-    drift_revert::run_signal_watcher(&pool, cancel, &mock)
-        .await
-        .expect("run_signal_watcher");
+    drift_revert::run_signal_watcher(
+        &pool,
+        cancel,
+        &mock,
+        drift_revert::WatcherTimeouts::default(),
+    )
+    .await;
 
     assert!(!mock.was_called(), "re_exec should NOT have been called");
 }
@@ -985,9 +993,15 @@ async fn init_handles_pending_signal_and_spawns_watcher() {
     let mock = MockReExec::new();
 
     // init as runner: handles the pending signal (revert + mark done).
-    drift_revert::init_with_reexec(pool.clone(), cancel.clone(), Some(cfg), mock)
-        .await
-        .expect("init");
+    drift_revert::init_with_reexec(
+        pool.clone(),
+        cancel.clone(),
+        Some(cfg),
+        mock,
+        drift_revert::WatcherTimeouts::default(),
+    )
+    .await
+    .expect("init");
 
     let signal = drift_revert::latest_signal(&pool).await.unwrap().unwrap();
     assert_eq!(
