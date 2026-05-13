@@ -30,6 +30,7 @@ jobs:
 
   check-docs:
     name: check-docs/check-docs
+    needs: [check-changes]
     if: needs.check-changes.outputs.changes-docs == 'true'
     runs-on: ubuntu-latest
     container:
