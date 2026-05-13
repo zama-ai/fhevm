@@ -119,6 +119,7 @@ export const COMPONENTS = [
   "gateway-mocked-payment",
   "gateway-sc",
   "host-sc",
+  "listener-core",
   "coprocessor",
   "kms-connector",
   "relayer",
@@ -155,6 +156,7 @@ export const LOG_TARGETS: Record<string, string> = {
 export const GROUP_BUILD_COMPONENTS: Record<OverrideGroup, string[]> = {
   "coprocessor": ["coprocessor"],
   "kms-connector": ["kms-connector"],
+  "listener-core": ["listener-core"],
   "relayer": ["relayer"],
   "gateway-contracts": ["gateway-mocked-payment", "gateway-sc"],
   "host-contracts": ["host-sc"],
@@ -179,6 +181,7 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
     "kms-connector-kms-worker",
     "kms-connector-tx-sender",
   ],
+  "listener-core": ["listener-publisher-for-anvil"],
   "relayer": [
     "relayer-db-migration",
     "relayer",
@@ -200,6 +203,7 @@ const SERVICE_OVERRIDE_GROUPS = ["coprocessor", "kms-connector", "test-suite"] a
 const GROUP_PREFIX: Record<OverrideGroup, string> = {
   "coprocessor": "coprocessor-",
   "kms-connector": "kms-connector-",
+  "listener-core": "listener-",
   "relayer": "relayer-",
   "gateway-contracts": "gateway-",
   "host-contracts": "host-",

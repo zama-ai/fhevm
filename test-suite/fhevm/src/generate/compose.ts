@@ -125,6 +125,9 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
       args: { RUST_IMAGE_VERSION: "1.91.0" },
     }),
   },
+  "listener-core": {
+    "listener-publisher-for-anvil": buildSpec("../../../listener", "Dockerfile"),
+  },
   relayer: {
     "relayer-db-migration": buildSpec("../../..", "relayer/docker/relayer-migrate/Dockerfile"),
     relayer: buildSpec("../../..", "relayer/docker/relayer/Dockerfile"),

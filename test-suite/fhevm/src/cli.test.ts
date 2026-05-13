@@ -22,7 +22,7 @@ import {
 } from "./layout";
 import { testDefaultScenario } from "./test-fixtures";
 import { withTempStateDir } from "./test-state";
-import type { State } from "./types";
+import { OVERRIDE_GROUPS, type State } from "./types";
 
 const CLI_DIR = path.resolve(import.meta.dir, "..");
 
@@ -223,7 +223,7 @@ describe("cli", () => {
     const result = await execCli(["up", "--override", "bogus"]);
     expect(result.code).toBe(1);
     expect(result.stderr).toContain(
-      "Valid: all, coprocessor, kms-connector, relayer, gateway-contracts, host-contracts, test-suite",
+      `Valid: all, ${OVERRIDE_GROUPS.join(", ")}`,
     );
   });
 

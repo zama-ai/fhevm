@@ -12,7 +12,6 @@ on:
     inputs:
       runbook:
         description: "TypeScript rollout runbook path"
-        default: "test-suite/fhevm/rollouts/v0.12-to-v0.13/run.ts"
         type: string
       test_profile:
         description: "Rollout test depth"
@@ -26,7 +25,7 @@ permissions: {}
 
 concurrency:
   # prettier-ignore
-  group: test-suite-stateful-rollout-${{ github.ref }}-${{ github.event.inputs.runbook || 'v0.12-to-v0.13' }}-${{ github.event.inputs.test_profile || 'rollout-standard' }}
+  group: test-suite-stateful-rollout-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -41,7 +40,6 @@ jobs:
     runs-on: large_ubuntu_32
     env:
       GH_TOKEN: ${{ github.token }}
-      ROLLOUT_RUNBOOK: ${{ github.event.inputs.runbook || 'test-suite/fhevm/rollouts/v0.12-to-v0.13/run.ts' }}
       ROLLOUT_TEST_PROFILE: ${{ github.event.inputs.test_profile || 'rollout-standard' }}
     steps:
       - name: Checkout code
@@ -59,19 +57,64 @@ jobs:
       - name: Install foundry
         uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
 
+      - name: Resolve rollout runbook
+        env:
+          INPUT_RUNBOOK: ${{ github.event.inputs.runbook }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_RUNBOOK" ]; then
+            runbook="$INPUT_RUNBOOK"
+            if [ ! -f "$runbook" ]; then
+              runbook="${GITHUB_WORKSPACE}/${INPUT_RUNBOOK}"
+            fi
+            if [ ! -f "$runbook" ]; then
+              echo "Runbook not found: ${INPUT_RUNBOOK}" >&2
+              exit 1
+            fi
+            echo "ROLLOUT_RUNBOOK=$runbook" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          if [ -z "$BASE_REF" ]; then
+            echo "workflow_dispatch requires the runbook input" >&2
+            exit 1
+          fi
+
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          git diff --name-only "origin/${BASE_REF}...HEAD" |
+            awk -F/ '$1 == "test-suite" && $2 == "fhevm" && $3 == "rollouts" && $4 != "" && $5 != "" { print $1 "/" $2 "/" $3 "/" $4 "/run.ts" }' |
+            sort -u > /tmp/rollout-runbooks.txt
+
+          count="$(grep -c . /tmp/rollout-runbooks.txt || true)"
+          if [ "$count" -ne 1 ]; then
+            echo "Could not infer exactly one rollout runbook from PR changes." >&2
+            echo "Candidates:" >&2
+            sed 's/^/  /' /tmp/rollout-runbooks.txt >&2
+            echo "Run this workflow manually with the runbook input." >&2
+            exit 1
+          fi
+
+          runbook="$(cat /tmp/rollout-runbooks.txt)"
+          if [ ! -f "$runbook" ]; then
+            echo "Inferred rollout runbook does not exist: ${runbook}" >&2
+            exit 1
+          fi
+          echo "ROLLOUT_RUNBOOK=$runbook" >> "$GITHUB_ENV"
+
       - name: Login to GitHub Container Registry
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_READ_TOKEN || github.token }} # zizmor: ignore[secrets-outside-env] Same-repository/manual rollout needs this read token for private images.
+          password: ${{ secrets.GHCR_READ_TOKEN || github.token }}
 
       - name: Login to Chainguard Registry
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           registry: cgr.dev
-          username: ${{ secrets.CGR_USERNAME }} # zizmor: ignore[secrets-outside-env] Same-repository/manual rollout needs Chainguard credentials for base images.
-          password: ${{ secrets.CGR_PASSWORD }} # zizmor: ignore[secrets-outside-env] Same-repository/manual rollout needs Chainguard credentials for base images.
+          username: ${{ secrets.CGR_USERNAME }}
+          password: ${{ secrets.CGR_PASSWORD }}
 
       - name: Install CLI deps
         working-directory: test-suite/fhevm

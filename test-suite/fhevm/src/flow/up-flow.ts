@@ -1217,6 +1217,24 @@ export const assertVersionLockChanges = (label: string, allowedVersionKeys: read
   }
 };
 
+const isOverrideGroup = (group: string): group is OverrideGroup =>
+  OVERRIDE_GROUPS.includes(group as OverrideGroup);
+
+export const runtimeUpgradeOverrideGroups = (group: UpgradeGroup): OverrideGroup[] => {
+  if (group === "kms") {
+    return ["kms-connector"];
+  }
+  if (group === "kms-core") {
+    return [];
+  }
+  return isOverrideGroup(group) ? [group] : [];
+};
+
+export const removeRuntimeUpgradeOverrides = (overrides: LocalOverride[], group: UpgradeGroup) => {
+  const upgraded = new Set(runtimeUpgradeOverrideGroups(group));
+  return overrides.filter((override) => !upgraded.has(override.group));
+};
+
 const applyRuntimeUpgradeLock = async (
   state: State,
   group: UpgradeGroup,
@@ -1235,6 +1253,7 @@ const applyRuntimeUpgradeLock = async (
     target: next.target,
     lockPath,
     requiresGitHub: targetNeedsGitHub({ target: next.target, lockFile }),
+    overrides: removeRuntimeUpgradeOverrides(state.overrides, group),
     versions: next,
     updatedAt: new Date().toISOString(),
   } satisfies State;
