@@ -115,8 +115,8 @@ anvil_setup_dirs() {
     TEST_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
     JS_SDK_DIR="$(cd "$TEST_DIR/.." && pwd)"
     CONTRACTS_DIR="$JS_SDK_DIR/contracts"
-    DEPLOY_FHEVM_SCRIPT="$CONTRACTS_DIR/script/fhevm-deploy.sh"
-    DEPLOY_FHE_TEST_SCRIPT="$CONTRACTS_DIR/script/fhetest-deploy.sh"
+    DEPLOY_FHEVM_SCRIPT="$CONTRACTS_DIR/scripts/fhevm-deploy.sh"
+    DEPLOY_FHE_TEST_SCRIPT="$CONTRACTS_DIR/scripts/fhetest-deploy.sh"
 }
 
 anvil_setup_vars() {

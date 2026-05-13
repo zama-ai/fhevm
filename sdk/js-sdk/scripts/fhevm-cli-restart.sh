@@ -37,4 +37,4 @@ cd ${CONTRACTS_DIR}
 
 forge clean
 
-./script/fhetest-deploy.sh --chain localhostFhevm
+./scripts/fhetest-deploy.sh --chain localhostFhevm

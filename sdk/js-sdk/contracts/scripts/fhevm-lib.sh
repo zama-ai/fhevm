@@ -211,7 +211,7 @@ fhevm_assert_foundry_profile() {
 
 # Resolves the FHEVMHostAddresses.sol path for a given Foundry profile.
 # Path is computed relative to this library's location (assumes layout under
-# sdk/js-sdk/contracts/script/).
+# sdk/js-sdk/contracts/scripts/).
 #
 # Usage: fhevm_host_addresses_file <profile>
 #   <profile>: v12 | v13 | latest

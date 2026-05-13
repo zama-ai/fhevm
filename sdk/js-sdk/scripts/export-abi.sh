@@ -27,7 +27,7 @@ fi
 ON_CHAIN_CODE=$(cast code "${FHETEST_ADDRESS}" --rpc-url "${RPC_URL}")
 if [ "${ON_CHAIN_CODE}" = "0x" ] || [ -z "${ON_CHAIN_CODE}" ]; then
   echo "Error: No contract deployed at ${FHETEST_ADDRESS}"
-  echo "Run: forge script script/DeployFHETest.s.sol --rpc-url ${RPC_URL} --broadcast"
+  echo "Run: forge script scripts/DeployFHETest.s.sol --rpc-url ${RPC_URL} --broadcast"
   exit 1
 fi
 
@@ -40,7 +40,7 @@ LOCAL_DEPLOYED_CODE=$(node -e "
 if [ "${ON_CHAIN_CODE}" != "${LOCAL_DEPLOYED_CODE}" ]; then
   echo "Error: On-chain bytecode at ${FHETEST_ADDRESS} does not match the locally compiled FHETest."
   echo "The contract needs to be redeployed."
-  echo "Run: forge script script/DeployFHETest.s.sol --rpc-url ${RPC_URL} --broadcast"
+  echo "Run: forge script scripts/DeployFHETest.s.sol --rpc-url ${RPC_URL} --broadcast"
   exit 1
 fi
 

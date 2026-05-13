@@ -235,7 +235,7 @@ if [[ "$dry_run" == "true" ]]; then
     echo
     echo "🧪 Dry run: printing precomputed FHEVM host addresses (profile=$profile)"
     env "${FORGE_ENV[@]}" forge script \
-        script/${host_contracts_version}/DeployCleartextFHEVMHost.s.sol:PrintFHEVMHostAddressesDotSol \
+        scripts/${host_contracts_version}/DeployCleartextFHEVMHost.s.sol:PrintFHEVMHostAddressesDotSol \
         --non-interactive
     exit 0
 fi
@@ -246,7 +246,7 @@ fi
 #
 # ==============================================================================
 
-env "${FORGE_ENV[@]}" forge script script/${host_contracts_version}/DeployCleartextFHEVMHost.s.sol:WriteFHEVMHostAddressesDotSol
+env "${FORGE_ENV[@]}" forge script scripts/${host_contracts_version}/DeployCleartextFHEVMHost.s.sol:WriteFHEVMHostAddressesDotSol
 
 # ==============================================================================
 #
@@ -263,7 +263,7 @@ forge_json() {
     '
 }
 
-signers_json="$(forge_json script/${host_contracts_version}/DeployCleartextFHEVMHost.s.sol:PrintFhevmSigners)"
+signers_json="$(forge_json scripts/${host_contracts_version}/DeployCleartextFHEVMHost.s.sol:PrintFhevmSigners)"
 
 deployer_address="$(jq -r '.deployer.address' <<<"$signers_json")"
 empty_uups_deployer_address="$(jq -r '.emptyUupsDeployer.address' <<<"$signers_json")"
@@ -319,7 +319,7 @@ echo
 echo "🚚  Deploying Cleartext FHEVM Host Constracts ..."
 
 env "${FORGE_ENV[@]}" forge script \
-    script/${host_contracts_version}/DeployCleartextFHEVMHost.s.sol:Deploy \
+    scripts/${host_contracts_version}/DeployCleartextFHEVMHost.s.sol:Deploy \
     --non-interactive \
     --rpc-url "${rpc_url}" \
     --broadcast
@@ -334,7 +334,7 @@ echo
 echo "🥬  Verifying Cleartext FHEVM Host Constracts ..."
 
 env "${FORGE_ENV[@]}" forge script \
-    script/${host_contracts_version}/DeployCleartextFHEVMHost.s.sol:Verify \
+    scripts/${host_contracts_version}/DeployCleartextFHEVMHost.s.sol:Verify \
     --non-interactive \
     --rpc-url "${rpc_url}"
 

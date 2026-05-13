@@ -34,7 +34,7 @@ write_dummy_addresses_file() {
 pragma solidity ^0.8.24;
 
 // DUMMY placeholder addresses. Replace by running:
-//   forge script script/ComputeAddresses.s.sol
+//   forge script scripts/ComputeAddresses.s.sol
 
 address constant aclAdd = address(0);
 address constant fhevmExecutorAdd = address(0);
