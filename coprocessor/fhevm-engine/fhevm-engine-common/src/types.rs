@@ -905,29 +905,19 @@ impl SupportedFheOperations {
         )
     }
 
-    /// Count of trailing operands that are always plaintext (ignoring `is_scalar`).
-    pub fn num_trailing_always_scalar_operands(&self, n_deps: usize) -> usize {
-        match self {
-            SupportedFheOperations::FheMulDiv => 1,
-            SupportedFheOperations::FheRand
-            | SupportedFheOperations::FheRandBounded
-            | SupportedFheOperations::FheTrivialEncrypt => n_deps,
-            _ => 0,
-        }
-    }
-
     /// Returns `true` if the operand at `idx` is a plaintext value, `false` if it is
     /// an encrypted ciphertext handle.
-    ///
-    /// Plaintext operands always come at the end of the operand list. Two things
-    /// can make an operand plaintext:
-    /// 1. The operation has a fixed plaintext tail. For example, `FheMulDiv` has
-    ///    operands `[lhs, rhs, divisor]` and `divisor` is always plaintext.
-    /// 2. The work item is marked scalar (`is_work_scalar == true`), which makes
-    ///    the rhs plaintext too — e.g. `fheAdd(encrypted, plaintext)`.
-    pub fn is_operand_scalar(&self, is_work_scalar: bool, idx: usize, n_deps: usize) -> bool {
-        let trailing = self.num_trailing_always_scalar_operands(n_deps) + is_work_scalar as usize;
-        idx + trailing >= n_deps
+    pub fn is_operand_scalar(&self, is_work_scalar: bool, idx: usize, _n_deps: usize) -> bool {
+        match self {
+            // All operands are plaintext.
+            SupportedFheOperations::FheRand
+            | SupportedFheOperations::FheRandBounded
+            | SupportedFheOperations::FheTrivialEncrypt => true,
+            // [lhs, rhs, divisor]: divisor is always plaintext; rhs is plaintext on the scalar path.
+            SupportedFheOperations::FheMulDiv => idx == 2 || (idx == 1 && is_work_scalar),
+            // Binary ops: rhs is plaintext on the scalar path.
+            _ => idx == 1 && is_work_scalar,
+        }
     }
 
     pub fn supports_bool_inputs(&self) -> bool {
@@ -1131,8 +1121,6 @@ mod tests {
     fn is_operand_scalar_fhe_mul_div() {
         // [lhs(enc), rhs(enc or scalar), divisor(scalar)].
         let op = SupportedFheOperations::FheMulDiv;
-        // Divisor (idx=2) is always a plaintext scalar, regardless of work_scalar.
-        assert_eq!(op.num_trailing_always_scalar_operands(3), 1);
         // Encrypted rhs path: only divisor is scalar.
         assert!(!op.is_operand_scalar(false, 0, 3));
         assert!(!op.is_operand_scalar(false, 1, 3));
