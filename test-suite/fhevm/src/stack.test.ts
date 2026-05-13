@@ -114,6 +114,20 @@ describe("stack", () => {
     ]);
   });
 
+  test("upgrade plan supports listener-core version-lock upgrades", () => {
+    const plan = resolveUpgradePlan({ overrides: [], scenario: defaultScenario }, "listener-core", { lockFile: true });
+    expect(plan.versionKeys).toEqual(["LISTENER_CORE_VERSION"]);
+    expect(plan.migrationServices).toEqual([]);
+    expect(plan.runtimeServices).toEqual(["listener-redis", "listener-publisher-for-anvil"]);
+  });
+
+  test("upgrade plan supports listener-core local overrides", () => {
+    const plan = resolveUpgradePlan({ overrides: [{ group: "listener-core" }], scenario: defaultScenario }, "listener-core");
+    expect(plan.versionKeys).toEqual(["LISTENER_CORE_VERSION"]);
+    expect(plan.migrationServices).toEqual([]);
+    expect(plan.runtimeServices).toEqual(["listener-publisher-for-anvil"]);
+  });
+
   test("runtime upgrade locks drop only overrides owned by the upgraded group", () => {
     expect(
       removeRuntimeUpgradeOverrides(
@@ -127,6 +141,12 @@ describe("stack", () => {
         "kms",
       ),
     ).toEqual([{ group: "listener-core" }, { group: "test-suite" }]);
+    expect(
+      removeRuntimeUpgradeOverrides(
+        [{ group: "listener-core" }, { group: "test-suite" }],
+        "listener-core",
+      ),
+    ).toEqual([{ group: "test-suite" }]);
   });
 
   test("version lock checks reject unrelated version keys", () => {
@@ -179,7 +199,6 @@ describe("stack", () => {
       { lockFile: true },
     );
     expect(plan.migrationServices).toContain("coprocessor-db-migration");
-    expect(plan.versionKeys).toContain("LISTENER_CORE_VERSION");
     expect(plan.runtimeServices).toContain("coprocessor-host-listener");
     expect(plan.runtimeServices).toContain("coprocessor1-host-listener");
   });
