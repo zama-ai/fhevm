@@ -90,16 +90,20 @@ When processing ciphertexts as input, it’s essential to validate that the send
 
 #### Example scenario: Confidential ERC20 attack
 
-Consider an **Confidential ERC20 token**. An attacker controlling two accounts, **Account A** and **Account B**, with 100 tokens in Account A, could exploit the system as follows:
+Suppose a confidential ERC20 token has a `transfer(address to, euint64 encryptedAmount)` function that does **not** call `FHE.isSenderAllowed(encryptedAmount)`. The contract trusts whatever encrypted amount the caller passes in.
 
-1. The attacker attempts to send the target user's encrypted balance from **Account A** to **Account B**.
-2. Observing the transaction outcome, the attacker gains information:
-   - **If successful**: The target's balance is equal to or less than 100 tokens.
-   - **If failed**: The target's balance exceeds 100 tokens.
+An attacker controls two accounts they own — **Account A** (funded with 100 tokens) and **Account B** — and wants to learn the balance of a victim **Account V** without ever decrypting it.
 
-This type of attack allows the attacker to infer private balances without explicit access.
+The attack:
 
-To prevent this, always use the `FHE.isSenderAllowed()` function to verify that the sender has legitimate access to the encrypted amount being transferred.
+1. The victim's encrypted balance handle is publicly readable on-chain (it lives in the contract's `balances[V]` storage). The attacker reads that handle.
+2. The attacker calls `transfer(B, balances[V])` from Account A — passing the **victim's** balance handle as the `encryptedAmount`. Without `isSenderAllowed`, the contract has no way to know the attacker did not produce that handle.
+3. Inside `transfer`, the contract executes `canTransfer = FHE.le(encryptedAmount, balances[A])` and conditionally moves the amount via `FHE.select`. Whether the transfer ends up actually moving tokens depends on whether `balance[V] <= 100`.
+4. The attacker reads `balances[B]` after the transaction. The new handle either reflects an increase (transfer happened ⇒ `balance[V] <= 100`) or stays the same (transfer skipped ⇒ `balance[V] > 100`).
+
+Each successful or failed transfer leaks one bit about the victim's balance. By repeating the attack with progressively different sender balances, the attacker can binary-search the victim's exact balance — all without ever obtaining a decryption.
+
+The fix is one line: require `FHE.isSenderAllowed(encryptedAmount)` so the contract only accepts handles the sender is genuinely authorized to use.
 
 ---
 
@@ -119,7 +123,7 @@ By enforcing this check, you can safeguard against inference attacks and ensure 
 
 ## ACL for user decryption
 
-If a ciphertext can be decrypt by a user, explicit access must be granted to them. Additionally, the user decryption mechanism requires the signature of a public key associated with the contract address. Therefore, a value that needs to be decrypted must be explicitly authorized for both the user and the contract.
+If a ciphertext can be decrypted by a user, explicit access must be granted to them. Additionally, the user decryption mechanism requires the signature of a public key associated with the contract address. Therefore, a value that needs to be decrypted must be explicitly authorized for both the user and the contract.
 
 Due to the user decryption mechanism, a user signs a public key associated with a specific contract; therefore, the ciphertext also needs to be allowed for the contract.
 
