@@ -14,7 +14,7 @@ import {
 import type { LocalOverride, OverrideGroup, ResolvedCoprocessorScenarioInstance, State, StepName } from "../types";
 import { extraHostChains, hostChainsForState } from "./topology";
 
-const UPGRADEABLE_GROUPS = ["coprocessor", "kms-connector", "kms-core", "kms", "listener-core", "relayer", "test-suite"] as const;
+const UPGRADEABLE_GROUPS = ["coprocessor", "kms-connector", "kms-core", "kms", "relayer", "test-suite"] as const;
 export type UpgradeGroup = (typeof UPGRADEABLE_GROUPS)[number];
 const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
   "coprocessor": [
@@ -25,6 +25,7 @@ const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
     "COPROCESSOR_TFHE_WORKER_VERSION",
     "COPROCESSOR_ZKPROOF_WORKER_VERSION",
     "COPROCESSOR_SNS_WORKER_VERSION",
+    "LISTENER_CORE_VERSION",
   ],
   "kms-connector": [
     "CONNECTOR_DB_MIGRATION_VERSION",
@@ -40,11 +41,9 @@ const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
     "CONNECTOR_KMS_WORKER_VERSION",
     "CONNECTOR_TX_SENDER_VERSION",
   ],
-  "listener-core": ["LISTENER_CORE_VERSION"],
   "relayer": ["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"],
   "test-suite": ["TEST_SUITE_VERSION"],
 };
-const LISTENER_CORE_SERVICES = ["listener-redis", "listener-publisher-for-anvil"];
 type UpgradeComponentPlan = {
   component: string;
   services: string[];
@@ -167,11 +166,6 @@ export const resolveUpgradePlan = (
       throw new Error("upgrade kms-core requires --lock-file");
     }
     return upgradePlan(group, [splitServices("core", ["kms-core"])], ["base"]);
-  }
-  if (group === "listener-core") {
-    if (lockFileMode) {
-      return upgradePlan(group, [splitServices("listener-core", LISTENER_CORE_SERVICES)], ["listener-core"]);
-    }
   }
   const groupOverrides = state.overrides.filter((item) => item.group === group);
   if (!lockFileMode && group === "coprocessor" && !hasLocalCoprocessorInstance(state) && !groupOverrides.length) {

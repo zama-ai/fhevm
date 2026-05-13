@@ -231,6 +231,31 @@ const postgresExec = async (dbName: string, args: string[]) => {
 
 const sqlLiteral = (value: string) => `'${value.replaceAll("'", "''")}'`;
 
+const ensureListenerDatabase = async () => {
+  const exists = await postgresExec("", ["-tAc", "SELECT 1 FROM pg_database WHERE datname = 'listener'"]);
+  if (exists.code !== 0) {
+    throw new PreflightError(exists.stderr.trim() || exists.stdout.trim() || "failed to check listener database");
+  }
+  if (exists.stdout.trim() === "1") {
+    return;
+  }
+  const created = await postgresExec("", ["-c", "CREATE DATABASE listener;"]);
+  if (created.code !== 0) {
+    throw new PreflightError(created.stderr.trim() || created.stdout.trim() || "failed to create listener database");
+  }
+};
+
+const ensureListenerCoreRuntime = async (state: State) => {
+  if (!supportsHostListenerConsumer(state)) {
+    return;
+  }
+  await ensureListenerDatabase();
+  await stepComposeUp("listener-core", state, ["listener-redis"]);
+  await waitForContainer("listener-redis", "running");
+  await stepComposeUp("listener-core", state, ["listener-publisher-for-anvil"]);
+  await waitForContainer("listener-publisher-for-anvil", "running");
+};
+
 /** Logs elapsed time for one stack subtask. */
 const timed = async <T>(label: string, task: () => Promise<T>) => {
   const started = Date.now();
@@ -620,18 +645,7 @@ export const runStep = async (state: State, step: StepName) => {
       break;
     }
     case "listener-core":
-      if (!supportsHostListenerConsumer(state)) {
-        break;
-      }
-      await postgresExec("", ["-c", "CREATE DATABASE listener;"]);
-      await stepComposeUp("listener-core", state,
-        ["listener-redis"]
-      );
-      await waitForContainer("listener-redis", "running");
-      await stepComposeUp("listener-core", state,
-        ["listener-publisher-for-anvil"]
-      );
-      await waitForContainer("listener-publisher-for-anvil", "running");
+      await ensureListenerCoreRuntime(state);
       break;
     case "coprocessor": {
       const skipMigration = await coprocessorDbsSeeded(state);
@@ -1365,11 +1379,6 @@ const waitForUpgrade = async (state: State, group: UpgradeGroup, runtimeServices
     await waitForContainer(KMS_CORE_CONTAINER, "running");
     return;
   }
-  if (group === "listener-core") {
-    await waitForContainer("listener-redis", "running");
-    await waitForContainer("listener-publisher-for-anvil", "running");
-    return;
-  }
   if (group === "relayer") {
     await waitForRelayer();
     return;
@@ -1399,8 +1408,8 @@ export const upgradeRuntimeGroup = async (groupValue: string | undefined, option
   console.log(`[upgrade] ${plan.group}`);
   await saveState(nextState);
   await generateRuntime(nextState, stackSpecForState(nextState));
-  if (plan.group === "listener-core") {
-    await postgresExec("", ["-c", "CREATE DATABASE listener;"]);
+  if (plan.group === "coprocessor") {
+    await ensureListenerCoreRuntime(nextState);
   }
   for (const component of plan.components) {
     await maybeBuild(component.component, nextState, { force: true });

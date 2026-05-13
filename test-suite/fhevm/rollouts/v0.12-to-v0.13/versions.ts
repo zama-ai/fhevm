@@ -60,7 +60,6 @@ const kmsKeys = [
   "CONNECTOR_KMS_WORKER_VERSION",
   "CONNECTOR_TX_SENDER_VERSION",
 ] as const satisfies readonly EnvKey[];
-const listenerKeys = ["LISTENER_CORE_VERSION"] as const satisfies readonly EnvKey[];
 const coprocessorKeys = [
   "COPROCESSOR_DB_MIGRATION_VERSION",
   "COPROCESSOR_HOST_LISTENER_VERSION",
@@ -69,6 +68,7 @@ const coprocessorKeys = [
   "COPROCESSOR_TFHE_WORKER_VERSION",
   "COPROCESSOR_ZKPROOF_WORKER_VERSION",
   "COPROCESSOR_SNS_WORKER_VERSION",
+  "LISTENER_CORE_VERSION",
 ] as const satisfies readonly EnvKey[];
 
 const withTargetVersions = (...keys: EnvKey[]): Env => ({
@@ -81,8 +81,7 @@ export const phaseVersions = {
   contracts: withTargetVersions(...contractKeys),
   relayer: withTargetVersions(...contractKeys, ...relayerKeys),
   kms: withTargetVersions(...contractKeys, ...relayerKeys, ...kmsKeys),
-  listenerCore: withTargetVersions(...contractKeys, ...relayerKeys, ...kmsKeys, ...listenerKeys),
-  coprocessor: to,
+  coprocessor: withTargetVersions(...contractKeys, ...relayerKeys, ...kmsKeys, ...coprocessorKeys),
 };
 
 export const versionSources = [`rollout=v0.12-to-v0.13`, `target=${targetTag}`, `kms-core=v0.13.20-0`];

@@ -136,8 +136,7 @@ export default async function run(ctx: RolloutRunContext) {
   const contractsLock = await writePhaseVersionLock(ctx, "01-contracts", phaseVersions.contracts);
   const relayerLock = await writePhaseVersionLock(ctx, "02-relayer", phaseVersions.relayer);
   const kmsLock = await writePhaseVersionLock(ctx, "03-kms", phaseVersions.kms);
-  const listenerCoreLock = await writePhaseVersionLock(ctx, "04-listener-core", phaseVersions.listenerCore);
-  const coprocessorLock = await writePhaseVersionLock(ctx, "05-coprocessor", phaseVersions.coprocessor);
+  const coprocessorLock = await writePhaseVersionLock(ctx, "04-coprocessor", phaseVersions.coprocessor);
 
   logPhase("00 baseline: boot v0.12.4 with the target test-suite harness");
   await ctx.up({ lockFile: baselineLock, scenario, overrides: [{ group: "test-suite" }] });
@@ -201,12 +200,7 @@ export default async function run(ctx: RolloutRunContext) {
   await ctx.upgradeRuntimeGroup("kms", { lockFile: kmsLock });
   await testPhase(ctx, "kms", testMode);
 
-  logPhase("04 listener-core: upgrade listener-core before coprocessor");
-  // No test gate here: old coprocessor listeners do not consume listener-core.
-  // The compatibility boundary is the coprocessor upgrade, where consumers
-  // switch to the new listener path.
-  await ctx.upgradeRuntimeGroup("listener-core", { lockFile: listenerCoreLock });
-  logPhase("05 coprocessor: upgrade coprocessor");
+  logPhase("04 coprocessor: upgrade coprocessor and enable listener-core");
   await ctx.upgradeRuntimeGroup("coprocessor", { lockFile: coprocessorLock });
   await testPhase(ctx, "final", testMode);
 }
