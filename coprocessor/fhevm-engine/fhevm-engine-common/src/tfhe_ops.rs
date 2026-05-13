@@ -861,17 +861,17 @@ pub fn check_fhe_operand_types(
                             input_types: vec![],
                         });
                     }
-                    let start = input_handles[2]
-                        .len()
-                        .checked_sub(lhs_width_bytes)
-                        .ok_or_else(|| FhevmError::UnsupportedFheTypes {
+                    let divisor_size = input_handles[2].len();
+                    if divisor_size < lhs_width_bytes {
+                        return Err(FhevmError::UnsupportedFheTypes {
                             fhe_operation: format!(
                                 "{:?}: divisor operand is shorter than operand width",
                                 fhe_op
                             ),
                             input_types: vec![],
-                        })?;
-                    let divisor_low = &input_handles[2][start..];
+                        });
+                    }
+                    let divisor_low = &input_handles[2][divisor_size - lhs_width_bytes..];
                     if divisor_low.iter().all(|b| *b == 0) {
                         return Err(FhevmError::FheOperationScalarDivisionByZero {
                             lhs_handle: format!("0x{}", hex::encode(&input_handles[0])),
