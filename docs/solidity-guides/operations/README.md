@@ -121,7 +121,7 @@ FHE arithmetic operators can overflow. Do not forget to take into account such a
 
 ```solidity
 function mint(externalEuint32 encryptedAmount, bytes calldata inputProof) public {
-  euint32 mintedAmount = FHE.asEuint32(encryptedAmount, inputProof);
+  euint32 mintedAmount = FHE.fromExternal(encryptedAmount, inputProof);
   totalSupply = FHE.add(totalSupply, mintedAmount);
   balances[msg.sender] = FHE.add(balances[msg.sender], mintedAmount);
   FHE.allowThis(balances[msg.sender]);
@@ -133,7 +133,7 @@ function mint(externalEuint32 encryptedAmount, bytes calldata inputProof) public
 
 ```solidity
 function mint(externalEuint32 encryptedAmount, bytes calldata inputProof) public {
-  euint32 mintedAmount = FHE.asEuint32(encryptedAmount, inputProof);
+  euint32 mintedAmount = FHE.fromExternal(encryptedAmount, inputProof);
   euint32 tempTotalSupply = FHE.add(totalSupply, mintedAmount);
   ebool isOverflow = FHE.lt(tempTotalSupply, totalSupply);
   totalSupply = FHE.select(isOverflow, totalSupply, tempTotalSupply);

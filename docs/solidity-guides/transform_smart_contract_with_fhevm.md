@@ -52,7 +52,7 @@ In this example, the vote counts (`yesVotes`, `noVotes`) and individual votes sh
 Replace standard data types and operations with their FHEVM equivalents for the identified sensitive parts. Use encrypted types and FHEVM library functions to perform computations on encrypted data.
 
 ```solidity
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.24;
 
 import "@fhevm/solidity/lib/FHE.sol";
 import {ZamaEthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
@@ -60,20 +60,22 @@ import {ZamaEthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 contract EncryptedSimpleVoting is ZamaEthereumConfig {
     enum VotingStatus {
         Open,
-        DecryptionInProgress,
-        ResultsDecrypted
+        DecryptionRequested,
+        ResultsRevealed
     }
     mapping(address => bool) public hasVoted;
 
     VotingStatus public status;
 
-    uint64 public decryptedYesVotes;
-    uint64 public decryptedNoVotes;
+    uint64 public revealedYesVotes;
+    uint64 public revealedNoVotes;
 
     uint256 public voteDeadline;
 
     euint64 private encryptedYesVotes;
     euint64 private encryptedNoVotes;
+
+    event ResultsDecryptionRequested(euint64 yes, euint64 no);
 
     constructor() {
         encryptedYesVotes = FHE.asEuint64(0);
@@ -92,45 +94,57 @@ contract EncryptedSimpleVoting is ZamaEthereumConfig {
         encryptedNoVotes = FHE.select(isSupport, encryptedNoVotes, FHE.add(encryptedNoVotes, 1));
         FHE.allowThis(encryptedYesVotes);
         FHE.allowThis(encryptedNoVotes);
-        
     }
 
+    /// @notice Marks the vote totals as publicly decryptable. Anyone can then call
+    /// the off-chain `publicDecrypt` (via the Zama SDK) to obtain the cleartexts
+    /// and a decryption proof.
     function requestVoteDecryption() public {
         require(block.timestamp > voteDeadline, "Voting is not finished");
-        bytes32[] memory cts = new bytes32[](2);
-        cts[0] = FHE.toBytes32(encryptedYesVotes);
-        cts[1] = FHE.toBytes32(encryptedNoVotes);
-        uint256 requestId = FHE.requestDecryption(cts, this.callbackDecryptVotes.selector);
-        status = VotingStatus.DecryptionInProgress;
+        require(status == VotingStatus.Open, "Decryption already requested");
+
+        FHE.makePubliclyDecryptable(encryptedYesVotes);
+        FHE.makePubliclyDecryptable(encryptedNoVotes);
+
+        status = VotingStatus.DecryptionRequested;
+
+        emit ResultsDecryptionRequested(encryptedYesVotes, encryptedNoVotes);
     }
 
-    function callbackDecryptVotes(uint256 requestId, bytes memory cleartexts, bytes memory decryptionProof) public {
-        FHE.checkSignatures(requestId, cleartexts, decryptionProof);
+    /// @notice Submits the off-chain cleartexts together with the KMS-signed proof.
+    /// `FHE.checkSignatures` reverts if the proof does not match the handles or values.
+    /// @dev The handle order MUST match the order used to generate the proof off-chain.
+    function revealResults(uint64 yesVotes, uint64 noVotes, bytes memory decryptionProof) public {
+        require(status == VotingStatus.DecryptionRequested, "Decryption was not requested");
 
-        (uint64 yesVotes, uint64 noVotes) = abi.decode(cleartexts, (uint64, uint64));
-        decryptedYesVotes = yesVotes;
-        decryptedNoVotes = noVotes;
-        status = VotingStatus.ResultsDecrypted;
+        bytes32[] memory handles = new bytes32[](2);
+        handles[0] = FHE.toBytes32(encryptedYesVotes);
+        handles[1] = FHE.toBytes32(encryptedNoVotes);
+
+        FHE.checkSignatures(handles, abi.encode(yesVotes, noVotes), decryptionProof);
+
+        revealedYesVotes = yesVotes;
+        revealedNoVotes = noVotes;
+        status = VotingStatus.ResultsRevealed;
     }
 
     function getResults() public view returns (uint64, uint64) {
-        require(status == VotingStatus.ResultsDecrypted, "Results were not decrypted");
-        return (
-            decryptedYesVotes,
-            decryptedNoVotes
-        );
+        require(status == VotingStatus.ResultsRevealed, "Results were not revealed");
+        return (revealedYesVotes, revealedNoVotes);
     }
 }
 ```
 
-Adjust your contract’s code to accept and return encrypted data where necessary. This may involve changing function parameters and return types to work with ciphertexts instead of plaintext values, as shown above.
+Adjust your contract's code to accept and return encrypted data where necessary. This may involve changing function parameters and return types to work with ciphertexts instead of plaintext values, as shown above.
 
-- The `vote` function now has two parameters: `support` and `inputProof`.
-- The `getResults` can only be called after the decryption occurred. Otherwise, the decrypted results are not visible to anyone. 
+- The `vote` function now takes two parameters: an encrypted `support` handle and its `inputProof`.
+- After the deadline, anyone calls `requestVoteDecryption()` to mark the encrypted totals as publicly decryptable.
+- An off-chain client then calls `publicDecrypt([yesHandle, noHandle])` via the Zama SDK to obtain the cleartexts and a KMS-signed proof, and submits them via `revealResults(...)`. `FHE.checkSignatures` cryptographically guarantees the cleartexts are authentic before the contract trusts them.
+- `getResults()` only returns once the cleartexts have been verified on-chain.
 
-However, it is far from being the main change. As this example illustrates, working with FHEVM often requires re-architecting the original logic to support privacy. 
+However, this is far from being the main change. As this example illustrates, working with FHEVM often requires re-architecting the original logic to support privacy.
 
-In the updated code, the logic becomes async; results are hidden until a request (to the oracle) explicitly has to be made to decrypt publicly the vote results.
+In the updated code, the logic becomes asynchronous: results are hidden until they are explicitly marked as publicly decryptable, decrypted off-chain, and verified back on-chain. See [Public Decryption](decryption/oracle.md) for the full step-by-step workflow.
 
 ## Conclusion
 
