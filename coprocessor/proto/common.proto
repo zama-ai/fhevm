@@ -37,5 +37,6 @@ enum FheOperation {
   FHE_RAND_BOUNDED = 27;
   FHE_SUM = 28;
   FHE_IS_IN = 29;
+  FHE_MUL_DIV = 30;
   FHE_GET_CIPHERTEXT = 32;
 }

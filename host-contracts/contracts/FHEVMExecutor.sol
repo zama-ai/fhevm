@@ -124,7 +124,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         fheRand,
         fheRandBounded,
         fheSum,
-        fheIsIn
+        fheIsIn,
+        fheMulDiv
     }
 
     /// @notice Name of the contract.
@@ -725,6 +726,31 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
+     * @notice              Computes FHEMulDiv operation: (lhs * rhs) / divisor with intermediate widening.
+     * @param lhs           LHS (always encrypted).
+     * @param rhs           RHS (encrypted when scalarByte=0x00, plaintext scalar when scalarByte=0x01).
+     * @param divisor       Divisor (always a plaintext scalar encoded as bytes32).
+     * @param scalarByte    0x00 = rhs is encrypted; 0x01 = rhs is scalar.
+     * @return result       Result.
+     */
+    function fheMulDiv(
+        bytes32 lhs,
+        bytes32 rhs,
+        bytes32 divisor,
+        bytes1 scalarByte
+    ) public virtual returns (bytes32 result) {
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
+            (1 << uint8(FheType.Uint16)) +
+            (1 << uint8(FheType.Uint32)) +
+            (1 << uint8(FheType.Uint64));
+        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
+        if (_isScalarZeroForType(divisor, lhsType)) revert DivisionByZero();
+        result = _mulDivOp(Operators.fheMulDiv, lhs, rhs, divisor, scalarByte, lhsType);
+        HCU_LIMIT.checkHCUForFheMulDiv(lhsType, scalarByte, lhs, rhs, result, msg.sender);
+        emit FheMulDiv(msg.sender, lhs, rhs, divisor, scalarByte, result);
+    }
+
+    /**
      * @notice          Performs the casting to a target type.
      * @param ct        Value to cast.
      * @param toType    Target type.
@@ -966,6 +992,40 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
                 lhs,
                 rhs,
                 scalar,
+                ACL,
+                block.chainid,
+                blockhash(block.number - 1),
+                block.timestamp
+            )
+        );
+        result = _appendMetadataToPrehandle(result, resultType);
+        ACL.allowTransient(result, msg.sender);
+    }
+
+    function _mulDivOp(
+        Operators op,
+        bytes32 lhs,
+        bytes32 rhs,
+        bytes32 divisor,
+        bytes1 scalarByte,
+        FheType resultType
+    ) internal virtual returns (bytes32 result) {
+        _checkBoolean(scalarByte);
+
+        if (!ACL.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
+        if (scalarByte == 0x00) {
+            if (!ACL.isAllowed(rhs, msg.sender)) revert ACLNotAllowed(rhs, msg.sender);
+            // resultType == _typeOf(lhs) (set by the caller's _verifyAndReturnType).
+            if (resultType != _typeOf(rhs)) revert IncompatibleTypes();
+        }
+        result = keccak256(
+            abi.encodePacked(
+                COMPUTATION_DOMAIN_SEPARATOR,
+                op,
+                lhs,
+                rhs,
+                divisor,
+                scalarByte,
                 ACL,
                 block.chainid,
                 blockhash(block.number - 1),
