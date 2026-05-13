@@ -63,7 +63,7 @@ export async function waitForTaskReady(
   }
 }
 
-async function assertContractMatchesVersionPrefix(
+export async function assertContractMatchesVersionPrefix(
   hre: HardhatRuntimeEnvironment,
   address: string,
   versionPrefix: string,

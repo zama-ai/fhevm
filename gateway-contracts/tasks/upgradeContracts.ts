@@ -1,4 +1,4 @@
-import { Wallet } from "ethers";
+import { Interface, Wallet } from "ethers";
 import { task, types } from "hardhat/config";
 import { HardhatRuntimeEnvironment, TaskArguments } from "hardhat/types";
 
@@ -157,18 +157,44 @@ async function deployImplementationForPreparedUpgrade(
   const newImplementationFactory = await hre.ethers.getContractFactory(newImplementation, deployer);
 
   console.log(`Deploying "${newImplementation}" for prepared upgrade on proxy ${proxyAddress}...`);
-  const implementationAddress = await hre.upgrades.prepareUpgrade(proxyAddress, newImplementationFactory, {
-    kind: "uups",
-  });
+  const implementationAddress = String(
+    await hre.upgrades.prepareUpgrade(proxyAddress, newImplementationFactory, {
+      kind: "uups",
+    }),
+  );
   console.log("New implementation deployed at:", implementationAddress);
 
+  const reinitializeFunctionSignature = getFunctionSignature(reinitializeFunction);
   const reinitializeCalldata = hre.ethers.Interface.from(newImplementationArtifact.abi).encodeFunctionData(
     reinitializeFunction.name,
     reinitializeArgs,
   );
+  const outerCalldata = new Interface([
+    "function upgradeToAndCall(address newImplementation, bytes data) payable",
+  ]).encodeFunctionData("upgradeToAndCall", [implementationAddress, reinitializeCalldata]);
+
+  console.log("proxyAddress:", proxyAddress);
+  console.log("newImplementationAddress:", implementationAddress);
+  console.log("innerFunctionSignature:", reinitializeFunctionSignature);
   console.log(`${reinitializeFunction.name} calldata:`, reinitializeCalldata);
+  console.log("upgradeToAndCall(address,bytes) calldata:", outerCalldata);
   console.log(
-    `To double check, run: cast calldata ${shellQuote(getFunctionSignature(reinitializeFunction))} ${reinitializeArgs
+    "Prepared upgrade artifact:",
+    JSON.stringify(
+      {
+        proxyAddress,
+        newImplementationAddress: implementationAddress,
+        innerFunctionSignature: reinitializeFunctionSignature,
+        decodedArgs: reinitializeArgs,
+        innerCalldata: reinitializeCalldata,
+        outerCalldata,
+      },
+      (_, value: unknown) => (typeof value === "bigint" ? value.toString() : value),
+      2,
+    ),
+  );
+  console.log(
+    `To double check, run: cast calldata ${shellQuote(reinitializeFunctionSignature)} ${reinitializeArgs
       .map((arg) => shellQuote(formatCastArg(arg)))
       .join(" ")}`.trim(),
   );
