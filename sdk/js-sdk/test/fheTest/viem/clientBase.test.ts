@@ -16,9 +16,9 @@ import { isCleartext } from '../setupCommon.js';
 // -------
 // CHAIN=devnet npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.test.ts
 //
-// localhost fhevm:
+// localstack:
 // ----------------
-// CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.test.ts
+// CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

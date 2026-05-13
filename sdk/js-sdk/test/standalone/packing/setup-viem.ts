@@ -38,7 +38,7 @@ function buildConfig(): FheTestViemConfig {
       ? viemSepolia
       : env.chainName === 'mainnet'
         ? viemMainnet
-        : env.chainName === 'localhostFhevm'
+        : env.chainName === 'localstack'
           ? { ...viemAnvil, id: env.fhevmChain.id }
           : viemAnvil;
 

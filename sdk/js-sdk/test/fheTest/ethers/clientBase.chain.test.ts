@@ -14,9 +14,9 @@ import { isCleartext, safeJSONstringify } from '../setupCommon.js';
 // -------
 // CHAIN=devnet npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.chain.test.ts
 //
-// localhost fhevm:
+// localstack:
 // ----------------
-// CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.chain.test.ts
+// CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.chain.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

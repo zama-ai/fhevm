@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,7 +15,7 @@ for arg in "$@"; do
       echo "Usage: $(basename "$0") [--no-restart]"
       echo ""
       echo "Options:"
-      echo "  --no-restart  Skip fhevm:restart before and fhevm:stop after running tests"
+      echo "  --no-restart  Skip localstack-restart.sh before and localstack-stop.sh after running tests"
       echo "  --help        Show this help message"
       exit 0
       ;;
@@ -24,15 +23,15 @@ for arg in "$@"; do
 done
 
 if [ "$NO_RESTART" = false ]; then
-  npm run fhevm:restart
+  $SCRIPT_DIR/localstack-restart.sh
 fi
 
-export CHAIN=localhostFhevm
+export CHAIN=localstack
 
 # First check configuiration
 if ! npx vitest run --config test/fheTest/vitest.config.ts test/fheTest/viem/clientBase.chain.test.ts; then
   echo ""
-  echo "❌ ERROR: update test/fheTest/chains/localhostFhevm.ts config file ❌"
+  echo "❌ ERROR: update test/fheTest/chains/localstack.ts config file ❌"
   echo ""
   exit 1
 fi
@@ -41,5 +40,5 @@ npx vitest run --config test/fheTest/vitest.config.ts test/fheTest/viem
 npx vitest run --config test/fheTest/vitest.config.ts test/fheTest/ethers 
 
 if [ "$NO_RESTART" = false ]; then
-  npm run fhevm:stop
+  $SCRIPT_DIR/localstack-stop.sh
 fi

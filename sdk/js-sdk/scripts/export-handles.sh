@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Exports FHETest handles from the local chain to handles.localhostFhevm.json.
+# Exports FHETest handles from the local chain to handles.localstack.json.
 # Reads committed on-chain state — run after InitFHETest.s.sol transactions are mined.
 #
 # Usage: ./scripts/export-handles.sh [rpc-url]
@@ -9,7 +9,7 @@ set -euo pipefail
 RPC_URL="${1:-http://localhost:8545}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONTRACTS_DIR="$(cd "$SCRIPT_DIR/../contracts" && pwd)"
-HANDLES_JSON="${SCRIPT_DIR}/../test/fheTest/handles.localhostFhevm.json"
+HANDLES_JSON="${SCRIPT_DIR}/../test/fheTest/handles.localstack.json"
 
 # Export handles via forge script
 cd "${CONTRACTS_DIR}"

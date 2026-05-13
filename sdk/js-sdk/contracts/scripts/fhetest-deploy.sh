@@ -40,7 +40,7 @@ Usage: fhetest-deploy.sh [options]
 Options:
   --mnemonic <phrase>   BIP-39 mnemonic for the deployer key.
                         Precedence: --mnemonic flag > \$MNEMONIC env > built-in test mnemonic.
-  --chain <name>        FHEVM chain (localhostFhevm | localhost | devnet).
+  --chain <name>        FHEVM chain (localstack | localhost | devnet).
                         Precedence: --chain flag > \$CHAIN env > $chain_default
   --dry-run             Resolve and print all addresses + config, then exit
                         before any state-changing call (no funding, no
@@ -65,11 +65,11 @@ fhevm_mnemonic="${mnemonic_cli:-${MNEMONIC:-$fhevm_mnemonic_default}}"
 chain="${chain_cli:-${CHAIN:-$chain_default}}"
 fhevm_assert_chain "$chain"
 
-# only chain="localhost|localhostFhevm" for the moment
+# only chain="localhost|localstack" for the moment
 case "$chain" in
-    localhost|localhostFhevm) ;;
+    localhost|localstack) ;;
     *)
-        echo "❌ fhetest-deploy.sh only supports chains 'localhost|localhostFhevm'; got '$chain'" >&2
+        echo "❌ fhetest-deploy.sh only supports chains 'localhost|localstack'; got '$chain'" >&2
         exit 1
         ;;
 esac

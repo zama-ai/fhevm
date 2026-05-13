@@ -41,10 +41,10 @@ EOF
 # (or missing file / missing key) with a banner-formatted error.
 #
 # Behavior per chain:
-#   localhost | localhostFhevm  → checks BOTH `localhost` AND `localhostFhevm`
-#                                 keys in the JSON.
-#   devnet                      → checks the `devnet` key.
-#   anything else               → no-op (returns 0).
+#   localhost | localstack  → checks BOTH `localhost` AND `localstack`
+#                             keys in the JSON.
+#   devnet                  → checks the `devnet` key.
+#   anything else           → no-op (returns 0).
 #
 # Usage: assert_fhetest_address_in_abi_v2 <chain> <deployed_addr> <addresses_json_file>
 assert_fhetest_address_in_abi_v2() {
@@ -54,8 +54,8 @@ assert_fhetest_address_in_abi_v2() {
 
     local -a keys=()
     case "$chain" in
-        localhost|localhostFhevm)
-            keys=(localhost localhostFhevm)
+        localhost|localstack)
+            keys=(localhost localstack)
             ;;
         devnet)
             keys=(devnet)
@@ -244,21 +244,21 @@ fhevm_host_addresses_file() {
 # is intentionally fail-fast — meant to be called at script entry, before
 # any work is done).
 #
-# Supported: mainnet | testnet | devnet | localhost | localhostFhevm
+# Supported: mainnet | testnet | devnet | localhost | localstack
 #
 # Usage: fhevm_assert_chain <chain_name>
 fhevm_assert_chain() {
     local chain="$1"
     case "$chain" in
-        mainnet|testnet|devnet|localhost|localhostFhevm)
+        mainnet|testnet|devnet|localhost|localstack)
             return 0
             ;;
         "")
-            echo "❌ chain name is required (expected: mainnet | testnet | devnet | localhost | localhostFhevm)" >&2
+            echo "❌ chain name is required (expected: mainnet | testnet | devnet | localhost | localstack)" >&2
             exit 1
             ;;
         *)
-            echo "❌ unsupported chain '$chain' (expected: mainnet | testnet | devnet | localhost | localhostFhevm)" >&2
+            echo "❌ unsupported chain '$chain' (expected: mainnet | testnet | devnet | localhost | localstack)" >&2
             exit 1
             ;;
     esac
@@ -273,7 +273,7 @@ fhevm_assert_chain() {
 # always match the filename (testnet → sepolia.ts).
 #
 # Usage: fhevm_chain_file <chain_name>
-#   <chain_name>: mainnet | testnet | devnet | localhost | localhostFhevm
+#   <chain_name>: mainnet | testnet | devnet | localhost | localstack
 fhevm_chain_file() {
     local chain="$1"
     local sdk_root
@@ -287,11 +287,11 @@ fhevm_chain_file() {
             # SDK file is named after the network (sepolia), not the role (testnet).
             printf '%s/src/core/chains/definitions/sepolia.ts\n' "$sdk_root"
             ;;
-        devnet|localhost|localhostFhevm)
+        devnet|localhost|localstack)
             printf '%s/test/fheTest/chains/%s.ts\n' "$sdk_root" "$chain"
             ;;
         *)
-            echo "fhevm_chain_file: unsupported chain '$chain' (expected: mainnet | testnet | devnet | localhost | localhostFhevm)" >&2
+            echo "fhevm_chain_file: unsupported chain '$chain' (expected: mainnet | testnet | devnet | localhost | localstack)" >&2
             return 1
             ;;
     esac
@@ -305,7 +305,7 @@ fhevm_chain_file() {
 #   testnet         → test/.env.sepolia
 #   devnet          → test/.env.devnet
 #   localhost       → test/.env.localhost
-#   localhostFhevm  → test/.env.localhostFhevm
+#   localstack      → test/.env.localstack
 #
 # Usage: fhevm_rpc_url <chain_name>
 #
@@ -317,7 +317,7 @@ fhevm_rpc_url() {
 
     local env_file
     case "$chain" in
-        mainnet|devnet|localhost|localhostFhevm)
+        mainnet|devnet|localhost|localstack)
             env_file="$sdk_root/test/.env.$chain"
             ;;
         testnet)
@@ -325,7 +325,7 @@ fhevm_rpc_url() {
             env_file="$sdk_root/test/.env.sepolia"
             ;;
         *)
-            echo "fhevm_rpc_url: unsupported chain '$chain' (expected: mainnet | testnet | devnet | localhost | localhostFhevm)" >&2
+            echo "fhevm_rpc_url: unsupported chain '$chain' (expected: mainnet | testnet | devnet | localhost | localstack)" >&2
             return 1
             ;;
     esac
@@ -360,7 +360,7 @@ fhevm_rpc_url() {
 #
 # Usage: fhevm_chain_address <chain_name> <key>
 # 
-# acl_addr="$(fhevm_chain_address localhostFhevm acl)"   
+# acl_addr="$(fhevm_chain_address localstack acl)"   
 # acl_addr="$(fhevm_chain_address localhost acl)"   
 fhevm_chain_address() {
     local chain="$1"

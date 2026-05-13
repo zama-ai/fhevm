@@ -21,9 +21,9 @@ import {
 // -------
 // CHAIN=devnet npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.delegateDecrypt.test.ts
 //
-// localhost fhevm:
+// localstack:
 // ----------------
-// CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.delegateDecrypt.test.ts
+// CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.delegateDecrypt.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

@@ -61,7 +61,7 @@ while [[ $# -gt 0 ]]; do
 Usage: fhevm-deploy.sh [options]
 
 Options:
-  --chain <name>        FHEVM chain (mainnet | testnet | devnet | localhost | localhostFhevm) [default: localhost].
+  --chain <name>        FHEVM chain (mainnet | testnet | devnet | localhost | localstack) [default: localhost].
                         Precedence: --chain flag > \$CHAIN env > $chain_default
   --profile <name>      Foundry profile (v12 | v13 | latest) [default: $profile_default].
   --dry-run             Print precomputed FHEVM host addresses and exit. No anvil, no broadcast,
@@ -92,11 +92,11 @@ fi
 chain="${chain_cli:-${CHAIN:-$chain_default}}"
 fhevm_assert_chain "$chain"
 
-# only chain="localhost" for the moment
+# only chain="localhost|localstack" for the moment
 case "$chain" in
-    localhost) ;;
+    localhost|localstack) ;;
     *)
-        echo "❌ fhevm-deploy.sh only supports chain=localhost; got '$chain'" >&2
+        echo "❌ fhevm-deploy.sh only supports chains 'localhost|localstack'; got '$chain'" >&2
         exit 1
         ;;
 esac

@@ -16,9 +16,9 @@ import { sepolia as fhevmSepolia } from '@fhevm/sdk/chains';
 // -------
 // CHAIN=devnet npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.test.ts
 //
-// localhost fhevm:
+// localstack:
 // ----------------
-// CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.test.ts
+// CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

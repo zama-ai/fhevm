@@ -25,15 +25,12 @@
     "test:fast:devnet": "CHAIN=devnet npx vitest run --config test/fheTest/vitest.config.ts --exclude '**/**.slow.test.ts' test/fheTest/ethers test/fheTest/viem",
     "test:full:testnet": "CHAIN=sepolia npx vitest run --config test/fheTest/vitest.config.ts test/fheTest/ethers test/fheTest/viem",
     "test:full:devnet": "CHAIN=devnet npx vitest run --config test/fheTest/vitest.config.ts test/fheTest/ethers test/fheTest/viem",
-    "test:localhostFhevm": "./test/scripts/run-localhostFhevm.sh",
+    "test:localstack": "./test/scripts/run-localstack.sh",
     "test:localhost:v12": "./test/scripts/run-cleartext-anvil.sh --profile=v12",
     "test:localhost:v13": "./test/scripts/run-cleartext-anvil.sh --profile=v13",
     "test:localhost": "./test/scripts/run-cleartext-anvil.sh",
     "test:examples": "tsx ./examples/node-ethers/test-run.ts && tsx ./examples/node-viem/test-run.ts",
-    "test": "npm run test:localhost && npm run test:localhostFhevm",
-    "fhevm:restart": "./scripts/fhevm-cli-restart.sh",
-    "fhevm:stop": "./scripts/fhevm-cli-stop.sh",
-    "fhevm:clean": "./scripts/fhevm-cli-clean.sh",
+    "test": "npm run test:localhost && npm run test:localstack",
     "version": "node ./scripts/generate-version.cjs"
   },
   "devDependencies": {

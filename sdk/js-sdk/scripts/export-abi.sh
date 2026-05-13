@@ -64,7 +64,7 @@ export const FHETestAddresses = JSON.parse(
   readFileSync(join(import.meta.dirname, 'fhe-test-addresses-v2.json'), 'utf-8'),
 ) as Readonly<{
   localhost: string;
-  localhostFhevm: string;
+  localstack: string;
   devnet: string;
 }>;
 

@@ -14,9 +14,9 @@ import { isCleartext } from '../setupCommon.js';
 // -------
 // npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.transportKeyPair.test.ts
 //
-// localhost fhevm:
+// localstack:
 // ----------------
-// CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.transportKeyPair.test.ts
+// CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.transportKeyPair.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 
