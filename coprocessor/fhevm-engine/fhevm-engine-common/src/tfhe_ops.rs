@@ -861,8 +861,8 @@ pub fn check_fhe_operand_types(
                             input_types: vec![],
                         });
                     }
-                    let divisor_size = input_handles[2].len();
-                    let divisor_low = &input_handles[2][divisor_size - lhs_width_bytes..];
+                    let ignored_hsb = input_handles[2].len() - lhs_width_bytes;
+                    let divisor_low = &input_handles[2][ignored_hsb..];
                     if divisor_low.iter().all(|b| *b == 0) {
                         return Err(FhevmError::FheOperationScalarDivisionByZero {
                             lhs_handle: format!("0x{}", hex::encode(&input_handles[0])),
