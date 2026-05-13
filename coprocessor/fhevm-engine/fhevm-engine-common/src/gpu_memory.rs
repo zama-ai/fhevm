@@ -1850,12 +1850,9 @@ pub fn get_op_size_on_gpu(
             get_fhe_is_in_size_on_gpu(fhe_operation_int, input_operands)
         }
         SupportedFheOperations::FheMulDiv => {
-            // MulDiv[T] ≈ Mul[2T] + Div[2T]; doubled blocks ⇒ ~4× narrow workspace.
-            const WIDENING_FACTOR: u64 = 4;
+            // MulDiv[T] runs at 2T bit-width internally.
             let widened_workspace = |mul_size: u64, div_size: u64| -> u64 {
-                mul_size
-                    .saturating_add(div_size)
-                    .saturating_mul(WIDENING_FACTOR)
+                (mul_size + div_size) * 2u64.pow(2) // double size with quadratic space complexity
             };
             assert_eq!(input_operands.len(), 3);
             match (&input_operands[0], &input_operands[1], &input_operands[2]) {
