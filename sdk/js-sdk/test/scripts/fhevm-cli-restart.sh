@@ -2,8 +2,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-FHEVM_DIR="$(cd "$SCRIPT_DIR/../../../test-suite/fhevm" && pwd)"
-CONTRACTS_DIR="$(cd "$SCRIPT_DIR/../contracts" && pwd)"
+FHEVM_DIR="$(cd "$SCRIPT_DIR/../../../../test-suite/fhevm" && pwd)"
+CONTRACTS_DIR="$(cd "$SCRIPT_DIR/../../contracts" && pwd)"
 
 echo $SCRIPT_DIR
 echo $FHEVM_DIR
