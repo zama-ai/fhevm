@@ -129,8 +129,10 @@ concurrency:
 
 jobs:
   fhevm-e2e-test:
+    name: test-suite-e2e-tests/fhevm-e2e-test
     # Run on manual/reusable invocations. For direct PRs, require the `e2e` label.
     if: ${{ github.event_name != 'pull_request' || inputs.orchestrated || inputs.compat-test != '' || (github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'mergify/merge-queue/') && contains(github.event.pull_request.labels.*.name, 'e2e')) }}
+    environment: private-registries
     permissions:
       contents: 'read' # Required to checkout repository code
       id-token: 'write' # Required for OIDC authentication
