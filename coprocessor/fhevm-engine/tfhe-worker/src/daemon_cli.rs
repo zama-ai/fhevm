@@ -1,4 +1,5 @@
 use clap::Parser;
+use fhevm_engine_common::drift_revert::WatcherTimeouts;
 use fhevm_engine_common::telemetry::MetricsConfig;
 use fhevm_engine_common::utils::DatabaseURL;
 use tracing::Level;
@@ -113,6 +114,11 @@ pub struct Args {
     /// Prometheus metrics: coprocessor_fhe_batch_latency_seconds
     #[arg(long, default_value = "0.2:5.0:0.05", value_parser = clap::value_parser!(MetricsConfig))]
     pub metric_fhe_batch_latency: MetricsConfig,
+
+    /// Not exposed via CLI — `#[arg(skip)]` initializes the field to `WatcherTimeouts::default()`
+    /// on `Args::parse()`.
+    #[arg(skip)]
+    pub drift_revert_watcher_timeouts: WatcherTimeouts,
 }
 
 pub fn parse_args() -> Args {
