@@ -11,6 +11,12 @@ queue_rules:
       - base = main
       - label!=do-not-merge
 
+  - name: docs
+    queue_conditions:
+      - base = main
+      - files ~= ^docs/             # touches at least one docs/ file
+      - -files ~= ^(?!docs/).       # AND no file outside docs/
+
 pull_request_rules:
   - name: merge-queued-label
     description: Toggle the `merge-queued` label when a pull request is queued
