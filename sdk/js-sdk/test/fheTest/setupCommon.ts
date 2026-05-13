@@ -260,7 +260,7 @@ export function isBytes32Hex(value: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// List of fhe types involed in FHETest.sol
+// List of fhe types involved in FHETest.sol
 // ---------------------------------------------------------------------------
 
 // Each FHE type to public-decrypt

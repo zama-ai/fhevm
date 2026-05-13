@@ -189,7 +189,7 @@ RELAYER_SDK_VERSION=0.5.0-rc.1 ./fhevm-cli upgrade test-suite
 ./fhevm-cli test --grep "test delegated user decrypt"
 ```
 
-## Test agains protocol v0.11
+## Test against protocol v0.11
 
 ```
 # Use local test suite and v0.11 profile
