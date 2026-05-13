@@ -72,6 +72,12 @@ const relayerOverrideState: State = {
   overrides: [{ group: "relayer" }],
 };
 
+const listenerCoreOverrideState: State = {
+  ...state,
+  overrides: [{ group: "listener-core" }],
+  scenario: testDefaultScenario(),
+};
+
 const gatewayContractsOverrideState: State = {
   ...state,
   overrides: [{ group: "gateway-contracts" }],
@@ -112,6 +118,7 @@ describe("render-compose", () => {
       const gatewaySc = await loadMergedComposeDoc("gateway-sc");
       const gatewayMockedPayment = await loadMergedComposeDoc("gateway-mocked-payment");
       const relayer = await loadMergedComposeDoc("relayer");
+      const listenerCore = await loadMergedComposeDoc("listener-core");
       const testSuite = await loadMergedComposeDoc("test-suite");
       expect(coprocessor.services["coprocessor-host-listener"]?.build).toBeUndefined();
       expect(connector.services["kms-connector-gw-listener"]?.build).toBeUndefined();
@@ -119,6 +126,7 @@ describe("render-compose", () => {
       expect(gatewaySc.services["gateway-sc-deploy"]?.build).toBeUndefined();
       expect(gatewayMockedPayment.services["gateway-deploy-mocked-zama-oft"]?.build).toBeUndefined();
       expect(relayer.services.relayer?.build).toBeUndefined();
+      expect(listenerCore.services["listener-publisher-for-anvil"]?.build).toBeUndefined();
       expect(testSuite.services["test-suite-e2e-debug"]?.build).toBeUndefined();
     });
   });
@@ -134,6 +142,20 @@ describe("render-compose", () => {
     const volumes = doc.services["kms-core"]?.volumes as string[] | undefined;
     expect(doc.services["kms-core"]?.user).toBe("root");
     expect(volumes).toContain("fhevm_kms_core_keys:/app/kms/core/service/keys");
+  });
+
+  test("renders listener-core local override for the publisher only", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await generateComposeOverrides(listenerCoreOverrideState, stackSpecForState(listenerCoreOverrideState));
+      const doc = YAML.parse(await readFile(composePath("listener-core"), "utf8")) as {
+        services: Record<string, { image?: string; build?: unknown }>;
+      };
+      expect(doc.services["listener-publisher-for-anvil"]?.image).toContain(":fhevm-local");
+      expect(doc.services["listener-publisher-for-anvil"]?.build).toBeTruthy();
+      expect(doc.services["listener-redis"]).toBeUndefined();
+    });
   });
 
   test("renders multi-instance coprocessor overrides with local poller siblings", async () => {

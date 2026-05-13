@@ -169,10 +169,9 @@ export const resolveUpgradePlan = (
     return upgradePlan(group, [splitServices("core", ["kms-core"])], ["base"]);
   }
   if (group === "listener-core") {
-    if (!lockFileMode) {
-      throw new Error("upgrade listener-core requires --lock-file");
+    if (lockFileMode) {
+      return upgradePlan(group, [splitServices("listener-core", LISTENER_CORE_SERVICES)], ["listener-core"]);
     }
-    return upgradePlan(group, [splitServices("listener-core", LISTENER_CORE_SERVICES)], ["listener-core"]);
   }
   const groupOverrides = state.overrides.filter((item) => item.group === group);
   if (!lockFileMode && group === "coprocessor" && !hasLocalCoprocessorInstance(state) && !groupOverrides.length) {

@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
 import { DEFAULT_EXTRA_HOST_RPC_PORT } from "./layout";
-import { assertVersionLockChanges, changedVersionKeys, previewStateFromBundle, resolveUpgradePlan } from "./flow/up-flow";
+import {
+  assertVersionLockChanges,
+  changedVersionKeys,
+  previewStateFromBundle,
+  removeRuntimeUpgradeOverrides,
+  resolveUpgradePlan,
+} from "./flow/up-flow";
 import { presetBundle } from "./resolve/target";
 import { testDefaultScenario } from "./test-fixtures";
 import type { State } from "./types";
@@ -113,6 +119,34 @@ describe("stack", () => {
     expect(plan.versionKeys).toEqual(["LISTENER_CORE_VERSION"]);
     expect(plan.migrationServices).toEqual([]);
     expect(plan.runtimeServices).toEqual(["listener-redis", "listener-publisher-for-anvil"]);
+  });
+
+  test("upgrade plan supports listener-core local overrides", () => {
+    const plan = resolveUpgradePlan({ overrides: [{ group: "listener-core" }], scenario: defaultScenario }, "listener-core");
+    expect(plan.versionKeys).toEqual(["LISTENER_CORE_VERSION"]);
+    expect(plan.migrationServices).toEqual([]);
+    expect(plan.runtimeServices).toEqual(["listener-publisher-for-anvil"]);
+  });
+
+  test("runtime upgrade locks drop only overrides owned by the upgraded group", () => {
+    expect(
+      removeRuntimeUpgradeOverrides(
+        [{ group: "relayer" }, { group: "test-suite" }],
+        "relayer",
+      ),
+    ).toEqual([{ group: "test-suite" }]);
+    expect(
+      removeRuntimeUpgradeOverrides(
+        [{ group: "kms-connector" }, { group: "listener-core" }, { group: "test-suite" }],
+        "kms",
+      ),
+    ).toEqual([{ group: "listener-core" }, { group: "test-suite" }]);
+    expect(
+      removeRuntimeUpgradeOverrides(
+        [{ group: "listener-core" }, { group: "test-suite" }],
+        "listener-core",
+      ),
+    ).toEqual([{ group: "test-suite" }]);
   });
 
   test("version lock checks reject unrelated version keys", () => {
