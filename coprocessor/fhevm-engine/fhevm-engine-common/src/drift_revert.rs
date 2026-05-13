@@ -21,6 +21,35 @@ const REVERT_SQL_TEMPLATE: &str =
 /// How often services poll `drift_revert_signal` for state changes.
 pub const POLL_INTERVAL: Duration = Duration::from_secs(2);
 
+/// Per-iteration bound on each signal-poll query.
+pub const POLL_QUERY_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Cumulative limit on DB unreachability. If the watcher cannot reach the
+/// DB (no successful poll) for longer than this, the process exits so the
+/// supervisor restarts it fresh. Prevents a service from running with stale
+/// in-memory state through a long DB outage during which the drift runner
+/// may have completed a revert without it noticing.
+pub const DRIFT_REVERT_DB_DOWN_LIMIT: Duration = Duration::from_secs(60);
+
+/// The revert runner's grace period must be at least this many times
+/// `DRIFT_REVERT_DB_DOWN_LIMIT`.
+pub const MIN_GRACE_PERIOD_MULTIPLIER: u32 = 2;
+
+#[derive(Clone, Copy, Debug)]
+pub struct WatcherTimeouts {
+    pub poll_query_timeout: Duration,
+    pub db_down_limit: Duration,
+}
+
+impl Default for WatcherTimeouts {
+    fn default() -> Self {
+        Self {
+            poll_query_timeout: POLL_QUERY_TIMEOUT,
+            db_down_limit: DRIFT_REVERT_DB_DOWN_LIMIT,
+        }
+    }
+}
+
 static SIGNAL_CREATED_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "coprocessor_drift_revert_signal_created_counter",
@@ -362,16 +391,46 @@ pub async fn on_drift_detected(pool: &Pool<Postgres>, handle: &[u8], host_chain_
 /// Poll `drift_revert_signal` until any signal is in flight (Pending or
 /// Reverting) on any host chain. Used by `run_signal_watcher` to detect that
 /// a drift revert is happening so the service can re-exec.
-/// Transient DB errors are logged and skipped — the watcher must stay alive.
-pub async fn wait_for_in_flight_signal(pool: &Pool<Postgres>) -> anyhow::Result<DriftRevertSignal> {
+///
+/// Transient DB errors are logged and skipped — the watcher must stay
+/// alive. However, if the DB is unreachable for longer than
+/// `DRIFT_REVERT_DB_DOWN_LIMIT`, the process exits so the supervisor can
+/// restart it with fresh in-memory state. Each individual poll is bounded
+/// by `POLL_QUERY_TIMEOUT`.
+pub async fn wait_for_in_flight_signal(
+    pool: &Pool<Postgres>,
+    timeouts: WatcherTimeouts,
+) -> DriftRevertSignal {
+    let mut last_success = std::time::Instant::now();
     loop {
-        match oldest_in_flight_signal(pool).await {
-            Ok(Some(signal)) => return Ok(signal),
-            Ok(None) => {}
-            Err(e) => {
-                error!(error = %e, "Drift-revert watcher poll failed, retrying");
+        match tokio::time::timeout(timeouts.poll_query_timeout, oldest_in_flight_signal(pool)).await
+        {
+            Ok(Ok(Some(signal))) => return signal,
+            Ok(Ok(None)) => {
+                last_success = std::time::Instant::now();
+            }
+            Ok(Err(e)) => {
+                error!(error = %e, "Drift-revert watcher poll failed");
+            }
+            Err(_) => {
+                error!(
+                    timeout = ?timeouts.poll_query_timeout,
+                    "Drift-revert watcher poll timed out"
+                );
             }
         }
+
+        let elapsed = last_success.elapsed();
+        if elapsed >= timeouts.db_down_limit {
+            error!(
+                elapsed = ?elapsed,
+                limit = ?timeouts.db_down_limit,
+                "Drift-revert watcher could not reach the DB for too long; exiting \
+                 for supervisor restart so in-memory state cannot drift past a revert"
+            );
+            std::process::exit(1);
+        }
+
         tokio::time::sleep(POLL_INTERVAL).await;
     }
 }
@@ -552,10 +611,11 @@ pub async fn run_signal_watcher(
     pool: &Pool<Postgres>,
     cancel_token: CancellationToken,
     re_exec_fn: &dyn ReExec,
-) -> anyhow::Result<()> {
+    timeouts: WatcherTimeouts,
+) {
     let signal = tokio::select! {
-        _ = cancel_token.cancelled() => return Ok(()),
-        r = wait_for_in_flight_signal(pool) => r?,
+        _ = cancel_token.cancelled() => return,
+        s = wait_for_in_flight_signal(pool, timeouts) => s,
     };
 
     info!(
@@ -567,8 +627,6 @@ pub async fn run_signal_watcher(
 
     // Never returns (exec replaces process, or exit on failure).
     re_exec_fn.re_exec();
-
-    Ok(())
 }
 
 /// Called on service startup BEFORE the main loop begins. If a pending signal
@@ -748,13 +806,23 @@ async fn run_all_pending_as_runner(
 ///    re-execs the process when one appears.
 ///
 /// Pass `Some(RevertRunnerConfig)` for the revert runner (e.g. gw-listener),
-/// `None` for all other services.
+/// `None` for all other services. `timeouts` controls the watcher's
+/// fail-fast thresholds — production should pass `WatcherTimeouts::default()`;
+/// heavy integration tests override with relaxed values.
 pub async fn init(
     pool: Pool<Postgres>,
     cancel_token: CancellationToken,
     runner_cfg: Option<RevertRunnerConfig>,
+    timeouts: WatcherTimeouts,
 ) -> anyhow::Result<()> {
-    init_with_reexec(pool, cancel_token, runner_cfg, ProcessReExec::new()).await
+    init_with_reexec(
+        pool,
+        cancel_token,
+        runner_cfg,
+        ProcessReExec::new(),
+        timeouts,
+    )
+    .await
 }
 
 /// Like [`init`] but lets the caller inject a custom `ReExec` implementation.
@@ -764,13 +832,12 @@ pub async fn init_with_reexec<R: ReExec + 'static>(
     cancel_token: CancellationToken,
     runner_cfg: Option<RevertRunnerConfig>,
     re_exec: R,
+    timeouts: WatcherTimeouts,
 ) -> anyhow::Result<()> {
     handle_pending_signal_on_startup(&pool, runner_cfg, &cancel_token).await?;
 
     tokio::spawn(async move {
-        if let Err(e) = run_signal_watcher(&pool, cancel_token, &re_exec).await {
-            error!(error = %e, "Drift-revert signal watcher failed");
-        }
+        run_signal_watcher(&pool, cancel_token, &re_exec, timeouts).await;
     });
 
     Ok(())
