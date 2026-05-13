@@ -7,7 +7,7 @@ HOOKS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GIT_HOOKS_DIR="$(git rev-parse --git-dir)/hooks"
 
 # List of hooks to install
-HOOKS=("commit-msg" "pre-push")
+HOOKS=("commit-msg" "pre-commit" "pre-push")
 
 # Create the hooks directory if it doesn't exist
 mkdir -p "$GIT_HOOKS_DIR"

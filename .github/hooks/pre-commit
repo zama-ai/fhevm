@@ -1,0 +1,105 @@
+#!/bin/bash
+
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+STAGED_WORKFLOWS=()
+while IFS= read -r workflow; do
+  STAGED_WORKFLOWS+=("$workflow")
+done < <(
+  git diff --cached --name-only --diff-filter=ACM |
+    grep -E "^\.github/workflows/.*\.ya?ml$" || true
+)
+
+if [ "${#STAGED_WORKFLOWS[@]}" -eq 0 ]; then
+  exit 0
+fi
+
+command -v zizmor >/dev/null 2>&1 || {
+  echo "ERROR: zizmor is required to check staged GitHub workflow changes."
+  echo "Install it or unstage workflow changes before committing."
+  exit 1
+}
+
+ZIZMOR_JSON="$(mktemp)"
+trap 'rm -f "$ZIZMOR_JSON"' EXIT
+
+set +e
+zizmor --persona pedantic --format json "${STAGED_WORKFLOWS[@]}" >"$ZIZMOR_JSON"
+ZIZMOR_STATUS=$?
+set -e
+
+if [ "$ZIZMOR_STATUS" -eq 0 ]; then
+  echo "zizmor found no findings in staged workflow files."
+  exit 0
+fi
+
+ruby -rjson -e '
+  json_path = ARGV.shift
+  staged_files = ARGV
+
+  def added_lines_for(path)
+    lines = {}
+    current = nil
+
+    diff = IO.popen(["git", "diff", "--cached", "--unified=0", "--", path], &:read)
+    diff.each_line do |line|
+      if (match = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/))
+        start = match[1].to_i
+        count = (match[2] || "1").to_i
+        current = start
+        (start...(start + count)).each { |line_no| lines[line_no] = true }
+      elsif current && line.start_with?("+") && !line.start_with?("+++")
+        current += 1
+      end
+    end
+
+    lines
+  end
+
+  def location_path(location)
+    key = location.dig("symbolic", "key")
+    if key.is_a?(Hash)
+      key.dig("Local", "given_path") || key.dig("Local", "prefix")
+    else
+      key
+    end
+  end
+
+  def primary_location(finding)
+    locations = finding["locations"] || []
+    locations.find { |loc| loc.dig("symbolic", "kind") == "Primary" } || locations.first
+  end
+
+  data = JSON.parse(File.read(json_path))
+  findings = data.is_a?(Hash) ? (data["findings"] || data["results"] || []) : data
+  added_by_file = staged_files.to_h { |file| [file, added_lines_for(file)] }
+
+  introduced = []
+  findings.each do |finding|
+    loc = primary_location(finding)
+    next if loc.nil?
+
+    file = location_path(loc)
+    row = loc.dig("concrete", "location", "start_point", "row")
+    next if file.nil? || row.nil?
+
+    line = row.to_i + 1
+    next unless added_by_file.fetch(file, {}).key?(line)
+
+    introduced << [file, line, finding["ident"], finding["desc"]]
+  end
+
+  if introduced.empty?
+    puts "zizmor reported findings in staged workflow files, but none start on added staged lines."
+    puts "Existing findings should be handled in a dedicated cleanup instead of blocking this commit."
+    exit 0
+  end
+
+  puts "zizmor found findings introduced by added staged workflow lines:"
+  introduced.each do |file, line, ident, desc|
+    puts "- #{file}:#{line}: #{ident}: #{desc}"
+  end
+  exit 1
+' "$ZIZMOR_JSON" "${STAGED_WORKFLOWS[@]}"
