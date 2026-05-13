@@ -29,11 +29,8 @@ test("keeps production-like mpc migration thresholds unchanged", () => {
   expect(normalizeLocalOneNodeMpcThreshold(env)).toBe(env);
 });
 
-test("splits listener-core from coprocessor rollout image changes", () => {
-  expect(phaseVersions.listenerCore.LISTENER_CORE_VERSION).toBe(phaseVersions.coprocessor.LISTENER_CORE_VERSION);
-  expect(phaseVersions.listenerCore.COPROCESSOR_DB_MIGRATION_VERSION).toBe(
-    phaseVersions.kms.COPROCESSOR_DB_MIGRATION_VERSION,
-  );
+test("turns on listener-core with the coprocessor rollout target", () => {
+  expect(phaseVersions.coprocessor.LISTENER_CORE_VERSION).not.toBe(phaseVersions.kms.LISTENER_CORE_VERSION);
   expect(phaseVersions.coprocessor.COPROCESSOR_DB_MIGRATION_VERSION).not.toBe(
     phaseVersions.kms.COPROCESSOR_DB_MIGRATION_VERSION,
   );
