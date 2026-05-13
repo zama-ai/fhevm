@@ -1109,7 +1109,13 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         Some(&cancel_token),
     )
     .await?;
-    drift_revert::init(drift_revert_pool, cancel_token.clone(), None).await?;
+    drift_revert::init(
+        drift_revert_pool,
+        cancel_token.clone(),
+        None,
+        drift_revert::WatcherTimeouts::default(),
+    )
+    .await?;
 
     if args.dependent_ops_max_per_chain == 0 {
         let promoted = db.promote_all_dep_chains_to_fast_priority().await?;
