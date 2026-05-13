@@ -4,9 +4,7 @@ import fs from "fs";
 import { task, types } from "hardhat/config";
 import path from "path";
 
-const KMS_GENERATION_STORAGE_LOCATION = BigInt(
-  calculateERC7201StorageLocation("fhevm_gateway.storage.KMSGeneration"),
-);
+const KMS_GENERATION_STORAGE_LOCATION = BigInt(calculateERC7201StorageLocation("fhevm_gateway.storage.KMSGeneration"));
 
 function storageSlot(offset: bigint): string {
   return toBeHex(KMS_GENERATION_STORAGE_LOCATION + offset, 32);
@@ -86,7 +84,9 @@ async function readKmsStorageState(
     readWord(mappingSlot(activeCrsId, KMS_GENERATION_SLOT.consensusDigest)),
   ]);
 
-  const prepKeygenConsensusDigest = await readWord(mappingSlot(activePrepKeygenId, KMS_GENERATION_SLOT.consensusDigest));
+  const prepKeygenConsensusDigest = await readWord(
+    mappingSlot(activePrepKeygenId, KMS_GENERATION_SLOT.consensusDigest),
+  );
 
   return {
     prepKeygenCounter,
@@ -124,7 +124,6 @@ function buildMigrationEnv(state: Record<string, unknown>): Record<string, unkno
 task("task:exportKmsMigrationState", "Exports Gateway KMSGeneration migration state for the DAO runbook")
   .addParam("kmsGenerationProxy", "Gateway KMSGeneration proxy address")
   .addParam("gatewayConfigProxy", "GatewayConfig proxy address")
-  .addOptionalParam("legacyHostKmsVerifier", "Legacy host KMSVerifier proxy address to record as metadata")
   .addOptionalParam("output", "Output JSON path", "migration-state.json", types.string)
   .addOptionalParam(
     "blockTag",
@@ -135,9 +134,6 @@ task("task:exportKmsMigrationState", "Exports Gateway KMSGeneration migration st
   .setAction(async function (taskArguments, { ethers }) {
     const kmsGenerationAddress = checksumAddress(taskArguments.kmsGenerationProxy, "Gateway KMSGeneration proxy");
     const gatewayConfigAddress = checksumAddress(taskArguments.gatewayConfigProxy, "GatewayConfig proxy");
-    const legacyHostKmsVerifierAddress = taskArguments.legacyHostKmsVerifier
-      ? checksumAddress(taskArguments.legacyHostKmsVerifier, "Legacy host KMSVerifier proxy")
-      : null;
 
     const exportBlockNumber =
       taskArguments.blockTag === undefined ? await ethers.provider.getBlockNumber() : Number(taskArguments.blockTag);
@@ -217,10 +213,10 @@ task("task:exportKmsMigrationState", "Exports Gateway KMSGeneration migration st
     };
 
     const thresholds = {
-      publicDecryption: publicDecryptionThreshold.toString(),
-      userDecryption: userDecryptionThreshold.toString(),
-      kmsGen: kmsGenThreshold.toString(),
-      mpc: mpcThreshold.toString(),
+      publicDecryption: Number(publicDecryptionThreshold),
+      userDecryption: Number(userDecryptionThreshold),
+      kmsGen: Number(kmsGenThreshold),
+      mpc: Number(mpcThreshold),
     };
     const migrationEnv = {
       ...buildMigrationEnv(hostKmsGenerationMigrationState),
@@ -238,7 +234,6 @@ task("task:exportKmsMigrationState", "Exports Gateway KMSGeneration migration st
         exportTimestamp: new Date(Number(exportBlock.timestamp) * 1000).toISOString(),
         gatewayKmsGenerationProxy: kmsGenerationAddress,
         gatewayConfigProxy: gatewayConfigAddress,
-        legacyHostKmsVerifierProxy: legacyHostKmsVerifierAddress,
       },
       export: migrationEnv,
     };
