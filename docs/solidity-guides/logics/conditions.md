@@ -29,7 +29,7 @@ Here's an example of using conditional logic to update the highest winning numbe
 ```solidity
 function bid(externalEuint64 encryptedValue, bytes calldata inputProof) external onlyBeforeEnd {
   // Convert the encrypted input to an encrypted 64-bit integer
-  euint64 bid = FHE.asEuint64(encryptedValue, inputProof);
+  euint64 bid = FHE.fromExternal(encryptedValue, inputProof);
 
   // Compare the current highest bid with the new bid
   ebool isAbove = FHE.lt(highestBid, bid);
@@ -80,7 +80,7 @@ euint64 internal highestBid;
 
 function bid(externalEuint64 encryptedValue, bytes calldata inputProof) external onlyBeforeEnd {
   // Convert the encrypted input to an encrypted 64-bit integer
-  euint64 bid = FHE.asEuint64(encryptedValue, inputProof);
+  euint64 bid = FHE.fromExternal(encryptedValue, inputProof);
 
   // Compare the current highest bid with the new bid
   ebool isAbove = FHE.lt(highestBid, bid);
