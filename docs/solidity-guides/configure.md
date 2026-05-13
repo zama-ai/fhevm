@@ -6,7 +6,7 @@ This document explains how to enable encrypted computations in your smart contra
 
 To utilize encrypted computations in Solidity contracts, you must configure the **FHE library**. The `fhevm` package simplifies this process with prebuilt configuration contracts, allowing you to focus on developing your contract's logic without handling the underlying cryptographic setup.
 
-This library and its associated contracts provide a standardized way to configure and interact with Zama's FHEVM (Fully Homomorphic Encryption Virtual Machine) infrastructure on different Ethereum networks. It supplies the necessary contract addresses for Zama's FHEVM components (`ACL`, `FHEVMExecutor`, `KMSVerifier`, `InputVerifier`), enabling seamless integration for Solidity contracts that require FHEVM support.
+This library and its associated contracts provide a standardized way to configure and interact with Zama's FHEVM (Fully Homomorphic Encryption Virtual Machine) infrastructure on different Ethereum networks. It supplies the necessary contract addresses for Zama's FHEVM components (`ACL`, `FHEVMExecutor`, `KMSVerifier`), enabling seamless integration for Solidity contracts that require FHEVM support. The `InputVerifier` is not part of the inherited config — it is resolved at runtime via `FHEVMExecutor.getInputVerifierAddress()`.
 
 ## Key components configured automatically
 
@@ -17,9 +17,9 @@ By inheriting these configuration contracts, you ensure seamless initialization 
 
 ## ZamaConfig.sol
 
-The `ZamaConfig` library exposes functions to retrieve FHEVM configuration structs and contract addresses for supported networks (currently only the Sepolia testnet).
+The `ZamaConfig` library exposes functions to retrieve FHEVM configuration structs and contract addresses for supported networks: Ethereum mainnet, Sepolia testnet, and local Hardhat environments.
 
-Under the hood, this library encapsulates the network-specific addresses of Zama's FHEVM infrastructure into a single struct (`FHEVMConfigStruct`).
+Under the hood, this library encapsulates the network-specific addresses of Zama's FHEVM infrastructure into a single struct (`CoprocessorConfig`).
 
 ## ZamaEthereumConfig
 
