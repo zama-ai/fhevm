@@ -229,6 +229,10 @@ jobs:
         with:
           node-version: 20.x
 
+      - name: Install safe-chain
+        shell: bash
+        run: curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
+
       - name: Build contracts
         env:
           HARDHAT_NETWORK: hardhat
