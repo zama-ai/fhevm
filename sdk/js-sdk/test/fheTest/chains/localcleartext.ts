@@ -1,6 +1,6 @@
 import { defineFhevmChain } from '@fhevm/sdk/chains';
 
-export const localhost = /*#__PURE__*/ defineFhevmChain({
+export const localcleartext = /*#__PURE__*/ defineFhevmChain({
   id: 31_337,
   fhevm: {
     contracts: {

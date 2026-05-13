@@ -26,11 +26,11 @@
     "test:full:testnet": "CHAIN=sepolia npx vitest run --config test/fheTest/vitest.config.ts test/fheTest/ethers test/fheTest/viem",
     "test:full:devnet": "CHAIN=devnet npx vitest run --config test/fheTest/vitest.config.ts test/fheTest/ethers test/fheTest/viem",
     "test:localstack": "./test/scripts/run-localstack.sh",
-    "test:localhost:v12": "./test/scripts/run-cleartext-anvil.sh --profile=v12",
-    "test:localhost:v13": "./test/scripts/run-cleartext-anvil.sh --profile=v13",
-    "test:localhost": "./test/scripts/run-cleartext-anvil.sh",
+    "test:localcleartext:v12": "./test/scripts/localcleartext-run-tests.sh --profile=v12",
+    "test:localcleartext:v13": "./test/scripts/localcleartext-run-tests.sh --profile=v13",
+    "test:localcleartext": "./test/scripts/localcleartext-run-tests.sh",
     "test:examples": "tsx ./examples/node-ethers/test-run.ts && tsx ./examples/node-viem/test-run.ts",
-    "test": "npm run test:localhost && npm run test:localstack",
+    "test": "npm run test:localcleartext && npm run test:localstack",
     "version": "node ./scripts/generate-version.cjs"
   },
   "devDependencies": {

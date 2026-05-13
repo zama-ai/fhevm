@@ -15,9 +15,9 @@ import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// localhost:
+// localcleartext:
 // ----------
-// CHAIN=localhost npx vitest run --config test/fheTest/vitest.config.ts cleartext-viem/clientBase.readPublicValue.test.ts
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts cleartext-viem/clientBase.readPublicValue.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

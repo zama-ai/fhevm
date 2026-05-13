@@ -4,9 +4,9 @@ import { getEthersTestConfig, type FheTestEthersConfig } from '../ethers/setup.j
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// localhost:
+// localcleartext:
 // ----------
-// CHAIN=localhost npx vitest run --config test/fheTest/vitest.config.ts cleartext-ethers/connectivity.test.ts
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts cleartext-ethers/connectivity.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

@@ -9,9 +9,9 @@ import { createWalletClient, http, type Hex } from 'viem';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// localhost:
+// localcleartext:
 // ----------
-// CHAIN=localhost npx vitest run --config test/fheTest/vitest.config.ts cleartext-viem/clientEncrypt.encryptDecrypt.slow.test.ts
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts cleartext-viem/clientEncrypt.encryptDecrypt.slow.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

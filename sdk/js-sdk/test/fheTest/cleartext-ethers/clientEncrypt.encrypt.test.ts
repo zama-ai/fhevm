@@ -8,9 +8,9 @@ import { asEncryptedValue } from '@fhevm/sdk/types';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// localhost:
+// localcleartext:
 // ----------
-// CHAIN=localhost npx vitest run --config test/fheTest/vitest.config.ts cleartext-ethers/clientEncrypt.encrypt.test.ts
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts cleartext-ethers/clientEncrypt.encrypt.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

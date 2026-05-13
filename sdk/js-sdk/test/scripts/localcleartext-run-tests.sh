@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # Run cleartext FHEVM tests against an Anvil node.
 #
-# Usage: run-cleartext-anvil.sh [--ethlib ethers|viem|ethers,viem|none] [--profile <name>] [--verbose] [--help]
+# Usage: run-localcleartext.sh [--ethlib ethers|viem|ethers,viem|none] [--profile <name>] [--verbose] [--help]
 #
 # Flow:
 #   1. Parse --ethlib (default: ethers,viem) and --profile (default: latest).
@@ -192,7 +192,7 @@ anvil_start_and_wait() {
 }
 
 anvil_deploy_cleartext() {
-    echo "RPC_URL=\"$RPC_URL\"" > "$TEST_DIR/.env.localhost"
+    echo "RPC_URL=\"$RPC_URL\"" > "$TEST_DIR/.env.localcleartext"
     echo "🏗️  Deploying FHEVM cleartext stack..."
     (
         cd "$CONTRACTS_DIR"
@@ -267,7 +267,7 @@ run_suite() {
     echo "🧪 Running cleartext ${lib} tests..."
     (
         cd "$JS_SDK_DIR"
-        CHAIN=localhost npx vitest run --config test/fheTest/vitest.config.ts "test/fheTest/cleartext-${lib}"
+        CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts "test/fheTest/cleartext-${lib}"
     )
     echo "✅ cleartext-${lib} tests passed."
 }

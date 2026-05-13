@@ -6,9 +6,9 @@ import { isCleartext } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// localhost:
+// localcleartext:
 // ----------
-// CHAIN=localhost npx vitest run --config test/fheTest/vitest.config.ts cleartext-viem/connectivity.test.ts
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts cleartext-viem/connectivity.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

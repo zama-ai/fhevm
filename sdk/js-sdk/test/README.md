@@ -19,7 +19,7 @@ In `sdk/js-sdk/test/.env.mainnet`, set:
 RPC_URL="https://ethereum-rpc.publicnode.com"
 ```
 
-In `sdk/js-sdk/test/.env.localhost` and `sdk/js-sdk/test/.env.localstack`, set:
+In `sdk/js-sdk/test/.env.localcleartext` and `sdk/js-sdk/test/.env.localstack`, set:
 
 ```
 RPC_URL="http://localhost:8545"

@@ -9,9 +9,9 @@ import { asEncryptedValue, type EncryptedValue, type TypedValue } from '@fhevm/s
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// localhost:
+// localcleartext:
 // ----------
-// CHAIN=localhost npx vitest run --config test/fheTest/vitest.config.ts cleartext-viem/clientDecrypt.decrypt.test.ts
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts cleartext-viem/clientDecrypt.decrypt.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

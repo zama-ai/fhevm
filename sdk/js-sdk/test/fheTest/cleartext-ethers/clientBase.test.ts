@@ -9,9 +9,9 @@ import { sepolia as fhevmSepolia } from '@fhevm/sdk/chains';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// localhost:
+// localcleartext:
 // ----------
-// CHAIN=localhost npx vitest run --config test/fheTest/vitest.config.ts cleartext-ethers/clientBase.test.ts
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts cleartext-ethers/clientBase.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

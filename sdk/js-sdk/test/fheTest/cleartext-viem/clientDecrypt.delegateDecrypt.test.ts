@@ -17,9 +17,9 @@ import {
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// localhost:
+// localcleartext:
 // ----------
-// CHAIN=localhost npx vitest run --config test/fheTest/vitest.config.ts cleartext-viem/clientDecrypt.delegateDecrypt.test.ts
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts cleartext-viem/clientDecrypt.delegateDecrypt.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

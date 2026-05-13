@@ -120,4 +120,4 @@ jobs:
           echo 'ZAMA_FHEVM_API_KEY="zmr_mainnet_blahblah"' >> test/.env
 
       - name: Run forge tests
-        run: npm run test:localhost
+        run: npm run test:localcleartext

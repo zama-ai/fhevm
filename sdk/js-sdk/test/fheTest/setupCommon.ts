@@ -4,7 +4,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { FHETestAddresses as FHETestAddressesv1 } from './abi-v1.js';
 import { FHETestAddresses as FHETestAddressesv2 } from './abi-v2.js';
-import { localhost } from './chains/localhost.js';
+import { localcleartext } from './chains/localcleartext.js';
 import { localstack } from './chains/localstack.js';
 import { devnet } from './chains/devnet.js';
 import { sepolia, mainnet } from '@fhevm/sdk/chains';
@@ -13,7 +13,7 @@ import { sepolia, mainnet } from '@fhevm/sdk/chains';
 // Types
 // ---------------------------------------------------------------------------
 
-export type FheTestChainName = 'sepolia' | 'mainnet' | 'localhost' | 'localstack' | 'devnet';
+export type FheTestChainName = 'sepolia' | 'mainnet' | 'localcleartext' | 'localstack' | 'devnet';
 
 export type FheTestBaseEnv = {
   readonly chainName: FheTestChainName;
@@ -29,11 +29,13 @@ export type FheTestBaseEnv = {
 // ---------------------------------------------------------------------------
 
 export function isV2(chainName: FheTestChainName) {
-  return chainName === 'localstack' || chainName === 'localhost' || chainName === 'devnet' || chainName === 'sepolia';
+  return (
+    chainName === 'localstack' || chainName === 'localcleartext' || chainName === 'devnet' || chainName === 'sepolia'
+  );
 }
 
 export function isCleartext(chainName: FheTestChainName) {
-  return chainName === 'localhost';
+  return chainName === 'localcleartext';
 }
 
 // ---------------------------------------------------------------------------
@@ -76,11 +78,11 @@ function resolveChainName(): FheTestChainName {
     chain !== 'sepolia' &&
     chain !== 'devnet' &&
     chain !== 'mainnet' &&
-    chain !== 'localhost' &&
+    chain !== 'localcleartext' &&
     chain !== 'localstack'
   ) {
     throw new Error(
-      `Invalid CHAIN env var: "${chain}". Expected "sepolia", "mainnet", "devnet", "localhost" or "localstack".`,
+      `Invalid CHAIN env var: "${chain}". Expected "sepolia", "mainnet", "devnet", "localcleartext" or "localstack".`,
     );
   }
   return chain;
@@ -91,7 +93,12 @@ function resolveChainName(): FheTestChainName {
 // ---------------------------------------------------------------------------
 
 function resolveFHETestAddress(chainName: FheTestChainName): string {
-  if (chainName === 'localhost' || chainName === 'localstack' || chainName === 'devnet' || chainName === 'sepolia') {
+  if (
+    chainName === 'localcleartext' ||
+    chainName === 'localstack' ||
+    chainName === 'devnet' ||
+    chainName === 'sepolia'
+  ) {
     return FHETestAddressesv2[chainName];
   }
   return FHETestAddressesv1[chainName];
@@ -121,7 +128,7 @@ export function getBaseEnv(): FheTestBaseEnv {
   let mnemonic;
   if (chainName === 'localstack') {
     mnemonic = LOCALSTACK_MNEMONIC;
-  } else if (chainName === 'localhost') {
+  } else if (chainName === 'localcleartext') {
     mnemonic = LOCALSTACK_MNEMONIC;
   } else {
     mnemonic = sharedEnv.MNEMONIC ?? process.env.MNEMONIC;
@@ -142,7 +149,7 @@ export function getBaseEnv(): FheTestBaseEnv {
 
   const fheTestAddress = resolveFHETestAddress(chainName);
 
-  const chainMap: Record<string, FhevmChain> = { localstack, localhost, sepolia, devnet, mainnet };
+  const chainMap: Record<string, FhevmChain> = { localstack, localcleartext, sepolia, devnet, mainnet };
   const fhevmChain = chainMap[chainName];
   if (!fhevmChain) {
     const valid = Object.keys(chainMap)
