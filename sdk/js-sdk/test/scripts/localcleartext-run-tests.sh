@@ -28,6 +28,7 @@ Options:
   --ethlib ethers,viem     Run both suites (default).
   --ethlib none            Start Anvil + deploy only; wait for Anvil to exit (no tests run).
   --profile <name>         Foundry profile to use (default: latest, possible values: v12, v13).
+  --use-pack               Use vitest-manual-pack.config.ts instead of vitest.config.ts.
   --verbose                Print Anvil logs to the console instead of redirecting to a file.
   --help                   Print this help message and exit.
 
@@ -47,6 +48,7 @@ EOF
 LIB="ethers,viem"
 PROFILE=""
 VERBOSE=0
+USE_PACK=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -74,6 +76,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --profile=*)
             PROFILE="${1#--profile=}"
+            shift
+            ;;
+        --use-pack)
+            USE_PACK=1
             shift
             ;;
         --verbose)
@@ -263,11 +269,13 @@ fi
 
 run_suite() {
     local lib="$1"
+    local config="test/fheTest/vitest.config.ts"
+    [[ "$USE_PACK" -eq 1 ]] && config="test/fheTest/vitest-manual-pack.config.ts"
     echo
     echo "🧪 Running cleartext ${lib} tests..."
     (
         cd "$JS_SDK_DIR"
-        CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts "test/fheTest/cleartext-${lib}"
+        CHAIN=localcleartext npx vitest run --config "$config" "test/fheTest/cleartext-${lib}"
     )
     echo "✅ cleartext-${lib} tests passed."
 }

@@ -3,7 +3,8 @@ import { defineConfig } from 'vitest/config';
 
 const chain = process.env.CHAIN ?? 'sepolia';
 
-const getfile = (path: string) => join(__dirname, '../../src', path, 'index.ts');
+const PACKED_SDK = join(__dirname, '../manual-pack/node_modules/@fhevm/sdk');
+const getfile = (path: string) => join(PACKED_SDK, '_esm', path, 'index.js');
 
 export default defineConfig({
   resolve: {

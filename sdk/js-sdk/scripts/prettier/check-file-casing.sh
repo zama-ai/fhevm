@@ -22,7 +22,7 @@ SCAN_DIRS=(
 
 # File patterns to exclude (glob patterns matched against the full path)
 EXCEPTIONS=(
-  "test/standalone/relayer-sdk-test"
+  "test/manual-pack"
 )
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

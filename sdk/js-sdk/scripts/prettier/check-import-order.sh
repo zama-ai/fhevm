@@ -24,6 +24,7 @@ SCAN_DIRS=(
 # File patterns to exclude (glob patterns matched against the full path)
 EXCEPTIONS=(
   "*/index.ts"
+  "test/manual-pack"
 )
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
