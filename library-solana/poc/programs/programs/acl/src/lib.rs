@@ -1,5 +1,6 @@
 mod constants;
 mod error;
+mod event;
 mod instructions;
 pub mod state;
 mod types;
@@ -25,18 +26,35 @@ pub mod acl {
         Ok(())
     }
 
-    pub fn allow(ctx: Context<Allow>, handle: Handle, context_key: Pubkey) -> Result<()> {
-        instructions::allow(ctx, handle, context_key)?;
+    pub fn allow(
+        ctx: Context<Allow>,
+        handle: Handle,
+        context_key: Pubkey,
+        initial_key: Pubkey,
+        output_index: u128,
+    ) -> Result<()> {
+        instructions::allow(ctx, handle, context_key, initial_key, output_index)?;
         Ok(())
     }
 
-    pub fn init_handle(ctx: Context<InitHandle>, handle: Handle) -> Result<()> {
-        instructions::init_handle(ctx, handle)?;
+    pub fn init_handle(
+        ctx: Context<InitHandle>,
+        handle: Handle,
+        initial_key: Pubkey,
+        output_index: u128,
+    ) -> Result<()> {
+        instructions::init_handle(ctx, handle, initial_key, output_index)?;
         Ok(())
     }
 
-    pub fn is_allowed(ctx: Context<IsAllowed>, handle: Handle) -> Result<bool> {
-        let res = instructions::is_allowed(ctx, handle)?;
-        Ok(res)
+    pub fn is_allowed(
+        ctx: Context<IsAllowed>,
+        handle: Handle,
+        subject_pubkey: Pubkey,
+        initial_pubkey: Pubkey,
+        output_index: u128,
+    ) -> Result<()> {
+        instructions::is_allowed(ctx, handle, subject_pubkey, initial_pubkey, output_index)?;
+        Ok(())
     }
 }

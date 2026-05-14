@@ -1,63 +1,64 @@
-import * as anchor from "@coral-xyz/anchor";
-import { Program } from "@coral-xyz/anchor";
-import { PublicKey, Keypair } from "@solana/web3.js";
+import { Keypair, SystemProgram } from "@solana/web3.js";
 import { assert, expect } from "chai";
-import { Acl } from "../target/types/acl";
+import {
+  aclProgramDataPda,
+  configPda,
+  program,
+  provider,
+} from "./utils";
 
-describe("acl", () => {
-  anchor.setProvider(anchor.AnchorProvider.env());
+describe("acl :: init", () => {
+  it("creates the config PDA and stores both authorities", async () => {
+    const fheAuthority = Keypair.generate().publicKey;
+    const externalInputAuthority = Keypair.generate().publicKey;
 
-  const provider = anchor.getProvider() as anchor.AnchorProvider;
-  const program = anchor.workspace.acl as Program<Acl>;
+    const existing = await provider.connection.getAccountInfo(configPda);
+    if (existing !== null) {
+      // Localnet state may persist across runs; skip if already initialized.
+      // `init` is single-shot (PDA-seeded), so a fresh validator is required
+      // to re-run this case.
+      return;
+    }
 
-  const [configPda] = PublicKey.findProgramAddressSync(
-    [Buffer.from("acl_config")],
-    program.programId
-  );
+    await program.methods
+      .init(fheAuthority, externalInputAuthority)
+      .accounts({
+        payer: provider.wallet.publicKey,
+        configPda: configPda,
+        acl: program.programId,
+        programData: aclProgramDataPda,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
 
-  describe("init", () => {
-    it("creates the config PDA and stores both authorities", async () => {
-      const fheAuthority = Keypair.generate().publicKey;
-      const externalInputAuthority = Keypair.generate().publicKey;
+    const config = await program.account.config.fetch(configPda);
+    assert.ok(
+      config.fheAuthority.equals(fheAuthority),
+      "fhe_authority should match the value passed to init"
+    );
+    assert.ok(
+      config.externalInputAuthority.equals(externalInputAuthority),
+      "external_input_authority should match the value passed to init"
+    );
 
-      const existing = await provider.connection.getAccountInfo(configPda);
-      if (existing !== null) {
-        // Localnet state may persist across runs; skip if already initialized.
-        // `init` is single-shot (PDA-seeded), so a fresh validator is required
-        // to re-run this case.
-        return;
-      }
+    const info = await provider.connection.getAccountInfo(configPda);
+    assert.isNotNull(info);
+    assert.ok(info!.owner.equals(program.programId));
+  });
 
-      await program.methods.init(fheAuthority, externalInputAuthority).rpc();
+  it("fails when re-initialized", async () => {
+    const fheAuthority = Keypair.generate().publicKey;
+    const externalInputAuthority = Keypair.generate().publicKey;
 
-      const config = await program.account.config.fetch(configPda);
-      assert.ok(
-        config.fheAuthority.equals(fheAuthority),
-        "fhe_authority should match the value passed to init"
-      );
-      assert.ok(
-        config.externalInputAuthority.equals(externalInputAuthority),
-        "external_input_authority should match the value passed to init"
-      );
-
-      const info = await provider.connection.getAccountInfo(configPda);
-      assert.isNotNull(info);
-      assert.ok(info!.owner.equals(program.programId));
-    });
-
-    it("fails when re-initialized", async () => {
-      const fheAuthority = Keypair.generate().publicKey;
-      const externalInputAuthority = Keypair.generate().publicKey;
-
-      try {
-        await program.methods
-          .init(fheAuthority, externalInputAuthority)
-          .rpc();
-        assert.fail("expected re-initialization to fail");
-      } catch (err: any) {
-        const msg = (err?.message ?? "") + JSON.stringify(err?.logs ?? []);
-        expect(msg).to.match(/already in use|custom program error: 0x0/i);
-      }
-    });
+    try {
+      await program.methods
+        .init(fheAuthority, externalInputAuthority)
+        .accountsPartial({ programData: aclProgramDataPda })
+        .rpc();
+      assert.fail("expected re-initialization to fail");
+    } catch (err: any) {
+      const msg = (err?.message ?? "") + JSON.stringify(err?.logs ?? []);
+      expect(msg).to.match(/already in use|custom program error: 0x0/i);
+    }
   });
 });

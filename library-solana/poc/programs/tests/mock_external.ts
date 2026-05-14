@@ -1,3 +1,4 @@
+import * as anchor from "@coral-xyz/anchor";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { assert, expect } from "chai";
 import {
@@ -7,20 +8,31 @@ import {
   mockExternalProgram,
   program,
   provider,
+  u128LeBytes,
 } from "./utils";
 
-const derivePermissionList = (handle: number[]): PublicKey =>
+// The mock seeds the permission_list PDA on (app, output_index), and the ACL
+// program then owns the resulting account. Both programs must agree on the
+// derivation, so we mirror the mock-external seeds here.
+const derivePermissionList = (
+  app: PublicKey,
+  outputIndex: anchor.BN
+): PublicKey =>
   PublicKey.findProgramAddressSync(
-    [Buffer.from("permission_list"), Buffer.from(handle)],
-    mockExternalProgram.programId
+    [Buffer.from("permission_list"), app.toBuffer(), u128LeBytes(outputIndex)],
+    program.programId
   )[0];
 
-const callAllowExternalInput = (handle: number[], app: PublicKey) =>
+const callAllowExternalInput = (
+  handle: number[],
+  app: PublicKey,
+  outputIndex: anchor.BN
+) =>
   mockExternalProgram.methods
-    .allowExternalInput(handle, app)
+    .allowExternalInput(handle, app, outputIndex)
     .accountsPartial({
       payer: provider.wallet.publicKey,
-      permissionList: derivePermissionList(handle),
+      permissionList: derivePermissionList(app, outputIndex),
       aclConfig: configPda,
       aclProgram: program.programId,
     })
@@ -32,14 +44,15 @@ describe("mock-external :: allow_external_input", () => {
   it("inits the handle and allows it for the user (signer) and the specified app", async () => {
     const handle = makeHandle(7);
     const app = Keypair.generate().publicKey;
+    const outputIndex = new anchor.BN(0);
 
-    await callAllowExternalInput(handle, app);
+    await callAllowExternalInput(handle, app, outputIndex);
 
     const acct = await program.account.handlerPermissions.fetch(
-      derivePermissionList(handle)
+      derivePermissionList(app, outputIndex)
     );
     assert.deepEqual(Array.from(acct.handle), handle);
-    assert.equal(acct.allowedAccounts.length, 2);
+    assert.equal(acct.subjectCount, 2);
     assert.ok(
       acct.allowedAccounts[0].equals(provider.wallet.publicKey),
       "first entry should be the transaction signer (user)"
@@ -50,18 +63,20 @@ describe("mock-external :: allow_external_input", () => {
     );
   });
 
-  it("reverts if the handle has already been initialized", async () => {
+  it("reverts with HandleMismatch when the same (app, output_index) PDA is reused with a different handle", async () => {
     const handle = makeHandle(8);
     const app = Keypair.generate().publicKey;
+    const outputIndex = new anchor.BN(0);
 
-    await callAllowExternalInput(handle, app);
+    await callAllowExternalInput(handle, app, outputIndex);
 
     try {
-      await callAllowExternalInput(handle, Keypair.generate().publicKey);
-      assert.fail("expected the second init_handle CPI to fail");
+      const otherHandle = makeHandle(9);
+      await callAllowExternalInput(otherHandle, app, outputIndex);
+      assert.fail("expected HandleMismatch");
     } catch (err: any) {
       const msg = (err?.message ?? "") + JSON.stringify(err?.logs ?? []);
-      expect(msg).to.match(/already in use|custom program error: 0x0/i);
+      expect(msg).to.match(/HandleMismatch/);
     }
   });
 });

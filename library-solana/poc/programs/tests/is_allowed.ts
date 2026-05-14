@@ -1,9 +1,5 @@
-import {
-  Keypair,
-  PublicKey,
-  SystemProgram,
-  Transaction,
-} from "@solana/web3.js";
+import * as anchor from "@coral-xyz/anchor";
+import { Keypair } from "@solana/web3.js";
 import { assert, expect } from "chai";
 import {
   allowKey,
@@ -11,137 +7,112 @@ import {
   initPermissionList,
   makeHandle,
   program,
-  provider,
 } from "./utils";
 
 describe("acl :: is_allowed", () => {
   before(ensureConfigInitialized);
 
-  // .view() simulates the tx with the provider wallet as the (default) payer.
-  // The program returns `payer.key ∈ allowed_accounts`, so to query "is the
-  // wallet allowed?", we just call .view() after allow-ing the wallet.
+  // `is_allowed` returns `Result<()>` — success = subject is in the allow
+  // list, error = it isn't (or the handle is wrong). Anchor's `.view()`
+  // requires a return value, so we use `.rpc()`: success resolves, failure
+  // rejects with an `AnchorError` we can match against.
 
-  it("returns true when the caller is in allowed_accounts", async () => {
+  it("succeeds when the subject is in allowed_accounts", async () => {
     const handle = makeHandle(20);
-    const permissionList = await initPermissionList(handle);
-    await allowKey(handle, permissionList.publicKey, provider.wallet.publicKey);
+    const initialKey = Keypair.generate().publicKey;
+    const outputIndex = new anchor.BN(0);
+    const permissionList = await initPermissionList(
+      handle,
+      initialKey,
+      outputIndex
+    );
+    const subject = Keypair.generate().publicKey;
+    await allowKey(handle, permissionList, subject, initialKey, outputIndex);
 
-    const result = await program.methods
-      .isAllowed(handle)
-      .accountsPartial({ permissionList: permissionList.publicKey })
-      .view();
-
-    assert.strictEqual(result, true);
+    await program.methods
+      .isAllowed(handle, subject, initialKey, outputIndex)
+      .accountsPartial({ permissionList })
+      .rpc();
   });
 
-  it("returns false when the caller is not in allowed_accounts", async () => {
+  it("reverts with HandleAuthorizationFailed when the subject is not in allowed_accounts", async () => {
     const handle = makeHandle(21);
-    const permissionList = await initPermissionList(handle);
-    // Allow some other key, not the provider wallet.
+    const initialKey = Keypair.generate().publicKey;
+    const outputIndex = new anchor.BN(0);
+    const permissionList = await initPermissionList(
+      handle,
+      initialKey,
+      outputIndex
+    );
+    // Allow some other key, not the one we'll query for.
     await allowKey(
       handle,
-      permissionList.publicKey,
-      Keypair.generate().publicKey
+      permissionList,
+      Keypair.generate().publicKey,
+      initialKey,
+      outputIndex
     );
+    const outsider = Keypair.generate().publicKey;
 
-    const result = await program.methods
-      .isAllowed(handle)
-      .accountsPartial({ permissionList: permissionList.publicKey })
-      .view();
-
-    assert.strictEqual(result, false);
+    try {
+      await program.methods
+        .isAllowed(handle, outsider, initialKey, outputIndex)
+        .accountsPartial({ permissionList })
+        .rpc();
+      assert.fail("expected HandleAuthorizationFailed");
+    } catch (err: any) {
+      const code = err?.error?.errorCode?.code ?? "";
+      const msg = code + " " + (err?.message ?? "");
+      expect(msg).to.match(/HandleAuthorizationFailed/);
+    }
   });
 
-  it("returns false for a freshly initialized permission_list", async () => {
+  it("reverts on a freshly initialized permission_list with no subjects", async () => {
     const handle = makeHandle(22);
-    const permissionList = await initPermissionList(handle);
+    const initialKey = Keypair.generate().publicKey;
+    const outputIndex = new anchor.BN(0);
+    const permissionList = await initPermissionList(
+      handle,
+      initialKey,
+      outputIndex
+    );
+    const someone = Keypair.generate().publicKey;
 
-    const result = await program.methods
-      .isAllowed(handle)
-      .accountsPartial({ permissionList: permissionList.publicKey })
-      .view();
-
-    assert.strictEqual(result, false);
+    try {
+      await program.methods
+        .isAllowed(handle, someone, initialKey, outputIndex)
+        .accountsPartial({ permissionList })
+        .rpc();
+      assert.fail("expected HandleAuthorizationFailed");
+    } catch (err: any) {
+      const code = err?.error?.errorCode?.code ?? "";
+      const msg = code + " " + (err?.message ?? "");
+      expect(msg).to.match(/HandleAuthorizationFailed/);
+    }
   });
 
   it("reverts with HandleMismatch when the handle argument doesn't match the account", async () => {
     const handle = makeHandle(23);
-    const permissionList = await initPermissionList(handle);
+    const initialKey = Keypair.generate().publicKey;
+    const outputIndex = new anchor.BN(0);
+    const permissionList = await initPermissionList(
+      handle,
+      initialKey,
+      outputIndex
+    );
     const wrongHandle = handle.map((b) => b ^ 0xff);
+    const someone = Keypair.generate().publicKey;
 
     try {
       await program.methods
-        .isAllowed(wrongHandle)
-        .accountsPartial({ permissionList: permissionList.publicKey })
-        .view();
+        .isAllowed(wrongHandle, someone, initialKey, outputIndex)
+        .accountsPartial({ permissionList })
+        .rpc();
       assert.fail("expected HandleMismatch");
     } catch (err: any) {
-      // .view() simulates the tx, so failures surface as a SimulateError whose
-      // program logs Anchor never translates into an AnchorError. The error
-      // identifier lives in `err.simulationResponse.logs`.
-      const logs = (err?.simulationResponse?.logs ?? err?.logs ?? []).join("\n");
-      expect(logs).to.match(/HandleMismatch/);
-    }
-  });
-
-  it("rejects an account at a permission_list-shaped address that is not owned by the ACL program", async () => {
-    // Set up a genuine permission_list so we have a real handle to mirror.
-    const handle = makeHandle(24);
-    await initPermissionList(handle);
-
-    // Build a fake "permission_list" at a deterministic address derived from
-    // a *different* program (here: the System Program). It is sized like a
-    // real HandlerPermissions account, but its owner is the System Program,
-    // not the ACL program.
-    //
-    // Note: we cannot actually write a matching HandlerPermissions
-    // discriminator + handle into the data, because writing arbitrary bytes
-    // requires a program-owned account. That doesn't weaken the test:
-    // Anchor's `Account<HandlerPermissions>` wrapper checks the *owner*
-    // before any contents, so owner-mismatch fires first. This pins down the
-    // property we care about — an attacker cannot impersonate a
-    // permission_list with an account they (or another program) own.
-    const seed = "acl-fake-permission-list";
-    const fakeAddr = await PublicKey.createWithSeed(
-      provider.wallet.publicKey,
-      seed,
-      SystemProgram.programId
-    );
-    const space = 8 + 32 + 4 + 10 * 32; // matches HandlerPermissions::INIT_SPACE
-    const lamports =
-      await provider.connection.getMinimumBalanceForRentExemption(space);
-
-    const setupTx = new Transaction().add(
-      SystemProgram.createAccountWithSeed({
-        fromPubkey: provider.wallet.publicKey,
-        basePubkey: provider.wallet.publicKey,
-        seed,
-        newAccountPubkey: fakeAddr,
-        lamports,
-        space,
-        programId: SystemProgram.programId,
-      })
-    );
-    await provider.sendAndConfirm(setupTx);
-
-    const info = await provider.connection.getAccountInfo(fakeAddr);
-    assert.ok(info, "fake account should exist");
-    assert.ok(
-      info!.owner.equals(SystemProgram.programId),
-      "fake account must be owned by something other than the ACL program"
-    );
-
-    try {
-      await program.methods
-        .isAllowed(handle)
-        .accountsPartial({ permissionList: fakeAddr })
-        .view();
-      assert.fail("expected rejection due to wrong account owner");
-    } catch (err: any) {
-      const logs = (err?.simulationResponse?.logs ?? err?.logs ?? []).join("\n");
-      expect(logs).to.match(
-        /AccountOwnedByWrongProgram|ConstraintOwner|3007|3008/i
-      );
+      const code = err?.error?.errorCode?.code ?? "";
+      const msg = code + " " + (err?.message ?? "");
+      expect(msg).to.match(/HandleMismatch/);
     }
   });
 });

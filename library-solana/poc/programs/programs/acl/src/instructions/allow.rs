@@ -1,44 +1,70 @@
 use crate::{
-    constants,
+    constants::{self, MAX_SUBJECTS},
     error::AclError,
-    state::{Config, HandlerPermissions, CHUNK, DISCRIMINATOR, HANDLE_SIZE, PUBKEY_SIZE, VEC_PREFIX},
+    event::Allowed,
+    state::{
+        Config, HandlerPermissions, HandlerState,
+    },
     types::Handle,
 };
 use anchor_lang::prelude::*;
 
+
+/// Grants `context_key` access to the handle stored at the PDA identified
+/// by `(initial_key, output_index)`.
+///
+/// The two pubkeys play different roles and are intentionally distinct:
+/// - `initial_key`: PDA seed — identifies *which* permission list to mutate.
+///   Must match the `initial_key` that was passed to `init_handle` when the
+///   list was created.
+/// - `context_key`: the account being added to that list's `allowed_accounts`.
+///   This is the grantee.
+#[event_cpi]
 #[derive(Accounts)]
-#[instruction(handle: u128, context_key: Pubkey)]
+#[instruction(handle: Handle, context_key: Pubkey, initial_key: Pubkey, output_index: u128)]
 pub struct Allow<'info> {
-    #[account(mut)]
-    pub payer: Signer<'info>,
     pub authority: Signer<'info>,
     #[account(
         mut,
-        realloc = {
-            let data_len = permission_list.to_account_info().data_len();
-            let header = DISCRIMINATOR + HANDLE_SIZE + VEC_PREFIX;
-            let current_capacity = (data_len - header) / PUBKEY_SIZE;
-            let chunks = (current_capacity + 1).div_ceil(CHUNK);
-            DISCRIMINATOR + HandlerPermissions::space_for_chunks(chunks)
-        },
-        realloc::payer = payer,
-        realloc::zero = true,
+        seeds = [
+            constants::PERMISSION_LIST,
+            initial_key.as_ref(), 
+            &output_index.to_le_bytes()
+        ],
+        bump = permission_list.bump
+
     )]
     pub permission_list: Account<'info, HandlerPermissions>,
     #[account(
         seeds = [constants::ACL_CONFIG],
-        bump
+        bump = acl_config.bump
     )]
     pub acl_config: Account<'info, Config>,
-    pub system_program: Program<'info, System>,
 }
 
-pub fn allow(ctx: Context<Allow>, handle: Handle, context_key: Pubkey) -> Result<()> {
+pub fn allow(ctx: Context<Allow>, handle: Handle, context_key: Pubkey, _initial_key: Pubkey, _output_index: u128) -> Result<()> {
     let permission_list = &mut ctx.accounts.permission_list;
     let config = &ctx.accounts.acl_config;
     let authority = &ctx.accounts.authority;
+    require!(context_key != Pubkey::default(), AclError::DefaultKeyAllow);
+    require!(
+        config.authorize(authority.key),
+        AclError::UnauthorizedAccess
+    );
+    require!(permission_list.state == HandlerState::Bound, AclError::HandleNotReady);
     require!(handle == permission_list.handle, AclError::HandleMismatch);
-    require!(config.authorize(authority.key), AclError::UnauthorizedAccess);
-    permission_list.allowed_accounts.push(context_key);
+    let subject_count = permission_list.subject_count as usize;
+    require!(subject_count < MAX_SUBJECTS, AclError::HandleOverflow);
+
+    if permission_list.allowed_accounts.contains(&context_key) {
+        return Ok(())
+    }
+    
+    permission_list.allowed_accounts[subject_count] = context_key;
+    permission_list.subject_count += 1;
+    emit_cpi!(Allowed {
+        handle,
+        context_key
+    });
     Ok(())
 }
