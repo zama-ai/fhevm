@@ -176,6 +176,7 @@ describe("InputVerification", function () {
     let inputVerification: InputVerification;
     let gatewayConfig: GatewayConfig;
     let owner: Wallet;
+    let pauser: Wallet;
     let coprocessorTxSenders: HardhatEthersSigner[];
     let coprocessorSigners: HardhatEthersSigner[];
     let tokenFundedTxSender: Wallet;
@@ -189,6 +190,7 @@ describe("InputVerification", function () {
       inputVerification = fixture.inputVerification;
       gatewayConfig = fixture.gatewayConfig;
       owner = fixture.owner;
+      pauser = fixture.pauser;
       coprocessorTxSenders = fixture.coprocessorTxSenders;
       coprocessorSigners = fixture.coprocessorSigners;
       tokenFundedTxSender = fixture.tokenFundedTxSender;
@@ -539,8 +541,11 @@ describe("InputVerification", function () {
 
     it("Should not reach verify consensus if it has already been rejected with low coprocessor threshold", async function () {
       // Update the coprocessor threshold to 1 in order to try to reach a consensus twice with the
-      // current total of 3 coprocessors
+      // current total of 3 coprocessors. Per L-04, updateCoprocessorThreshold requires
+      // InputVerification to be paused first.
+      await inputVerification.connect(pauser).pause();
       await gatewayConfig.connect(owner).updateCoprocessorThreshold(1);
+      await inputVerification.connect(owner).unpause();
 
       // Trigger a proof rejection response with the first coprocessor transaction sender
       await inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId, extraDataV0);
@@ -565,6 +570,7 @@ describe("InputVerification", function () {
     let inputVerification: InputVerification;
     let gatewayConfig: GatewayConfig;
     let owner: Wallet;
+    let pauser: Wallet;
     let coprocessorTxSenders: HardhatEthersSigner[];
     let coprocessorSigners: HardhatEthersSigner[];
     let tokenFundedTxSender: Wallet;
@@ -576,6 +582,7 @@ describe("InputVerification", function () {
       inputVerification = fixture.inputVerification;
       gatewayConfig = fixture.gatewayConfig;
       owner = fixture.owner;
+      pauser = fixture.pauser;
       coprocessorTxSenders = fixture.coprocessorTxSenders;
       coprocessorSigners = fixture.coprocessorSigners;
       tokenFundedTxSender = fixture.tokenFundedTxSender;
@@ -808,8 +815,11 @@ describe("InputVerification", function () {
 
     it("Should not reach verify consensus if it has already been rejected with low coprocessor threshold", async function () {
       // Update the coprocessor threshold to 1 in order to try to reach a consensus twice with the
-      // current total of 3 coprocessors
+      // current total of 3 coprocessors. Per L-04, updateCoprocessorThreshold requires
+      // InputVerification to be paused first.
+      await inputVerification.connect(pauser).pause();
       await gatewayConfig.connect(owner).updateCoprocessorThreshold(1);
+      await inputVerification.connect(owner).unpause();
 
       // Create the EIP712 message
       const eip712Message = createEIP712ResponseZKPoK(

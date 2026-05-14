@@ -33,13 +33,13 @@ contract GatewayConfigMock {
 
     event UpdateCustodians(Custodian[] newCustodians);
 
-    event UpdateMpcThreshold(uint256 newMpcThreshold);
+    event UpdateMpcThresholdForContext(uint256 indexed contextId, uint256 newMpcThreshold);
 
-    event UpdatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold);
+    event UpdatePublicDecryptionThresholdForContext(uint256 indexed contextId, uint256 newPublicDecryptionThreshold);
 
-    event UpdateUserDecryptionThreshold(uint256 newUserDecryptionThreshold);
+    event UpdateUserDecryptionThresholdForContext(uint256 indexed contextId, uint256 newUserDecryptionThreshold);
 
-    event UpdateKmsGenThreshold(uint256 newKmsGenThreshold);
+    event UpdateKmsGenThresholdForContext(uint256 indexed contextId, uint256 newKmsGenThreshold);
 
     event UpdateCoprocessorThreshold(uint256 newCoprocessorThreshold);
 
@@ -93,20 +93,23 @@ contract GatewayConfigMock {
         emit UpdateCustodians(newCustodians);
     }
 
-    function updateMpcThreshold(uint256 newMpcThreshold) external {
-        emit UpdateMpcThreshold(newMpcThreshold);
+    function updateMpcThresholdForContext(uint256 contextId, uint256 newMpcThreshold) external {
+        emit UpdateMpcThresholdForContext(contextId, newMpcThreshold);
     }
 
-    function updatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold) external {
-        emit UpdatePublicDecryptionThreshold(newPublicDecryptionThreshold);
+    function updatePublicDecryptionThresholdForContext(
+        uint256 contextId,
+        uint256 newPublicDecryptionThreshold
+    ) external {
+        emit UpdatePublicDecryptionThresholdForContext(contextId, newPublicDecryptionThreshold);
     }
 
-    function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external {
-        emit UpdateUserDecryptionThreshold(newUserDecryptionThreshold);
+    function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newUserDecryptionThreshold) external {
+        emit UpdateUserDecryptionThresholdForContext(contextId, newUserDecryptionThreshold);
     }
 
-    function updateKmsGenThreshold(uint256 newKmsGenThreshold) external {
-        emit UpdateKmsGenThreshold(newKmsGenThreshold);
+    function updateKmsGenThresholdForContext(uint256 contextId, uint256 newKmsGenThreshold) external {
+        emit UpdateKmsGenThresholdForContext(contextId, newKmsGenThreshold);
     }
 
     function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external {

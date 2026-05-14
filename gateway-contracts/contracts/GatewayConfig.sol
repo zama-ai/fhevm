@@ -170,6 +170,17 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
+     * @dev Used by admin operations that mutate consensus state read by `InputVerification`.
+     *      The operator must pause `InputVerification` first to drain in-flight requests.
+     */
+    modifier whenInputVerificationPaused() {
+        if (!INPUT_VERIFICATION.paused()) {
+            revert InputVerificationMustBePaused();
+        }
+        _;
+    }
+
+    /**
      * @notice Initializes the contract
      * @dev This function needs to be public in order to be called by the UUPS proxy.
      * @param initialMetadata Metadata of the protocol
@@ -291,7 +302,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function updateCoprocessors(
         Coprocessor[] calldata newCoprocessors,
         uint256 newCoprocessorThreshold
-    ) external virtual onlyOwner {
+    ) external virtual onlyOwner whenInputVerificationPaused {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
 
         // Remove the old coprocessors
@@ -335,45 +346,49 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice See {IGatewayConfig-updateMpcThreshold}.
+     * @notice See {IGatewayConfig-updateMpcThresholdForContext}.
      */
-    function updateMpcThreshold(uint256 newMpcThreshold) external virtual onlyOwner {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        _setMpcThreshold($.currentKmsContextId, newMpcThreshold);
-        emit UpdateMpcThreshold(newMpcThreshold);
+    function updateMpcThresholdForContext(uint256 contextId, uint256 newMpcThreshold) external virtual onlyOwner {
+        _setMpcThreshold(contextId, newMpcThreshold);
+        emit UpdateMpcThresholdForContext(contextId, newMpcThreshold);
     }
 
     /**
-     * @notice See {IGatewayConfig-updatePublicDecryptionThreshold}.
+     * @notice See {IGatewayConfig-updatePublicDecryptionThresholdForContext}.
      */
-    function updatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold) external virtual onlyOwner {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        _setPublicDecryptionThreshold($.currentKmsContextId, newPublicDecryptionThreshold);
-        emit UpdatePublicDecryptionThreshold(newPublicDecryptionThreshold);
+    function updatePublicDecryptionThresholdForContext(
+        uint256 contextId,
+        uint256 newPublicDecryptionThreshold
+    ) external virtual onlyOwner {
+        _setPublicDecryptionThreshold(contextId, newPublicDecryptionThreshold);
+        emit UpdatePublicDecryptionThresholdForContext(contextId, newPublicDecryptionThreshold);
     }
 
     /**
-     * @notice See {IGatewayConfig-updateUserDecryptionThreshold}.
+     * @notice See {IGatewayConfig-updateUserDecryptionThresholdForContext}.
      */
-    function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external virtual onlyOwner {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        _setUserDecryptionThreshold($.currentKmsContextId, newUserDecryptionThreshold);
-        emit UpdateUserDecryptionThreshold(newUserDecryptionThreshold);
+    function updateUserDecryptionThresholdForContext(
+        uint256 contextId,
+        uint256 newUserDecryptionThreshold
+    ) external virtual onlyOwner {
+        _setUserDecryptionThreshold(contextId, newUserDecryptionThreshold);
+        emit UpdateUserDecryptionThresholdForContext(contextId, newUserDecryptionThreshold);
     }
 
     /**
-     * @notice See {IGatewayConfig-updateKmsGenThreshold}.
+     * @notice See {IGatewayConfig-updateKmsGenThresholdForContext}.
      */
-    function updateKmsGenThreshold(uint256 newKmsGenThreshold) external virtual onlyOwner {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        _setKmsGenThreshold($.currentKmsContextId, newKmsGenThreshold);
-        emit UpdateKmsGenThreshold(newKmsGenThreshold);
+    function updateKmsGenThresholdForContext(uint256 contextId, uint256 newKmsGenThreshold) external virtual onlyOwner {
+        _setKmsGenThreshold(contextId, newKmsGenThreshold);
+        emit UpdateKmsGenThresholdForContext(contextId, newKmsGenThreshold);
     }
 
     /**
      * @notice See {IGatewayConfig-updateCoprocessorThreshold}.
      */
-    function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external virtual onlyOwner {
+    function updateCoprocessorThreshold(
+        uint256 newCoprocessorThreshold
+    ) external virtual onlyOwner whenInputVerificationPaused {
         _setCoprocessorThreshold(newCoprocessorThreshold);
         emit UpdateCoprocessorThreshold(newCoprocessorThreshold);
     }

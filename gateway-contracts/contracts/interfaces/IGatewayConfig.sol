@@ -85,28 +85,32 @@ interface IGatewayConfig {
     event UpdateCustodians(Custodian[] newCustodians);
 
     /**
-     * @notice Emitted when the MPC threshold has been updated.
+     * @notice Emitted when the MPC threshold for a specific KMS context has been updated.
+     * @param contextId The KMS context the threshold was updated for.
      * @param newMpcThreshold The new MPC threshold.
      */
-    event UpdateMpcThreshold(uint256 newMpcThreshold);
+    event UpdateMpcThresholdForContext(uint256 indexed contextId, uint256 newMpcThreshold);
 
     /**
-     * @notice Emitted when the public decryption threshold has been updated.
+     * @notice Emitted when the public decryption threshold for a specific KMS context has been updated.
+     * @param contextId The KMS context the threshold was updated for.
      * @param newPublicDecryptionThreshold The new public decryption threshold.
      */
-    event UpdatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold);
+    event UpdatePublicDecryptionThresholdForContext(uint256 indexed contextId, uint256 newPublicDecryptionThreshold);
 
     /**
-     * @notice Emitted when the user decryption threshold has been updated.
+     * @notice Emitted when the user decryption threshold for a specific KMS context has been updated.
+     * @param contextId The KMS context the threshold was updated for.
      * @param newUserDecryptionThreshold The new user decryption threshold.
      */
-    event UpdateUserDecryptionThreshold(uint256 newUserDecryptionThreshold);
+    event UpdateUserDecryptionThresholdForContext(uint256 indexed contextId, uint256 newUserDecryptionThreshold);
 
     /**
-     * @notice Emitted when the key and CRS generation threshold has been updated.
+     * @notice Emitted when the key and CRS generation threshold for a specific KMS context has been updated.
+     * @param contextId The KMS context the threshold was updated for.
      * @param newKmsGenThreshold The new key and CRS generation threshold.
      */
-    event UpdateKmsGenThreshold(uint256 newKmsGenThreshold);
+    event UpdateKmsGenThresholdForContext(uint256 indexed contextId, uint256 newKmsGenThreshold);
 
     /**
      * @notice Emitted when the coprocessor threshold has been updated.
@@ -254,6 +258,13 @@ interface IGatewayConfig {
     error InvalidNullKmsContextId();
 
     /**
+     * @notice Error emitted when an admin operation requires `InputVerification` to be paused first.
+     * @dev `updateCoprocessors` and `updateCoprocessorThreshold` rewrite consensus state read by
+     *      every input verification, so the contract must be paused first to drain in-flight requests.
+     */
+    error InputVerificationMustBePaused();
+
+    /**
      * @notice Error emitted when the KMS context ID is not strictly greater than the current one.
      * @param contextId The provided context ID.
      * @param currentKmsContextId The current KMS context ID.
@@ -303,8 +314,8 @@ interface IGatewayConfig {
 
     /**
      * @notice Update the list of coprocessors and their threshold.
-     * @dev ⚠️ This function should be used with caution as it can lead to unexpected behavior in
-     * some requests and the contracts should first be paused. It will be deprecated in the future.
+     * @dev Requires `InputVerification` to be paused first — this call rewrites the coprocessor
+     *      set, which input verification reads on every call.
      * @param newCoprocessors The new coprocessors.
      * @param newCoprocessorThreshold The new coprocessor threshold.
      */
@@ -318,36 +329,53 @@ interface IGatewayConfig {
     function updateCustodians(Custodian[] calldata newCustodians) external;
 
     /**
-     * @notice Update the MPC threshold.
-     * @dev The new threshold must verify `0 <= t < n`, with `n` the number of KMS nodes currently registered.
+     * @notice Update the MPC threshold for a given KMS context.
+     * @dev The new threshold must verify `0 <= t < n`, with `n` the number of KMS nodes registered
+     *      for the given context. Updating the *current* KMS context's threshold can affect in-flight
+     *      decryption requests pinned to that context (they may fail to reach the new threshold or
+     *      reach it earlier than originally configured); the operator should ensure timing accordingly.
+     * @param contextId The KMS context to update.
      * @param newMpcThreshold The new MPC threshold.
      */
-    function updateMpcThreshold(uint256 newMpcThreshold) external;
+    function updateMpcThresholdForContext(uint256 contextId, uint256 newMpcThreshold) external;
 
     /**
-     * @notice Update the public decryption threshold.
-     * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of KMS nodes currently registered.
+     * @notice Update the public decryption threshold for a given KMS context.
+     * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of KMS nodes registered
+     *      for the given context. Updating the *current* KMS context's threshold can affect in-flight
+     *      decryption requests pinned to that context; the operator should ensure timing accordingly.
+     * @param contextId The KMS context to update.
      * @param newPublicDecryptionThreshold The new public decryption threshold.
      */
-    function updatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold) external;
+    function updatePublicDecryptionThresholdForContext(
+        uint256 contextId,
+        uint256 newPublicDecryptionThreshold
+    ) external;
 
     /**
-     * @notice Update the user decryption threshold.
-     * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of KMS nodes currently registered.
+     * @notice Update the user decryption threshold for a given KMS context.
+     * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of KMS nodes registered
+     *      for the given context. Updating the *current* KMS context's threshold can affect in-flight
+     *      decryption requests pinned to that context; the operator should ensure timing accordingly.
+     * @param contextId The KMS context to update.
      * @param newUserDecryptionThreshold The new user decryption threshold.
      */
-    function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external;
+    function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newUserDecryptionThreshold) external;
 
     /**
-     * @notice Update the key and CRS generation threshold.
-     * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of KMS nodes currently registered.
+     * @notice Update the key and CRS generation threshold for a given KMS context.
+     * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of KMS nodes registered
+     *      for the given context. Updating the *current* KMS context's threshold can affect in-flight
+     *      key/CRS generation requests pinned to that context; the operator should ensure timing accordingly.
+     * @param contextId The KMS context to update.
      * @param newKmsGenThreshold The new key and CRS generation threshold.
      */
-    function updateKmsGenThreshold(uint256 newKmsGenThreshold) external;
+    function updateKmsGenThresholdForContext(uint256 contextId, uint256 newKmsGenThreshold) external;
 
     /**
      * @notice Update the coprocessor threshold.
      * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of coprocessors currently registered.
+     *      Requires `InputVerification` to be paused first — input verification reads this threshold on every call.
      * @param newCoprocessorThreshold The new coprocessor threshold.
      */
     function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external;
