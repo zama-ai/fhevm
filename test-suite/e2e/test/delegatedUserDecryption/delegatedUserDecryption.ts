@@ -246,6 +246,6 @@ describe('Delegated user decryption', function () {
         privateKey,
         publicKey,
       ),
-    ).to.be.rejectedWith('Execution reverted');
+    ).to.be.rejectedWith('Not allowed on host ACL');
   });
 });
