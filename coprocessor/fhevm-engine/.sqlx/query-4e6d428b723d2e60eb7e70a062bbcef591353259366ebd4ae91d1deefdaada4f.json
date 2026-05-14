@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO keys (\n                chain_id, block_hash, key_id_gw, key_id,\n                pks_key, sks_key, sns_pk,\n                sks_key_compressed, sns_pk_compressed\n            )\n            SELECT\n                e.chain_id, e.block_hash, e.key_id, e.key_id,\n                e.key_content_public, e.key_content_sks_key, e.key_content_sns_pk,\n                e.key_content_sks_key_compressed, e.key_content_sns_pk_compressed\n            FROM kms_key_activation_events AS e\n            WHERE\n                e.chain_id = $1\n                AND e.block_hash = $2\n                AND e.key_id = $3\n                -- For now test on legacy uncompressed as always available\n                AND e.key_content_public IS NOT NULL\n                AND e.key_content_sks_key IS NOT NULL\n            ON CONFLICT (chain_id, block_hash, key_id_gw) DO UPDATE\n            SET pks_key            = EXCLUDED.pks_key,\n                sks_key            = EXCLUDED.sks_key,\n                sns_pk             = COALESCE(EXCLUDED.sns_pk, keys.sns_pk),\n                -- Compressed columns must move in lockstep with sks_key /\n                -- sns_pk: readers prefer the compressed blob when present,\n                -- so a format rollback (XOF -> ServerKey) on a replayed\n                -- activation would otherwise leave the legacy blob updated\n                -- but the compressed blob pointing at stale bytes.\n                sks_key_compressed = EXCLUDED.sks_key_compressed,\n                sns_pk_compressed  = EXCLUDED.sns_pk_compressed,\n                key_id_gw          = EXCLUDED.key_id_gw\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4e6d428b723d2e60eb7e70a062bbcef591353259366ebd4ae91d1deefdaada4f"
+}

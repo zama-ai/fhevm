@@ -63,8 +63,15 @@ impl DbKeyCache {
         }
 
         // Only fetch the heavy key blobs when the latest key is not already cached.
+        // We pull just one of sks_key / sks_key_compressed per row: COALESCE
+        // picks the compressed blob when populated. The is_compressed flag tells the
+        // deserializer which encoding came back.
         let row = sqlx::query(
-            "SELECT key_id, sequence_number, pks_key, sks_key, cks_key FROM keys WHERE key_id = $1",
+            "SELECT key_id, sequence_number, pks_key, \
+             COALESCE(sks_key_compressed, sks_key) AS sks_key_blob, \
+             (sks_key_compressed IS NOT NULL) AS is_compressed, \
+             cks_key \
+             FROM keys WHERE key_id = $1",
         )
         .bind(&key_id)
         .fetch_optional(&mut *executor)
@@ -138,17 +145,29 @@ impl DbKeyCache {
     where
         T: sqlx::PgExecutor<'a>,
     {
+        // Pick sks_key_compressed if present, sks_key otherwise -
+        // don't transfer both.
         let rows = if let Some(ref ids) = db_key_ids_to_query {
             sqlx::query(
-                "SELECT key_id, sequence_number, pks_key, sks_key, cks_key FROM keys WHERE key_id = ANY($1)",
+                "SELECT key_id, sequence_number, pks_key, \
+                 COALESCE(sks_key_compressed, sks_key) AS sks_key_blob, \
+                 (sks_key_compressed IS NOT NULL) AS is_compressed, \
+                 cks_key \
+                 FROM keys WHERE key_id = ANY($1)",
             )
             .bind(ids)
             .fetch_all(conn)
             .await?
         } else {
-            sqlx::query("SELECT key_id, sequence_number, pks_key, sks_key, cks_key FROM keys")
-                .fetch_all(conn)
-                .await?
+            sqlx::query(
+                "SELECT key_id, sequence_number, pks_key, \
+                 COALESCE(sks_key_compressed, sks_key) AS sks_key_blob, \
+                 (sks_key_compressed IS NOT NULL) AS is_compressed, \
+                 cks_key \
+                 FROM keys",
+            )
+            .fetch_all(conn)
+            .await?
         };
 
         let mut res = Vec::with_capacity(rows.len());
@@ -164,7 +183,8 @@ impl DbKeyCache {
         let key_id = row.try_get("key_id")?;
         let sequence_number: i64 = row.try_get("sequence_number")?;
         let pks_key: Vec<u8> = row.try_get("pks_key")?;
-        let sks_key: Vec<u8> = row.try_get("sks_key")?;
+        let sks_key_blob: Vec<u8> = row.try_get("sks_key_blob")?;
+        let is_compressed: bool = row.try_get("is_compressed")?;
         let cks_key: Option<Vec<u8>> = row.try_get("cks_key")?;
 
         let pks: tfhe::CompactPublicKey = safe_deserialize_key(&pks_key)?;
@@ -173,9 +193,15 @@ impl DbKeyCache {
             .map(|k| safe_deserialize_key(k))
             .transpose()?;
 
+        // Prefer compressed column from CompressedXofKeySet over legacy sks_key.
         #[cfg(not(feature = "gpu"))]
         {
-            let sks: tfhe::ServerKey = safe_deserialize_key(&sks_key)?;
+            let sks: tfhe::ServerKey = if is_compressed {
+                let csks: tfhe::CompressedServerKey = safe_deserialize_key(&sks_key_blob)?;
+                csks.decompress()
+            } else {
+                safe_deserialize_key(&sks_key_blob)?
+            };
 
             Ok(DbKey {
                 key_id,
@@ -188,7 +214,29 @@ impl DbKeyCache {
         #[cfg(feature = "gpu")]
         {
             let num_gpus = get_number_of_gpus() as u64;
-            let csks: tfhe::CompressedServerKey = safe_deserialize_key(&sks_key)?;
+            // The GPU path needs a CompressedServerKey. The XOF ingest
+            // path writes one to sks_key_compressed (is_compressed =
+            // true); the legacy-ServerKey fallback path writes a plain
+            // ServerKey to sks_key (is_compressed = false) which the
+            // deserialize below cannot consume. The LFS test fixture
+            // historically writes CompressedServerKey bytes into
+            // sks_key directly, so we still attempt the deserialize on
+            // legacy rows and wrap the failure with an operator-facing
+            // diagnostic.
+            let csks: tfhe::CompressedServerKey =
+                safe_deserialize_key(&sks_key_blob).map_err(|err| {
+                    if is_compressed {
+                        anyhow::anyhow!(
+                            "failed to deserialize CompressedServerKey from sks_key_compressed: {err}"
+                        )
+                    } else {
+                        anyhow::anyhow!(
+                            "GPU coprocessor cannot read a legacy ServerKey-format key (sks_key_compressed is NULL); \
+                             rotate kms-core to publish CompressedXofKeySet so the host-listener can ingest it into the compressed column. \
+                             Underlying deserialize error: {err}"
+                        )
+                    }
+                })?;
 
             Ok(DbKey {
                 key_id,
@@ -241,6 +289,57 @@ pub async fn read_keys_from_large_object_by_key_id_gw(
     info!("Retrieved oid: {:?}, column: {}", oid, keys_column_name);
 
     read_large_object_in_chunks(pool, oid, CHUNK_SIZE, capacity).await
+}
+
+/// Encoding of the server-key LOB returned by [`read_sns_pk_with_fallback`].
+///
+/// `Compressed` blobs are `tfhe::CompressedServerKey` and must be decompressed
+/// before use; `Legacy` blobs are `tfhe::ServerKey` and can be deserialized
+/// directly. Reflects which column in the `keys` table held the OID.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SnsPkEncoding {
+    Compressed,
+    Legacy,
+}
+
+/// Reads the SNS server-key LOB for `key_id_gw`, preferring the compressed
+/// column (`sns_pk_compressed`) when present and falling back to the
+/// decompressed column (`sns_pk`) for older rows.
+///
+/// Callers pass two capacity hints because the two encodings differ by
+/// a factor of ~3 in size — using a single legacy-sized hint for the
+/// compressed branch over-allocates the receive buffer and partly
+/// negates the operational benefit of the compressed format.
+pub async fn read_sns_pk_with_fallback(
+    pool: &PgPool,
+    key_id_gw: DbKeyId,
+    compressed_capacity: usize,
+    legacy_capacity: usize,
+) -> anyhow::Result<(Vec<u8>, SnsPkEncoding)> {
+    let row: PgRow = sqlx::query("SELECT sns_pk_compressed, sns_pk FROM keys WHERE key_id_gw = $1")
+        .bind(key_id_gw)
+        .fetch_one(pool)
+        .await?;
+
+    let compressed: Option<Oid> = row.try_get(0)?;
+    if let Some(oid) = compressed {
+        info!("Retrieved compressed sns_pk oid: {:?}", oid);
+        let bytes = read_large_object_in_chunks(pool, oid, CHUNK_SIZE, compressed_capacity).await?;
+        return Ok((bytes, SnsPkEncoding::Compressed));
+    }
+
+    // The activation upsert in host-listener::database gates on
+    // key_content_sks_key IS NOT NULL but doesn't explicitly require
+    // either sns_pk column; surface a clear error if a keys row ever
+    // makes it here with both SNS columns NULL rather than letting
+    // sqlx produce an opaque ColumnDecode failure.
+    let legacy: Option<Oid> = row.try_get(1)?;
+    let legacy = legacy.ok_or_else(|| {
+        anyhow::anyhow!("keys row for key_id_gw has neither sns_pk_compressed nor sns_pk populated")
+    })?;
+    info!("Retrieved legacy sns_pk oid: {:?}", legacy);
+    let bytes = read_large_object_in_chunks(pool, legacy, CHUNK_SIZE, legacy_capacity).await?;
+    Ok((bytes, SnsPkEncoding::Legacy))
 }
 
 // Read a large object by Oid from the database in chunks

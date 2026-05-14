@@ -9,6 +9,7 @@ use fhevm_engine_common::db_keys::write_large_object_in_chunks_tx;
 
 use crate::contracts::KMSGeneration;
 use crate::kms_generation::key_id_to_database_bytes;
+use crate::kms_generation::sks_key::PreparedServerKey;
 
 const CHUNK_SIZE: usize = 128 * 1024 * 1024; // 128MB
 
@@ -238,23 +239,33 @@ pub(crate) async fn activate_ready_key_activations(
             r#"
             INSERT INTO keys (
                 chain_id, block_hash, key_id_gw, key_id,
-                pks_key, sks_key, sns_pk
+                pks_key, sks_key, sns_pk,
+                sks_key_compressed, sns_pk_compressed
             )
             SELECT
                 e.chain_id, e.block_hash, e.key_id, e.key_id,
-                e.key_content_public, e.key_content_sks_key, e.key_content_sns_pk
+                e.key_content_public, e.key_content_sks_key, e.key_content_sns_pk,
+                e.key_content_sks_key_compressed, e.key_content_sns_pk_compressed
             FROM kms_key_activation_events AS e
             WHERE
                 e.chain_id = $1
                 AND e.block_hash = $2
                 AND e.key_id = $3
+                -- For now test on legacy uncompressed as always available
                 AND e.key_content_public IS NOT NULL
                 AND e.key_content_sks_key IS NOT NULL
             ON CONFLICT (chain_id, block_hash, key_id_gw) DO UPDATE
-            SET pks_key   = EXCLUDED.pks_key,
-                sks_key   = EXCLUDED.sks_key,
-                sns_pk    = COALESCE(EXCLUDED.sns_pk, keys.sns_pk),
-                key_id_gw = EXCLUDED.key_id_gw
+            SET pks_key            = EXCLUDED.pks_key,
+                sks_key            = EXCLUDED.sks_key,
+                sns_pk             = COALESCE(EXCLUDED.sns_pk, keys.sns_pk),
+                -- Compressed columns must move in lockstep with sks_key /
+                -- sns_pk: readers prefer the compressed blob when present,
+                -- so a format rollback (XOF -> ServerKey) on a replayed
+                -- activation would otherwise leave the legacy blob updated
+                -- but the compressed blob pointing at stale bytes.
+                sks_key_compressed = EXCLUDED.sks_key_compressed,
+                sns_pk_compressed  = EXCLUDED.sns_pk_compressed,
+                key_id_gw          = EXCLUDED.key_id_gw
             "#,
             chain_id,
             &block_hash,
@@ -485,15 +496,35 @@ pub(crate) async fn all_pending_crs_activations_to_download(
     Ok(result)
 }
 
-pub async fn set_ready_key_activation(
+pub(crate) async fn set_ready_key_activation(
     tx: &mut Transaction<'_, Postgres>,
     activation: &PendingKeyActivation,
-    sns_pk: Option<Vec<u8>>,
-    sks_key: Option<Vec<u8>>,
+    server_key: Option<PreparedServerKey>,
     public_key: Option<Vec<u8>>,
 ) -> anyhow::Result<()> {
+    let (sns_pk, sks_key, sns_pk_compressed, sks_key_compressed) =
+        if let Some(prepared) = server_key {
+            (
+                Some(prepared.sns_pk),
+                Some(prepared.sks_key),
+                prepared.sns_pk_compressed,
+                prepared.sks_key_compressed,
+            )
+        } else {
+            (None, None, None, None)
+        };
     let sns_pk_oid = if let Some(sns_pk) = sns_pk {
         Some(write_large_object_in_chunks_tx(tx, &sns_pk, CHUNK_SIZE).await?)
+    } else {
+        None
+    };
+    let sns_pk_compressed_oid = if let Some(sns_pk_compressed) =
+        sns_pk_compressed
+    {
+        Some(
+            write_large_object_in_chunks_tx(tx, &sns_pk_compressed, CHUNK_SIZE)
+                .await?,
+        )
     } else {
         None
     };
@@ -505,12 +536,16 @@ pub async fn set_ready_key_activation(
             key_content_sns_pk = $1,
             key_content_sks_key = $2,
             key_content_public = $3,
+            key_content_sns_pk_compressed = $4,
+            key_content_sks_key_compressed = $5,
             last_updated_at = NOW()
-        WHERE chain_id = $4 AND block_hash = $5 AND key_id = $6
+        WHERE chain_id = $6 AND block_hash = $7 AND key_id = $8
         "#,
         sns_pk_oid,
         sks_key,
         public_key,
+        sns_pk_compressed_oid,
+        sks_key_compressed,
         activation.chain_id.as_i64(),
         activation.block_hash,
         activation.key_id,
