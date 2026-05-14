@@ -11,11 +11,46 @@ import {
   defaultHostChainKey,
   hostChainSuffix,
 } from "../layout";
-import type { LocalOverride, OverrideGroup, State, StepName } from "../types";
+import type { LocalOverride, OverrideGroup, ResolvedCoprocessorScenarioInstance, State, StepName } from "../types";
 import { extraHostChains, hostChainsForState } from "./topology";
 
-const UPGRADEABLE_GROUPS = ["coprocessor", "kms-connector", "test-suite"] as const;
-type UpgradeGroup = (typeof UPGRADEABLE_GROUPS)[number];
+const UPGRADEABLE_GROUPS = ["coprocessor", "kms-connector", "kms-core", "kms", "listener-core", "relayer", "test-suite"] as const;
+export type UpgradeGroup = (typeof UPGRADEABLE_GROUPS)[number];
+const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
+  "coprocessor": [
+    "COPROCESSOR_DB_MIGRATION_VERSION",
+    "COPROCESSOR_HOST_LISTENER_VERSION",
+    "COPROCESSOR_GW_LISTENER_VERSION",
+    "COPROCESSOR_TX_SENDER_VERSION",
+    "COPROCESSOR_TFHE_WORKER_VERSION",
+    "COPROCESSOR_ZKPROOF_WORKER_VERSION",
+    "COPROCESSOR_SNS_WORKER_VERSION",
+  ],
+  "kms-connector": [
+    "CONNECTOR_DB_MIGRATION_VERSION",
+    "CONNECTOR_GW_LISTENER_VERSION",
+    "CONNECTOR_KMS_WORKER_VERSION",
+    "CONNECTOR_TX_SENDER_VERSION",
+  ],
+  "kms-core": ["CORE_VERSION"],
+  "kms": [
+    "CORE_VERSION",
+    "CONNECTOR_DB_MIGRATION_VERSION",
+    "CONNECTOR_GW_LISTENER_VERSION",
+    "CONNECTOR_KMS_WORKER_VERSION",
+    "CONNECTOR_TX_SENDER_VERSION",
+  ],
+  "listener-core": ["LISTENER_CORE_VERSION"],
+  "relayer": ["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"],
+  "test-suite": ["TEST_SUITE_VERSION"],
+};
+const LISTENER_CORE_SERVICES = ["listener-redis", "listener-publisher-for-anvil"];
+type UpgradeComponentPlan = {
+  component: string;
+  services: string[];
+  migrationServices: string[];
+  runtimeServices: string[];
+};
 const supportsConsumerForState = (state: { versions?: State["versions"] }) =>
   !state.versions || supportsHostListenerConsumer({ versions: state.versions });
 const coprocessorRuntimeSuffixes = (state: { versions?: State["versions"] }) =>
@@ -112,16 +147,37 @@ export const multiChainCoprocessorUpgradeTargets = (
 export const resolveUpgradePlan = (
   state: Pick<State, "overrides" | "scenario"> & { versions?: State["versions"] },
   groupValue: string | undefined,
+  options: { lockFile?: boolean } = {},
 ) => {
   if (!groupValue || !UPGRADEABLE_GROUPS.includes(groupValue as UpgradeGroup)) {
     throw new Error(`upgrade expects one of ${UPGRADEABLE_GROUPS.join(", ")}`);
   }
   const group = groupValue as UpgradeGroup;
+  const lockFileMode = options.lockFile === true;
+  if (group === "kms") {
+    if (!lockFileMode) {
+      throw new Error("upgrade kms requires --lock-file");
+    }
+    const core = splitServices("core", ["kms-core"]);
+    const connector = splitServices("kms-connector", GROUP_BUILD_SERVICES["kms-connector"]);
+    return upgradePlan(group, [core, connector], ["base", "kms-connector"]);
+  }
+  if (group === "kms-core") {
+    if (!lockFileMode) {
+      throw new Error("upgrade kms-core requires --lock-file");
+    }
+    return upgradePlan(group, [splitServices("core", ["kms-core"])], ["base"]);
+  }
+  if (group === "listener-core") {
+    if (lockFileMode) {
+      return upgradePlan(group, [splitServices("listener-core", LISTENER_CORE_SERVICES)], ["listener-core"]);
+    }
+  }
   const groupOverrides = state.overrides.filter((item) => item.group === group);
-  if (group === "coprocessor" && !hasLocalCoprocessorInstance(state) && !groupOverrides.length) {
+  if (!lockFileMode && group === "coprocessor" && !hasLocalCoprocessorInstance(state) && !groupOverrides.length) {
     throw new Error("upgrade requires an active local coprocessor instance");
   }
-  if (group !== "coprocessor" && !groupOverrides.length) {
+  if (!lockFileMode && group !== "coprocessor" && !groupOverrides.length) {
     throw new Error(`upgrade requires an active local override for ${group}`);
   }
   const [component] = GROUP_BUILD_COMPONENTS[group];
@@ -135,17 +191,26 @@ export const resolveUpgradePlan = (
       : GROUP_BUILD_SERVICES[group]
     : [];
   const overrideServices = selectedServices.length ? [...new Set(selectedServices)] : fullGroupServices;
+  const releaseServices = lockFileMode ? GROUP_BUILD_SERVICES[group] : overrideServices;
   const scenario = state.scenario;
+  const instances: ResolvedCoprocessorScenarioInstance[] = scenario.instances.length
+    ? scenario.instances
+    : Array.from({ length: topologyForState(state).count }, (_, index) => ({
+        index,
+        source: { mode: "inherit" },
+        env: {},
+        args: {},
+      }));
   const plannedServices =
     group === "coprocessor"
-      ? scenario.instances.flatMap((instance) => {
-          if (instance.source.mode === "registry") {
+      ? instances.flatMap((instance) => {
+          if (!lockFileMode && instance.source.mode === "registry") {
             return [];
           }
           const selected =
             instance.source.mode === "local"
               ? instance.localServices ?? coprocessorServices(state)
-              : overrideServices;
+              : releaseServices;
           return selected.map((service) =>
             instance.index === 0 ? service : service.replace(/^coprocessor-/, `coprocessor${instance.index}-`),
           );
@@ -153,15 +218,32 @@ export const resolveUpgradePlan = (
       : selectedServices.length
         ? [...new Set(selectedServices)]
         : GROUP_BUILD_SERVICES[group];
+  return upgradePlan(group, [splitServices(component, plannedServices)], [group === "coprocessor" ? "coprocessor" : group]);
+};
+
+const splitServices = (component: string, plannedServices: string[]): UpgradeComponentPlan => {
   const services = [...new Set(plannedServices)];
-  const runtimeServices = services.filter((service) => !service.endsWith("-db-migration"));
+  return {
+    component,
+    services,
+    migrationServices: services.filter((service) => service.endsWith("-db-migration")),
+    runtimeServices: services.filter((service) => !service.endsWith("-db-migration")),
+  };
+};
+
+const upgradePlan = (group: UpgradeGroup, components: UpgradeComponentPlan[], steps: StepName[]) => {
+  const runtimeServices = components.flatMap((component) => component.runtimeServices);
   if (!runtimeServices.length) {
     throw new Error(`upgrade requires restartable runtime services for ${group}`);
   }
   return {
-    component,
+    component: components[0].component,
+    components,
     group,
+    migrationServices: components.flatMap((component) => component.migrationServices),
     runtimeServices,
-    step: group === "coprocessor" ? "coprocessor" : group,
+    step: steps[0],
+    steps,
+    versionKeys: UPGRADE_VERSION_KEYS[group],
   } as const;
 };

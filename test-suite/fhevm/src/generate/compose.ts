@@ -125,6 +125,9 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
       args: { RUST_IMAGE_VERSION: "1.91.0" },
     }),
   },
+  "listener-core": {
+    "listener-publisher-for-anvil": buildSpec("../../../listener", "Dockerfile"),
+  },
   relayer: {
     "relayer-db-migration": buildSpec("../../..", "relayer/docker/relayer-migrate/Dockerfile"),
     relayer: buildSpec("../../..", "relayer/docker/relayer/Dockerfile"),
@@ -290,12 +293,14 @@ const applyInstanceAdjustments = (
 };
 
 /** Lists runtime service names for the requested component and topology. */
-export const serviceNameList = (state: Pick<State, "scenario">, component: string) => {
+export const serviceNameList = (state: Pick<State, "scenario" | "versions">, component: string) => {
   if (component !== "coprocessor") {
     return [];
   }
   const topology = topologyForState(state);
-  const suffixes = GROUP_SERVICE_SUFFIXES.coprocessor;
+  const suffixes = GROUP_SERVICE_SUFFIXES.coprocessor.filter(
+    (suffix) => suffix !== "host-listener-consumer" || supportsHostListenerConsumer(state),
+  );
   const names: string[] = [];
   for (let index = 0; index < topology.count; index += 1) {
     for (const suffix of suffixes) {

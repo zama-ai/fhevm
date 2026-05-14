@@ -190,37 +190,28 @@ The lock file must contain every version key. Example:
 If you also pass `--target`, it must match the lock file. Otherwise the CLI infers the target from the lock file itself.
 The lock file replaces only the version resolution step — preflight, boot pipeline, and everything else run normally.
 
-## Rollout Lock Generation
+## Stateful Rollout Runbooks
 
-For release compatibility matrices, check in a compat-test definition under `compat-tests/` and either generate the full rollout locally or render one ephemeral step on demand:
+Release rollouts are executable TypeScript runbooks under `rollouts/`. A runbook boots one baseline stack, performs each upgrade step in order, preserves chain/database/container state, and runs rollout-safe e2e coverage after each step:
 
 ```sh
-./fhevm-cli rollout \
-  --compat-test ./compat-tests/v0.12-to-main.json \
-  --out /tmp/fhevm-rollout
-
-./fhevm-cli rollout \
-  --compat-test ./compat-tests/v0.12-to-main.json \
-  --step 3 \
-  --out /tmp/fhevm-step.lock.json
+./fhevm-cli rollout run ./rollouts/v0.12-to-v0.13/run.ts
 ```
 
-Compat-tests define:
+Use `./fhevm-cli rollout receipt` to print the markdown receipt of the most recent rollout run.
 
-- explicit `from` and `to` version maps
-- explicit `harness.testSuiteVersion` for the harness line that should materialize into `TEST_SUITE_VERSION`
-- explicit `harness.relayerSdkVersion`
-- ordered rollout `steps` with either `units` or ordered `substeps`
-- an explicit `units` map that assigns every version key to exactly one rollout unit
-- optional execution defaults such as scenario
+Runbooks use the same primitives an operator needs during a release:
 
-`rollout` writes:
+- `ctx.up(...)` starts the old baseline once.
+- `ctx.writeVersionLock(...)` writes explicit version locks from the runbook.
+- `ctx.applyVersionLock(...)` applies version changes that do not restart runtime services, then regenerates env/compose.
+- `ctx.runHostContractTask(...)` and `ctx.runGatewayContractTask(...)` run contract migration/upgrade tasks from the selected deploy images.
+- `ctx.upgradeRuntimeGroup(...)` restarts selected runtime components in place and runs their DB migrations when present.
+- `ctx.test(...)` runs the rollout-safe e2e profile after each state.
 
-- `00-baseline.lock.json`
-- one cumulative lock file per rollout step
-- `matrix.json` for GitHub Actions matrix expansion
+`rollout-standard` is intentionally narrow: it covers encrypted input, FHE compute/write paths, user decrypt, delegated user decrypt, public decrypt, and ERC20 transfer coverage. Broader profiles such as `multi-chain-isolation`, HCU, pause/unpause, DB revert, and drift recovery stay available as explicit tests but are not part of the per-step rollout gate.
 
-GitHub Actions consumes the compat-test JSON directly and renders one temporary lock file per matrix job. The generated lock files are execution artifacts, not checked-in state.
+The `test-suite-stateful-rollout` workflow executes the checked-in runbook when the `rollout` label is present, or through manual dispatch with a custom runbook path.
 
 ## Version Override via Environment Variables
 
@@ -283,17 +274,17 @@ If you already know the exact repo SHA you want and all fhevm images were publis
 
 This resolves every repo-owned image to `9587546` and keeps only external companions like `core` on the maintained non-network companion set used by `latest-main`.
 
-## Compatibility Matrix
+## Compatibility Rules
 
 All version compatibility rules live in a single source of truth: `src/compat/compat.ts` → `COMPAT_MATRIX`.
 
-The matrix has three sections:
+The rules have three sections:
 
-| Section | Purpose | Example |
-|---------|---------|---------|
-| `incompatibilities` | Version pairs that break at runtime | relayer v1 + test-suite v2 |
-| `legacyShims` | Old versions needing extra flags/env | coprocessor < 0.12.0 needs API key flags |
-| `anchors` | Git history reference points | simple-ACL cutover commit |
+| Section             | Purpose                              | Example                                  |
+| ------------------- | ------------------------------------ | ---------------------------------------- |
+| `incompatibilities` | Version pairs that break at runtime  | relayer v1 + test-suite v2               |
+| `legacyShims`       | Old versions needing extra flags/env | coprocessor < 0.12.0 needs API key flags |
+| `anchors`           | Git history reference points         | simple-ACL cutover commit                |
 
 Merge-queue e2e explicitly keeps `build=false`.
 For non-release PRs it boots `two-of-two-multi-chain` from the frozen base lock plus any successful head-image overrides.
@@ -308,6 +299,7 @@ Edit `MAINLINE_COMPANIONS` in `src/resolve/presets.ts`. `latest-main` and `sha` 
 Add an entry to `COMPAT_MATRIX.incompatibilities` with a unique `code`. The CLI validates all entries at boot.
 
 **Add a legacy shim for a breaking change:**
+
 1. Add a profile to `SHIM_PROFILES` describing the legacy flags/env
 2. Add an entry to `COMPAT_MATRIX.legacyShims` specifying which version key and threshold
 3. Run `bun test` to verify
@@ -367,6 +359,7 @@ When changing runtime flags, env contracts, target semantics, or external compan
 Use `--override` to run local code for one repo-owned group on top of an otherwise versioned stack.
 
 Important:
+
 - by default, the stack uses the published `test-suite` image
 - local e2e test changes are not picked up unless you use `--override test-suite` or `--build`
 - if you are validating newly added or edited tests in this branch, prefer `--override test-suite` for a surgical local test-suite rebuild
@@ -420,11 +413,11 @@ Example on a mainline baseline:
 
 Available runtime suffixes:
 
-| Group | Suffixes |
-|-------|----------|
-| `coprocessor` | `db-migration`, `host-listener`, `host-listener-poller`, `gw-listener`, `tfhe-worker`, `zkproof-worker`, `sns-worker`, `transaction-sender` |
-| `kms-connector` | `db-migration`, `gw-listener`, `kms-worker`, `tx-sender` |
-| `test-suite` | `e2e-debug` |
+| Group           | Suffixes                                                                                                                                    |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `coprocessor`   | `db-migration`, `host-listener`, `host-listener-poller`, `gw-listener`, `tfhe-worker`, `zkproof-worker`, `sns-worker`, `transaction-sender` |
+| `kms-connector` | `db-migration`, `gw-listener`, `kms-worker`, `tx-sender`                                                                                    |
+| `test-suite`    | `e2e-debug`                                                                                                                                 |
 
 ### Multiple overrides
 
@@ -465,7 +458,7 @@ If a runtime override is already active and you only want to rebuild and restart
 ./fhevm-cli upgrade coprocessor
 ```
 
-`upgrade` only supports active runtime override groups: `coprocessor`, `kms-connector`, and `test-suite`. It is a runtime rebuild/restart command, not a live schema migration command. For schema-coupled groups (`coprocessor`, `kms-connector`), if local DB migrations changed, `upgrade` fails fast and asks you to do a fresh `fhevm-cli up` instead of rerunning the initializer on a live database.
+`upgrade` restarts the selected runtime group in place. With `--lock-file`, it moves that group to the versions from the lock, regenerates env/compose, runs DB migration services when present, and restarts only the affected runtime services.
 
 ## Dropped Convenience Commands
 
@@ -474,7 +467,7 @@ If a runtime override is already active and you only want to rebuild and restart
 
 ## Coprocessor Scenarios
 
-Use `--scenario <name-or-file>` for consensus and rollout matrices. Bundled presets resolve by filename stem, and explicit file paths still work. The scenario file is the source of truth for:
+Use `--scenario <name-or-file>` for consensus and stateful rollout runs. Bundled presets resolve by filename stem, and explicit file paths still work. The scenario file is the source of truth for:
 
 - coprocessor count and threshold
 - per-instance source mode: `inherit`, `registry`, or `local`

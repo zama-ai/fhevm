@@ -21,6 +21,7 @@ export const TARGETS = ["latest-main", "latest-supported", "sha", "devnet", "tes
 export const OVERRIDE_GROUPS = [
   "coprocessor",
   "kms-connector",
+  "listener-core",
   "relayer",
   "gateway-contracts",
   "host-contracts",

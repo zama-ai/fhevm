@@ -1,7 +1,8 @@
-import path from "node:path";
-import { mkdir, writeFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_GATEWAY_RPC_PORT, DEFAULT_HOST_RPC_PORT, MINIO_PORT, STANDARD_TEST_PROFILES, TEST_SUITE_CONTAINER } from "./layout";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+
+import { resolveLogsFollow } from "./cli";
 import {
   buildTestContainerArgs,
   dbRevertDeleteExpectations,
@@ -11,10 +12,17 @@ import {
   waitForKeyBootstrap,
 } from "./commands/test";
 import { resumeOptionConflicts, shouldShowResumeHint } from "./flow/up-flow";
-import { resolveLogsFollow } from "./cli";
-import { withTempStateDir } from "./test-state";
+import {
+  DEFAULT_GATEWAY_RPC_PORT,
+  DEFAULT_HOST_RPC_PORT,
+  MINIO_PORT,
+  ROLLOUT_STANDARD_TEST_PROFILES,
+  STANDARD_TEST_PROFILES,
+  TEST_SUITE_CONTAINER,
+} from "./layout";
 import { testDefaultScenario } from "./test-fixtures";
-import type { State } from "./types";
+import { withTempStateDir } from "./test-state";
+import { OVERRIDE_GROUPS, type State } from "./types";
 
 const CLI_DIR = path.resolve(import.meta.dir, "..");
 
@@ -69,8 +77,13 @@ const bootstrappedState = (target: State["target"] = "latest-main"): State => ({
     gateway: {} as NonNullable<State["discovery"]>["gateway"],
     hosts: { host: {} as NonNullable<State["discovery"]>["hosts"][string] },
     endpoints: {
-      gateway: { http: `http://127.0.0.1:${DEFAULT_GATEWAY_RPC_PORT}`, ws: `ws://127.0.0.1:${DEFAULT_GATEWAY_RPC_PORT}` },
-      hosts: { host: { http: `http://127.0.0.1:${DEFAULT_HOST_RPC_PORT}`, ws: `ws://127.0.0.1:${DEFAULT_HOST_RPC_PORT}` } },
+      gateway: {
+        http: `http://127.0.0.1:${DEFAULT_GATEWAY_RPC_PORT}`,
+        ws: `ws://127.0.0.1:${DEFAULT_GATEWAY_RPC_PORT}`,
+      },
+      hosts: {
+        host: { http: `http://127.0.0.1:${DEFAULT_HOST_RPC_PORT}`, ws: `ws://127.0.0.1:${DEFAULT_HOST_RPC_PORT}` },
+      },
       minioExternal: `http://127.0.0.1:${MINIO_PORT}`,
       minioInternal: `http://minio:${MINIO_PORT}`,
     },
@@ -111,10 +124,28 @@ describe("cli", () => {
     expect(output).toContain("[TESTNAME]");
   });
 
+  test("prints upgrade help with version-lock flags", async () => {
+    const result = await execCli(["upgrade", "--help"]);
+    const output = normalizeCliOutput(result.stdout);
+    expect(result.code).toBe(0);
+    expect(output).toContain("fhevm-cli upgrade");
+    expect(output).toContain("--lock-file");
+  });
+
+  test("prints rollout help with run and receipt subcommands", async () => {
+    const result = await execCli(["rollout", "--help"]);
+    const output = normalizeCliOutput(result.stdout);
+    expect(result.code).toBe(0);
+    expect(output).toContain("fhevm-cli rollout");
+    expect(output).toContain("run");
+    expect(output).toContain("receipt");
+  });
+
   test("lists bundled test profiles", async () => {
     const result = await execCli(["test", "list"]);
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("standard");
+    expect(result.stdout).toContain("rollout-standard");
     expect(result.stdout).toContain("multi-chain-isolation");
     expect(result.stdout).toContain("ciphertext-drift - 2+ coprocessors");
     expect(result.stdout).toContain("ciphertext-drift-auto-recovery - standard");
@@ -122,6 +153,22 @@ describe("cli", () => {
 
   test("standard suite includes multi-chain isolation coverage", () => {
     expect(STANDARD_TEST_PROFILES).toContain("multi-chain-isolation");
+  });
+
+  test("rollout-standard keeps write coverage but excludes disruptive profiles", () => {
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).toContain("input-proof");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).toContain("input-proof-compute-decrypt");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).toContain("user-decryption");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).toContain("delegated-user-decryption");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).toContain("erc20");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).toContain("public-decrypt-http-ebool");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).toContain("public-decrypt-http-mixed");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).not.toContain("paused-host-contracts");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).not.toContain("paused-gateway-contracts");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).not.toContain("coprocessor-db-state-revert");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).not.toContain("ciphertext-drift-auto-recovery");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).not.toContain("multi-chain-isolation");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).not.toContain("hcu-block-cap");
   });
 
   test("lists bundled scenarios", async () => {
@@ -175,7 +222,9 @@ describe("cli", () => {
   test("lists valid overrides when override parsing fails", async () => {
     const result = await execCli(["up", "--override", "bogus"]);
     expect(result.code).toBe(1);
-    expect(result.stderr).toContain("Valid: all, coprocessor, kms-connector, relayer, gateway-contracts, host-contracts, test-suite");
+    expect(result.stderr).toContain(
+      `Valid: all, ${OVERRIDE_GROUPS.join(", ")}`,
+    );
   });
 
   test("prints logs help with an optional service argument", async () => {
@@ -245,7 +294,14 @@ describe("cli", () => {
           ciphertexts128: 2,
         },
       ),
-    ).toEqual(["computationsDone", "computationsTotal", "allowedHandles", "pbsComputations", "ciphertextDigest", "ciphertexts"]);
+    ).toEqual([
+      "computationsDone",
+      "computationsTotal",
+      "allowedHandles",
+      "pbsComputations",
+      "ciphertextDigest",
+      "ciphertexts",
+    ]);
   });
 
   test("resume rejects any explicit target override", () => {

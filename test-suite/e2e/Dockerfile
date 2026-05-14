@@ -28,10 +28,7 @@ COPY test-suite/e2e/package.json ./test-suite/e2e/
 
 # Install dependencies
 RUN npm ci && \
-    npm prune && \
-    if [ -n "$RELAYER_SDK_VERSION" ]; then \
-      npm install --prefix test-suite/e2e --no-save "@zama-fhe/relayer-sdk@${RELAYER_SDK_VERSION}"; \
-    fi
+    npm prune
 
 # Copy sources after deps are cached
 COPY library-solidity ./library-solidity
@@ -40,6 +37,10 @@ COPY test-suite/e2e ./test-suite/e2e
 WORKDIR /app/test-suite/e2e
 
 RUN npx hardhat compile
+
+RUN if [ -n "$RELAYER_SDK_VERSION" ]; then \
+      npm install --prefix /app/test-suite/e2e --no-save "@zama-fhe/relayer-sdk@${RELAYER_SDK_VERSION}"; \
+    fi
 
 # --- Runtime Stage ---
 FROM node:${NODE_VERSION} AS prod

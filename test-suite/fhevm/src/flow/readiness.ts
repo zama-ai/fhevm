@@ -1,6 +1,6 @@
 import { supportsHostListenerConsumer } from "../compat/compat";
 import { BootstrapTimeout, ContainerCrashed, MinioError, PreflightError, ProbeTimeout, RpcError } from "../errors";
-import { requiresModernHostAddressArtifacts } from "../compat/compat";
+import { bootstrapUsesHostKmsGeneration } from "../compat/compat";
 import {
   COPROCESSOR_DB_CONTAINER,
   CRSGEN_ID_SELECTOR,
@@ -19,6 +19,10 @@ import { hostReachableMaterialUrl, hostReachableRpcUrl, predictedCrsId, predicte
 import { run } from "../utils/process";
 
 const POST_BOOT_HEALTH_GATE_DELAY_MS = 5_000;
+const KMS_CONNECTOR_DECRYPTION_READY =
+  /Started Decryption polling from block|Last block polled updated for \d+\/\d+ event types in \[PublicDecryptionRequest, UserDecryptionRequest\]/;
+const KMS_CONNECTOR_KMS_GENERATION_READY =
+  /Started KMSGeneration polling from block|Last block polled updated for \d+\/\d+ event types in \[PrepKeygenRequest, KeygenRequest, CrsgenRequest, PrssInit, KeyReshareSameSet\]/;
 
 export const KMS_CONNECTOR_HEALTH_CONTAINERS = [
   "kms-connector-gw-listener",
@@ -290,7 +294,7 @@ export const probeBootstrap = async (state: State) => {
   const keyPrefix = discovery.minioKeyPrefix ?? "PUB";
   try {
     const defaultHostKey = defaultHostChainKey(state.scenario.hostChains);
-    const useHostKms = requiresModernHostAddressArtifacts(state);
+    const useHostKms = bootstrapUsesHostKmsGeneration(state);
     const rawRpcUrl = useHostKms
       ? discovery.endpoints.hosts[defaultHostKey]?.http
       : discovery.endpoints.gateway.http;
@@ -385,8 +389,8 @@ export const waitForKmsConnector = async () => {
   await waitForContainer("kms-connector-gw-listener", "running");
   await waitForContainer("kms-connector-kms-worker", "running");
   await waitForContainer("kms-connector-tx-sender", "running");
-  await waitForLog("kms-connector-gw-listener", /Started Decryption polling from block/);
-  await waitForLog("kms-connector-gw-listener", /Started KMSGeneration polling from block/);
+  await waitForLog("kms-connector-gw-listener", KMS_CONNECTOR_DECRYPTION_READY);
+  await waitForLog("kms-connector-gw-listener", KMS_CONNECTOR_KMS_GENERATION_READY);
 };
 
 /** Waits for the e2e test-suite container to reach running state. */

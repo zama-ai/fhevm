@@ -9,6 +9,9 @@ import { CommandError } from "../errors";
 const readPipe = async (stream: ReadableStream<Uint8Array> | number | null | undefined) =>
   stream && typeof stream !== "number" ? new Response(stream).text() : "";
 
+const appendBounded = (current: string, chunk: string, maxChars = 20_000) =>
+  (current + chunk).slice(-maxChars);
+
 /** Runs a command and captures stdout, stderr, and exit code. */
 export const run = async (argv: string[], options: RunOptions = {}): Promise<RunResult> => {
   let proc: ReturnType<typeof Bun.spawn>;
@@ -64,13 +67,45 @@ export const runStreaming = async (
   argv: string[],
   options: Omit<RunOptions, "input"> = {},
 ): Promise<number> => {
+  let stdout = "";
+  let stderr = "";
+  const pipe = async (
+    stream: ReadableStream<Uint8Array> | number | null | undefined,
+    writer: NodeJS.WriteStream,
+    capture: "stdout" | "stderr",
+  ) => {
+    if (!stream || typeof stream === "number") {
+      return;
+    }
+    const reader = stream.getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          return;
+        }
+        if (value?.length) {
+          const chunk = Buffer.from(value);
+          if (capture === "stdout") {
+            stdout = appendBounded(stdout, chunk.toString());
+          } else {
+            stderr = appendBounded(stderr, chunk.toString());
+          }
+          writer.write(chunk);
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  };
+
   let proc: ReturnType<typeof Bun.spawn>;
   try {
     proc = Bun.spawn(argv, {
       cwd: options.cwd,
       env: { ...process.env, ...options.env },
-      stdout: "inherit",
-      stderr: "inherit",
+      stdout: "pipe",
+      stderr: "pipe",
       stdin: "inherit",
     });
   } catch (error) {
@@ -79,9 +114,13 @@ export const runStreaming = async (
     }
     throw new CommandError(argv, 1, error instanceof Error ? error.message : String(error));
   }
-  const code = await proc.exited;
+  const [code] = await Promise.all([
+    proc.exited,
+    pipe(proc.stdout, process.stdout, "stdout"),
+    pipe(proc.stderr, process.stderr, "stderr"),
+  ]);
   if (code !== 0 && !options.allowFailure) {
-    throw new CommandError(argv, code, "see output above");
+    throw new CommandError(argv, code, (stderr || stdout).trim() || "see output above");
   }
   return code;
 };
