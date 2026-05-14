@@ -908,6 +908,75 @@ describe("GatewayConfig", function () {
         });
       });
 
+      describe("KMS context destruction", function () {
+        let initialKmsContextId: bigint;
+
+        beforeEach(async function () {
+          initialKmsContextId = await gatewayConfig.getCurrentKmsContextId();
+          // Rotate to a new context so the initial one becomes non-current and can be destroyed.
+          await gatewayConfig.connect(owner).updateKmsContext(nextKmsContextId, kmsNodes, 0, 1, 1, 1);
+        });
+
+        it("Should destroy a non-current KMS context", async function () {
+          // Sanity: signer is registered for the initial context before destruction.
+          expect(await gatewayConfig.isKmsSignerForContext(initialKmsContextId, kmsSigners[0].address)).to.be.true;
+
+          const tx = await gatewayConfig.connect(owner).destroyKmsContext(initialKmsContextId);
+          await expect(tx).to.emit(gatewayConfig, "DestroyKmsContext").withArgs(initialKmsContextId);
+
+          // After destruction, all per-context views revert with InvalidKmsContext so callers
+          // cannot resolve any state for the destroyed context.
+          await expect(gatewayConfig.isKmsSignerForContext(initialKmsContextId, kmsSigners[0].address))
+            .to.be.revertedWithCustomError(gatewayConfig, "InvalidKmsContext")
+            .withArgs(initialKmsContextId);
+          await expect(gatewayConfig.isKmsTxSenderForContext(initialKmsContextId, kmsTxSenders[0].address))
+            .to.be.revertedWithCustomError(gatewayConfig, "InvalidKmsContext")
+            .withArgs(initialKmsContextId);
+          await expect(gatewayConfig.getKmsNodeForContext(initialKmsContextId, kmsTxSenders[0].address))
+            .to.be.revertedWithCustomError(gatewayConfig, "InvalidKmsContext")
+            .withArgs(initialKmsContextId);
+          await expect(gatewayConfig.getKmsTxSendersForContext(initialKmsContextId))
+            .to.be.revertedWithCustomError(gatewayConfig, "InvalidKmsContext")
+            .withArgs(initialKmsContextId);
+          await expect(gatewayConfig.getKmsSignersForContext(initialKmsContextId))
+            .to.be.revertedWithCustomError(gatewayConfig, "InvalidKmsContext")
+            .withArgs(initialKmsContextId);
+          await expect(gatewayConfig.getPublicDecryptionThresholdForContext(initialKmsContextId))
+            .to.be.revertedWithCustomError(gatewayConfig, "InvalidKmsContext")
+            .withArgs(initialKmsContextId);
+          await expect(gatewayConfig.getUserDecryptionThresholdForContext(initialKmsContextId))
+            .to.be.revertedWithCustomError(gatewayConfig, "InvalidKmsContext")
+            .withArgs(initialKmsContextId);
+        });
+
+        it("Should revert because the sender is not the owner", async function () {
+          await expect(gatewayConfig.connect(fakeOwner).destroyKmsContext(initialKmsContextId))
+            .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+            .withArgs(fakeOwner.address);
+        });
+
+        it("Should revert when destroying the current KMS context", async function () {
+          const currentContextId = await gatewayConfig.getCurrentKmsContextId();
+          await expect(gatewayConfig.connect(owner).destroyKmsContext(currentContextId))
+            .to.be.revertedWithCustomError(gatewayConfig, "CurrentKmsContextCannotBeDestroyed")
+            .withArgs(currentContextId);
+        });
+
+        it("Should revert when destroying an unknown KMS context", async function () {
+          const unknownContextId = nextKmsContextId + 999n;
+          await expect(gatewayConfig.connect(owner).destroyKmsContext(unknownContextId))
+            .to.be.revertedWithCustomError(gatewayConfig, "InvalidKmsContext")
+            .withArgs(unknownContextId);
+        });
+
+        it("Should revert when destroying an already-destroyed KMS context", async function () {
+          await gatewayConfig.connect(owner).destroyKmsContext(initialKmsContextId);
+          await expect(gatewayConfig.connect(owner).destroyKmsContext(initialKmsContextId))
+            .to.be.revertedWithCustomError(gatewayConfig, "InvalidKmsContext")
+            .withArgs(initialKmsContextId);
+        });
+      });
+
       describe("Coprocessors updates", function () {
         beforeEach(async function () {
           // updateCoprocessors / updateCoprocessorThreshold now require InputVerification to be paused.

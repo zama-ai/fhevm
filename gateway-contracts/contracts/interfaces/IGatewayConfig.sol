@@ -72,6 +72,15 @@ interface IGatewayConfig {
     );
 
     /**
+     * @notice Emitted when a KMS context has been destroyed.
+     * @dev Once destroyed, a context's signers and tx senders are reported as not registered by
+     *      `isKmsSignerForContext` / `isKmsTxSenderForContext`, so on-chain verification rejects
+     *      signatures referencing the destroyed context.
+     * @param kmsContextId The destroyed KMS context ID.
+     */
+    event DestroyKmsContext(uint256 indexed kmsContextId);
+
+    /**
      * @notice Emitted when the coprocessors have been updated.
      * @param newCoprocessors The new coprocessors.
      * @param newCoprocessorThreshold The new coprocessor threshold.
@@ -272,6 +281,18 @@ interface IGatewayConfig {
     error KmsContextAlreadyRegistered(uint256 contextId, uint256 currentKmsContextId);
 
     /**
+     * @notice Error emitted when an attempt is made to destroy the current KMS context.
+     * @param currentKmsContextId The current KMS context ID, which cannot be destroyed.
+     */
+    error CurrentKmsContextCannotBeDestroyed(uint256 currentKmsContextId);
+
+    /**
+     * @notice Error emitted when targeting a KMS context that does not exist or has already been destroyed.
+     * @param kmsContextId The invalid KMS context ID.
+     */
+    error InvalidKmsContext(uint256 kmsContextId);
+
+    /**
      * @notice Error indicating that a null chain ID is not allowed.
      */
     error InvalidNullChainId();
@@ -311,6 +332,15 @@ interface IGatewayConfig {
         uint256 newUserDecryptionThreshold,
         uint256 newKmsGenThreshold
     ) external;
+
+    /**
+     * @notice Destroy a non-current KMS context, preventing it from being used for verification.
+     * @dev Once destroyed, the context's signers and tx senders are reported as not registered by
+     *      `isKmsSignerForContext` / `isKmsTxSenderForContext`, and `getKmsNodeForContext` returns
+     *      the zero `KmsNode`. The current context cannot be destroyed.
+     * @param kmsContextId The non-current KMS context to destroy.
+     */
+    function destroyKmsContext(uint256 kmsContextId) external;
 
     /**
      * @notice Update the list of coprocessors and their threshold.

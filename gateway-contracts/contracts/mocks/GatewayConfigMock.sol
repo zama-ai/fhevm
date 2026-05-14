@@ -29,6 +29,8 @@ contract GatewayConfigMock {
         uint256 newKmsGenThreshold
     );
 
+    event DestroyKmsContext(uint256 indexed kmsContextId);
+
     event UpdateCoprocessors(Coprocessor[] newCoprocessors, uint256 newCoprocessorThreshold);
 
     event UpdateCustodians(Custodian[] newCustodians);
@@ -83,6 +85,10 @@ contract GatewayConfigMock {
             newUserDecryptionThreshold,
             newKmsGenThreshold
         );
+    }
+
+    function destroyKmsContext(uint256 kmsContextId) external {
+        emit DestroyKmsContext(kmsContextId);
     }
 
     function updateCoprocessors(Coprocessor[] calldata newCoprocessors, uint256 newCoprocessorThreshold) external {
