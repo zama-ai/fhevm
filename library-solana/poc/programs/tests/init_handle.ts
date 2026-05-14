@@ -37,9 +37,9 @@ describe("acl :: init_handle", () => {
     assert.isNotNull(info);
     assert.ok(info!.owner.equals(program.programId));
     // INIT_SPACE = handle(32) + state(1) + allowed_accounts(16*32=512)
-    //              + subject_count(1) + bump(1) = 547
+    //              + subject_count(1) + bump(1) + version(1) = 547
     // + 8-byte discriminator = 555
-    assert.equal(info!.data.length, 555);
+    assert.equal(info!.data.length, 556);
   });
 
   it("is idempotent when called twice with the same (initial_key, output_index, handle)", async () => {

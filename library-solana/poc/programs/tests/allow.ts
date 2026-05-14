@@ -9,7 +9,7 @@ import {
   program,
 } from "./utils";
 
-const MAX_SUBJECTS = 16;
+const MAX_SUBJECTS = 8;
 
 describe("acl :: allow", () => {
   before(ensureConfigInitialized);

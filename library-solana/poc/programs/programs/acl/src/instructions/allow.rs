@@ -42,6 +42,9 @@ pub struct Allow<'info> {
     pub acl_config: Account<'info, Config>,
 }
 
+/// In current implementation we decided not to do pagination/extension of handle PDAs 
+/// and limited them to 8 accounts per handle
+/// We can make it for v1 if we will decide it is needed.
 pub fn allow(ctx: Context<Allow>, handle: Handle, context_key: Pubkey, _initial_key: Pubkey, _output_index: u128) -> Result<()> {
     let permission_list = &mut ctx.accounts.permission_list;
     let config = &ctx.accounts.acl_config;

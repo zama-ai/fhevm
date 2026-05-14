@@ -34,6 +34,11 @@ pub struct InitHandle<'info> {
     pub system_program: Program<'info, System>,
 }
 
+/// I have intentionally omitted the check of canonicality for the handle. 
+/// It would be easier to implement that handle is canonical during FHE Executor PoC.
+/// 
+/// Also, this instruction for simplicity merges both reserve and bind handle.
+/// At later stages we would prefer to have them separated. 
 pub fn init_handle(ctx: Context<InitHandle>, handle: Handle, initial_key: Pubkey, output_index: u128) -> Result<()> {
     let config = &ctx.accounts.acl_config;
     let authority = &ctx.accounts.authority;

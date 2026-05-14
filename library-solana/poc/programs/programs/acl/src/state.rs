@@ -30,6 +30,7 @@ impl Default for HandlerState {
     }
 }
 
+/// This is a bit far from a canonical record, I have cut it for simplicity to the information that is needed.
 #[account]
 #[derive(Default, InitSpace)]
 pub struct HandlerPermissions {
@@ -38,4 +39,5 @@ pub struct HandlerPermissions {
     pub allowed_accounts: [Pubkey; MAX_SUBJECTS],
     pub subject_count: u8,
     pub bump: u8,
+    pub version: u8,
 }
