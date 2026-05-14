@@ -92,3 +92,7 @@ mochawesome-report/
 #-------------------------------------------------------------------------------
 # Build artifacts directory
 target/
+
+
+# Solana specific
+.anchor
