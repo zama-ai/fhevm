@@ -969,6 +969,7 @@ fn parse_chain_id(chain_id: &str) -> Result<u64, ParseIntError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
     use std::convert::TryFrom;
     use std::str::FromStr;
 
@@ -979,6 +980,21 @@ mod tests {
     const CIPHERTEXT: &str =
         "12B06C1cc05e9493856a1D637a74FAb30999D17FAAB8c95B2eCD500cFeFc8f658f15dB8453e944bE";
     const EXTRA_DATA: &str = "0x00";
+
+    fn sample_delegated_user_decrypt_request() -> DelegatedUserDecryptRequest {
+        DelegatedUserDecryptRequest {
+            ct_handle_contract_pairs: vec![],
+            contracts_chain_id: 1,
+            contract_addresses: vec![],
+            delegator_address: Address::ZERO,
+            delegate_address: Address::ZERO,
+            start_timestamp: U256::ZERO,
+            duration_days: U256::ZERO,
+            signature: Bytes::default(),
+            public_key: Bytes::default(),
+            extra_data: Bytes::default(),
+        }
+    }
 
     #[test]
     #[ignore]
@@ -1004,5 +1020,129 @@ mod tests {
         assert_eq!(request.ciphetext_with_zk_proof, Bytes::from(expected_bytes));
 
         Ok(())
+    }
+
+    #[test]
+    fn test_event_id_spaces_are_disjoint_except_delegated_user_decrypt() {
+        let gateway_ids = vec![u8::from(GatewayChainEventId::EventLogRcvd)];
+        let public_decrypt_ids = vec![
+            u8::from(PublicDecryptEventId::ReqRcvdFromUser),
+            u8::from(PublicDecryptEventId::ReadinessCheckPassed),
+            u8::from(PublicDecryptEventId::ReqSentToGw),
+            u8::from(PublicDecryptEventId::RespRcvdFromGw),
+            u8::from(PublicDecryptEventId::Failed),
+            u8::from(PublicDecryptEventId::RespSentToUser),
+            u8::from(PublicDecryptEventId::InternalFailure),
+            u8::from(PublicDecryptEventId::ReadinessCheckTimedOut),
+            u8::from(PublicDecryptEventId::ReadinessCheckFailed),
+        ];
+        let user_decrypt_ids = vec![
+            u8::from(UserDecryptEventId::ReqRcvdFromUser),
+            u8::from(UserDecryptEventId::ReadinessCheckPassed),
+            u8::from(UserDecryptEventId::ReqSentToGw),
+            u8::from(UserDecryptEventId::RespRcvdFromGw),
+            u8::from(UserDecryptEventId::RespSentToUser),
+            u8::from(UserDecryptEventId::Failed),
+            u8::from(UserDecryptEventId::InternalFailure),
+            u8::from(UserDecryptEventId::ReadinessCheckTimedOut),
+            u8::from(UserDecryptEventId::ReadinessCheckFailed),
+        ];
+        let input_proof_ids = vec![
+            u8::from(InputProofEventId::ReqRcvdFromUser),
+            u8::from(InputProofEventId::ReqSentToGw),
+            u8::from(InputProofEventId::RespRcvdFromGw),
+            u8::from(InputProofEventId::Failed),
+            u8::from(InputProofEventId::InternalFailure),
+        ];
+        let key_url_ids = vec![u8::from(KeyUrlEventId::KeyDataUpdated)];
+
+        let mut seen = HashSet::new();
+        for (name, ids) in [
+            ("gateway", gateway_ids),
+            ("public_decrypt", public_decrypt_ids),
+            ("user_decrypt", user_decrypt_ids),
+            ("input_proof", input_proof_ids),
+            ("key_url", key_url_ids),
+        ] {
+            for id in ids {
+                assert!(
+                    seen.insert(id),
+                    "event id {id} from {name} conflicts with another non-delegated event category"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_delegated_user_decrypt_event_ids_match_user_decrypt_event_ids() {
+        let delegated_to_user_pairs = vec![
+            (
+                DelegatedUserDecryptEventData::ReqRcvdFromUser {
+                    decrypt_request: sample_delegated_user_decrypt_request(),
+                },
+                u8::from(UserDecryptEventId::ReqRcvdFromUser),
+            ),
+            (
+                DelegatedUserDecryptEventData::ReadinessCheckPassed {
+                    decrypt_request: sample_delegated_user_decrypt_request(),
+                },
+                u8::from(UserDecryptEventId::ReadinessCheckPassed),
+            ),
+            (
+                DelegatedUserDecryptEventData::ReadinessCheckTimedOut {
+                    decrypt_request: sample_delegated_user_decrypt_request(),
+                    error: EventProcessingError::ReadinessCheckTimedOut,
+                },
+                u8::from(UserDecryptEventId::ReadinessCheckTimedOut),
+            ),
+            (
+                DelegatedUserDecryptEventData::ReadinessCheckFailed {
+                    decrypt_request: sample_delegated_user_decrypt_request(),
+                    error: EventProcessingError::QueueFull,
+                },
+                u8::from(UserDecryptEventId::ReadinessCheckFailed),
+            ),
+            (
+                DelegatedUserDecryptEventData::ReqSentToGw {
+                    gw_req_reference_id: U256::ZERO,
+                },
+                u8::from(UserDecryptEventId::ReqSentToGw),
+            ),
+            (
+                DelegatedUserDecryptEventData::RespRcvdFromGw {
+                    decrypt_response: UserDecryptResponse {
+                        gateway_request_id: U256::ZERO,
+                        reencrypted_shares: vec![],
+                        signatures: vec![],
+                        extra_data: String::new(),
+                    },
+                },
+                u8::from(UserDecryptEventId::RespRcvdFromGw),
+            ),
+            (
+                DelegatedUserDecryptEventData::RespSentToUser,
+                u8::from(UserDecryptEventId::RespSentToUser),
+            ),
+            (
+                DelegatedUserDecryptEventData::Failed {
+                    error: EventProcessingError::QueueFull,
+                },
+                u8::from(UserDecryptEventId::Failed),
+            ),
+            (
+                DelegatedUserDecryptEventData::InternalFailure {
+                    error: EventProcessingError::ChannelClosed,
+                },
+                u8::from(UserDecryptEventId::InternalFailure),
+            ),
+        ];
+
+        for (delegated_event, expected_user_event_id) in delegated_to_user_pairs {
+            assert_eq!(
+                delegated_event.event_id(),
+                expected_user_event_id,
+                "delegated user decrypt event ids must stay aligned with user decrypt event ids"
+            );
+        }
     }
 }
