@@ -220,6 +220,12 @@ FHE.fromExternal(inputEuint32, inputProof);
 
 This method verifies the zero-knowledge proof and returns a usable encrypted value within the contract.
 
+{% hint style="warning" %}
+Functions using `FHE.fromExternal()` should not be marked as `view`.
+
+Although this does not mutate your application-level contract state, the proof verification step is not compatible with Solidity's `view` modifier. Keep these functions as regular state-changing functions.
+{% endhint %}
+
 #### Replace
 
 ```solidity

@@ -127,6 +127,12 @@ function transfer(
 2. **Type conversion**:\
    The function transforms `externalEbool`, `externalEaddress`, `externalEuintXX` into the appropriate encrypted type (`ebool`, `eaddress`, `euintXX`) for further operations within the contract.
 
+{% hint style="warning" %}
+Functions that call `FHE.fromExternal()` cannot be marked as `view`.
+
+Even if your contract logic feels read-only, `FHE.fromExternal()` performs proof verification under the hood, which makes the call incompatible with Solidity's `view` modifier. Declare these functions as regular state-changing functions and invoke them as transactions.
+{% endhint %}
+
 ## Best Practices
 
 - **Input packing**: Minimize the size and complexity of zero-knowledge proofs by packing all encrypted inputs into a single ciphertext.
