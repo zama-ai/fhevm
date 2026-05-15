@@ -8,7 +8,7 @@ use tracing::{debug, error, info, warn};
 
 use broker::{Broker, Publisher};
 
-use primitives::event::{BlockFlow, ReorgBacktrackEvent};
+use primitives::event::{BlockFlow, CatchupPayload, ReorgBacktrackEvent};
 
 use super::publisher::{self, PublisherError};
 use crate::config::{BlockStartConfig, BlockchainConfig, PublishConfig};
@@ -108,6 +108,7 @@ pub struct EvmListener {
     loop_delay_ms: u64,
     finality_depth: u64,
     max_exponential_backoff_ms: u64,
+    catchup_max_range: u64,
 }
 
 impl EvmListener {
@@ -138,6 +139,7 @@ impl EvmListener {
             loop_delay_ms: blockchain_settings.strategy.loop_delay_ms,
             finality_depth: blockchain_settings.finality_depth,
             max_exponential_backoff_ms: blockchain_settings.strategy.max_exponential_backoff_ms,
+            catchup_max_range: blockchain_settings.catchup.catchup_max_range,
         }
     }
 
@@ -930,6 +932,194 @@ impl EvmListener {
 
         Ok(())
     }
+
+    /// Catchup orchestrator: take an arbitrarily-large user-facing
+    /// [`CatchupPayload`], clamp it to the current chain head, and **compute**
+    /// the bounded sub-payloads to publish on `range-catchup`. The handler
+    /// (the broker boundary) is responsible for actually publishing them.
+    ///
+    /// # Behavior
+    /// - Fetches the current chain height once (the only RPC call here).
+    /// - If `block_start > chain_height` → returns an empty `Vec` (skip).
+    ///   Catchup is a bounded one-shot — the user asked for blocks that don't
+    ///   exist yet. The caller can re-issue the request later.
+    /// - Otherwise, clamps `block_end` down to `chain_height` and splits
+    ///   `[block_start, effective_end]` into chunks of `catchup_max_range`
+    ///   blocks (configured via `catchup.catchup_max_range`).
+    /// - Returns the chunks as ready-to-publish [`CatchupPayload`]s.
+    ///
+    /// # Upper bound
+    /// **Raw chain head, no finality margin.** Catchups *within* the
+    /// unfinalized window are permitted: the caller takes the reorg risk on
+    /// those blocks. The live cursor remains authoritative for canonical state.
+    pub async fn dispatch_catchup_range(
+        &self,
+        payload: CatchupPayload,
+    ) -> Result<Vec<CatchupPayload>, EvmListenerError> {
+        metrics::counter!(
+            "listener_catchup_iterations_total",
+            "chain_id" => self.chain_id.to_string()
+        )
+        .increment(1);
+
+        let chain_height = self
+            .provider
+            .get_block_number()
+            .await
+            .map_err(|e| EvmListenerError::ChainHeightError { source: e })?;
+
+        if payload.block_start > chain_height {
+            metrics::counter!(
+                "listener_catchup_skipped_above_head_total",
+                "chain_id" => self.chain_id.to_string()
+            )
+            .increment(1);
+            info!(
+                consumer_id = %payload.consumer_id,
+                block_start = payload.block_start,
+                block_end = payload.block_end,
+                chain_height,
+                "Catchup orchestrator: block_start above chain height, skipping"
+            );
+            return Ok(Vec::new());
+        }
+
+        let effective_end = std::cmp::min(payload.block_end, chain_height);
+        let chunks =
+            split_catchup_range(payload.block_start, effective_end, self.catchup_max_range);
+
+        info!(
+            consumer_id = %payload.consumer_id,
+            range_start = payload.block_start,
+            range_end = effective_end,
+            sub_count = chunks.len(),
+            chain_height,
+            "Catchup orchestrator: computed sub-ranges"
+        );
+
+        Ok(chunks
+            .into_iter()
+            .map(|(start, end)| CatchupPayload {
+                consumer_id: payload.consumer_id.clone(),
+                block_start: start,
+                block_end: end,
+            })
+            .collect())
+    }
+
+    /// Fetch a single bounded sub-range and publish it in order on the
+    /// `catchup-event` queue for `consumer_id`.
+    ///
+    /// This is the **inner** catchup primitive — the worker behind the
+    /// `range-catchup` queue. The caller (typically [`Self::dispatch_catchup_range`])
+    /// is responsible for clamping `block_end` to chain head and chunking
+    /// arbitrarily-large requests into bounded sub-ranges of
+    /// `catchup.catchup_max_range` blocks. This function trusts that contract
+    /// and **does not re-check the chain head**.
+    ///
+    /// # Behavior
+    /// - Spawns the same parallel producer used by the live cursor
+    ///   ([`fetch_blocks_in_parallel`]) plus a sequential publish consumer
+    ///   ([`catchup_processing`]) over an [`AsyncSlotBuffer`].
+    /// - No DB writes, no parent-hash validation, no reorg handling — pure replay.
+    /// - No advisory lock. At-least-once: downstream dedupes by
+    ///   (block_number, block_hash).
+    pub async fn run_range_catchup(&self, payload: CatchupPayload) -> Result<(), EvmListenerError> {
+        let range_start = payload.block_start;
+        let range_end = payload.block_end;
+        let range_length = (range_end - range_start + 1) as usize;
+
+        info!(
+            consumer_id = %payload.consumer_id,
+            range_start,
+            range_end,
+            range_length,
+            "Starting catchup range"
+        );
+
+        // Step 3 — shared producer/consumer state.
+        let range_start_time = Instant::now();
+        let buffer = AsyncSlotBuffer::<FetchedBlock>::new(range_length);
+        let cancel_token = CancellationToken::new();
+
+        // Step 4 — spawn the same producer used by the live cursor: pure fetch,
+        // no DB or hash work — perfectly reusable.
+        let fetcher_handle = tokio::spawn(fetch_blocks_in_parallel(
+            self.clone(),
+            buffer.clone(),
+            cancel_token.clone(),
+            range_start,
+            range_length,
+        ));
+
+        // Step 5 — spawn the catchup consumer (in-order publish, no DB, no hashing).
+        let catchup_handle = tokio::spawn(catchup_processing(
+            self.clone(),
+            buffer,
+            cancel_token.clone(),
+            range_start,
+            range_length,
+            payload.consumer_id.clone(),
+        ));
+
+        // Step 6 — join, classify like fetch_blocks_and_run_cursor.
+        let (catchup_join, fetcher_join) = tokio::join!(catchup_handle, fetcher_handle);
+
+        metrics::histogram!(
+            "listener_catchup_range_duration_seconds",
+            "chain_id" => self.chain_id.to_string()
+        )
+        .record(range_start_time.elapsed().as_secs_f64());
+
+        let catchup_outcome = catchup_join.map_err(|join_err| {
+            cancel_token.cancel();
+            error!(error = %join_err, "Catchup consumer task panicked — this is a critical bug");
+            EvmListenerError::InvariantViolation {
+                message: format!("Catchup consumer panicked: {}", join_err),
+            }
+        })?;
+
+        let fetcher_outcome = fetcher_join.map_err(|join_err| {
+            cancel_token.cancel();
+            error!(error = %join_err, "Catchup fetcher task panicked — this is a critical bug");
+            EvmListenerError::InvariantViolation {
+                message: format!("Catchup fetcher panicked: {}", join_err),
+            }
+        })?;
+
+        // Same priority logic as the live path, simplified (no reorg branch):
+        //  - both Ok → success
+        //  - consumer cancelled by fetcher → return fetcher's root cause
+        //  - consumer real error → return it
+        //  - consumer Ok, fetcher Err → unexpected, log and treat as success
+        //    (consumer is authoritative; if all slots were read, all blocks were published)
+        match (catchup_outcome, fetcher_outcome) {
+            (Ok(()), Ok(())) => {
+                info!(range_start, range_end, "Catchup range complete");
+                Ok(())
+            }
+            (
+                Err(EvmListenerError::CouldNotFetchBlock {
+                    source: BlockFetchError::Cancelled,
+                }),
+                Err(fetcher_err),
+            ) => {
+                error!(error = %fetcher_err, "Catchup fetcher error caused consumer cancellation");
+                Err(fetcher_err)
+            }
+            (Err(consumer_err), _) => {
+                error!(error = %consumer_err, "Catchup consumer error during iteration");
+                Err(consumer_err)
+            }
+            (Ok(()), Err(fetcher_err)) => {
+                warn!(
+                    error = %fetcher_err,
+                    "Catchup fetcher errored despite consumer succeeding — unexpected"
+                );
+                Ok(())
+            }
+        }
+    }
 }
 
 /// Sequential block validator and DB inserter (the "consumer" in the producer-consumer pattern).
@@ -1066,6 +1256,79 @@ async fn cursor_processing(
     Ok(CursorResult::Complete)
 }
 
+/// Sequential publisher for the catchup pipeline (the "consumer" sibling of
+/// [`cursor_processing`], stripped down for replay).
+///
+/// Reads blocks from the [`AsyncSlotBuffer`] in order (slot 0, 1, 2, …) and
+/// publishes each one to `{consumer_id}.catchup-event` via
+/// [`publisher::publish_catchup_block_events`]. **No** parent-hash validation,
+/// **no** DB writes, **no** reorg branch — this is pure replay.
+///
+/// On publish failure, cancels the producer (no point fetching more blocks if
+/// we can't deliver them) and propagates the error so the handler can retry
+/// the entire range.
+///
+/// # Cancellation Safety
+/// `buffer.get()` is cancel-safe; the `tokio::select! { biased; … }` checks
+/// the cancel token first to avoid processing stale data after cancellation.
+async fn catchup_processing(
+    listener: EvmListener,
+    buffer: AsyncSlotBuffer<FetchedBlock>,
+    cancel_token: CancellationToken,
+    range_start: u64,
+    range_length: usize,
+    consumer_id: String,
+) -> Result<(), EvmListenerError> {
+    let chain_id_u64 = listener.repositories.chain_id() as u64;
+
+    for i in 0..range_length {
+        let block_number = range_start + i as u64;
+
+        let fetched_block = tokio::select! {
+            biased;
+            _ = cancel_token.cancelled() => {
+                return Err(EvmListenerError::CouldNotFetchBlock {
+                    source: BlockFetchError::Cancelled,
+                });
+            }
+            block_opt = buffer.get(i) => {
+                block_opt.ok_or(EvmListenerError::SlotBufferError {
+                    source: BufferError::IndexOutOfBounds,
+                })?
+            }
+        };
+
+        // Publish to {consumer_id}.catchup-event. Errors stop the producer too.
+        // BlockFlow::Catchup is hardcoded inside publish_catchup_block_events.
+        publisher::publish_catchup_block_events(
+            &listener.repositories,
+            &fetched_block,
+            chain_id_u64,
+            &consumer_id,
+            &listener.broker,
+            &listener.event_publisher,
+            &listener.publish_config,
+        )
+        .await
+        .map_err(|source| {
+            cancel_token.cancel();
+            EvmListenerError::PayloadBuildError { source }
+        })?;
+
+        info!(
+            consumer_id = %consumer_id,
+            block_number = block_number,
+            block_hash = %fetched_block.block.header.hash,
+            tx_count = fetched_block.transaction_count(),
+            slot = i + 1,
+            total = range_length,
+            "Catchup block published"
+        );
+    }
+
+    Ok(())
+}
+
 /// Parallel block fetcher (the "producer" in the producer-consumer pattern).
 ///
 /// Spawns one `tokio::spawn` task per block in the range. Each task fetches a block via RPC
@@ -1157,4 +1420,89 @@ async fn fetch_blocks_in_parallel(
     }
 
     Ok(())
+}
+
+/// Split inclusive range `[start, end]` into chunks of at most `max` blocks.
+///
+/// Returns inclusive `(start, end)` tuples in ascending order. Caller must
+/// ensure `start <= end` and `max > 0` (the orchestrator validates both
+/// upstream — the payload validator rejects inverted ranges and the config
+/// validator rejects `catchup_max_range == 0`).
+///
+/// Saturating arithmetic + early-exit on `chunk_end == u64::MAX` guarantee
+/// the loop terminates even on the pathological `[0, u64::MAX]` input.
+fn split_catchup_range(start: u64, end: u64, max: u64) -> Vec<(u64, u64)> {
+    debug_assert!(start <= end);
+    debug_assert!(max > 0);
+    let mut out = Vec::new();
+    let mut cursor = start;
+    loop {
+        let chunk_end = std::cmp::min(cursor.saturating_add(max - 1), end);
+        out.push((cursor, chunk_end));
+        if chunk_end >= end || chunk_end == u64::MAX {
+            break;
+        }
+        cursor = chunk_end + 1;
+    }
+    out
+}
+
+#[cfg(test)]
+mod split_catchup_range_tests {
+    use super::split_catchup_range;
+
+    #[test]
+    fn single_block_range() {
+        assert_eq!(split_catchup_range(1, 1, 1000), vec![(1, 1)]);
+    }
+
+    #[test]
+    fn exactly_one_chunk() {
+        assert_eq!(split_catchup_range(1, 1000, 1000), vec![(1, 1000)]);
+    }
+
+    #[test]
+    fn one_chunk_plus_one_block() {
+        assert_eq!(
+            split_catchup_range(1, 1001, 1000),
+            vec![(1, 1000), (1001, 1001)],
+        );
+    }
+
+    #[test]
+    fn typical_fan_out_1000_to_8000_with_max_1000() {
+        // 7001 blocks → 7 full chunks of 1000 plus 1 chunk of 1.
+        let chunks = split_catchup_range(1000, 8000, 1000);
+        assert_eq!(
+            chunks,
+            vec![
+                (1000, 1999),
+                (2000, 2999),
+                (3000, 3999),
+                (4000, 4999),
+                (5000, 5999),
+                (6000, 6999),
+                (7000, 7999),
+                (8000, 8000),
+            ],
+        );
+    }
+
+    #[test]
+    fn max_equals_one_produces_per_block_chunks() {
+        assert_eq!(
+            split_catchup_range(10, 12, 1),
+            vec![(10, 10), (11, 11), (12, 12)],
+        );
+    }
+
+    #[test]
+    fn near_u64_max_terminates_without_overflow() {
+        // Exercises both the `saturating_add(max - 1)` guard and the
+        // `chunk_end == u64::MAX` early-exit. start = u64::MAX - 5, end =
+        // u64::MAX, max = 1000 ⇒ exactly one chunk covering the tail.
+        let start = u64::MAX - 5;
+        let chunks = split_catchup_range(start, u64::MAX, 1000);
+        assert_eq!(chunks, vec![(start, u64::MAX)]);
+    }
 }

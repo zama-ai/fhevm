@@ -10,8 +10,8 @@ use listener_core::blockchain::evm::sem_evm_rpc_provider::SemEvmRpcProvider;
 use listener_core::config::BrokerType;
 use listener_core::config::config::Settings;
 use listener_core::core::{
-    Cleaner, CleanerHandler, EvmListener, FetchHandler, Filters, ReorgHandler, UnwatchHandler,
-    WatchHandler,
+    CatchupHandler, Cleaner, CleanerHandler, EvmListener, FetchHandler, Filters,
+    RangeCatchupHandler, ReorgHandler, UnwatchHandler, WatchHandler,
 };
 use listener_core::logging;
 use listener_core::store::repositories::Repositories;
@@ -343,6 +343,48 @@ async fn main() {
         }
     };
 
+    let catchup_consumer = match broker
+        .consumer(&Topic::new(routing::CATCHUP).with_namespace(chain_id))
+        .group(routing::CATCHUP)
+        .prefetch(settings.blockchain.catchup.prefetch)
+        .max_retries(5)
+        .redis_claim_min_idle(settings.blockchain.catchup.claim_min_idle_secs)
+        .redis_claim_interval(1)
+        .redis_block_ms(200)
+        .circuit_breaker(
+            settings.broker.circuit_breaker_threshold,
+            Duration::from_secs(settings.broker.circuit_breaker_cooldown_secs),
+        )
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to build catchup consumer: {}", e);
+            process::exit(1);
+        }
+    };
+
+    let range_catchup_consumer = match broker
+        .consumer(&Topic::new(routing::RANGE_CATCHUP).with_namespace(chain_id))
+        .group(routing::RANGE_CATCHUP)
+        .prefetch(settings.blockchain.catchup.range_prefetch)
+        .max_retries(5)
+        .redis_claim_min_idle(settings.blockchain.catchup.claim_min_idle_secs)
+        .redis_claim_interval(1)
+        .redis_block_ms(200)
+        .circuit_breaker(
+            settings.broker.circuit_breaker_threshold,
+            Duration::from_secs(settings.broker.circuit_breaker_cooldown_secs),
+        )
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to build range-catchup consumer: {}", e);
+            process::exit(1);
+        }
+    };
+
     // ── Define handlers ─────────────────────────────────────────────────
     let flow_lock = FlowLock::new(Arc::clone(&arc_pg_client), configured_chain_id);
     let fetch_handler = FetchHandler::new(
@@ -350,7 +392,11 @@ async fn main() {
         flow_lock.clone(),
         handler_publisher.clone(),
     );
-    let reorg_handler = ReorgHandler::new(Arc::clone(&evm_listener), flow_lock, handler_publisher);
+    let reorg_handler = ReorgHandler::new(
+        Arc::clone(&evm_listener),
+        flow_lock,
+        handler_publisher.clone(),
+    );
 
     let filters = Filters::new(repositories_for_filters, settings.blockchain.chain_id);
     let filters = Arc::new(filters);
@@ -364,6 +410,9 @@ async fn main() {
         &settings.blockchain.cleaner,
     ));
     let cleaner_handler = CleanerHandler::new(Arc::clone(&cleaner));
+
+    let catchup_handler = CatchupHandler::new(Arc::clone(&evm_listener), handler_publisher.clone());
+    let range_catchup_handler = RangeCatchupHandler::new(Arc::clone(&evm_listener));
 
     // ── Ensure AMQP queues/bindings exist before checking depth ────────
     // Without this, AMQP silently drops the seed message because no queue
@@ -432,6 +481,18 @@ async fn main() {
         process::exit(1);
     }
 
+    // ── Ensure catchup topology (no seed — catchup messages come from external producers) ──
+    if let Err(e) = catchup_consumer.ensure_topology().await {
+        error!(error = %e, "Failed to set up catchup consumer topology");
+        process::exit(1);
+    }
+
+    // ── Ensure range-catchup topology (no seed — sub-ranges come from the catchup orchestrator) ──
+    if let Err(e) = range_catchup_consumer.ensure_topology().await {
+        error!(error = %e, "Failed to set up range-catchup consumer topology");
+        process::exit(1);
+    }
+
     let cleaner_topic = Topic::new(routing::CLEAN_BLOCKS).with_namespace(chain_id);
     let cleaner_is_empty = match broker.is_empty(&cleaner_topic, routing::CLEAN_BLOCKS).await {
         Ok(empty) => empty,
@@ -451,35 +512,6 @@ async fn main() {
             process::exit(1);
         }
     }
-    // Remove this, its only for testing purposes.
-    // TODO: Remove, only for testing purposes.
-    // It simulates consumer lib to test if we are properly revcieving the events.
-    // let dyn_routing = format!("coprocessor.{}", routing::NEW_EVENT);
-    // let test_consumer_lib = match broker
-    //     .consumer(&Topic::new(dyn_routing.clone()).with_namespace(namespace::EMPTY_NAMESPACE))
-    //     .group(dyn_routing.clone())
-    //     .prefetch(20)
-    //     .max_retries(5)
-    //     .redis_claim_min_idle(10)
-    //     .redis_claim_interval(1)
-    //     .redis_block_ms(200)
-    //     .circuit_breaker(3, Duration::from_secs(30))
-    //     .build()
-    // {
-    //     Ok(c) => c,
-    //     Err(e) => {
-    //         error!("Failed to build test consumer consumer: {}", e);
-    //         process::exit(1);
-    //     }
-    // };
-
-    // let consumer_lib_handler_test =
-    //     AsyncHandlerPayloadOnly::new(move |event: BlockPayload| async move {
-    //         // println!("Consumer received event: {}", event);
-    //         info!("GETTING EVENT FROM BLOCK: {}", event.block_number);
-    //         Ok::<(), EvmListenerError>(())
-    //     });
-
     // ── Periodic queue depth poller ──────────────────────────────────────
     // Polls broker.queue_depths() every 15s for each listener topic and emits
     // the values as broker_queue_depth_* Prometheus gauges.
@@ -538,9 +570,8 @@ async fn main() {
         r = watch_consumer.run(watch_handler) => ("Watch", r),
         r = unwatch_consumer.run(unwatch_handler) => ("Unwatch", r),
         r = cleaner_consumer.run(cleaner_handler) => ("Cleaner", r),
-
-        // TEST CONSUMER: TO REMOVE.
-        // r = test_consumer_lib.run(consumer_lib_handler_test) => ("test copro lib consumer", r),
+        r = catchup_consumer.run(catchup_handler) => ("Catchup", r),
+        r = range_catchup_consumer.run(range_catchup_handler) => ("RangeCatchup", r),
     };
 
     error!("{consumer_name} consumer exited: {result:?}");
