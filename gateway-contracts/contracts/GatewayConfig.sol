@@ -15,8 +15,6 @@ import { ProtocolMetadata, HostChain, Coprocessor, Custodian, KmsNode } from "./
 /**
  * @title GatewayConfig contract
  * @notice See {IGatewayConfig}.
- * @dev Add/remove methods will be added in the future for KMS nodes, coprocessors and host chains.
- * See https://github.com/zama-ai/fhevm-gateway/issues/98 for more details.
  */
 /// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeableEmptyProxy {
@@ -45,7 +43,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 7;
+    uint64 private constant REINITIALIZER_VERSION = 8;
 
     /**
      * @notice The address of the all gateway contracts
@@ -147,6 +145,12 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         mapping(uint256 contextId => uint256) mpcThresholdForContext;
         /// @notice The key and CRS generation threshold per context
         mapping(uint256 contextId => uint256) kmsGenThresholdForContext;
+        /// @notice Whether a KMS context has been destroyed.
+        /// @dev A destroyed context cannot satisfy any decryption verification: its signers and
+        ///      tx senders are reported as not registered, and its KMS-node lookups return zero.
+        mapping(uint256 contextId => bool isDestroyed) destroyedKmsContexts;
+        /// @notice Whether a registered host chain has been disabled.
+        mapping(uint256 chainId => bool isDisabled) disabledHostChains;
     }
 
     /**
@@ -165,6 +169,17 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     modifier onlyPauser() {
         if (!isPauser(msg.sender)) {
             revert NotPauser(msg.sender);
+        }
+        _;
+    }
+
+    /**
+     * @dev Used by admin operations that mutate consensus state read by `InputVerification`.
+     *      The operator must pause `InputVerification` first to drain in-flight requests.
+     */
+    modifier whenInputVerificationPaused() {
+        if (!INPUT_VERIFICATION.paused()) {
+            revert InputVerificationMustBePaused();
         }
         _;
     }
@@ -226,12 +241,11 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice Re-initializes the contract from V5.
-     * @dev No storage migration is required for the post-v0.12.1 behavior change.
+     * @notice Re-initializes the contract from V6.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV6() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV7() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IGatewayConfig-isPauser}.
@@ -286,12 +300,31 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
+     * @notice See {IGatewayConfig-destroyKmsContext}.
+     */
+    function destroyKmsContext(uint256 kmsContextId) external virtual onlyOwner {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+
+        if (kmsContextId == $.currentKmsContextId) {
+            revert CurrentKmsContextCannotBeDestroyed(kmsContextId);
+        }
+        // Context must exist (signer set populated by updateKmsContext or initializer)
+        // and not be already destroyed.
+        if ($.kmsSignerAddressesForContext[kmsContextId].length == 0 || $.destroyedKmsContexts[kmsContextId]) {
+            revert InvalidKmsContext(kmsContextId);
+        }
+
+        $.destroyedKmsContexts[kmsContextId] = true;
+        emit DestroyKmsContext(kmsContextId);
+    }
+
+    /**
      * @notice See {IGatewayConfig-updateCoprocessors}.
      */
     function updateCoprocessors(
         Coprocessor[] calldata newCoprocessors,
         uint256 newCoprocessorThreshold
-    ) external virtual onlyOwner {
+    ) external virtual onlyOwner whenInputVerificationPaused {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
 
         // Remove the old coprocessors
@@ -335,45 +368,53 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice See {IGatewayConfig-updateMpcThreshold}.
+     * @notice See {IGatewayConfig-updateMpcThresholdForContext}.
      */
-    function updateMpcThreshold(uint256 newMpcThreshold) external virtual onlyOwner {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        _setMpcThreshold($.currentKmsContextId, newMpcThreshold);
-        emit UpdateMpcThreshold(newMpcThreshold);
+    function updateMpcThresholdForContext(uint256 contextId, uint256 newMpcThreshold) external virtual onlyOwner {
+        _requireValidContext(contextId);
+        _setMpcThreshold(contextId, newMpcThreshold);
+        emit UpdateMpcThresholdForContext(contextId, newMpcThreshold);
     }
 
     /**
-     * @notice See {IGatewayConfig-updatePublicDecryptionThreshold}.
+     * @notice See {IGatewayConfig-updatePublicDecryptionThresholdForContext}.
      */
-    function updatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold) external virtual onlyOwner {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        _setPublicDecryptionThreshold($.currentKmsContextId, newPublicDecryptionThreshold);
-        emit UpdatePublicDecryptionThreshold(newPublicDecryptionThreshold);
+    function updatePublicDecryptionThresholdForContext(
+        uint256 contextId,
+        uint256 newPublicDecryptionThreshold
+    ) external virtual onlyOwner {
+        _requireValidContext(contextId);
+        _setPublicDecryptionThreshold(contextId, newPublicDecryptionThreshold);
+        emit UpdatePublicDecryptionThresholdForContext(contextId, newPublicDecryptionThreshold);
     }
 
     /**
-     * @notice See {IGatewayConfig-updateUserDecryptionThreshold}.
+     * @notice See {IGatewayConfig-updateUserDecryptionThresholdForContext}.
      */
-    function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external virtual onlyOwner {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        _setUserDecryptionThreshold($.currentKmsContextId, newUserDecryptionThreshold);
-        emit UpdateUserDecryptionThreshold(newUserDecryptionThreshold);
+    function updateUserDecryptionThresholdForContext(
+        uint256 contextId,
+        uint256 newUserDecryptionThreshold
+    ) external virtual onlyOwner {
+        _requireValidContext(contextId);
+        _setUserDecryptionThreshold(contextId, newUserDecryptionThreshold);
+        emit UpdateUserDecryptionThresholdForContext(contextId, newUserDecryptionThreshold);
     }
 
     /**
-     * @notice See {IGatewayConfig-updateKmsGenThreshold}.
+     * @notice See {IGatewayConfig-updateKmsGenThresholdForContext}.
      */
-    function updateKmsGenThreshold(uint256 newKmsGenThreshold) external virtual onlyOwner {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        _setKmsGenThreshold($.currentKmsContextId, newKmsGenThreshold);
-        emit UpdateKmsGenThreshold(newKmsGenThreshold);
+    function updateKmsGenThresholdForContext(uint256 contextId, uint256 newKmsGenThreshold) external virtual onlyOwner {
+        _requireValidContext(contextId);
+        _setKmsGenThreshold(contextId, newKmsGenThreshold);
+        emit UpdateKmsGenThresholdForContext(contextId, newKmsGenThreshold);
     }
 
     /**
      * @notice See {IGatewayConfig-updateCoprocessorThreshold}.
      */
-    function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external virtual onlyOwner {
+    function updateCoprocessorThreshold(
+        uint256 newCoprocessorThreshold
+    ) external virtual onlyOwner whenInputVerificationPaused {
         _setCoprocessorThreshold(newCoprocessorThreshold);
         emit UpdateCoprocessorThreshold(newCoprocessorThreshold);
     }
@@ -397,6 +438,69 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         $.hostChains.push(hostChain);
         $.isHostChainRegistered[hostChain.chainId] = true;
         emit AddHostChain(hostChain);
+    }
+
+    /**
+     * @notice See {IGatewayConfig-disableHostChain}.
+     */
+    function disableHostChain(uint256 chainId) external virtual onlyOwner {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        if (!$.isHostChainRegistered[chainId]) {
+            revert HostChainNotRegistered(chainId);
+        }
+        if ($.disabledHostChains[chainId]) {
+            revert HostChainAlreadyDisabled(chainId);
+        }
+        $.disabledHostChains[chainId] = true;
+        emit DisableHostChain(chainId);
+    }
+
+    /**
+     * @notice See {IGatewayConfig-enableHostChain}.
+     */
+    function enableHostChain(uint256 chainId) external virtual onlyOwner {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        if (!$.isHostChainRegistered[chainId]) {
+            revert HostChainNotRegistered(chainId);
+        }
+        if (!$.disabledHostChains[chainId]) {
+            revert HostChainAlreadyEnabled(chainId);
+        }
+        $.disabledHostChains[chainId] = false;
+        emit EnableHostChain(chainId);
+    }
+
+    /**
+     * @notice See {IGatewayConfig-removeHostChain}.
+     */
+    function removeHostChain(uint256 chainId) external virtual onlyOwner {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        if (!$.isHostChainRegistered[chainId]) {
+            revert HostChainNotRegistered(chainId);
+        }
+        // The chain must be disabled first so the action is deliberate and cannot pull a chain
+        // out from under in-flight requests.
+        if (!$.disabledHostChains[chainId]) {
+            revert HostChainNotDisabled(chainId);
+        }
+
+        // Swap-and-pop the entry out of the `hostChains` array.
+        uint256 len = $.hostChains.length;
+        for (uint256 i = 0; i < len; i++) {
+            if ($.hostChains[i].chainId == chainId) {
+                if (i != len - 1) {
+                    $.hostChains[i] = $.hostChains[len - 1];
+                }
+                $.hostChains.pop();
+                break;
+            }
+        }
+
+        // Clear the boolean state so a fresh `addHostChain(chainId)` later starts from a clean slate.
+        $.isHostChainRegistered[chainId] = false;
+        $.disabledHostChains[chainId] = false;
+
+        emit RemoveHostChain(chainId);
     }
 
     /**
@@ -500,6 +604,14 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function isHostChainRegistered(uint256 chainId) external view virtual returns (bool) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         return $.isHostChainRegistered[chainId];
+    }
+
+    /**
+     * @notice See {IGatewayConfig-isHostChainDisabled}.
+     */
+    function isHostChainDisabled(uint256 chainId) external view virtual returns (bool) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        return $.disabledHostChains[chainId];
     }
 
     /**
@@ -624,45 +736,52 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice See {IGatewayConfig-isKmsTxSenderForContext}.
+     * @dev Reverts with `InvalidKmsContext` if the context is unknown or destroyed, so the
+     *      on-chain verification flow rejects signatures referencing them.
      */
     function isKmsTxSenderForContext(uint256 contextId, address txSenderAddress) external view virtual returns (bool) {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.isKmsTxSenderForContext[contextId][txSenderAddress];
+        _requireValidContext(contextId);
+        return _getGatewayConfigStorage().isKmsTxSenderForContext[contextId][txSenderAddress];
     }
 
     /**
      * @notice See {IGatewayConfig-isKmsSignerForContext}.
+     * @dev Reverts with `InvalidKmsContext` if the context is unknown or destroyed, so the
+     *      on-chain verification flow rejects signatures referencing them.
      */
     function isKmsSignerForContext(uint256 contextId, address signerAddress) external view virtual returns (bool) {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.isKmsSignerForContext[contextId][signerAddress];
+        _requireValidContext(contextId);
+        return _getGatewayConfigStorage().isKmsSignerForContext[contextId][signerAddress];
     }
 
     /**
      * @notice See {IGatewayConfig-getKmsNodeForContext}.
+     * @dev Reverts with `InvalidKmsContext` if the context is unknown or destroyed.
      */
     function getKmsNodeForContext(
         uint256 contextId,
         address kmsTxSenderAddress
     ) external view virtual returns (KmsNode memory) {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.kmsNodesForContext[contextId][kmsTxSenderAddress];
+        _requireValidContext(contextId);
+        return _getGatewayConfigStorage().kmsNodesForContext[contextId][kmsTxSenderAddress];
     }
 
     /**
      * @notice See {IGatewayConfig-getKmsTxSendersForContext}.
+     * @dev Reverts with `InvalidKmsContext` if the context is unknown or destroyed.
      */
     function getKmsTxSendersForContext(uint256 contextId) external view virtual returns (address[] memory) {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.kmsTxSenderAddressesForContext[contextId];
+        _requireValidContext(contextId);
+        return _getGatewayConfigStorage().kmsTxSenderAddressesForContext[contextId];
     }
 
     /**
      * @notice See {IGatewayConfig-getKmsSignersForContext}.
+     * @dev Reverts with `InvalidKmsContext` if the context is unknown or destroyed.
      */
     function getKmsSignersForContext(uint256 contextId) external view virtual returns (address[] memory) {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.kmsSignerAddressesForContext[contextId];
+        _requireValidContext(contextId);
+        return _getGatewayConfigStorage().kmsSignerAddressesForContext[contextId];
     }
 
     /**
@@ -675,18 +794,20 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice See {IGatewayConfig-getPublicDecryptionThresholdForContext}.
+     * @dev Reverts with `InvalidKmsContext` if the context is unknown or destroyed.
      */
     function getPublicDecryptionThresholdForContext(uint256 contextId) external view virtual returns (uint256) {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.publicDecryptionThresholdForContext[contextId];
+        _requireValidContext(contextId);
+        return _getGatewayConfigStorage().publicDecryptionThresholdForContext[contextId];
     }
 
     /**
      * @notice See {IGatewayConfig-getUserDecryptionThresholdForContext}.
+     * @dev Reverts with `InvalidKmsContext` if the context is unknown or destroyed.
      */
     function getUserDecryptionThresholdForContext(uint256 contextId) external view virtual returns (uint256) {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.userDecryptionThresholdForContext[contextId];
+        _requireValidContext(contextId);
+        return _getGatewayConfigStorage().userDecryptionThresholdForContext[contextId];
     }
 
     /**
@@ -842,6 +963,27 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             // Register custodian signer
             $.isCustodianSigner[newCustodianSignerAddress] = true;
             $.custodianSignerAddresses.push(newCustodianSignerAddress);
+        }
+    }
+
+    /**
+     * @notice Returns whether a KMS context ID has been created and not destroyed.
+     * @dev A context is considered created once `kmsSignerAddressesForContext[contextId].length > 0`,
+     *      which happens in `_setKmsContext` (invoked by `updateKmsContext` and the initializer).
+     */
+    function _isValidKmsContext(uint256 contextId) internal view returns (bool) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        return $.kmsSignerAddressesForContext[contextId].length != 0 && !$.destroyedKmsContexts[contextId];
+    }
+
+    /**
+     * @notice Reverts with `InvalidKmsContext` if the given context is unknown or destroyed.
+     * @dev Used by all external per-context views and setters so that callers cannot read or
+     *      mutate state of a context that does not exist or has been destroyed.
+     */
+    function _requireValidContext(uint256 contextId) internal view {
+        if (!_isValidKmsContext(contextId)) {
+            revert InvalidKmsContext(contextId);
         }
     }
 

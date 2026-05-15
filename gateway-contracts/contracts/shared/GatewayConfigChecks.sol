@@ -58,6 +58,14 @@ abstract contract GatewayConfigChecks {
     error HostChainNotRegistered(uint256 chainId);
 
     /**
+     * @notice Error emitted when a host chain has been disabled by the gateway owner.
+     * @dev Disabled host chains keep their registry entry but no longer accept traffic; the
+     *      gateway owner can re-enable them via `enableHostChain`.
+     * @param chainId The disabled host chain's chain ID.
+     */
+    error HostChainDisabled(uint256 chainId);
+
+    /**
      * @notice Error emitted when the KMS signer does not correspond to the KMS transaction sender.
      * @param signerAddress The address of the KMS signer.
      * @param txSenderAddress The address of the KMS transaction sender.
@@ -92,24 +100,44 @@ abstract contract GatewayConfigChecks {
     }
 
     /**
-     * @notice Checks if the chain ID corresponds to a registered host chain.
+     * @notice Checks if the chain ID corresponds to a registered and enabled host chain.
+     * @dev Reverts with `HostChainNotRegistered` for unknown chains and with `HostChainDisabled`
+     *      for registered-but-disabled chains, so callers can distinguish the two cases.
      */
     modifier onlyRegisteredHostChain(uint256 chainId) {
         if (!GATEWAY_CONFIG.isHostChainRegistered(chainId)) {
             revert HostChainNotRegistered(chainId);
         }
+        if (GATEWAY_CONFIG.isHostChainDisabled(chainId)) {
+            revert HostChainDisabled(chainId);
+        }
         _;
     }
 
     /**
-     * @notice Checks if the chain ID extracted from the handle corresponds to a registered host chain.
+     * @notice Checks if the chain ID extracted from the handle corresponds to a registered and
+     *         enabled host chain.
+     * @dev Reverts with `HostChainNotRegistered` for unknown chains and with `HostChainDisabled`
+     *      for registered-but-disabled chains.
      */
     modifier onlyHandleFromRegisteredHostChain(bytes32 handle) {
+        _checkHandleFromRegisteredHostChain(handle);
+        _;
+    }
+
+    /**
+     * @notice Internal variant of `onlyHandleFromRegisteredHostChain` callable from loops where a
+     *         per-iteration modifier isn't available (e.g., `CiphertextCommits.getSnsCiphertextMaterials`).
+     * @dev Reverts with the same errors as the modifier.
+     */
+    function _checkHandleFromRegisteredHostChain(bytes32 handle) internal view {
         uint256 handleChainId = HandleOps.extractChainId(handle);
         if (!GATEWAY_CONFIG.isHostChainRegistered(handleChainId)) {
             revert HostChainNotRegistered(handleChainId);
         }
-        _;
+        if (GATEWAY_CONFIG.isHostChainDisabled(handleChainId)) {
+            revert HostChainDisabled(handleChainId);
+        }
     }
 
     /**

@@ -33,6 +33,14 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       "event UpdateKmsNodes((address,address,string,string)[],uint256,uint256,uint256,uint256)",
       "function getPublicDecryptionThreshold() returns (uint256)",
       "function getUserDecryptionThreshold() returns (uint256)",
+      "function updateMpcThreshold(uint256)",
+      "function updatePublicDecryptionThreshold(uint256)",
+      "function updateUserDecryptionThreshold(uint256)",
+      "function updateKmsGenThreshold(uint256)",
+      "event UpdateMpcThreshold(uint256)",
+      "event UpdatePublicDecryptionThreshold(uint256)",
+      "event UpdateUserDecryptionThreshold(uint256)",
+      "event UpdateKmsGenThreshold(uint256)",
     ],
     // KMSGeneration was frozen to a view-only implementation after the move of key generation to
     // Ethereum. State-changing entrypoints and the errors/events they emitted were removed from
