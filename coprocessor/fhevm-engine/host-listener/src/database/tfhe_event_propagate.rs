@@ -343,6 +343,8 @@ impl Database {
             dependencies,
             fhe_operation,
             scalar_byte,
+            None,
+            0,
             log,
         )
         .await
@@ -366,9 +368,57 @@ impl Database {
             dependencies,
             fhe_operation,
             scalar_byte,
+            None,
+            0,
             log,
         )
         .await
+    }
+
+    // N rows sharing `group_id`, with `output_index` 0..N-1.
+    #[allow(clippy::too_many_arguments)]
+    async fn insert_multi_output_computation(
+        &self,
+        tx: &mut Transaction<'_>,
+        results: &[&Handle],
+        dependencies: &[&Handle],
+        fhe_operation: FheOperation,
+        scalar_byte: &FixedBytes<1>,
+        log: &LogTfhe,
+    ) -> Result<bool, SqlxError> {
+        let dependencies =
+            dependencies.iter().map(|d| d.to_vec()).collect::<Vec<_>>();
+        let group_id = results
+            .first()
+            .ok_or_else(|| {
+                SqlxError::Protocol(
+                    "insert_multi_output_computation: results is empty".into(),
+                )
+            })?
+            .to_vec();
+        let mut any_inserted = false;
+        for (idx, result) in results.iter().enumerate() {
+            let output_index = i16::try_from(idx).map_err(|_| {
+                SqlxError::Protocol(format!(
+                    "multi-output arity {} exceeds i16 range",
+                    results.len()
+                ))
+            })?;
+            let inserted = self
+                .insert_computation_inner(
+                    tx,
+                    result,
+                    dependencies.clone(),
+                    fhe_operation,
+                    scalar_byte,
+                    Some(&group_id),
+                    output_index,
+                    log,
+                )
+                .await?;
+            any_inserted = any_inserted || inserted;
+        }
+        Ok(any_inserted)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -379,10 +429,19 @@ impl Database {
         dependencies: Vec<Vec<u8>>,
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
+        group_id: Option<&[u8]>,
+        output_index: i16,
         log: &LogTfhe,
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
+        let group_id_vec = group_id.map(|g| g.to_vec());
+        // Op-level fields live on the primary row only (single-output ops are their own primary).
+        let is_primary = group_id.is_none() || output_index == 0;
+        let deps_opt = is_primary.then_some(dependencies);
+        let fhe_op_opt = is_primary.then_some(fhe_operation as i16);
+        let is_scalar_opt = is_primary.then_some(is_scalar);
+        let is_allowed_opt = is_primary.then_some(log.is_allowed);
         let query = sqlx::query!(
             r#"
             INSERT INTO computations (
@@ -397,25 +456,29 @@ impl Database {
                 schedule_order,
                 is_completed,
                 host_chain_id,
-                block_number
+                block_number,
+                group_id,
+                output_index
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12, $13)
             ON CONFLICT (output_handle, transaction_id) DO NOTHING
             "#,
             output_handle,
-            &dependencies,
-            fhe_operation as i16,
-            is_scalar,
+            deps_opt.as_deref(),
+            fhe_op_opt,
+            is_scalar_opt,
             log.dependence_chain.to_vec(),
             log.transaction_hash.map(|txh| txh.to_vec()),
-            log.is_allowed,
+            is_allowed_opt,
             log.block_timestamp
                 .saturating_add(TimeDuration::microseconds(
                     log.tx_depth_size as i64
                 )),
             !log.is_allowed,
             self.chain_id.as_i64(),
-            log.block_number as i64
+            log.block_number as i64,
+            group_id_vec,
+            output_index,
         );
         query
             .execute(tx.deref_mut())
@@ -449,6 +512,9 @@ impl Database {
         };
         let insert_computation_bytes = |tx, result, dependencies_handles, dependencies_bytes, scalar_byte| {
             self.insert_computation_bytes(tx, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
+        };
+        let insert_multi_output_computation = |tx, results, dependencies, scalar_byte| {
+            self.insert_multi_output_computation(tx, results, dependencies, fhe_operation, scalar_byte, log)
         };
 
         // Record the transaction if this is a computation event
@@ -526,6 +592,19 @@ impl Database {
                 } else {
                     insert_computation_bytes(tx, result, &[lhs], &[rhs.to_vec(), divisor.to_vec()], &HAS_SCALAR).await
                 }
+            }
+
+            E::FheSampleMultiOutput(C::FheSampleMultiOutput { ct, resultValue, resultFound, .. })
+            => insert_multi_output_computation(
+                tx,
+                &[resultValue, resultFound],
+                &[ct],
+                &NO_SCALAR,
+            ).await,
+
+            E::FheSampleMultiOutput100(C::FheSampleMultiOutput100 { ct, results, .. }) => {
+                let result_refs: Vec<&Handle> = results.iter().collect();
+                insert_multi_output_computation(tx, &result_refs, &[ct], &NO_SCALAR).await
             }
 
             | E::Initialized(_)
@@ -1061,6 +1140,8 @@ fn event_to_op_int(op: &TfheContractEvents) -> FheOperation {
         E::FheSum(_) => O::FheSum as i32,
         E::FheIsIn(_) => O::FheIsIn as i32,
         E::FheMulDiv(_) => O::FheMulDiv as i32,
+        E::FheSampleMultiOutput(_) => O::FheSampleMultiOutput as i32,
+        E::FheSampleMultiOutput100(_) => O::FheSampleMultiOutput100 as i32,
         // Not tfhe ops
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => -1,
     }
@@ -1099,13 +1180,15 @@ pub fn event_name(op: &TfheContractEvents) -> &'static str {
         E::FheSum(_) => "FheSum",
         E::FheIsIn(_) => "FheIsIn",
         E::FheMulDiv(_) => "FheMulDiv",
+        E::FheSampleMultiOutput(_) => "FheSampleMultiOutput",
+        E::FheSampleMultiOutput100(_) => "FheSampleMultiOutput100",
         E::Initialized(_) => "Initialized",
         E::Upgraded(_) => "Upgraded",
         E::VerifyInput(_) => "VerifyInput",
     }
 }
 
-pub fn tfhe_result_handle(op: &TfheContractEvents) -> Option<Handle> {
+pub fn tfhe_result_handles(op: &TfheContractEvents) -> Vec<Handle> {
     use TfheContract as C;
     use TfheContractEvents as E;
     match op {
@@ -1138,9 +1221,19 @@ pub fn tfhe_result_handle(op: &TfheContractEvents) -> Option<Handle> {
         | E::TrivialEncrypt(C::TrivialEncrypt { result, .. })
         | E::FheSum(C::FheSum { result, .. })
         | E::FheIsIn(C::FheIsIn { result, .. })
-        | E::FheMulDiv(C::FheMulDiv { result, .. }) => Some(*result),
+        | E::FheMulDiv(C::FheMulDiv { result, .. }) => vec![*result],
 
-        E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => None,
+        E::FheSampleMultiOutput(C::FheSampleMultiOutput {
+            resultValue,
+            resultFound,
+            ..
+        }) => vec![*resultValue, *resultFound],
+        E::FheSampleMultiOutput100(C::FheSampleMultiOutput100 {
+            results,
+            ..
+        }) => results.clone(),
+
+        E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
     }
 }
 
@@ -1330,6 +1423,11 @@ pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
                 vec![*lhs]
             }
         }
+
+        E::FheSampleMultiOutput(C::FheSampleMultiOutput { ct, .. })
+        | E::FheSampleMultiOutput100(C::FheSampleMultiOutput100 {
+            ct, ..
+        }) => vec![*ct],
 
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
     }

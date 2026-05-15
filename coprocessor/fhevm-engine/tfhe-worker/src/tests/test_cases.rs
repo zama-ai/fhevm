@@ -26,6 +26,20 @@ pub struct UnaryOperatorTestCase {
     pub expected_output: BigInt,
 }
 
+#[derive(Clone, Debug)]
+pub struct ExpectedOutput {
+    pub value: BigInt,
+    pub fhe_type: i32,
+}
+
+pub struct MultiOutputOperatorTestCase {
+    pub bits: i32,
+    pub inp: BigInt,
+    pub operand: i32,
+    pub operand_types: i32,
+    pub expected_outputs: Vec<ExpectedOutput>,
+}
+
 fn supported_bits() -> &'static [i32] {
     &[1, 4, 8, 16, 32, 64, 128, 160, 256, 512, 1024, 2048]
 }
@@ -186,6 +200,9 @@ pub fn generate_unary_test_cases() -> Vec<UnaryOperatorTestCase> {
             {
                 continue;
             }
+            if op.is_multi_output() {
+                continue;
+            }
             if op.op_type() == FheOperationType::Unary {
                 let inp = if bits == 1 {
                     BigInt::from(1)
@@ -227,6 +244,86 @@ fn compute_expected_unary_output(inp: &BigInt, op: SupportedFheOperations) -> Bi
             num + 1
         }
         other => panic!("unsupported unary operation: {:?}", other),
+    }
+}
+
+// The DB type encoding for bool, used as the second output type of FheSampleMultiOutput.
+const BOOL_DB_TYPE: i32 = 0;
+
+// Bit widths supported by each multi-output op's tfhe-rs impl.
+fn multi_output_supports_bits(op: SupportedFheOperations, bits: i32) -> bool {
+    match op {
+        SupportedFheOperations::FheSampleMultiOutput
+        | SupportedFheOperations::FheSampleMultiOutput100 => {
+            matches!(bits, 8 | 16 | 32 | 64 | 128)
+        }
+        _ => true,
+    }
+}
+
+pub fn generate_multi_output_test_cases() -> Vec<MultiOutputOperatorTestCase> {
+    let mut cases = Vec::new();
+
+    for bits in supported_bits() {
+        let bits = *bits;
+        let shift_by = bits - 3;
+        let max_bits_value = (BigInt::from(1) << bits) - 1;
+        for op in SupportedFheOperations::iter() {
+            if !op.is_multi_output() || !multi_output_supports_bits(op, bits) {
+                continue;
+            }
+            let inp = {
+                let mut res = BigInt::from(3);
+                res <<= shift_by;
+                res
+            };
+            let operand_types = supported_bits_to_bit_type_in_db(bits);
+            let expected_outputs =
+                compute_expected_multi_output_outputs(&inp, op, operand_types, &max_bits_value);
+            cases.push(MultiOutputOperatorTestCase {
+                bits,
+                operand: op as i32,
+                operand_types,
+                inp,
+                expected_outputs,
+            });
+        }
+    }
+
+    cases
+}
+
+fn compute_expected_multi_output_outputs(
+    inp: &BigInt,
+    op: SupportedFheOperations,
+    operand_types: i32,
+    max_bits_value: &BigInt,
+) -> Vec<ExpectedOutput> {
+    match op {
+        SupportedFheOperations::FheSampleMultiOutput => {
+            let found = if *inp == BigInt::from(0) {
+                BigInt::from(0)
+            } else {
+                BigInt::from(1)
+            };
+            vec![
+                ExpectedOutput {
+                    value: (inp + 1) & max_bits_value,
+                    fhe_type: operand_types,
+                },
+                ExpectedOutput {
+                    value: found,
+                    fhe_type: BOOL_DB_TYPE,
+                },
+            ]
+        }
+        SupportedFheOperations::FheSampleMultiOutput100 => (1..=100i64)
+            .map(|i| ExpectedOutput {
+                value: (inp + i) & max_bits_value,
+                fhe_type: operand_types,
+            })
+            .collect(),
+        other => panic!("unsupported multi-output operation: {:?}", other),
     }
 }
 

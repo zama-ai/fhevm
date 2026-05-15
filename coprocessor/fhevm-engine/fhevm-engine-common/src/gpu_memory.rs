@@ -1926,6 +1926,46 @@ pub fn get_op_size_on_gpu(
                 }),
             }
         }
+        // FheSampleMultiOutput = (a + 1) + (a.ne(0)).
+        SupportedFheOperations::FheSampleMultiOutput => {
+            assert_eq!(input_operands.len(), 1);
+            match &input_operands[0] {
+                SupportedFheCiphertexts::FheUint8(a) => {
+                    Ok(a.get_add_size_on_gpu(1u8) + a.get_ne_size_on_gpu(0u8))
+                }
+                SupportedFheCiphertexts::FheUint16(a) => {
+                    Ok(a.get_add_size_on_gpu(1u16) + a.get_ne_size_on_gpu(0u16))
+                }
+                SupportedFheCiphertexts::FheUint32(a) => {
+                    Ok(a.get_add_size_on_gpu(1u32) + a.get_ne_size_on_gpu(0u32))
+                }
+                SupportedFheCiphertexts::FheUint64(a) => {
+                    Ok(a.get_add_size_on_gpu(1u64) + a.get_ne_size_on_gpu(0u64))
+                }
+                SupportedFheCiphertexts::FheUint128(a) => {
+                    Ok(a.get_add_size_on_gpu(1u128) + a.get_ne_size_on_gpu(0u128))
+                }
+                _ => Err(FhevmError::UnsupportedFheTypes {
+                    fhe_operation: format!("{:?}", fhe_operation),
+                    input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                }),
+            }
+        }
+        // FheSampleMultiOutput100 = 100x (a + i); peak holds all 100 outputs before compression.
+        SupportedFheOperations::FheSampleMultiOutput100 => {
+            assert_eq!(input_operands.len(), 1);
+            match &input_operands[0] {
+                SupportedFheCiphertexts::FheUint8(a) => Ok(100 * a.get_add_size_on_gpu(1u8)),
+                SupportedFheCiphertexts::FheUint16(a) => Ok(100 * a.get_add_size_on_gpu(1u16)),
+                SupportedFheCiphertexts::FheUint32(a) => Ok(100 * a.get_add_size_on_gpu(1u32)),
+                SupportedFheCiphertexts::FheUint64(a) => Ok(100 * a.get_add_size_on_gpu(1u64)),
+                SupportedFheCiphertexts::FheUint128(a) => Ok(100 * a.get_add_size_on_gpu(1u128)),
+                _ => Err(FhevmError::UnsupportedFheTypes {
+                    fhe_operation: format!("{:?}", fhe_operation),
+                    input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                }),
+            }
+        }
         _ => Err(FhevmError::UnknownFheOperation(fhe_operation_int.into())),
     }
 }

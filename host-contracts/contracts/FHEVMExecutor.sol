@@ -125,7 +125,15 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         fheRandBounded,
         fheSum,
         fheIsIn,
-        fheMulDiv
+        fheMulDiv,
+        /// @dev Sample multi-output op — proof-of-concept for the multi-output
+        ///      infrastructure. Takes 1 ciphertext, returns 2 handles
+        ///      (value = input + 1; found = input != 0). Not a production op.
+        fheSampleMultiOutput,
+        /// @dev High-arity sample multi-output op — stress test variant.
+        ///      Takes 1 ciphertext, returns 100 handles
+        ///      (output[i] = input + (i + 1) for i = 0..99). Not a production op.
+        fheSampleMultiOutput100
     }
 
     /// @notice Name of the contract.
@@ -748,6 +756,99 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         result = _mulDivOp(Operators.fheMulDiv, lhs, rhs, divisor, scalarByte, lhsType);
         HCU_LIMIT.checkHCUForFheMulDiv(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheMulDiv(msg.sender, lhs, rhs, divisor, scalarByte, result);
+    }
+
+    /**
+     * @notice              Sample multi-output op — proof-of-concept for the
+     *                      multi-output infrastructure. Produces two handles
+     *                      derived from one base hash with a one-byte index suffix.
+     * @dev                 output[0] (`resultValue`) shares the input's type.
+     *                      output[1] (`resultFound`) is `ebool`. Coprocessor
+     *                      computes `resultValue = ct + 1` and `resultFound = ct != 0`.
+     * @param ct            Ciphertext input.
+     * @return resultValue  Output index 0 — same type as `ct`.
+     * @return resultFound  Output index 1 — `ebool`.
+     */
+    function fheSampleMultiOutput(bytes32 ct) public virtual returns (bytes32 resultValue, bytes32 resultFound) {
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
+            (1 << uint8(FheType.Uint16)) +
+            (1 << uint8(FheType.Uint32)) +
+            (1 << uint8(FheType.Uint64)) +
+            (1 << uint8(FheType.Uint128));
+        FheType typeCt = _verifyAndReturnType(ct, supportedTypes);
+
+        if (!ACL.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
+
+        bytes32 base = keccak256(
+            abi.encodePacked(
+                COMPUTATION_DOMAIN_SEPARATOR,
+                Operators.fheSampleMultiOutput,
+                ct,
+                ACL,
+                block.chainid,
+                blockhash(block.number - 1),
+                block.timestamp
+            )
+        );
+
+        resultValue = _appendMetadataToPrehandle(
+            keccak256(abi.encodePacked(base, uint8(0))),
+            typeCt
+        );
+        resultFound = _appendMetadataToPrehandle(
+            keccak256(abi.encodePacked(base, uint8(1))),
+            FheType.Bool
+        );
+
+        ACL.allowTransient(resultValue, msg.sender);
+        ACL.allowTransient(resultFound, msg.sender);
+
+        HCU_LIMIT.checkHCUForFheSampleMultiOutput(typeCt, ct, resultValue, resultFound, msg.sender);
+        emit FheSampleMultiOutput(msg.sender, ct, resultValue, resultFound);
+    }
+
+    /**
+     * @notice              High-arity sample multi-output op — stress test variant.
+     *                      Produces 100 handles, each derived from one base hash
+     *                      with a one-byte index suffix.
+     * @dev                 Every output shares the input's type. Coprocessor
+     *                      computes `results[i] = ct + (i + 1)` for `i = 0..99`.
+     * @param ct            Ciphertext input.
+     * @return results      Output handles ordered by tfhe-rs result tuple index 0..99.
+     */
+    function fheSampleMultiOutput100(bytes32 ct) public virtual returns (bytes32[] memory results) {
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
+            (1 << uint8(FheType.Uint16)) +
+            (1 << uint8(FheType.Uint32)) +
+            (1 << uint8(FheType.Uint64)) +
+            (1 << uint8(FheType.Uint128));
+        FheType typeCt = _verifyAndReturnType(ct, supportedTypes);
+
+        if (!ACL.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
+
+        bytes32 base = keccak256(
+            abi.encodePacked(
+                COMPUTATION_DOMAIN_SEPARATOR,
+                Operators.fheSampleMultiOutput100,
+                ct,
+                ACL,
+                block.chainid,
+                blockhash(block.number - 1),
+                block.timestamp
+            )
+        );
+
+        results = new bytes32[](100);
+        for (uint8 i = 0; i < 100; i++) {
+            results[i] = _appendMetadataToPrehandle(
+                keccak256(abi.encodePacked(base, i)),
+                typeCt
+            );
+            ACL.allowTransient(results[i], msg.sender);
+        }
+
+        HCU_LIMIT.checkHCUForFheSampleMultiOutput100(typeCt, ct, results, msg.sender);
+        emit FheSampleMultiOutput100(msg.sender, ct, results);
     }
 
     /**
