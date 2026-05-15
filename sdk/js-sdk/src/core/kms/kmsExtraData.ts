@@ -9,6 +9,13 @@ export function fromKmsExtraData(extraData: BytesHex): {
   version: Uint8Number;
   kmsContextId: Uint256BigInt;
 } {
+  if ((extraData as string) === '0x00' || (extraData as string) === '0x') {
+    return {
+      version: 0 as Uint8Number,
+      kmsContextId: 0n as Uint256BigInt,
+    };
+  }
+
   // First byte = version (characters 2-3 after '0x')
   const version = asUint8Number(parseInt(extraData.slice(2, 4), 16));
 
@@ -43,7 +50,7 @@ export function assertIsKmsExtraData(
   value: unknown,
   options: { subject?: string } & ErrorMetadataParams,
 ): asserts value is BytesHex {
-  if (value === '0x00') {
+  if (value === '0x00' || value === '0x') {
     return;
   }
   assertIsBytesHex(value, { ...options, byteLength: 33 as ByteLength });

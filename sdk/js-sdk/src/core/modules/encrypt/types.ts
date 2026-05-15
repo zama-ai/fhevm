@@ -1,4 +1,4 @@
-import type { TypedValue } from '../../types/primitives.js';
+import type { BytesHex, TypedValue } from '../../types/primitives.js';
 import type { EncryptionBits, FheTypeId } from '../../types/fheType.js';
 import type {
   FheEncryptionCrs,
@@ -108,16 +108,20 @@ export type ParseTFHEProvenCompactCiphertextListModuleFunction = {
 // 2. buildWithProofPacked
 ////////////////////////////////////////////////////////////////////////////////
 
-export type BuildWithProofPackedReturnTypeParameters = {
+export type BuildWithProofPackedParameters = {
   readonly fheEncryptionKey: FheEncryptionKeyWasm;
   readonly typedValues: TypedValue[];
   readonly metaData: Uint8Array;
+  readonly extraData: BytesHex;
 };
 
-export type BuildWithProofPackedReturnType = Uint8Array;
+export type BuildWithProofPackedReturnType = {
+  readonly ciphertextWithZKProofBytes: Uint8Array;
+  readonly extraData: BytesHex;
+};
 
 export type BuildWithProofPackedModuleFunction = {
-  buildWithProofPacked(parameters: BuildWithProofPackedReturnTypeParameters): Promise<BuildWithProofPackedReturnType>;
+  buildWithProofPacked(parameters: BuildWithProofPackedParameters): Promise<BuildWithProofPackedReturnType>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

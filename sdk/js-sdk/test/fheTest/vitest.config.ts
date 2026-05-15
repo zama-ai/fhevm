@@ -6,9 +6,16 @@ const chain = process.env.CHAIN ?? 'sepolia';
 export default defineConfig({
   resolve: {
     alias: {
+      //
+      // WARNING!!!! Order matters! '<xxx>/cleartext' MUST BE LISTED BEFORE '<xxx>' !!!
+      //
+      '@fhevm/sdk/ethers/cleartext': join(__dirname, '../../src/ethers/cleartext/index.ts'),
       '@fhevm/sdk/ethers': join(__dirname, '../../src/ethers/index.ts'),
+      '@fhevm/sdk/viem/cleartext': join(__dirname, '../../src/viem/cleartext/index.ts'),
       '@fhevm/sdk/viem': join(__dirname, '../../src/viem/index.ts'),
+      '@fhevm/sdk/base': join(__dirname, '../../src/core/base/index.ts'),
       '@fhevm/sdk/chains': join(__dirname, '../../src/core/chains/index.ts'),
+      '@fhevm/sdk/types': join(__dirname, '../../src/core/types/index.ts'),
       '@fhevm/sdk/actions/base': join(__dirname, '../../src/core/actions/base/index.ts'),
       '@fhevm/sdk/actions/chain': join(__dirname, '../../src/core/actions/chain/index.ts'),
       '@fhevm/sdk/actions/decrypt': join(__dirname, '../../src/core/actions/decrypt/index.ts'),
@@ -21,6 +28,7 @@ export default defineConfig({
     testTimeout: 120_000,
     hookTimeout: 120_000,
     retry: 0,
+    fileParallelism: false,
     env: {
       CHAIN: chain,
     },

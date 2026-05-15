@@ -16,6 +16,7 @@ export default [
       'coverage/**',
       '**/*.test.ts',
       '**/*.test-d.ts',
+      'src/vitest.config.ts',
       '**/*.js',
       '**/*.cjs',
       '**/*.mjs',

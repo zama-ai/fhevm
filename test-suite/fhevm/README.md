@@ -289,11 +289,11 @@ All version compatibility rules live in a single source of truth: `src/compat/co
 
 The matrix has three sections:
 
-| Section | Purpose | Example |
-|---------|---------|---------|
-| `incompatibilities` | Version pairs that break at runtime | relayer v1 + test-suite v2 |
-| `legacyShims` | Old versions needing extra flags/env | coprocessor < 0.12.0 needs API key flags |
-| `anchors` | Git history reference points | simple-ACL cutover commit |
+| Section             | Purpose                              | Example                                  |
+| ------------------- | ------------------------------------ | ---------------------------------------- |
+| `incompatibilities` | Version pairs that break at runtime  | relayer v1 + test-suite v2               |
+| `legacyShims`       | Old versions needing extra flags/env | coprocessor < 0.12.0 needs API key flags |
+| `anchors`           | Git history reference points         | simple-ACL cutover commit                |
 
 Merge-queue e2e explicitly keeps `build=false`.
 For non-release PRs it boots `two-of-two-multi-chain` from the frozen base lock plus any successful head-image overrides.
@@ -308,6 +308,7 @@ Edit `MAINLINE_COMPANIONS` in `src/resolve/presets.ts`. `latest-main` and `sha` 
 Add an entry to `COMPAT_MATRIX.incompatibilities` with a unique `code`. The CLI validates all entries at boot.
 
 **Add a legacy shim for a breaking change:**
+
 1. Add a profile to `SHIM_PROFILES` describing the legacy flags/env
 2. Add an entry to `COMPAT_MATRIX.legacyShims` specifying which version key and threshold
 3. Run `bun test` to verify
@@ -367,6 +368,7 @@ When changing runtime flags, env contracts, target semantics, or external compan
 Use `--override` to run local code for one repo-owned group on top of an otherwise versioned stack.
 
 Important:
+
 - by default, the stack uses the published `test-suite` image
 - local e2e test changes are not picked up unless you use `--override test-suite` or `--build`
 - if you are validating newly added or edited tests in this branch, prefer `--override test-suite` for a surgical local test-suite rebuild
@@ -420,11 +422,11 @@ Example on a mainline baseline:
 
 Available runtime suffixes:
 
-| Group | Suffixes |
-|-------|----------|
-| `coprocessor` | `db-migration`, `host-listener`, `host-listener-poller`, `gw-listener`, `tfhe-worker`, `zkproof-worker`, `sns-worker`, `transaction-sender` |
-| `kms-connector` | `db-migration`, `gw-listener`, `kms-worker`, `tx-sender` |
-| `test-suite` | `e2e-debug` |
+| Group           | Suffixes                                                                                                                                    |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `coprocessor`   | `db-migration`, `host-listener`, `host-listener-poller`, `gw-listener`, `tfhe-worker`, `zkproof-worker`, `sns-worker`, `transaction-sender` |
+| `kms-connector` | `db-migration`, `gw-listener`, `kms-worker`, `tx-sender`                                                                                    |
+| `test-suite`    | `e2e-debug`                                                                                                                                 |
 
 ### Multiple overrides
 

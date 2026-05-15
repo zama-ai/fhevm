@@ -63,16 +63,28 @@ type ResolvedTfheModuleConfig = {
 };
 
 let resolvedTfheModuleConfig: ResolvedTfheModuleConfig | undefined = undefined;
+let resolvingTfheModuleConfigPromise: Promise<ResolvedTfheModuleConfig> | undefined;
 
 /**
  * @internal
  * Returns the existing resolved config, or resolves it from the runtime config.
  */
 async function _getOrResolveTfheModuleConfig(runtime: FhevmRuntime): Promise<ResolvedTfheModuleConfig> {
-  if (resolvedTfheModuleConfig !== undefined) return resolvedTfheModuleConfig;
+  if (resolvedTfheModuleConfig !== undefined) {
+    return resolvedTfheModuleConfig;
+  }
 
-  resolvedTfheModuleConfig = await _resolveTfheModuleConfig(runtime.config);
-  return resolvedTfheModuleConfig;
+  resolvingTfheModuleConfigPromise ??= _resolveTfheModuleConfig(runtime.config)
+    .then((cfg) => {
+      resolvedTfheModuleConfig = cfg;
+      return cfg;
+    })
+    .catch((error: unknown) => {
+      resolvingTfheModuleConfigPromise = undefined;
+      throw error;
+    });
+
+  return resolvingTfheModuleConfigPromise;
 }
 
 /**
@@ -81,10 +93,6 @@ async function _getOrResolveTfheModuleConfig(runtime: FhevmRuntime): Promise<Res
  * (thread count, worker URL, WASM URL). Must be called before WASM initialization.
  */
 async function _resolveTfheModuleConfig(parameters: FhevmRuntimeConfig): Promise<ResolvedTfheModuleConfig> {
-  if (cachedTfheModulePromise !== undefined) {
-    throw new Error('Cannot configure module after initialization has started');
-  }
-
   const { locateFile, singleThread: singleThreadConfig, numberOfThreads: numberOfThreadsConfig } = parameters;
 
   let singleThread = false;
@@ -181,21 +189,29 @@ export async function initTfheModule(runtime: FhevmRuntime): Promise<void> {
 
   ownerUid = runtime.uid;
 
-  if (cachedTfheModulePromise !== undefined) {
-    return cachedTfheModulePromise;
+  // Cache the whole initialization promise before the first await. Several
+  // clients may call initTfheModule concurrently during startup; if the promise
+  // were assigned after resolving the config, each caller could enter
+  // _initTfheModule and try to start the global TFHE worker pool independently.
+  // The worker pool is process-wide and startWorkers() is intentionally
+  // one-shot, so every concurrent caller must await this same promise.
+  //
+  // Retry is not supported:
+  // -----------------------
+  // TFHE/WASM initialization and worker startup mutate
+  // lower-level module globals that cannot be reset reliably after a partial
+  // failure. Keep even a rejected promise cached so later callers observe the
+  // original initialization error instead of retrying against half-initialized
+  // state and producing secondary errors such as "Already started".
+
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+  if (cachedTfheModulePromise === undefined) {
+    cachedTfheModulePromise = (async () => {
+      // resolve is async
+      const cfg = await _getOrResolveTfheModuleConfig(runtime);
+      await _initTfheModule(cfg);
+    })();
   }
-
-  // Use existing config if already set, otherwise resolve from runtime
-  const cfg = await _getOrResolveTfheModuleConfig(runtime);
-
-  cachedTfheModulePromise = _initTfheModule(cfg);
-
-  // This is purely theoretical. Retry is not yet possible since the `_initTfheModule`
-  // does not support retry (see tfhe lib internal global variables).
-  cachedTfheModulePromise.catch(() => {
-    // Clear cache on failure so retry is possible
-    cachedTfheModulePromise = undefined;
-  });
 
   return cachedTfheModulePromise;
 }

@@ -1,12 +1,16 @@
-import type { ChecksummedAddress, TypedValue } from '../../../src/core/types/primitives.js';
-import type { FheType } from '../../../src/core/types/fheType.js';
 import type { ethers } from 'ethers';
+import type { EncryptedValue, TypedValue } from '@fhevm/sdk/types';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmDecryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
+import {
+  decryptTestCases,
+  isCleartext,
+  fheTypeIdFromName,
+  clearTypeFromHandle,
+  fheTypeIdFromHandle,
+} from '../setupCommon.js';
+import { asEncryptedValue } from '@fhevm/sdk/types';
 import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
-import { fheTypeIdFromName } from '../../../src/core/handle/FheType.js';
-import { asEncryptedValue } from '../../../src/core/handle/EncryptedValue.js';
-import { toFhevmHandle } from '../../../src/core/handle/FhevmHandle.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -24,21 +28,7 @@ import { toFhevmHandle } from '../../../src/core/handle/FhevmHandle.js';
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-// Each FHE type to decrypt individually
-const decryptTestCases: readonly FheType[] = [
-  'ebool',
-  'euint8',
-  'euint16',
-  'euint32',
-  'euint64',
-  'euint128',
-  'euint256',
-  'eaddress',
-] as const;
-
-////////////////////////////////////////////////////////////////////////////////
-
-describe('Decrypt client — user decrypt', () => {
+describe.runIf(!isCleartext(getEthersTestConfig().chainName))('Decrypt client — user decrypt', () => {
   let config: FheTestEthersConfig;
 
   beforeAll(() => {
@@ -64,19 +54,19 @@ describe('Decrypt client — user decrypt', () => {
     expect(typeof client.decryptValue).toBe('function');
     expect(typeof client.decryptValues).toBe('function');
     expect(typeof client.decryptValuesFromPairs).toBe('function');
-    expect(typeof client.generateTransportKeypair).toBe('function');
+    expect(typeof client.generateTransportKeyPair).toBe('function');
     expect(typeof client.signDecryptionPermit).toBe('function');
   });
 
-  it('should generate an e2e transport keypair', async () => {
+  it('should generate an e2e transport key pair', async () => {
     const client = createFhevmDecryptClient({
       chain: config.fhevmChain,
       provider: config.provider,
     });
     await client.ready;
 
-    const keypair = await client.generateTransportKeypair();
-    expect(keypair).toBeDefined();
+    const keyPair = await client.generateTransportKeyPair();
+    expect(keyPair).toBeDefined();
   });
 
   it('should sign a self decryption permit', async () => {
@@ -86,9 +76,9 @@ describe('Decrypt client — user decrypt', () => {
     });
     await client.ready;
 
-    const keypair = await client.generateTransportKeypair();
+    const keyPair = await client.generateTransportKeyPair();
     const signedPermit = await client.signDecryptionPermit({
-      transportKeypair: keypair,
+      transportKeyPair: keyPair,
       contractAddresses: [config.fheTestAddress],
       durationDays: 1,
       startTimestamp: Math.floor(Date.now() / 1000),
@@ -115,12 +105,15 @@ describe('Decrypt client — user decrypt', () => {
       const fheTest = config.fheTestContract.connect(config.signer) as ethers.Contract;
 
       // Read handle from FHETest contract
-      const handle: string = await fheTest.getHandleOf!(config.wallet.address, fheTypeId);
-      expect(handle).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
-      console.log(`  ${fheType}: handle=${handle.slice(0, 20)}...`);
+      const encryptedValue: EncryptedValue = asEncryptedValue(
+        await fheTest.getHandleOf!(config.wallet.address, fheTypeId),
+      );
+      expect(encryptedValue).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
+      expect(fheTypeIdFromHandle(encryptedValue)).toBe(fheTypeIdFromName(fheType));
+      console.log(`  ${fheType}: handle=${encryptedValue.slice(0, 20)}...`);
 
       // Read expected clear value from FHETest._db
-      const expectedRaw: bigint = await fheTest.getClearText!(handle);
+      const expectedRaw: bigint = await fheTest.getClearText!(encryptedValue);
 
       // Decrypt via SDK
       const client = createFhevmDecryptClient({
@@ -129,9 +122,9 @@ describe('Decrypt client — user decrypt', () => {
       });
       await client.ready;
 
-      const transportKeypair = await client.generateTransportKeypair();
+      const transportKeyPair = await client.generateTransportKeyPair();
       const signedPermit = await client.signDecryptionPermit({
-        transportKeypair,
+        transportKeyPair: transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationDays: 1,
         startTimestamp: Math.floor(Date.now() / 1000),
@@ -140,13 +133,13 @@ describe('Decrypt client — user decrypt', () => {
       });
 
       const typedValue = await client.decryptValue({
-        contractAddress: config.fheTestAddress as ChecksummedAddress,
-        encryptedValue: handle,
+        contractAddress: config.fheTestAddress,
+        encryptedValue: encryptedValue,
         signedPermit,
-        transportKeypair,
+        transportKeyPair: transportKeyPair,
       });
 
-      expect(typedValue.type).toBe(toFhevmHandle(handle).clearType);
+      expect(typedValue.type).toBe(clearTypeFromHandle(encryptedValue));
 
       console.log(`  ${fheType}: decrypted=${typedValue.value} expected=${expectedRaw}`);
 
@@ -174,18 +167,22 @@ describe('Decrypt client — user decrypt', () => {
 
     // Read all handles and their expected clear values from FHETest
     const entries: {
-      fheType: FheType;
+      fheType: string;
       handle: string;
       expectedRaw: bigint;
     }[] = [];
 
     for (const fheType of decryptTestCases) {
       const fheTypeId = fheTypeIdFromName(fheType);
-      const handle: string = await fheTest.getHandleOf!(config.wallet.address, fheTypeId);
-      expect(handle).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
-      const expectedRaw: bigint = await fheTest.getClearText!(handle);
-      entries.push({ fheType, handle, expectedRaw });
-      console.log(`  ${fheType}: handle=${handle.slice(0, 20)}... expected=${expectedRaw}`);
+
+      const encryptedValue: EncryptedValue = asEncryptedValue(
+        await fheTest.getHandleOf!(config.wallet.address, fheTypeId),
+      );
+      expect(encryptedValue).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
+
+      const expectedRaw: bigint = await fheTest.getClearText!(encryptedValue);
+      entries.push({ fheType, handle: encryptedValue, expectedRaw });
+      console.log(`  ${fheType}: handle=${encryptedValue.slice(0, 20)}... expected=${expectedRaw}`);
     }
 
     // Decrypt all in a single call
@@ -195,9 +192,9 @@ describe('Decrypt client — user decrypt', () => {
     });
     await client.ready;
 
-    const transportKeypair = await client.generateTransportKeypair();
+    const transportKeyPair = await client.generateTransportKeyPair();
     const signedPermit = await client.signDecryptionPermit({
-      transportKeypair,
+      transportKeyPair: transportKeyPair,
       contractAddresses: [config.fheTestAddress],
       durationDays: 1,
       startTimestamp: Math.floor(Date.now() / 1000),
@@ -209,9 +206,9 @@ describe('Decrypt client — user decrypt', () => {
 
     const typedValues: readonly TypedValue[] = await client.decryptValues({
       encryptedValues,
-      contractAddress: config.fheTestAddress as ChecksummedAddress,
+      contractAddress: config.fheTestAddress,
       signedPermit,
-      transportKeypair,
+      transportKeyPair: transportKeyPair,
     });
 
     expect(typedValues).toHaveLength(entries.length);

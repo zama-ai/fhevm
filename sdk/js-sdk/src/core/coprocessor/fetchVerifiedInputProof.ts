@@ -1,7 +1,6 @@
 import type { RelayerInputProofOptions } from '../types/relayer.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { VerifiedInputProof } from '../types/inputProof.js';
-import type { BytesHex } from '../types/primitives.js';
 import type { ZkProof } from '../types/zkProof-p.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { InputHandle } from '../types/encryptedTypes-p.js';
@@ -22,7 +21,6 @@ type Context = {
 
 type Parameters = {
   readonly zkProof: ZkProof;
-  readonly extraData: BytesHex;
   readonly options?: RelayerInputProofOptions | undefined;
 };
 
@@ -31,7 +29,7 @@ type ReturnType = VerifiedInputProof;
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function fetchVerifiedInputProof(context: Context, parameters: Parameters): Promise<ReturnType> {
-  const { zkProof, extraData, options } = parameters;
+  const { zkProof, options } = parameters;
 
   assertIsZkProof(zkProof, {});
 
@@ -52,16 +50,12 @@ export async function fetchVerifiedInputProof(context: Context, parameters: Para
 
   // 2. Request coprocessor signatures from the relayer for the given ZK proof
   const { handles: coprocessorSignedHandles, coprocessorEip712Signatures: coprocessorSignatures } =
-    await context.runtime.relayer.fetchCoprocessorSignatures(
-      { relayerUrl: context.chain.fhevm.relayerUrl, chainId: context.chain.id },
-      {
-        payload: {
-          zkProof,
-          extraData,
-        },
-        options: relayerOptions,
+    await context.runtime.relayer.fetchCoprocessorSignatures(context, {
+      payload: {
+        zkProof,
       },
-    );
+      options: relayerOptions,
+    });
 
   // 3. Check that the handles and the one in the fetch result
   // Note: this check is theoretically unnecessary
@@ -73,7 +67,7 @@ export async function fetchVerifiedInputProof(context: Context, parameters: Para
   const inputProof = createInputProofFromInputHandles({
     coprocessorEip712Signatures: coprocessorSignatures,
     inputHandles,
-    extraData,
+    extraData: zkProof.getExtraData(),
     signedHandleAccess: {
       userAddress: zkProof.userAddress,
       contractAddress: zkProof.contractAddress,

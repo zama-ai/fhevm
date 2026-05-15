@@ -1,8 +1,7 @@
 import type { KmsSigncryptedShare } from '../../../types/kms-p.js';
-import type { Bytes65HexNo0x } from '../../../types/primitives.js';
 import type { FetchUserDecryptPayload } from '../../../types/relayer-p.js';
 import type { FetchUserDecryptResult } from '../../../types/relayer.js';
-import type { FetchUserDecryptParameters, FetchUserDecryptReturnType, RelayerClient } from '../types.js';
+import type { FetchUserDecryptParameters, FetchUserDecryptReturnType, RelayerClientWithRuntime } from '../types.js';
 import { remove0x, removeSuffix } from '../../../base/string.js';
 import { RelayerAsyncRequest } from './RelayerAsyncRequest.js';
 
@@ -11,7 +10,7 @@ import { RelayerAsyncRequest } from './RelayerAsyncRequest.js';
 //////////////////////////////////////////////////////////////////////////////
 
 export async function fetchUserDecrypt(
-  relayerClient: RelayerClient,
+  relayerClient: RelayerClientWithRuntime,
   parameters: FetchUserDecryptParameters,
 ): Promise<FetchUserDecryptReturnType> {
   const { options, payload } = parameters;
@@ -38,14 +37,14 @@ export async function fetchUserDecrypt(
     contractsChainId,
     contractAddresses: payload.kmsDecryptEip712Message.contractAddresses,
     userAddress: payload.kmsDecryptEip712Signer,
-    signature: remove0x(payload.kmsDecryptEip712Signature) as Bytes65HexNo0x,
+    signature: remove0x(payload.kmsDecryptEip712Signature),
     extraData: payload.kmsDecryptEip712Message.extraData,
     publicKey: remove0x(payload.kmsDecryptEip712Message.publicKey),
   };
 
   const request = new RelayerAsyncRequest({
     relayerOperation: 'USER_DECRYPT',
-    url: `${removeSuffix(relayerClient.relayerUrl, '/')}/v2/user-decrypt`,
+    url: `${removeSuffix(relayerClient.chain.fhevm.relayerUrl, '/')}/v2/user-decrypt`,
     payload: relayerPayload,
     options,
   });

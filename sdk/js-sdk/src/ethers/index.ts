@@ -1,4 +1,4 @@
-export { setFhevmRuntimeConfig } from './internal/ethers-p.js';
+export { setFhevmRuntimeConfig, hasFhevmRuntimeConfig } from './internal/config.js';
 
 export { createFhevmBaseClient } from './clients/createFhevmBaseClient.js';
 export { createFhevmClient } from './clients/createFhevmClient.js';

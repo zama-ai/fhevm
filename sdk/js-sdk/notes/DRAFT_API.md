@@ -61,7 +61,7 @@ export async function decryptValuesFromPairs(
       readonly contractAddress: string;
     }>;
     readonly signedPermit: SignedSelfDecryptionPermit;
-    readonly e2eTransportKeypair: E2eTransportKeypair;
+    readonly transportKeyPair: TransportKeyPair;
     readonly options?: RelayerUserDecryptOptions | undefined;
   },
 ): Promise<readonly TypedValue[]>;
@@ -72,7 +72,7 @@ export async function decryptValue(
     readonly encryptedValue: EncryptedValueLike;
     readonly contractAddress: string;
     readonly signedPermit: SignedSelfDecryptionPermit;
-    readonly e2eTransportKeypair: E2eTransportKeypair;
+    readonly transportKeyPair: TransportKeyPair;
     readonly options?: RelayerUserDecryptOptions | undefined;
   },
 ): Promise<readonly TypedValue>;
@@ -83,7 +83,7 @@ export async function decryptValues(
     readonly encryptedValues: readonly EncryptedValueLike[];
     readonly contractAddress: string;
     readonly signedPermit: SignedSelfDecryptionPermit;
-    readonly e2eTransportKeypair: E2eTransportKeypair;
+    readonly transportKeyPair: TransportKeyPair;
     readonly options?: RelayerUserDecryptOptions | undefined;
   },
 ): Promise<readonly TypedValue[]>;
@@ -111,7 +111,7 @@ export function canDecryptValue(
     readonly encryptedValue: EncryptedValueLike;
     readonly contractAddress: string;
     readonly signedPermit: SignedSelfDecryptionPermit | SignedDelegatedDecryptionPermit;
-    readonly e2eTransportKeypair?: E2eTransportKeypair | undefined;
+    readonly transportKeyPair?: TransportKeyPair | undefined;
   },
 ): {
   readonly allowed: boolean;
@@ -142,7 +142,7 @@ export function canDecryptValues(
     readonly encryptedValues: readonly EncryptedValueLike[];
     readonly contractAddress: string;
     readonly signedPermit: SignedSelfDecryptionPermit | SignedDelegatedDecryptionPermit;
-    readonly e2eTransportKeypair?: E2eTransportKeypair | undefined;
+    readonly transportKeyPair?: TransportKeyPair | undefined;
   },
 ): {
   readonly allowed: boolean;
@@ -161,7 +161,7 @@ export function canDecryptValuesFromPairs(
       readonly contractAddress: string;
     }>;
     readonly signedPermit: SignedSelfDecryptionPermit | SignedDelegatedDecryptionPermit;
-    readonly e2eTransportKeypair?: E2eTransportKeypair | undefined;
+    readonly transportKeyPair?: TransportKeyPair | undefined;
   },
 ): {
   readonly allowed: boolean;

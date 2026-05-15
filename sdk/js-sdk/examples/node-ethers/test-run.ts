@@ -175,14 +175,14 @@ async function main(): Promise<void> {
     console.log('  Parsed handle — chainId:', countHandle.chainId.toString(), 'fheType:', countHandle.fheType);
 
     step('Generate transport key pair');
-    const transportKeypair = await client.generateTransportKeypair();
-    const pubKeyHex = transportKeypair.publicKey;
+    const transportKeyPair = await client.generateTransportKeyPair();
+    const pubKeyHex = transportKeyPair.publicKey;
     console.log('  Public key:', pubKeyHex.slice(0, 40) + '...');
 
     step('Create and sign EIP-712 decrypt permit');
     const now = Math.floor(Date.now() / 1000);
     const signedPermit = await client.signDecryptionPermit({
-      transportKeypair,
+      transportKeyPair,
       contractAddresses: [FHE_COUNTER_ADDRESS],
       startTimestamp: now,
       durationDays: 1,
@@ -195,7 +195,7 @@ async function main(): Promise<void> {
     step('Decrypt the FHECounter count');
     try {
       const decrypted = await client.decryptValue({
-        transportKeypair,
+        transportKeyPair,
         encryptedValue: countHandle,
         contractAddress: asChecksummedAddress(FHE_COUNTER_ADDRESS),
         signedPermit,

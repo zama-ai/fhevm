@@ -4,31 +4,17 @@ export type {
   RelayerDelegatedUserDecryptProgressArgs,
 } from '../../types/relayer.js';
 
-export {
-  type GenerateTransportKeypairReturnType as GenerateE2eTransportKeypairReturnType,
-  generateTransportKeypair as generateE2eTransportKeypair,
-} from './generateTransportKeypair.js';
+export { type GenerateTransportKeyPairReturnType, generateTransportKeyPair } from './generateTransportKeyPair.js';
 
 export {
-  type DecryptSelfValuesFromPairsParameters,
-  type DecryptDelegatedValuesFromPairsParameters,
+  type DecryptValuesFromPairsParameters,
   type DecryptValuesFromPairsReturnType,
   decryptValuesFromPairs,
 } from './decryptValuesFromPairs.js';
 
-export {
-  type DecryptSelfValueParameters,
-  type DecryptDelegatedValueParameters,
-  type DecryptValueReturnType,
-  decryptValue,
-} from './decryptValue.js';
+export { type DecryptValueParameters, type DecryptValueReturnType, decryptValue } from './decryptValue.js';
 
-export {
-  type DecryptSelfValuesParameters,
-  type DecryptDelegatedValuesParameters,
-  type DecryptValuesReturnType,
-  decryptValues,
-} from './decryptValues.js';
+export { type DecryptValuesParameters, type DecryptValuesReturnType, decryptValues } from './decryptValues.js';
 
 export {
   type DecryptKmsSignedcryptedSharesParameters,
@@ -56,3 +42,10 @@ export {
   type CanDecryptValueReturnType,
   canDecryptValue,
 } from './canDecryptValue.js';
+
+export { type TransportKeyPair } from '../../kms/TransportKeyPair-p.js';
+
+export {
+  type SignDecryptionPermitParameters,
+  type SignDecryptionPermitReturnType,
+} from '../base/signDecryptionPermit.js';

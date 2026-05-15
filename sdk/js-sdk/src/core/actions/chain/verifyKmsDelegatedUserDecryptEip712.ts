@@ -6,7 +6,7 @@ import {
   type VerifyKmsDelegatedUserDecryptEip712Parameters,
 } from '../../utils-p/decrypt/verifyKmsDelegatedUserDecryptEip712.js';
 
-export type { VerifyKmsDelegatedUserDecryptEip712Parameters as VerifyKmsDelegatedUserDecryptEIP712Parameters };
+export type { VerifyKmsDelegatedUserDecryptEip712Parameters };
 
 export async function verifyKmsDelegatedUserDecryptEip712(
   fhevm: Fhevm<FhevmChain, FhevmRuntime, OptionalNativeClient>,
