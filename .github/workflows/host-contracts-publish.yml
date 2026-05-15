@@ -33,6 +33,9 @@ jobs:
         with:
           node-version: 20.x
 
+      - name: Install safe-chain
+        run: curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
+
       - name: Prepare environment file
         working-directory: host-contracts
         run: cp .env.example .env
