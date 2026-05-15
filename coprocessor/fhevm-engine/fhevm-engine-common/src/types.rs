@@ -722,48 +722,6 @@ impl SupportedFheCiphertexts {
         }
     }
 
-    pub fn add_re_randomization_metadata(&mut self, hash_data: &[u8]) {
-        match self {
-            SupportedFheCiphertexts::FheBool(ct) => {
-                ct.re_randomization_metadata_mut().set_data(hash_data);
-            }
-            SupportedFheCiphertexts::FheUint4(ct) => {
-                ct.re_randomization_metadata_mut().set_data(hash_data);
-            }
-            SupportedFheCiphertexts::FheUint8(ct) => {
-                ct.re_randomization_metadata_mut().set_data(hash_data);
-            }
-            SupportedFheCiphertexts::FheUint16(ct) => {
-                ct.re_randomization_metadata_mut().set_data(hash_data);
-            }
-            SupportedFheCiphertexts::FheUint32(ct) => {
-                ct.re_randomization_metadata_mut().set_data(hash_data);
-            }
-            SupportedFheCiphertexts::FheUint64(ct) => {
-                ct.re_randomization_metadata_mut().set_data(hash_data);
-            }
-            SupportedFheCiphertexts::FheUint128(ct) => {
-                ct.re_randomization_metadata_mut().set_data(hash_data);
-            }
-            SupportedFheCiphertexts::FheUint160(ct) => {
-                ct.re_randomization_metadata_mut().set_data(hash_data);
-            }
-            SupportedFheCiphertexts::FheUint256(ct) => {
-                ct.re_randomization_metadata_mut().set_data(hash_data);
-            }
-            SupportedFheCiphertexts::FheBytes64(ct) => {
-                ct.re_randomization_metadata_mut().set_data(hash_data);
-            }
-            SupportedFheCiphertexts::FheBytes128(ct) => {
-                ct.re_randomization_metadata_mut().set_data(hash_data);
-            }
-            SupportedFheCiphertexts::FheBytes256(ct) => {
-                ct.re_randomization_metadata_mut().set_data(hash_data);
-            }
-            SupportedFheCiphertexts::Scalar(_) => (),
-        }
-    }
-
     pub fn add_to_rerandomisation_context(&self, context: &mut ReRandomizationContext) {
         match self {
             SupportedFheCiphertexts::FheBool(c) => context.add_ciphertext(c),
