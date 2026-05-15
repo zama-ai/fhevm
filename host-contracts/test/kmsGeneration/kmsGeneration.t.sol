@@ -235,7 +235,10 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     /// @dev Hash + sign + prank + call prepKeygenResponse for a single KMS node.
     function _doPrepKeygenResponse(uint256 prepKeygenId, uint256 pk, address sender) internal {
-        bytes memory extraData = _buildExtraData();
+        _doPrepKeygenResponse(prepKeygenId, _buildExtraData(), pk, sender);
+    }
+
+    function _doPrepKeygenResponse(uint256 prepKeygenId, bytes memory extraData, uint256 pk, address sender) internal {
         bytes32 digest = _hashPrepKeygen(prepKeygenId, extraData);
         bytes memory sig = _computeSignature(pk, digest);
         vm.prank(sender);
@@ -244,7 +247,16 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     /// @dev Hash + sign + prank + call keygenResponse for a single KMS node (uses _mockKeyDigests).
     function _doKeygenResponse(uint256 prepKeygenId, uint256 keyId, uint256 pk, address sender) internal {
-        bytes memory extraData = _buildExtraData();
+        _doKeygenResponse(prepKeygenId, keyId, _buildExtraData(), pk, sender);
+    }
+
+    function _doKeygenResponse(
+        uint256 prepKeygenId,
+        uint256 keyId,
+        bytes memory extraData,
+        uint256 pk,
+        address sender
+    ) internal {
         IKMSGeneration.KeyDigest[] memory digests = _mockKeyDigests();
         bytes32 digest = _hashKeygen(prepKeygenId, keyId, digests, extraData);
         bytes memory sig = _computeSignature(pk, digest);
@@ -260,7 +272,17 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         uint256 pk,
         address sender
     ) internal {
-        bytes memory extraData = _buildExtraData();
+        _doCrsgenResponse(crsId, maxBitLength, crsDigestData, _buildExtraData(), pk, sender);
+    }
+
+    function _doCrsgenResponse(
+        uint256 crsId,
+        uint256 maxBitLength,
+        bytes memory crsDigestData,
+        bytes memory extraData,
+        uint256 pk,
+        address sender
+    ) internal {
         bytes32 digest = _hashCrsgen(crsId, maxBitLength, crsDigestData, extraData);
         bytes memory sig = _computeSignature(pk, digest);
         vm.prank(sender);
@@ -562,41 +584,96 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         kmsGeneration.keygenResponse(KEY_COUNTER_BASE + 1, _mockKeyDigests(), hex"");
     }
 
-    function test_pendingKeygenCannotCompleteAfterContextRotationAndCanBeAborted() public {
+    function test_pendingKeygenCompletesAfterContextRotationUsingPinnedContext() public {
+        bytes memory oldExtraData = _buildExtraData();
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
 
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
         uint256 keyId = KEY_COUNTER_BASE + 1;
-        bytes memory oldExtraData = _buildExtraData();
-        bytes32 oldPrepDigest = _hashPrepKeygen(prepKeygenId, oldExtraData);
-        bytes memory oldPrepSig = _computeSignature(kmsPk0, oldPrepDigest);
 
+        address[] memory rotatedSigners = new address[](2);
+        rotatedSigners[0] = kmsSigner1;
+        rotatedSigners[1] = kmsSigner2;
+        KmsNode[] memory rotatedNodes = _makeKmsNodesFromSigners(rotatedSigners);
+
+        vm.prank(owner);
+        protocolConfig.defineNewKmsContext(rotatedNodes, _defaultThresholds());
+
+        _doPrepKeygenResponse(prepKeygenId, oldExtraData, kmsPk0, kmsTxSender0);
+        assertTrue(kmsGeneration.isRequestDone(prepKeygenId));
+
+        _doKeygenResponse(prepKeygenId, keyId, oldExtraData, kmsPk0, kmsTxSender0);
+        assertTrue(kmsGeneration.isRequestDone(keyId));
+        assertEq(kmsGeneration.getActiveKeyId(), keyId);
+    }
+
+    function test_pendingKeygenCompletesWhenTxSenderRotatedOutOfLiveContext() public {
+        bytes memory oldExtraData = _buildExtraData();
+        vm.prank(owner);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+
+        uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
+
+        // Override both tx sender and signer fields: `_makeKmsNodes` reuses kmsTxSender0/1 by
+        // default, and we need a context fully disjoint from the original committee.
         KmsNode[] memory rotatedNodes = _makeKmsNodes(2);
+        rotatedNodes[0].txSenderAddress = address(0xB1);
         rotatedNodes[0].signerAddress = kmsSigner1;
+        rotatedNodes[1].txSenderAddress = address(0xB2);
         rotatedNodes[1].signerAddress = kmsSigner2;
 
         vm.prank(owner);
         protocolConfig.defineNewKmsContext(rotatedNodes, _defaultThresholds());
 
+        // Sanity: kmsTxSender0 is no longer a tx sender under the live context.
+        assertFalse(protocolConfig.isKmsTxSenderForContext(protocolConfig.getCurrentKmsContextId(), kmsTxSender0));
+
+        bytes32 prepDigest = _hashPrepKeygen(prepKeygenId, oldExtraData);
+        bytes memory prepSig = _computeSignature(kmsPk0, prepDigest);
         vm.prank(kmsTxSender0);
-        vm.expectRevert(
-            abi.encodeWithSelector(IKMSGeneration.KmsSignerDoesNotMatchTxSender.selector, kmsSigner0, kmsTxSender0)
-        );
-        kmsGeneration.prepKeygenResponse(prepKeygenId, oldPrepSig);
-
-        vm.prank(owner);
-        kmsGeneration.abortKeygen(prepKeygenId);
+        kmsGeneration.prepKeygenResponse(prepKeygenId, prepSig);
         assertTrue(kmsGeneration.isRequestDone(prepKeygenId));
-        assertTrue(kmsGeneration.isRequestDone(keyId));
+    }
 
+    function test_keygenConsensusUsesRequestPinnedThreshold() public {
+        uint256 requestContextId = protocolConfig.getCurrentKmsContextId();
+        assertEq(protocolConfig.getKmsGenThresholdForContext(requestContextId), 1);
+
+        bytes memory oldExtraData = _buildExtraData();
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
-        uint256 nextPrepKeygenId = PREP_KEYGEN_COUNTER_BASE + 2;
-        uint256 nextKeyId = KEY_COUNTER_BASE + 2;
-        _doPrepKeygenResponse(nextPrepKeygenId, kmsPk1, kmsTxSender0);
-        _doKeygenResponse(nextPrepKeygenId, nextKeyId, kmsPk1, kmsTxSender0);
-        assertTrue(kmsGeneration.isRequestDone(nextKeyId));
+
+        uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
+
+        _switchToMultiSignerContext();
+        assertEq(protocolConfig.getKmsGenThresholdForContext(protocolConfig.getCurrentKmsContextId()), 3);
+
+        _doPrepKeygenResponse(prepKeygenId, oldExtraData, kmsPk0, kmsTxSender0);
+
+        assertTrue(kmsGeneration.isRequestDone(prepKeygenId));
+        assertEq(kmsGeneration.getConsensusTxSenders(prepKeygenId).length, 1);
+    }
+
+    function test_pendingCrsgenCompletesAfterContextRotationUsingPinnedContext() public {
+        bytes memory oldExtraData = _buildExtraData();
+        vm.prank(owner);
+        kmsGeneration.crsgenRequest(4096, IKMSGeneration.ParamsType.Default);
+
+        uint256 crsId = CRS_COUNTER_BASE + 1;
+
+        address[] memory rotatedSigners = new address[](2);
+        rotatedSigners[0] = kmsSigner1;
+        rotatedSigners[1] = kmsSigner2;
+        KmsNode[] memory rotatedNodes = _makeKmsNodesFromSigners(rotatedSigners);
+
+        vm.prank(owner);
+        protocolConfig.defineNewKmsContext(rotatedNodes, _defaultThresholds());
+
+        _doCrsgenResponse(crsId, 4096, hex"deadbeef", oldExtraData, kmsPk0, kmsTxSender0);
+
+        assertTrue(kmsGeneration.isRequestDone(crsId));
+        assertEq(kmsGeneration.getActiveCrsId(), crsId);
     }
 
     function test_revertPrepKeygenResponseSignedWithStaleContextExtraData() public {
@@ -909,6 +986,42 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Test);
+    }
+
+    function test_abortPendingKeygenAfterContextRotationAllowsNewKeygen() public {
+        vm.prank(owner);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+
+        uint256 abortedPrepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
+        uint256 abortedKeyId = KEY_COUNTER_BASE + 1;
+
+        address[] memory rotatedSigners = new address[](2);
+        rotatedSigners[0] = kmsSigner1;
+        rotatedSigners[1] = kmsSigner2;
+        KmsNode[] memory rotatedNodes = _makeKmsNodesFromSigners(rotatedSigners);
+
+        vm.prank(owner);
+        protocolConfig.defineNewKmsContext(rotatedNodes, _defaultThresholds());
+
+        vm.expectEmit(true, true, true, true, address(kmsGeneration));
+        emit IKMSGeneration.AbortKeygen(abortedPrepKeygenId);
+        vm.prank(owner);
+        kmsGeneration.abortKeygen(abortedPrepKeygenId);
+
+        assertTrue(kmsGeneration.isRequestDone(abortedPrepKeygenId));
+        assertTrue(kmsGeneration.isRequestDone(abortedKeyId));
+
+        vm.prank(owner);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Test);
+
+        uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 2;
+        uint256 keyId = KEY_COUNTER_BASE + 2;
+
+        _doPrepKeygenResponse(prepKeygenId, kmsPk1, kmsTxSender0);
+        _doKeygenResponse(prepKeygenId, keyId, kmsPk1, kmsTxSender0);
+
+        assertEq(kmsGeneration.getActiveKeyId(), keyId);
+        assertEq(uint256(kmsGeneration.getKeyParamsType(keyId)), uint256(IKMSGeneration.ParamsType.Test));
     }
 
     function test_abortCrsgen() public {
