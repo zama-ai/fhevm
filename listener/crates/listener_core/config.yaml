@@ -24,10 +24,10 @@ database:
     # idle_timeout_secs: 600
     # max_lifetime_secs: 1800
 broker:
-  broker_type: redis
-  broker_url: redis://localhost:6379
-  # broker_type: amqp
-  # broker_url: amqp://user:pass@localhost:5672/%2f
+  # broker_type: redis
+  # broker_url: redis://localhost:6379
+  broker_type: amqp
+  broker_url: amqp://user:pass@localhost:5672/%2f
   # ensure_publish: true # Enable replication-aware publish durability (WAIT for Redis, confirms for AMQP)
   # circuit_breaker_cooldown_secs: 10  # Seconds to wait before retrying a failed publish (circuit breaker)
   # circuit_breaker_threshold: 3  # Number of consecutive publish failures to trigger the circuit breaker

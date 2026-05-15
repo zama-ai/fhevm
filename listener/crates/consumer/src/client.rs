@@ -9,10 +9,10 @@ use primitives::routing;
 use primitives::utils::chain_id_to_namespace;
 use std::future::Future;
 use std::sync::Arc;
-use std::time::Duration;
 use tracing::warn;
 
 pub use crate::error::ConsumerError;
+use crate::options::{CatchupConsumerOptions, LiveConsumerOptions};
 
 /// Chain & Consumer-scoped client for the consumer library.
 ///
@@ -47,11 +47,27 @@ pub struct ListenerConsumer {
     live_cancel: CancellationToken,
     /// Child token: cancels only the catchup flow.
     catchup_cancel: CancellationToken,
+    live_options: LiveConsumerOptions,
+    catchup_options: CatchupConsumerOptions,
 }
 
 impl ListenerConsumer {
-    /// Create a new consumer bound to a broker and chain ID.
+    /// Create a new consumer bound to a broker and chain ID, with default
+    /// tuning for both the live and catchup pipelines.
     pub fn new(broker: &Broker, chain_id: u64, consumer_id: &str) -> Self {
+        Self::with_options(broker, chain_id, consumer_id, None, None)
+    }
+
+    /// Create a new consumer with explicit per-pipeline tuning. `None` for
+    /// either argument falls back to the corresponding `Default` impl, which
+    /// matches the values previously hardcoded in this file.
+    pub fn with_options(
+        broker: &Broker,
+        chain_id: u64,
+        consumer_id: &str,
+        live: Option<LiveConsumerOptions>,
+        catchup: Option<CatchupConsumerOptions>,
+    ) -> Self {
         let consumer_id_trimmed = consumer_id.trim();
         if consumer_id != consumer_id_trimmed {
             warn!(
@@ -68,6 +84,8 @@ impl ListenerConsumer {
             cancel_token,
             live_cancel,
             catchup_cancel,
+            live_options: live.unwrap_or_default(),
+            catchup_options: catchup.unwrap_or_default(),
         }
     }
 
@@ -174,39 +192,69 @@ impl ListenerConsumer {
     fn broker_consumer(&self) -> Result<Consumer, BrokerError> {
         let topic = self.consumer_topic();
         let cancel = self.live_cancel.clone();
-        let builder = self
+        let opts = &self.live_options;
+
+        let mut builder = self
             .broker
             .consumer(&topic)
             .group(topic.to_string())
-            .prefetch(1)
-            .max_retries(3)
-            .circuit_breaker(3, Duration::from_secs(30))
+            .prefetch(opts.prefetch())
+            .max_retries(opts.max_retries())
             .with_cancellation(cancel);
 
-        match &self.broker {
-            Broker::Redis { .. } => builder.redis_claim_min_idle(60).redis_claim_interval(1),
-            Broker::Amqp { .. } => builder,
+        if let Some((threshold, cooldown)) = opts.circuit_breaker() {
+            builder = builder.circuit_breaker(threshold, cooldown);
         }
-        .build()
+
+        let builder = match &self.broker {
+            Broker::Redis { .. } => {
+                let mut b = builder;
+                if let Some(d) = opts.redis_claim_min_idle() {
+                    b = b.redis_claim_min_idle(d.as_secs());
+                }
+                if let Some(d) = opts.redis_claim_interval() {
+                    b = b.redis_claim_interval(d.as_secs());
+                }
+                b
+            }
+            Broker::Amqp { .. } => builder,
+        };
+
+        builder.build()
     }
 
     fn broker_catchup_consumer(&self) -> Result<Consumer, BrokerError> {
         let topic = self.catchup_consumer_topic();
         let cancel = self.catchup_cancel.clone();
-        let builder = self
+        let opts = &self.catchup_options;
+
+        let mut builder = self
             .broker
             .consumer(&topic)
             .group(topic.to_string())
-            .prefetch(1)
-            .max_retries(5)
-            .circuit_breaker(5, Duration::from_secs(60))
+            .prefetch(opts.prefetch())
+            .max_retries(opts.max_retries())
             .with_cancellation(cancel);
 
-        match &self.broker {
-            Broker::Redis { .. } => builder.redis_claim_min_idle(120).redis_claim_interval(5),
-            Broker::Amqp { .. } => builder,
+        if let Some((threshold, cooldown)) = opts.circuit_breaker() {
+            builder = builder.circuit_breaker(threshold, cooldown);
         }
-        .build()
+
+        let builder = match &self.broker {
+            Broker::Redis { .. } => {
+                let mut b = builder;
+                if let Some(d) = opts.redis_claim_min_idle() {
+                    b = b.redis_claim_min_idle(d.as_secs());
+                }
+                if let Some(d) = opts.redis_claim_interval() {
+                    b = b.redis_claim_interval(d.as_secs());
+                }
+                b
+            }
+            Broker::Amqp { .. } => builder,
+        };
+
+        builder.build()
     }
 
     /// Publish filters registration command to watch contracts.

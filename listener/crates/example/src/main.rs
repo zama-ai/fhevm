@@ -61,7 +61,7 @@ async fn main() -> anyhow::Result<()> {
     info!(%broker_url, chain_id, %token, consumer_id = CONSUMER_ID,
         "starting Zama-token Transfer showcase");
 
-    let broker = Broker::redis(&broker_url)
+    let broker = Broker::from_url(&broker_url)
         .await
         .context("connecting to broker")?;
     let consumer = ListenerConsumer::new(&broker, chain_id, CONSUMER_ID);
