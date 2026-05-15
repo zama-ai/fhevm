@@ -15,8 +15,6 @@ import { ProtocolMetadata, HostChain, Coprocessor, Custodian, KmsNode } from "./
 /**
  * @title GatewayConfig contract
  * @notice See {IGatewayConfig}.
- * @dev Add/remove methods will be added in the future for KMS nodes, coprocessors and host chains.
- * See https://github.com/zama-ai/fhevm-gateway/issues/98 for more details.
  */
 /// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeableEmptyProxy {
@@ -45,7 +43,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 7;
+    uint64 private constant REINITIALIZER_VERSION = 8;
 
     /**
      * @notice The address of the all gateway contracts
@@ -151,6 +149,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         /// @dev A destroyed context cannot satisfy any decryption verification: its signers and
         ///      tx senders are reported as not registered, and its KMS-node lookups return zero.
         mapping(uint256 contextId => bool isDestroyed) destroyedKmsContexts;
+        /// @notice Whether a registered host chain has been disabled.
+        mapping(uint256 chainId => bool isDisabled) disabledHostChains;
     }
 
     /**
@@ -241,12 +241,11 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice Re-initializes the contract from V5.
-     * @dev No storage migration is required for the post-v0.12.1 behavior change.
+     * @notice Re-initializes the contract from V6.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV6() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV7() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IGatewayConfig-isPauser}.
@@ -442,6 +441,69 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
+     * @notice See {IGatewayConfig-disableHostChain}.
+     */
+    function disableHostChain(uint256 chainId) external virtual onlyOwner {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        if (!$.isHostChainRegistered[chainId]) {
+            revert HostChainNotRegistered(chainId);
+        }
+        if ($.disabledHostChains[chainId]) {
+            revert HostChainAlreadyDisabled(chainId);
+        }
+        $.disabledHostChains[chainId] = true;
+        emit DisableHostChain(chainId);
+    }
+
+    /**
+     * @notice See {IGatewayConfig-enableHostChain}.
+     */
+    function enableHostChain(uint256 chainId) external virtual onlyOwner {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        if (!$.isHostChainRegistered[chainId]) {
+            revert HostChainNotRegistered(chainId);
+        }
+        if (!$.disabledHostChains[chainId]) {
+            revert HostChainAlreadyEnabled(chainId);
+        }
+        $.disabledHostChains[chainId] = false;
+        emit EnableHostChain(chainId);
+    }
+
+    /**
+     * @notice See {IGatewayConfig-removeHostChain}.
+     */
+    function removeHostChain(uint256 chainId) external virtual onlyOwner {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        if (!$.isHostChainRegistered[chainId]) {
+            revert HostChainNotRegistered(chainId);
+        }
+        // The chain must be disabled first so the action is deliberate and cannot pull a chain
+        // out from under in-flight requests.
+        if (!$.disabledHostChains[chainId]) {
+            revert HostChainNotDisabled(chainId);
+        }
+
+        // Swap-and-pop the entry out of the `hostChains` array.
+        uint256 len = $.hostChains.length;
+        for (uint256 i = 0; i < len; i++) {
+            if ($.hostChains[i].chainId == chainId) {
+                if (i != len - 1) {
+                    $.hostChains[i] = $.hostChains[len - 1];
+                }
+                $.hostChains.pop();
+                break;
+            }
+        }
+
+        // Clear the boolean state so a fresh `addHostChain(chainId)` later starts from a clean slate.
+        $.isHostChainRegistered[chainId] = false;
+        $.disabledHostChains[chainId] = false;
+
+        emit RemoveHostChain(chainId);
+    }
+
+    /**
      * @notice See {IGatewayConfig-pauseAllGatewayContracts}.
      * Contracts that are technically pausable but do not provide any pausable functions are not
      * paused. If all of the contracts are already paused, the function will revert.
@@ -542,6 +604,14 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function isHostChainRegistered(uint256 chainId) external view virtual returns (bool) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         return $.isHostChainRegistered[chainId];
+    }
+
+    /**
+     * @notice See {IGatewayConfig-isHostChainDisabled}.
+     */
+    function isHostChainDisabled(uint256 chainId) external view virtual returns (bool) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        return $.disabledHostChains[chainId];
     }
 
     /**

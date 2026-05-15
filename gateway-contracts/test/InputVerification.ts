@@ -75,6 +75,7 @@ describe("InputVerification", function () {
 
   describe("Verify proof request", async function () {
     let inputVerification: InputVerification;
+    let gatewayConfig: GatewayConfig;
     let protocolPayment: ProtocolPayment;
     let mockedZamaOFT: ZamaOFT;
     let contractChainId: number;
@@ -89,6 +90,7 @@ describe("InputVerification", function () {
     beforeEach(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
       inputVerification = fixture.inputVerification;
+      gatewayConfig = fixture.gatewayConfig;
       protocolPayment = fixture.protocolPayment;
       mockedZamaOFT = fixture.mockedZamaOFT;
       mockedFeesSenderToBurnerAddress = fixture.mockedFeesSenderToBurnerAddress;
@@ -121,6 +123,26 @@ describe("InputVerification", function () {
       )
         .revertedWithCustomError(inputVerification, "HostChainNotRegistered")
         .withArgs(fakeHostChainId);
+    });
+
+    it("Should revert because the contract's chain ID corresponds to a disabled host chain", async function () {
+      await gatewayConfig.connect(owner).disableHostChain(contractChainId);
+
+      await expect(
+        inputVerification
+          .connect(tokenFundedTxSender)
+          .verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof, extraDataV0),
+      )
+        .revertedWithCustomError(inputVerification, "HostChainDisabled")
+        .withArgs(contractChainId);
+
+      // Re-enable: the same request now goes through.
+      await gatewayConfig.connect(owner).enableHostChain(contractChainId);
+      await expect(
+        inputVerification
+          .connect(tokenFundedTxSender)
+          .verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof, extraDataV0),
+      ).to.emit(inputVerification, "VerifyProofRequest");
     });
 
     it("Should revert because the contract is paused", async function () {
@@ -541,8 +563,8 @@ describe("InputVerification", function () {
 
     it("Should not reach verify consensus if it has already been rejected with low coprocessor threshold", async function () {
       // Update the coprocessor threshold to 1 in order to try to reach a consensus twice with the
-      // current total of 3 coprocessors. Per L-04, updateCoprocessorThreshold requires
-      // InputVerification to be paused first.
+      // current total of 3 coprocessors. updateCoprocessorThreshold requires InputVerification
+      // to be paused first.
       await inputVerification.connect(pauser).pause();
       await gatewayConfig.connect(owner).updateCoprocessorThreshold(1);
       await inputVerification.connect(owner).unpause();
@@ -815,8 +837,8 @@ describe("InputVerification", function () {
 
     it("Should not reach verify consensus if it has already been rejected with low coprocessor threshold", async function () {
       // Update the coprocessor threshold to 1 in order to try to reach a consensus twice with the
-      // current total of 3 coprocessors. Per L-04, updateCoprocessorThreshold requires
-      // InputVerification to be paused first.
+      // current total of 3 coprocessors. updateCoprocessorThreshold requires InputVerification
+      // to be paused first.
       await inputVerification.connect(pauser).pause();
       await gatewayConfig.connect(owner).updateCoprocessorThreshold(1);
       await inputVerification.connect(owner).unpause();

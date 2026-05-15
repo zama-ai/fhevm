@@ -47,6 +47,12 @@ contract GatewayConfigMock {
 
     event AddHostChain(HostChain hostChain);
 
+    event DisableHostChain(uint256 indexed chainId);
+
+    event EnableHostChain(uint256 indexed chainId);
+
+    event RemoveHostChain(uint256 indexed chainId);
+
     event PauseAllGatewayContracts();
 
     event UnpauseAllGatewayContracts();
@@ -124,6 +130,18 @@ contract GatewayConfigMock {
 
     function addHostChain(HostChain calldata hostChain) external {
         emit AddHostChain(hostChain);
+    }
+
+    function disableHostChain(uint256 chainId) external {
+        emit DisableHostChain(chainId);
+    }
+
+    function enableHostChain(uint256 chainId) external {
+        emit EnableHostChain(chainId);
+    }
+
+    function removeHostChain(uint256 chainId) external {
+        emit RemoveHostChain(chainId);
     }
 
     function pauseAllGatewayContracts() external {

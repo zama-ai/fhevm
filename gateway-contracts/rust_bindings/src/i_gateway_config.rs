@@ -49,7 +49,11 @@ interface IGatewayConfig {
     error EmptyCoprocessors();
     error EmptyCustodians();
     error EmptyKmsNodes();
+    error HostChainAlreadyDisabled(uint256 chainId);
+    error HostChainAlreadyEnabled(uint256 chainId);
     error HostChainAlreadyRegistered(uint256 chainId);
+    error HostChainNotDisabled(uint256 chainId);
+    error HostChainNotRegistered(uint256 chainId);
     error InputVerificationMustBePaused();
     error InvalidHighCoprocessorThreshold(uint256 coprocessorThreshold, uint256 nCoprocessors);
     error InvalidHighKmsGenThreshold(uint256 kmsGenThreshold, uint256 nKmsNodes);
@@ -70,8 +74,11 @@ interface IGatewayConfig {
 
     event AddHostChain(HostChain hostChain);
     event DestroyKmsContext(uint256 indexed kmsContextId);
+    event DisableHostChain(uint256 indexed chainId);
+    event EnableHostChain(uint256 indexed chainId);
     event InitializeGatewayConfig(uint256 indexed kmsContextId, ProtocolMetadata metadata, Thresholds thresholds, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
     event PauseAllGatewayContracts();
+    event RemoveHostChain(uint256 indexed chainId);
     event UnpauseAllGatewayContracts();
     event UpdateCoprocessorThreshold(uint256 newCoprocessorThreshold);
     event UpdateCoprocessors(Coprocessor[] newCoprocessors, uint256 newCoprocessorThreshold);
@@ -84,6 +91,8 @@ interface IGatewayConfig {
 
     function addHostChain(HostChain memory hostChain) external;
     function destroyKmsContext(uint256 kmsContextId) external;
+    function disableHostChain(uint256 chainId) external;
+    function enableHostChain(uint256 chainId) external;
     function getCoprocessor(address coprocessorTxSenderAddress) external view returns (Coprocessor memory);
     function getCoprocessorMajorityThreshold() external view returns (uint256);
     function getCoprocessorSigners() external view returns (address[] memory);
@@ -110,6 +119,7 @@ interface IGatewayConfig {
     function isCoprocessorTxSender(address coprocessorTxSenderAddress) external view returns (bool);
     function isCustodianSigner(address signerAddress) external view returns (bool);
     function isCustodianTxSender(address txSenderAddress) external view returns (bool);
+    function isHostChainDisabled(uint256 chainId) external view returns (bool);
     function isHostChainRegistered(uint256 chainId) external view returns (bool);
     function isKmsSigner(address signerAddress) external view returns (bool);
     function isKmsSignerForContext(uint256 contextId, address signerAddress) external view returns (bool);
@@ -117,6 +127,7 @@ interface IGatewayConfig {
     function isKmsTxSenderForContext(uint256 contextId, address txSenderAddress) external view returns (bool);
     function isPauser(address account) external view returns (bool);
     function pauseAllGatewayContracts() external;
+    function removeHostChain(uint256 chainId) external;
     function unpauseAllGatewayContracts() external;
     function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external;
     function updateCoprocessors(Coprocessor[] memory newCoprocessors, uint256 newCoprocessorThreshold) external;
@@ -178,6 +189,32 @@ interface IGatewayConfig {
     "inputs": [
       {
         "name": "kmsContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "disableHostChain",
+    "inputs": [
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "enableHostChain",
+    "inputs": [
+      {
+        "name": "chainId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -752,6 +789,25 @@ interface IGatewayConfig {
   },
   {
     "type": "function",
+    "name": "isHostChainDisabled",
+    "inputs": [
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "isHostChainRegistered",
     "inputs": [
       {
@@ -878,6 +934,19 @@ interface IGatewayConfig {
     "type": "function",
     "name": "pauseAllGatewayContracts",
     "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "removeHostChain",
+    "inputs": [
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
@@ -1153,6 +1222,32 @@ interface IGatewayConfig {
   },
   {
     "type": "event",
+    "name": "DisableHostChain",
+    "inputs": [
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "EnableHostChain",
+    "inputs": [
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "InitializeGatewayConfig",
     "inputs": [
       {
@@ -1293,6 +1388,19 @@ interface IGatewayConfig {
     "type": "event",
     "name": "PauseAllGatewayContracts",
     "inputs": [],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "RemoveHostChain",
+    "inputs": [
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
     "anonymous": false
   },
   {
@@ -1614,7 +1722,51 @@ interface IGatewayConfig {
   },
   {
     "type": "error",
+    "name": "HostChainAlreadyDisabled",
+    "inputs": [
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "HostChainAlreadyEnabled",
+    "inputs": [
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "HostChainAlreadyRegistered",
+    "inputs": [
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "HostChainNotDisabled",
+    "inputs": [
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "HostChainNotRegistered",
     "inputs": [
       {
         "name": "chainId",
@@ -4268,6 +4420,172 @@ error EmptyKmsNodes();
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `HostChainAlreadyDisabled(uint256)` and selector `0xa6fef8b7`.
+```solidity
+error HostChainAlreadyDisabled(uint256 chainId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct HostChainAlreadyDisabled {
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<HostChainAlreadyDisabled>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: HostChainAlreadyDisabled) -> Self {
+                (value.chainId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for HostChainAlreadyDisabled {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { chainId: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for HostChainAlreadyDisabled {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "HostChainAlreadyDisabled(uint256)";
+            const SELECTOR: [u8; 4] = [166u8, 254u8, 248u8, 183u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `HostChainAlreadyEnabled(uint256)` and selector `0x5a73e383`.
+```solidity
+error HostChainAlreadyEnabled(uint256 chainId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct HostChainAlreadyEnabled {
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<HostChainAlreadyEnabled> for UnderlyingRustTuple<'_> {
+            fn from(value: HostChainAlreadyEnabled) -> Self {
+                (value.chainId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for HostChainAlreadyEnabled {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { chainId: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for HostChainAlreadyEnabled {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "HostChainAlreadyEnabled(uint256)";
+            const SELECTOR: [u8; 4] = [90u8, 115u8, 227u8, 131u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `HostChainAlreadyRegistered(uint256)` and selector `0x96a56828`.
 ```solidity
 error HostChainAlreadyRegistered(uint256 chainId);
@@ -4327,6 +4645,170 @@ error HostChainAlreadyRegistered(uint256 chainId);
             > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "HostChainAlreadyRegistered(uint256)";
             const SELECTOR: [u8; 4] = [150u8, 165u8, 104u8, 40u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `HostChainNotDisabled(uint256)` and selector `0xab1b9ca9`.
+```solidity
+error HostChainNotDisabled(uint256 chainId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct HostChainNotDisabled {
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<HostChainNotDisabled> for UnderlyingRustTuple<'_> {
+            fn from(value: HostChainNotDisabled) -> Self {
+                (value.chainId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for HostChainNotDisabled {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { chainId: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for HostChainNotDisabled {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "HostChainNotDisabled(uint256)";
+            const SELECTOR: [u8; 4] = [171u8, 27u8, 156u8, 169u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `HostChainNotRegistered(uint256)` and selector `0xb6679c3b`.
+```solidity
+error HostChainNotRegistered(uint256 chainId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct HostChainNotRegistered {
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<HostChainNotRegistered> for UnderlyingRustTuple<'_> {
+            fn from(value: HostChainNotRegistered) -> Self {
+                (value.chainId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for HostChainNotRegistered {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { chainId: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for HostChainNotRegistered {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "HostChainNotRegistered(uint256)";
+            const SELECTOR: [u8; 4] = [182u8, 103u8, 156u8, 59u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -5987,6 +6469,220 @@ event DestroyKmsContext(uint256 indexed kmsContextId);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `DisableHostChain(uint256)` and selector `0x57f4673404454b9403c58190b0f1b853ea8a49847f82024d97552045018f8538`.
+```solidity
+event DisableHostChain(uint256 indexed chainId);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct DisableHostChain {
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for DisableHostChain {
+            type DataTuple<'a> = ();
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<256>,
+            );
+            const SIGNATURE: &'static str = "DisableHostChain(uint256)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                87u8, 244u8, 103u8, 52u8, 4u8, 69u8, 75u8, 148u8, 3u8, 197u8, 129u8,
+                144u8, 176u8, 241u8, 184u8, 83u8, 234u8, 138u8, 73u8, 132u8, 127u8,
+                130u8, 2u8, 77u8, 151u8, 85u8, 32u8, 69u8, 1u8, 143u8, 133u8, 56u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self { chainId: topics.1 }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                ()
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(), self.chainId.clone())
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.chainId);
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for DisableHostChain {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&DisableHostChain> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(this: &DisableHostChain) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `EnableHostChain(uint256)` and selector `0x46604040ac2fa90b709704b39e50ddc9fa910cd568f0124ded496eadd7c840e0`.
+```solidity
+event EnableHostChain(uint256 indexed chainId);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct EnableHostChain {
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for EnableHostChain {
+            type DataTuple<'a> = ();
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<256>,
+            );
+            const SIGNATURE: &'static str = "EnableHostChain(uint256)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                70u8, 96u8, 64u8, 64u8, 172u8, 47u8, 169u8, 11u8, 112u8, 151u8, 4u8,
+                179u8, 158u8, 80u8, 221u8, 201u8, 250u8, 145u8, 12u8, 213u8, 104u8,
+                240u8, 18u8, 77u8, 237u8, 73u8, 110u8, 173u8, 215u8, 200u8, 64u8, 224u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self { chainId: topics.1 }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                ()
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(), self.chainId.clone())
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.chainId);
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for EnableHostChain {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&EnableHostChain> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(this: &EnableHostChain) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `InitializeGatewayConfig(uint256,(string,string),(uint256,uint256,uint256,uint256,uint256),(address,address,string,string)[],(address,address,string)[],(address,address,bytes)[])` and selector `0xf5d9541a4bf6bf4b48fc79d7a8d6bd49eb3435da57dccbea6e525ac86bbf43fe`.
 ```solidity
 event InitializeGatewayConfig(uint256 indexed kmsContextId, ProtocolMetadata metadata, Thresholds thresholds, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
@@ -6234,6 +6930,113 @@ event PauseAllGatewayContracts();
             fn from(
                 this: &PauseAllGatewayContracts,
             ) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `RemoveHostChain(uint256)` and selector `0x974136e48e50baef88d31d016167b2e7129f0bab0b1a851cf1e3d7f05462db12`.
+```solidity
+event RemoveHostChain(uint256 indexed chainId);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct RemoveHostChain {
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for RemoveHostChain {
+            type DataTuple<'a> = ();
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<256>,
+            );
+            const SIGNATURE: &'static str = "RemoveHostChain(uint256)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                151u8, 65u8, 54u8, 228u8, 142u8, 80u8, 186u8, 239u8, 136u8, 211u8, 29u8,
+                1u8, 97u8, 103u8, 178u8, 231u8, 18u8, 159u8, 11u8, 171u8, 11u8, 26u8,
+                133u8, 28u8, 241u8, 227u8, 215u8, 240u8, 84u8, 98u8, 219u8, 18u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self { chainId: topics.1 }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                ()
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(), self.chainId.clone())
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.chainId);
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for RemoveHostChain {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&RemoveHostChain> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(this: &RemoveHostChain) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
@@ -7578,6 +8381,300 @@ function destroyKmsContext(uint256 kmsContextId) external;
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 destroyKmsContextReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `disableHostChain(uint256)` and selector `0x7c797e74`.
+```solidity
+function disableHostChain(uint256 chainId) external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct disableHostChainCall {
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    ///Container type for the return parameters of the [`disableHostChain(uint256)`](disableHostChainCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct disableHostChainReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<disableHostChainCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: disableHostChainCall) -> Self {
+                    (value.chainId,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for disableHostChainCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { chainId: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<disableHostChainReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: disableHostChainReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for disableHostChainReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        impl disableHostChainReturn {
+            fn _tokenize(
+                &self,
+            ) -> <disableHostChainCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for disableHostChainCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = disableHostChainReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "disableHostChain(uint256)";
+            const SELECTOR: [u8; 4] = [124u8, 121u8, 126u8, 116u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                disableHostChainReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `enableHostChain(uint256)` and selector `0x9b0e476f`.
+```solidity
+function enableHostChain(uint256 chainId) external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct enableHostChainCall {
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    ///Container type for the return parameters of the [`enableHostChain(uint256)`](enableHostChainCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct enableHostChainReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<enableHostChainCall> for UnderlyingRustTuple<'_> {
+                fn from(value: enableHostChainCall) -> Self {
+                    (value.chainId,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for enableHostChainCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { chainId: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<enableHostChainReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: enableHostChainReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for enableHostChainReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        impl enableHostChainReturn {
+            fn _tokenize(
+                &self,
+            ) -> <enableHostChainCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for enableHostChainCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = enableHostChainReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "enableHostChain(uint256)";
+            const SELECTOR: [u8; 4] = [155u8, 14u8, 71u8, 111u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                enableHostChainReturn::_tokenize(ret)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
@@ -11589,6 +12686,162 @@ function isCustodianTxSender(address txSenderAddress) external view returns (boo
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `isHostChainDisabled(uint256)` and selector `0xccc50dba`.
+```solidity
+function isHostChainDisabled(uint256 chainId) external view returns (bool);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct isHostChainDisabledCall {
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`isHostChainDisabled(uint256)`](isHostChainDisabledCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct isHostChainDisabledReturn {
+        #[allow(missing_docs)]
+        pub _0: bool,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<isHostChainDisabledCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: isHostChainDisabledCall) -> Self {
+                    (value.chainId,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isHostChainDisabledCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { chainId: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (bool,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<isHostChainDisabledReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: isHostChainDisabledReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isHostChainDisabledReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for isHostChainDisabledCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = bool;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "isHostChainDisabled(uint256)";
+            const SELECTOR: [u8; 4] = [204u8, 197u8, 13u8, 186u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: isHostChainDisabledReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: isHostChainDisabledReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `isHostChainRegistered(uint256)` and selector `0xbff3aaba`.
 ```solidity
 function isHostChainRegistered(uint256 chainId) external view returns (bool);
@@ -12659,6 +13912,152 @@ function pauseAllGatewayContracts() external;
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 pauseAllGatewayContractsReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `removeHostChain(uint256)` and selector `0xdd90851e`.
+```solidity
+function removeHostChain(uint256 chainId) external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct removeHostChainCall {
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    ///Container type for the return parameters of the [`removeHostChain(uint256)`](removeHostChainCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct removeHostChainReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<removeHostChainCall> for UnderlyingRustTuple<'_> {
+                fn from(value: removeHostChainCall) -> Self {
+                    (value.chainId,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for removeHostChainCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { chainId: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<removeHostChainReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: removeHostChainReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for removeHostChainReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        impl removeHostChainReturn {
+            fn _tokenize(
+                &self,
+            ) -> <removeHostChainCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for removeHostChainCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = removeHostChainReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "removeHostChain(uint256)";
+            const SELECTOR: [u8; 4] = [221u8, 144u8, 133u8, 30u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                removeHostChainReturn::_tokenize(ret)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
@@ -14183,6 +15582,10 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
         #[allow(missing_docs)]
         destroyKmsContext(destroyKmsContextCall),
         #[allow(missing_docs)]
+        disableHostChain(disableHostChainCall),
+        #[allow(missing_docs)]
+        enableHostChain(enableHostChainCall),
+        #[allow(missing_docs)]
         getCoprocessor(getCoprocessorCall),
         #[allow(missing_docs)]
         getCoprocessorMajorityThreshold(getCoprocessorMajorityThresholdCall),
@@ -14237,6 +15640,8 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
         #[allow(missing_docs)]
         isCustodianTxSender(isCustodianTxSenderCall),
         #[allow(missing_docs)]
+        isHostChainDisabled(isHostChainDisabledCall),
+        #[allow(missing_docs)]
         isHostChainRegistered(isHostChainRegisteredCall),
         #[allow(missing_docs)]
         isKmsSigner(isKmsSignerCall),
@@ -14250,6 +15655,8 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
         isPauser(isPauserCall),
         #[allow(missing_docs)]
         pauseAllGatewayContracts(pauseAllGatewayContractsCall),
+        #[allow(missing_docs)]
+        removeHostChain(removeHostChainCall),
         #[allow(missing_docs)]
         unpauseAllGatewayContracts(unpauseAllGatewayContractsCall),
         #[allow(missing_docs)]
@@ -14304,6 +15711,7 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
             [116u8, 32u8, 243u8, 212u8],
             [119u8, 211u8, 142u8, 36u8],
             [121u8, 139u8, 88u8, 166u8],
+            [124u8, 121u8, 126u8, 116u8],
             [126u8, 170u8, 200u8, 242u8],
             [131u8, 187u8, 46u8, 87u8],
             [136u8, 45u8, 125u8, 211u8],
@@ -14311,6 +15719,7 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
             [148u8, 71u8, 207u8, 212u8],
             [151u8, 111u8, 62u8, 185u8],
             [154u8, 90u8, 59u8, 196u8],
+            [155u8, 14u8, 71u8, 111u8],
             [176u8, 180u8, 97u8, 196u8],
             [177u8, 129u8, 205u8, 167u8],
             [180u8, 114u8, 43u8, 196u8],
@@ -14321,8 +15730,10 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
             [197u8, 166u8, 164u8, 70u8],
             [200u8, 11u8, 51u8, 202u8],
             [203u8, 90u8, 167u8, 233u8],
+            [204u8, 197u8, 13u8, 186u8],
             [209u8, 15u8, 127u8, 249u8],
             [213u8, 225u8, 107u8, 125u8],
+            [221u8, 144u8, 133u8, 30u8],
             [227u8, 178u8, 168u8, 116u8],
             [229u8, 39u8, 94u8, 175u8],
             [239u8, 105u8, 151u8, 249u8],
@@ -14332,7 +15743,7 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
     impl alloy_sol_types::SolInterface for IGatewayConfigCalls {
         const NAME: &'static str = "IGatewayConfigCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 44usize;
+        const COUNT: usize = 48usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -14341,6 +15752,12 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 }
                 Self::destroyKmsContext(_) => {
                     <destroyKmsContextCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::disableHostChain(_) => {
+                    <disableHostChainCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::enableHostChain(_) => {
+                    <enableHostChainCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getCoprocessor(_) => {
                     <getCoprocessorCall as alloy_sol_types::SolCall>::SELECTOR
@@ -14420,6 +15837,9 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 Self::isCustodianTxSender(_) => {
                     <isCustodianTxSenderCall as alloy_sol_types::SolCall>::SELECTOR
                 }
+                Self::isHostChainDisabled(_) => {
+                    <isHostChainDisabledCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::isHostChainRegistered(_) => {
                     <isHostChainRegisteredCall as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -14438,6 +15858,9 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 Self::isPauser(_) => <isPauserCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::pauseAllGatewayContracts(_) => {
                     <pauseAllGatewayContractsCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::removeHostChain(_) => {
+                    <removeHostChainCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::unpauseAllGatewayContracts(_) => {
                     <unpauseAllGatewayContractsCall as alloy_sol_types::SolCall>::SELECTOR
@@ -14730,6 +16153,17 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                     unpauseAllGatewayContracts
                 },
                 {
+                    fn disableHostChain(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <disableHostChainCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::disableHostChain)
+                    }
+                    disableHostChain
+                },
+                {
                     fn getKmsSigners(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
@@ -14805,6 +16239,17 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                             .map(IGatewayConfigCalls::pauseAllGatewayContracts)
                     }
                     pauseAllGatewayContracts
+                },
+                {
+                    fn enableHostChain(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <enableHostChainCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::enableHostChain)
+                    }
+                    enableHostChain
                 },
                 {
                     fn updateKmsGenThresholdForContext(
@@ -14921,6 +16366,17 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                     getCustodian
                 },
                 {
+                    fn isHostChainDisabled(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <isHostChainDisabledCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::isHostChainDisabled)
+                    }
+                    isHostChainDisabled
+                },
+                {
                     fn getHostChain(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
@@ -14941,6 +16397,17 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                             .map(IGatewayConfigCalls::updateCoprocessorThreshold)
                     }
                     updateCoprocessorThreshold
+                },
+                {
+                    fn removeHostChain(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <removeHostChainCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::removeHostChain)
+                    }
+                    removeHostChain
                 },
                 {
                     fn getKmsNode(
@@ -15242,6 +16709,17 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                     unpauseAllGatewayContracts
                 },
                 {
+                    fn disableHostChain(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <disableHostChainCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::disableHostChain)
+                    }
+                    disableHostChain
+                },
+                {
                     fn getKmsSigners(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
@@ -15317,6 +16795,17 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                             .map(IGatewayConfigCalls::pauseAllGatewayContracts)
                     }
                     pauseAllGatewayContracts
+                },
+                {
+                    fn enableHostChain(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <enableHostChainCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::enableHostChain)
+                    }
+                    enableHostChain
                 },
                 {
                     fn updateKmsGenThresholdForContext(
@@ -15433,6 +16922,17 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                     getCustodian
                 },
                 {
+                    fn isHostChainDisabled(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <isHostChainDisabledCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::isHostChainDisabled)
+                    }
+                    isHostChainDisabled
+                },
+                {
                     fn getHostChain(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
@@ -15453,6 +16953,17 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                             .map(IGatewayConfigCalls::updateCoprocessorThreshold)
                     }
                     updateCoprocessorThreshold
+                },
+                {
+                    fn removeHostChain(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <removeHostChainCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::removeHostChain)
+                    }
+                    removeHostChain
                 },
                 {
                     fn getKmsNode(
@@ -15508,6 +17019,16 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 }
                 Self::destroyKmsContext(inner) => {
                     <destroyKmsContextCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::disableHostChain(inner) => {
+                    <disableHostChainCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::enableHostChain(inner) => {
+                    <enableHostChainCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -15637,6 +17158,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                         inner,
                     )
                 }
+                Self::isHostChainDisabled(inner) => {
+                    <isHostChainDisabledCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::isHostChainRegistered(inner) => {
                     <isHostChainRegisteredCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
@@ -15667,6 +17193,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 }
                 Self::pauseAllGatewayContracts(inner) => {
                     <pauseAllGatewayContractsCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::removeHostChain(inner) => {
+                    <removeHostChainCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -15728,6 +17259,18 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 }
                 Self::destroyKmsContext(inner) => {
                     <destroyKmsContextCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::disableHostChain(inner) => {
+                    <disableHostChainCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::enableHostChain(inner) => {
+                    <enableHostChainCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -15888,6 +17431,12 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                         out,
                     )
                 }
+                Self::isHostChainDisabled(inner) => {
+                    <isHostChainDisabledCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::isHostChainRegistered(inner) => {
                     <isHostChainRegisteredCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
@@ -15926,6 +17475,12 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 }
                 Self::pauseAllGatewayContracts(inner) => {
                     <pauseAllGatewayContractsCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::removeHostChain(inner) => {
+                    <removeHostChainCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -16014,7 +17569,15 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
         #[allow(missing_docs)]
         EmptyKmsNodes(EmptyKmsNodes),
         #[allow(missing_docs)]
+        HostChainAlreadyDisabled(HostChainAlreadyDisabled),
+        #[allow(missing_docs)]
+        HostChainAlreadyEnabled(HostChainAlreadyEnabled),
+        #[allow(missing_docs)]
         HostChainAlreadyRegistered(HostChainAlreadyRegistered),
+        #[allow(missing_docs)]
+        HostChainNotDisabled(HostChainNotDisabled),
+        #[allow(missing_docs)]
+        HostChainNotRegistered(HostChainNotRegistered),
         #[allow(missing_docs)]
         InputVerificationMustBePaused(InputVerificationMustBePaused),
         #[allow(missing_docs)]
@@ -16071,6 +17634,7 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
             [65u8, 120u8, 222u8, 66u8],
             [69u8, 149u8, 252u8, 226u8],
             [84u8, 123u8, 142u8, 75u8],
+            [90u8, 115u8, 227u8, 131u8],
             [109u8, 165u8, 127u8, 153u8],
             [119u8, 221u8, 190u8, 129u8],
             [122u8, 162u8, 109u8, 16u8],
@@ -16079,8 +17643,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
             [144u8, 126u8, 102u8, 129u8],
             [150u8, 165u8, 104u8, 40u8],
             [151u8, 190u8, 171u8, 173u8],
+            [166u8, 254u8, 248u8, 183u8],
+            [171u8, 27u8, 156u8, 169u8],
             [177u8, 174u8, 146u8, 234u8],
             [182u8, 13u8, 36u8, 65u8],
+            [182u8, 103u8, 156u8, 59u8],
             [189u8, 124u8, 184u8, 129u8],
             [202u8, 209u8, 213u8, 52u8],
             [207u8, 80u8, 231u8, 173u8],
@@ -16094,7 +17661,7 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
     impl alloy_sol_types::SolInterface for IGatewayConfigErrors {
         const NAME: &'static str = "IGatewayConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 29usize;
+        const COUNT: usize = 33usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -16131,8 +17698,20 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 Self::EmptyKmsNodes(_) => {
                     <EmptyKmsNodes as alloy_sol_types::SolError>::SELECTOR
                 }
+                Self::HostChainAlreadyDisabled(_) => {
+                    <HostChainAlreadyDisabled as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::HostChainAlreadyEnabled(_) => {
+                    <HostChainAlreadyEnabled as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::HostChainAlreadyRegistered(_) => {
                     <HostChainAlreadyRegistered as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::HostChainNotDisabled(_) => {
+                    <HostChainNotDisabled as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::HostChainNotRegistered(_) => {
+                    <HostChainNotRegistered as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::InputVerificationMustBePaused(_) => {
                     <InputVerificationMustBePaused as alloy_sol_types::SolError>::SELECTOR
@@ -16337,6 +17916,17 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                     AllGatewayContractsAlreadyPaused
                 },
                 {
+                    fn HostChainAlreadyEnabled(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <HostChainAlreadyEnabled as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigErrors::HostChainAlreadyEnabled)
+                    }
+                    HostChainAlreadyEnabled
+                },
+                {
                     fn CustodianTxSenderAlreadyRegistered(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
@@ -16431,6 +18021,28 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                     InvalidHighCoprocessorThreshold
                 },
                 {
+                    fn HostChainAlreadyDisabled(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <HostChainAlreadyDisabled as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigErrors::HostChainAlreadyDisabled)
+                    }
+                    HostChainAlreadyDisabled
+                },
+                {
+                    fn HostChainNotDisabled(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <HostChainNotDisabled as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigErrors::HostChainNotDisabled)
+                    }
+                    HostChainNotDisabled
+                },
+                {
                     fn InvalidNullPublicDecryptionThreshold(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
@@ -16453,6 +18065,17 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                             .map(IGatewayConfigErrors::InvalidNullCoprocessorThreshold)
                     }
                     InvalidNullCoprocessorThreshold
+                },
+                {
+                    fn HostChainNotRegistered(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <HostChainNotRegistered as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigErrors::HostChainNotRegistered)
+                    }
+                    HostChainNotRegistered
                 },
                 {
                     fn CoprocessorTxSenderAlreadyRegistered(
@@ -16694,6 +18317,17 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                     AllGatewayContractsAlreadyPaused
                 },
                 {
+                    fn HostChainAlreadyEnabled(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <HostChainAlreadyEnabled as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigErrors::HostChainAlreadyEnabled)
+                    }
+                    HostChainAlreadyEnabled
+                },
+                {
                     fn CustodianTxSenderAlreadyRegistered(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
@@ -16788,6 +18422,28 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                     InvalidHighCoprocessorThreshold
                 },
                 {
+                    fn HostChainAlreadyDisabled(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <HostChainAlreadyDisabled as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigErrors::HostChainAlreadyDisabled)
+                    }
+                    HostChainAlreadyDisabled
+                },
+                {
+                    fn HostChainNotDisabled(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <HostChainNotDisabled as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigErrors::HostChainNotDisabled)
+                    }
+                    HostChainNotDisabled
+                },
+                {
                     fn InvalidNullPublicDecryptionThreshold(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
@@ -16810,6 +18466,17 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                             .map(IGatewayConfigErrors::InvalidNullCoprocessorThreshold)
                     }
                     InvalidNullCoprocessorThreshold
+                },
+                {
+                    fn HostChainNotRegistered(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <HostChainNotRegistered as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigErrors::HostChainNotRegistered)
+                    }
+                    HostChainNotRegistered
                 },
                 {
                     fn CoprocessorTxSenderAlreadyRegistered(
@@ -16961,8 +18628,28 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 Self::EmptyKmsNodes(inner) => {
                     <EmptyKmsNodes as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
+                Self::HostChainAlreadyDisabled(inner) => {
+                    <HostChainAlreadyDisabled as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::HostChainAlreadyEnabled(inner) => {
+                    <HostChainAlreadyEnabled as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::HostChainAlreadyRegistered(inner) => {
                     <HostChainAlreadyRegistered as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::HostChainNotDisabled(inner) => {
+                    <HostChainNotDisabled as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::HostChainNotRegistered(inner) => {
+                    <HostChainNotRegistered as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -17120,8 +18807,32 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                         out,
                     )
                 }
+                Self::HostChainAlreadyDisabled(inner) => {
+                    <HostChainAlreadyDisabled as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::HostChainAlreadyEnabled(inner) => {
+                    <HostChainAlreadyEnabled as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::HostChainAlreadyRegistered(inner) => {
                     <HostChainAlreadyRegistered as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::HostChainNotDisabled(inner) => {
+                    <HostChainNotDisabled as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::HostChainNotRegistered(inner) => {
+                    <HostChainNotRegistered as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -17237,9 +18948,15 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
         #[allow(missing_docs)]
         DestroyKmsContext(DestroyKmsContext),
         #[allow(missing_docs)]
+        DisableHostChain(DisableHostChain),
+        #[allow(missing_docs)]
+        EnableHostChain(EnableHostChain),
+        #[allow(missing_docs)]
         InitializeGatewayConfig(InitializeGatewayConfig),
         #[allow(missing_docs)]
         PauseAllGatewayContracts(PauseAllGatewayContracts),
+        #[allow(missing_docs)]
+        RemoveHostChain(RemoveHostChain),
         #[allow(missing_docs)]
         UnpauseAllGatewayContracts(UnpauseAllGatewayContracts),
         #[allow(missing_docs)]
@@ -17282,6 +18999,16 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 167u8, 241u8, 172u8, 109u8, 168u8, 35u8, 34u8, 233u8, 2u8, 94u8,
             ],
             [
+                70u8, 96u8, 64u8, 64u8, 172u8, 47u8, 169u8, 11u8, 112u8, 151u8, 4u8,
+                179u8, 158u8, 80u8, 221u8, 201u8, 250u8, 145u8, 12u8, 213u8, 104u8,
+                240u8, 18u8, 77u8, 237u8, 73u8, 110u8, 173u8, 215u8, 200u8, 64u8, 224u8,
+            ],
+            [
+                87u8, 244u8, 103u8, 52u8, 4u8, 69u8, 75u8, 148u8, 3u8, 197u8, 129u8,
+                144u8, 176u8, 241u8, 184u8, 83u8, 234u8, 138u8, 73u8, 132u8, 127u8,
+                130u8, 2u8, 77u8, 151u8, 85u8, 32u8, 69u8, 1u8, 143u8, 133u8, 56u8,
+            ],
+            [
                 90u8, 30u8, 115u8, 147u8, 167u8, 249u8, 108u8, 147u8, 212u8, 40u8, 201u8,
                 49u8, 15u8, 228u8, 84u8, 1u8, 39u8, 102u8, 109u8, 182u8, 52u8, 144u8,
                 20u8, 23u8, 113u8, 236u8, 188u8, 223u8, 101u8, 11u8, 82u8, 238u8,
@@ -17310,6 +19037,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 147u8, 42u8, 4u8, 89u8, 61u8, 143u8, 182u8, 14u8, 49u8, 171u8, 90u8,
                 163u8, 2u8, 113u8, 229u8, 58u8, 46u8, 32u8, 105u8, 196u8, 137u8, 136u8,
                 170u8, 186u8, 223u8, 42u8, 8u8, 243u8, 101u8, 6u8, 172u8, 142u8,
+            ],
+            [
+                151u8, 65u8, 54u8, 228u8, 142u8, 80u8, 186u8, 239u8, 136u8, 211u8, 29u8,
+                1u8, 97u8, 103u8, 178u8, 231u8, 18u8, 159u8, 11u8, 171u8, 11u8, 26u8,
+                133u8, 28u8, 241u8, 227u8, 215u8, 240u8, 84u8, 98u8, 219u8, 18u8,
             ],
             [
                 190u8, 79u8, 101u8, 93u8, 170u8, 224u8, 219u8, 174u8, 246u8, 58u8, 107u8,
@@ -17341,7 +19073,7 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for IGatewayConfigEvents {
         const NAME: &'static str = "IGatewayConfigEvents";
-        const COUNT: usize = 13usize;
+        const COUNT: usize = 16usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
@@ -17363,6 +19095,20 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                         )
                         .map(Self::DestroyKmsContext)
                 }
+                Some(<DisableHostChain as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
+                    <DisableHostChain as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::DisableHostChain)
+                }
+                Some(<EnableHostChain as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
+                    <EnableHostChain as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::EnableHostChain)
+                }
                 Some(
                     <InitializeGatewayConfig as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
                 ) => {
@@ -17380,6 +19126,13 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                             data,
                         )
                         .map(Self::PauseAllGatewayContracts)
+                }
+                Some(<RemoveHostChain as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
+                    <RemoveHostChain as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::RemoveHostChain)
                 }
                 Some(
                     <UnpauseAllGatewayContracts as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
@@ -17482,10 +19235,19 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 Self::DestroyKmsContext(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
+                Self::DisableHostChain(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
+                Self::EnableHostChain(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
                 Self::InitializeGatewayConfig(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::PauseAllGatewayContracts(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
+                Self::RemoveHostChain(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::UnpauseAllGatewayContracts(inner) => {
@@ -17525,10 +19287,19 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 Self::DestroyKmsContext(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
+                Self::DisableHostChain(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::EnableHostChain(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
                 Self::InitializeGatewayConfig(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::PauseAllGatewayContracts(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::RemoveHostChain(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::UnpauseAllGatewayContracts(inner) => {
@@ -17737,6 +19508,20 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                     kmsContextId,
                 },
             )
+        }
+        ///Creates a new call builder for the [`disableHostChain`] function.
+        pub fn disableHostChain(
+            &self,
+            chainId: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<&P, disableHostChainCall, N> {
+            self.call_builder(&disableHostChainCall { chainId })
+        }
+        ///Creates a new call builder for the [`enableHostChain`] function.
+        pub fn enableHostChain(
+            &self,
+            chainId: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<&P, enableHostChainCall, N> {
+            self.call_builder(&enableHostChainCall { chainId })
         }
         ///Creates a new call builder for the [`getCoprocessor`] function.
         pub fn getCoprocessor(
@@ -17965,6 +19750,13 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
+        ///Creates a new call builder for the [`isHostChainDisabled`] function.
+        pub fn isHostChainDisabled(
+            &self,
+            chainId: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<&P, isHostChainDisabledCall, N> {
+            self.call_builder(&isHostChainDisabledCall { chainId })
+        }
         ///Creates a new call builder for the [`isHostChainRegistered`] function.
         pub fn isHostChainRegistered(
             &self,
@@ -18032,6 +19824,13 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::SolCallBuilder<&P, pauseAllGatewayContractsCall, N> {
             self.call_builder(&pauseAllGatewayContractsCall)
+        }
+        ///Creates a new call builder for the [`removeHostChain`] function.
+        pub fn removeHostChain(
+            &self,
+            chainId: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<&P, removeHostChainCall, N> {
+            self.call_builder(&removeHostChainCall { chainId })
         }
         ///Creates a new call builder for the [`unpauseAllGatewayContracts`] function.
         pub fn unpauseAllGatewayContracts(
@@ -18187,6 +19986,18 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::Event<&P, DestroyKmsContext, N> {
             self.event_filter::<DestroyKmsContext>()
         }
+        ///Creates a new event filter for the [`DisableHostChain`] event.
+        pub fn DisableHostChain_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, DisableHostChain, N> {
+            self.event_filter::<DisableHostChain>()
+        }
+        ///Creates a new event filter for the [`EnableHostChain`] event.
+        pub fn EnableHostChain_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, EnableHostChain, N> {
+            self.event_filter::<EnableHostChain>()
+        }
         ///Creates a new event filter for the [`InitializeGatewayConfig`] event.
         pub fn InitializeGatewayConfig_filter(
             &self,
@@ -18198,6 +20009,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::Event<&P, PauseAllGatewayContracts, N> {
             self.event_filter::<PauseAllGatewayContracts>()
+        }
+        ///Creates a new event filter for the [`RemoveHostChain`] event.
+        pub fn RemoveHostChain_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, RemoveHostChain, N> {
+            self.event_filter::<RemoveHostChain>()
         }
         ///Creates a new event filter for the [`UnpauseAllGatewayContracts`] event.
         pub fn UnpauseAllGatewayContracts_filter(

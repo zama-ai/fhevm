@@ -134,6 +134,26 @@ interface IGatewayConfig {
     event AddHostChain(HostChain hostChain);
 
     /**
+     * @notice Emitted when a registered host chain has been disabled.
+     * @param chainId The disabled host chain's chain ID.
+     */
+    event DisableHostChain(uint256 indexed chainId);
+
+    /**
+     * @notice Emitted when a previously-disabled host chain has been re-enabled.
+     * @param chainId The re-enabled host chain's chain ID.
+     */
+    event EnableHostChain(uint256 indexed chainId);
+
+    /**
+     * @notice Emitted when a registered host chain has been removed from the registry.
+     * @dev Only possible after the chain has been disabled via `disableHostChain`. After removal,
+     *      the same `chainId` can be freshly registered again via `addHostChain`.
+     * @param chainId The removed host chain's chain ID.
+     */
+    event RemoveHostChain(uint256 indexed chainId);
+
+    /**
      * @notice Error indicating that the given account is not a pauser.
      * @param account The address of the account.
      */
@@ -260,6 +280,32 @@ interface IGatewayConfig {
      * @param chainId The host chain's chain ID that is already registered.
      */
     error HostChainAlreadyRegistered(uint256 chainId);
+
+    /**
+     * @notice Error emitted when targeting a host chain that is not registered.
+     * @param chainId The host chain's chain ID.
+     */
+    error HostChainNotRegistered(uint256 chainId);
+
+    /**
+     * @notice Error emitted when trying to disable a host chain that is already disabled.
+     * @param chainId The host chain's chain ID.
+     */
+    error HostChainAlreadyDisabled(uint256 chainId);
+
+    /**
+     * @notice Error emitted when trying to enable a host chain that is not currently disabled.
+     * @param chainId The host chain's chain ID.
+     */
+    error HostChainAlreadyEnabled(uint256 chainId);
+
+    /**
+     * @notice Error emitted when trying to remove a host chain that has not been disabled first.
+     * @dev `removeHostChain` requires the chain to be disabled to force a deliberate two-step
+     *      action and to prevent yanking a chain out from under in-flight requests.
+     * @param chainId The host chain's chain ID.
+     */
+    error HostChainNotDisabled(uint256 chainId);
 
     /**
      * @notice Error indicating that a null KMS context ID is not allowed.
@@ -418,6 +464,26 @@ interface IGatewayConfig {
     function addHostChain(HostChain calldata hostChain) external;
 
     /**
+     * @notice Disable a registered host chain.
+     * @param chainId The host chain to disable.
+     */
+    function disableHostChain(uint256 chainId) external;
+
+    /**
+     * @notice Re-enable a previously-disabled host chain.
+     * @param chainId The host chain to enable.
+     */
+    function enableHostChain(uint256 chainId) external;
+
+    /**
+     * @notice Remove a registered host chain from the registry.
+     * @dev The chain must be disabled first via `disableHostChain`. After removal, the same
+     *      `chainId` can be freshly registered again via `addHostChain`.
+     * @param chainId The host chain to remove.
+     */
+    function removeHostChain(uint256 chainId) external;
+
+    /**
      * @notice Pause all pausable gateway contracts.
      */
     function pauseAllGatewayContracts() external;
@@ -468,6 +534,14 @@ interface IGatewayConfig {
      * @param chainId The chain ID to check.
      */
     function isHostChainRegistered(uint256 chainId) external view returns (bool);
+
+    /**
+     * @notice Indicates if a registered host chain has been disabled by the gateway owner.
+     * @dev Returns false for both unknown and registered-but-enabled chains; check
+     *      `isHostChainRegistered` first to distinguish them.
+     * @param chainId The chain ID to check.
+     */
+    function isHostChainDisabled(uint256 chainId) external view returns (bool);
 
     /**
      * @notice Check if the account is a pauser.

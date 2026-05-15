@@ -1051,7 +1051,7 @@ describe("GatewayConfig", function () {
         });
 
         it("Should revert because InputVerification is not paused", async function () {
-          // L-04: rewrite coprocessor consensus state without first pausing InputVerification.
+          // Rewrite coprocessor consensus state without first pausing InputVerification.
           await inputVerification.connect(owner).unpause();
           await expect(gatewayConfig.connect(owner).updateCoprocessors(coprocessors, 1)).to.be.revertedWithCustomError(
             gatewayConfig,
@@ -1302,8 +1302,8 @@ describe("GatewayConfig", function () {
 
         const tx = await gatewayConfig.connect(owner).updateMpcThresholdForContext(currentContextId, newMpcThreshold);
 
-        // No per-context getter exists for MPC threshold yet (M-01); event emission is the
-        // observable evidence that the setter ran against the targeted context.
+        // No per-context getter exists for MPC threshold; event emission is the observable
+        // evidence that the setter ran against the targeted context.
         await expect(tx)
           .to.emit(gatewayConfig, "UpdateMpcThresholdForContext")
           .withArgs(currentContextId, newMpcThreshold);
@@ -1485,8 +1485,8 @@ describe("GatewayConfig", function () {
           .connect(owner)
           .updateKmsGenThresholdForContext(currentContextId, newKmsGenThreshold);
 
-        // No per-context getter exists for KMS gen threshold yet (M-01); event emission is the
-        // observable evidence that the setter ran against the targeted context.
+        // No per-context getter exists for KMS gen threshold; event emission is the observable
+        // evidence that the setter ran against the targeted context.
         await expect(tx)
           .to.emit(gatewayConfig, "UpdateKmsGenThresholdForContext")
           .withArgs(currentContextId, newKmsGenThreshold);
@@ -1570,7 +1570,7 @@ describe("GatewayConfig", function () {
       });
 
       it("Should revert because InputVerification is not paused", async function () {
-        // L-04: rewrite coprocessor consensus state without first pausing InputVerification.
+        // Rewrite coprocessor consensus state without first pausing InputVerification.
         await inputVerification.connect(owner).unpause();
         await expect(gatewayConfig.connect(owner).updateCoprocessorThreshold(1)).to.be.revertedWithCustomError(
           gatewayConfig,
@@ -1658,6 +1658,141 @@ describe("GatewayConfig", function () {
         await expect(gatewayConfig.connect(owner).addHostChain(alreadyAddedHostChain))
           .to.revertedWithCustomError(gatewayConfig, "HostChainAlreadyRegistered")
           .withArgs(alreadyAddedHostChainId);
+      });
+    });
+
+    describe("Disable / enable host chain", function () {
+      // Pick a chain ID that's already registered by the fixture so we have something to toggle.
+      let registeredChainId: number;
+      const unknownChainId = 999999;
+
+      beforeEach(async function () {
+        registeredChainId = hostChainIds[0];
+      });
+
+      it("Should disable a registered host chain", async function () {
+        expect(await gatewayConfig.isHostChainDisabled(registeredChainId)).to.be.false;
+
+        await expect(gatewayConfig.connect(owner).disableHostChain(registeredChainId))
+          .to.emit(gatewayConfig, "DisableHostChain")
+          .withArgs(registeredChainId);
+
+        expect(await gatewayConfig.isHostChainDisabled(registeredChainId)).to.be.true;
+        // Registry entry is unchanged — disable doesn't unregister.
+        expect(await gatewayConfig.isHostChainRegistered(registeredChainId)).to.be.true;
+      });
+
+      it("Should re-enable a previously-disabled host chain", async function () {
+        await gatewayConfig.connect(owner).disableHostChain(registeredChainId);
+
+        await expect(gatewayConfig.connect(owner).enableHostChain(registeredChainId))
+          .to.emit(gatewayConfig, "EnableHostChain")
+          .withArgs(registeredChainId);
+
+        expect(await gatewayConfig.isHostChainDisabled(registeredChainId)).to.be.false;
+      });
+
+      it("Should revert disabling because the sender is not the owner", async function () {
+        await expect(gatewayConfig.connect(fakeOwner).disableHostChain(registeredChainId))
+          .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+          .withArgs(fakeOwner.address);
+      });
+
+      it("Should revert enabling because the sender is not the owner", async function () {
+        await gatewayConfig.connect(owner).disableHostChain(registeredChainId);
+        await expect(gatewayConfig.connect(fakeOwner).enableHostChain(registeredChainId))
+          .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+          .withArgs(fakeOwner.address);
+      });
+
+      it("Should revert disabling an unknown host chain", async function () {
+        await expect(gatewayConfig.connect(owner).disableHostChain(unknownChainId))
+          .to.be.revertedWithCustomError(gatewayConfig, "HostChainNotRegistered")
+          .withArgs(unknownChainId);
+      });
+
+      it("Should revert enabling an unknown host chain", async function () {
+        await expect(gatewayConfig.connect(owner).enableHostChain(unknownChainId))
+          .to.be.revertedWithCustomError(gatewayConfig, "HostChainNotRegistered")
+          .withArgs(unknownChainId);
+      });
+
+      it("Should revert disabling an already-disabled host chain", async function () {
+        await gatewayConfig.connect(owner).disableHostChain(registeredChainId);
+        await expect(gatewayConfig.connect(owner).disableHostChain(registeredChainId))
+          .to.be.revertedWithCustomError(gatewayConfig, "HostChainAlreadyDisabled")
+          .withArgs(registeredChainId);
+      });
+
+      it("Should revert enabling an already-enabled host chain", async function () {
+        await expect(gatewayConfig.connect(owner).enableHostChain(registeredChainId))
+          .to.be.revertedWithCustomError(gatewayConfig, "HostChainAlreadyEnabled")
+          .withArgs(registeredChainId);
+      });
+    });
+
+    describe("Remove host chain", function () {
+      let registeredChainId: number;
+      const unknownChainId = 999999;
+      const fhevmExecutorAddress = hre.ethers.getAddress("0x1234567890AbcdEF1234567890aBcdef12345678");
+      const aclAddress = hre.ethers.getAddress("0xabcdef1234567890abcdef1234567890abcdef12");
+
+      beforeEach(async function () {
+        registeredChainId = hostChainIds[0];
+      });
+
+      it("Should remove a disabled host chain", async function () {
+        await gatewayConfig.connect(owner).disableHostChain(registeredChainId);
+
+        const hostChainsBefore = await gatewayConfig.getHostChains();
+        expect(hostChainsBefore.some((c) => c.chainId === BigInt(registeredChainId))).to.be.true;
+
+        await expect(gatewayConfig.connect(owner).removeHostChain(registeredChainId))
+          .to.emit(gatewayConfig, "RemoveHostChain")
+          .withArgs(registeredChainId);
+
+        // Registry state is fully cleared: not registered, not disabled, not in the hostChains list.
+        expect(await gatewayConfig.isHostChainRegistered(registeredChainId)).to.be.false;
+        expect(await gatewayConfig.isHostChainDisabled(registeredChainId)).to.be.false;
+        const hostChainsAfter = await gatewayConfig.getHostChains();
+        expect(hostChainsAfter.some((c) => c.chainId === BigInt(registeredChainId))).to.be.false;
+      });
+
+      it("Should allow re-adding the same chainId after removal", async function () {
+        await gatewayConfig.connect(owner).disableHostChain(registeredChainId);
+        await gatewayConfig.connect(owner).removeHostChain(registeredChainId);
+
+        const reAdded = {
+          chainId: registeredChainId,
+          fhevmExecutorAddress,
+          aclAddress,
+          name: "Re-added host chain",
+          website: "https://re-added.example",
+        };
+        await expect(gatewayConfig.connect(owner).addHostChain(reAdded))
+          .to.emit(gatewayConfig, "AddHostChain")
+          .withArgs(toValues(reAdded));
+        expect(await gatewayConfig.isHostChainRegistered(registeredChainId)).to.be.true;
+        expect(await gatewayConfig.isHostChainDisabled(registeredChainId)).to.be.false;
+      });
+
+      it("Should revert because the sender is not the owner", async function () {
+        await gatewayConfig.connect(owner).disableHostChain(registeredChainId);
+        await expect(gatewayConfig.connect(fakeOwner).removeHostChain(registeredChainId))
+          .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+          .withArgs(fakeOwner.address);
+      });
+
+      it("Should revert when removing an unknown host chain", async function () {
+        await expect(gatewayConfig.connect(owner).removeHostChain(unknownChainId))
+          .to.be.revertedWithCustomError(gatewayConfig, "HostChainNotRegistered")
+          .withArgs(unknownChainId);
+      });
+
+      it("Should revert when removing a host chain that has not been disabled", async function () {
+        await expect(gatewayConfig.connect(owner).removeHostChain(registeredChainId))
+          .to.be.revertedWithCustomError(gatewayConfig, "HostChainNotDisabled")
+          .withArgs(registeredChainId);
       });
     });
   });
