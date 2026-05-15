@@ -92,6 +92,9 @@ export async function assertContractMatchesVersionPrefix(
 // All Host Contracts
 ////////////////////////////////////////////////////////////////////////////////
 
+const PROTOCOL_CONFIG_SOURCES = ['fresh', 'migration'] as const;
+type ProtocolConfigSource = (typeof PROTOCOL_CONFIG_SOURCES)[number];
+
 task('task:deployAllHostContracts')
   .addParam(
     'withKmsGeneration',
@@ -99,7 +102,25 @@ task('task:deployAllHostContracts')
     undefined,
     types.boolean,
   )
-  .setAction(async function ({ withKmsGeneration }: { withKmsGeneration: boolean }, hre) {
+  .addOptionalParam(
+    'protocolConfigSource',
+    "How to initialize ProtocolConfig: 'fresh' (default) calls initializeFromEmptyProxy with env-driven KMS nodes/thresholds; 'migration' calls initializeFromMigration consuming MIGRATION_CONTEXT_ID / MIGRATION_KMS_NODES / MIGRATION_KMS_THRESHOLDS.",
+    'fresh',
+    types.string,
+  )
+  .setAction(async function (
+    {
+      withKmsGeneration,
+      protocolConfigSource,
+    }: { withKmsGeneration: boolean; protocolConfigSource: string },
+    hre,
+  ) {
+    if (!PROTOCOL_CONFIG_SOURCES.includes(protocolConfigSource as ProtocolConfigSource)) {
+      throw new Error(
+        `Invalid --protocol-config-source "${protocolConfigSource}". Allowed values: ${PROTOCOL_CONFIG_SOURCES.join(', ')}.`,
+      );
+    }
+
     if (process.env.SOLIDITY_COVERAGE !== 'true') {
       await hre.run('clean');
     }
@@ -115,7 +136,11 @@ task('task:deployAllHostContracts')
 
     await hre.run('task:deployACL');
     await hre.run('task:deployFHEVMExecutor');
-    await hre.run('task:deployProtocolConfig');
+    if (protocolConfigSource === 'migration') {
+      await hre.run('task:deployProtocolConfigFromMigration');
+    } else {
+      await hre.run('task:deployProtocolConfig');
+    }
     if (withKmsGeneration) {
       await hre.run('task:deployKMSGeneration');
     }

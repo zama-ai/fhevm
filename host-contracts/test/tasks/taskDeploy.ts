@@ -10,6 +10,12 @@ describe('task:deployAllHostContracts', function () {
   it('requires the KMSGeneration deployment role to be explicit', async function () {
     await expect(run('task:deployAllHostContracts')).to.be.rejectedWith(/withKmsGeneration/);
   });
+
+  it('rejects an invalid --protocol-config-source value before mutating state', async function () {
+    await expect(
+      run('task:deployAllHostContracts', { withKmsGeneration: false, protocolConfigSource: 'bogus' }),
+    ).to.be.rejectedWith(/Invalid --protocol-config-source "bogus"\. Allowed values: fresh, migration\./);
+  });
 });
 
 describe('task:deployEmptyUUPSProxies', function () {
