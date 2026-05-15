@@ -11,6 +11,7 @@ import {
   KMS_CONTEXT_COUNTER_BASE,
   PREP_KEYGEN_COUNTER_BASE,
 } from '../../tasks/utils/kmsGenerationConstants';
+import { makeEnvHelpers } from '../../tasks/utils/envSnapshot';
 import {
   type KmsGenerationMigrationEnv,
   type KmsGenerationMigrationEnvSnapshot,
@@ -43,6 +44,15 @@ function patchHostEnv(key: string, value: string): void {
   fs.writeFileSync(HOST_ENV_FILE, updated);
 }
 
+const HOST_ADDRESS_ENV_KEYS = [
+  'PROTOCOL_CONFIG_CONTRACT_ADDRESS',
+  'KMS_GENERATION_CONTRACT_ADDRESS',
+  'KMS_VERIFIER_CONTRACT_ADDRESS',
+] as const;
+
+const { snapshot: snapshotHostAddressEnv, restore: restoreHostAddressEnv } = makeEnvHelpers(HOST_ADDRESS_ENV_KEYS);
+type HostAddressEnvSnapshot = ReturnType<typeof snapshotHostAddressEnv>;
+
 function getKmsTxSenderAddresses(count: number): string[] {
   return Array.from({ length: count }, (_, idx) => getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`));
 }
@@ -62,6 +72,7 @@ describe('Migration prepare tasks', function () {
   const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(deployerPrivateKey).connect(ethers.provider);
   let originalEnvHost: string;
+  let originalHostAddressEnv: HostAddressEnvSnapshot;
   let originalMigrationEnv: KmsGenerationMigrationEnvSnapshot;
   let originalProtocolConfigMigrationEnv: ProtocolConfigMigrationEnvSnapshot;
 
@@ -70,6 +81,7 @@ describe('Migration prepare tasks', function () {
   });
 
   beforeEach(function () {
+    originalHostAddressEnv = snapshotHostAddressEnv();
     originalMigrationEnv = snapshotKmsGenerationMigrationEnv();
     originalProtocolConfigMigrationEnv = snapshotProtocolConfigMigrationEnv();
   });
@@ -77,6 +89,7 @@ describe('Migration prepare tasks', function () {
   afterEach(async function () {
     // Restore .env.host so other tests are unaffected.
     fs.writeFileSync(HOST_ENV_FILE, originalEnvHost);
+    restoreHostAddressEnv(originalHostAddressEnv);
     restoreKmsGenerationMigrationEnv(originalMigrationEnv);
     restoreProtocolConfigMigrationEnv(originalProtocolConfigMigrationEnv);
   });
@@ -332,12 +345,25 @@ describe('Migration prepare tasks', function () {
       await run('task:deployKMSVerifier');
       await run('task:deployKMSGenerationFromMigration');
 
-      return fixture;
+      return {
+        ...fixture,
+        protocolConfigProxyAddress,
+        kmsGenerationProxyAddress,
+        kmsVerifierProxyAddress,
+      };
     }
 
-    it('asserts the live host migration state matches the live Gateway snapshot', async function () {
+    it('asserts the live host migration state from process env matches the live Gateway snapshot', async function () {
       const fixture = await deployHostMigrationStack();
       const { gatewayConfigAddress, gatewayKmsGenerationAddress } = await deploySeededMockGateway(fixture);
+
+      // Poison .env.host so the assertion can only pass if the task read addresses from process.env.
+      process.env.PROTOCOL_CONFIG_CONTRACT_ADDRESS = fixture.protocolConfigProxyAddress;
+      process.env.KMS_GENERATION_CONTRACT_ADDRESS = fixture.kmsGenerationProxyAddress;
+      process.env.KMS_VERIFIER_CONTRACT_ADDRESS = fixture.kmsVerifierProxyAddress;
+      for (const key of HOST_ADDRESS_ENV_KEYS) {
+        patchHostEnv(key, '0x000000000000000000000000000000000000dEaD');
+      }
 
       await run('task:assertKmsMigrationSucceeded', {
         gatewayConfigProxy: gatewayConfigAddress,
@@ -356,6 +382,7 @@ describe('Migration prepare tasks', function () {
         run('task:assertKmsMigrationSucceeded', {
           gatewayConfigProxy: gatewayConfigAddress,
           gatewayKmsGenerationProxy: gatewayKmsGenerationAddress,
+          useInternalProxyAddress: true,
         }),
       ).to.be.rejectedWith(/ProtocolConfig public decryption threshold mismatch/);
     });
@@ -371,6 +398,7 @@ describe('Migration prepare tasks', function () {
         run('task:assertKmsMigrationSucceeded', {
           gatewayConfigProxy: gatewayConfigAddress,
           gatewayKmsGenerationProxy: gatewayKmsGenerationAddress,
+          useInternalProxyAddress: true,
         }),
       ).to.be.rejectedWith(/KMSGeneration key consensus digest mismatch/);
     });
@@ -392,6 +420,7 @@ describe('Migration prepare tasks', function () {
         run('task:assertKmsMigrationSucceeded', {
           gatewayConfigProxy: gatewayConfigAddress,
           gatewayKmsGenerationProxy: gatewayKmsGenerationAddress,
+          useInternalProxyAddress: true,
         }),
       ).to.be.rejectedWith(/ProtocolConfig KMS nodes mismatch/);
     });
