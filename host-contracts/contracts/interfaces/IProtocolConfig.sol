@@ -194,10 +194,24 @@ interface IProtocolConfig {
     function getKmsGenThreshold() external view returns (uint256);
 
     /**
+     * @notice Returns the kmsGen threshold for a given context.
+     * @param kmsContextId The context ID.
+     * @return The kmsGen threshold for the context.
+     */
+    function getKmsGenThresholdForContext(uint256 kmsContextId) external view returns (uint256);
+
+    /**
      * @notice Returns the current MPC threshold (for the active context).
      * @return The MPC threshold.
      */
     function getMpcThreshold() external view returns (uint256);
+
+    /**
+     * @notice Returns the MPC threshold for a given context.
+     * @param kmsContextId The context ID.
+     * @return The MPC threshold for the context.
+     */
+    function getMpcThresholdForContext(uint256 kmsContextId) external view returns (uint256);
 
     /**
      * @notice Returns the contract version.
