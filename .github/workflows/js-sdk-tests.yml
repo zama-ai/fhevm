@@ -52,7 +52,18 @@ jobs:
           node-version: 22.x
 
       # -----------------------------------------------------------------------
-      # 3. Foundry setup
+      # 3. safe-chain
+      #    Aikido's supply-chain monitor. Hooks into npm install so that any
+      #    package with a known-malicious checksum is blocked before it can
+      #    execute. --ci makes it exit non-zero on any violation instead of
+      #    prompting interactively.
+      # -----------------------------------------------------------------------
+      - name: Install safe-chain
+        run: |
+          curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
+
+      # -----------------------------------------------------------------------
+      # 4. Foundry setup
       #    The SDK Test suite requires Foundry.
       # -----------------------------------------------------------------------
       - name: Set up Foundry
@@ -61,7 +72,7 @@ jobs:
           version: stable
 
       # -----------------------------------------------------------------------
-      # 4. Upgrade npm
+      # 5. Upgrade npm
       #    The bundled npm in Node 22 may not support provenance publishing.
       #    Pin to the same version used in the sibling library-solidity workflow
       #    for consistency. The .npmrc already sets provenance=true.
@@ -70,7 +81,7 @@ jobs:
         run: npm install -g npm@11.7.0
 
       # -----------------------------------------------------------------------
-      # 5. Install dependencies
+      # 6. Install dependencies
       #    npm ci is strict and deterministic: it installs exactly what is in
       #    package-lock.json, fails if the lockfile is out of sync, and never
       #    modifies it. This is preferred over npm install in CI environments.
@@ -81,7 +92,7 @@ jobs:
         run: npm ci
 
       # -----------------------------------------------------------------------
-      # 6. Build
+      # 7. Build
       #    The top-level "build" script does more than transpilation:
       #      - clean           → remove prior tsbuildinfo and generated outputs
       #      - prettier:check  → formatting validation
@@ -98,7 +109,7 @@ jobs:
         run: npm run build
 
       # -----------------------------------------------------------------------
-      # 7. Unit tests
+      # 8. Unit tests
       #    Runs fast, isolated unit tests (src/**/*.test.ts) with type-checking.
       #    No network or chain required.
       # -----------------------------------------------------------------------
@@ -106,7 +117,7 @@ jobs:
         run: npm run test:unit
 
       # -----------------------------------------------------------------------
-      # 8. Locahost cleartext chain Test
+      # 9. Locahost cleartext chain Test
       #    package.json maps "test" to the local cleartext integration runner,
       #    which starts Anvil, deploys the FHEVM stack, runs only
       #    test/fheTest/viem-cleartext, and then tears the local chain down.
@@ -119,5 +130,7 @@ jobs:
           echo 'MNEMONIC="test test test test test test test test test test test junk"' > test/.env
           echo 'ZAMA_FHEVM_API_KEY="zmr_mainnet_blahblah"' >> test/.env
 
-      - name: Run forge tests
-        run: npm run test:localcleartext
+      - name: Run cleartext tests with manual package
+        run: |
+          ulimit -n 65536
+          npm run test:localcleartext:pack
