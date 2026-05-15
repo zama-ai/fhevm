@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "@fhevm/solidity/lib/FHE.sol";
+import {Impl} from "@fhevm/solidity/lib/Impl.sol";
 import {E2ECoprocessorConfig} from "../E2ECoprocessorConfigLocal.sol";
 
 contract FHEVMManualTestSuite is E2ECoprocessorConfig {
@@ -13,6 +14,9 @@ contract FHEVMManualTestSuite is E2ECoprocessorConfig {
     euint128 public resEuint128;
     euint256 public resEuint256;
     eaddress public resAdd;
+
+    euint32 public resSampleMulti100Slot;
+    uint8 public resSampleMulti100SlotIndex;
 
     function eqEbool(bool a, bool b) external {
         ebool input1 = FHE.asEbool(a);
@@ -544,5 +548,33 @@ contract FHEVMManualTestSuite is E2ECoprocessorConfig {
         set[1] = FHE.asEuint256(2);
         resEbool = FHE.isIn(value, set);
         FHE.makePubliclyDecryptable(resEbool);
+    }
+
+    function test_sampleMultiOutput_euint32(externalEuint32 a, bytes calldata inputProof) external {
+        euint32 aProc = FHE.fromExternal(a, inputProof);
+        (bytes32 rv, bytes32 rf) = Impl.sampleMultiOutput(euint32.unwrap(aProc));
+        euint32 resValue = euint32.wrap(rv);
+        ebool resFound = ebool.wrap(rf);
+        FHE.makePubliclyDecryptable(resValue);
+        FHE.makePubliclyDecryptable(resFound);
+        resEuint32 = resValue;
+        resEbool = resFound;
+    }
+
+    function test_sampleMultiOutput100_euint32(
+        externalEuint32 a,
+        uint8 slotIndex,
+        bytes calldata inputProof
+    ) external {
+        require(slotIndex < 100, "slotIndex out of range");
+        euint32 aProc = FHE.fromExternal(a, inputProof);
+        bytes32[] memory raw = Impl.sampleMultiOutput100(euint32.unwrap(aProc));
+        require(raw.length == 100, "unexpected output length");
+        for (uint256 i = 0; i < raw.length; i++) {
+            euint32 r = euint32.wrap(raw[i]);
+            FHE.makePubliclyDecryptable(r);
+        }
+        resSampleMulti100Slot = euint32.wrap(raw[slotIndex]);
+        resSampleMulti100SlotIndex = slotIndex;
     }
 }

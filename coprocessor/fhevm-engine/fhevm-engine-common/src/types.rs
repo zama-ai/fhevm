@@ -407,6 +407,10 @@ pub enum SupportedFheOperations {
     FheIsIn = 29,
     FheMulDiv = 30,
     FheGetInputCiphertext = 32,
+    // POC multi-output op: returns (input + 1, input != 0).
+    FheSampleMultiOutput = 33,
+    // POC multi-output op: returns 100 outputs, output[i] = input + (i + 1).
+    FheSampleMultiOutput100 = 34,
 }
 
 #[derive(PartialEq, Eq)]
@@ -868,9 +872,10 @@ impl SupportedFheOperations {
             | SupportedFheOperations::FheLt
             | SupportedFheOperations::FheMin
             | SupportedFheOperations::FheMax => FheOperationType::Binary,
-            SupportedFheOperations::FheNot | SupportedFheOperations::FheNeg => {
-                FheOperationType::Unary
-            }
+            SupportedFheOperations::FheNot
+            | SupportedFheOperations::FheNeg
+            | SupportedFheOperations::FheSampleMultiOutput
+            | SupportedFheOperations::FheSampleMultiOutput100 => FheOperationType::Unary,
             SupportedFheOperations::FheIfThenElse
             | SupportedFheOperations::FheCast
             | SupportedFheOperations::FheTrivialEncrypt
@@ -920,6 +925,19 @@ impl SupportedFheOperations {
         }
     }
 
+    /// Number of outputs for multi-output ops; `None` for single-output ops.
+    pub fn multi_output_arity(&self) -> Option<u8> {
+        match self {
+            SupportedFheOperations::FheSampleMultiOutput => Some(2),
+            SupportedFheOperations::FheSampleMultiOutput100 => Some(100),
+            _ => None,
+        }
+    }
+
+    pub fn is_multi_output(&self) -> bool {
+        self.multi_output_arity().is_some()
+    }
+
     pub fn supports_bool_inputs(&self) -> bool {
         matches!(
             self,
@@ -964,7 +982,9 @@ impl SupportedFheOperations {
             | SupportedFheOperations::FheGetInputCiphertext
             | SupportedFheOperations::FheSum
             | SupportedFheOperations::FheIsIn
-            | SupportedFheOperations::FheMulDiv => false,
+            | SupportedFheOperations::FheMulDiv
+            | SupportedFheOperations::FheSampleMultiOutput
+            | SupportedFheOperations::FheSampleMultiOutput100 => false,
         }
     }
 }
@@ -1005,6 +1025,8 @@ impl TryFrom<i16> for SupportedFheOperations {
             29 => Ok(SupportedFheOperations::FheIsIn),
             30 => Ok(SupportedFheOperations::FheMulDiv),
             32 => Ok(SupportedFheOperations::FheGetInputCiphertext),
+            33 => Ok(SupportedFheOperations::FheSampleMultiOutput),
+            34 => Ok(SupportedFheOperations::FheSampleMultiOutput100),
             _ => Err(FhevmError::UnknownFheOperation(value as i32)),
         };
 

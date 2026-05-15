@@ -114,6 +114,23 @@ interface IFHEVMExecutor {
     function fheMulDiv(bytes32 lhs, bytes32 rhs, bytes32 divisor, bytes1 scalarByte) external returns (bytes32 result);
 
     /**
+     * @notice                  Sample multi-output op (proof-of-concept).
+     *                          Returns two handles derived from one base hash.
+     * @param ct                Ciphertext input.
+     * @return resultValue      Output index 0 — same type as `ct` (= `ct + 1`).
+     * @return resultFound      Output index 1 — `ebool` (= `ct != 0`).
+     */
+    function fheSampleMultiOutput(bytes32 ct) external returns (bytes32 resultValue, bytes32 resultFound);
+
+    /**
+     * @notice                  High-arity sample multi-output op (stress test).
+     *                          Returns 100 handles derived from one base hash.
+     * @param ct                Ciphertext input.
+     * @return results          Output handles 0..99 (each = `ct + (i + 1)`).
+     */
+    function fheSampleMultiOutput100(bytes32 ct) external returns (bytes32[] memory results);
+
+    /**
      * @notice                      Returns the address of the InputVerifier contract used by the coprocessor.
      * @return inputVerifierAddress Address of the InputVerifier.
      */
@@ -284,6 +301,16 @@ library Impl {
     //$$ -----------------------------------------------------------------------
     $${ImplOperators}$$
     //$$ -----------------------------------------------------------------------
+
+    function sampleMultiOutput(bytes32 ct) internal returns (bytes32 resultValue, bytes32 resultFound) {
+        CoprocessorConfig storage $ = getCoprocessorConfig();
+        (resultValue, resultFound) = IFHEVMExecutor($.CoprocessorAddress).fheSampleMultiOutput(ct);
+    }
+
+    function sampleMultiOutput100(bytes32 ct) internal returns (bytes32[] memory results) {
+        CoprocessorConfig storage $ = getCoprocessorConfig();
+        results = IFHEVMExecutor($.CoprocessorAddress).fheSampleMultiOutput100(ct);
+    }
 
     /**
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.

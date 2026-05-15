@@ -159,6 +159,15 @@ contract SupportedTypesConstants {
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint160)) +
             (1 << uint8(FheType.Uint256));
+
+    /// @dev Sample multi-output op (proof-of-concept) supports the same
+    /// narrow set as the coprocessor-side execution path.
+    uint256 internal supportedTypesFheSampleMultiOutput =
+        (1 << uint8(FheType.Uint8)) +
+            (1 << uint8(FheType.Uint16)) +
+            (1 << uint8(FheType.Uint32)) +
+            (1 << uint8(FheType.Uint64)) +
+            (1 << uint8(FheType.Uint128));
 }
 
 /// @dev This contract is a mock implementation of the ACL interface.
@@ -1099,6 +1108,161 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         emit FHEEvents.FheNot(sender, lhs, expectedResult);
         bytes32 result = fhevmExecutor.fheNot(lhs);
         assertEq(result, expectedResult);
+    }
+
+    /// @dev Helper: compute the expected (resultValue, resultFound) pair for
+    /// `fheSampleMultiOutput`. The base hash mirrors the executor's derivation
+    /// using `Operators.fheSampleMultiOutput`; per-output handles append a
+    /// one-byte output_index suffix.
+    function _computeExpectedResultFheSampleMultiOutput(
+        bytes32 ct,
+        FheType inputType
+    ) internal view returns (bytes32 resultValue, bytes32 resultFound) {
+        bytes32 base = keccak256(
+            abi.encodePacked(
+                COMPUTATION_DOMAIN_SEPARATOR,
+                FHEVMExecutor.Operators.fheSampleMultiOutput,
+                ct,
+                acl,
+                block.chainid,
+                blockhash(block.number - 1),
+                block.timestamp
+            )
+        );
+        resultValue = _appendMetadataToPrehandle(
+            inputType,
+            keccak256(abi.encodePacked(base, uint8(0))),
+            block.chainid,
+            HANDLE_VERSION
+        );
+        resultFound = _appendMetadataToPrehandle(
+            FheType.Bool,
+            keccak256(abi.encodePacked(base, uint8(1))),
+            block.chainid,
+            HANDLE_VERSION
+        );
+    }
+
+    /// @dev Same as above but for the 100-output variant.
+    function _computeExpectedResultFheSampleMultiOutput100(
+        bytes32 ct,
+        FheType inputType
+    ) internal view returns (bytes32[] memory results) {
+        bytes32 base = keccak256(
+            abi.encodePacked(
+                COMPUTATION_DOMAIN_SEPARATOR,
+                FHEVMExecutor.Operators.fheSampleMultiOutput100,
+                ct,
+                acl,
+                block.chainid,
+                blockhash(block.number - 1),
+                block.timestamp
+            )
+        );
+        results = new bytes32[](100);
+        for (uint8 i = 0; i < 100; i++) {
+            results[i] = _appendMetadataToPrehandle(
+                inputType,
+                keccak256(abi.encodePacked(base, i)),
+                block.chainid,
+                HANDLE_VERSION
+            );
+        }
+    }
+
+    function test_FheSampleMultiOutputSupportedTypesWorkAsExpected(uint8 fheType) public {
+        vm.assume(fheType <= uint8(FheType.Int248));
+        vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheSampleMultiOutput));
+        address sender = address(123);
+
+        bytes32 ct = _generateMockHandle(FheType(fheType));
+        _approveHandleInACL(ct, sender);
+
+        (bytes32 expectedValue, bytes32 expectedFound) = _computeExpectedResultFheSampleMultiOutput(
+            ct,
+            FheType(fheType)
+        );
+
+        vm.prank(sender);
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheSampleMultiOutput(sender, ct, expectedValue, expectedFound);
+        (bytes32 resultValue, bytes32 resultFound) = fhevmExecutor.fheSampleMultiOutput(ct);
+
+        assertEq(resultValue, expectedValue, "resultValue mismatch");
+        assertEq(resultFound, expectedFound, "resultFound mismatch");
+
+        // resultValue keeps the input's type tag in byte 30; resultFound is ebool.
+        assertEq(uint8(uint256(resultValue) >> 8) & 0xff, fheType, "resultValue type tag");
+        assertEq(uint8(uint256(resultFound) >> 8) & 0xff, uint8(FheType.Bool), "resultFound type tag");
+
+        // Both outputs are distinct handles.
+        assertTrue(resultValue != resultFound, "outputs must differ");
+    }
+
+    function test_FheSampleMultiOutputRevertsOnUnsupportedType() public {
+        // FheType.Bool is intentionally excluded from supportedTypesFheSampleMultiOutput.
+        address sender = address(123);
+        bytes32 ct = _generateMockHandle(FheType.Bool);
+        _approveHandleInACL(ct, sender);
+
+        vm.prank(sender);
+        vm.expectRevert();
+        fhevmExecutor.fheSampleMultiOutput(ct);
+    }
+
+    function test_FheSampleMultiOutputRevertsWhenACLNotAllowed() public {
+        address sender = address(123);
+        bytes32 ct = _generateMockHandle(FheType.Uint32);
+        // Deliberately skip _approveHandleInACL
+
+        vm.prank(sender);
+        vm.expectRevert();
+        fhevmExecutor.fheSampleMultiOutput(ct);
+    }
+
+    function test_FheSampleMultiOutput100SupportedTypesWorkAsExpected(uint8 fheType) public {
+        vm.assume(fheType <= uint8(FheType.Int248));
+        vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheSampleMultiOutput));
+        address sender = address(123);
+
+        bytes32 ct = _generateMockHandle(FheType(fheType));
+        _approveHandleInACL(ct, sender);
+
+        bytes32[] memory expectedResults = _computeExpectedResultFheSampleMultiOutput100(ct, FheType(fheType));
+
+        vm.prank(sender);
+
+        vm.expectEmit(true, true, true, true);
+        emit FHEEvents.FheSampleMultiOutput100(sender, ct, expectedResults);
+        bytes32[] memory results = fhevmExecutor.fheSampleMultiOutput100(ct);
+
+        assertEq(results.length, 100, "must produce 100 outputs");
+        for (uint256 i = 0; i < 100; i++) {
+            assertEq(results[i], expectedResults[i], "result mismatch at index");
+        }
+
+        // All 100 handles must be unique.
+        for (uint256 i = 0; i < 100; i++) {
+            for (uint256 j = i + 1; j < 100; j++) {
+                assertTrue(results[i] != results[j], "duplicate handle found");
+            }
+        }
+
+        // Every output keeps the input's type tag in byte 30.
+        for (uint256 i = 0; i < 100; i++) {
+            assertEq(uint8(uint256(results[i]) >> 8) & 0xff, fheType, "output type tag mismatch");
+        }
+    }
+
+    function test_FheSampleMultiOutput100RevertsOnUnsupportedType() public {
+        address sender = address(123);
+        bytes32 ct = _generateMockHandle(FheType.Bool);
+        _approveHandleInACL(ct, sender);
+
+        vm.prank(sender);
+        vm.expectRevert();
+        fhevmExecutor.fheSampleMultiOutput100(ct);
     }
 
     function test_FheIfThenElseSupportedTypesWorkAsExpected(uint8 fheType) public {

@@ -1675,4 +1675,104 @@ describe('FHEVM manual operations', function () {
     const res = await this.instance.publicDecrypt([handle]);
     assert.equal(res.clearValues[handle], 0n);
   });
+
+  // -----------------------------------------------------------------------
+  // Multi-output sample ops (proof-of-concept).
+  //
+  // Validates the full multi-output pipeline end-to-end:
+  //   Solidity executor → event → host-listener → DB (group_id +
+  //   output_index) → worker grouping pass → tfhe-rs multi-output
+  //   execution → N ciphertexts → public decryption.
+  // -----------------------------------------------------------------------
+
+  describe('FHEVM sample multi-output ops', function () {
+    it('sampleMultiOutput euint32 - non-zero input: value = ct + 1, found = true', async function () {
+      const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+      input.add32(41);
+      const encryptedAmount = await input.encrypt();
+      const tx = await this.contract.test_sampleMultiOutput_euint32(
+        encryptedAmount.handles[0],
+        encryptedAmount.inputProof,
+      );
+      await tx.wait();
+
+      const valueHandle = await this.contract.resEuint32();
+      const foundHandle = await this.contract.resEbool();
+      assert.notEqual(valueHandle, encryptedAmount.handles[0]);
+      assert.notEqual(valueHandle, foundHandle);
+
+      const res = await this.instance.publicDecrypt([valueHandle, foundHandle]);
+      assert.equal(res.clearValues[valueHandle], 42n); // 41 + 1
+      assert.equal(res.clearValues[foundHandle], true); // 41 != 0
+    });
+
+    it('sampleMultiOutput euint32 - zero input: value = 1, found = false', async function () {
+      const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+      input.add32(0);
+      const encryptedAmount = await input.encrypt();
+      const tx = await this.contract.test_sampleMultiOutput_euint32(
+        encryptedAmount.handles[0],
+        encryptedAmount.inputProof,
+      );
+      await tx.wait();
+
+      const valueHandle = await this.contract.resEuint32();
+      const foundHandle = await this.contract.resEbool();
+
+      const res = await this.instance.publicDecrypt([valueHandle, foundHandle]);
+      assert.equal(res.clearValues[valueHandle], 1n); // 0 + 1
+      assert.equal(res.clearValues[foundHandle], false); // 0 != 0 is false
+    });
+
+    it('sampleMultiOutput100 euint32 - slot 0 returns ct + 1', async function () {
+      const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+      input.add32(100);
+      const encryptedAmount = await input.encrypt();
+      const tx = await this.contract.test_sampleMultiOutput100_euint32(
+        encryptedAmount.handles[0],
+        0,
+        encryptedAmount.inputProof,
+      );
+      await tx.wait();
+
+      assert.equal(await this.contract.resSampleMulti100SlotIndex(), 0);
+      const handle = await this.contract.resSampleMulti100Slot();
+      const res = await this.instance.publicDecrypt([handle]);
+      assert.equal(res.clearValues[handle], 101n); // 100 + (0 + 1)
+    });
+
+    it('sampleMultiOutput100 euint32 - slot 42 returns ct + 43', async function () {
+      const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+      input.add32(1000);
+      const encryptedAmount = await input.encrypt();
+      const tx = await this.contract.test_sampleMultiOutput100_euint32(
+        encryptedAmount.handles[0],
+        42,
+        encryptedAmount.inputProof,
+      );
+      await tx.wait();
+
+      assert.equal(await this.contract.resSampleMulti100SlotIndex(), 42);
+      const handle = await this.contract.resSampleMulti100Slot();
+      const res = await this.instance.publicDecrypt([handle]);
+      assert.equal(res.clearValues[handle], 1043n); // 1000 + (42 + 1)
+    });
+
+    it('sampleMultiOutput100 euint32 - slot 99 returns ct + 100', async function () {
+      const input = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
+      input.add32(7);
+      const encryptedAmount = await input.encrypt();
+      const tx = await this.contract.test_sampleMultiOutput100_euint32(
+        encryptedAmount.handles[0],
+        99,
+        encryptedAmount.inputProof,
+      );
+      await tx.wait();
+
+      assert.equal(await this.contract.resSampleMulti100SlotIndex(), 99);
+      const handle = await this.contract.resSampleMulti100Slot();
+      const res = await this.instance.publicDecrypt([handle]);
+      assert.equal(res.clearValues[handle], 107n); // 7 + (99 + 1)
+    });
+  });
 });

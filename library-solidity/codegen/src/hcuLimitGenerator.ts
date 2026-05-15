@@ -345,6 +345,70 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
   return (
     output +
     `    /**
+     * @notice HCU check for the sample multi-output op (2 outputs).
+     *         Costs are placeholders sized at ~2x fheNeg (clone-ish + ne_zero).
+     */
+    function checkHCUForFheSampleMultiOutput(
+        FheType inputType,
+        bytes32 ct,
+        bytes32 resultValue,
+        bytes32 resultFound,
+        address caller
+    ) external virtual {
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
+        uint256 opHCU;
+        if (inputType == FheType.Uint8) {
+            opHCU = 160000;
+        } else if (inputType == FheType.Uint16) {
+            opHCU = 186000;
+        } else if (inputType == FheType.Uint32) {
+            opHCU = 190000;
+        } else if (inputType == FheType.Uint64) {
+            opHCU = 262000;
+        } else if (inputType == FheType.Uint128) {
+            opHCU = 336000;
+        } else {
+            revert UnsupportedOperation();
+        }
+        bytes32[] memory results = new bytes32[](2);
+        results[0] = resultValue;
+        results[1] = resultFound;
+        _adjustAndCheckFheTransactionLimitOneOpMultiResult(opHCU, caller, ct, results);
+    }
+
+    /**
+     * @notice HCU check for the high-arity sample multi-output op (100 outputs).
+     *
+     *         On-chain this is a single dispatch — one event, one row group —
+     *         so the HCU cost is sized like a single FHE dispatch rather than
+     *         100x. The coprocessor-side cost of running the 100 internal
+     *         additions does not multiply the per-tx HCU depth budget.
+     */
+    function checkHCUForFheSampleMultiOutput100(
+        FheType inputType,
+        bytes32 ct,
+        bytes32[] memory results,
+        address caller
+    ) external virtual {
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
+        uint256 opHCU;
+        if (inputType == FheType.Uint8) {
+            opHCU = 200000;
+        } else if (inputType == FheType.Uint16) {
+            opHCU = 250000;
+        } else if (inputType == FheType.Uint32) {
+            opHCU = 300000;
+        } else if (inputType == FheType.Uint64) {
+            opHCU = 400000;
+        } else if (inputType == FheType.Uint128) {
+            opHCU = 500000;
+        } else {
+            revert UnsupportedOperation();
+        }
+        _adjustAndCheckFheTransactionLimitOneOpMultiResult(opHCU, caller, ct, results);
+    }
+
+    /**
      * @notice Sets the block-level HCU limit for non-whitelisted callers.
      * @param hcuPerBlock New block-level cap.
      */
@@ -403,6 +467,29 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         }
 
         _setHCUForHandle(result, totalHCU);
+    }
+
+    /**
+     * @notice Adjusts the sequential HCU for a multi-output op with a single input.
+     *         The op HCU is charged once at the transaction level (one FHE call),
+     *         and the depth HCU is recorded on every output handle.
+     */
+    function _adjustAndCheckFheTransactionLimitOneOpMultiResult(
+        uint256 opHCU,
+        address caller,
+        bytes32 op1,
+        bytes32[] memory results
+    ) internal virtual {
+        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
+
+        uint256 totalHCU = opHCU + _getHCUForHandle(op1);
+        if (totalHCU > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
+            revert HCUTransactionDepthLimitExceeded();
+        }
+
+        for (uint256 i = 0; i < results.length; i++) {
+            _setHCUForHandle(results[i], totalHCU);
+        }
     }
 
     /**

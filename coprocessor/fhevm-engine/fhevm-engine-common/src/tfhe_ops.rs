@@ -940,6 +940,33 @@ pub fn perform_fhe_operation(
     res
 }
 
+#[cfg(not(feature = "gpu"))]
+pub fn perform_multi_output_fhe_operation(
+    fhe_operation_int: i16,
+    input_operands: &[SupportedFheCiphertexts],
+    _: usize,
+) -> Result<Vec<SupportedFheCiphertexts>, FhevmError> {
+    perform_multi_output_fhe_operation_impl(fhe_operation_int, input_operands)
+}
+
+#[cfg(feature = "gpu")]
+pub fn perform_multi_output_fhe_operation(
+    fhe_operation_int: i16,
+    input_operands: &[SupportedFheCiphertexts],
+    gpu_idx: usize,
+) -> Result<Vec<SupportedFheCiphertexts>, FhevmError> {
+    use crate::gpu_memory::{get_op_size_on_gpu, release_memory_on_gpu, reserve_memory_on_gpu};
+
+    let mut gpu_mem_res = get_op_size_on_gpu(fhe_operation_int, input_operands)?;
+    input_operands
+        .iter()
+        .for_each(|i| gpu_mem_res += i.get_size_on_gpu());
+    reserve_memory_on_gpu(gpu_mem_res, gpu_idx);
+    let res = perform_multi_output_fhe_operation_impl(fhe_operation_int, input_operands);
+    release_memory_on_gpu(gpu_mem_res, gpu_idx);
+    res
+}
+
 fn collect_operands_as<'a, T>(
     fhe_operation: &SupportedFheOperations,
     operands: &'a [SupportedFheCiphertexts],
@@ -3556,6 +3583,90 @@ pub fn perform_fhe_operation_impl(
                 }),
             }
         }
+        // Multi-output ops dispatch through perform_multi_output_fhe_operation_impl.
+        SupportedFheOperations::FheSampleMultiOutput
+        | SupportedFheOperations::FheSampleMultiOutput100 => {
+            Err(FhevmError::UnknownFheOperation(fhe_operation_int as i32))
+        }
+    }
+}
+
+pub fn perform_multi_output_fhe_operation_impl(
+    fhe_operation_int: i16,
+    input_operands: &[SupportedFheCiphertexts],
+) -> Result<Vec<SupportedFheCiphertexts>, FhevmError> {
+    let fhe_operation: SupportedFheOperations = fhe_operation_int.try_into()?;
+    match fhe_operation {
+        SupportedFheOperations::FheSampleMultiOutput => {
+            if input_operands.len() != 1 {
+                return Err(FhevmError::UnsupportedFheTypes {
+                    fhe_operation: format!("{:?}", fhe_operation),
+                    input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                });
+            }
+            let (value, found) = match &input_operands[0] {
+                SupportedFheCiphertexts::FheUint8(a) => (
+                    SupportedFheCiphertexts::FheUint8(a + 1u8),
+                    SupportedFheCiphertexts::FheBool(a.ne(0u8)),
+                ),
+                SupportedFheCiphertexts::FheUint16(a) => (
+                    SupportedFheCiphertexts::FheUint16(a + 1u16),
+                    SupportedFheCiphertexts::FheBool(a.ne(0u16)),
+                ),
+                SupportedFheCiphertexts::FheUint32(a) => (
+                    SupportedFheCiphertexts::FheUint32(a + 1u32),
+                    SupportedFheCiphertexts::FheBool(a.ne(0u32)),
+                ),
+                SupportedFheCiphertexts::FheUint64(a) => (
+                    SupportedFheCiphertexts::FheUint64(a + 1u64),
+                    SupportedFheCiphertexts::FheBool(a.ne(0u64)),
+                ),
+                SupportedFheCiphertexts::FheUint128(a) => (
+                    SupportedFheCiphertexts::FheUint128(a + 1u128),
+                    SupportedFheCiphertexts::FheBool(a.ne(0u128)),
+                ),
+                _ => {
+                    return Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    });
+                }
+            };
+            Ok(vec![value, found])
+        }
+        SupportedFheOperations::FheSampleMultiOutput100 => {
+            if input_operands.len() != 1 {
+                return Err(FhevmError::UnsupportedFheTypes {
+                    fhe_operation: format!("{:?}", fhe_operation),
+                    input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                });
+            }
+            let outputs: Vec<SupportedFheCiphertexts> = match &input_operands[0] {
+                SupportedFheCiphertexts::FheUint8(a) => (1u8..=100u8)
+                    .map(|i| SupportedFheCiphertexts::FheUint8(a + i))
+                    .collect(),
+                SupportedFheCiphertexts::FheUint16(a) => (1u16..=100u16)
+                    .map(|i| SupportedFheCiphertexts::FheUint16(a + i))
+                    .collect(),
+                SupportedFheCiphertexts::FheUint32(a) => (1u32..=100u32)
+                    .map(|i| SupportedFheCiphertexts::FheUint32(a + i))
+                    .collect(),
+                SupportedFheCiphertexts::FheUint64(a) => (1u64..=100u64)
+                    .map(|i| SupportedFheCiphertexts::FheUint64(a + i))
+                    .collect(),
+                SupportedFheCiphertexts::FheUint128(a) => (1u128..=100u128)
+                    .map(|i| SupportedFheCiphertexts::FheUint128(a + i))
+                    .collect(),
+                _ => {
+                    return Err(FhevmError::UnsupportedFheTypes {
+                        fhe_operation: format!("{:?}", fhe_operation),
+                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                    });
+                }
+            };
+            Ok(outputs)
+        }
+        _ => Err(FhevmError::UnknownFheOperation(fhe_operation_int as i32)),
     }
 }
 
