@@ -8,8 +8,8 @@ import type { ChecksummedAddress, TypedValue } from '../types/primitives.js';
 import type { RelayerDelegatedUserDecryptOptions, RelayerUserDecryptOptions } from '../types/relayer.js';
 import type { SignedDelegatedDecryptionPermit, SignedSelfDecryptionPermit } from '../types/signedDecryptionPermit.js';
 import type { TransportKeypair } from './TransportKeypair-p.js';
-import { decryptKmsSignedcryptedShares } from './decryptKmsSignedcryptedShares-p.js';
-import { fetchKmsSignedcryptedShares } from './fetchKmsSignedcryptedShares-p.js';
+import { decryptKmsSigncryptedShares } from './decryptKmsSigncryptedShares-p.js';
+import { fetchKmsSigncryptedShares } from './fetchKmsSigncryptedShares-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -47,10 +47,10 @@ export type ReturnType = readonly TypedValue[];
 export async function decryptValuesFromPairs(fhevm: Context, parameters: Parameters): Promise<ReturnType> {
   const { transportKeypair } = parameters;
 
-  const kmsSigncryptedShares: KmsSigncryptedShares = await fetchKmsSignedcryptedShares(fhevm, parameters);
+  const kmsSigncryptedShares: KmsSigncryptedShares = await fetchKmsSigncryptedShares(fhevm, parameters);
 
   // Using the `KmsSigncryptedShares` decrypt and reconstruct clear values
-  return decryptKmsSignedcryptedShares(fhevm, {
+  return decryptKmsSigncryptedShares(fhevm, {
     kmsSigncryptedShares,
     transportKeypair,
   });

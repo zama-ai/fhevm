@@ -4,28 +4,28 @@ import type { WithDecrypt } from '../../types/coreFhevmRuntime.js';
 import type { KmsSigncryptedShares } from '../../types/kms.js';
 import type { TransportKeypair } from '../../kms/TransportKeypair-p.js';
 import type { TypedValue } from '../../types/primitives.js';
-import { decryptKmsSignedcryptedShares as decryptKmsSignedcryptedShares_ } from '../../kms/decryptKmsSignedcryptedShares-p.js';
+import { decryptKmsSigncryptedShares as decryptKmsSigncryptedShares_ } from '../../kms/decryptKmsSigncryptedShares-p.js';
 import { clearValueToTypedValue } from '../../handle/ClearValue.js';
 
 ////////////////////////////////////////////////////////////////////////////////
-// decryptKmsSignedcryptedShares (with privateKey)
+// decryptKmsSigncryptedShares (with privateKey)
 ////////////////////////////////////////////////////////////////////////////////
 
-export type DecryptKmsSignedcryptedSharesParameters = {
+export type DecryptKmsSigncryptedSharesParameters = {
   readonly kmsSigncryptedShares: KmsSigncryptedShares;
   readonly transportKeypair: TransportKeypair;
 };
 
-export type DecryptKmsSignedcryptedSharesReturnType = readonly TypedValue[];
+export type DecryptKmsSigncryptedSharesReturnType = readonly TypedValue[];
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export async function decryptKmsSignedcryptedShares(
+export async function decryptKmsSigncryptedShares(
   fhevm: Fhevm<FhevmChain, WithDecrypt>,
-  parameters: DecryptKmsSignedcryptedSharesParameters,
-): Promise<DecryptKmsSignedcryptedSharesReturnType> {
-  const clearValues = await decryptKmsSignedcryptedShares_(fhevm, parameters);
+  parameters: DecryptKmsSigncryptedSharesParameters,
+): Promise<DecryptKmsSigncryptedSharesReturnType> {
+  const clearValues = await decryptKmsSigncryptedShares_(fhevm, parameters);
 
-  const originToken = Symbol('decryptKmsSignedcryptedShares');
+  const originToken = Symbol('decryptKmsSigncryptedShares');
   return clearValues.map((cv) => clearValueToTypedValue(cv, originToken));
 }
