@@ -7,8 +7,8 @@ This document explains how to handle branches, loops or conditions when working 
 ❌ In FHE, it is not possible to break a loop based on an encrypted condition. For example, this would not work:
 
 ```solidity
-euint8 maxValue = FHE.asEuint(6); // Could be a value between 0 and 10
-euint8 x = FHE.asEuint(0);
+euint8 maxValue = FHE.asEuint8(6); // Could be a value between 0 and 10
+euint8 x = FHE.asEuint8(0);
 // some code
 while(FHE.lt(x, maxValue)){
     x = FHE.add(x, 2);
@@ -22,16 +22,16 @@ If your code logic requires looping on an encrypted boolean condition, we highly
 ✅ For example, the previous code could maybe be replaced by the following snippet:
 
 ```solidity
-euint8 maxValue = FHE.asEuint(6); // Could be a value between 0 and 10
-euint8 x;
+euint8 maxValue = FHE.asEuint8(6); // Could be a value between 0 and 10
+euint8 x = FHE.asEuint8(0);
 // some code
 for (uint32 i = 0; i < 10; i++) {
-    euint8 toAdd = FHE.select(FHE.lt(x, maxValue), 2, 0);
+    euint8 toAdd = FHE.select(FHE.lt(x, maxValue), FHE.asEuint8(2), FHE.asEuint8(0));
     x = FHE.add(x, toAdd);
 }
 ```
 
-In this snippet, we perform 10 iterations, adding 4 to `x` in each iteration as long as the iteration count is less than `maxValue`. If the iteration count exceeds `maxValue`, we add 0 instead for the remaining iterations because we can't break the loop.
+In this snippet, we perform 10 iterations, adding 2 to `x` in each iteration as long as `x` is still less than `maxValue`. Once `x` reaches `maxValue`, we add 0 instead for the remaining iterations because we can't break the loop.
 
 ## Best practices
 
@@ -53,8 +53,8 @@ function swapTokensForTokens(
   externalEuint32 encryptedAmountBIn,
   bytes calldata inputProof
 ) external {
-  euint32 encryptedAmountA = FHE.asEuint32(encryptedAmountAIn, inputProof); // even if amount is null, do a transfer to obfuscate trade direction
-  euint32 encryptedAmountB = FHE.asEuint32(encryptedAmountBIn, inputProof); // even if amount is null, do a transfer to obfuscate trade direction
+  euint32 encryptedAmountA = FHE.fromExternal(encryptedAmountAIn, inputProof); // even if amount is null, do a transfer to obfuscate trade direction
+  euint32 encryptedAmountB = FHE.fromExternal(encryptedAmountBIn, inputProof); // even if amount is null, do a transfer to obfuscate trade direction
 
   // send tokens from user to AMM contract
   FHE.allowTransient(encryptedAmountA, tokenA);
@@ -92,7 +92,7 @@ euint32 x;
 euint32[] encArray;
 
 function setXwithEncryptedIndex(externalEuint32 encryptedIndex, bytes calldata inputProof) public {
-    euint32 index = FHE.asEuint32(encryptedIndex, inputProof);
+    euint32 index = FHE.fromExternal(encryptedIndex, inputProof);
     for (uint32 i = 0; i < encArray.length; i++) {
         ebool isEqual = FHE.eq(index, i);
         x = FHE.select(isEqual, encArray[i], x);

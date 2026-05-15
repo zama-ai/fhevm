@@ -539,7 +539,13 @@ pub async fn run_all(
 
     // Drift-revert: must run before any DB-using task so the uploader and
     // service loop don't read or write rows the revert SQL is about to delete.
-    drift_revert::init(pool_mngr.pool().clone(), token.clone(), None).await?;
+    drift_revert::init(
+        pool_mngr.pool().clone(),
+        token.clone(),
+        None,
+        drift_revert::WatcherTimeouts::default(),
+    )
+    .await?;
 
     // Spawns a task to handle S3 uploads
     spawn(async move {
