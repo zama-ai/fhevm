@@ -496,7 +496,7 @@ jobs:
           fi
 
           # Block responses containing potential secrets
-          if grep -qiE '(ghp_[a-zA-Z0-9]{36}|gho_[a-zA-Z0-9]{36}|github_pat_|sk-ant-|AKIA[0-9A-Z]{16}|-----BEGIN (RSA |EC )?PRIVATE KEY)' /tmp/claude-response-validated.md; then
+          if grep -qiE '((ghp|gho|ghu|ghs|ghr)_[a-zA-Z0-9]{20,}|github_pat_|sk-ant-|AKIA[0-9A-Z]{16}|-----BEGIN (RSA |EC )?PRIVATE KEY)' /tmp/claude-response-validated.md; then
             echo "::error::Response appears to contain secrets — refusing to post"
             echo "Claude's response was blocked because it appeared to contain sensitive data. See [workflow logs](${RUN_URL})." > /tmp/claude-response-validated.md
           fi

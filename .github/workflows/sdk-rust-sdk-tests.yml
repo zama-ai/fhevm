@@ -43,7 +43,7 @@ jobs:
   start-runner:
     name: sdk-rust-sdk-tests/start-runner
     needs: check-changes
-    if: ${{ needs.check-changes.outputs.changes-rust-sdk == 'true' }}
+    if: ${{ needs.check-changes.outputs.changes-rust-sdk == 'true' && github.event.pull_request.head.repo.full_name == github.repository }}
     permissions:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
@@ -67,6 +67,7 @@ jobs:
   test-rust-sdk:
     name: sdk-rust-sdk-tests/test-rust-sdk (bpr)
     needs: start-runner
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
     timeout-minutes: 50
     permissions:
       actions: 'read' # Required to read workflow run information
@@ -110,10 +111,13 @@ jobs:
         with:
           version: "26.x"
 
-      - name: Setup usage of private repo
+      - name: Fetch private dependencies
         env:
           BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
-        run: git config --global url."https://${BLOCKCHAIN_ACTIONS_TOKEN}@github.com".insteadOf ssh://git@github.com
+        run: |
+          git config --global url."https://${BLOCKCHAIN_ACTIONS_TOKEN}@github.com".insteadOf ssh://git@github.com
+          trap 'git config --global --unset-all url."https://${BLOCKCHAIN_ACTIONS_TOKEN}@github.com".insteadOf || true' EXIT
+          cargo fetch
 
       - name: Formatting
         run: cargo fmt -- --check
@@ -122,20 +126,14 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Gen FHE keys
-        env:
-          BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
         run: |
           RUST_BACKTRACE=full cargo run --example keygen
 
       - name: Run Tests
-        env:
-          BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
         run: |
           RUST_BACKTRACE=full cargo test
 
       - name: Run Examples
-        env:
-          BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
         run: |
           bash scripts/run-examples.sh
 

@@ -954,6 +954,9 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           postgresPassword: postgres.postgresPassword,
         };
         const hostChainId = process.env.CHAIN_ID ?? "12345";
+        if (!/^\d+$/.test(hostChainId)) {
+          throw new PreflightError(`Invalid CHAIN_ID ${hostChainId}; expected a positive integer`);
+        }
 
         // Snapshot row counts before the revert runs. The gw-listener is
         // still in the grace period (pending status), so this is stable.

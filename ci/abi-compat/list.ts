@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { execSync } from "child_process";
+import { execFileSync, execSync } from "child_process";
 import { existsSync, mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
@@ -83,7 +83,16 @@ function run(cmd: string, cwd: string) {
 }
 
 function addWorktree(repoRoot: string, path: string, ref: string) {
-  run(`git worktree add --detach "${path}" "${ref}"`, repoRoot);
+  try {
+    execFileSync("git", ["worktree", "add", "--detach", path, ref], {
+      cwd: repoRoot,
+      stdio: ["ignore", "pipe", "pipe"],
+      encoding: "utf-8",
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+  } catch (error) {
+    throw new Error(`Command failed in ${repoRoot}: git worktree add --detach ${path} ${ref}\n${formatExecError(error)}`);
+  }
 }
 
 function preparePackage(currentRepoRoot: string, targetRoot: string, baselineRoot: string, pkg: PackageName) {
