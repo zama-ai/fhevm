@@ -14,7 +14,7 @@ import {
   waitForTaskReady,
 } from './taskDeploy';
 import { buildKMSGenerationInitializeFromMigrationArgs } from './utils/kmsGenerationMigrationEnv';
-import { getRequiredEnvVar } from './utils/loadVariables';
+import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 import {
   type ProtocolConfigMigrationKmsNode,
   buildProtocolConfigInitializeFromMigrationArgs,
@@ -416,16 +416,26 @@ task(
   .addParam('gatewayConfigProxy', 'Gateway GatewayConfig proxy address')
   .addParam('gatewayKmsGenerationProxy', 'Gateway KMSGeneration proxy address')
   .addOptionalParam(
+    'useInternalProxyAddress',
+    'Load host proxy addresses from the addresses/ env file. Defaults to false (read from process.env).',
+    false,
+    types.boolean,
+  )
+  .addOptionalParam(
     'gatewayBlockTag',
     'Gateway block to read at. Defaults to metadata.exportBlockNumber from gateway-contracts/migration-state.json if present; else latest with a warning.',
     undefined,
     types.int,
   )
   .setAction(async function (taskArgs, hre) {
-    const parsedEnv = readHostEnv();
-    const protocolConfigAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
-    const kmsGenerationAddress = parsedEnv.KMS_GENERATION_CONTRACT_ADDRESS;
-    const kmsVerifierAddress = parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS;
+    await hre.run('compile:specific', { contract: 'contracts' });
+
+    if (taskArgs.useInternalProxyAddress) {
+      loadHostAddresses();
+    }
+    const protocolConfigAddress = getRequiredEnvVar('PROTOCOL_CONFIG_CONTRACT_ADDRESS');
+    const kmsGenerationAddress = getRequiredEnvVar('KMS_GENERATION_CONTRACT_ADDRESS');
+    const kmsVerifierAddress = getRequiredEnvVar('KMS_VERIFIER_CONTRACT_ADDRESS');
 
     const gatewayConfigProxy = getAddress(taskArgs.gatewayConfigProxy);
     const gatewayKmsGenerationProxy = getAddress(taskArgs.gatewayKmsGenerationProxy);
