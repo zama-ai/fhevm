@@ -50,4 +50,10 @@ contract FHEEvents {
         bytes1 scalarByte,
         bytes32 result
     );
+    /// @dev Sample multi-output op (proof-of-concept). Emits two result handles:
+    ///      `resultValue` (index 0, same type as input) and `resultFound` (index 1, ebool).
+    event FheSampleMultiOutput(address indexed caller, bytes32 ct, bytes32 resultValue, bytes32 resultFound);
+    /// @dev High-arity sample multi-output op. Emits 100 result handles, ordered by
+    ///      tfhe-rs result tuple index. Every entry shares the input type.
+    event FheSampleMultiOutput100(address indexed caller, bytes32 ct, bytes32[] results);
 }

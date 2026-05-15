@@ -42,7 +42,7 @@ impl std::fmt::Debug for ExecNode {
 
 #[derive(Debug)]
 pub struct DFGOp {
-    pub output_handle: Handle,
+    pub output_handles: Vec<Handle>,
     pub fhe_op: SupportedFheOperations,
     pub inputs: Vec<DFGTaskInput>,
     pub is_allowed: bool,
@@ -50,7 +50,7 @@ pub struct DFGOp {
 impl Default for DFGOp {
     fn default() -> Self {
         DFGOp {
-            output_handle: vec![],
+            output_handles: vec![],
             fhe_op: SupportedFheOperations::FheTrivialEncrypt,
             inputs: vec![],
             is_allowed: false,
@@ -161,12 +161,17 @@ pub fn build_component_nodes(
     mut operations: Vec<DFGOp>,
     transaction_id: &Handle,
 ) -> ComponentNodes {
-    operations.sort_by_key(|o| o.output_handle.clone());
+    if operations.iter().any(|o| o.output_handles.is_empty()) {
+        return Err(SchedulerError::DataflowGraphError.into());
+    }
+    operations.sort_by_key(|o| o.output_handles[0].clone());
     let mut graph: Dag<(bool, usize), OpEdge> = Dag::default();
     let mut produced_handles: HashMap<Handle, usize> = HashMap::new();
     let mut components: Vec<ComponentNode> = vec![];
     for (index, op) in operations.iter().enumerate() {
-        produced_handles.insert(op.output_handle.clone(), index);
+        for h in op.output_handles.iter() {
+            produced_handles.insert(h.clone(), index);
+        }
     }
     let mut dependence_pairs = vec![];
     // Determine dependences within this graph
@@ -197,7 +202,13 @@ pub fn build_component_nodes(
     // Prune unneeded branches from the graph
     let unneeded: Vec<(Handle, Handle)> = finalize(&mut graph)
         .into_iter()
-        .map(|i| (operations[i].output_handle.clone(), transaction_id.clone()))
+        .flat_map(|i| {
+            operations[i]
+                .output_handles
+                .iter()
+                .map(|h| (h.clone(), transaction_id.clone()))
+                .collect::<Vec<_>>()
+        })
         .collect();
     // Partition the graph and extract sequential components
     let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
@@ -234,7 +245,9 @@ impl ComponentNode {
         // Gather all handles produced within the transaction
         let mut produced_handles: HashMap<Handle, usize> = HashMap::new();
         for (index, op) in operations.iter().enumerate() {
-            produced_handles.insert(op.output_handle.clone(), index);
+            for h in op.output_handles.iter() {
+                produced_handles.insert(h.clone(), index);
+            }
         }
         let mut dependence_pairs = vec![];
         for (index, op) in operations.iter_mut().enumerate() {
@@ -254,18 +267,20 @@ impl ComponentNode {
                     DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_) => {}
                 }
             }
-            self.results.push(op.output_handle.clone());
-            if !op.is_allowed {
-                self.intermediate_handles.push(op.output_handle.clone());
+            for h in op.output_handles.iter() {
+                self.results.push(h.clone());
+                if !op.is_allowed {
+                    self.intermediate_handles.push(h.clone());
+                }
             }
             let node_idx = self
                 .graph
                 .add_node(
-                    op.output_handle.clone(),
+                    op.output_handles.clone(),
                     (op.fhe_op as i16).into(),
                     std::mem::take(&mut op.inputs),
                     op.is_allowed,
-                )
+                )?
                 .index();
             if index != node_idx {
                 return Err(SchedulerError::DataflowGraphError.into());
@@ -434,11 +449,13 @@ impl DFComponentGraph {
                     error!(target: "scheduler", { transaction_id = ?hex::encode(tx.transaction_id.clone()) },
 		       "Transaction is part of a dependence cycle");
                     for (_, op) in tx.graph.graph.node_references() {
-                        self.results.push(DFGTxResult {
-                            transaction_id: tx.transaction_id.clone(),
-                            handle: op.result_handle.to_vec(),
-                            compressed_ct: Err(SchedulerError::CyclicDependence.into()),
-                        });
+                        for h in op.result_handles.iter() {
+                            self.results.push(DFGTxResult {
+                                transaction_id: tx.transaction_id.clone(),
+                                handle: h.clone(),
+                                compressed_ct: Err(SchedulerError::CyclicDependence.into()),
+                            });
+                        }
                     }
                 }
             }
@@ -557,11 +574,13 @@ impl DFComponentGraph {
 
             // Add error results for all operations in this transaction
             for (_idx, op) in tx_node.graph.graph.node_references() {
-                self.results.push(DFGTxResult {
-                    transaction_id: tx_node.transaction_id.clone(),
-                    handle: op.result_handle.to_vec(),
-                    compressed_ct: Err(SchedulerError::MissingInputs.into()),
-                });
+                for h in op.result_handles.iter() {
+                    self.results.push(DFGTxResult {
+                        transaction_id: tx_node.transaction_id.clone(),
+                        handle: h.clone(),
+                        compressed_ct: Err(SchedulerError::MissingInputs.into()),
+                    });
+                }
             }
 
             // Push all dependent transactions onto the stack
@@ -617,7 +636,7 @@ pub struct DFGResult {
 pub type OpEdge = u8;
 pub struct OpNode {
     opcode: i32,
-    result_handle: Handle,
+    result_handles: Vec<Handle>,
     inputs: Vec<DFGTaskInput>,
     is_allowed: bool,
 }
@@ -625,7 +644,10 @@ impl std::fmt::Debug for OpNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OpNode")
             .field("OP", &self.opcode)
-            .field("Result handle", &format_args!("{:?}", &self.result_handle))
+            .field(
+                "Result handles",
+                &format_args!("{:?}", &self.result_handles),
+            )
             .finish()
     }
 }
@@ -657,17 +679,22 @@ pub struct DFGraph {
 impl DFGraph {
     pub fn add_node(
         &mut self,
-        rh: Handle,
+        result_handles: Vec<Handle>,
         opcode: i32,
         inputs: Vec<DFGTaskInput>,
         is_allowed: bool,
-    ) -> NodeIndex {
-        self.graph.add_node(OpNode {
+    ) -> Result<NodeIndex> {
+        // Scheduler indexes result_handles[0] directly; reject empty input
+        // here rather than panic the worker.
+        if result_handles.is_empty() {
+            return Err(SchedulerError::DataflowGraphError.into());
+        }
+        Ok(self.graph.add_node(OpNode {
             opcode,
-            result_handle: rh,
+            result_handles,
             inputs,
             is_allowed,
-        })
+        }))
     }
     pub fn add_dependence(
         &mut self,
@@ -808,4 +835,135 @@ pub fn partition_components<TNode, TEdge>(
     // components within the DFG, there are no dependences (edges) to
     // add to the execution graph.
     Ok(())
+}
+
+#[cfg(test)]
+mod multi_output_tests {
+    use super::*;
+
+    fn h(b: u8) -> Handle {
+        vec![b; 32]
+    }
+
+    fn single_op(out: Handle) -> DFGOp {
+        DFGOp {
+            output_handles: vec![out],
+            fhe_op: SupportedFheOperations::FheAdd,
+            inputs: vec![],
+            is_allowed: true,
+        }
+    }
+
+    fn multi_op(outs: Vec<Handle>) -> DFGOp {
+        DFGOp {
+            output_handles: outs,
+            fhe_op: SupportedFheOperations::FheSampleMultiOutput,
+            inputs: vec![],
+            is_allowed: true,
+        }
+    }
+
+    #[test]
+    fn single_output_op_registers_one_producer() {
+        let op = single_op(h(7));
+        let (components, unneeded) = build_component_nodes(vec![op], &h(0xff)).unwrap();
+        assert_eq!(unneeded.len(), 0);
+        // One component, one node, one result handle
+        assert_eq!(components.len(), 1);
+        let c = &components[0];
+        assert_eq!(c.results, vec![h(7)]);
+    }
+
+    #[test]
+    fn multi_output_op_registers_all_handles_as_results() {
+        let op = multi_op(vec![h(10), h(11)]);
+        let (components, _) = build_component_nodes(vec![op], &h(0xff)).unwrap();
+        // Both output handles appear in this component's results, and both
+        // were produced by the same logical op.
+        assert_eq!(components.len(), 1);
+        let c = &components[0];
+        assert_eq!(c.results, vec![h(10), h(11)]);
+    }
+
+    #[test]
+    fn consumer_reading_any_multi_output_handle_finds_producer() {
+        // Producer emits two handles 10 and 11. Two consumers each read a
+        // different output of the same producer. Across all generated
+        // components, every output handle must be findable in some result
+        // set (the partition strategy may split parallel work into separate
+        // components, but no handle should be lost).
+        let producer = multi_op(vec![h(10), h(11)]);
+        let consumer_of_value = DFGOp {
+            output_handles: vec![h(20)],
+            fhe_op: SupportedFheOperations::FheAdd,
+            inputs: vec![DFGTaskInput::Dependence(h(10))],
+            is_allowed: true,
+        };
+        let consumer_of_found = DFGOp {
+            output_handles: vec![h(21)],
+            fhe_op: SupportedFheOperations::FheNot,
+            inputs: vec![DFGTaskInput::Dependence(h(11))],
+            is_allowed: true,
+        };
+        let (components, _) = build_component_nodes(
+            vec![producer, consumer_of_value, consumer_of_found],
+            &h(0xff),
+        )
+        .unwrap();
+        let all_results: Vec<Handle> = components.iter().flat_map(|c| c.results.clone()).collect();
+        for handle in [h(10), h(11), h(20), h(21)] {
+            assert!(
+                all_results.contains(&handle),
+                "handle {:?} missing from results",
+                handle
+            );
+        }
+    }
+
+    #[test]
+    fn high_arity_multi_output_op_registers_all_100_handles() {
+        let handles: Vec<Handle> = (0u8..100).map(h).collect();
+        let op = DFGOp {
+            output_handles: handles.clone(),
+            fhe_op: SupportedFheOperations::FheSampleMultiOutput100,
+            inputs: vec![],
+            is_allowed: true,
+        };
+        let (components, _) = build_component_nodes(vec![op], &h(0xff)).unwrap();
+        assert_eq!(components.len(), 1);
+        let c = &components[0];
+        assert_eq!(c.results.len(), 100);
+        for handle in handles {
+            assert!(c.results.contains(&handle));
+        }
+    }
+
+    #[test]
+    fn intermediate_handles_track_all_outputs_of_disallowed_multi_op() {
+        // A disallowed multi-output op is kept by finalize() when an allowed
+        // consumer depends on one of its outputs; all its outputs then count
+        // as intermediate handles.
+        let producer = DFGOp {
+            output_handles: vec![h(100), h(101)],
+            fhe_op: SupportedFheOperations::FheSampleMultiOutput,
+            inputs: vec![],
+            is_allowed: false,
+        };
+        let consumer = DFGOp {
+            output_handles: vec![h(200)],
+            fhe_op: SupportedFheOperations::FheAdd,
+            inputs: vec![DFGTaskInput::Dependence(h(100))],
+            is_allowed: true,
+        };
+        let (components, _) = build_component_nodes(vec![producer, consumer], &h(0xff)).unwrap();
+        let all_intermediate: Vec<Handle> = components
+            .iter()
+            .flat_map(|c| c.intermediate_handles.clone())
+            .collect();
+        // Both disallowed output handles are tracked as intermediates.
+        assert!(all_intermediate.contains(&h(100)));
+        assert!(all_intermediate.contains(&h(101)));
+        // The allowed consumer's output is not in intermediates.
+        assert!(!all_intermediate.contains(&h(200)));
+    }
 }
