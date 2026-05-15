@@ -25,7 +25,7 @@
 - logger.error not used
 - logger global ?
 - fix fheType array ascii art
-- remove E2e in E2eTransportKeypair
+- remove E2e in E2eTransportKeyPair
 - OK EIP712 -> Eip712 etc.
 - ClearValueTypeMap is unused!
 - handle : euint8
@@ -41,6 +41,46 @@
 - initFhevmEncryptRuntime / initFhevmDecryptRuntime / initFhevmRuntime
 - remove userDecryptModule
 - rename RelayerPublicDecryptOptions etc. does not match the API names
+- MAX_INPUT_INDEX = 254 (see https://github.com/zama-ai/fhevm/blob/main/coprocessor/fhevm-engine/zkproof-worker/src/verifier.rs#L40)
+- do not export private types like: SignDecryptionPermitContext
+- missing type FhevmClient in exports
+- missing TransportKeyPair export (generateTransportKeyPair)
+- Fix peerDependency issue: test-suite/e2e: conflict with ethers, see:
+
+```ts
+type FhevmClient = ReturnType<typeof createFhevmClient>;
+type CreateFhevmClientParameters = Parameters<typeof createFhevmClient>[0];
+type FhevmClientProvider = CreateFhevmClientParameters['provider'];
+```
+
+- Verify async race conditions issues, following init-p.ts encrypt module init bug:
+
+```ts
+let resolvedTfheModuleConfig: ResolvedTfheModuleConfig | undefined = undefined;
+let resolvingTfheModuleConfigPromise: Promise<ResolvedTfheModuleConfig> | undefined;
+
+/**
+ * @internal
+ * Returns the existing resolved config, or resolves it from the runtime config.
+ */
+async function _getOrResolveTfheModuleConfig(runtime: FhevmRuntime): Promise<ResolvedTfheModuleConfig> {
+  if (resolvedTfheModuleConfig !== undefined) {
+    return resolvedTfheModuleConfig;
+  }
+
+  resolvingTfheModuleConfigPromise ??= _resolveTfheModuleConfig(runtime.config)
+    .then((cfg) => {
+      resolvedTfheModuleConfig = cfg;
+      return cfg;
+    })
+    .catch((error: unknown) => {
+      resolvingTfheModuleConfigPromise = undefined;
+      throw error;
+    });
+
+  return resolvingTfheModuleConfigPromise;
+}
+```
 
 ```ts
     function checkSignatures(
@@ -162,7 +202,7 @@ export type DecryptValueParameters = {
   readonly handle: HandleLike;
   readonly contractAddress: string;
   readonly signedPermit: SignedSelfDecryptionPermit;
-  readonly e2eTransportKeypair: E2eTransportKeypair;
+  readonly transportKeyPair: TransportKeyPair;
   readonly options?: RelayerUserDecryptOptions | undefined;
 };
 export async function decryptValue(
@@ -175,7 +215,7 @@ export type DecryptHandleParameters = {
   readonly handle: HandleLike;
   readonly contractAddress: string;
   readonly signedPermit: SignedSelfDecryptionPermit;
-  readonly e2eTransportKeypair: E2eTransportKeypair;
+  readonly transportKeyPair: TransportKeyPair;
   readonly options?: RelayerUserDecryptOptions | undefined;
 };
 export async function decryptHandle(
@@ -187,7 +227,7 @@ export async function decryptHandle(
 export type DecryptValuesParameters = {
   readonly handles: { readonly handle: HandleLike; readonly contractAddress: string }[];
   readonly signedPermit: SignedSelfDecryptionPermit;
-  readonly e2eTransportKeypair: E2eTransportKeypair;
+  readonly transportKeyPair: TransportKeyPair;
   readonly options?: RelayerUserDecryptOptions | undefined;
 };
 export async function decryptValues(
@@ -200,7 +240,7 @@ export type DecryptValuesParameters = {
   readonly handles: HandleLike[];
   readonly contractAddress: string;
   readonly signedPermit: SignedSelfDecryptionPermit;
-  readonly e2eTransportKeypair: E2eTransportKeypair;
+  readonly transportKeyPair: TransportKeyPair;
   readonly options?: RelayerUserDecryptOptions | undefined;
 };
 export async function decryptValues(
@@ -212,7 +252,7 @@ export async function decryptValues(
 export type DecryptHandlesParameters = {
   readonly handles: { readonly handle: HandleLike; readonly contractAddress: string }[];
   readonly signedPermit: SignedSelfDecryptionPermit;
-  readonly e2eTransportKeypair: E2eTransportKeypair;
+  readonly transportKeyPair: TransportKeyPair;
   readonly options?: RelayerUserDecryptOptions | undefined;
 };
 export async function decryptHandles(
@@ -224,7 +264,7 @@ export async function decryptHandles(
 export type DecryptHandleContractPairsParameters = {
   readonly handles: { readonly handle: HandleLike; readonly contractAddress: string }[];
   readonly signedPermit: SignedSelfDecryptionPermit;
-  readonly e2eTransportKeypair: E2eTransportKeypair;
+  readonly transportKeyPair: TransportKeyPair;
   readonly options?: RelayerUserDecryptOptions | undefined;
 };
 export async function decryptHandleContractPairs(

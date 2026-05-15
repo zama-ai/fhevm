@@ -20,7 +20,7 @@ contract WildcardDelegationTarget is E2ECoprocessorConfig {
     }
 
     /// @notice Returns the handle stored for `delegator` (zero handle if unset).
-    function valueOf(address delegator) external view returns (bytes32) {
+    function euint64Of(address delegator) external view returns (bytes32) {
         return euint64.unwrap(_values[delegator]);
     }
 }

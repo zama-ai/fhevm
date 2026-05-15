@@ -2,8 +2,9 @@ import type { ErrorMetadataParams } from './errors/ErrorBase.js';
 import type {
   AddressValueLike,
   BoolValueLike,
+  Bytes32Hex,
+  RawTypedValue,
   TypedValue,
-  TypedValueFrom,
   TypedValueLike,
   TypedValueOfBase,
   Uint128ValueLike,
@@ -19,7 +20,8 @@ import type {
 import { asAddress } from './address.js';
 import { toBoolean } from './boolean.js';
 import { InvalidTypeError } from './errors/InvalidTypeError.js';
-import { asUintForType, normalizeUintForType } from './uint.js';
+import { assertIsUintTypeName, asUintForType, normalizeUintForType } from './uint.js';
+import { bigIntToBytesHex } from './bytes.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -182,15 +184,13 @@ export function assertIsTypedValueArray(
  * // Type: TypedValue<'address', ChecksummedAddress>
  * ```
  */
-export function createTypedValue<InputType extends TypedValueLike>(
-  input: InputType,
-): TypedValue & { readonly type: InputType['type'] } {
-  if ((input as unknown) == null || typeof input !== 'object') {
+export function createTypedValue(input: RawTypedValue): TypedValue {
+  if ((input as unknown) == null || typeof input !== 'object' || (input as unknown) === undefined) {
     throw new InvalidTypeError(
       {
         subject: 'input',
         type: typeof input,
-        expectedType: 'InputTypedValue ({ type, value })',
+        expectedType: '{ type, value }',
       },
       {},
     );
@@ -203,27 +203,36 @@ export function createTypedValue<InputType extends TypedValueLike>(
   const expectedType = input.type;
 
   let validatedValue: ValueType;
+  let resolvedType: ValueTypeName;
 
   if (expectedType === 'bool') {
+    resolvedType = 'bool';
     validatedValue = toBoolean(input.value, {});
-  } else if (expectedType === 'address') {
-    validatedValue = asAddress(input.value);
+  } else if (expectedType === 'address' || expectedType === 'uint160') {
+    // uint160 and address share a 160-bit width; canonicalize uint160 → address.
+    resolvedType = 'address';
+    if (typeof input.value === 'string') {
+      validatedValue = asAddress(input.value);
+    } else {
+      const u = asUintForType(input.value, 'uint160', {});
+      validatedValue = asAddress(bigIntToBytesHex(BigInt(u), { byteLength: 20 }));
+    }
   } else {
+    assertIsUintTypeName(expectedType, {});
+    if (expectedType === 'uint160') {
+      // Unreachable: handled by the address branch above. Re-checked here
+      // because `assertIsUintTypeName` widens the type back to include 'uint160'.
+      throw new InvalidTypeError({ subject: 'input.type', type: expectedType, expectedType: 'ValueTypeName' }, {});
+    }
+    resolvedType = expectedType;
     validatedValue = normalizeUintForType(asUintForType(input.value, expectedType, {}), expectedType);
   }
 
-  const v: TypedValueOfBase<typeof expectedType> = new TypedValueImpl(validatedValue, expectedType);
+  const v = new TypedValueImpl(validatedValue, resolvedType);
   Object.freeze(v);
-  return v as TypedValueFrom<InputType>;
-}
 
-/**
- * Mapped tuple type that preserves per-element type narrowing.
- * @internal
- */
-type TypedValueArrayFrom<T extends readonly TypedValueLike[]> = {
-  [K in keyof T]: TypedValueFrom<T[K]>;
-};
+  return v as TypedValue;
+}
 
 /**
  * Creates an array of validated {@link TypedValueOf}s from a tuple of inputs.
@@ -237,8 +246,8 @@ type TypedValueArrayFrom<T extends readonly TypedValueLike[]> = {
  * // b: BoolValue, n: Uint8Value
  * ```
  */
-export function createTypedValueArray<T extends readonly TypedValueLike[]>(inputs: [...T]): TypedValueArrayFrom<T> {
-  return inputs.map(createTypedValue) as unknown as TypedValueArrayFrom<T>;
+export function createTypedValueArray(inputs: readonly RawTypedValue[]): TypedValue[] {
+  return inputs.map(createTypedValue);
 }
 
 /**
@@ -298,10 +307,10 @@ export class TypedValueArrayBuilder {
     return this;
   }
 
-  #push(typeName: ValueTypeName, value: unknown): this {
+  #push(typeName: ValueTypeName, value: TypedValueLike | RawTypedValue['value']): this {
     if (isTypedValue(value, { type: typeName })) {
       this.#arr.push(value);
-    } else if (typeof value === 'object' && value !== null) {
+    } else if (typeof value === 'object') {
       const tv = value as TypedValue;
       if (tv.type !== typeName) {
         throw new InvalidTypeError(
@@ -313,14 +322,30 @@ export class TypedValueArrayBuilder {
           {},
         );
       }
-      this.#arr.push(createTypedValue({ type: typeName, value: tv.value } as TypedValueLike));
+      this.#arr.push(createTypedValue({ type: typeName, value: tv.value }));
     } else {
-      this.#arr.push(createTypedValue({ type: typeName, value } as TypedValueLike));
+      this.#arr.push(createTypedValue({ type: typeName, value }));
     }
     return this;
   }
 
   public build(): readonly TypedValue[] {
     return Object.freeze([...this.#arr]);
+  }
+}
+
+export function typedValueToBytes32Hex(typedValue: TypedValue): Bytes32Hex {
+  assertIsTypedValue(typedValue, {});
+  switch (typedValue.type) {
+    case 'uint8':
+    case 'uint16':
+    case 'uint32':
+    case 'uint64':
+    case 'uint128':
+    case 'uint256':
+    case 'address':
+      return bigIntToBytesHex(BigInt(typedValue.value), { byteLength: 32 });
+    case 'bool':
+      return bigIntToBytesHex(typedValue.value ? 1n : 0n, { byteLength: 32 });
   }
 }

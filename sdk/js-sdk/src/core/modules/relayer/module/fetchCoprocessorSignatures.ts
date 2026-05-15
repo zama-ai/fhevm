@@ -3,7 +3,7 @@ import type { FetchInputProofResult } from '../../../types/relayer.js';
 import type {
   FetchCoprocessorSignaturesParameters,
   FetchCoprocessorSignaturesReturnType,
-  RelayerClient,
+  RelayerClientWithRuntime,
 } from '../types.js';
 import { bytesToHexNo0x } from '../../../base/bytes.js';
 import { removeSuffix } from '../../../base/string.js';
@@ -15,7 +15,7 @@ import { RelayerAsyncRequest } from './RelayerAsyncRequest.js';
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function fetchCoprocessorSignatures(
-  relayerClient: RelayerClient,
+  relayerClient: RelayerClientWithRuntime,
   parameters: FetchCoprocessorSignaturesParameters,
 ): Promise<FetchCoprocessorSignaturesReturnType> {
   const { options, payload } = parameters;
@@ -24,13 +24,13 @@ export async function fetchCoprocessorSignatures(
     ciphertextWithInputVerification: bytesToHexNo0x(payload.zkProof.ciphertextWithZkProof),
     contractAddress: payload.zkProof.contractAddress,
     contractChainId: uintToHex0x(payload.zkProof.chainId),
-    extraData: payload.extraData,
+    extraData: payload.zkProof.getExtraData(),
     userAddress: payload.zkProof.userAddress,
   };
 
   const request = new RelayerAsyncRequest({
     relayerOperation: 'INPUT_PROOF',
-    url: `${removeSuffix(relayerClient.relayerUrl, '/')}/v2/input-proof`,
+    url: `${removeSuffix(relayerClient.chain.fhevm.relayerUrl, '/')}/v2/input-proof`,
     payload: inputProofPayload,
     options,
   });

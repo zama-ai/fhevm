@@ -25,7 +25,7 @@ Before you can do anything, you need to tell the SDK how to run its internal WAS
 In Node.js, the SDK resolves WASM file paths automatically. You only need to set the thread count:
 
 ```ts
-import { setFhevmRuntimeConfig } from "@fhevm/sdk/viem"; // or "@fhevm/sdk/ethers"
+import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem'; // or "@fhevm/sdk/ethers"
 
 setFhevmRuntimeConfig({
   numberOfThreads: 4,
@@ -41,7 +41,7 @@ In the browser, there are two extra things to configure: **WASM file locations**
 **WASM files:** The SDK embeds WASM as base64 strings by default, so it works without any file hosting. However, if you want to serve the WASM files from your own server or CDN (recommended for production — avoids inlining ~5MB of base64 in your JavaScript bundle), use `locateFile`:
 
 ```ts
-import { setFhevmRuntimeConfig } from "@fhevm/sdk/viem";
+import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 
 setFhevmRuntimeConfig({
   numberOfThreads: navigator.hardwareConcurrency || 4,
@@ -51,9 +51,9 @@ setFhevmRuntimeConfig({
 
 When using `locateFile`, you need to copy these files to your `/wasm/` directory (or wherever you point to):
 
-| File | Size | Purpose |
-| --- | --- | --- |
-| `tfhe_bg.v1.5.3.wasm` | ~5MB | TFHE encryption WASM binary |
+| File                     | Size | Purpose                                   |
+| ------------------------ | ---- | ----------------------------------------- |
+| `tfhe_bg.v1.5.3.wasm`    | ~5MB | TFHE encryption WASM binary               |
 | `tfhe-worker.v1.5.3.mjs` | ~2KB | Web Worker script for multi-threaded TFHE |
 
 **HTTP headers for multi-threading:** The TFHE WASM module uses `SharedArrayBuffer` for multi-threading, which browsers only enable when your server sends these headers:
@@ -70,10 +70,10 @@ module.exports = {
   async headers() {
     return [
       {
-        source: "/(.*)",
+        source: '/(.*)',
         headers: [
-          { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
-          { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
+          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+          { key: 'Cross-Origin-Embedder-Policy', value: 'require-corp' },
         ],
       },
     ];
@@ -87,8 +87,8 @@ For **Vite**, add to `vite.config.ts`:
 export default defineConfig({
   server: {
     headers: {
-      "Cross-Origin-Opener-Policy": "same-origin",
-      "Cross-Origin-Embedder-Policy": "require-corp",
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
     },
   },
 });
@@ -103,14 +103,14 @@ A **client** is your main interface to the SDK. It's bound to a specific chain a
 **With viem:**
 
 ```ts
-import { createFhevmClient } from "@fhevm/sdk/viem";
-import { sepolia } from "@fhevm/sdk/chains";
-import { createPublicClient, http } from "viem";
-import { sepolia as viemSepolia } from "viem/chains";
+import { createFhevmClient } from '@fhevm/sdk/viem';
+import { sepolia } from '@fhevm/sdk/chains';
+import { createPublicClient, http } from 'viem';
+import { sepolia as viemSepolia } from 'viem/chains';
 
 const provider = createPublicClient({
   chain: viemSepolia,
-  transport: http("https://ethereum-sepolia-rpc.publicnode.com"),
+  transport: http('https://ethereum-sepolia-rpc.publicnode.com'),
 });
 
 const client = createFhevmClient({ chain: sepolia, provider });
@@ -119,11 +119,11 @@ const client = createFhevmClient({ chain: sepolia, provider });
 **With ethers.js:**
 
 ```ts
-import { createFhevmClient } from "@fhevm/sdk/ethers";
-import { sepolia } from "@fhevm/sdk/chains";
-import { ethers } from "ethers";
+import { createFhevmClient } from '@fhevm/sdk/ethers';
+import { sepolia } from '@fhevm/sdk/chains';
+import { ethers } from 'ethers';
 
-const provider = new ethers.JsonRpcProvider("https://ethereum-sepolia-rpc.publicnode.com");
+const provider = new ethers.JsonRpcProvider('https://ethereum-sepolia-rpc.publicnode.com');
 const client = createFhevmClient({ chain: sepolia, provider });
 ```
 
@@ -145,13 +145,14 @@ Call `encrypt()` with the values you want to encrypt, the target contract addres
 
 ```ts
 const encrypted = await client.encrypt({
-  contractAddress: "0xYourCounter...",
-  userAddress: "0xYourWallet...",
-  values: [{ type: "uint32", value: 42 }],
+  contractAddress: '0xYourCounter...',
+  userAddress: '0xYourWallet...',
+  values: [{ type: 'uint32', value: 42 }],
 });
 ```
 
 The result contains:
+
 - `encrypted.externalEncryptedValues` — one encrypted value per input, in the same order you provided them
 - `encrypted.inputProof` — a ZK proof that the encryption was done correctly
 
@@ -163,8 +164,8 @@ Now send the encrypted value and proof to your contract. The two values map dire
 
 ```ts
 await contract.increment(
-  encrypted.externalEncryptedValues[0],  // → externalEuint32 in Solidity
-  encrypted.inputProof,                  // → bytes calldata inputProof in Solidity
+  encrypted.externalEncryptedValues[0], // → externalEuint32 in Solidity
+  encrypted.inputProof, // → bytes calldata inputProof in Solidity
 );
 ```
 
@@ -196,21 +197,21 @@ You can encrypt multiple values in a single `encrypt()` call (up to 2048 encrypt
 
 ```ts
 const encrypted = await client.encrypt({
-  contractAddress: "0xYourContract...",
-  userAddress: "0xYourWallet...",
+  contractAddress: '0xYourContract...',
+  userAddress: '0xYourWallet...',
   values: [
-    { type: "uint32", value: 42 },
-    { type: "bool", value: true },
-    { type: "address", value: "0xAbCdEf0123456789AbCdEf0123456789AbCdEf01" },
+    { type: 'uint32', value: 42 },
+    { type: 'bool', value: true },
+    { type: 'address', value: '0xAbCdEf0123456789AbCdEf0123456789AbCdEf01' },
   ],
 });
 
 // Pass to a contract that accepts (externalEuint32, externalEbool, externalEaddress, bytes)
 await contract.myFunction(
-  encrypted.externalEncryptedValues[0],  // externalEuint32
-  encrypted.externalEncryptedValues[1],  // externalEbool
-  encrypted.externalEncryptedValues[2],  // externalEaddress
-  encrypted.inputProof,                  // one shared proof for all values
+  encrypted.externalEncryptedValues[0], // externalEuint32
+  encrypted.externalEncryptedValues[1], // externalEbool
+  encrypted.externalEncryptedValues[2], // externalEaddress
+  encrypted.inputProof, // one shared proof for all values
 );
 ```
 
@@ -242,43 +243,41 @@ Here's the full flow:
 // 1. Generate a transport key pair
 //    This encrypts the channel between your app and the Zama Protocol —
 //    only your app can read the decrypted values.
-const e2eTransportKeypair = await client.generateE2eTransportKeypair();
+const transportKeyPair = await client.generateTransportKeyPair();
 
 // 2. Create and sign the decrypt permit in one step
 //    The SDK constructs the EIP-712 message and signs it with your signer.
 const signedPermit = await client.signDecryptionPermit({
-  contractAddresses: ["0xYourContract..."],
+  contractAddresses: ['0xYourContract...'],
   startTimestamp: Math.floor(Date.now() / 1000),
   durationDays: 7,
   signerAddress: await signer.getAddress(), // or walletClient.account.address for viem
-  signer,                                    // ethers Signer or viem WalletClient
-  e2eTransportKeypair,
+  signer, // ethers Signer or viem WalletClient
+  transportKeyPair,
 });
 
 // 3. Decrypt — pass the encrypted value you read from your contract
 const encryptedBalance = await contract.balances(userAddress);
 
 const results = await client.decrypt({
-  encryptedValues: [
-    { encryptedValue: encryptedBalance, contractAddress: "0xYourContract..." },
-  ],
-  e2eTransportKeypair,
+  encryptedValues: [{ encryptedValue: encryptedBalance, contractAddress: '0xYourContract...' }],
+  transportKeyPair,
   signedPermit,
 });
 
 // Access the plaintext
-results[0].value;   // e.g. 42 (number) or 1000n (bigint)
+results[0].value; // e.g. 42 (number) or 1000n (bigint)
 results[0].fheType; // "euint32", "euint64", "ebool", etc.
 ```
 
 Decrypted values are typed based on their FHE type:
 
-| FHE type | JavaScript type | Example |
-| --- | --- | --- |
-| `ebool` | `boolean` | `true` |
-| `euint8`, `euint16`, `euint32` | `number` | `42` |
-| `euint64`, `euint128`, `euint256` | `bigint` | `1000n` |
-| `eaddress` | `string` | `"0xAbCd..."` |
+| FHE type                          | JavaScript type | Example       |
+| --------------------------------- | --------------- | ------------- |
+| `ebool`                           | `boolean`       | `true`        |
+| `euint8`, `euint16`, `euint32`    | `number`        | `42`          |
+| `euint64`, `euint128`, `euint256` | `bigint`        | `1000n`       |
+| `eaddress`                        | `string`        | `"0xAbCd..."` |
 
 **Why so many steps?** Security. The permit system ensures that decryption only happens when the user explicitly authorizes it, for specific contracts, within a specific time window. The transport key pair never leaves the browser — the Zama Protocol sends encrypted shares that only this key can reconstruct.
 
@@ -297,13 +296,13 @@ On the SDK side — same flow as above, but with `onBehalfOf` to specify whose d
 
 ```ts
 const signedPermit = await client.signDecryptionPermit({
-  contractAddresses: ["0xYourContract..."],
+  contractAddresses: ['0xYourContract...'],
   startTimestamp: Math.floor(Date.now() / 1000),
   durationDays: 7,
   signerAddress: await signer.getAddress(),
   signer,
-  e2eTransportKeypair,
-  onBehalfOf: "0xDataOwnerAddress...",
+  transportKeyPair,
+  onBehalfOf: '0xDataOwnerAddress...',
 });
 ```
 
@@ -333,24 +332,24 @@ const result = await client.publicDecrypt({
 });
 
 // Access the plaintext
-const value = result.orderedClearValues[0].value;   // the decrypted value
-const type = result.orderedClearValues[0].fheType;   // "euint32", "ebool", etc.
+const value = result.orderedClearValues[0].value; // the decrypted value
+const type = result.orderedClearValues[0].fheType; // "euint32", "ebool", etc.
 ```
 
 **When would you use this?** For values that should be visible to everyone — like the result of a completed auction, a public vote tally, or a game outcome.
 
 ## Import paths
 
-| Path | What it gives you |
-| --- | --- |
-| `@fhevm/sdk/ethers` | Client factories + runtime config (ethers.js v6 adapter) |
-| `@fhevm/sdk/viem` | Client factories + runtime config (viem adapter) — identical API |
-| `@fhevm/sdk/chains` | Chain definitions: `mainnet`, `sepolia` |
-| `@fhevm/sdk/actions/base` | Base actions (standalone functions) |
-| `@fhevm/sdk/actions/encrypt` | Encrypt actions (standalone functions) |
-| `@fhevm/sdk/actions/decrypt` | Decrypt actions (standalone functions) |
-| `@fhevm/sdk/actions/chain` | Chain-only utility actions (standalone functions) |
-| `@fhevm/sdk/actions/host` | Host contract read actions (standalone functions) |
+| Path                         | What it gives you                                                |
+| ---------------------------- | ---------------------------------------------------------------- |
+| `@fhevm/sdk/ethers`          | Client factories + runtime config (ethers.js v6 adapter)         |
+| `@fhevm/sdk/viem`            | Client factories + runtime config (viem adapter) — identical API |
+| `@fhevm/sdk/chains`          | Chain definitions: `mainnet`, `sepolia`                          |
+| `@fhevm/sdk/actions/base`    | Base actions (standalone functions)                              |
+| `@fhevm/sdk/actions/encrypt` | Encrypt actions (standalone functions)                           |
+| `@fhevm/sdk/actions/decrypt` | Decrypt actions (standalone functions)                           |
+| `@fhevm/sdk/actions/chain`   | Chain-only utility actions (standalone functions)                |
+| `@fhevm/sdk/actions/host`    | Host contract read actions (standalone functions)                |
 
 The ethers and viem adapters have **identical APIs**. You can switch between them by changing only the import path — no other code changes.
 
