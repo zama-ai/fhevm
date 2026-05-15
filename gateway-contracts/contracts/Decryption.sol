@@ -201,7 +201,7 @@ contract Decryption is
      */
     string private constant CONTRACT_NAME = "Decryption";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 4;
+    uint256 private constant MINOR_VERSION = 5;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
