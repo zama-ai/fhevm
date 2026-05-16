@@ -875,6 +875,10 @@ impl UserDecryptHandler {
 
 // OpenAPI documented endpoints as standalone functions
 /// Submit user decryption.
+///
+/// **Deprecated.** Superseded by `POST /v3/user-decrypt` (RFC016 unified
+/// user-decryption). The v2 surface remains available throughout the
+/// relayer-sdk deprecation window.
 #[utoipa::path(
     post,
     path = "/v2/user-decrypt",
@@ -887,6 +891,7 @@ impl UserDecryptHandler {
     ),
     tag = "User Decrypt"
 )]
+#[deprecated(note = "Superseded by POST /v3/user-decrypt (RFC016)")]
 pub async fn user_decrypt_post_v2(
     handler: Arc<UserDecryptHandler>,
     req: Request<axum::body::Body>,
@@ -922,6 +927,11 @@ pub async fn user_decrypt_get_v2(
 }
 
 /// Submit delegated user decryption.
+///
+/// **Deprecated.** Superseded by `POST /v3/user-decrypt` (RFC016 unified
+/// user-decryption — delegated handles use the per-entry `ownerAddress`).
+/// The v2 surface remains available throughout the relayer-sdk
+/// deprecation window.
 #[utoipa::path(
     post,
     path = "/v2/delegated-user-decrypt",
@@ -934,6 +944,7 @@ pub async fn user_decrypt_get_v2(
     ),
     tag = "Delegated User Decrypt"
 )]
+#[deprecated(note = "Superseded by POST /v3/user-decrypt (RFC016)")]
 pub async fn delegated_user_decrypt_post_v2(
     handler: Arc<UserDecryptHandler>,
     req: Request<axum::body::Body>,

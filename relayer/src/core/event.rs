@@ -4,6 +4,7 @@ use crate::http::endpoints::v2::types::DelegatedUserDecryptRequestJson;
 use crate::http::endpoints::v2::types::{
     InputProofRequestJson, PublicDecryptRequestJson, UserDecryptRequestJson,
 };
+use crate::http::endpoints::v3::types::AttestedUserDecryptRequestJson;
 use crate::orchestrator::traits::Event;
 use alloy::primitives::{Address, Bytes, FixedBytes, TxHash};
 use alloy::{primitives::U256, rpc::types::Log};
@@ -690,6 +691,81 @@ impl TryFrom<DelegatedUserDecryptRequestJson> for UserDecryptRequest {
             payload: UserDecryptPayload::LegacyDelegated {
                 delegator_address: Address::from_str(&value.delegator_address)?,
                 delegate_address: Address::from_str(&value.delegate_address)?,
+            },
+        })
+    }
+}
+
+impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
+    type Error = anyhow::Error;
+
+    fn try_from(value: AttestedUserDecryptRequestJson) -> Result<Self, Self::Error> {
+        info!("Converting AttestedUserDecryptRequestJson to UserDecryptRequest (Unified)");
+
+        let payload_inner = value.attested_payload;
+
+        // Build the (ctHandle, contract_address) pairs at the top level and
+        // collect per-handle owner addresses for the Unified payload arm,
+        // index-aligned with ct_handle_contract_pairs.
+        let mut ct_handle_contract_pairs = Vec::with_capacity(payload_inner.handles.len());
+        let mut owner_addresses = Vec::with_capacity(payload_inner.handles.len());
+        for entry in &payload_inner.handles {
+            let ct_handle = if let Some(rest) = entry.ct_handle.strip_prefix("0x") {
+                U256::from_str_radix(rest, 16)
+            } else {
+                U256::from_str_radix(&entry.ct_handle, 16)
+            }
+            .map_err(|e| anyhow::anyhow!("Failed to parse ctHandle: {}", e))?;
+
+            let contract_address = Address::from_str(&entry.contract_address)
+                .map_err(|e| anyhow::anyhow!("Failed to parse contractAddress: {}", e))?;
+            let owner_address = Address::from_str(&entry.owner_address)
+                .map_err(|e| anyhow::anyhow!("Failed to parse ownerAddress: {}", e))?;
+
+            ct_handle_contract_pairs.push(HandleContractPair {
+                ct_handle,
+                contract_address,
+            });
+            owner_addresses.push(owner_address);
+        }
+
+        // Allowed contracts (may be empty for permissive mode).
+        let contract_addresses = payload_inner
+            .allowed_contracts
+            .iter()
+            .map(|addr| Address::from_str(addr))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // For the Unified variant `request_validity.duration_days` is reused
+        // as `durationSeconds` (the U256 slot is generic; the unit is per-
+        // variant and the gateway calldata builder picks the right sol
+        // struct).
+        let start_timestamp = U256::from_str(&payload_inner.request_validity.start_timestamp)?;
+        let duration_seconds = U256::from_str(&payload_inner.request_validity.duration_seconds)?;
+        let request_validity = RequestValidity {
+            start_timestamp,
+            duration_days: duration_seconds,
+        };
+
+        let user_address = Address::from_str(&payload_inner.user_address)?;
+        let public_key = Bytes::from_str(&payload_inner.public_key)?;
+        let extra_data = Bytes::from_str(&payload_inner.extra_data)?;
+        let signature = Bytes::from_str(&value.signature)?;
+
+        Ok(UserDecryptRequest {
+            ct_handle_contract_pairs,
+            request_validity,
+            // `contracts_chain_id` is unused on the unified path (no
+            // `ContractsInfo` struct in the userDecryptionRequest_0 ABI).
+            contracts_chain_id: 0,
+            contract_addresses,
+            signature,
+            public_key,
+            extra_data,
+            payload: UserDecryptPayload::Unified {
+                attestation_type: value.attestation_type,
+                user_address,
+                owner_addresses,
             },
         })
     }
