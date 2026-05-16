@@ -2,23 +2,25 @@
 //! unified user-decryption). Uses the in-process `TestSetup` harness and
 //! the `ethereum_rpc_mock` JSON-RPC mock — the same plumbing v2 tests use.
 //!
-//! Happy-path E2E (with mocked gateway events emitting the unified
-//! `UserDecryptionRequest_1` event and the shared `UserDecryptionResponse`
-//! shares) lives in `tests/user_decrypt_v3_e2e_test.rs` once the mock is
-//! extended for the unified selector + event. This file covers everything
-//! that doesn't require mock changes: validation, dispatch by
-//! `attestationType`, schema rejection.
+//! Covers the full HTTP → calldata → mocked-gateway → shares → GET path
+//! end-to-end, plus the validation / dispatch / schema-rejection surface.
 
 mod common;
 
-use crate::common::utils::TestSetup;
+use crate::common::utils::{assert_retry_after_header_present, TestSetup};
 use crate::common::validation_helper::{
     expect_v2_malformed_json, expect_v2_missing_field, expect_v2_validation_error, test_endpoint,
     test_endpoint_raw_body, with_invalid_field,
 };
-use alloy::primitives::Address;
+use alloy::primitives::{Address, B256};
+use ethereum_rpc_mock::fhevm::UserDecryptKind;
+use fhevm_relayer::http::endpoints::v2::types::error::ApiResponseStatus;
+use fhevm_relayer::http::endpoints::v2::types::user_decrypt::{
+    UserDecryptPostResponseJson, UserDecryptStatusResponseJson,
+};
 use rand::{rng, RngExt};
 use serde_json::json;
+use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod helpers {
@@ -44,6 +46,39 @@ mod helpers {
             s.push_str(&format!("{:x}", rng.random_range(0..16)));
         }
         s
+    }
+
+    pub fn v3_user_decrypt_get_url(setup: &TestSetup, job_id: &str) -> String {
+        format!(
+            "http://localhost:{}/v3/user-decrypt/{}",
+            setup.http_port, job_id
+        )
+    }
+
+    /// Extract the `ctHandle` strings from the first handle entry of a v3
+    /// envelope as `B256` values — the format the `ethereum_rpc_mock`
+    /// `on_user_decrypt_success(...)` registration expects.
+    pub fn extract_handles_from_v3_envelope(payload: &serde_json::Value) -> Vec<B256> {
+        payload["attestedPayload"]["handles"]
+            .as_array()
+            .unwrap_or(&vec![])
+            .iter()
+            .filter_map(|h| {
+                h["ctHandle"].as_str().and_then(|s| {
+                    let cleaned = s.strip_prefix("0x").unwrap_or(s);
+                    B256::from_str(cleaned).ok()
+                })
+            })
+            .collect()
+    }
+
+    pub fn extract_user_address_from_v3_envelope(payload: &serde_json::Value) -> Address {
+        Address::from_str(
+            payload["attestedPayload"]["userAddress"]
+                .as_str()
+                .expect("attestedPayload.userAddress must be a string"),
+        )
+        .expect("attestedPayload.userAddress must be a valid hex address")
     }
 
     /// Build a syntactically valid RFC016 v3 envelope. Callers can mutate
@@ -398,6 +433,98 @@ async fn v3_rejects_malformed_json() {
     let url = helpers::v3_user_decrypt_post_url(&setup);
 
     test_endpoint_raw_body(&url, "{ this is not json", expect_v2_malformed_json()).await;
+
+    setup.shutdown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Happy-path E2E: POST → calldata submitted → mocked-gateway emits unified
+// `UserDecryptionRequest_1` request event + the shared
+// `UserDecryptionResponse` shares → GET returns succeeded with the shares.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn v3_e2e_succeeds_against_mocked_gateway() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let payload = helpers::create_v3_envelope();
+    let handles = helpers::extract_handles_from_v3_envelope(&payload);
+    let user_address = helpers::extract_user_address_from_v3_envelope(&payload);
+
+    // Wire the mock to recognise the unified `userDecryptionRequest_0`
+    // selector, emit a `UserDecryptionRequest_1` event with the decryption
+    // id, and follow up with the standard 9 shares + 1 threshold-reached
+    // event.
+    setup.fhevm_mock.on_user_decrypt_success(
+        UserDecryptKind::Unified,
+        handles,
+        user_address,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
+
+    // POST → 202 + jobId
+    let response = reqwest::Client::new()
+        .post(helpers::v3_user_decrypt_post_url(&setup))
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(10))
+        .json(&payload)
+        .send()
+        .await
+        .expect("POST failed");
+
+    assert_eq!(response.status(), reqwest::StatusCode::ACCEPTED);
+    assert_retry_after_header_present(&response);
+
+    let post_response: UserDecryptPostResponseJson = response
+        .json()
+        .await
+        .expect("Failed to parse POST response");
+    assert_eq!(post_response.status, ApiResponseStatus::Queued);
+    let job_id = post_response.result.job_id.clone();
+
+    // Poll GET until terminal — the mock emits the threshold-reached event
+    // at ~2s after the POST, so allow plenty of headroom.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        let get_response = reqwest::Client::new()
+            .get(helpers::v3_user_decrypt_get_url(&setup, &job_id))
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await
+            .expect("GET failed");
+
+        let status = get_response.status();
+        if status == reqwest::StatusCode::ACCEPTED {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "v3 job never completed"
+            );
+            continue;
+        }
+
+        assert_eq!(
+            status,
+            reqwest::StatusCode::OK,
+            "v3 job ended in unexpected state {}: {:?}",
+            status,
+            get_response.text().await
+        );
+        let body: UserDecryptStatusResponseJson = get_response
+            .json()
+            .await
+            .expect("Failed to parse GET response");
+        assert_eq!(body.status, ApiResponseStatus::Succeeded);
+        let result = body.result.expect("Succeeded GET must include result");
+        assert!(
+            !result.result.is_empty(),
+            "Result items should not be empty"
+        );
+        for item in &result.result {
+            assert!(!item.payload.is_empty(), "Share payload empty");
+            assert!(!item.signature.is_empty(), "Share signature empty");
+        }
+        break;
+    }
 
     setup.shutdown().await;
 }

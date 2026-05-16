@@ -21,11 +21,15 @@ use tracing::{debug, info};
 pub use fhevm_gateway_bindings::decryption::Decryption;
 pub use fhevm_gateway_bindings::input_verification::InputVerification;
 
-/// Selects between direct and delegated user decryption mock patterns.
+/// Selects which user-decryption gateway overload the mock should match
+/// when registering a success pattern. `Direct` / `Delegated` are the v2
+/// dialects (legacy `_1Call` / `delegatedUserDecryptionRequestCall`);
+/// `Unified` is the RFC016 v3 overload (`_0Call`).
 #[derive(Debug, Clone, Copy)]
 pub enum UserDecryptKind {
     Direct,
     Delegated,
+    Unified,
 }
 
 impl UserDecryptKind {
@@ -33,6 +37,7 @@ impl UserDecryptKind {
         match self {
             Self::Direct => Decryption::userDecryptionRequest_1Call::SELECTOR,
             Self::Delegated => Decryption::delegatedUserDecryptionRequestCall::SELECTOR,
+            Self::Unified => Decryption::userDecryptionRequest_0Call::SELECTOR,
         }
     }
 }
@@ -305,7 +310,7 @@ impl FhevmMockWrapper {
         target: mock_server::SubscriptionTarget,
     ) {
         self.register_user_decrypt_success(
-            kind.selector(),
+            kind,
             handles,
             user,
             vec![target],
@@ -325,13 +330,7 @@ impl FhevmMockWrapper {
         user: Address,
         targets: Vec<mock_server::SubscriptionTarget>,
     ) {
-        self.register_user_decrypt_success(
-            kind.selector(),
-            handles,
-            user,
-            targets,
-            UsageLimit::Once,
-        );
+        self.register_user_decrypt_success(kind, handles, user, targets, UsageLimit::Once);
     }
 
     /// Register user decryption that reverts with specified reason.
@@ -341,15 +340,21 @@ impl FhevmMockWrapper {
 
     // Shared internals for user / delegated-user decryption
 
-    /// Internal: register a user-decrypt success pattern for the given TX selector.
+    /// Internal: register a user-decrypt success pattern for the given
+    /// dialect. The request log emitted in the immediate response uses
+    /// `UserDecryptionRequest_0` for `Direct` / `Delegated` (legacy v2) and
+    /// `UserDecryptionRequest_1` for `Unified` (RFC016 v3). The 10
+    /// `UserDecryptionResponse` shares emitted afterwards are
+    /// dialect-agnostic and identical across all variants.
     fn register_user_decrypt_success(
         &self,
-        selector: [u8; 4],
+        kind: UserDecryptKind,
         handles: Vec<B256>,
         user: Address,
         targets: Vec<mock_server::SubscriptionTarget>,
         usage_limit: UsageLimit,
     ) {
+        let selector = kind.selector();
         // Set up readiness check patterns to return true (ready)
         self.set_readiness_success();
 
@@ -364,8 +369,22 @@ impl FhevmMockWrapper {
         let signatures = generate_mock_signatures(9);
         let extra_data = Bytes::from(vec![0x00]); // Same extraData for all events in a decryption
 
-        // Build the request log (immediate response)
-        let request_log = build_user_decrypt_request(self.decryption_contract, id, user, handles);
+        // Build the request log (immediate response). Pick the event
+        // signature that matches the dialect: the relayer's
+        // `on_receipt_received` scans the receipt for both
+        // `UserDecryptionRequest_0` (legacy) and `_1` (unified).
+        let request_log = match kind {
+            UserDecryptKind::Direct | UserDecryptKind::Delegated => {
+                build_legacy_user_decrypt_request(self.decryption_contract, id, user, handles)
+            }
+            UserDecryptKind::Unified => build_unified_user_decrypt_request(
+                self.decryption_contract,
+                id,
+                user,
+                handles,
+                extra_data.clone(),
+            ),
+        };
 
         // Build events using hard-coded 3-3-3-1 block pattern (targets resolved later)
         let events: Vec<(Duration, Log)> = vec![
@@ -703,7 +722,8 @@ impl FhevmMockWrapper {
     ) {
         self.set_readiness_success();
         let id = self.next_decryption_id();
-        let request_log = build_user_decrypt_request(self.decryption_contract, id, user, handles);
+        let request_log =
+            build_legacy_user_decrypt_request(self.decryption_contract, id, user, handles);
         self.register_request_only(self.decryption_contract, selector, request_log);
     }
 
@@ -716,7 +736,7 @@ impl FhevmMockWrapper {
             mock_server::SubscriptionTarget::All,
             UsageLimit::Once,
             |id, contract| {
-                let request_log = build_user_decrypt_request(contract, id, user, handles);
+                let request_log = build_legacy_user_decrypt_request(contract, id, user, handles);
                 let response_log = build_user_decrypt_response(contract, id, vec![]); // Error response has empty decrypted shares
                 (request_log, response_log)
             },
@@ -851,7 +871,9 @@ fn build_event_log<T: SolEvent>(contract: Address, event: &T, topics: Vec<B256>)
     }
 }
 
-fn build_user_decrypt_request(
+/// Legacy v2 `UserDecryptionRequest` event (the relayer scans receipts for
+/// this signature when handling `Direct` / `Delegated` calls).
+fn build_legacy_user_decrypt_request(
     contract: Address,
     decryption_id: U256,
     user_address: Address,
@@ -870,6 +892,64 @@ fn build_user_decrypt_request(
         &request,
         vec![
             Decryption::UserDecryptionRequest_0::SIGNATURE_HASH,
+            B256::from(decryption_id),
+        ],
+    )
+}
+
+/// RFC016 unified `UserDecryptionRequest` event with `HandleEntry[]` and a
+/// `UserDecryptionRequestPayload` struct. The relayer's
+/// `on_receipt_received` extracts only `decryptionId` from the indexed
+/// topic, so the inner fields are populated with mock data sufficient to
+/// round-trip the ABI encoding.
+fn build_unified_user_decrypt_request(
+    contract: Address,
+    decryption_id: U256,
+    user_address: Address,
+    handles: Vec<B256>,
+    extra_data: Bytes,
+) -> Log {
+    // `UserDecryptionRequest_1.payload` is the file-level
+    // `decryption::IDecryption::UserDecryptionRequestPayload` (the sol!
+    // macro emits it once at the top of `decryption.rs`). Import it
+    // directly from the bindings crate.
+    use fhevm_gateway_bindings::decryption::IDecryption::{
+        RequestValiditySeconds, UserDecryptionRequestPayload,
+    };
+
+    let handle_entries: Vec<Decryption::HandleEntry> = handles
+        .iter()
+        .map(|h| Decryption::HandleEntry {
+            handle: *h,
+            contractAddress: contract,
+            ownerAddress: user_address,
+        })
+        .collect();
+
+    let payload = UserDecryptionRequestPayload {
+        userAddress: user_address,
+        publicKey: Bytes::from(vec![0x00; MOCK_PUBLIC_KEY_SIZE]),
+        allowedContracts: vec![],
+        requestValidity: RequestValiditySeconds {
+            startTimestamp: U256::from(0),
+            durationSeconds: U256::from(0),
+        },
+        extraData: extra_data,
+        signature: Bytes::from(vec![0x00; MOCK_SIGNATURE_SIZE]),
+    };
+
+    let request = Decryption::UserDecryptionRequest_1 {
+        decryptionId: decryption_id,
+        snsCtMaterials: create_sns_materials(handles),
+        handles: handle_entries,
+        payload,
+    };
+
+    build_event_log(
+        contract,
+        &request,
+        vec![
+            Decryption::UserDecryptionRequest_1::SIGNATURE_HASH,
             B256::from(decryption_id),
         ],
     )
