@@ -2,8 +2,8 @@ use crate::{
     core::{
         errors::EventProcessingError,
         event::{
-            ApiCategory, ApiVersion, DelegatedUserDecryptEventData, DelegatedUserDecryptRequest,
-            RelayerEvent, RelayerEventData,
+            ApiCategory, ApiVersion, AttestationFormat, RelayerEvent, RelayerEventData,
+            UserDecryptEventData, UserDecryptRequest,
         },
         job_id::JobId,
     },
@@ -85,11 +85,23 @@ impl DelegatedUserDecryptReadinessProcessor {
         }
 
         // 2. GATEWAY CIPHERTEXT CHECK
+        let (delegator_address, pairs) = match &task.request.attestation {
+            AttestationFormat::LegacyDelegated {
+                delegator_address,
+                ct_handle_contract_pairs,
+                ..
+            } => (*delegator_address, ct_handle_contract_pairs.as_slice()),
+            AttestationFormat::LegacyDirect { .. } | AttestationFormat::Eip712UnifiedV1 { .. } => {
+                unreachable!(
+                    "DelegatedUserDecryptReadinessProcessor reached with non-LegacyDelegated payload"
+                )
+            }
+        };
         let result = checker
             .check_user_decryption_readiness(
                 &task.job_id,
-                task.request.delegator_address,
-                &task.request.ct_handle_contract_pairs,
+                delegator_address,
+                pairs,
                 task.request.extra_data.clone(),
             )
             .await;
@@ -102,11 +114,10 @@ impl DelegatedUserDecryptReadinessProcessor {
                     task.job_id
                 );
 
-                let next_event_data = RelayerEventData::DelegatedUserDecrypt(
-                    DelegatedUserDecryptEventData::ReadinessCheckPassed {
+                let next_event_data =
+                    RelayerEventData::UserDecrypt(UserDecryptEventData::ReadinessCheckPassed {
                         decrypt_request: task.request,
-                    },
-                );
+                    });
 
                 let next_event = RelayerEvent::new(
                     task.job_id,
@@ -162,7 +173,7 @@ impl DelegatedUserDecryptReadinessProcessor {
 
     async fn dispatch_timeout(
         dispatcher: &Arc<Orchestrator>,
-        decrypt_request: &DelegatedUserDecryptRequest,
+        decrypt_request: &UserDecryptRequest,
         job_id: JobId,
         error: EventProcessingError,
     ) {
@@ -172,12 +183,10 @@ impl DelegatedUserDecryptReadinessProcessor {
                 category: ApiCategory::PRODUCTION,
                 number: 1,
             },
-            RelayerEventData::DelegatedUserDecrypt(
-                DelegatedUserDecryptEventData::ReadinessCheckTimedOut {
-                    decrypt_request: decrypt_request.clone(),
-                    error,
-                },
-            ),
+            RelayerEventData::UserDecrypt(UserDecryptEventData::ReadinessCheckTimedOut {
+                decrypt_request: decrypt_request.clone(),
+                error,
+            }),
         );
 
         if let Err(e) = dispatcher.dispatch_event(event).await {
@@ -187,7 +196,7 @@ impl DelegatedUserDecryptReadinessProcessor {
 
     async fn dispatch_failure(
         dispatcher: &Arc<Orchestrator>,
-        decrypt_request: &DelegatedUserDecryptRequest,
+        decrypt_request: &UserDecryptRequest,
         job_id: JobId,
         error: EventProcessingError,
     ) {
@@ -197,12 +206,10 @@ impl DelegatedUserDecryptReadinessProcessor {
                 category: ApiCategory::PRODUCTION,
                 number: 1,
             },
-            RelayerEventData::DelegatedUserDecrypt(
-                DelegatedUserDecryptEventData::ReadinessCheckFailed {
-                    decrypt_request: decrypt_request.clone(),
-                    error,
-                },
-            ),
+            RelayerEventData::UserDecrypt(UserDecryptEventData::ReadinessCheckFailed {
+                decrypt_request: decrypt_request.clone(),
+                error,
+            }),
         );
 
         if let Err(e) = dispatcher.dispatch_event(event).await {
