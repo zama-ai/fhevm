@@ -376,6 +376,7 @@ test-build: ## Build all test binaries (no Postgres needed — uses sqlx offline
 	@$(CARGO_TEST) --features integration-tests --test public_decrypt_v2_test --no-run
 	@$(CARGO_TEST) --features integration-tests --test user_decrypt_v2_test --no-run
 	@$(CARGO_TEST) --features integration-tests --test delegated_user_decrypt_v2_test --no-run
+	@$(CARGO_TEST) --features integration-tests --test user_decrypt_v3_test --no-run
 	@$(CARGO_TEST) --features integration-tests --test health_tests --no-run
 	@$(CARGO_TEST) --features integration-tests --test keyurl_test --no-run
 
@@ -386,6 +387,7 @@ test-run: _check-postgres ## Run pre-built test binaries
 	@$(CARGO_TEST) --features integration-tests --test public_decrypt_v2_test -- --test-threads=1
 	@$(CARGO_TEST) --features integration-tests --test user_decrypt_v2_test -- --test-threads=1
 	@$(CARGO_TEST) --features integration-tests --test delegated_user_decrypt_v2_test -- --test-threads=1
+	@$(CARGO_TEST) --features integration-tests --test user_decrypt_v3_test -- --test-threads=1
 	@$(CARGO_TEST) --features integration-tests --test health_tests -- --test-threads=1
 	@$(CARGO_TEST) --features integration-tests --test keyurl_test -- --test-threads=1
 
