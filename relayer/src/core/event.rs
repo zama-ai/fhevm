@@ -449,69 +449,75 @@ pub struct PublicDecryptRequest {
     pub extra_data: Bytes,
 }
 
-/// A user-decryption request that captures both the v2 direct and v2 delegated
-/// flows under a single shape. The dialect-specific addressing lives in
-/// `payload`; everything else (handles, validity, signature, …) is shared.
+/// A user-decryption request. Only the truly format-agnostic fields
+/// (`signature`, `public_key`, `extra_data`) live at the top level; every
+/// field that differs across attestation formats — handle vector layout,
+/// validity-window unit, on-chain caller, allowed contracts, host chain
+/// id — lives inside the variant in `attestation`. The compiler then
+/// enforces that every consumer handles each format exhaustively.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
 pub struct UserDecryptRequest {
-    pub ct_handle_contract_pairs: Vec<HandleContractPair>,
-    pub request_validity: RequestValidity,
-    pub contracts_chain_id: u64,
-    pub contract_addresses: Vec<Address>,
     pub signature: Bytes,
     pub public_key: Bytes,
     pub extra_data: Bytes,
-    pub payload: UserDecryptPayload,
+    pub attestation: AttestationFormat,
 }
 
+/// The attestation/signature format used for this user-decrypt request.
+/// Each variant owns the complete set of fields that format expects on
+/// the wire and on the gateway.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum UserDecryptPayload {
-    /// v2 direct user-decryption: the on-chain caller is `user_address`.
-    LegacyDirect { user_address: Address },
-    /// v2 delegated user-decryption: `delegator_address` owns the ciphertexts,
-    /// `delegate_address` is the party authorised to receive the shares.
+pub enum AttestationFormat {
+    /// v2 direct user-decryption: maps to
+    /// `userDecryptionRequest(CtHandleContractPair[], RequestValidity,
+    /// ContractsInfo, address userAddress, …)` on the gateway.
+    LegacyDirect {
+        ct_handle_contract_pairs: Vec<HandleContractPair>,
+        request_validity: RequestValidity,
+        contracts_chain_id: u64,
+        contract_addresses: Vec<Address>,
+        user_address: Address,
+    },
+    /// v2 delegated user-decryption: maps to
+    /// `delegatedUserDecryptionRequest(CtHandleContractPair[],
+    /// RequestValidity, DelegationAccounts, ContractsInfo, …)`.
     LegacyDelegated {
+        ct_handle_contract_pairs: Vec<HandleContractPair>,
+        request_validity: RequestValidity,
+        contracts_chain_id: u64,
+        contract_addresses: Vec<Address>,
         delegator_address: Address,
         delegate_address: Address,
     },
-    /// RFC016 unified user-decryption flow (v3). Notes on shared fields:
-    /// - `ct_handle_contract_pairs` (top-level) carries the per-handle
-    ///   (ctHandle, contractAddress) tuples; `owner_addresses` below is
-    ///   index-aligned with that vector.
-    /// - `request_validity.duration_days` (top-level) is reinterpreted as
-    ///   `durationSeconds` for this variant.
-    /// - `contract_addresses` (top-level) doubles as `allowedContracts` and
-    ///   may be empty (permissive mode).
-    /// - `contracts_chain_id` (top-level) is unused on this path.
-    Unified {
-        /// Tag identifying the attestation/signature scheme used for the
-        /// `signature` bytes. The first supported value is
-        /// `"eip712-unified-user-decrypt-v1"`. Future schemes (e.g. Solana
-        /// `"ed25519-solana-user-decrypt-v1"`) plug in as additional values.
-        attestation_type: String,
-        /// On-chain caller for the unified gateway call.
+    /// RFC016 unified user-decryption (attestation_type
+    /// `"eip712-unified-user-decrypt-v1"`): maps to
+    /// `userDecryptionRequest(HandleEntry[], address userAddress,
+    /// bytes publicKey, address[] allowedContracts,
+    /// RequestValiditySeconds, …)`. `allowed_contracts` may be empty
+    /// (permissive mode). Per-handle owner addresses live inside each
+    /// `HandleEntry`.
+    Eip712UnifiedV1 {
+        handles: Vec<HandleEntry>,
         user_address: Address,
-        /// Per-handle owner addresses, aligned by index with
-        /// `ct_handle_contract_pairs`. For direct-access handles this is
-        /// `user_address`; for delegated handles it differs.
-        owner_addresses: Vec<Address>,
+        allowed_contracts: Vec<Address>,
+        request_validity: RequestValiditySeconds,
     },
 }
 
 impl UserDecryptRequest {
-    /// Returns a label suitable for logs / metrics describing the dialect.
-    pub fn payload_kind(&self) -> &'static str {
-        match self.payload {
-            UserDecryptPayload::LegacyDirect { .. } => "legacy_direct",
-            UserDecryptPayload::LegacyDelegated { .. } => "legacy_delegated",
-            UserDecryptPayload::Unified { .. } => "unified",
+    /// Short label for logs / metrics. Matches the serde tag values.
+    pub fn attestation_kind(&self) -> &'static str {
+        match self.attestation {
+            AttestationFormat::LegacyDirect { .. } => "legacy_direct",
+            AttestationFormat::LegacyDelegated { .. } => "legacy_delegated",
+            AttestationFormat::Eip712UnifiedV1 { .. } => "eip712_unified_v1",
         }
     }
 
     /// Whether this request uses the RFC016 unified gateway overload.
     pub fn is_unified(&self) -> bool {
-        matches!(self.payload, UserDecryptPayload::Unified { .. })
+        matches!(self.attestation, AttestationFormat::Eip712UnifiedV1 { .. })
     }
 }
 
@@ -524,6 +530,20 @@ pub struct HandleContractPair {
     pub contract_address: Address,
 }
 
+/// Per-handle entry for the RFC016 unified format: carries the originating
+/// contract plus the owner address used by the on-chain ACL check for
+/// each handle. Sibling to `HandleContractPair` (v2 shape).
+#[allow(non_snake_case)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
+pub struct HandleEntry {
+    #[serde(rename = "ctHandle")]
+    pub ct_handle: U256,
+    #[serde(rename = "contractAddress")]
+    pub contract_address: Address,
+    #[serde(rename = "ownerAddress")]
+    pub owner_address: Address,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
 #[allow(non_snake_case)]
 pub struct RequestValidity {
@@ -531,6 +551,17 @@ pub struct RequestValidity {
     pub start_timestamp: U256,
     #[serde(rename = "durationDays")]
     pub duration_days: U256,
+}
+
+/// Request-validity window in seconds (RFC016 unified shape). Sibling to
+/// `RequestValidity` (v2 days-based shape).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
+#[allow(non_snake_case)]
+pub struct RequestValiditySeconds {
+    #[serde(rename = "startTimestamp")]
+    pub start_timestamp: U256,
+    #[serde(rename = "durationSeconds")]
+    pub duration_seconds: U256,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -612,14 +643,14 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
         let extra_data = Bytes::from_str(&value.extra_data)?;
 
         Ok(UserDecryptRequest {
-            ct_handle_contract_pairs,
-            request_validity,
-            contracts_chain_id,
-            contract_addresses: contract_addresses.clone(),
             signature: Bytes::from_str(&value.signature)?,
             public_key: Bytes::from_str(&value.public_key)?,
             extra_data,
-            payload: UserDecryptPayload::LegacyDirect {
+            attestation: AttestationFormat::LegacyDirect {
+                ct_handle_contract_pairs,
+                request_validity,
+                contracts_chain_id,
+                contract_addresses: contract_addresses.clone(),
                 user_address: Address::from_str(&value.user_address)?,
             },
         })
@@ -678,17 +709,17 @@ impl TryFrom<DelegatedUserDecryptRequestJson> for UserDecryptRequest {
         let extra_data = Bytes::from_str(&value.extra_data)?;
 
         Ok(UserDecryptRequest {
-            ct_handle_contract_pairs,
-            request_validity: RequestValidity {
-                start_timestamp: U256::from_str(&value.start_timestamp)?,
-                duration_days,
-            },
-            contracts_chain_id,
-            contract_addresses: contract_addresses.clone(),
             signature: Bytes::from_str(&value.signature)?,
             public_key: Bytes::from_str(&value.public_key)?,
             extra_data,
-            payload: UserDecryptPayload::LegacyDelegated {
+            attestation: AttestationFormat::LegacyDelegated {
+                ct_handle_contract_pairs,
+                request_validity: RequestValidity {
+                    start_timestamp: U256::from_str(&value.start_timestamp)?,
+                    duration_days,
+                },
+                contracts_chain_id,
+                contract_addresses: contract_addresses.clone(),
                 delegator_address: Address::from_str(&value.delegator_address)?,
                 delegate_address: Address::from_str(&value.delegate_address)?,
             },
@@ -700,15 +731,15 @@ impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
     type Error = anyhow::Error;
 
     fn try_from(value: AttestedUserDecryptRequestJson) -> Result<Self, Self::Error> {
-        info!("Converting AttestedUserDecryptRequestJson to UserDecryptRequest (Unified)");
+        info!("Converting AttestedUserDecryptRequestJson to UserDecryptRequest (Eip712UnifiedV1)");
 
+        // The envelope's `attestation_type` is validated at the HTTP layer
+        // to be exactly `"eip712-unified-user-decrypt-v1"`; the variant tag
+        // below carries that semantic implicitly, so we don't re-store it
+        // on the core type.
         let payload_inner = value.attested_payload;
 
-        // Build the (ctHandle, contract_address) pairs at the top level and
-        // collect per-handle owner addresses for the Unified payload arm,
-        // index-aligned with ct_handle_contract_pairs.
-        let mut ct_handle_contract_pairs = Vec::with_capacity(payload_inner.handles.len());
-        let mut owner_addresses = Vec::with_capacity(payload_inner.handles.len());
+        let mut handles = Vec::with_capacity(payload_inner.handles.len());
         for entry in &payload_inner.handles {
             let ct_handle = if let Some(rest) = entry.ct_handle.strip_prefix("0x") {
                 U256::from_str_radix(rest, 16)
@@ -722,50 +753,33 @@ impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
             let owner_address = Address::from_str(&entry.owner_address)
                 .map_err(|e| anyhow::anyhow!("Failed to parse ownerAddress: {}", e))?;
 
-            ct_handle_contract_pairs.push(HandleContractPair {
+            handles.push(HandleEntry {
                 ct_handle,
                 contract_address,
+                owner_address,
             });
-            owner_addresses.push(owner_address);
         }
 
-        // Allowed contracts (may be empty for permissive mode).
-        let contract_addresses = payload_inner
+        let allowed_contracts = payload_inner
             .allowed_contracts
             .iter()
             .map(|addr| Address::from_str(addr))
             .collect::<Result<Vec<_>, _>>()?;
 
-        // For the Unified variant `request_validity.duration_days` is reused
-        // as `durationSeconds` (the U256 slot is generic; the unit is per-
-        // variant and the gateway calldata builder picks the right sol
-        // struct).
-        let start_timestamp = U256::from_str(&payload_inner.request_validity.start_timestamp)?;
-        let duration_seconds = U256::from_str(&payload_inner.request_validity.duration_seconds)?;
-        let request_validity = RequestValidity {
-            start_timestamp,
-            duration_days: duration_seconds,
+        let request_validity = RequestValiditySeconds {
+            start_timestamp: U256::from_str(&payload_inner.request_validity.start_timestamp)?,
+            duration_seconds: U256::from_str(&payload_inner.request_validity.duration_seconds)?,
         };
 
-        let user_address = Address::from_str(&payload_inner.user_address)?;
-        let public_key = Bytes::from_str(&payload_inner.public_key)?;
-        let extra_data = Bytes::from_str(&payload_inner.extra_data)?;
-        let signature = Bytes::from_str(&value.signature)?;
-
         Ok(UserDecryptRequest {
-            ct_handle_contract_pairs,
-            request_validity,
-            // `contracts_chain_id` is unused on the unified path (no
-            // `ContractsInfo` struct in the userDecryptionRequest_0 ABI).
-            contracts_chain_id: 0,
-            contract_addresses,
-            signature,
-            public_key,
-            extra_data,
-            payload: UserDecryptPayload::Unified {
-                attestation_type: value.attestation_type,
-                user_address,
-                owner_addresses,
+            signature: Bytes::from_str(&value.signature)?,
+            public_key: Bytes::from_str(&payload_inner.public_key)?,
+            extra_data: Bytes::from_str(&payload_inner.extra_data)?,
+            attestation: AttestationFormat::Eip712UnifiedV1 {
+                handles,
+                user_address: Address::from_str(&payload_inner.user_address)?,
+                allowed_contracts,
+                request_validity,
             },
         })
     }

@@ -1,11 +1,14 @@
 use crate::core::{
     errors::EventProcessingError,
-    event::{UserDecryptPayload, UserDecryptRequest},
+    event::{AttestationFormat, UserDecryptRequest},
 };
 use crate::gateway::arbitrum::bindings::{
     Decryption,
-    Decryption::{CtHandleContractPair, HandleEntry},
-    IDecryption::{ContractsInfo, DelegationAccounts, RequestValidity, RequestValiditySeconds},
+    Decryption::{CtHandleContractPair, HandleEntry as SolHandleEntry},
+    IDecryption::{
+        ContractsInfo, DelegationAccounts, RequestValidity as SolRequestValidity,
+        RequestValiditySeconds as SolRequestValiditySeconds,
+    },
     InputVerification,
 };
 use alloy::{
@@ -16,30 +19,6 @@ use alloy::{
 use tracing::info;
 
 pub struct ComputeCalldata;
-
-fn legacy_ct_handle_contract_pairs(req: &UserDecryptRequest) -> Vec<CtHandleContractPair> {
-    req.ct_handle_contract_pairs
-        .iter()
-        .map(|d| CtHandleContractPair {
-            ctHandle: d.ct_handle.into(),
-            contractAddress: d.contract_address,
-        })
-        .collect()
-}
-
-fn legacy_contracts_info(req: &UserDecryptRequest) -> ContractsInfo {
-    ContractsInfo {
-        addresses: req.contract_addresses.clone(),
-        chainId: U256::from(req.contracts_chain_id),
-    }
-}
-
-fn legacy_request_validity(req: &UserDecryptRequest) -> RequestValidity {
-    RequestValidity {
-        startTimestamp: req.request_validity.start_timestamp,
-        durationDays: req.request_validity.duration_days,
-    }
-}
 
 impl ComputeCalldata {
     /// Computes calldata for public decryption request
@@ -61,97 +40,115 @@ impl ComputeCalldata {
     }
 
     /// Computes calldata for a user decryption request. Picks the gateway
-    /// overload based on the payload variant:
-    ///   - `LegacyDirect`    → `userDecryptionRequest(CtHandleContractPair[], …)` (`_1Call`)
-    ///   - `LegacyDelegated` → `delegatedUserDecryptionRequest(…)`
-    ///   - `Unified`         → `userDecryptionRequest(HandleEntry[], …)` (`_0Call`)
+    /// overload based on the attestation format:
+    ///   - `LegacyDirect`     → `userDecryptionRequest(CtHandleContractPair[], …)` (`_1Call`)
+    ///   - `LegacyDelegated`  → `delegatedUserDecryptionRequest(…)`
+    ///   - `Eip712UnifiedV1`  → `userDecryptionRequest(HandleEntry[], …)` (`_0Call`)
     pub fn user_decryption_req(
         user_decrypt_request: UserDecryptRequest,
     ) -> Result<Bytes, EventProcessingError> {
-        let calldata = match &user_decrypt_request.payload {
-            UserDecryptPayload::LegacyDirect { user_address } => {
-                let pairs = legacy_ct_handle_contract_pairs(&user_decrypt_request);
-                let contracts_info = legacy_contracts_info(&user_decrypt_request);
-                let validity = legacy_request_validity(&user_decrypt_request);
+        let UserDecryptRequest {
+            signature,
+            public_key,
+            extra_data,
+            attestation,
+        } = user_decrypt_request;
+
+        let kind = attestation_kind(&attestation);
+
+        let calldata = match attestation {
+            AttestationFormat::LegacyDirect {
+                ct_handle_contract_pairs,
+                request_validity,
+                contracts_chain_id,
+                contract_addresses,
+                user_address,
+            } => {
+                let pairs = sol_ct_handle_contract_pairs(&ct_handle_contract_pairs);
+                let contracts_info = ContractsInfo {
+                    addresses: contract_addresses,
+                    chainId: U256::from(contracts_chain_id),
+                };
+                let validity = SolRequestValidity {
+                    startTimestamp: request_validity.start_timestamp,
+                    durationDays: request_validity.duration_days,
+                };
                 let call = Decryption::userDecryptionRequest_1Call::new((
                     pairs,
                     validity,
                     contracts_info,
-                    *user_address,
-                    user_decrypt_request.public_key.clone(),
-                    user_decrypt_request.signature.clone(),
-                    user_decrypt_request.extra_data.clone(),
+                    user_address,
+                    public_key,
+                    signature,
+                    extra_data,
                 ));
                 Decryption::userDecryptionRequest_1Call::abi_encode(&call)
             }
-            UserDecryptPayload::LegacyDelegated {
+            AttestationFormat::LegacyDelegated {
+                ct_handle_contract_pairs,
+                request_validity,
+                contracts_chain_id,
+                contract_addresses,
                 delegator_address,
                 delegate_address,
             } => {
-                let pairs = legacy_ct_handle_contract_pairs(&user_decrypt_request);
-                let contracts_info = legacy_contracts_info(&user_decrypt_request);
-                let validity = legacy_request_validity(&user_decrypt_request);
+                let pairs = sol_ct_handle_contract_pairs(&ct_handle_contract_pairs);
+                let contracts_info = ContractsInfo {
+                    addresses: contract_addresses,
+                    chainId: U256::from(contracts_chain_id),
+                };
+                let validity = SolRequestValidity {
+                    startTimestamp: request_validity.start_timestamp,
+                    durationDays: request_validity.duration_days,
+                };
                 let delegation_accounts = DelegationAccounts {
-                    delegatorAddress: *delegator_address,
-                    delegateAddress: *delegate_address,
+                    delegatorAddress: delegator_address,
+                    delegateAddress: delegate_address,
                 };
                 let call = Decryption::delegatedUserDecryptionRequestCall::new((
                     pairs,
                     validity,
                     delegation_accounts,
                     contracts_info,
-                    user_decrypt_request.public_key.clone(),
-                    user_decrypt_request.signature.clone(),
-                    user_decrypt_request.extra_data.clone(),
+                    public_key,
+                    signature,
+                    extra_data,
                 ));
                 Decryption::delegatedUserDecryptionRequestCall::abi_encode(&call)
             }
-            UserDecryptPayload::Unified {
+            AttestationFormat::Eip712UnifiedV1 {
+                handles,
                 user_address,
-                owner_addresses,
-                ..
+                allowed_contracts,
+                request_validity,
             } => {
-                if owner_addresses.len() != user_decrypt_request.ct_handle_contract_pairs.len() {
-                    return Err(EventProcessingError::ValidationFailed {
-                        field: "handles".to_string(),
-                        reason: format!(
-                            "owner_addresses length {} != ct_handle_contract_pairs length {}",
-                            owner_addresses.len(),
-                            user_decrypt_request.ct_handle_contract_pairs.len()
-                        ),
-                    });
-                }
-                let handles: Vec<HandleEntry> = user_decrypt_request
-                    .ct_handle_contract_pairs
+                let sol_handles: Vec<SolHandleEntry> = handles
                     .iter()
-                    .zip(owner_addresses.iter())
-                    .map(|(p, owner)| HandleEntry {
-                        handle: p.ct_handle.into(),
-                        contractAddress: p.contract_address,
-                        ownerAddress: *owner,
+                    .map(|h| SolHandleEntry {
+                        handle: h.ct_handle.into(),
+                        contractAddress: h.contract_address,
+                        ownerAddress: h.owner_address,
                     })
                     .collect();
-                // For the unified path, the top-level `request_validity.duration_days`
-                // is reinterpreted as durationSeconds (see UserDecryptPayload::Unified).
-                let validity = RequestValiditySeconds {
-                    startTimestamp: user_decrypt_request.request_validity.start_timestamp,
-                    durationSeconds: user_decrypt_request.request_validity.duration_days,
+                let validity = SolRequestValiditySeconds {
+                    startTimestamp: request_validity.start_timestamp,
+                    durationSeconds: request_validity.duration_seconds,
                 };
                 let call = Decryption::userDecryptionRequest_0Call::new((
-                    handles,
-                    *user_address,
-                    user_decrypt_request.public_key.clone(),
-                    user_decrypt_request.contract_addresses.clone(),
+                    sol_handles,
+                    user_address,
+                    public_key,
+                    allowed_contracts,
                     validity,
-                    user_decrypt_request.signature.clone(),
-                    user_decrypt_request.extra_data.clone(),
+                    signature,
+                    extra_data,
                 ));
                 Decryption::userDecryptionRequest_0Call::abi_encode(&call)
             }
         };
 
         info!(
-            kind = %user_decrypt_request.payload_kind(),
+            kind = %kind,
             "UserDecryptionRequest calldata: 0x{}",
             hex::encode(&calldata)
         );
@@ -178,5 +175,25 @@ impl ComputeCalldata {
         };
         let calldata = request_call.abi_encode();
         Ok(Bytes::from(calldata))
+    }
+}
+
+fn sol_ct_handle_contract_pairs(
+    pairs: &[crate::core::event::HandleContractPair],
+) -> Vec<CtHandleContractPair> {
+    pairs
+        .iter()
+        .map(|d| CtHandleContractPair {
+            ctHandle: d.ct_handle.into(),
+            contractAddress: d.contract_address,
+        })
+        .collect()
+}
+
+fn attestation_kind(a: &AttestationFormat) -> &'static str {
+    match a {
+        AttestationFormat::LegacyDirect { .. } => "legacy_direct",
+        AttestationFormat::LegacyDelegated { .. } => "legacy_delegated",
+        AttestationFormat::Eip712UnifiedV1 { .. } => "eip712_unified_v1",
     }
 }

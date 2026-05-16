@@ -8,7 +8,7 @@ use uuid::Uuid;
 use alloy::primitives::{Address, Bytes, U256};
 
 use crate::core::event::{
-    HandleContractPair, RequestValidity, UserDecryptPayload, UserDecryptRequest,
+    AttestationFormat, HandleContractPair, RequestValidity, UserDecryptRequest,
 };
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
 
@@ -87,14 +87,14 @@ struct LegacyDirectFlatRow {
 impl From<LegacyDirectFlatRow> for UserDecryptRequest {
     fn from(v: LegacyDirectFlatRow) -> Self {
         UserDecryptRequest {
-            ct_handle_contract_pairs: v.ct_handle_contract_pairs,
-            request_validity: v.request_validity,
-            contracts_chain_id: v.contracts_chain_id,
-            contract_addresses: v.contract_addresses,
             signature: v.signature,
             public_key: v.public_key,
             extra_data: v.extra_data,
-            payload: UserDecryptPayload::LegacyDirect {
+            attestation: AttestationFormat::LegacyDirect {
+                ct_handle_contract_pairs: v.ct_handle_contract_pairs,
+                request_validity: v.request_validity,
+                contracts_chain_id: v.contracts_chain_id,
+                contract_addresses: v.contract_addresses,
                 user_address: v.user_address,
             },
         }
@@ -125,17 +125,17 @@ struct LegacyDelegatedFlatRow {
 impl From<LegacyDelegatedFlatRow> for UserDecryptRequest {
     fn from(v: LegacyDelegatedFlatRow) -> Self {
         UserDecryptRequest {
-            ct_handle_contract_pairs: v.ct_handle_contract_pairs,
-            request_validity: RequestValidity {
-                start_timestamp: v.start_timestamp,
-                duration_days: v.duration_days,
-            },
-            contracts_chain_id: v.contracts_chain_id,
-            contract_addresses: v.contract_addresses,
             signature: v.signature,
             public_key: v.public_key,
             extra_data: v.extra_data,
-            payload: UserDecryptPayload::LegacyDelegated {
+            attestation: AttestationFormat::LegacyDelegated {
+                ct_handle_contract_pairs: v.ct_handle_contract_pairs,
+                request_validity: RequestValidity {
+                    start_timestamp: v.start_timestamp,
+                    duration_days: v.duration_days,
+                },
+                contracts_chain_id: v.contracts_chain_id,
+                contract_addresses: v.contract_addresses,
                 delegator_address: v.delegator_address,
                 delegate_address: v.delegate_address,
             },

@@ -2,8 +2,8 @@ use crate::{
     core::{
         errors::EventProcessingError,
         event::{
-            ApiCategory, ApiVersion, RelayerEvent, RelayerEventData, UserDecryptEventData,
-            UserDecryptPayload, UserDecryptRequest,
+            ApiCategory, ApiVersion, AttestationFormat, RelayerEvent, RelayerEventData,
+            UserDecryptEventData, UserDecryptRequest,
         },
         job_id::JobId,
     },
@@ -85,11 +85,13 @@ impl DelegatedUserDecryptReadinessProcessor {
         }
 
         // 2. GATEWAY CIPHERTEXT CHECK
-        let delegator_address = match task.request.payload {
-            UserDecryptPayload::LegacyDelegated {
-                delegator_address, ..
-            } => delegator_address,
-            UserDecryptPayload::LegacyDirect { .. } | UserDecryptPayload::Unified { .. } => {
+        let (delegator_address, pairs) = match &task.request.attestation {
+            AttestationFormat::LegacyDelegated {
+                delegator_address,
+                ct_handle_contract_pairs,
+                ..
+            } => (*delegator_address, ct_handle_contract_pairs.as_slice()),
+            AttestationFormat::LegacyDirect { .. } | AttestationFormat::Eip712UnifiedV1 { .. } => {
                 unreachable!(
                     "DelegatedUserDecryptReadinessProcessor reached with non-LegacyDelegated payload"
                 )
@@ -99,7 +101,7 @@ impl DelegatedUserDecryptReadinessProcessor {
             .check_user_decryption_readiness(
                 &task.job_id,
                 delegator_address,
-                &task.request.ct_handle_contract_pairs,
+                pairs,
                 task.request.extra_data.clone(),
             )
             .await;

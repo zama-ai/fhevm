@@ -3,8 +3,8 @@ use crate::{
     core::{
         errors::{EventProcessingError, READINESS_CHECK_TIMEOUT_MSG},
         event::{
-            GatewayChainEventData, GatewayChainEventId, HandleContractPair, RelayerEvent,
-            RelayerEventData, UserDecryptEventData, UserDecryptEventId, UserDecryptPayload,
+            AttestationFormat, GatewayChainEventData, GatewayChainEventId, HandleContractPair,
+            RelayerEvent, RelayerEventData, UserDecryptEventData, UserDecryptEventId,
             UserDecryptRequest, UserDecryptResponse,
         },
         job_id::JobId,
@@ -125,23 +125,23 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                     ..
                 } => {
                     info!(
-                        kind = %decrypt_request.payload_kind(),
+                        kind = %decrypt_request.attestation_kind(),
                         "Processing user decrypt request {}",
                         event.job_id
                     );
                     async {
                         let job_id_hash = decrypt_request.content_hash();
-                        // LegacyDirect + Unified share the same readiness
+                        // LegacyDirect + Eip712UnifiedV1 share the readiness
                         // throttler (gateway uses the same isUserDecryptionReady
                         // call for the readiness check). LegacyDelegated has its
                         // own throttler for dedicated capacity.
-                        match decrypt_request.payload {
-                            UserDecryptPayload::LegacyDirect { .. }
-                            | UserDecryptPayload::Unified { .. } => {
+                        match decrypt_request.attestation {
+                            AttestationFormat::LegacyDirect { .. }
+                            | AttestationFormat::Eip712UnifiedV1 { .. } => {
                                 self.readiness_check_enqueue(job_id_hash, decrypt_request)
                                     .await
                             }
-                            UserDecryptPayload::LegacyDelegated { .. } => {
+                            AttestationFormat::LegacyDelegated { .. } => {
                                 self.delegated_user_decrypt_readiness_check_enqueue(
                                     job_id_hash,
                                     decrypt_request,
@@ -160,7 +160,7 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                         info!(
                             step = %UserDecryptStep::ReadinessCheckPassed,
                             int_job_id = %event.job_id,
-                            kind = %decrypt_request.payload_kind(),
+                            kind = %decrypt_request.attestation_kind(),
                             "Readiness check passed, sending user decrypt request to gateway"
                         );
 
