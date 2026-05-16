@@ -10,8 +10,7 @@ use crate::core::errors::{
     TIMEOUT_REASON_MISSING_MSG,
 };
 use crate::core::event::{
-    ApiVersion, DelegatedUserDecryptEventData, DelegatedUserDecryptRequest, RelayerEvent,
-    RelayerEventData, UserDecryptEventData, UserDecryptRequest,
+    ApiVersion, RelayerEvent, RelayerEventData, UserDecryptEventData, UserDecryptRequest,
 };
 use crate::core::job_id::JobId;
 use crate::host::HostChainIdChecker;
@@ -208,9 +207,16 @@ impl UserDecryptHandler {
         info!("Successfully parsed and validated request");
 
         // Check early to avoid filling the queue with handles of unsupported chains
+        let pairs = match &user_decrypt_request.attestation {
+            crate::core::event::AttestationFormat::LegacyDirect {
+                ct_handle_contract_pairs,
+                ..
+            } => ct_handle_contract_pairs,
+            _ => unreachable!("v2 /user-decrypt always produces AttestationFormat::LegacyDirect"),
+        };
         if let Err(chain_id) = self
             .host_chain_id_checker
-            .validate_u256_handles(&user_decrypt_request.ct_handle_contract_pairs)
+            .validate_u256_handles(pairs.iter().map(|p| &p.ct_handle))
         {
             return RelayerV2ResponseFailed::host_chain_id_not_supported(
                 chain_id,
@@ -422,9 +428,9 @@ impl UserDecryptHandler {
             }
         };
 
-        let delegated_user_decrypt_request: DelegatedUserDecryptRequest = match parse_and_validate::<
+        let delegated_user_decrypt_request: UserDecryptRequest = match parse_and_validate::<
             DelegatedUserDecryptRequestJson,
-            DelegatedUserDecryptRequest,
+            UserDecryptRequest,
         >(&body)
         {
             Ok(request) => request,
@@ -440,9 +446,18 @@ impl UserDecryptHandler {
         info!("Successfully parsed and validated delegated user decryption request.");
 
         // Check early to avoid filling the queue with handles of unsupported chains
+        let pairs = match &delegated_user_decrypt_request.attestation {
+            crate::core::event::AttestationFormat::LegacyDelegated {
+                ct_handle_contract_pairs,
+                ..
+            } => ct_handle_contract_pairs,
+            _ => unreachable!(
+                "v2 /delegated-user-decrypt always produces AttestationFormat::LegacyDelegated"
+            ),
+        };
         if let Err(chain_id) = self
             .host_chain_id_checker
-            .validate_u256_handles(&delegated_user_decrypt_request.ct_handle_contract_pairs)
+            .validate_u256_handles(pairs.iter().map(|p| &p.ct_handle))
         {
             return RelayerV2ResponseFailed::host_chain_id_not_supported(
                 chain_id,
@@ -520,13 +535,13 @@ impl UserDecryptHandler {
 
         // Only dispatch event for new requests (deduplication)
         if matches!(insert_result, UserDecryptInsertResult::Inserted { .. }) {
-            let request_data = DelegatedUserDecryptEventData::ReqRcvdFromUser {
+            let request_data = UserDecryptEventData::ReqRcvdFromUser {
                 decrypt_request: delegated_user_decrypt_request,
             };
             let event = RelayerEvent::new(
                 int_job_id,
                 self.api_version,
-                RelayerEventData::DelegatedUserDecrypt(request_data),
+                RelayerEventData::UserDecrypt(request_data),
             );
 
             if let Err(e) = self.orchestrator.dispatch_event(event).await {
@@ -876,6 +891,10 @@ impl UserDecryptHandler {
 
 // OpenAPI documented endpoints as standalone functions
 /// Submit user decryption.
+///
+/// **Deprecated.** Superseded by `POST /v3/user-decrypt` (unified EIP-712
+/// user-decryption). The v2 surface remains available throughout the
+/// deprecation window.
 #[utoipa::path(
     post,
     path = "/v2/user-decrypt",
@@ -887,6 +906,9 @@ impl UserDecryptHandler {
         (status = 500, description = "Internal server error", body = crate::http::endpoints::v2::types::error::RelayerV2ResponseFailed),
     ),
     tag = "User Decrypt"
+)]
+#[deprecated(
+    note = "Use POST /v3/user-decrypt (unified EIP-712). Should be removed once the legacy EIP-712 formats are deprecated."
 )]
 pub async fn user_decrypt_post_v2(
     handler: Arc<UserDecryptHandler>,
@@ -923,6 +945,10 @@ pub async fn user_decrypt_get_v2(
 }
 
 /// Submit delegated user decryption.
+///
+/// **Deprecated.** Superseded by `POST /v3/user-decrypt` (unified EIP-712
+/// user-decryption — delegated handles use the per-entry `ownerAddress`).
+/// The v2 surface remains available throughout the deprecation window.
 #[utoipa::path(
     post,
     path = "/v2/delegated-user-decrypt",
@@ -934,6 +960,9 @@ pub async fn user_decrypt_get_v2(
         (status = 500, description = "Internal server error", body = crate::http::endpoints::v2::types::error::RelayerV2ResponseFailed),
     ),
     tag = "Delegated User Decrypt"
+)]
+#[deprecated(
+    note = "Use POST /v3/user-decrypt (unified EIP-712). Should be removed once the legacy EIP-712 formats are deprecated."
 )]
 pub async fn delegated_user_decrypt_post_v2(
     handler: Arc<UserDecryptHandler>,

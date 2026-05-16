@@ -2,8 +2,8 @@ use crate::{
     core::{
         errors::EventProcessingError,
         event::{
-            ApiCategory, ApiVersion, RelayerEvent, RelayerEventData, UserDecryptEventData,
-            UserDecryptRequest,
+            ApiCategory, ApiVersion, AttestationFormat, HandleContractPair, RelayerEvent,
+            RelayerEventData, UserDecryptEventData, UserDecryptRequest,
         },
         job_id::JobId,
     },
@@ -86,11 +86,42 @@ impl UserDecryptReadinessProcessor {
         }
 
         // 2. GATEWAY CIPHERTEXT CHECK
+        // The gateway's `isUserDecryptionReady_1(CtHandleContractPair[], …)`
+        // takes only the handle pairs and extra_data, so LegacyDirect and
+        // Eip712UnifiedV1 share this readiness call. For Eip712UnifiedV1
+        // we project `HandleEntry { ct_handle, contract_address, _ }`
+        // down to `HandleContractPair` for the readiness check (the
+        // per-handle owner addresses only feed the actual decryption
+        // call).
+        let (user_address, pairs): (_, Vec<HandleContractPair>) = match &task.request.attestation {
+            AttestationFormat::LegacyDirect {
+                user_address,
+                ct_handle_contract_pairs,
+                ..
+            } => (*user_address, ct_handle_contract_pairs.clone()),
+            AttestationFormat::Eip712UnifiedV1 {
+                user_address,
+                handles,
+                ..
+            } => (
+                *user_address,
+                handles
+                    .iter()
+                    .map(|h| HandleContractPair {
+                        ct_handle: h.ct_handle,
+                        contract_address: h.contract_address,
+                    })
+                    .collect(),
+            ),
+            AttestationFormat::LegacyDelegated { .. } => {
+                unreachable!("UserDecryptReadinessProcessor reached with LegacyDelegated payload")
+            }
+        };
         let result = checker
             .check_user_decryption_readiness(
                 &task.job_id,
-                task.request.user_address,
-                &task.request.ct_handle_contract_pairs,
+                user_address,
+                &pairs,
                 task.request.extra_data.clone(),
             )
             .await;
