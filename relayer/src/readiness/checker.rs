@@ -94,6 +94,10 @@ impl ReadinessChecker {
                 "check_host_acl_user_decrypt called with LegacyDelegated payload; \
                  use check_host_acl_delegated_user_decrypt instead"
             ),
+            // RFC016 unified flow: per-handle ACL is enforced by the gateway
+            // contract using the owner_address attached to each HandleEntry,
+            // so the relayer skips its host-ACL pre-check here.
+            UserDecryptPayload::Unified { .. } => return Ok(()),
         };
         self.host_acl
             .check_user_decrypt(job_id, &request.ct_handle_contract_pairs, user_address)
@@ -126,10 +130,11 @@ impl ReadinessChecker {
                 delegator_address,
                 delegate_address,
             } => (delegator_address, delegate_address),
-            UserDecryptPayload::LegacyDirect { .. } => unreachable!(
-                "check_host_acl_delegated_user_decrypt called with LegacyDirect payload; \
-                 use check_host_acl_user_decrypt instead"
-            ),
+            UserDecryptPayload::LegacyDirect { .. } | UserDecryptPayload::Unified { .. } => {
+                unreachable!(
+                    "check_host_acl_delegated_user_decrypt called with non-LegacyDelegated payload"
+                )
+            }
         };
         self.host_acl
             .check_delegated_user_decrypt(

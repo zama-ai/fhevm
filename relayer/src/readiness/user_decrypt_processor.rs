@@ -86,8 +86,14 @@ impl UserDecryptReadinessProcessor {
         }
 
         // 2. GATEWAY CIPHERTEXT CHECK
+        // The gateway-side `isUserDecryptionReady_1(CtHandleContractPair[], …)`
+        // takes only the handle pairs and extra_data on the new bindings, so
+        // the same readiness call is used for both LegacyDirect and Unified.
+        // Unified provides per-handle owner_addresses to the actual decryption
+        // call but they're not part of the readiness check.
         let user_address = match task.request.payload {
             UserDecryptPayload::LegacyDirect { user_address } => user_address,
+            UserDecryptPayload::Unified { user_address, .. } => user_address,
             UserDecryptPayload::LegacyDelegated { .. } => {
                 unreachable!("UserDecryptReadinessProcessor reached with LegacyDelegated payload")
             }

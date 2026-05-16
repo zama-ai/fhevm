@@ -131,11 +131,13 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                     );
                     async {
                         let job_id_hash = decrypt_request.content_hash();
-                        // Route to the v2-direct or v2-delegated readiness throttler
-                        // based on the payload variant. v3 will plug in here as a
-                        // third variant in Step 2.
+                        // LegacyDirect + Unified share the same readiness
+                        // throttler (gateway uses the same isUserDecryptionReady
+                        // call for the readiness check). LegacyDelegated has its
+                        // own throttler for dedicated capacity.
                         match decrypt_request.payload {
-                            UserDecryptPayload::LegacyDirect { .. } => {
+                            UserDecryptPayload::LegacyDirect { .. }
+                            | UserDecryptPayload::Unified { .. } => {
                                 self.readiness_check_enqueue(job_id_hash, decrypt_request)
                                     .await
                             }
@@ -1031,13 +1033,29 @@ impl TxLifecycleHooks for GatewayHandler {
         job_id: &JobId,
         receipt: &TxResult,
     ) -> Result<(), EventProcessingError> {
-        let gw_reference_id = TransactionHelper::extract_gateway_id_from_receipt::<
+        // Both gateway overloads emit a `UserDecryptionRequest` event but the
+        // legacy and unified variants have different signature hashes. Try
+        // the legacy one first (covers v2 direct and v2 delegated); fall back
+        // to the unified one for v3 calls.
+        let gw_reference_id = match TransactionHelper::extract_gateway_id_from_receipt::<
             Decryption::UserDecryptionRequest_0,
         >(
             receipt,
             Decryption::UserDecryptionRequest_0::SIGNATURE_HASH,
             |event| event.decryptionId,
-        )?;
+        ) {
+            Ok(id) => id,
+            Err(EventProcessingError::ValidationFailed { .. }) => {
+                TransactionHelper::extract_gateway_id_from_receipt::<
+                    Decryption::UserDecryptionRequest_1,
+                >(
+                    receipt,
+                    Decryption::UserDecryptionRequest_1::SIGNATURE_HASH,
+                    |event| event.decryptionId,
+                )?
+            }
+            Err(e) => return Err(e),
+        };
 
         let tx_hash = format!("{:?}", receipt.transaction_hash);
 

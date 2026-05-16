@@ -4,8 +4,8 @@ use crate::core::{
 };
 use crate::gateway::arbitrum::bindings::{
     Decryption,
-    Decryption::CtHandleContractPair,
-    IDecryption::{ContractsInfo, DelegationAccounts, RequestValidity},
+    Decryption::{CtHandleContractPair, HandleEntry},
+    IDecryption::{ContractsInfo, DelegationAccounts, RequestValidity, RequestValiditySeconds},
     InputVerification,
 };
 use alloy::{
@@ -16,6 +16,30 @@ use alloy::{
 use tracing::info;
 
 pub struct ComputeCalldata;
+
+fn legacy_ct_handle_contract_pairs(req: &UserDecryptRequest) -> Vec<CtHandleContractPair> {
+    req.ct_handle_contract_pairs
+        .iter()
+        .map(|d| CtHandleContractPair {
+            ctHandle: d.ct_handle.into(),
+            contractAddress: d.contract_address,
+        })
+        .collect()
+}
+
+fn legacy_contracts_info(req: &UserDecryptRequest) -> ContractsInfo {
+    ContractsInfo {
+        addresses: req.contract_addresses.clone(),
+        chainId: U256::from(req.contracts_chain_id),
+    }
+}
+
+fn legacy_request_validity(req: &UserDecryptRequest) -> RequestValidity {
+    RequestValidity {
+        startTimestamp: req.request_validity.start_timestamp,
+        durationDays: req.request_validity.duration_days,
+    }
+}
 
 impl ComputeCalldata {
     /// Computes calldata for public decryption request
@@ -38,40 +62,25 @@ impl ComputeCalldata {
 
     /// Computes calldata for a user decryption request. Picks the gateway
     /// overload based on the payload variant:
-    ///   - LegacyDirect    → `userDecryptionRequest(CtHandleContractPair[], …)`
-    ///   - LegacyDelegated → `delegatedUserDecryptionRequest(…)`
+    ///   - `LegacyDirect`    → `userDecryptionRequest(CtHandleContractPair[], …)` (`_1Call`)
+    ///   - `LegacyDelegated` → `delegatedUserDecryptionRequest(…)`
+    ///   - `Unified`         → `userDecryptionRequest(HandleEntry[], …)` (`_0Call`)
     pub fn user_decryption_req(
         user_decrypt_request: UserDecryptRequest,
     ) -> Result<Bytes, EventProcessingError> {
-        let ct_handle_contract_pairs = user_decrypt_request
-            .ct_handle_contract_pairs
-            .iter()
-            .map(|d| CtHandleContractPair {
-                ctHandle: d.ct_handle.into(),
-                contractAddress: d.contract_address,
-            })
-            .collect::<Vec<_>>();
-
-        let contracts_info = ContractsInfo {
-            addresses: user_decrypt_request.contract_addresses,
-            chainId: U256::from(user_decrypt_request.contracts_chain_id),
-        };
-
-        let validity = RequestValidity {
-            startTimestamp: user_decrypt_request.request_validity.start_timestamp,
-            durationDays: user_decrypt_request.request_validity.duration_days,
-        };
-
-        let calldata = match user_decrypt_request.payload {
+        let calldata = match &user_decrypt_request.payload {
             UserDecryptPayload::LegacyDirect { user_address } => {
+                let pairs = legacy_ct_handle_contract_pairs(&user_decrypt_request);
+                let contracts_info = legacy_contracts_info(&user_decrypt_request);
+                let validity = legacy_request_validity(&user_decrypt_request);
                 let call = Decryption::userDecryptionRequest_1Call::new((
-                    ct_handle_contract_pairs,
+                    pairs,
                     validity,
                     contracts_info,
-                    user_address,
-                    user_decrypt_request.public_key,
-                    user_decrypt_request.signature,
-                    user_decrypt_request.extra_data,
+                    *user_address,
+                    user_decrypt_request.public_key.clone(),
+                    user_decrypt_request.signature.clone(),
+                    user_decrypt_request.extra_data.clone(),
                 ));
                 Decryption::userDecryptionRequest_1Call::abi_encode(&call)
             }
@@ -79,24 +88,70 @@ impl ComputeCalldata {
                 delegator_address,
                 delegate_address,
             } => {
+                let pairs = legacy_ct_handle_contract_pairs(&user_decrypt_request);
+                let contracts_info = legacy_contracts_info(&user_decrypt_request);
+                let validity = legacy_request_validity(&user_decrypt_request);
                 let delegation_accounts = DelegationAccounts {
-                    delegatorAddress: delegator_address,
-                    delegateAddress: delegate_address,
+                    delegatorAddress: *delegator_address,
+                    delegateAddress: *delegate_address,
                 };
                 let call = Decryption::delegatedUserDecryptionRequestCall::new((
-                    ct_handle_contract_pairs,
+                    pairs,
                     validity,
                     delegation_accounts,
                     contracts_info,
-                    user_decrypt_request.public_key,
-                    user_decrypt_request.signature,
-                    user_decrypt_request.extra_data,
+                    user_decrypt_request.public_key.clone(),
+                    user_decrypt_request.signature.clone(),
+                    user_decrypt_request.extra_data.clone(),
                 ));
                 Decryption::delegatedUserDecryptionRequestCall::abi_encode(&call)
+            }
+            UserDecryptPayload::Unified {
+                user_address,
+                owner_addresses,
+                ..
+            } => {
+                if owner_addresses.len() != user_decrypt_request.ct_handle_contract_pairs.len() {
+                    return Err(EventProcessingError::ValidationFailed {
+                        field: "handles".to_string(),
+                        reason: format!(
+                            "owner_addresses length {} != ct_handle_contract_pairs length {}",
+                            owner_addresses.len(),
+                            user_decrypt_request.ct_handle_contract_pairs.len()
+                        ),
+                    });
+                }
+                let handles: Vec<HandleEntry> = user_decrypt_request
+                    .ct_handle_contract_pairs
+                    .iter()
+                    .zip(owner_addresses.iter())
+                    .map(|(p, owner)| HandleEntry {
+                        handle: p.ct_handle.into(),
+                        contractAddress: p.contract_address,
+                        ownerAddress: *owner,
+                    })
+                    .collect();
+                // For the unified path, the top-level `request_validity.duration_days`
+                // is reinterpreted as durationSeconds (see UserDecryptPayload::Unified).
+                let validity = RequestValiditySeconds {
+                    startTimestamp: user_decrypt_request.request_validity.start_timestamp,
+                    durationSeconds: user_decrypt_request.request_validity.duration_days,
+                };
+                let call = Decryption::userDecryptionRequest_0Call::new((
+                    handles,
+                    *user_address,
+                    user_decrypt_request.public_key.clone(),
+                    user_decrypt_request.contract_addresses.clone(),
+                    validity,
+                    user_decrypt_request.signature.clone(),
+                    user_decrypt_request.extra_data.clone(),
+                ));
+                Decryption::userDecryptionRequest_0Call::abi_encode(&call)
             }
         };
 
         info!(
+            kind = %user_decrypt_request.payload_kind(),
             "UserDecryptionRequest calldata: 0x{}",
             hex::encode(&calldata)
         );

@@ -474,6 +474,28 @@ pub enum UserDecryptPayload {
         delegator_address: Address,
         delegate_address: Address,
     },
+    /// RFC016 unified user-decryption flow (v3). Notes on shared fields:
+    /// - `ct_handle_contract_pairs` (top-level) carries the per-handle
+    ///   (ctHandle, contractAddress) tuples; `owner_addresses` below is
+    ///   index-aligned with that vector.
+    /// - `request_validity.duration_days` (top-level) is reinterpreted as
+    ///   `durationSeconds` for this variant.
+    /// - `contract_addresses` (top-level) doubles as `allowedContracts` and
+    ///   may be empty (permissive mode).
+    /// - `contracts_chain_id` (top-level) is unused on this path.
+    Unified {
+        /// Tag identifying the attestation/signature scheme used for the
+        /// `signature` bytes. The first supported value is
+        /// `"eip712-unified-user-decrypt-v1"`. Future schemes (e.g. Solana
+        /// `"ed25519-solana-user-decrypt-v1"`) plug in as additional values.
+        attestation_type: String,
+        /// On-chain caller for the unified gateway call.
+        user_address: Address,
+        /// Per-handle owner addresses, aligned by index with
+        /// `ct_handle_contract_pairs`. For direct-access handles this is
+        /// `user_address`; for delegated handles it differs.
+        owner_addresses: Vec<Address>,
+    },
 }
 
 impl UserDecryptRequest {
@@ -482,7 +504,13 @@ impl UserDecryptRequest {
         match self.payload {
             UserDecryptPayload::LegacyDirect { .. } => "legacy_direct",
             UserDecryptPayload::LegacyDelegated { .. } => "legacy_delegated",
+            UserDecryptPayload::Unified { .. } => "unified",
         }
+    }
+
+    /// Whether this request uses the RFC016 unified gateway overload.
+    pub fn is_unified(&self) -> bool {
+        matches!(self.payload, UserDecryptPayload::Unified { .. })
     }
 }
 

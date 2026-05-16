@@ -54,6 +54,25 @@ impl ContentHasher for UserDecryptRequest {
                 hasher.update(b"delegate_address:"); // 7
                 hasher.update(delegate_address.as_slice());
             }
+            UserDecryptPayload::Unified {
+                attestation_type,
+                user_address,
+                owner_addresses,
+            } => {
+                // Variant tag prevents v3 unified hashes from colliding with
+                // v2 legacy hashes that share the same user_address +
+                // handles. Tag is hashed in addition to the variant-specific
+                // fields below.
+                hasher.update(b"variant:unified:"); // 6
+                hasher.update(b"attestation_type:");
+                hasher.update(attestation_type.as_bytes());
+                hasher.update(b"user_address:");
+                hasher.update(user_address.as_slice());
+                hasher.update(b"owner_addresses:");
+                for addr in owner_addresses {
+                    hasher.update(addr.as_slice());
+                }
+            }
         }
 
         hasher.finalize().into()

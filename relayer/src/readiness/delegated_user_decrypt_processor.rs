@@ -89,9 +89,11 @@ impl DelegatedUserDecryptReadinessProcessor {
             UserDecryptPayload::LegacyDelegated {
                 delegator_address, ..
             } => delegator_address,
-            UserDecryptPayload::LegacyDirect { .. } => unreachable!(
-                "DelegatedUserDecryptReadinessProcessor reached with LegacyDirect payload"
-            ),
+            UserDecryptPayload::LegacyDirect { .. } | UserDecryptPayload::Unified { .. } => {
+                unreachable!(
+                    "DelegatedUserDecryptReadinessProcessor reached with non-LegacyDelegated payload"
+                )
+            }
         };
         let result = checker
             .check_user_decryption_readiness(

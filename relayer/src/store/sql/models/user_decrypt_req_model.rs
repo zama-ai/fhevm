@@ -19,28 +19,32 @@ use crate::store::sql::models::req_status_enum_model::ReqStatus;
 pub enum UserDecryptReqType {
     /// Legacy requests (existing format before type distinction)
     Legacy,
-    /// User decryption request
+    /// v2 direct user decryption request
     UserDecrypt,
-    /// Delegated user decryption request
+    /// v2 delegated user decryption request
     DelegatedUserDecrypt,
+    /// v3 RFC016 unified user decryption request
+    Unified,
 }
 
 /// Typed wrapper for user decrypt request data.
 ///
-/// Both `UserDecrypt` and `DelegatedUserDecrypt` now carry the unified
-/// `UserDecryptRequest`; the variant discriminator is kept around because
-/// the `user_decrypt_req_type` SQL enum has existing on-disk values that
-/// we don't want to migrate. `parse_req_data` knows how to lift pre-refactor
+/// `UserDecrypt`, `DelegatedUserDecrypt`, and `Unified` all carry the unified
+/// in-memory `UserDecryptRequest`; the variant discriminator is preserved so
+/// the `user_decrypt_req_type` SQL enum maps cleanly without dropping
+/// existing on-disk values. `parse_req_data` knows how to lift pre-refactor
 /// rows (which had flat top-level fields) into the new tagged shape.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum UserDecryptReqData {
     /// Legacy requests stored as raw JSON (for backward compatibility)
     Legacy(Value),
-    /// Direct user decryption request (payload = LegacyDirect)
+    /// v2 direct user decryption request (payload = LegacyDirect)
     UserDecrypt(UserDecryptRequest),
-    /// Delegated user decryption request (payload = LegacyDelegated)
+    /// v2 delegated user decryption request (payload = LegacyDelegated)
     DelegatedUserDecrypt(UserDecryptRequest),
+    /// v3 RFC016 unified user decryption request (payload = Unified)
+    Unified(UserDecryptRequest),
 }
 
 impl UserDecryptReqData {
@@ -48,8 +52,9 @@ impl UserDecryptReqData {
     pub fn to_value(&self) -> Result<Value, serde_json::Error> {
         match self {
             UserDecryptReqData::Legacy(v) => Ok(v.clone()),
-            UserDecryptReqData::UserDecrypt(req) => serde_json::to_value(req),
-            UserDecryptReqData::DelegatedUserDecrypt(req) => serde_json::to_value(req),
+            UserDecryptReqData::UserDecrypt(req)
+            | UserDecryptReqData::DelegatedUserDecrypt(req)
+            | UserDecryptReqData::Unified(req) => serde_json::to_value(req),
         }
     }
 
@@ -58,6 +63,7 @@ impl UserDecryptReqData {
             UserDecryptReqData::Legacy(_) => UserDecryptReqType::Legacy,
             UserDecryptReqData::UserDecrypt(_) => UserDecryptReqType::UserDecrypt,
             UserDecryptReqData::DelegatedUserDecrypt(_) => UserDecryptReqType::DelegatedUserDecrypt,
+            UserDecryptReqData::Unified(_) => UserDecryptReqType::Unified,
         }
     }
 }
@@ -191,6 +197,13 @@ impl UserDecryptReq {
                         .map(UserDecryptRequest::from)
                 })?;
                 Ok(UserDecryptReqData::DelegatedUserDecrypt(req))
+            }
+            UserDecryptReqType::Unified => {
+                // Unified rows are only written by post-refactor relayer
+                // versions, so the tagged-payload JSON shape is the only
+                // format we ever see here — no flat-shape fallback needed.
+                let req: UserDecryptRequest = serde_json::from_value(self.req.clone())?;
+                Ok(UserDecryptReqData::Unified(req))
             }
         }
     }
