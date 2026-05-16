@@ -365,7 +365,7 @@ paths:
       - User Decrypt
       summary: Submit user decryption.
       description: |-
-        **Deprecated.** Superseded by `POST /v3/user-decrypt` (RFC016 unified
+        **Deprecated.** Superseded by `POST /v3/user-decrypt` (unified EIP-712
         user-decryption). The v2 surface remains available throughout the
         relayer-sdk deprecation window.
       operationId: user_decrypt_post_v2
@@ -612,7 +612,7 @@ paths:
       - Delegated User Decrypt
       summary: Submit delegated user decryption.
       description: |-
-        **Deprecated.** Superseded by `POST /v3/user-decrypt` (RFC016 unified
+        **Deprecated.** Superseded by `POST /v3/user-decrypt` (unified EIP-712
         user-decryption — delegated handles use the per-entry `ownerAddress`).
         The v2 surface remains available throughout the relayer-sdk
         deprecation window.
@@ -1100,7 +1100,7 @@ paths:
     post:
       tags:
       - User Decrypt v3
-      summary: Submit a v3 (RFC016 unified) user-decryption request.
+      summary: Submit a v3 (unified EIP-712) user-decryption request.
       operationId: user_decrypt_post_v3
       requestBody:
         content:
@@ -1391,7 +1391,7 @@ components:
           description: Validity window for the request, in seconds.
         type:
           type: string
-          description: RFC016 mandates the literal `"user_decryption"`.
+          description: Must equal `"user_decryption"`.
           example: user_decryption
         userAddress:
           type: string
@@ -1399,7 +1399,7 @@ components:
           example: "0x1234567890123456789012345678901234567890"
         version:
           type: string
-          description: RFC016 mandates the literal `"2.0"`.
+          description: Must equal `"2.0"`.
           example: '2.0'
       additionalProperties: false
     FheKeyInfo:
@@ -1426,7 +1426,7 @@ components:
     HandleEntryJson:
       type: object
       description: |-
-        A single handle entry in the RFC016 unified user-decryption payload.
+        A single handle entry in the unified EIP-712 user-decryption payload.
         Carries the `ownerAddress` for that handle alongside the handle and its
         originating contract address.
       required:
@@ -1720,7 +1720,7 @@ components:
     RequestValiditySecondsJson:
       type: object
       description: |-
-        Request-validity window for the RFC016 unified payload. Like
+        Request-validity window for the unified EIP-712 payload. Like
         `RequestValidityJson` but in seconds instead of days.
       required:
       - startTimestamp
@@ -1987,7 +1987,7 @@ tags:
 - name: Delegated User Decrypt
   description: Decrypt ciphertexts via delegated key shares
 - name: User Decrypt v3
-  description: RFC016 unified user-decryption (direct + delegated under one endpoint)
+  description: unified EIP-712 user-decryption (direct + delegated under one endpoint)
 - name: Public Decrypt
   description: Decrypt ciphertexts using the network public key
 - name: Health

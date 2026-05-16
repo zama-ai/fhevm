@@ -44,7 +44,7 @@ pub use utils::{
     validate_timestamp,
     validate_u32_string,
     validate_u64_string,
-    // v3 RFC016 validators
+    // v3 unified EIP-712 validators
     validate_v3_attestation_type,
     validate_v3_payload_type,
     validate_v3_version,

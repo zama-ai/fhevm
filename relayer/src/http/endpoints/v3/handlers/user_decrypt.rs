@@ -1,4 +1,4 @@
-//! v3 `/v3/user-decrypt` handler (RFC016 unified user-decryption).
+//! v3 `/v3/user-decrypt` handler (unified EIP-712 user-decryption).
 //!
 //! POST validates the typed-attestation envelope, converts it to the
 //! shared `UserDecryptRequest` with `UserDecryptPayload::Unified`, runs the
@@ -350,7 +350,7 @@ impl UserDecryptHandler {
 }
 
 // OpenAPI documented endpoints as standalone functions.
-/// Submit a v3 (RFC016 unified) user-decryption request.
+/// Submit a v3 (unified EIP-712) user-decryption request.
 #[utoipa::path(
     post,
     path = "/v3/user-decrypt",

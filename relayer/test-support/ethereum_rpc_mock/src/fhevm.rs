@@ -24,7 +24,7 @@ pub use fhevm_gateway_bindings::input_verification::InputVerification;
 /// Selects which user-decryption gateway overload the mock should match
 /// when registering a success pattern. `Direct` / `Delegated` are the v2
 /// dialects (legacy `_1Call` / `delegatedUserDecryptionRequestCall`);
-/// `Unified` is the RFC016 v3 overload (`_0Call`).
+/// `Unified` is the unified EIP-712 v3 overload (`_0Call`).
 #[derive(Debug, Clone, Copy)]
 pub enum UserDecryptKind {
     Direct,
@@ -343,7 +343,7 @@ impl FhevmMockWrapper {
     /// Internal: register a user-decrypt success pattern for the given
     /// dialect. The request log emitted in the immediate response uses
     /// `UserDecryptionRequest_0` for `Direct` / `Delegated` (legacy v2) and
-    /// `UserDecryptionRequest_1` for `Unified` (RFC016 v3). The 10
+    /// `UserDecryptionRequest_1` for `Unified` (unified EIP-712 v3). The 10
     /// `UserDecryptionResponse` shares emitted afterwards are
     /// dialect-agnostic and identical across all variants.
     fn register_user_decrypt_success(
@@ -897,7 +897,7 @@ fn build_legacy_user_decrypt_request(
     )
 }
 
-/// RFC016 unified `UserDecryptionRequest` event with `HandleEntry[]` and a
+/// unified EIP-712 `UserDecryptionRequest` event with `HandleEntry[]` and a
 /// `UserDecryptionRequestPayload` struct. The relayer's
 /// `on_receipt_received` extracts only `decryptionId` from the indexed
 /// topic, so the inner fields are populated with mock data sufficient to

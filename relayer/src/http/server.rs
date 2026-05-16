@@ -134,7 +134,7 @@ pub async fn run_http_server(
         host_chain_id_checker.clone(),
     ));
 
-    // v3 (RFC016) user-decrypt handler. Shares orchestrator + repo + queue
+    // v3 (unified EIP-712) user-decrypt handler. Shares orchestrator + repo + queue
     // state with v2; GET delegates to the v2 handler since the response
     // schema is unchanged. Uses a distinct API version tag so dashboards
     // separate v2 and v3 traffic.

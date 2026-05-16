@@ -98,7 +98,7 @@ impl ReadinessChecker {
                 "check_host_acl_user_decrypt called with LegacyDelegated payload; \
                  use check_host_acl_delegated_user_decrypt instead"
             ),
-            // RFC016 unified flow: per-handle ACL is enforced by the gateway
+            // unified EIP-712 flow: per-handle ACL is enforced by the gateway
             // contract using the owner_address attached to each HandleEntry,
             // so the relayer skips its host-ACL pre-check here.
             AttestationFormat::Eip712UnifiedV1 { .. } => return Ok(()),

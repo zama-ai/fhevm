@@ -1,4 +1,4 @@
-//! Integration tests for the v3 `/v3/user-decrypt` endpoint (RFC016
+//! Integration tests for the v3 `/v3/user-decrypt` endpoint (unified EIP-712
 //! unified user-decryption). Uses the in-process `TestSetup` harness and
 //! the `ethereum_rpc_mock` JSON-RPC mock — the same plumbing v2 tests use.
 //!
@@ -81,7 +81,7 @@ mod helpers {
         .expect("attestedPayload.userAddress must be a valid hex address")
     }
 
-    /// Build a syntactically valid RFC016 v3 envelope. Callers can mutate
+    /// Build a syntactically valid unified EIP-712 v3 envelope. Callers can mutate
     /// the returned `serde_json::Value` to test rejection paths.
     pub fn create_v3_envelope() -> serde_json::Value {
         let user_address = random_address();
@@ -184,7 +184,7 @@ async fn v3_accepts_mixed_direct_and_delegated_handles() {
 }
 
 /// v3 accepts the permissive mode where `allowedContracts` is an empty
-/// list. RFC016 explicitly allows this.
+/// list (allowed by the unified EIP-712 spec).
 #[tokio::test]
 async fn v3_accepts_empty_allowed_contracts() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");

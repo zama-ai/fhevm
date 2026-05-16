@@ -216,7 +216,7 @@ pub fn validate_request_validity(
 }
 
 // ---------------------------------------------------------------------------
-// v3 (RFC016 unified user-decryption) validators
+// v3 (unified EIP-712 user-decryption) validators
 // ---------------------------------------------------------------------------
 
 /// The single attestation-type value supported by the current v3 endpoint.
@@ -224,10 +224,10 @@ pub fn validate_request_validity(
 /// allowlist.
 pub const V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1: &str = "eip712-unified-user-decrypt-v1";
 
-/// The EIP-712 payload `version` value RFC016 mandates.
+/// Required `version` value in the EIP-712 payload.
 pub const V3_PAYLOAD_VERSION: &str = "2.0";
 
-/// The EIP-712 payload `type` value RFC016 mandates.
+/// Required `type` value in the EIP-712 payload.
 pub const V3_PAYLOAD_TYPE: &str = "user_decryption";
 
 /// v3 envelope: `attestationType` must match a supported scheme.
@@ -280,8 +280,8 @@ pub fn validate_handle_entries(entries: &Vec<HandleEntryJson>) -> Result<(), Val
     Ok(())
 }
 
-/// Like `validate_blockchain_addresses` but RFC016 explicitly allows an
-/// empty `allowedContracts` list (permissive mode).
+/// Like `validate_blockchain_addresses` but `allowedContracts` may be
+/// empty (permissive mode is part of the unified EIP-712 spec).
 pub fn validate_blockchain_addresses_allow_empty(
     addresses: &Vec<String>,
 ) -> Result<(), ValidationError> {

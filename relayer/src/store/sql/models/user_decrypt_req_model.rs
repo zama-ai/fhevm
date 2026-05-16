@@ -23,7 +23,7 @@ pub enum UserDecryptReqType {
     UserDecrypt,
     /// v2 delegated user decryption request
     DelegatedUserDecrypt,
-    /// v3 RFC016 unified user decryption request
+    /// v3 unified EIP-712 user decryption request
     Unified,
 }
 
@@ -43,7 +43,7 @@ pub enum UserDecryptReqData {
     UserDecrypt(UserDecryptRequest),
     /// v2 delegated user decryption request (payload = LegacyDelegated)
     DelegatedUserDecrypt(UserDecryptRequest),
-    /// v3 RFC016 unified user decryption request (payload = Unified)
+    /// v3 unified EIP-712 user decryption request (payload = Unified)
     Unified(UserDecryptRequest),
 }
 

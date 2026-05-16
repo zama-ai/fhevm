@@ -1,8 +1,8 @@
 //! v3 user-decrypt JSON wire types.
 //!
-//! The body is a typed-attestation envelope (see RFC016 issue comment
+//! The body is a typed-attestation envelope (see the issue comment
 //! 4278777024). Internally the `attestedPayload` is the EIP-712 Unified
-//! User-Decryption Request defined by RFC016. The relayer never re-hashes
+//! User-Decryption Request defined by the unified EIP-712 payload. The relayer never re-hashes
 //! the payload — `signature` is opaque and forwarded verbatim to the
 //! gateway (the KMS Connector verifies it off-chain, #1288).
 
@@ -51,12 +51,12 @@ pub struct AttestedUserDecryptRequestJson {
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Eip712UnifiedUserDecryptPayloadJson {
-    /// RFC016 mandates the literal `"2.0"`.
+    /// Must equal `"2.0"`.
     #[validate(custom(function = "crate::http::validate_v3_version"))]
     #[schema(example = "2.0")]
     pub version: String,
 
-    /// RFC016 mandates the literal `"user_decryption"`.
+    /// Must equal `"user_decryption"`.
     #[serde(rename = "type")]
     #[validate(custom(function = "crate::http::validate_v3_payload_type"))]
     #[schema(example = "user_decryption")]

@@ -153,7 +153,7 @@ paths(
     // Public Decrypt
     crate::http::endpoints::v2::handlers::public_decrypt::public_decrypt_post_v2,
     crate::http::endpoints::v2::handlers::public_decrypt::public_decrypt_get_v2,
-    // v3 User Decrypt (RFC016 unified)
+    // v3 User Decrypt (unified EIP-712)
     crate::http::endpoints::v3::handlers::user_decrypt::user_decrypt_post_v3,
     crate::http::endpoints::v3::handlers::user_decrypt::user_decrypt_get_v3,
     // Health
@@ -179,7 +179,7 @@ components(
     schemas(V2ErrorResponseBody, V2ApiError, V2ApiErrorWithDetails, V2ErrorLabel, RelayerV2ErrorDetail),
     // V2 response wrappers (failed POST, per-status-code GET)
     schemas(RelayerV2ResponseFailed, V2StatusQueued, V2StatusFailed),
-    // v3 User Decrypt types (RFC016 unified)
+    // v3 User Decrypt types (unified EIP-712)
     schemas(AttestedUserDecryptRequestJson, Eip712UnifiedUserDecryptPayloadJson),
     // Common types
     schemas(crate::http::endpoints::common::types::HandleContractPairJson, crate::http::endpoints::common::types::RequestValidityJson),
@@ -191,7 +191,7 @@ tags(
     (name = "Input Proof", description = "Verify input proofs for encrypted computations"),
     (name = "User Decrypt", description = "Decrypt ciphertexts with user-provided key shares"),
     (name = "Delegated User Decrypt", description = "Decrypt ciphertexts via delegated key shares"),
-    (name = "User Decrypt v3", description = "RFC016 unified user-decryption (direct + delegated under one endpoint)"),
+    (name = "User Decrypt v3", description = "unified EIP-712 user-decryption (direct + delegated under one endpoint)"),
     (name = "Public Decrypt", description = "Decrypt ciphertexts using the network public key"),
     (name = "Health", description = "Liveness, readiness, and version probes")
 ),

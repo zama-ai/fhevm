@@ -47,7 +47,7 @@ pub struct RequestValidityJson {
     pub duration_days: String,
 }
 
-/// A single handle entry in the RFC016 unified user-decryption payload.
+/// A single handle entry in the unified EIP-712 user-decryption payload.
 /// Carries the `ownerAddress` for that handle alongside the handle and its
 /// originating contract address.
 #[derive(Debug, Deserialize, Clone, Serialize, Hash, ToSchema, Validate)]
@@ -76,7 +76,7 @@ impl Display for HandleEntryJson {
     }
 }
 
-/// Request-validity window for the RFC016 unified payload. Like
+/// Request-validity window for the unified EIP-712 payload. Like
 /// `RequestValidityJson` but in seconds instead of days.
 #[derive(Debug, Deserialize, Clone, Serialize, Validate, ToSchema)]
 #[serde(rename_all = "camelCase")]

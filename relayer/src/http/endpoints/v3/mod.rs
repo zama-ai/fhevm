@@ -1,4 +1,4 @@
-//! v3 endpoints: RFC016 unified user-decryption.
+//! v3 endpoints: unified EIP-712 user-decryption.
 //!
 //! The v3 surface is intentionally minimal — only `/v3/user-decrypt` POST +
 //! GET. The HTTP request body is a typed-attestation envelope so future

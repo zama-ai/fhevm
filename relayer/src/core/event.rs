@@ -490,7 +490,7 @@ pub enum AttestationFormat {
         delegator_address: Address,
         delegate_address: Address,
     },
-    /// RFC016 unified user-decryption (attestation_type
+    /// unified EIP-712 user-decryption (attestation_type
     /// `"eip712-unified-user-decrypt-v1"`): maps to
     /// `userDecryptionRequest(HandleEntry[], address userAddress,
     /// bytes publicKey, address[] allowedContracts,
@@ -515,7 +515,7 @@ impl UserDecryptRequest {
         }
     }
 
-    /// Whether this request uses the RFC016 unified gateway overload.
+    /// Whether this request uses the unified EIP-712 gateway overload.
     pub fn is_unified(&self) -> bool {
         matches!(self.attestation, AttestationFormat::Eip712UnifiedV1 { .. })
     }
@@ -530,7 +530,7 @@ pub struct HandleContractPair {
     pub contract_address: Address,
 }
 
-/// Per-handle entry for the RFC016 unified format: carries the originating
+/// Per-handle entry for the unified EIP-712 format: carries the originating
 /// contract plus the owner address used by the on-chain ACL check for
 /// each handle. Sibling to `HandleContractPair` (v2 shape).
 #[allow(non_snake_case)]
@@ -553,7 +553,7 @@ pub struct RequestValidity {
     pub duration_days: U256,
 }
 
-/// Request-validity window in seconds (RFC016 unified shape). Sibling to
+/// Request-validity window in seconds (unified EIP-712 shape). Sibling to
 /// `RequestValidity` (v2 days-based shape).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
 #[allow(non_snake_case)]
