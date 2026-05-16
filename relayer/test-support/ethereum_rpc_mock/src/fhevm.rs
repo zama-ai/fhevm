@@ -31,7 +31,7 @@ pub enum UserDecryptKind {
 impl UserDecryptKind {
     fn selector(&self) -> [u8; 4] {
         match self {
-            Self::Direct => Decryption::userDecryptionRequestCall::SELECTOR,
+            Self::Direct => Decryption::userDecryptionRequest_1Call::SELECTOR,
             Self::Delegated => Decryption::delegatedUserDecryptionRequestCall::SELECTOR,
         }
     }
@@ -857,7 +857,7 @@ fn build_user_decrypt_request(
     user_address: Address,
     handles: Vec<B256>,
 ) -> Log {
-    let request = Decryption::UserDecryptionRequest {
+    let request = Decryption::UserDecryptionRequest_0 {
         decryptionId: decryption_id,
         snsCtMaterials: create_sns_materials(handles),
         userAddress: user_address,
@@ -869,7 +869,7 @@ fn build_user_decrypt_request(
         contract,
         &request,
         vec![
-            Decryption::UserDecryptionRequest::SIGNATURE_HASH,
+            Decryption::UserDecryptionRequest_0::SIGNATURE_HASH,
             B256::from(decryption_id),
         ],
     )

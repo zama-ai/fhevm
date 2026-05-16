@@ -165,7 +165,6 @@ impl Event for RelayerEvent {
             RelayerEventData::GatewayChain(e) => e.event_id(),
             RelayerEventData::PublicDecrypt(e) => e.event_id(),
             RelayerEventData::UserDecrypt(e) => e.event_id(),
-            RelayerEventData::DelegatedUserDecrypt(e) => e.event_id(),
             RelayerEventData::InputProof(e) => e.event_id(),
             RelayerEventData::KeyUrl(e) => e.event_id(),
         }
@@ -219,7 +218,6 @@ pub enum RelayerEventData {
     GatewayChain(GatewayChainEventData),
     PublicDecrypt(PublicDecryptEventData),
     UserDecrypt(UserDecryptEventData),
-    DelegatedUserDecrypt(DelegatedUserDecryptEventData),
     InputProof(InputProofEventData),
     KeyUrl(KeyUrlEventData),
 }
@@ -230,7 +228,6 @@ impl AsRef<str> for RelayerEventData {
             RelayerEventData::GatewayChain(gateway_event) => gateway_event.event_name(),
             RelayerEventData::PublicDecrypt(decrypt_event) => decrypt_event.event_name(),
             RelayerEventData::UserDecrypt(decrypt_event) => decrypt_event.event_name(),
-            RelayerEventData::DelegatedUserDecrypt(decrypt_event) => decrypt_event.event_name(),
             RelayerEventData::InputProof(input_event) => input_event.event_name(),
             RelayerEventData::KeyUrl(keyurl_event) => keyurl_event.event_name(),
         }
@@ -441,114 +438,6 @@ impl UserDecryptEventData {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum DelegatedUserDecryptEventData {
-    /// Event representing a delegated user decryption request for ciphertexts on fhevm.
-    ReqRcvdFromUser {
-        decrypt_request: DelegatedUserDecryptRequest,
-    },
-
-    /// Event representing that readiness check has passed for a delegated user decryption request.
-    ReadinessCheckPassed {
-        decrypt_request: DelegatedUserDecryptRequest,
-    },
-
-    /// Event representing that readiness check has timed out for a delegated user decryption request.
-    ReadinessCheckTimedOut {
-        decrypt_request: DelegatedUserDecryptRequest,
-        error: EventProcessingError,
-    },
-
-    /// Event representing that readiness check has failed for a delegated user decryption request.
-    ReadinessCheckFailed {
-        decrypt_request: DelegatedUserDecryptRequest,
-        error: EventProcessingError,
-    },
-
-    /// Event representing the result of sending a delegated user decryption request to
-    /// gateway. It will be used to map the response that will be received later
-    /// to the request.
-    ReqSentToGw { gw_req_reference_id: U256 },
-
-    /// Event representing the success response received from gateway for delegated user
-    /// decryption sent from this instance of relayer.
-    RespRcvdFromGw {
-        decrypt_response: UserDecryptResponse,
-    },
-
-    /// Event representing the user decryption response sent to the user.
-    RespSentToUser,
-
-    /// Event representing the failure in processing the delegated user decryption request.
-    /// Used to notify outside internal handlers only.
-    Failed { error: EventProcessingError },
-
-    /// Event representing the internal failure in processing the user decrypt request: will not notify the user directly.
-    InternalFailure { error: EventProcessingError },
-}
-
-impl DelegatedUserDecryptEventData {
-    pub fn event_name(&self) -> &'static str {
-        match self {
-            DelegatedUserDecryptEventData::ReqRcvdFromUser { .. } => "UserDecrypt::ReqRcvdFromUser",
-            DelegatedUserDecryptEventData::ReadinessCheckPassed { .. } => {
-                "DelegatedUserDecrypt::ReadinessCheckPassed"
-            }
-            DelegatedUserDecryptEventData::ReadinessCheckTimedOut { .. } => {
-                "DelegatedUserDecrypt::ReadinessCheckTimedOut"
-            }
-            DelegatedUserDecryptEventData::ReadinessCheckFailed { .. } => {
-                "DelegatedUserDecrypt::ReadinessCheckFailed"
-            }
-            DelegatedUserDecryptEventData::ReqSentToGw { .. } => {
-                "DelegatedUserDecrypt::ReqSentToGw"
-            }
-            DelegatedUserDecryptEventData::RespRcvdFromGw { .. } => {
-                "DelegatedUserDecrypt::RespRcvdFromGw"
-            }
-            DelegatedUserDecryptEventData::RespSentToUser => "DelegatedUserDecrypt::RespSentToUser",
-            DelegatedUserDecryptEventData::Failed { .. } => "DelegatedUserDecrypt::Failed",
-            DelegatedUserDecryptEventData::InternalFailure { .. } => {
-                "DelegatedUserDecrypt::InternalFailure"
-            }
-        }
-    }
-
-    /// Returns the event ID for this delegated user decrypt event.
-    /// Intentionally reuses `UserDecryptEventId` values — delegated and
-    /// non-delegated user decrypt flows share the same event ID space so
-    /// they are routed to the same set of handlers.
-    pub fn event_id(&self) -> u8 {
-        match self {
-            DelegatedUserDecryptEventData::ReqRcvdFromUser { .. } => {
-                UserDecryptEventId::ReqRcvdFromUser.into()
-            }
-            DelegatedUserDecryptEventData::ReadinessCheckPassed { .. } => {
-                UserDecryptEventId::ReadinessCheckPassed.into()
-            }
-            DelegatedUserDecryptEventData::ReadinessCheckTimedOut { .. } => {
-                UserDecryptEventId::ReadinessCheckTimedOut.into()
-            }
-            DelegatedUserDecryptEventData::ReadinessCheckFailed { .. } => {
-                UserDecryptEventId::ReadinessCheckFailed.into()
-            }
-            DelegatedUserDecryptEventData::ReqSentToGw { .. } => {
-                UserDecryptEventId::ReqSentToGw.into()
-            }
-            DelegatedUserDecryptEventData::RespRcvdFromGw { .. } => {
-                UserDecryptEventId::RespRcvdFromGw.into()
-            }
-            DelegatedUserDecryptEventData::RespSentToUser => {
-                UserDecryptEventId::RespSentToUser.into()
-            }
-            DelegatedUserDecryptEventData::Failed { .. } => UserDecryptEventId::Failed.into(),
-            DelegatedUserDecryptEventData::InternalFailure { .. } => {
-                UserDecryptEventId::InternalFailure.into()
-            }
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, Hash)]
 pub struct PublicDecryptRequest {
     #[serde(
@@ -559,32 +448,42 @@ pub struct PublicDecryptRequest {
     pub extra_data: Bytes,
 }
 
+/// A user-decryption request that captures both the v2 direct and v2 delegated
+/// flows under a single shape. The dialect-specific addressing lives in
+/// `payload`; everything else (handles, validity, signature, …) is shared.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
 pub struct UserDecryptRequest {
     pub ct_handle_contract_pairs: Vec<HandleContractPair>,
     pub request_validity: RequestValidity,
     pub contracts_chain_id: u64,
     pub contract_addresses: Vec<Address>,
-    pub user_address: Address,
     pub signature: Bytes,
     pub public_key: Bytes,
     pub extra_data: Bytes,
+    pub payload: UserDecryptPayload,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
-pub struct DelegatedUserDecryptRequest {
-    pub ct_handle_contract_pairs: Vec<HandleContractPair>,
-    pub contracts_chain_id: u64,
-    pub contract_addresses: Vec<Address>,
-    pub delegator_address: Address,
-    pub delegate_address: Address,
-    #[serde(rename = "startTimestamp")]
-    pub start_timestamp: U256,
-    #[serde(rename = "durationDays")]
-    pub duration_days: U256,
-    pub signature: Bytes,
-    pub public_key: Bytes,
-    pub extra_data: Bytes,
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum UserDecryptPayload {
+    /// v2 direct user-decryption: the on-chain caller is `user_address`.
+    LegacyDirect { user_address: Address },
+    /// v2 delegated user-decryption: `delegator_address` owns the ciphertexts,
+    /// `delegate_address` is the party authorised to receive the shares.
+    LegacyDelegated {
+        delegator_address: Address,
+        delegate_address: Address,
+    },
+}
+
+impl UserDecryptRequest {
+    /// Returns a label suitable for logs / metrics describing the dialect.
+    pub fn payload_kind(&self) -> &'static str {
+        match self.payload {
+            UserDecryptPayload::LegacyDirect { .. } => "legacy_direct",
+            UserDecryptPayload::LegacyDelegated { .. } => "legacy_delegated",
+        }
+    }
 }
 
 #[allow(non_snake_case)]
@@ -688,19 +587,21 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
             request_validity,
             contracts_chain_id,
             contract_addresses: contract_addresses.clone(),
-            user_address: Address::from_str(&value.user_address)?,
             signature: Bytes::from_str(&value.signature)?,
             public_key: Bytes::from_str(&value.public_key)?,
             extra_data,
+            payload: UserDecryptPayload::LegacyDirect {
+                user_address: Address::from_str(&value.user_address)?,
+            },
         })
     }
 }
 
-impl TryFrom<DelegatedUserDecryptRequestJson> for DelegatedUserDecryptRequest {
+impl TryFrom<DelegatedUserDecryptRequestJson> for UserDecryptRequest {
     type Error = anyhow::Error;
 
     fn try_from(value: DelegatedUserDecryptRequestJson) -> Result<Self, Self::Error> {
-        info!("Converting DelegatedUserDecryptRequestJson to DelegatedUserDecryptRequest");
+        info!("Converting DelegatedUserDecryptRequestJson to UserDecryptRequest (LegacyDelegated)");
 
         let mut ct_handle_contract_pairs = Vec::new();
         for json_data in &value.handle_contract_pairs {
@@ -747,17 +648,21 @@ impl TryFrom<DelegatedUserDecryptRequestJson> for DelegatedUserDecryptRequest {
         // Parse extraData (validated at HTTP layer)
         let extra_data = Bytes::from_str(&value.extra_data)?;
 
-        Ok(DelegatedUserDecryptRequest {
+        Ok(UserDecryptRequest {
             ct_handle_contract_pairs,
+            request_validity: RequestValidity {
+                start_timestamp: U256::from_str(&value.start_timestamp)?,
+                duration_days,
+            },
             contracts_chain_id,
             contract_addresses: contract_addresses.clone(),
-            delegator_address: Address::from_str(&value.delegator_address)?,
-            delegate_address: Address::from_str(&value.delegate_address)?,
-            start_timestamp: U256::from_str(&value.start_timestamp)?,
-            duration_days,
             signature: Bytes::from_str(&value.signature)?,
             public_key: Bytes::from_str(&value.public_key)?,
             extra_data,
+            payload: UserDecryptPayload::LegacyDelegated {
+                delegator_address: Address::from_str(&value.delegator_address)?,
+                delegate_address: Address::from_str(&value.delegate_address)?,
+            },
         })
     }
 }

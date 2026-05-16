@@ -10,8 +10,7 @@ use crate::core::errors::{
     TIMEOUT_REASON_MISSING_MSG,
 };
 use crate::core::event::{
-    ApiVersion, DelegatedUserDecryptEventData, DelegatedUserDecryptRequest, RelayerEvent,
-    RelayerEventData, UserDecryptEventData, UserDecryptRequest,
+    ApiVersion, RelayerEvent, RelayerEventData, UserDecryptEventData, UserDecryptRequest,
 };
 use crate::core::job_id::JobId;
 use crate::host::HostChainIdChecker;
@@ -422,9 +421,9 @@ impl UserDecryptHandler {
             }
         };
 
-        let delegated_user_decrypt_request: DelegatedUserDecryptRequest = match parse_and_validate::<
+        let delegated_user_decrypt_request: UserDecryptRequest = match parse_and_validate::<
             DelegatedUserDecryptRequestJson,
-            DelegatedUserDecryptRequest,
+            UserDecryptRequest,
         >(&body)
         {
             Ok(request) => request,
@@ -520,13 +519,13 @@ impl UserDecryptHandler {
 
         // Only dispatch event for new requests (deduplication)
         if matches!(insert_result, UserDecryptInsertResult::Inserted { .. }) {
-            let request_data = DelegatedUserDecryptEventData::ReqRcvdFromUser {
+            let request_data = UserDecryptEventData::ReqRcvdFromUser {
                 decrypt_request: delegated_user_decrypt_request,
             };
             let event = RelayerEvent::new(
                 int_job_id,
                 self.api_version,
-                RelayerEventData::DelegatedUserDecrypt(request_data),
+                RelayerEventData::UserDecrypt(request_data),
             );
 
             if let Err(e) = self.orchestrator.dispatch_event(event).await {

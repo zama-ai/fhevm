@@ -2,7 +2,7 @@ use crate::{
     config::settings::GatewayConfig,
     core::{
         errors::EventProcessingError,
-        event::{DelegatedUserDecryptRequest, UserDecryptRequest},
+        event::{UserDecryptPayload, UserDecryptRequest},
         job_id::JobId,
     },
     gateway::ciphertext_checker::CiphertextChecker,
@@ -88,12 +88,15 @@ impl ReadinessChecker {
         job_id: &JobId,
         request: &UserDecryptRequest,
     ) -> Result<(), ReadinessCheckError> {
+        let user_address = match request.payload {
+            UserDecryptPayload::LegacyDirect { user_address } => user_address,
+            UserDecryptPayload::LegacyDelegated { .. } => unreachable!(
+                "check_host_acl_user_decrypt called with LegacyDelegated payload; \
+                 use check_host_acl_delegated_user_decrypt instead"
+            ),
+        };
         self.host_acl
-            .check_user_decrypt(
-                job_id,
-                &request.ct_handle_contract_pairs,
-                request.user_address,
-            )
+            .check_user_decrypt(job_id, &request.ct_handle_contract_pairs, user_address)
             .await
             .map_err(|e| match &e {
                 HostAclError::NotAllowed { .. } => ReadinessCheckError::NotAllowedOnHostAcl(e),
@@ -116,14 +119,24 @@ impl ReadinessChecker {
     pub async fn check_host_acl_delegated_user_decrypt(
         &self,
         job_id: &JobId,
-        request: &DelegatedUserDecryptRequest,
+        request: &UserDecryptRequest,
     ) -> Result<(), ReadinessCheckError> {
+        let (delegator_address, delegate_address) = match request.payload {
+            UserDecryptPayload::LegacyDelegated {
+                delegator_address,
+                delegate_address,
+            } => (delegator_address, delegate_address),
+            UserDecryptPayload::LegacyDirect { .. } => unreachable!(
+                "check_host_acl_delegated_user_decrypt called with LegacyDirect payload; \
+                 use check_host_acl_user_decrypt instead"
+            ),
+        };
         self.host_acl
             .check_delegated_user_decrypt(
                 job_id,
                 &request.ct_handle_contract_pairs,
-                request.delegator_address,
-                request.delegate_address,
+                delegator_address,
+                delegate_address,
             )
             .await
             .map_err(|e| match &e {

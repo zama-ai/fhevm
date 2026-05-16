@@ -81,7 +81,7 @@ async fn create_user_decrypt_transaction(
     nonce: u64,
 ) -> Result<Bytes, Box<dyn std::error::Error>> {
     // Create call data with just the function selector - mock only needs selector to match patterns
-    let mut call_data = Decryption::userDecryptionRequestCall::SELECTOR.to_vec();
+    let mut call_data = Decryption::userDecryptionRequest_1Call::SELECTOR.to_vec();
     call_data.extend_from_slice(&[0; 32]); // Add some padding data
 
     let mut tx = TxEip1559 {
