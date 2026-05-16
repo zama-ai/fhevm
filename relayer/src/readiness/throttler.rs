@@ -1,7 +1,7 @@
 use crate::{
     core::{
         errors::EventProcessingError,
-        event::{DelegatedUserDecryptRequest, PublicDecryptRequest, UserDecryptRequest},
+        event::{PublicDecryptRequest, UserDecryptRequest},
         job_id::JobId,
     },
     metrics,
@@ -142,11 +142,16 @@ impl ReadinessItem for UserDecryptReadinessTask {
 }
 
 /// The unit of work for the Readiness Throttler.
+///
+/// Same task shape as `UserDecryptReadinessTask`; kept as a separate type
+/// only so the two throttlers have distinct generic instantiations and can
+/// be tuned independently. `request.payload` will always be
+/// `UserDecryptPayload::LegacyDelegated` here.
 #[derive(Debug, Clone)]
 pub struct DelegatedUserDecryptReadinessTask {
     pub id: String,
     pub job_id: JobId,
-    pub request: DelegatedUserDecryptRequest,
+    pub request: UserDecryptRequest,
 }
 
 impl ReadinessItem for DelegatedUserDecryptReadinessTask {
