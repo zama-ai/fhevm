@@ -208,9 +208,9 @@ export function createInputProofFromInputHandles({
   // Proof format :
   // ==============
   //
-  // <len(handles)><len(signatures)><concat(handles)><concat(signatures)>
+  // <len(handles)><len(signatures)><concat(handles)><concat(signatures)><extraData>
   //
-  // size: Byte1 + Byte1 + len(handles)*Bytes32 + len(signatures)*Bytes65
+  // size: Byte1 + Byte1 + len(handles)*Bytes32 + len(signatures)*Bytes65 + BytesN(extraData)
   //
 
   let proof: string = '';

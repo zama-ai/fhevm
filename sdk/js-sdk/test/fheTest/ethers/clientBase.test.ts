@@ -1,3 +1,12 @@
+import { describe, it, expect, beforeAll } from 'vitest';
+import { createFhevmBaseClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
+import { ethers } from 'ethers';
+import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
+import { clearKeyCache, readKeyFromCache, writeKeyToCache } from '../keyCache.js';
+import { isCleartext } from '../setupCommon.js';
+import { sepolia as fhevmSepolia } from '@fhevm/sdk/chains';
+
+////////////////////////////////////////////////////////////////////////////////
 //
 // Sepolia Testnet:
 // ----------------
@@ -11,13 +20,9 @@
 // ----------------
 // CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.test.ts
 //
-import { describe, it, expect, beforeAll } from 'vitest';
-import { createFhevmBaseClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import { ethers } from 'ethers';
-import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
-import { clearKeyCache, readKeyFromCache, writeKeyToCache } from '../keyCache.js';
+////////////////////////////////////////////////////////////////////////////////
 
-describe('createFhevmBaseClient', () => {
+describe.runIf(!isCleartext(getEthersTestConfig().chainName))('createFhevmBaseClient', () => {
   let config: FheTestEthersConfig;
 
   beforeAll(() => {
@@ -37,11 +42,11 @@ describe('createFhevmBaseClient', () => {
 
   it('should create a base client with sepolia chain', () => {
     const client = createFhevmBaseClient({
-      chain: config.fhevmChain,
+      chain: fhevmSepolia,
       provider: config.provider,
     });
     expect(client).toBeDefined();
-    expect(client.chain).toBe(config.fhevmChain);
+    expect(client.chain).toBe(fhevmSepolia);
     expect(client.chain.id).toBe(11_155_111);
     expect(client.client).toBe(config.provider);
   });
@@ -55,7 +60,7 @@ describe('createFhevmBaseClient', () => {
     expect(typeof client.readPublicValues).toBe('function');
     expect(typeof client.readPublicValuesWithSignatures).toBe('function');
     expect(typeof client.signDecryptionPermit).toBe('function');
-    expect(typeof client.parseTransportKeypair).toBe('function');
+    expect(typeof client.parseTransportKeyPair).toBe('function');
     expect(typeof client.fetchFheEncryptionKeyBytes).toBe('function');
   });
 
@@ -92,7 +97,7 @@ describe('createFhevmBaseClient', () => {
   it('should accept a custom provider', () => {
     const customProvider = new ethers.JsonRpcProvider('https://ethereum-sepolia-rpc.publicnode.com');
     const client = createFhevmBaseClient({
-      chain: config.fhevmChain,
+      chain: fhevmSepolia,
       provider: customProvider,
     });
     expect(client).toBeDefined();
