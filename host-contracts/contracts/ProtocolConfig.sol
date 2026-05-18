@@ -32,7 +32,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     ///      in a single byte (`uint8(decryptionProof[0])`). A context registered above this
     ///      bound cannot ever satisfy verification, so the limit is enforced at registration time
     ///      to reject the misconfiguration loudly rather than silently bricking the context.
-    uint256 internal constant MAX_KMS_SIGNERS = type(uint8).max;
+    uint256 private constant MAX_KMS_SIGNERS = type(uint8).max;
 
     // -----------------------------------------------------------------------------------------
     // ERC-7201 namespaced storage

@@ -32,7 +32,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      *      signature count in a single byte (`uint8(decryptionProof[0])`). Both registries cap
      *      at registration time so a misconfiguration is rejected loudly on either side.
      */
-    uint256 internal constant MAX_KMS_SIGNERS = type(uint8).max;
+    uint256 private constant MAX_KMS_SIGNERS = type(uint8).max;
 
     // ----------------------------------------------------------------------------------------------
     // Contract information:
