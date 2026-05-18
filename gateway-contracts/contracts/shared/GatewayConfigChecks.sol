@@ -52,12 +52,6 @@ abstract contract GatewayConfigChecks {
     error NotCustodianSigner(address signerAddress);
 
     /**
-     * @notice Error emitted when a host chain is not registered in the GatewayConfig contract.
-     * @param chainId The host chain's chain ID.
-     */
-    error HostChainNotRegistered(uint256 chainId);
-
-    /**
      * @notice Error emitted when a host chain has been disabled by the gateway owner.
      * @dev Disabled host chains keep their registry entry but no longer accept traffic; the
      *      gateway owner can re-enable them via `enableHostChain`.
@@ -106,7 +100,7 @@ abstract contract GatewayConfigChecks {
      */
     modifier onlyRegisteredHostChain(uint256 chainId) {
         if (!GATEWAY_CONFIG.isHostChainRegistered(chainId)) {
-            revert HostChainNotRegistered(chainId);
+            revert IGatewayConfig.HostChainNotRegistered(chainId);
         }
         if (GATEWAY_CONFIG.isHostChainDisabled(chainId)) {
             revert HostChainDisabled(chainId);
@@ -133,7 +127,7 @@ abstract contract GatewayConfigChecks {
     function _checkHandleFromRegisteredHostChain(bytes32 handle) internal view {
         uint256 handleChainId = HandleOps.extractChainId(handle);
         if (!GATEWAY_CONFIG.isHostChainRegistered(handleChainId)) {
-            revert HostChainNotRegistered(handleChainId);
+            revert IGatewayConfig.HostChainNotRegistered(handleChainId);
         }
         if (GATEWAY_CONFIG.isHostChainDisabled(handleChainId)) {
             revert HostChainDisabled(handleChainId);

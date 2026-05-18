@@ -977,6 +977,26 @@ describe("GatewayConfig", function () {
         });
       });
 
+      describe("isValidKmsContext", function () {
+        it("Should return true for the current KMS context", async function () {
+          const currentKmsContextId = await gatewayConfig.getCurrentKmsContextId();
+          expect(await gatewayConfig.isValidKmsContext(currentKmsContextId)).to.be.true;
+        });
+
+        it("Should return false for an unknown KMS context", async function () {
+          const unknownContextId = nextKmsContextId + 999n;
+          expect(await gatewayConfig.isValidKmsContext(unknownContextId)).to.be.false;
+        });
+
+        it("Should return false for a destroyed KMS context", async function () {
+          const initialKmsContextId = await gatewayConfig.getCurrentKmsContextId();
+          // Rotate so the initial context becomes non-current and destructible.
+          await gatewayConfig.connect(owner).updateKmsContext(nextKmsContextId, kmsNodes, 0, 1, 1, 1);
+          await gatewayConfig.connect(owner).destroyKmsContext(initialKmsContextId);
+          expect(await gatewayConfig.isValidKmsContext(initialKmsContextId)).to.be.false;
+        });
+      });
+
       describe("Coprocessors updates", function () {
         beforeEach(async function () {
           // updateCoprocessors / updateCoprocessorThreshold now require InputVerification to be paused.

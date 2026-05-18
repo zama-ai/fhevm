@@ -308,11 +308,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         if (kmsContextId == $.currentKmsContextId) {
             revert CurrentKmsContextCannotBeDestroyed(kmsContextId);
         }
-        // Context must exist (signer set populated by updateKmsContext or initializer)
-        // and not be already destroyed.
-        if ($.kmsSignerAddressesForContext[kmsContextId].length == 0 || $.destroyedKmsContexts[kmsContextId]) {
-            revert InvalidKmsContext(kmsContextId);
-        }
+        // Context must exist and not be already destroyed.
+        _requireValidContext(kmsContextId);
 
         $.destroyedKmsContexts[kmsContextId] = true;
         emit DestroyKmsContext(kmsContextId);
@@ -790,6 +787,13 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function getCurrentKmsContextId() external view virtual returns (uint256) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         return $.currentKmsContextId;
+    }
+
+    /**
+     * @notice See {IGatewayConfig-isValidKmsContext}.
+     */
+    function isValidKmsContext(uint256 contextId) external view virtual returns (bool) {
+        return _isValidKmsContext(contextId);
     }
 
     /**

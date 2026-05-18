@@ -682,6 +682,17 @@ interface IGatewayConfig {
     function getCurrentKmsContextId() external view returns (uint256);
 
     /**
+     * @notice Returns whether a KMS context ID has been created and not destroyed.
+     * @dev Non-reverting predicate intended for off-chain consumers. The per-context state
+     *      views (e.g. `isKmsSignerForContext`, `getKmsNodeForContext`) revert with
+     *      `InvalidKmsContext` for unknown/destroyed contexts; use this function to test
+     *      validity without exception handling.
+     * @param contextId The KMS context ID to check.
+     * @return True if the context exists and has not been destroyed.
+     */
+    function isValidKmsContext(uint256 contextId) external view returns (bool);
+
+    /**
      * @notice Get the public decryption threshold for a given context.
      * @param contextId The context ID.
      * @return The public decryption threshold.
