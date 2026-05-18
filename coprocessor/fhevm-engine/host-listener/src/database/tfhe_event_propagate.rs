@@ -405,12 +405,16 @@ impl Database {
             .to_vec();
         let mut any_inserted = false;
         for (idx, result) in results.iter().enumerate() {
-            let output_index = i16::try_from(idx).map_err(|_| {
-                SqlxError::Protocol(format!(
-                    "multi-output arity {} exceeds i16 range",
-                    results.len()
-                ))
-            })?;
+            let output_index = match i16::try_from(idx) {
+                Ok(v) => v,
+                Err(_) => {
+                    // Bounded by `SupportedFheOperations::multi_output_arity` so idx <= u8::MAX = 255 < i16::MAX.
+                    warn!(target: "host_listener",
+                        arity = results.len(),
+                        "multi-output arity exceeds i16::MAX; skipping event");
+                    return Ok(false);
+                }
+            };
             let inserted = self
                 .insert_computation_inner(
                     tx,
