@@ -220,7 +220,7 @@ pub async fn setup_test_key(
     let key_id_gw: i32 = rand::rng().random_range(1..10000);
     let key_id_gw = U256::from(key_id_gw).to_be_bytes::<32>();
 
-    sqlx::query(
+    sqlx::query!(
         "
             INSERT INTO keys(
                 key_id, key_id_gw, pks_key, sks_key, cks_key, sns_pk,
@@ -237,15 +237,15 @@ pub async fn setup_test_key(
                 $8
             )
         ",
+        &key_id,
+        &key_id_gw,
+        &pks,
+        &sks,
+        &cks,
+        sns_pk_oid,
+        sks_key_compressed.as_deref(),
+        sns_pk_compressed_oid,
     )
-    .bind(&key_id)
-    .bind(&key_id_gw)
-    .bind(&pks)
-    .bind(&sks)
-    .bind(&cks)
-    .bind(sns_pk_oid)
-    .bind(sks_key_compressed.as_deref())
-    .bind(sns_pk_compressed_oid)
     .execute(pool)
     .await?;
 

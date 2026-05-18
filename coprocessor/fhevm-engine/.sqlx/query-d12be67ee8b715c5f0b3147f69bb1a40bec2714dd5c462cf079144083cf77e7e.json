@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT pks_key, sks_key, sks_key_compressed, cks_key FROM keys WHERE key_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pks_key",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "sks_key",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "sks_key_compressed",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "cks_key",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "d12be67ee8b715c5f0b3147f69bb1a40bec2714dd5c462cf079144083cf77e7e"
+}

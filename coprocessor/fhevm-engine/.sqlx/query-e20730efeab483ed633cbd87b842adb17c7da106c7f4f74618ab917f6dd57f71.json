@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT sns_pk_compressed, sns_pk FROM keys WHERE key_id_gw = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "sns_pk_compressed",
+        "type_info": "Oid"
+      },
+      {
+        "ordinal": 1,
+        "name": "sns_pk",
+        "type_info": "Oid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "e20730efeab483ed633cbd87b842adb17c7da106c7f4f74618ab917f6dd57f71"
+}

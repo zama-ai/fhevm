@@ -13,6 +13,15 @@ use tfhe::core_crypto::gpu::get_number_of_gpus;
 
 pub type DbKeyId = Vec<u8>;
 
+struct DbKeyRow {
+    key_id: DbKeyId,
+    sequence_number: i64,
+    pks_key: Vec<u8>,
+    sks_key_blob: Vec<u8>,
+    is_compressed: bool,
+    cks_key: Option<Vec<u8>>,
+}
+
 #[derive(Clone)]
 pub struct DbKeyCache {
     cache: Arc<RwLock<lru::LruCache<DbKeyId, DbKey>>>,
@@ -45,14 +54,14 @@ impl DbKeyCache {
 
     /// Fetches the latest key by sequence_number.
     pub async fn fetch_latest(&self, executor: &mut PgConnection) -> anyhow::Result<DbKey> {
-        let row = sqlx::query(
-            "SELECT key_id, sequence_number FROM keys ORDER BY sequence_number DESC LIMIT 1",
+        let row = sqlx::query!(
+            "SELECT key_id, sequence_number FROM keys ORDER BY sequence_number DESC LIMIT 1"
         )
         .fetch_optional(&mut *executor)
         .await?
         .ok_or_else(|| anyhow::anyhow!("No keys found in database"))?;
 
-        let key_id: DbKeyId = row.try_get("key_id")?;
+        let key_id: DbKeyId = row.key_id;
 
         // Check if already in cache
         {
@@ -66,14 +75,15 @@ impl DbKeyCache {
         // We pull just one of sks_key / sks_key_compressed per row: COALESCE
         // picks the compressed blob when populated. The is_compressed flag tells the
         // deserializer which encoding came back.
-        let row = sqlx::query(
+        let row = sqlx::query_as!(
+            DbKeyRow,
             "SELECT key_id, sequence_number, pks_key, \
-             COALESCE(sks_key_compressed, sks_key) AS sks_key_blob, \
-             (sks_key_compressed IS NOT NULL) AS is_compressed, \
+             COALESCE(sks_key_compressed, sks_key) AS \"sks_key_blob!\", \
+             (sks_key_compressed IS NOT NULL) AS \"is_compressed!\", \
              cks_key \
              FROM keys WHERE key_id = $1",
+            &key_id
         )
-        .bind(&key_id)
         .fetch_optional(&mut *executor)
         .await?
         .ok_or_else(|| anyhow::anyhow!("Latest key disappeared from database"))?;
@@ -148,21 +158,23 @@ impl DbKeyCache {
         // Pick sks_key_compressed if present, sks_key otherwise -
         // don't transfer both.
         let rows = if let Some(ref ids) = db_key_ids_to_query {
-            sqlx::query(
+            sqlx::query_as!(
+                DbKeyRow,
                 "SELECT key_id, sequence_number, pks_key, \
-                 COALESCE(sks_key_compressed, sks_key) AS sks_key_blob, \
-                 (sks_key_compressed IS NOT NULL) AS is_compressed, \
+                 COALESCE(sks_key_compressed, sks_key) AS \"sks_key_blob!\", \
+                 (sks_key_compressed IS NOT NULL) AS \"is_compressed!\", \
                  cks_key \
                  FROM keys WHERE key_id = ANY($1)",
+                ids
             )
-            .bind(ids)
             .fetch_all(conn)
             .await?
         } else {
-            sqlx::query(
+            sqlx::query_as!(
+                DbKeyRow,
                 "SELECT key_id, sequence_number, pks_key, \
-                 COALESCE(sks_key_compressed, sks_key) AS sks_key_blob, \
-                 (sks_key_compressed IS NOT NULL) AS is_compressed, \
+                 COALESCE(sks_key_compressed, sks_key) AS \"sks_key_blob!\", \
+                 (sks_key_compressed IS NOT NULL) AS \"is_compressed!\", \
                  cks_key \
                  FROM keys",
             )
@@ -179,13 +191,15 @@ impl DbKeyCache {
         Ok(res)
     }
 
-    fn deserialize_db_key_row(row: PgRow) -> anyhow::Result<DbKey> {
-        let key_id = row.try_get("key_id")?;
-        let sequence_number: i64 = row.try_get("sequence_number")?;
-        let pks_key: Vec<u8> = row.try_get("pks_key")?;
-        let sks_key_blob: Vec<u8> = row.try_get("sks_key_blob")?;
-        let is_compressed: bool = row.try_get("is_compressed")?;
-        let cks_key: Option<Vec<u8>> = row.try_get("cks_key")?;
+    fn deserialize_db_key_row(row: DbKeyRow) -> anyhow::Result<DbKey> {
+        let DbKeyRow {
+            key_id,
+            sequence_number,
+            pks_key,
+            sks_key_blob,
+            is_compressed,
+            cks_key,
+        } = row;
 
         let pks: tfhe::CompactPublicKey = safe_deserialize_key(&pks_key)?;
         let cks: Option<tfhe::ClientKey> = cks_key
@@ -306,13 +320,14 @@ pub async fn read_sns_pk_with_fallback(
     compressed_capacity: usize,
     legacy_capacity: usize,
 ) -> anyhow::Result<(Vec<u8>, SnsPkEncoding)> {
-    let row: PgRow = sqlx::query("SELECT sns_pk_compressed, sns_pk FROM keys WHERE key_id_gw = $1")
-        .bind(key_id_gw)
-        .fetch_one(pool)
-        .await?;
+    let row = sqlx::query!(
+        "SELECT sns_pk_compressed, sns_pk FROM keys WHERE key_id_gw = $1",
+        key_id_gw
+    )
+    .fetch_one(pool)
+    .await?;
 
-    let compressed: Option<Oid> = row.try_get(0)?;
-    if let Some(oid) = compressed {
+    if let Some(oid) = row.sns_pk_compressed {
         info!("Retrieved compressed sns_pk oid: {:?}", oid);
         let bytes = read_large_object_in_chunks(pool, oid, CHUNK_SIZE, compressed_capacity).await?;
         return Ok((bytes, SnsPkEncoding::Compressed));
@@ -323,8 +338,7 @@ pub async fn read_sns_pk_with_fallback(
     // either sns_pk column; surface a clear error if a keys row ever
     // makes it here with both SNS columns NULL rather than letting
     // sqlx produce an opaque ColumnDecode failure.
-    let legacy: Option<Oid> = row.try_get(1)?;
-    let legacy = legacy.ok_or_else(|| {
+    let legacy = row.sns_pk.ok_or_else(|| {
         anyhow::anyhow!("keys row for key_id_gw has neither sns_pk_compressed nor sns_pk populated")
     })?;
     info!("Retrieved legacy sns_pk oid: {:?}", legacy);
