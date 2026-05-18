@@ -136,13 +136,15 @@ fn extract_server_key_without_ns_from_server_key(
     ) = server_key.into_raw_parts();
 
     if noise_squashing_key.is_none() {
-        anyhow::bail!("Server key does not have noise squashing");
+        anyhow::bail!("Server key is missing the noise squashing key");
     }
     if noise_squashing_compression_key.is_none() {
-        anyhow::bail!("Server key does not have noise squashing compression");
+        anyhow::bail!(
+            "Server key is missing the noise squashing compression key"
+        );
     }
     if re_randomization_keyswitching_key.is_none() {
-        anyhow::bail!("Server key does not have rerandomisation");
+        anyhow::bail!("Server key is missing rerandomisation keyswitching key");
     }
 
     Ok(safe_serialize_key(&ServerKey::from_raw_parts(
@@ -174,15 +176,19 @@ fn extract_server_key_without_ns_from_compressed_server_key(
     ) = compressed_server_key.into_raw_parts();
 
     if noise_squashing_key.is_none() {
-        anyhow::bail!("Compressed server key does not have noise squashing");
+        anyhow::bail!(
+            "Compressed server key is missing the noise squashing key"
+        );
     }
     if noise_squashing_compression_key.is_none() {
         anyhow::bail!(
-            "Compressed server key does not have noise squashing compression"
+            "Compressed server key is missing the noise squashing compression key"
         );
     }
     if cpk_re_randomization_key.is_none() {
-        anyhow::bail!("Compressed server key does not have rerandomisation");
+        anyhow::bail!(
+            "Compressed server key is missing the rerandomisation key"
+        );
     }
 
     Ok(safe_serialize_key(&CompressedServerKey::from_raw_parts(
