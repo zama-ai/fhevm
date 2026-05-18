@@ -1,4 +1,5 @@
 import '@nomicfoundation/hardhat-toolbox';
+import 'chai-as-promised';
 import dotenv from 'dotenv';
 import type { HardhatUserConfig } from 'hardhat/config';
 import { task, vars } from 'hardhat/config';
@@ -33,7 +34,7 @@ task('coverage').setAction(async (taskArgs, hre, runSuper) => {
 
 task('test', async (taskArgs, hre, runSuper) => {
   // Run modified test task
-  if (network.name === 'hardhat') {
+  if (hre.network.name === 'hardhat') {
     const privKeyFhevmDeployer = process.env.PRIVATE_KEY_FHEVM_DEPLOYER;
     // await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmDeployer });
     // await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmRelayer });
@@ -87,7 +88,7 @@ const chainIds = {
 };
 
 function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
-  let jsonRpcUrl: string;
+  let jsonRpcUrl: string | undefined;
   const defaultRpcUrl = 'http://localhost:8545';
   const requestedNetwork = (() => {
     const idx = process.argv.indexOf('--network');
@@ -242,11 +243,11 @@ const config: HardhatUserConfig = {
       },
     ],
   },
-  warnings: {
-    '*': {
-      'transient-storage': false,
-    },
-  },
+  // warnings: {
+  //   "*": {
+  //     "transient-storage": false,
+  //   },
+  // },
   typechain: {
     outDir: 'types',
     target: 'ethers-v6',

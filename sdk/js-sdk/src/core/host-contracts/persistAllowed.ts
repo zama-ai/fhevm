@@ -61,7 +61,7 @@ async function _persistAllowed(
   });
 
   if (typeof res !== 'boolean') {
-    throw new Error(`Invalid isAllowedForDecryption result.`);
+    throw new Error(`Invalid persistAllowed result.`);
   }
 
   return res;
