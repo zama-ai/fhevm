@@ -346,18 +346,11 @@ fn execute_partition(
         };
         let edges = dfg.graph.map(|_, _| (), |_, edge| *edge);
         for nidx in ts.iter() {
-            let producer_handles: Vec<Handle> = {
-                let Some(node) = dfg.graph.node_weight(*nidx) else {
-                    error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
-                    continue;
-                };
-                node.result_handles.clone()
-            };
-
             let Some(node) = dfg.graph.node_weight_mut(*nidx) else {
                 error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                 continue;
             };
+            let producer_handles: Vec<Handle> = node.result_handles.clone();
             let result = try_execute_node(node, nidx.index(), tx_inputs, gpu_idx, &tid, &cpk);
             match result {
                 Ok(result) => {
