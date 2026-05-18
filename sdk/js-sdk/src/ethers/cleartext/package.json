@@ -1,0 +1,6 @@
+{
+  "type": "module",
+  "types": "../../_types/ethers/cleartext/index.d.ts",
+  "module": "../../_esm/ethers/cleartext/index.js",
+  "main": "../../_cjs/ethers/cleartext/index.js"
+}
