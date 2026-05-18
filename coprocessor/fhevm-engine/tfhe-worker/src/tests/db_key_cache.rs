@@ -69,23 +69,27 @@ async fn test_fetch_latest_refreshes_cache_after_key_rotation(
 
     let initial = cache.fetch_latest_from_pool(&pool).await?;
 
-    let row = sqlx::query("SELECT pks_key, sks_key, cks_key FROM keys WHERE key_id = $1")
-        .bind(&initial.key_id)
-        .fetch_one(&pool)
-        .await?;
+    let row = sqlx::query(
+        "SELECT pks_key, sks_key, sks_key_compressed, cks_key FROM keys WHERE key_id = $1",
+    )
+    .bind(&initial.key_id)
+    .fetch_one(&pool)
+    .await?;
     let pks_key: Vec<u8> = row.try_get("pks_key")?;
     let sks_key: Vec<u8> = row.try_get("sks_key")?;
+    let sks_key_compressed: Option<Vec<u8>> = row.try_get("sks_key_compressed")?;
     let cks_key: Option<Vec<u8>> = row.try_get("cks_key")?;
 
     let new_key_id = random_key_id();
     let new_key_id_gw = random_key_id();
     sqlx::query(
-        "INSERT INTO keys (key_id, key_id_gw, pks_key, sks_key, cks_key) VALUES ($1, $2, $3, $4, $5)",
+        "INSERT INTO keys (key_id, key_id_gw, pks_key, sks_key, sks_key_compressed, cks_key) VALUES ($1, $2, $3, $4, $5, $6)",
     )
     .bind(&new_key_id)
     .bind(&new_key_id_gw)
     .bind(&pks_key)
     .bind(&sks_key)
+    .bind(sks_key_compressed.as_deref())
     .bind(cks_key)
     .execute(&pool)
     .await?;

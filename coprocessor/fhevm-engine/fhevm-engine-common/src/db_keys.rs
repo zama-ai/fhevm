@@ -214,28 +214,18 @@ impl DbKeyCache {
         #[cfg(feature = "gpu")]
         {
             let num_gpus = get_number_of_gpus() as u64;
-            // The GPU path needs a CompressedServerKey. The XOF ingest
-            // path writes one to sks_key_compressed (is_compressed =
-            // true); the legacy-ServerKey fallback path writes a plain
-            // ServerKey to sks_key (is_compressed = false) which the
-            // deserialize below cannot consume. The LFS test fixture
-            // historically writes CompressedServerKey bytes into
-            // sks_key directly, so we still attempt the deserialize on
-            // legacy rows and wrap the failure with an operator-facing
-            // diagnostic.
+            if !is_compressed {
+                anyhow::bail!(
+                    "GPU coprocessor cannot read a legacy ServerKey-format key (sks_key_compressed is NULL); \
+                     rotate kms-core to publish CompressedXofKeySet so the host-listener can ingest it into the compressed column"
+                );
+            }
+
             let csks: tfhe::CompressedServerKey =
                 safe_deserialize_key(&sks_key_blob).map_err(|err| {
-                    if is_compressed {
-                        anyhow::anyhow!(
-                            "failed to deserialize CompressedServerKey from sks_key_compressed: {err}"
-                        )
-                    } else {
-                        anyhow::anyhow!(
-                            "GPU coprocessor cannot read a legacy ServerKey-format key (sks_key_compressed is NULL); \
-                             rotate kms-core to publish CompressedXofKeySet so the host-listener can ingest it into the compressed column. \
-                             Underlying deserialize error: {err}"
-                        )
-                    }
+                    anyhow::anyhow!(
+                        "failed to deserialize CompressedServerKey from sks_key_compressed: {err}"
+                    )
                 })?;
 
             Ok(DbKey {

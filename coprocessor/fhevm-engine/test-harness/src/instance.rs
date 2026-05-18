@@ -188,16 +188,21 @@ async fn create_database(
 }
 
 pub async fn get_sns_pk_size(pool: &sqlx::PgPool) -> Result<i64, sqlx::Error> {
-    let row = sqlx::query("SELECT sns_pk FROM keys ORDER BY sequence_number DESC LIMIT 1")
-        .fetch_optional(pool)
-        .await?;
+    let row = sqlx::query(
+        "SELECT COALESCE(sns_pk_compressed, sns_pk) AS sns_pk_oid FROM keys ORDER BY sequence_number DESC LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await?;
 
     let Some(row) = row else {
         info!("No sns_pk found in keys");
         return Ok(0);
     };
 
-    let oid: Oid = row.try_get(0)?;
+    let Some(oid) = row.try_get::<Option<Oid>, _>(0)? else {
+        info!("No sns_pk found in keys");
+        return Ok(0);
+    };
     info!(oid = ?oid, "Found sns_pk oid");
     let row = sqlx::query_scalar(
         "SELECT COALESCE(SUM(octet_length(data))::bigint, 0) FROM pg_largeobject WHERE loid = $1",

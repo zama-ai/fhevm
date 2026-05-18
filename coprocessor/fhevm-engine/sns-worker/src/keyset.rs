@@ -26,25 +26,25 @@ fn decode_server_key(
 
 // GPU requires a CompressedServerKey. The XOF ingest path lands one in
 // sns_pk_compressed; the legacy fallback path lands a plain ServerKey
-// in sns_pk which the deserialize below cannot consume. LFS test
-// fixtures put a CompressedServerKey into the sns_pk column directly,
-// so we still attempt the deserialize on Legacy rows and wrap the
-// failure with an operator-facing diagnostic.
+// in sns_pk which the GPU path cannot consume.
 #[cfg(feature = "gpu")]
 fn decode_server_key(
     blob: &[u8],
     encoding: SnsPkEncoding,
 ) -> Result<tfhe::CudaServerKey, ExecutionError> {
+    if encoding == SnsPkEncoding::Legacy {
+        return Err(anyhow::anyhow!(
+            "GPU coprocessor cannot read a legacy ServerKey-format key (sns_pk_compressed is NULL); \
+             rotate kms-core to publish CompressedXofKeySet so the host-listener can ingest it into the compressed column"
+        )
+        .into());
+    }
+
     let compressed_server_key: tfhe::CompressedServerKey =
-        safe_deserialize_sns_key(blob).map_err(|err| match encoding {
-            SnsPkEncoding::Compressed => anyhow::anyhow!(
+        safe_deserialize_sns_key(blob).map_err(|err| {
+            anyhow::anyhow!(
                 "failed to deserialize CompressedServerKey from sns_pk_compressed: {err}"
-            ),
-            SnsPkEncoding::Legacy => anyhow::anyhow!(
-                "GPU coprocessor cannot read a legacy ServerKey-format key (sns_pk_compressed is NULL); \
-                 rotate kms-core to publish CompressedXofKeySet so the host-listener can ingest it into the compressed column. \
-                 Underlying deserialize error: {err}"
-            ),
+            )
         })?;
     info!("Deserialized sns_pk/sks_ns to CompressedServerKey");
     let server_key = compressed_server_key.decompress_to_gpu();
