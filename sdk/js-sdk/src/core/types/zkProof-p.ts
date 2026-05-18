@@ -1,6 +1,6 @@
 import type { InputHandle } from './encryptedTypes-p.js';
 import type { EncryptionBits } from './fheType.js';
-import type { Bytes, ChecksummedAddress, Uint64BigInt } from './primitives.js';
+import type { Bytes, BytesHex, ChecksummedAddress, Uint64BigInt } from './primitives.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -25,5 +25,7 @@ export interface ZkProof {
   readonly ciphertextWithZkProof: Bytes;
   readonly encryptionBits: readonly EncryptionBits[];
 
+  // Private functions
   getInputHandles(): readonly InputHandle[];
+  getExtraData(): BytesHex;
 }

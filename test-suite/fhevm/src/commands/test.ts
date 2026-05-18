@@ -49,6 +49,9 @@ const timedLabel = (label: string, started: number) =>
 
 const TEST_PROFILE_NAMES = [...Object.keys(TEST_GREP), "ciphertext-drift", "ciphertext-drift-auto-recovery", "coprocessor-db-state-revert", "heavy", "light", "standard"].sort();
 const ZERO_TESTS_RE = /\b0 passing\b/;
+// Mocha prints "N pending" when tests exist but were skipped. If any are pending,
+// the grep did match — don't treat all-skipped as "matched zero tests".
+const SOME_PENDING_RE = /\b[1-9]\d* pending\b/;
 const PAUSE_PROFILE_SCOPE: Record<string, string> = {
   "paused-host-contracts": "host",
   "paused-gateway-contracts": "gateway",
@@ -401,7 +404,7 @@ const runTestsCommand = (
 
 /** Runs a narrow e2e grep inside the test-suite container. */
 const assertMatchedTests = (output: string, label: string) => {
-  if (ZERO_TESTS_RE.test(output)) {
+  if (ZERO_TESTS_RE.test(output) && !SOME_PENDING_RE.test(output)) {
     throw new PreflightError(`${label} matched zero tests`);
   }
 };
