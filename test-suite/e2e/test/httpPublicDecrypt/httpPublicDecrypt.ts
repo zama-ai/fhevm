@@ -50,7 +50,7 @@ describe('HTTPPublicDecrypt', function () {
         await this.instances.alice.publicDecrypt([handle]);
         expect.fail('Expected an error - handle is not publicly decryptable');
       } catch (error) {
-        expect(error.message).to.include('not allowed for public decryption');
+        expect((error as { message: string }).message).to.include('not allowed for public decryption');
       }
     });
   });

@@ -1,7 +1,7 @@
 {
   "name": "@fhevm/sdk",
   "description": "TypeScript Interface for FHEVM",
-  "version": "1.0.0-alpha.1",
+  "version": "1.0.0-alpha.5",
   "type": "module",
   "main": "./_cjs/index.js",
   "module": "./_esm/index.js",
@@ -11,8 +11,10 @@
   "files": [
     "*",
     "!**/*.test.ts",
+    "!**/*.template",
     "!**/*.tsbuildinfo",
-    "!tsconfig.build.json"
+    "!vitest.config.ts",
+    "!tsconfig.json"
   ],
   "exports": {
     ".": {
@@ -35,6 +37,11 @@
       "import": "./_esm/ethers/index.js",
       "default": "./_cjs/ethers/index.js"
     },
+    "./ethers/cleartext": {
+      "types": "./_types/ethers/cleartext/index.d.ts",
+      "import": "./_esm/ethers/cleartext/index.js",
+      "default": "./_cjs/ethers/cleartext/index.js"
+    },
     "./types": {
       "types": "./_types/core/types/index.d.ts",
       "import": "./_esm/core/types/index.js",
@@ -44,6 +51,11 @@
       "types": "./_types/viem/index.d.ts",
       "import": "./_esm/viem/index.js",
       "default": "./_cjs/viem/index.js"
+    },
+    "./viem/cleartext": {
+      "types": "./_types/viem/cleartext/index.d.ts",
+      "import": "./_esm/viem/cleartext/index.js",
+      "default": "./_cjs/viem/cleartext/index.js"
     },
     "./actions/base": {
       "types": "./_types/core/actions/base/index.d.ts",
@@ -73,7 +85,7 @@
     "./package.json": "./package.json"
   },
   "peerDependencies": {
-    "ethers": ">=6",
+    "ethers": ">=6.8.0",
     "typescript": ">=5.0.4",
     "viem": ">=2"
   },
@@ -90,6 +102,7 @@
   },
   "dependencies": {
     "@noble/hashes": "2.0.1",
+    "@noble/curves": "2.0.1",
     "wasm-feature-detect": "^1.8.0"
   },
   "repository": {

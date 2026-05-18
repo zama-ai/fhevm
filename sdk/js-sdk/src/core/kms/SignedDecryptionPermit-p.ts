@@ -29,7 +29,7 @@ import {
   createKmsDelegatedUserDecryptEip712,
 } from './createKmsDelegatedUserDecryptEip712.js';
 import { assertRecordStringProperty } from '../base/string.js';
-import { assertIsTransportKeypair, type TransportKeypair } from './TransportKeypair-p.js';
+import { assertIsTransportKeyPair, type TransportKeyPair } from './TransportKeyPair-p.js';
 import { assertKmsEIP712DeadlineValidity } from './utils.js';
 import { readKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
 import { kmsSignersContextToExtraData } from '../host-contracts/KmsSignersContext-p.js';
@@ -125,7 +125,7 @@ abstract class SignedDecryptionPermitBaseImpl {
     }
   }
 
-  public get e2eTransportPublicKey(): BytesHex {
+  public get transportPublicKey(): BytesHex {
     return this.#eip712.message.publicKey;
   }
 
@@ -301,7 +301,7 @@ type SignDecryptionPermitCommonParameters = {
   readonly durationDays: number;
   readonly signerAddress: string;
   readonly signer: NativeSigner;
-  readonly transportKeypair: TransportKeypair;
+  readonly transportKeyPair: TransportKeyPair;
 };
 
 export type SignSelfDecryptionPermitParameters = SignDecryptionPermitCommonParameters & {
@@ -324,10 +324,10 @@ export type SignDecryptionPermitParameters =
  * to decrypt encrypted values belonging to the `delegatorAddress` account.
  * Otherwise, creates a standard permit where the signer decrypts their own values.
  *
- * The EIP-712 message includes the keypair's public key, allowing the gateway
- * to encrypt the decrypted result for this specific keypair.
+ * The EIP-712 message includes the key pair's public key, allowing the gateway
+ * to encrypt the decrypted result for this specific key pair.
  *
- * @throws If the signer, address, or keypair is invalid.
+ * @throws If the signer, address, or key pair is invalid.
  * @throws If the signature verification fails.
  */
 export async function signDecryptionPermit(
@@ -353,12 +353,12 @@ export async function signDecryptionPermit(
     startTimestamp,
     durationDays,
     signerAddress: signerAddressArg,
-    transportKeypair,
+    transportKeyPair: transportKeyPair,
     signer,
     delegatorAddress,
   } = parameters;
 
-  assertIsTransportKeypair(transportKeypair, {});
+  assertIsTransportKeyPair(transportKeyPair, {});
   assertIsAddress(signerAddressArg, {});
 
   if (delegatorAddress !== undefined) {
@@ -380,7 +380,7 @@ export async function signDecryptionPermit(
     durationDays,
     startTimestamp,
     extraData,
-    publicKey: transportKeypair.publicKey,
+    publicKey: transportKeyPair.publicKey,
   };
 
   const eip712 =
@@ -414,10 +414,10 @@ export async function parseSignedDecryptionPermit(
     readonly client: NonNullable<object>;
     readonly options: { readonly batchRpcCalls: boolean };
   },
-  transportKeypair: TransportKeypair,
+  transportKeyPair: TransportKeyPair,
   permit: unknown,
 ): Promise<SignedDecryptionPermit> {
-  assertIsTransportKeypair(transportKeypair, {});
+  assertIsTransportKeyPair(transportKeyPair, {});
 
   const permitName = 'permit';
   const options = {};
@@ -438,10 +438,10 @@ export async function parseSignedDecryptionPermit(
     throw new Error(`Unknown permit primaryType: ${primaryType}`);
   }
 
-  if (eip712.message.publicKey.toLowerCase() !== transportKeypair.publicKey.toLowerCase()) {
+  if (eip712.message.publicKey.toLowerCase() !== transportKeyPair.publicKey.toLowerCase()) {
     throw new Error(
-      "The permit's publicKey does not match the E2eTransportKeypair's publicKey. " +
-        'Ensure the permit was signed with the same keypair.',
+      "The permit's publicKey does not match the TransportKeyPairKeyPair's publicKey. " +
+        'Ensure the permit was signed with the same key pair.',
     );
   }
 

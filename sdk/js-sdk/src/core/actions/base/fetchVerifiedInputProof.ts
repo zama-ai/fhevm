@@ -20,6 +20,6 @@ export async function fetchVerifiedInputProof(
   parameters: FetchVerifiedInputProofParameters,
 ): Promise<FetchVerifiedInputProofReturnType> {
   const { zkProof, ...rest } = parameters;
-  const sanitizedZkProof = await toZkProof(zkProof);
+  const sanitizedZkProof = await toZkProof(zkProof, parameters.extraData);
   return fetchVerifiedInputProof_(fhevm, { zkProof: sanitizedZkProof, ...rest });
 }
