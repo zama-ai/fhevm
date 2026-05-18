@@ -649,17 +649,10 @@ fn run_computation(
     let op = FheOperation::try_from(operation);
     match op {
         Ok(FheOperation::FheGetCiphertext) => {
-            let ct_type = inputs[0].type_num();
-            let compressed = inputs[0].compress();
-            match compressed {
-                Ok(ct_bytes) => (
-                    graph_node_index,
-                    Ok(vec![CompressedCiphertext { ct_type, ct_bytes }]),
-                ),
-                Err(error) => {
-                    telemetry::set_current_span_error(&error);
-                    (graph_node_index, Err(error.into()))
-                }
+            let ct = inputs.into_iter().next().unwrap();
+            match compress_single(ct, &txn_id_short, "FheGetCiphertext") {
+                Ok(cc) => (graph_node_index, Ok(vec![cc])),
+                Err(e) => (graph_node_index, Err(e)),
             }
         }
         Ok(fhe_op) => {
