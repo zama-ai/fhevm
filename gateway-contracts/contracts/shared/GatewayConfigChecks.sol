@@ -40,18 +40,6 @@ abstract contract GatewayConfigChecks {
     error NotCoprocessorSigner(address signerAddress);
 
     /**
-     * @notice Error emitted when an address is not a custodian transaction sender.
-     * @param txSenderAddress The address that is not a custodian transaction sender.
-     */
-    error NotCustodianTxSender(address txSenderAddress);
-
-    /**
-     * @notice Error emitted when an address is not a custodian signer.
-     * @param signerAddress The address that is not a custodian signer.
-     */
-    error NotCustodianSigner(address signerAddress);
-
-    /**
      * @notice Error emitted when a host chain is not registered in the GatewayConfig contract.
      * @param chainId The host chain's chain ID.
      */
@@ -113,36 +101,12 @@ abstract contract GatewayConfigChecks {
     }
 
     /**
-     * @notice Checks if the address is a KMS signer.
-     * @param signerAddress The address to check.
-     */
-    function _checkIsKmsSigner(address signerAddress) internal view {
-        if (!GATEWAY_CONFIG.isKmsSigner(signerAddress)) {
-            revert NotKmsSigner(signerAddress);
-        }
-    }
-
-    /**
      * @notice Checks if the address is a coprocessor signer.
      * @param signerAddress The address to check.
      */
     function _checkIsCoprocessorSigner(address signerAddress) internal view {
         if (!GATEWAY_CONFIG.isCoprocessorSigner(signerAddress)) {
             revert NotCoprocessorSigner(signerAddress);
-        }
-    }
-
-    /**
-     * @notice Checks if the signer is a KMS signer, and that it corresponds to the transaction
-     * sender of the same KMS node.
-     * @param signerAddress The signer address to check.
-     * @param txSenderAddress The address of the KMS transaction sender.
-     */
-    function _checkKmsSignerMatchesTxSender(address signerAddress, address txSenderAddress) internal view {
-        _checkIsKmsSigner(signerAddress);
-
-        if (GATEWAY_CONFIG.getKmsNode(txSenderAddress).signerAddress != signerAddress) {
-            revert KmsSignerDoesNotMatchTxSender(signerAddress, txSenderAddress);
         }
     }
 

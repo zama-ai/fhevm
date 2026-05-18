@@ -100,6 +100,12 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
         protocolConfig.getPublicDecryptionThresholdForContext(contextId);
+
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
+        protocolConfig.getKmsGenThresholdForContext(contextId);
+
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
+        protocolConfig.getMpcThresholdForContext(contextId);
     }
 
     // -----------------------------------------------------------------------
@@ -437,6 +443,52 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertEq(protocolConfig.getUserDecryptionThresholdForContext(secondContextId), 1);
         // Old context still returns the original threshold
         assertEq(protocolConfig.getUserDecryptionThresholdForContext(firstContextId), 2);
+    }
+
+    function test_getKmsGenThresholdForContext() public {
+        _setupDefault();
+        uint256 firstContextId = protocolConfig.getCurrentKmsContextId();
+        assertEq(protocolConfig.getKmsGenThresholdForContext(firstContextId), 3);
+
+        IProtocolConfig.KmsThresholds memory newThresholds = IProtocolConfig.KmsThresholds({
+            publicDecryption: 1,
+            userDecryption: 1,
+            kmsGen: 2,
+            mpc: 1
+        });
+        vm.prank(owner);
+        protocolConfig.defineNewKmsContext(_makeKmsNodes(2), newThresholds);
+        uint256 secondContextId = protocolConfig.getCurrentKmsContextId();
+
+        assertEq(protocolConfig.getKmsGenThresholdForContext(secondContextId), 2);
+        assertEq(protocolConfig.getKmsGenThresholdForContext(firstContextId), 3);
+
+        uint256 invalidId = KMS_CONTEXT_COUNTER_BASE + 999;
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidId));
+        protocolConfig.getKmsGenThresholdForContext(invalidId);
+    }
+
+    function test_getMpcThresholdForContext() public {
+        _setupDefault();
+        uint256 firstContextId = protocolConfig.getCurrentKmsContextId();
+        assertEq(protocolConfig.getMpcThresholdForContext(firstContextId), 4);
+
+        IProtocolConfig.KmsThresholds memory newThresholds = IProtocolConfig.KmsThresholds({
+            publicDecryption: 1,
+            userDecryption: 1,
+            kmsGen: 1,
+            mpc: 2
+        });
+        vm.prank(owner);
+        protocolConfig.defineNewKmsContext(_makeKmsNodes(2), newThresholds);
+        uint256 secondContextId = protocolConfig.getCurrentKmsContextId();
+
+        assertEq(protocolConfig.getMpcThresholdForContext(secondContextId), 2);
+        assertEq(protocolConfig.getMpcThresholdForContext(firstContextId), 4);
+
+        uint256 invalidId = KMS_CONTEXT_COUNTER_BASE + 999;
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidId));
+        protocolConfig.getMpcThresholdForContext(invalidId);
     }
 
     function test_getPublicDecryptionThresholdForContext() public {
