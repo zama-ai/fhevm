@@ -15,6 +15,28 @@ import linkcheckmd as lc
 MARKDOWN_LINK_REGEX = [re.compile(r"\[[^\]]*\]\(([^\)]*)\)"), re.compile(r"href=\"[^\"]*\"")]
 
 
+def should_skip_link(link: str) -> bool:
+    """Return True for links that should not be checked as local files."""
+    link = link.strip()
+    if link.startswith("http"):
+        # This means this is a reference to a website.
+        return True
+    if link.startswith("<http"):
+        # This means this is a reference to a website.
+        return True
+    if link.startswith("#"):
+        # This means this is a reference to a header.
+        return True
+    if link.startswith("mailto:"):
+        # This means this is a reference to an email.
+        return True
+    if link.endswith(".address"):
+        # Solidity accessors (e.g. recipient.address) are not file links.
+        return True
+
+    return False
+
+
 # pylint: disable-next=too-many-branches
 def check_content_for_dead_links(
     content: str, file_path: Path, cell_id: Optional[int] = None
@@ -44,17 +66,7 @@ def check_content_for_dead_links(
 
     for link in links:
         link = link.strip()
-        if link.startswith("http"):
-            # This means this is a reference to a website
-            continue
-        if link.startswith("<http"):
-            # This means this is a reference to a website
-            continue
-        if link.startswith("#"):
-            # This means this is a reference to a header
-            continue
-        if link.startswith("mailto:"):
-            # This means this is a reference to an email
+        if should_skip_link(link):
             continue
         if "#" in link:
             # This means this is a reference to a file with header
@@ -165,6 +177,8 @@ def main():
                             for err_link in bad:
                                 # Skip links to CML internal issues
                                 if "zama-ai/concrete-ml-internal" in err_link[1]:
+                                    continue
+                                if should_skip_link(err_link[1]):
                                     continue
 
                                 errors.append(
