@@ -19,10 +19,10 @@ function done(status: 'pass' | 'fail') {
   document.body.appendChild(el);
 }
 
-const WASM_URLS: Record<string, string> = {
-  'tfhe_bg.v1.5.3.wasm': '/src/wasm/tfhe/tfhe_bg.v1.5.3.wasm',
-  'tfhe-worker.v1.5.3.mjs': '/src/wasm/tfhe/tfhe-worker.v1.5.3.mjs',
-  'kms_lib_bg.v0.13.10.wasm': '/src/wasm/tkms/kms_lib_bg.v0.13.10.wasm',
+const WASM_URLS: Record<string, URL> = {
+  'tfhe_bg.v1.5.3.wasm': new URL('/src/wasm/tfhe/tfhe_bg.v1.5.3.wasm', location.origin),
+  'tfhe-worker.v1.5.3.mjs': new URL('/src/wasm/tfhe/tfhe-worker.v1.5.3.mjs', location.origin),
+  'kms_lib_bg.v0.13.10.wasm': new URL('/src/wasm/tkms/v0.13.10/kms_lib_bg.wasm', location.origin),
 };
 
 async function run() {
@@ -30,11 +30,11 @@ async function run() {
     log('Setting runtime config (URL-based WASM)...');
     setFhevmRuntimeConfig({
       locateFile: (file: string): URL => {
-        const path = WASM_URLS[file];
-        if (!path) {
+        const url = WASM_URLS[file];
+        if (!url) {
           throw new Error(`Unknown WASM file: ${file}`);
         }
-        return new URL(path, location.origin);
+        return url;
       },
       logger: {
         debug: (message: string) => log(`  [debug] ${message}`),

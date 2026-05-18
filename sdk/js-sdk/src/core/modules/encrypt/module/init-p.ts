@@ -1,36 +1,18 @@
 import type { FhevmRuntime, FhevmRuntimeConfig } from '../../../types/coreFhevmRuntime.js';
-import init_tfhe_lib from '../../../../wasm/tfhe/tfhe.v1.5.3.js';
-import { init_panic_hook, initThreadPool, setWorkerUrlConfig, getWasmInfo } from '../../../../wasm/tfhe/tfhe.v1.5.3.js';
-import { isomorphicCompileWasm, isomorphicCompileWasmFromBase64 } from '../../../base/wasm.js';
+import type { GetTfheModuleInfoReturnType, TfheModuleInfo } from '../types.js';
+import type { TfheLibApi } from '../../../../wasm/tfhe/TfheApi.js';
+import type { TfheAssetMetadata, TfheVersion } from '../../../../wasm/tfhe/loadTfheLib.js';
+import { isomorphicCompileVerifiedWasm, isomorphicCompileWasmFromBase64 } from '../../../base/wasm.js';
 import { isBlobWorkerSupported, isBrowserLike } from '../../../base/isomorphicWorker.js';
 import { threads } from 'wasm-feature-detect';
 import { assertIsFhevmRuntime } from '../../../runtime/CoreFhevmRuntime-p.js';
-
-////////////////////////////////////////////////////////////////////////////////
-
-// IMPORTANT: The import path MUST be a string literal, not a variable.
-// Bundlers (Webpack, Vite, Rollup) statically analyze import() calls to
-// create separate chunks for code-splitting. A variable path like
-// `import(someVar)` makes the target unresolvable — the bundler either
-// includes every possible file or fails entirely.
-// With a literal path, the bundler creates a lazy-loaded chunk for this
-// ~6.5MB base64 file, only downloaded when this function is called.
-function dynamicImportWasmBase64(): Promise<{
-  readonly tfheWasmBase64: string;
-}> {
-  // Bundler Alert: !! KEEP THE PATH AS-IS !!
-  return import('../../../../wasm/tfhe/tfhe_bg.v1.5.3.wasm.base64.js');
-}
-
-const TFHE_WORKER_JS_FILENAME = 'tfhe-worker.v1.5.3.mjs';
-const TFHE_BG_WASM_FILENAME = 'tfhe_bg.v1.5.3.wasm';
-
-////////////////////////////////////////////////////////////////////////////////
-
+import { resolveTfheModuleVersion } from '../../../../wasm/tfheModuleVersion-p.js';
 // Pure JS file (not compiled by tsc) — provides cross-platform base URL
 // for resolving WASM paths. Uses import.meta.url in ESM, __filename in CJS.
 import { wasmBaseUrl } from '../../../../wasm/wasmBaseUrl.js';
-import type { GetTfheModuleInfoReturnType, TfheModuleInfo } from '../types.js';
+import { loadTfheLib, loadTfheWasmBase64, tfheAssetsWithVersion } from '../../../../wasm/tfhe/loadTfheLib.js';
+
+////////////////////////////////////////////////////////////////////////////////
 
 // (Node only) Path relative to src/wasm/ where wasmBaseUrl is anchored
 const nodeDefaultLocateFile = (file: string): URL => {
@@ -48,13 +30,31 @@ type InitTfheModuleParameters = {
   readonly num_threads?: number;
 };
 
+type ResolvedTfheAsset = TfheAssetMetadata & {
+  readonly url: URL | undefined;
+};
+
+function _resolveTfheAsset(asset: TfheAssetMetadata, locateFile: FhevmRuntimeConfig['locateFile']): ResolvedTfheAsset {
+  let url: URL | undefined;
+
+  if (locateFile !== undefined) {
+    url = locateFile(asset.filename);
+  } else if (!isBrowserLike()) {
+    url = nodeDefaultLocateFile(asset.localRelativePath);
+  }
+
+  return Object.freeze({ ...asset, url });
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // ResolvedTfheModuleConfig
 ////////////////////////////////////////////////////////////////////////////////
 
 type ResolvedTfheModuleConfig = {
-  readonly workerUrl: URL | undefined;
-  readonly wasmUrl: URL | undefined;
+  readonly version: TfheVersion;
+  readonly worker: ResolvedTfheAsset;
+  readonly wasmAssetLoadMode: FhevmRuntimeConfig['wasmAssetLoadMode'];
+  readonly wasm: ResolvedTfheAsset;
   /* if `true`, then `numberOfThreads` is 0, if `false` then `numberOfThreads` > 0 */
   readonly singleThread: boolean;
   readonly numberOfThreads: number;
@@ -74,7 +74,9 @@ async function _getOrResolveTfheModuleConfig(runtime: FhevmRuntime): Promise<Res
     return resolvedTfheModuleConfig;
   }
 
-  resolvingTfheModuleConfigPromise ??= _resolveTfheModuleConfig(runtime.config)
+  const version = resolveTfheModuleVersion(runtime.config);
+
+  resolvingTfheModuleConfigPromise ??= _resolveTfheModuleConfig(runtime.config, version)
     .then((cfg) => {
       resolvedTfheModuleConfig = cfg;
       return cfg;
@@ -92,8 +94,16 @@ async function _getOrResolveTfheModuleConfig(runtime: FhevmRuntime): Promise<Res
  * Resolves user-provided {@link FhevmRuntimeConfig} into a fully resolved config
  * (thread count, worker URL, WASM URL). Must be called before WASM initialization.
  */
-async function _resolveTfheModuleConfig(parameters: FhevmRuntimeConfig): Promise<ResolvedTfheModuleConfig> {
-  const { locateFile, singleThread: singleThreadConfig, numberOfThreads: numberOfThreadsConfig } = parameters;
+async function _resolveTfheModuleConfig(
+  parameters: FhevmRuntimeConfig,
+  version: TfheVersion,
+): Promise<ResolvedTfheModuleConfig> {
+  const {
+    locateFile,
+    wasmAssetLoadMode,
+    singleThread: singleThreadConfig,
+    numberOfThreads: numberOfThreadsConfig,
+  } = parameters;
 
   let singleThread = false;
   if (singleThreadConfig !== undefined) {
@@ -102,23 +112,24 @@ async function _resolveTfheModuleConfig(parameters: FhevmRuntimeConfig): Promise
 
   const canUseBlob = await isBlobWorkerSupported();
 
-  let wasmUrl: URL | undefined;
-  let workerUrl: URL | undefined;
+  const assets = tfheAssetsWithVersion(version);
+  const wasm = _resolveTfheAsset(assets.wasm, locateFile);
+  const worker = _resolveTfheAsset(assets.worker, locateFile);
 
   if (locateFile !== undefined) {
-    workerUrl = locateFile(TFHE_WORKER_JS_FILENAME);
-    wasmUrl = locateFile(TFHE_BG_WASM_FILENAME);
+    parameters.logger?.debug(`resolve tfhe wasm filename: ${wasm.filename} -> url: ${wasm.url}`);
+    parameters.logger?.debug(`resolve tfhe worker filename: ${worker.filename} -> url: ${worker.url}`);
   } else {
     /*
       if run in Node only, use defaultLocateFile!
     */
-    if (!isBrowserLike()) {
-      workerUrl = nodeDefaultLocateFile(TFHE_WORKER_JS_FILENAME);
-      wasmUrl = nodeDefaultLocateFile(TFHE_BG_WASM_FILENAME);
-    } else {
+    if (isBrowserLike()) {
       if (!canUseBlob) {
         throw new Error('Missing locate file function');
       }
+    } else {
+      parameters.logger?.debug(`resolve tfhe wasm local path: ${wasm.localRelativePath} -> url: ${wasm.url}`);
+      parameters.logger?.debug(`resolve tfhe worker local path: ${worker.localRelativePath} -> url: ${worker.url}`);
     }
   }
 
@@ -149,15 +160,19 @@ async function _resolveTfheModuleConfig(parameters: FhevmRuntimeConfig): Promise
     numberOfThreads = 0;
   }
 
-  setWorkerUrlConfig({
-    workerUrl,
+  const tfheLib = await loadTfheLib(version);
+  tfheLib.setWorkerUrlConfig({
+    workerUrl: worker.url,
+    wasmAssetLoadMode,
     logger: parameters.logger,
   });
 
   const cfg = {
+    version,
     numberOfThreads,
-    workerUrl,
-    wasmUrl,
+    worker,
+    wasmAssetLoadMode,
+    wasm,
     singleThread,
     logger: parameters.logger,
     supportsThreads,
@@ -172,13 +187,14 @@ async function _resolveTfheModuleConfig(parameters: FhevmRuntimeConfig): Promise
 // initTfheModule
 ////////////////////////////////////////////////////////////////////////////////
 
-let cachedTfheModulePromise: Promise<void> | undefined;
+let cachedTfheModulePromise: Promise<TfheLibApi> | undefined;
 let ownerUid: string | undefined = undefined;
 
 /**
- * Initializes the TFHE module.
+ * Initializes the TFHE module and returns the loaded lib bindings.
+ * Idempotent: subsequent calls return the same cached lib instance.
  */
-export async function initTfheModule(runtime: FhevmRuntime): Promise<void> {
+export async function initTfheModule(runtime: FhevmRuntime): Promise<TfheLibApi> {
   assertIsFhevmRuntime(runtime, {});
 
   if (ownerUid !== undefined && runtime.uid !== ownerUid) {
@@ -209,7 +225,7 @@ export async function initTfheModule(runtime: FhevmRuntime): Promise<void> {
     cachedTfheModulePromise = (async () => {
       // resolve is async
       const cfg = await _getOrResolveTfheModuleConfig(runtime);
-      await _initTfheModule(cfg);
+      return await _initTfheModule(cfg);
     })();
   }
 
@@ -218,42 +234,46 @@ export async function initTfheModule(runtime: FhevmRuntime): Promise<void> {
 
 let moduleInfo: TfheModuleInfo | undefined = undefined;
 
-async function _initTfheModule(cfg: ResolvedTfheModuleConfig): Promise<void> {
+async function _initTfheModule(cfg: ResolvedTfheModuleConfig): Promise<TfheLibApi> {
+  const tfheLib = await loadTfheLib(cfg.version);
+
   // Compile WASM module (see matrix in types.ts)
   let wasmModule;
-  if (cfg.wasmUrl !== undefined) {
-    cfg.logger?.debug(`compile wasm at: ${cfg.wasmUrl}`);
-    wasmModule = await isomorphicCompileWasm(cfg.wasmUrl);
+  if (cfg.wasm.url !== undefined) {
+    cfg.logger?.debug(`compile verified wasm at: ${cfg.wasm.url}`);
+    wasmModule = await isomorphicCompileVerifiedWasm(cfg.wasm.url, cfg.wasm.sha256);
   } else {
-    cfg.logger?.debug(`compile wasm from embedded base64`);
-    const { tfheWasmBase64 } = await dynamicImportWasmBase64();
-    wasmModule = await isomorphicCompileWasmFromBase64(tfheWasmBase64);
+    const { tfheWasmBase64, tfheWasmBase64CompressionFormat } = await loadTfheWasmBase64(cfg.version);
+    cfg.logger?.debug(`compile wasm from embedded base64 (compression:${tfheWasmBase64CompressionFormat ?? 'none'})`);
+    wasmModule = await isomorphicCompileWasmFromBase64(tfheWasmBase64, tfheWasmBase64CompressionFormat);
   }
 
   const input: InitTfheModuleParameters = { module_or_path: wasmModule };
 
   // 2. Load and instantiate the TFHE WASM binary
-  await init_tfhe_lib(input);
+  await tfheLib.default(input);
 
   // 3. Route WASM panics to console.error instead of silently aborting
-  init_panic_hook();
+  tfheLib.init_panic_hook();
 
   // 4. Spawn Web Workers for parallel FHE operations (skipped when single-threaded)
   if (!cfg.singleThread) {
     cfg.logger?.debug(`initThreadPool(${cfg.numberOfThreads})`);
-    await initThreadPool(cfg.numberOfThreads);
+    await tfheLib.initThreadPool(cfg.numberOfThreads);
   }
 
-  const wasmInfo = getWasmInfo();
+  const wasmInfo = tfheLib.getWasmInfo();
 
   moduleInfo = Object.freeze({
-    wasmUrl: cfg.wasmUrl ? new URL(cfg.wasmUrl) : undefined,
+    wasmUrl: cfg.wasm.url ? new URL(cfg.wasm.url) : undefined,
     version: wasmInfo.version,
     name: wasmInfo.name,
-    workerUrl: cfg.workerUrl ? new URL(cfg.workerUrl) : undefined,
+    workerUrl: cfg.worker.url ? new URL(cfg.worker.url) : undefined,
     numberOfThreads: cfg.singleThread ? 0 : cfg.numberOfThreads,
     threadsAvailable: cfg.supportsThreads,
   });
+
+  return tfheLib;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

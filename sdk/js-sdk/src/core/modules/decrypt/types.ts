@@ -17,7 +17,7 @@ WASM compilation (how to get WebAssembly.Module):
 
 | wasmUrl   | Result                                                         |
 |-----------|----------------------------------------------------------------|
-| defined   | Compile from URL (isomorphicCompileWasm)                       |
+| defined   | Verify and compile from URL (isomorphicCompileVerifiedWasm)    |
 | undefined | Compile from embedded base64 (isomorphicCompileWasmFromBase64) |
 
 */

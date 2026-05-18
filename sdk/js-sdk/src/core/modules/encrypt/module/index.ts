@@ -27,7 +27,9 @@ import { getTfheModuleInfo, initTfheModule } from './init-p.js';
 export const encryptModule: EncryptModuleFactory = (runtime: FhevmRuntime) => {
   return Object.freeze({
     encrypt: Object.freeze({
-      initTfheModule: () => initTfheModule(runtime),
+      initTfheModule: async () => {
+        await initTfheModule(runtime);
+      },
       getTfheModuleInfo: () => getTfheModuleInfo(),
       parseTFHEProvenCompactCiphertextList: (args: ParseTFHEProvenCompactCiphertextListParameters) =>
         parseTFHEProvenCompactCiphertextList(runtime, args),

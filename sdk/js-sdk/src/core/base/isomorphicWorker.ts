@@ -55,6 +55,9 @@ export async function createIsomorphicWorker(url: string): Promise<Worker | Node
   return createNodeLikeWorker(url);
 }
 
+/*
+  TODO: add support for TrustedScriptURL if needed
+*/
 export async function createIsomorphicWorkerFromCode(jsCode: string): Promise<Worker | NodeMessagePort> {
   if (isBrowserLike()) {
     const blob = new Blob([jsCode], { type: 'application/javascript' });

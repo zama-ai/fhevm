@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <!--
+      Restrictive CSP for this page only. `script-src 'self'` allows the
+      module script + Vite's HMR client (both same-origin) but deliberately
+      omits 'wasm-unsafe-eval' / 'unsafe-eval', so any WebAssembly.compile*
+      call must throw. `worker-src 'self' blob:' lets the TFHE worker spawn.
+      `connect-src` / `style-src` / `img-src` fall back to no restriction
+      because `default-src` is not set.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self'; worker-src 'self' blob:" />
+    <meta charset="utf-8" />
+    <title>Smoke CSP-block — WASM compile must fail</title>
+    <style>
+      body { font-family: monospace; background: #1a1a1a; color: #e0e0e0; padding: 2rem; }
+      .pass { color: #4caf50; }
+      .fail { color: #f44336; }
+    </style>
+  </head>
+  <body>
+    <h2>Smoke CSP-block — WASM compile must fail</h2>
+    <pre id="log"></pre>
+    <script type="module" src="../scripts/smoke-csp-block.ts"></script>
+  </body>
+</html>

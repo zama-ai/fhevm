@@ -1,4 +1,5 @@
 import type { FhevmRuntimeConfig } from '../../core/types/coreFhevmRuntime.js';
+import { cloneModuleVersions } from '../../core/runtimeConfig-p.js';
 
 let viemFhevmRuntimeConfig: FhevmRuntimeConfig | undefined;
 
@@ -19,6 +20,7 @@ export function setFhevmRuntimeConfig(config: FhevmRuntimeConfig): void {
     viemFhevmRuntimeConfig = Object.freeze({
       ...config,
       logger: config.logger ? Object.freeze({ ...config.logger }) : undefined,
+      moduleVersions: cloneModuleVersions(config.moduleVersions),
     });
     return;
   }
@@ -26,6 +28,8 @@ export function setFhevmRuntimeConfig(config: FhevmRuntimeConfig): void {
   if (
     viemFhevmRuntimeConfig.logger !== config.logger ||
     viemFhevmRuntimeConfig.locateFile !== config.locateFile ||
+    viemFhevmRuntimeConfig.wasmAssetLoadMode !== config.wasmAssetLoadMode ||
+    !moduleVersionsAreEqual(viemFhevmRuntimeConfig.moduleVersions, config.moduleVersions) ||
     viemFhevmRuntimeConfig.singleThread !== config.singleThread ||
     viemFhevmRuntimeConfig.numberOfThreads !== config.numberOfThreads
   ) {
@@ -47,4 +51,32 @@ export function getFhevmRuntimeConfig(): FhevmRuntimeConfig {
     );
   }
   return viemFhevmRuntimeConfig;
+}
+
+function moduleVersionsAreEqual(
+  a: FhevmRuntimeConfig['moduleVersions'],
+  b: FhevmRuntimeConfig['moduleVersions'],
+): boolean {
+  const normalizedA = normalizeModuleVersions(a);
+  const normalizedB = normalizeModuleVersions(b);
+  return (
+    normalizedA.tfhe === normalizedB.tfhe &&
+    normalizedA.kms === normalizedB.kms &&
+    normalizedA.checkCompatibility === normalizedB.checkCompatibility
+  );
+}
+
+function normalizeModuleVersions(moduleVersions: FhevmRuntimeConfig['moduleVersions']): {
+  readonly tfhe: 'auto' | NonNullable<Exclude<FhevmRuntimeConfig['moduleVersions'], 'auto'>>['tfhe'];
+  readonly kms: 'auto' | NonNullable<Exclude<FhevmRuntimeConfig['moduleVersions'], 'auto'>>['kms'];
+  readonly checkCompatibility: NonNullable<Exclude<FhevmRuntimeConfig['moduleVersions'], 'auto'>>['checkCompatibility'];
+} {
+  if (moduleVersions === undefined || moduleVersions === 'auto') {
+    return { tfhe: 'auto', kms: 'auto', checkCompatibility: undefined };
+  }
+  return {
+    tfhe: moduleVersions.tfhe ?? 'auto',
+    kms: moduleVersions.kms ?? 'auto',
+    checkCompatibility: moduleVersions.checkCompatibility,
+  };
 }

@@ -97,6 +97,7 @@ jobs:
       #      - clean           → remove prior tsbuildinfo and generated outputs
       #      - prettier:check  → formatting validation
       #      - prettier:ext    → repo-specific style/import checks
+      #      - codegen:loaders:check:dev → fail if generated WASM loaders/API declarations are stale
       #      - lint            → eslint + full TypeScript noEmit check
       #      - build:cjs       → CommonJS output under src/_cjs
       #      - build:esm       → ES module output under src/_esm
@@ -106,7 +107,7 @@ jobs:
       #    running "build" prepares the package contents under src/ before pack.
       # -----------------------------------------------------------------------
       - name: Build package (CJS + ESM + types)
-        run: npm run build
+        run: npm run build:prod
 
       # -----------------------------------------------------------------------
       # 8. Unit tests

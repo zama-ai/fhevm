@@ -1,43 +1,43 @@
 import type { FhevmRuntime, FhevmRuntimeConfig } from '../../../types/coreFhevmRuntime.js';
 import type { GetTkmsModuleInfoReturnType, TkmsModuleInfo } from '../types.js';
-import init_kms_lib from '../../../../wasm/tkms/kms_lib.v0.13.10.js';
-import { getWasmInfo } from '../../../../wasm/tkms/kms_lib.v0.13.10.js';
+import type { KmsLibApi, TkmsVersion } from '../../../../wasm/tkms/KmsLibApi.js';
+import type { KmsAssetMetadata } from '../../../../wasm/tkms/loadKmsLib.js';
 import { isBrowserLike } from '../../../base/isomorphicWorker.js';
-import { isomorphicCompileWasm, isomorphicCompileWasmFromBase64 } from '../../../base/wasm.js';
+import { isomorphicCompileVerifiedWasm, isomorphicCompileWasmFromBase64 } from '../../../base/wasm.js';
 import { assertIsFhevmRuntime } from '../../../runtime/CoreFhevmRuntime-p.js';
-
-////////////////////////////////////////////////////////////////////////////////
-
-// IMPORTANT: The import path MUST be a string literal, not a variable.
-// Bundlers (Webpack, Vite, Rollup) statically analyze import() calls to
-// create separate chunks for code-splitting. A variable path like
-// `import(someVar)` makes the target unresolvable — the bundler either
-// includes every possible file or fails entirely.
-// With a literal path, the bundler creates a lazy-loaded chunk for this
-// ~0.85MB base64 file, only downloaded when this function is called.
-function dynamicImportWasmBase64(): Promise<{
-  readonly tkmsWasmBase64: string;
-}> {
-  // Bundler Alert: !! KEEP THE PATH AS-IS !!
-  //return import("../../../../wasm/tkms/kms_lib_bg.wasm.base64.js");
-  return import('../../../../wasm/tkms/kms_lib_bg.v0.13.10.wasm.base64.js');
-}
-
-const KMS_BG_WASM_FILENAME = 'kms_lib_bg.v0.13.10.wasm';
+import { resolveTkmsModuleVersion } from '../../../../wasm/tkmsModuleVersion-p.js';
+import { wasmBaseUrl } from '../../../../wasm/wasmBaseUrl.js';
+import { kmsAssetsWithVersion, loadKmsLib, loadKmsWasmBase64 } from '../../../../wasm/tkms/loadKmsLib.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
 // Pure JS file (not compiled by tsc) — provides cross-platform base URL
 // for resolving WASM paths. Uses import.meta.url in ESM, __filename in CJS.
-import { wasmBaseUrl } from '../../../../wasm/wasmBaseUrl.js';
 
 // (Node only) Path relative to src/wasm/ where wasmBaseUrl is anchored
 const nodeDefaultLocateFile = (file: string): URL => {
   return new URL(`./tkms/${file}`, wasmBaseUrl);
 };
 
+type ResolvedKmsAsset = KmsAssetMetadata & {
+  readonly url: URL | undefined;
+};
+
+function _resolveKmsAsset(asset: KmsAssetMetadata, locateFile: FhevmRuntimeConfig['locateFile']): ResolvedKmsAsset {
+  let url: URL | undefined;
+
+  if (locateFile !== undefined) {
+    url = locateFile(asset.filename);
+  } else if (!isBrowserLike()) {
+    url = nodeDefaultLocateFile(asset.localRelativePath);
+  }
+
+  return Object.freeze({ ...asset, url });
+}
+
 type ResolvedTkmsModuleConfig = {
-  readonly wasmUrl: URL | undefined;
+  readonly version: TkmsVersion;
+  readonly wasm: ResolvedKmsAsset;
   readonly logger: FhevmRuntimeConfig['logger'];
 };
 
@@ -50,33 +50,37 @@ let resolvedTkmsModuleConfig: ResolvedTkmsModuleConfig | undefined = undefined;
 function _getOrResolveTkmsModuleConfig(runtime: FhevmRuntime): ResolvedTkmsModuleConfig {
   if (resolvedTkmsModuleConfig !== undefined) return resolvedTkmsModuleConfig;
 
-  resolvedTkmsModuleConfig = _resolveTkmsModuleConfig(runtime.config);
+  const version = resolveTkmsModuleVersion(runtime.config);
+
+  resolvedTkmsModuleConfig = _resolveTkmsModuleConfig(runtime.config, version);
   return resolvedTkmsModuleConfig;
 }
 
-function _resolveTkmsModuleConfig(parameters: FhevmRuntimeConfig): ResolvedTkmsModuleConfig {
+function _resolveTkmsModuleConfig(parameters: FhevmRuntimeConfig, version: TkmsVersion): ResolvedTkmsModuleConfig {
   if (cachedTkmsModulePromise !== undefined) {
     throw new Error('Cannot configure module after initialization has started');
   }
 
   const { locateFile } = parameters;
 
-  let wasmUrl: URL | undefined;
+  const assets = kmsAssetsWithVersion(version);
+  const wasm = _resolveKmsAsset(assets.wasm, locateFile);
 
   if (locateFile !== undefined) {
-    wasmUrl = locateFile(KMS_BG_WASM_FILENAME);
+    parameters.logger?.debug(`resolve kms wasm filename: ${wasm.filename} -> url: ${wasm.url}`);
   } else {
     /*
       if run in Node only, use defaultLocateFile!
     */
     if (!isBrowserLike()) {
-      wasmUrl = nodeDefaultLocateFile(KMS_BG_WASM_FILENAME);
+      parameters.logger?.debug(`resolve kms wasm local path: ${wasm.localRelativePath} -> url: ${wasm.url}`);
     }
   }
 
   // if wasmUrl is undefined, use base64 code instead
   const cfg = {
-    wasmUrl,
+    version,
+    wasm,
     logger: parameters.logger,
   };
 
@@ -95,10 +99,10 @@ type InitTkmsModuleParameters = {
   readonly module_or_path: TkmsInitInput | Promise<TkmsInitInput>;
 };
 
-let cachedTkmsModulePromise: Promise<void> | undefined;
+let cachedTkmsModulePromise: Promise<KmsLibApi> | undefined;
 let ownerUid: string | undefined = undefined;
 
-export async function initTkmsModule(runtime: FhevmRuntime): Promise<void> {
+export async function initTkmsModule(runtime: FhevmRuntime): Promise<KmsLibApi> {
   assertIsFhevmRuntime(runtime, {});
 
   if (ownerUid !== undefined && runtime.uid !== ownerUid) {
@@ -129,31 +133,35 @@ export async function initTkmsModule(runtime: FhevmRuntime): Promise<void> {
 
 let moduleInfo: TkmsModuleInfo | undefined = undefined;
 
-async function _initTkmsModule(cfg: ResolvedTkmsModuleConfig): Promise<void> {
+async function _initTkmsModule(cfg: ResolvedTkmsModuleConfig): Promise<KmsLibApi> {
+  const libPromise = loadKmsLib(cfg.version);
+
   // Compile WASM module (see matrix in types.ts)
   let wasmModule;
-  if (cfg.wasmUrl !== undefined) {
-    cfg.logger?.debug(`compile wasm at: ${cfg.wasmUrl}`);
-    wasmModule = await isomorphicCompileWasm(cfg.wasmUrl);
+  if (cfg.wasm.url !== undefined) {
+    cfg.logger?.debug(`compile verified wasm at: ${cfg.wasm.url}`);
+    wasmModule = await isomorphicCompileVerifiedWasm(cfg.wasm.url, cfg.wasm.sha256);
   } else {
-    cfg.logger?.debug(`compile wasm from embedded base64`);
-    const { tkmsWasmBase64 } = await dynamicImportWasmBase64();
-    wasmModule = await isomorphicCompileWasmFromBase64(tkmsWasmBase64);
+    const { tkmsWasmBase64, tkmsWasmBase64IsGzipped } = await loadKmsWasmBase64(cfg.version);
+    cfg.logger?.debug(`compile wasm from embedded base64 (compression:${tkmsWasmBase64IsGzipped})`);
+    wasmModule = await isomorphicCompileWasmFromBase64(tkmsWasmBase64, tkmsWasmBase64IsGzipped ? 'gzip' : undefined);
   }
 
   const input: InitTkmsModuleParameters = { module_or_path: wasmModule };
 
-  await init_kms_lib(input);
+  const lib = await libPromise;
+  await lib.default(input);
 
   // Note: init_panic_hook is not exposed by kms_lib
-
-  const wasmInfo = getWasmInfo();
+  const wasmInfo = lib.getWasmInfo();
 
   moduleInfo = Object.freeze({
-    wasmUrl: cfg.wasmUrl ? new URL(cfg.wasmUrl) : undefined,
+    wasmUrl: cfg.wasm.url ? new URL(cfg.wasm.url) : undefined,
     version: wasmInfo.version,
     name: wasmInfo.name,
   });
+
+  return lib;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -7,10 +7,8 @@ test('createFhevmClient initializes with URL-based WASM', async ({ page }) => {
   await result.waitFor({ timeout: 300_000 });
 
   const status = await result.getAttribute('data-status');
-  if (status !== 'pass') {
-    const logs = await page.locator('#log').textContent();
-    console.error('Smoke wasm logs:\n', logs);
-  }
+  const logs = await page.locator('#log').textContent();
+  console.log('Smoke wasm logs:\n', logs);
 
   expect(status).toBe('pass');
 });

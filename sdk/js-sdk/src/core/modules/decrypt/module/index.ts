@@ -27,7 +27,9 @@ import { getTkmsModuleInfo, initTkmsModule } from './init-p.js';
 export const decryptModule: DecryptModuleFactory = (runtime: FhevmRuntime) => {
   return Object.freeze({
     decrypt: Object.freeze({
-      initTkmsModule: () => initTkmsModule(runtime),
+      initTkmsModule: async () => {
+        await initTkmsModule(runtime);
+      },
       getTkmsModuleInfo: () => getTkmsModuleInfo(),
       decryptAndReconstruct: (args: DecryptAndReconstructParameters) => decryptAndReconstruct(runtime, args),
       generateTkmsPrivateKey: () => generateTkmsPrivateKey(runtime),
@@ -53,7 +55,9 @@ export const userDecryptModule: UserDecryptModuleFactory = (
   const { privateKey } = parameters;
   return Object.freeze({
     userDecrypt: Object.freeze({
-      initTkmsModule: () => initTkmsModule(runtime),
+      initTkmsModule: async () => {
+        await initTkmsModule(runtime);
+      },
       getTkmsModuleInfo: () => getTkmsModuleInfo(),
       decryptAndReconstruct: (args: DecryptAndReconstructUserParameters) =>
         decryptAndReconstruct(runtime, {

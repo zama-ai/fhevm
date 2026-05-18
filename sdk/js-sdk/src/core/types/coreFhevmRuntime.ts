@@ -4,11 +4,30 @@ import type { EncryptModule, EncryptModuleFactory, WithEncryptModule } from '../
 import type { DecryptModule, DecryptModuleFactory, WithDecryptModule } from '../modules/decrypt/types.js';
 import type { Logger } from './logger.js';
 import type { Auth } from './auth.js';
+import type { TfheVersion } from '../../wasm/tfhe/loadTfheLib.js';
+import type { TkmsVersion } from '../../wasm/tkms/loadKmsLib.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
+export type WasmAssetLoadMode =
+  | 'embedded-base64'
+  | 'verified-blob'
+  | 'precheck-direct-url'
+  | 'trusted-direct-url'
+  | 'auto';
+
+export type WasmModuleVersions =
+  | 'auto'
+  | {
+      readonly tfhe?: TfheVersion | 'auto';
+      readonly kms?: TkmsVersion | 'auto';
+      readonly checkCompatibility?: 'throw' | 'warn' | 'off';
+    };
+
 export type FhevmRuntimeConfig = {
   readonly locateFile?: ((file: string) => URL) | undefined;
+  readonly wasmAssetLoadMode?: WasmAssetLoadMode | undefined;
+  readonly moduleVersions?: WasmModuleVersions | undefined;
   readonly logger?: Logger | undefined;
   readonly singleThread?: boolean | undefined;
   readonly numberOfThreads?: number | undefined;

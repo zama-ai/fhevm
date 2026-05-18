@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.esm.json",
+  "compilerOptions": {
+    "outDir": "../_cjs/wasm",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "removeComments": true,
+    "verbatimModuleSyntax": false,
+    "ignoreDeprecations": "6.0"
+  }
+}

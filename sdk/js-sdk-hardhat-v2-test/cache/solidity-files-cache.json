@@ -1,0 +1,1007 @@
+{
+  "_format": "hh-sol-cache-2",
+  "files": {
+    "/Users/alex/src/me/zama-ai/fhevm/sdk/js-sdk-hardhat-v2-test/contracts/E2ECoprocessorConfigLocal.sol": {
+      "lastModificationDate": 1777367915692,
+      "contentHash": "a7397eeae27639dd4bf2b614bf0961a4",
+      "sourceName": "contracts/E2ECoprocessorConfigLocal.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@fhevm/solidity/lib/FHE.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "DefaultCoprocessorConfig",
+        "E2ECoprocessorConfig"
+      ]
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/library-solidity/lib/FHE.sol": {
+      "lastModificationDate": 1777028910637,
+      "contentHash": "090462102d263e0286c0652ae5186d24",
+      "sourceName": "@fhevm/solidity/lib/FHE.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "./Impl.sol",
+        "./cryptography/FhevmECDSA.sol",
+        "./FheType.sol",
+        "encrypted-types/EncryptedTypes.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "FHE",
+        "IKMSVerifier"
+      ]
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/library-solidity/lib/Impl.sol": {
+      "lastModificationDate": 1777028910637,
+      "contentHash": "68866e1050079bd9720398ae0290121a",
+      "sourceName": "@fhevm/solidity/lib/Impl.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "./FheType.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "IACL",
+        "IFHEVMExecutor",
+        "IInputVerifier",
+        "Impl"
+      ]
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/library-solidity/lib/FheType.sol": {
+      "lastModificationDate": 1774944737613,
+      "contentHash": "65f472a3e319ba73ac6b19a5e8660d15",
+      "sourceName": "@fhevm/solidity/lib/FheType.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": []
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/sdk/js-sdk-hardhat-v2-test/node_modules/encrypted-types/EncryptedTypes.sol": {
+      "lastModificationDate": 1777368094837,
+      "contentHash": "521a624fad71cd29fc4b7c443b41bb86",
+      "sourceName": "encrypted-types/EncryptedTypes.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": []
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/library-solidity/lib/cryptography/FhevmECDSA.sol": {
+      "lastModificationDate": 1774944737613,
+      "contentHash": "1b1e13e26717f0d4eed5c23a4a23660d",
+      "sourceName": "@fhevm/solidity/lib/cryptography/FhevmECDSA.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "FhevmECDSA"
+      ]
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/sdk/js-sdk-hardhat-v2-test/contracts/smoke/TestInput.sol": {
+      "lastModificationDate": 1777367915694,
+      "contentHash": "8d30ce09af9d4106d085a7f32f71fa42",
+      "sourceName": "contracts/smoke/TestInput.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@fhevm/solidity/lib/FHE.sol",
+        "../E2ECoprocessorConfigLocal.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "TestInput"
+      ]
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/sdk/js-sdk-hardhat-v2-test/contracts/smoke/SmokeTestInput.sol": {
+      "lastModificationDate": 1777367915694,
+      "contentHash": "e9084c9afdcc30da1aeea855f5f8a02e",
+      "sourceName": "contracts/smoke/SmokeTestInput.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@fhevm/solidity/lib/FHE.sol",
+        "@fhevm/solidity/lib/Impl.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "SmokeTestInput"
+      ]
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/sdk/js-sdk-hardhat-v2-test/contracts/operations/SlowLaneContention.sol": {
+      "lastModificationDate": 1777367915694,
+      "contentHash": "c8c923f21fa0671712360aa393daa353",
+      "sourceName": "contracts/operations/SlowLaneContention.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@fhevm/solidity/lib/FHE.sol",
+        "../E2ECoprocessorConfigLocal.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "SlowLaneContention"
+      ]
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/sdk/js-sdk-hardhat-v2-test/contracts/operations/FHEVMTestSuite7.sol": {
+      "lastModificationDate": 1777367915694,
+      "contentHash": "109e4e9a3098e9a1d932635638bc3a8f",
+      "sourceName": "contracts/operations/FHEVMTestSuite7.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@fhevm/solidity/lib/FHE.sol",
+        "../E2ECoprocessorConfigLocal.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "FHEVMTestSuite7"
+      ]
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/sdk/js-sdk-hardhat-v2-test/contracts/operations/FHEVMTestSuite6.sol": {
+      "lastModificationDate": 1777367915694,
+      "contentHash": "3dc9b0128edb2a0f1cb30684ffdccee2",
+      "sourceName": "contracts/operations/FHEVMTestSuite6.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@fhevm/solidity/lib/FHE.sol",
+        "../E2ECoprocessorConfigLocal.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "FHEVMTestSuite6"
+      ]
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/sdk/js-sdk-hardhat-v2-test/contracts/operations/FHEVMTestSuite5.sol": {
+      "lastModificationDate": 1777367915693,
+      "contentHash": "311dab7d34cf276191c2b52ce5797051",
+      "sourceName": "contracts/operations/FHEVMTestSuite5.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@fhevm/solidity/lib/FHE.sol",
+        "../E2ECoprocessorConfigLocal.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "FHEVMTestSuite5"
+      ]
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/sdk/js-sdk-hardhat-v2-test/contracts/operations/FHEVMTestSuite4.sol": {
+      "lastModificationDate": 1777367915693,
+      "contentHash": "8b973fc8d1c9d40aa2c07c797fd56181",
+      "sourceName": "contracts/operations/FHEVMTestSuite4.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@fhevm/solidity/lib/FHE.sol",
+        "../E2ECoprocessorConfigLocal.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "FHEVMTestSuite4"
+      ]
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/sdk/js-sdk-hardhat-v2-test/contracts/operations/FHEVMTestSuite3.sol": {
+      "lastModificationDate": 1777367915693,
+      "contentHash": "1b6dbf284839bd4e0827d81478241f06",
+      "sourceName": "contracts/operations/FHEVMTestSuite3.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@fhevm/solidity/lib/FHE.sol",
+        "../E2ECoprocessorConfigLocal.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "FHEVMTestSuite3"
+      ]
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/sdk/js-sdk-hardhat-v2-test/contracts/operations/FHEVMTestSuite2.sol": {
+      "lastModificationDate": 1777367915693,
+      "contentHash": "fd6140d520ff05db1473bb717480b0d0",
+      "sourceName": "contracts/operations/FHEVMTestSuite2.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@fhevm/solidity/lib/FHE.sol",
+        "../E2ECoprocessorConfigLocal.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "FHEVMTestSuite2"
+      ]
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/sdk/js-sdk-hardhat-v2-test/contracts/operations/FHEVMTestSuite1.sol": {
+      "lastModificationDate": 1777367915693,
+      "contentHash": "4f9bdcf22bde88a4aa38366f26cdf67f",
+      "sourceName": "contracts/operations/FHEVMTestSuite1.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@fhevm/solidity/lib/FHE.sol",
+        "../E2ECoprocessorConfigLocal.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "FHEVMTestSuite1"
+      ]
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/sdk/js-sdk-hardhat-v2-test/contracts/operations/FHEVMManualTestSuite.sol": {
+      "lastModificationDate": 1777367915693,
+      "contentHash": "8363932bf33afd5b413c1e5e1ec07e70",
+      "sourceName": "contracts/operations/FHEVMManualTestSuite.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@fhevm/solidity/lib/FHE.sol",
+        "../E2ECoprocessorConfigLocal.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "FHEVMManualTestSuite"
+      ]
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/sdk/js-sdk-hardhat-v2-test/contracts/UserDecrypt.sol": {
+      "lastModificationDate": 1777367915693,
+      "contentHash": "8840e7baea88ca1d10cb7414299d5a1d",
+      "sourceName": "contracts/UserDecrypt.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@fhevm/solidity/lib/FHE.sol",
+        "./E2ECoprocessorConfigLocal.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "UserDecrypt"
+      ]
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/sdk/js-sdk-hardhat-v2-test/contracts/SmartWalletWithDelegation.sol": {
+      "lastModificationDate": 1777432088406,
+      "contentHash": "db1c3df41e330e3cedd7b64d443144ef",
+      "sourceName": "contracts/SmartWalletWithDelegation.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@fhevm/solidity/lib/FHE.sol",
+        "./E2ECoprocessorConfigLocal.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "SmartWalletWithDelegation"
+      ]
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/sdk/js-sdk-hardhat-v2-test/contracts/Rand.sol": {
+      "lastModificationDate": 1777367915693,
+      "contentHash": "99e829bcde57d4fc15760377d51ffb7f",
+      "sourceName": "contracts/Rand.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@fhevm/solidity/lib/FHE.sol",
+        "./E2ECoprocessorConfigLocal.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "Rand"
+      ]
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/sdk/js-sdk-hardhat-v2-test/contracts/MakePubliclyDecryptable.sol": {
+      "lastModificationDate": 1777367915692,
+      "contentHash": "85602f45d7edab10fd568a77f165a75c",
+      "sourceName": "contracts/MakePubliclyDecryptable.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@fhevm/solidity/lib/FHE.sol",
+        "./E2ECoprocessorConfigLocal.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "MakePubliclyDecryptable"
+      ]
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/sdk/js-sdk-hardhat-v2-test/contracts/HTTPPublicDecrypt.sol": {
+      "lastModificationDate": 1777367915692,
+      "contentHash": "0c90959242347dbb6001bbfbf07ba6bf",
+      "sourceName": "contracts/HTTPPublicDecrypt.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@fhevm/solidity/lib/FHE.sol",
+        "./E2ECoprocessorConfigLocal.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "HTTPPublicDecrypt"
+      ]
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/sdk/js-sdk-hardhat-v2-test/contracts/EncryptedERC20.sol": {
+      "lastModificationDate": 1777367915692,
+      "contentHash": "62448adfdb094c845bebf14279cd7508",
+      "sourceName": "contracts/EncryptedERC20.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@fhevm/solidity/lib/FHE.sol",
+        "./E2ECoprocessorConfigLocal.sol",
+        "@openzeppelin/contracts/access/Ownable2Step.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "EncryptedERC20"
+      ]
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/sdk/js-sdk-hardhat-v2-test/node_modules/@openzeppelin/contracts/access/Ownable2Step.sol": {
+      "lastModificationDate": 1777368104492,
+      "contentHash": "4c23c95621f1bdfb8c47bcb3795c53e8",
+      "sourceName": "@openzeppelin/contracts/access/Ownable2Step.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "./Ownable.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "Ownable2Step"
+      ]
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/sdk/js-sdk-hardhat-v2-test/node_modules/@openzeppelin/contracts/access/Ownable.sol": {
+      "lastModificationDate": 1777368104491,
+      "contentHash": "d3c790edc9ccf808a17c5a6cd13614fd",
+      "sourceName": "@openzeppelin/contracts/access/Ownable.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "../utils/Context.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "Ownable"
+      ]
+    },
+    "/Users/alex/src/me/zama-ai/fhevm/sdk/js-sdk-hardhat-v2-test/node_modules/@openzeppelin/contracts/utils/Context.sol": {
+      "lastModificationDate": 1777368103708,
+      "contentHash": "67bfbc07588eb8683b3fd8f6f909563e",
+      "sourceName": "@openzeppelin/contracts/utils/Context.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "Context"
+      ]
+    }
+  }
+}

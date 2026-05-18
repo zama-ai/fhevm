@@ -21,17 +21,15 @@ import type {
   FheEncryptionPublicKey,
   FheEncryptionPublicKeyBrand,
 } from '../../../types/fheEncryptionKey.js';
-import type { CompactCiphertextListBuilder } from '../../../../wasm/tfhe/tfhe.v1.5.3.js';
 import type { Bytes, UintNumber } from '../../../types/primitives.js';
 import type { FheTypeId } from '../../../types/fheType.js';
 import type { FhevmRuntime } from '../../../types/coreFhevmRuntime.js';
-import {
-  TfheCompactPublicKey,
+import type {
   CompactPkeCrs,
+  TfheCompactPublicKey,
   ProvenCompactCiphertextList,
-  CompactCiphertextList,
-  ZkComputeLoad,
-} from '../../../../wasm/tfhe/tfhe.v1.5.3.js';
+  CompactCiphertextListBuilder,
+} from '../../../../wasm/tfhe/TfheApi.js';
 import { isNonEmptyString } from '../../../base/string.js';
 import { hexToBytesFaster } from '../../../base/bytes.js';
 import { encryptionBitsFromFheTypeId, isFheTypeId } from '../../../handle/FheType.js';
@@ -135,7 +133,7 @@ export async function parseTFHEProvenCompactCiphertextList(
   runtime: FhevmRuntime,
   parameters: ParseTFHEProvenCompactCiphertextListParameters,
 ): Promise<ParseTFHEProvenCompactCiphertextListReturnType> {
-  await initTfheModule(runtime);
+  const tfheLib = await initTfheModule(runtime);
 
   const { ciphertextWithZkProof: ciphertextWithZKProof } = parameters;
   if ((ciphertextWithZKProof as unknown) == null) {
@@ -156,7 +154,7 @@ export async function parseTFHEProvenCompactCiphertextList(
 
   let listWasm: ProvenCompactCiphertextList;
   try {
-    listWasm = ProvenCompactCiphertextList.safe_deserialize(ciphertext, SERIALIZED_SIZE_LIMIT_CIPHERTEXT);
+    listWasm = tfheLib.ProvenCompactCiphertextList.safe_deserialize(ciphertext, SERIALIZED_SIZE_LIMIT_CIPHERTEXT);
   } catch (e) {
     throw new EncryptionError({
       message: `Invalid ciphertextWithZKProof bytes. ${getErrorMessage(e)}.`,
@@ -195,7 +193,7 @@ export async function buildWithProofPacked(
   runtime: FhevmRuntime,
   parameters: BuildWithProofPackedParameters,
 ): Promise<BuildWithProofPackedReturnType> {
-  await initTfheModule(runtime);
+  const tfheLib = await initTfheModule(runtime);
 
   const { fheEncryptionKey: publicEncryptionParams, metaData, typedValues, extraData } = parameters;
 
@@ -224,7 +222,7 @@ export async function buildWithProofPacked(
       PRIVATE_TFHE_LIB_TOKEN,
     );
 
-    fheCompactCiphertextListBuilderWasm = CompactCiphertextList.builder(tfheCompactPublicKeyWasm);
+    fheCompactCiphertextListBuilderWasm = tfheLib.CompactCiphertextList.builder(tfheCompactPublicKeyWasm);
 
     for (const typedValue of typedValues) {
       assertIsTypedValue(typedValue, {});
@@ -259,7 +257,7 @@ export async function buildWithProofPacked(
     tfheProvenCompactCiphertextList = fheCompactCiphertextListBuilderWasm.build_with_proof_packed(
       compactPkeCrsWasm,
       metaData,
-      ZkComputeLoad.Verify,
+      tfheLib.ZkComputeLoad.Verify,
     );
 
     ciphertextWithZKProofBytes = tfheProvenCompactCiphertextList.safe_serialize(SERIALIZED_SIZE_LIMIT_CIPHERTEXT);
@@ -398,11 +396,11 @@ export async function deserializeFheEncryptionCrs(
   runtime: FhevmRuntime,
   parameters: DeserializeFheEncryptionCrsParameters,
 ): Promise<DeserializeFheEncryptionCrsReturnType> {
-  await initTfheModule(runtime);
+  const tfheLib = await initTfheModule(runtime);
 
   const { crsBytes: globalFheCrsBytes } = parameters;
 
-  const compactPkeCrsWasm: CompactPkeCrs = CompactPkeCrs.safe_deserialize(
+  const compactPkeCrsWasm: CompactPkeCrs = tfheLib.CompactPkeCrs.safe_deserialize(
     globalFheCrsBytes.bytes,
     SERIALIZED_SIZE_LIMIT_CRS,
   );
@@ -423,11 +421,11 @@ export async function deserializeFheEncryptionPublicKey(
   runtime: FhevmRuntime,
   parameters: DeserializeFheEncryptionPublicKeyParameters,
 ): Promise<DeserializeFheEncryptionPublicKeyReturnType> {
-  await initTfheModule(runtime);
+  const tfheLib = await initTfheModule(runtime);
 
   const { publicKeyBytes: globalFhePublicKeyBytes } = parameters;
 
-  const tfheCompactPublicKeyWasm: TfheCompactPublicKey = TfheCompactPublicKey.safe_deserialize(
+  const tfheCompactPublicKeyWasm: TfheCompactPublicKey = tfheLib.TfheCompactPublicKey.safe_deserialize(
     globalFhePublicKeyBytes.bytes,
     SERIALIZED_SIZE_LIMIT_PK,
   );

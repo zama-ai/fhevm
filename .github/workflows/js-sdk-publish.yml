@@ -76,18 +76,14 @@ jobs:
         run: npm ci
 
       # -----------------------------------------------------------------------
-      # 6. Build
-      #    The top-level "build" script orchestrates all sub-builds:
-      #      - build:cjs       → CommonJS output
-      #      - build:cjs:wasm  → WASM glue for CJS
-      #      - build:esm       → ES Modules output
-      #      - build:esm:wasm  → WASM glue for ESM
-      #      - build:types     → TypeScript declaration files (.d.ts)
-      #    Running "build" ensures the dist/ folder is fully populated before
-      #    packing. Publishing without this step would ship source-only.
+      # 5. Build
+      #    Run the same full validation/build path used by PR CI, but with the
+      #    production WASM profile for package outputs. This also runs
+      #    codegen:loaders:check:dev so stale generated loaders/API declarations
+      #    fail CI instead of being silently regenerated during publish.
       # -----------------------------------------------------------------------
       - name: Build package (CJS + ESM + types)
-        run: npm run build:cjs && npm run build:esm && npm run build:types
+        run: npm run build:prod
 
       # -----------------------------------------------------------------------
       # 7. Pack inspection
