@@ -201,12 +201,20 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     bytes32 private constant KMS_GENERATION_STORAGE_LOCATION =
         0x26fdaf8a2cb20d20b55e36218986905e534ee7a970dd2fa827946e4b7496db00;
 
-    modifier onlyKmsTxSender() {
-        uint256 contextId = PROTOCOL_CONFIG.getCurrentKmsContextId();
+    /**
+     * @notice Loads a request's pinned context and authorizes the response sender against it.
+     * @dev Uses the request-time context, not the live context, so rotations do not invalidate
+     * in-flight responses from the original KMS committee.
+     */
+    function _loadExtraDataAndAuthorizeResponse(
+        uint256 requestId
+    ) internal view virtual returns (bytes memory extraData, uint256 contextId) {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+        extraData = $.requestExtraData[requestId];
+        contextId = _extractContextIdFromExtraData(extraData);
         if (!PROTOCOL_CONFIG.isKmsTxSenderForContext(contextId, msg.sender)) {
             revert NotKmsTxSender(msg.sender);
         }
-        _;
     }
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -279,7 +287,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     /**
      * @notice See {IKMSGeneration-prepKeygenResponse}.
      */
-    function prepKeygenResponse(uint256 prepKeygenId, bytes calldata signature) external virtual onlyKmsTxSender {
+    function prepKeygenResponse(uint256 prepKeygenId, bytes calldata signature) external virtual {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         // Make sure the prepKeygenId corresponds to a generated preprocessing keygen request.
@@ -287,13 +295,13 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             revert PrepKeygenNotRequested(prepKeygenId);
         }
 
-        bytes memory extraData = $.requestExtraData[prepKeygenId];
+        (bytes memory extraData, uint256 contextId) = _loadExtraDataAndAuthorizeResponse(prepKeygenId);
 
         // Compute the digest of the PrepKeygenVerification struct.
         bytes32 digest = _hashPrepKeygenVerification(prepKeygenId, extraData);
 
-        // Recover the signer address from the signature and check that it is a KMS node
-        address kmsSigner = _validateEIP712Signature(digest, signature);
+        // Recover the signer address from the signature and check that it is a KMS node.
+        address kmsSigner = _validateEIP712Signature(contextId, digest, signature);
 
         // Check that the signer has not already signed for this preprocessing keygen response
         if ($.kmsHasSignedForResponse[prepKeygenId][kmsSigner]) {
@@ -313,7 +321,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.isRequestDone[prepKeygenId] && _isKmsConsensusReached(consensusTxSenders.length)) {
+        if (!$.isRequestDone[prepKeygenId] && _isKmsConsensusReachedForContext(contextId, consensusTxSenders.length)) {
             $.isRequestDone[prepKeygenId] = true;
 
             // Store the digest on which consensus was reached for the preprocessing keygen request
@@ -329,11 +337,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     /**
      * @notice See {IKMSGeneration-keygenResponse}.
      */
-    function keygenResponse(
-        uint256 keyId,
-        KeyDigest[] calldata keyDigests,
-        bytes calldata signature
-    ) external virtual onlyKmsTxSender {
+    function keygenResponse(uint256 keyId, KeyDigest[] calldata keyDigests, bytes calldata signature) external virtual {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         // Make sure the keyId corresponds to a generated keygen request.
@@ -347,16 +351,18 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             revert EmptyKeyDigests(keyId);
         }
 
+        (bytes memory extraData, uint256 contextId) = _loadExtraDataAndAuthorizeResponse(keyId);
+
         uint256 prepKeygenId = $.keygenIdPairs[keyId];
         if (!$.isRequestDone[prepKeygenId]) {
             revert KeyManagementRequestPending();
         }
 
         // Compute the digest of the KeygenVerification struct.
-        bytes32 digest = _hashKeygenVerification(prepKeygenId, keyId, keyDigests, $.requestExtraData[keyId]);
+        bytes32 digest = _hashKeygenVerification(prepKeygenId, keyId, keyDigests, extraData);
 
-        // Recover the signer address from the signature and check that it is a KMS node
-        address kmsSigner = _validateEIP712Signature(digest, signature);
+        // Recover the signer address from the signature and check that it is a KMS node.
+        address kmsSigner = _validateEIP712Signature(contextId, digest, signature);
 
         // Check that the signer has not already signed for this key generation response
         if ($.kmsHasSignedForResponse[keyId][kmsSigner]) {
@@ -370,14 +376,12 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         address[] storage consensusTxSenders = $.consensusTxSenderAddresses[keyId][digest];
         consensusTxSenders.push(msg.sender);
 
-        uint256 consensusTxSendersLength = consensusTxSenders.length;
-
         // Emit the event at each call for monitoring purposes.
         emit KeygenResponse(keyId, keyDigests, signature, msg.sender);
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.isRequestDone[keyId] && _isKmsConsensusReached(consensusTxSendersLength)) {
+        if (!$.isRequestDone[keyId] && _isKmsConsensusReachedForContext(contextId, consensusTxSenders.length)) {
             $.isRequestDone[keyId] = true;
 
             // Store the digests of the generated keys in order to retrieve them later
@@ -394,7 +398,6 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
             // Set the active keyId
             $.activeKeyId = keyId;
-            uint256 contextId = _extractContextIdFromExtraData($.requestExtraData[keyId]);
             string[] memory consensusUrls = _buildConsensusStorageUrls(contextId, consensusTxSenders);
 
             emit ActivateKey(keyId, consensusUrls, keyDigests);
@@ -438,11 +441,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     /**
      * @notice See {IKMSGeneration-crsgenResponse}.
      */
-    function crsgenResponse(
-        uint256 crsId,
-        bytes calldata crsDigest,
-        bytes calldata signature
-    ) external virtual onlyKmsTxSender {
+    function crsgenResponse(uint256 crsId, bytes calldata crsDigest, bytes calldata signature) external virtual {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         // Make sure the crsId corresponds to a generated CRS generation request.
@@ -450,13 +449,13 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             revert CrsgenNotRequested(crsId);
         }
 
-        uint256 maxBitLength = $.crsMaxBitLength[crsId];
+        (bytes memory extraData, uint256 contextId) = _loadExtraDataAndAuthorizeResponse(crsId);
 
         // Compute the digest of the CrsgenVerification struct.
-        bytes32 digest = _hashCrsgenVerification(crsId, maxBitLength, crsDigest, $.requestExtraData[crsId]);
+        bytes32 digest = _hashCrsgenVerification(crsId, $.crsMaxBitLength[crsId], crsDigest, extraData);
 
-        // Recover the signer address from the signature and check that it is a KMS node
-        address kmsSigner = _validateEIP712Signature(digest, signature);
+        // Recover the signer address from the signature and check that it is a KMS node.
+        address kmsSigner = _validateEIP712Signature(contextId, digest, signature);
 
         // Check that the signer has not already signed for this CRS generation response
         if ($.kmsHasSignedForResponse[crsId][kmsSigner]) {
@@ -470,14 +469,12 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         address[] storage consensusTxSenders = $.consensusTxSenderAddresses[crsId][digest];
         consensusTxSenders.push(msg.sender);
 
-        uint256 consensusTxSendersLength = consensusTxSenders.length;
-
         // Emit the event at each call for monitoring purposes.
         emit CrsgenResponse(crsId, crsDigest, signature, msg.sender);
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.isRequestDone[crsId] && _isKmsConsensusReached(consensusTxSendersLength)) {
+        if (!$.isRequestDone[crsId] && _isKmsConsensusReachedForContext(contextId, consensusTxSenders.length)) {
             $.isRequestDone[crsId] = true;
 
             // Store the digest of the generated CRS in order to retrieve it later
@@ -489,7 +486,6 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             // Set the active CRS ID
             $.activeCrsId = crsId;
 
-            uint256 contextId = _extractContextIdFromExtraData($.requestExtraData[crsId]);
             string[] memory consensusUrls = _buildConsensusStorageUrls(contextId, consensusTxSenders);
             emit ActivateCrs(crsId, consensusUrls, crsDigest);
         }
@@ -690,20 +686,23 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     }
 
     /**
-     * @notice Validates the EIP712 signature.
+     * @notice Validates the EIP712 signature against the request's pinned KMS context.
+     * @param contextId The KMS context ID pinned at request time.
      * @param digest The hashed EIP712 struct.
      * @param signature The signature to validate.
      * @return The signer address.
      */
     function _validateEIP712Signature(
+        uint256 contextId,
         bytes32 digest,
         bytes calldata signature
     ) internal view virtual returns (address) {
         // Recover the signer address from the signature
         address signer = ECDSA.recover(digest, signature);
 
-        // Check that the signer is a KMS signer, and that it corresponds to the transaction sender of the same KMS node.
-        _checkKmsSignerMatchesTxSender(signer, msg.sender);
+        // Verify signer/tx-sender membership within the request's pinned context so a mid-flight
+        // rotation cannot invalidate in-flight responses or split consensus across committees.
+        _checkKmsContextSignerMatchesTxSender(contextId, signer, msg.sender);
 
         return signer;
     }
@@ -715,12 +714,16 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyACLOwner {}
 
     /**
-     * @notice Checks if the consensus is reached among the KMS nodes.
-     * @param kmsCounter The number of KMS nodes that agreed
-     * @return Whether the consensus is reached
+     * @notice Checks if the consensus is reached among the KMS nodes for a given context.
+     * @param contextId The KMS context ID pinned at request time.
+     * @param kmsCounter The number of KMS nodes that agreed.
+     * @return Whether the consensus is reached.
      */
-    function _isKmsConsensusReached(uint256 kmsCounter) internal view virtual returns (bool) {
-        uint256 consensusThreshold = PROTOCOL_CONFIG.getKmsGenThreshold();
+    function _isKmsConsensusReachedForContext(
+        uint256 contextId,
+        uint256 kmsCounter
+    ) internal view virtual returns (bool) {
+        uint256 consensusThreshold = PROTOCOL_CONFIG.getKmsGenThresholdForContext(contextId);
         return kmsCounter >= consensusThreshold;
     }
 
@@ -818,12 +821,16 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     }
 
     /**
-     * @notice Checks that the signer corresponds to the tx sender within the current KMS context.
+     * @notice Checks that the signer corresponds to the tx sender within a given KMS context.
+     * @param contextId The KMS context ID pinned at request time.
      * @param signerAddress The recovered EIP-712 signer.
      * @param txSenderAddress The transaction sender (msg.sender).
      */
-    function _checkKmsSignerMatchesTxSender(address signerAddress, address txSenderAddress) internal view virtual {
-        uint256 contextId = PROTOCOL_CONFIG.getCurrentKmsContextId();
+    function _checkKmsContextSignerMatchesTxSender(
+        uint256 contextId,
+        address signerAddress,
+        address txSenderAddress
+    ) internal view virtual {
         if (!PROTOCOL_CONFIG.isKmsSignerForContext(contextId, signerAddress)) {
             revert KmsSignerDoesNotMatchTxSender(signerAddress, txSenderAddress);
         }

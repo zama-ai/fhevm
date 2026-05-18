@@ -42,7 +42,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         mapping(uint256 contextId => mapping(address => bool)) isKmsSignerForContext;
         /// @notice KmsNode by tx sender per context.
         mapping(uint256 contextId => mapping(address => KmsNode)) kmsNodeByTxSenderForContext;
-        /// @notice Signer addresses per context (for ordered iteration).
+        /// @notice Signer addresses per context, in insertion order.
         mapping(uint256 contextId => address[]) kmsSignerAddressesForContext;
         /// @notice Public decryption threshold per context.
         mapping(uint256 contextId => uint256) publicDecryptionThresholdForContext;
@@ -236,9 +236,21 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /// @inheritdoc IProtocolConfig
+    function getKmsGenThresholdForContext(uint256 kmsContextId) external view virtual returns (uint256) {
+        _requireValidContext(kmsContextId);
+        return _getProtocolConfigStorage().kmsGenThresholdForContext[kmsContextId];
+    }
+
+    /// @inheritdoc IProtocolConfig
     function getMpcThreshold() external view virtual returns (uint256) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         return $.mpcThresholdForContext[$.currentKmsContextId];
+    }
+
+    /// @inheritdoc IProtocolConfig
+    function getMpcThresholdForContext(uint256 kmsContextId) external view virtual returns (uint256) {
+        _requireValidContext(kmsContextId);
+        return _getProtocolConfigStorage().mpcThresholdForContext[kmsContextId];
     }
 
     /// @inheritdoc IProtocolConfig

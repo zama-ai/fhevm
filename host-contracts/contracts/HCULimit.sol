@@ -50,6 +50,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned if the operation is not scalar.
     error OnlyScalarOperationsAreSupported();
 
+    /// @notice Returned if a handle is the zero handle.
+    /// @dev Handle slot zero is reserved for the transaction HCU accumulator.
+    error InvalidZeroHandle();
+
     /// @notice Emitted when the global block HCU cap is updated.
     /// @param hcuPerBlock New global block HCU cap.
     event HCUPerBlockSet(uint48 hcuPerBlock);
@@ -1752,6 +1756,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @dev This function uses inline assembly to load the HCU from a specific storage location.
      */
     function _getHCUForHandle(bytes32 handle) internal view virtual returns (uint256 handleHCU) {
+        // Handle slot zero is reserved for _getHCUForTransaction.
+        if (handle == bytes32(0)) revert InvalidZeroHandle();
         assembly {
             handleHCU := tload(handle)
         }
@@ -1775,6 +1781,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @dev This function uses inline assembly to store the HCU in a specific transient storage slot.
      */
     function _setHCUForHandle(bytes32 handle, uint256 handleHCU) internal virtual {
+        // Handle slot zero is reserved for _setHCUForTransaction.
+        if (handle == bytes32(0)) revert InvalidZeroHandle();
         assembly {
             tstore(handle, handleHCU)
         }

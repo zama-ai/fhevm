@@ -222,4 +222,3 @@ When using `eaddress` (internally represented as `euint160`), the HCU costs for 
 | ---------------- | ------------- |
 | `cast`           | 32            |
 | `trivialEncrypt` | 32            |
-| `randBounded`    | 23,000-30,000 |

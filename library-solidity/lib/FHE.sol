@@ -9880,7 +9880,6 @@ library FHE {
     ///                       `abiEncodedCleartexts`
     /// @return true if the signatures verification succeeds, false otherwise
     /// @dev Private low-level function used to verify the KMS signatures.
-    ///      Warning: this function never reverts, its boolean return value must be checked.
     ///      The decryptionProof is the numSigners + kmsSignatures + extraData (1 + 65*numSigners + extraData bytes)
     ///      Only static native solidity types for clear values are supported, so `abiEncodedCleartexts` is the concatenation of all clear values appended to 32 bytes.
     /// @dev Reverts if any of the following conditions are met by the underlying KMS verifier:

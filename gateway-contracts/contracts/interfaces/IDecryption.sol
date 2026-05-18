@@ -339,7 +339,8 @@ interface IDecryption {
     ) external;
 
     /**
-     * @notice Indicates if handles are ready to be decrypted publicly.
+     * @notice Indicates if ciphertext material exists for public decryption.
+     * @dev Checks only ciphertext-material availability. ACL checks happen off-chain in the KMS.
      * @param ctHandles The ciphertext handles.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
@@ -349,7 +350,8 @@ interface IDecryption {
     ) external view returns (bool);
 
     /**
-     * @notice Indicates if handles are ready to be decrypted by a user.
+     * @notice Indicates if ciphertext material exists for user decryption.
+     * @dev Checks only ciphertext-material availability. ACL checks happen off-chain in the KMS.
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
@@ -359,7 +361,8 @@ interface IDecryption {
     ) external view returns (bool);
 
     /**
-     * @notice Indicates if handles are ready to be decrypted by a user.
+     * @notice Indicates if ciphertext material exists for user decryption.
+     * @dev Checks only ciphertext-material availability. ACL checks happen off-chain in the KMS.
      * @param userAddress The user's address (unused, kept for backward compatibility).
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
@@ -372,7 +375,8 @@ interface IDecryption {
     ) external view returns (bool);
 
     /**
-     * @notice Indicates if the handles are ready to be decrypted by the delegate address in delegation accounts.
+     * @notice Indicates if ciphertext material exists for delegated user decryption.
+     * @dev Checks only ciphertext-material availability. ACL checks happen off-chain in the KMS.
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
