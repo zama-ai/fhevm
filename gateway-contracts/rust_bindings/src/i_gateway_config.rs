@@ -62,8 +62,10 @@ interface IGatewayConfig {
     error InvalidNullUserDecryptionThreshold();
     error KmsContextAlreadyRegistered(uint256 contextId, uint256 currentKmsContextId);
     error KmsSignerAlreadyRegistered(address kmsSignerAddress);
+    error KmsSignerSetExceedsProofFormatLimit(uint256 signerCount, uint256 maxAllowed);
     error KmsTxSenderAlreadyRegistered(address kmsTxSenderAddress);
     error NotPauser(address account);
+    error ThresholdExceedsProofFormatLimit(string thresholdName, uint256 threshold, uint256 maxAllowed);
 
     event AddHostChain(HostChain hostChain);
     event InitializeGatewayConfig(uint256 indexed kmsContextId, ProtocolMetadata metadata, Thresholds thresholds, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
@@ -1676,6 +1678,22 @@ interface IGatewayConfig {
   },
   {
     "type": "error",
+    "name": "KmsSignerSetExceedsProofFormatLimit",
+    "inputs": [
+      {
+        "name": "signerCount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "maxAllowed",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "KmsTxSenderAlreadyRegistered",
     "inputs": [
       {
@@ -1693,6 +1711,27 @@ interface IGatewayConfig {
         "name": "account",
         "type": "address",
         "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ThresholdExceedsProofFormatLimit",
+    "inputs": [
+      {
+        "name": "thresholdName",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "threshold",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "maxAllowed",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ]
   }
@@ -5270,6 +5309,102 @@ error KmsSignerAlreadyRegistered(address kmsSignerAddress);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `KmsSignerSetExceedsProofFormatLimit(uint256,uint256)` and selector `0x16a72778`.
+```solidity
+error KmsSignerSetExceedsProofFormatLimit(uint256 signerCount, uint256 maxAllowed);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct KmsSignerSetExceedsProofFormatLimit {
+        #[allow(missing_docs)]
+        pub signerCount: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub maxAllowed: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<KmsSignerSetExceedsProofFormatLimit>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: KmsSignerSetExceedsProofFormatLimit) -> Self {
+                (value.signerCount, value.maxAllowed)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for KmsSignerSetExceedsProofFormatLimit {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    signerCount: tuple.0,
+                    maxAllowed: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for KmsSignerSetExceedsProofFormatLimit {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "KmsSignerSetExceedsProofFormatLimit(uint256,uint256)";
+            const SELECTOR: [u8; 4] = [22u8, 167u8, 39u8, 120u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.signerCount),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.maxAllowed),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KmsTxSenderAlreadyRegistered(address)` and selector `0xd18c4ff0`.
 ```solidity
 error KmsTxSenderAlreadyRegistered(address kmsTxSenderAddress);
@@ -5421,6 +5556,110 @@ error NotPauser(address account);
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.account,
                     ),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `ThresholdExceedsProofFormatLimit(string,uint256,uint256)` and selector `0x22ba52db`.
+```solidity
+error ThresholdExceedsProofFormatLimit(string thresholdName, uint256 threshold, uint256 maxAllowed);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct ThresholdExceedsProofFormatLimit {
+        #[allow(missing_docs)]
+        pub thresholdName: alloy::sol_types::private::String,
+        #[allow(missing_docs)]
+        pub threshold: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub maxAllowed: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::String,
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::String,
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<ThresholdExceedsProofFormatLimit>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: ThresholdExceedsProofFormatLimit) -> Self {
+                (value.thresholdName, value.threshold, value.maxAllowed)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for ThresholdExceedsProofFormatLimit {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    thresholdName: tuple.0,
+                    threshold: tuple.1,
+                    maxAllowed: tuple.2,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for ThresholdExceedsProofFormatLimit {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "ThresholdExceedsProofFormatLimit(string,uint256,uint256)";
+            const SELECTOR: [u8; 4] = [34u8, 186u8, 82u8, 219u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
+                        &self.thresholdName,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.threshold),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.maxAllowed),
                 )
             }
             #[inline]
@@ -15285,9 +15524,13 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         #[allow(missing_docs)]
         KmsSignerAlreadyRegistered(KmsSignerAlreadyRegistered),
         #[allow(missing_docs)]
+        KmsSignerSetExceedsProofFormatLimit(KmsSignerSetExceedsProofFormatLimit),
+        #[allow(missing_docs)]
         KmsTxSenderAlreadyRegistered(KmsTxSenderAlreadyRegistered),
         #[allow(missing_docs)]
         NotPauser(NotPauser),
+        #[allow(missing_docs)]
+        ThresholdExceedsProofFormatLimit(ThresholdExceedsProofFormatLimit),
     }
     #[automatically_derived]
     impl IGatewayConfigErrors {
@@ -15302,7 +15545,9 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
             [6u8, 140u8, 141u8, 64u8],
             [15u8, 105u8, 203u8, 252u8],
             [20u8, 238u8, 189u8, 73u8],
+            [22u8, 167u8, 39u8, 120u8],
             [32u8, 106u8, 52u8, 110u8],
+            [34u8, 186u8, 82u8, 219u8],
             [34u8, 247u8, 63u8, 234u8],
             [59u8, 185u8, 158u8, 34u8],
             [62u8, 229u8, 7u8, 116u8],
@@ -15330,7 +15575,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
     impl alloy_sol_types::SolInterface for IGatewayConfigErrors {
         const NAME: &'static str = "IGatewayConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 26usize;
+        const COUNT: usize = 28usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -15406,10 +15651,16 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 Self::KmsSignerAlreadyRegistered(_) => {
                     <KmsSignerAlreadyRegistered as alloy_sol_types::SolError>::SELECTOR
                 }
+                Self::KmsSignerSetExceedsProofFormatLimit(_) => {
+                    <KmsSignerSetExceedsProofFormatLimit as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::KmsTxSenderAlreadyRegistered(_) => {
                     <KmsTxSenderAlreadyRegistered as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::NotPauser(_) => <NotPauser as alloy_sol_types::SolError>::SELECTOR,
+                Self::ThresholdExceedsProofFormatLimit(_) => {
+                    <ThresholdExceedsProofFormatLimit as alloy_sol_types::SolError>::SELECTOR
+                }
             }
         }
         #[inline]
@@ -15476,6 +15727,19 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                     InvalidNullKmsContextId
                 },
                 {
+                    fn KmsSignerSetExceedsProofFormatLimit(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <KmsSignerSetExceedsProofFormatLimit as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                IGatewayConfigErrors::KmsSignerSetExceedsProofFormatLimit,
+                            )
+                    }
+                    KmsSignerSetExceedsProofFormatLimit
+                },
+                {
                     fn NotPauser(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
@@ -15483,6 +15747,17 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                             .map(IGatewayConfigErrors::NotPauser)
                     }
                     NotPauser
+                },
+                {
+                    fn ThresholdExceedsProofFormatLimit(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <ThresholdExceedsProofFormatLimit as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigErrors::ThresholdExceedsProofFormatLimit)
+                    }
+                    ThresholdExceedsProofFormatLimit
                 },
                 {
                     fn InvalidNullChainId(
@@ -15796,6 +16071,19 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                     InvalidNullKmsContextId
                 },
                 {
+                    fn KmsSignerSetExceedsProofFormatLimit(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <KmsSignerSetExceedsProofFormatLimit as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                IGatewayConfigErrors::KmsSignerSetExceedsProofFormatLimit,
+                            )
+                    }
+                    KmsSignerSetExceedsProofFormatLimit
+                },
+                {
                     fn NotPauser(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
@@ -15805,6 +16093,17 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                             .map(IGatewayConfigErrors::NotPauser)
                     }
                     NotPauser
+                },
+                {
+                    fn ThresholdExceedsProofFormatLimit(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <ThresholdExceedsProofFormatLimit as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigErrors::ThresholdExceedsProofFormatLimit)
+                    }
+                    ThresholdExceedsProofFormatLimit
                 },
                 {
                     fn InvalidNullChainId(
@@ -16183,6 +16482,11 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         inner,
                     )
                 }
+                Self::KmsSignerSetExceedsProofFormatLimit(inner) => {
+                    <KmsSignerSetExceedsProofFormatLimit as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::KmsTxSenderAlreadyRegistered(inner) => {
                     <KmsTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -16190,6 +16494,11 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 }
                 Self::NotPauser(inner) => {
                     <NotPauser as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                }
+                Self::ThresholdExceedsProofFormatLimit(inner) => {
+                    <ThresholdExceedsProofFormatLimit as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
                 }
             }
         }
@@ -16340,6 +16649,12 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         out,
                     )
                 }
+                Self::KmsSignerSetExceedsProofFormatLimit(inner) => {
+                    <KmsSignerSetExceedsProofFormatLimit as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::KmsTxSenderAlreadyRegistered(inner) => {
                     <KmsTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -16348,6 +16663,12 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 }
                 Self::NotPauser(inner) => {
                     <NotPauser as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
+                }
+                Self::ThresholdExceedsProofFormatLimit(inner) => {
+                    <ThresholdExceedsProofFormatLimit as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
             }
         }

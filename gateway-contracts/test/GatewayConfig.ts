@@ -723,6 +723,33 @@ describe("GatewayConfig", function () {
           ).to.be.revertedWithCustomError(gatewayConfig, "EmptyKmsNodes");
         });
 
+        it("Should revert because the KMS signer set exceeds the proof format limit", async function () {
+          // Build a 256-node set with distinct tx-sender and signer addresses.
+          const tooManyKmsNodes: KmsNodeStruct[] = [];
+          for (let i = 0; i < 256; i++) {
+            tooManyKmsNodes.push({
+              txSenderAddress: createRandomAddress(),
+              signerAddress: createRandomAddress(),
+              ipAddress: `127.0.0.${i}`,
+              storageUrl: `s3://kms-${i}`,
+            });
+          }
+          await expect(
+            gatewayConfig
+              .connect(owner)
+              .updateKmsContext(
+                nextKmsContextId,
+                tooManyKmsNodes,
+                mpcThreshold,
+                publicDecryptionThreshold,
+                userDecryptionThreshold,
+                kmsGenThreshold,
+              ),
+          )
+            .to.be.revertedWithCustomError(gatewayConfig, "KmsSignerSetExceedsProofFormatLimit")
+            .withArgs(256, 255);
+        });
+
         it("Should revert because the MPC threshold is too high", async function () {
           await expect(
             gatewayConfig
@@ -1229,6 +1256,13 @@ describe("GatewayConfig", function () {
           .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighMpcThreshold")
           .withArgs(highMpcThreshold, nKmsNodes);
       });
+
+      it("Should revert because the MPC threshold exceeds the proof format limit", async function () {
+        // A threshold above the proof-format limit is rejected before the node-count check.
+        await expect(gatewayConfig.connect(owner).updateMpcThreshold(256))
+          .to.be.revertedWithCustomError(gatewayConfig, "ThresholdExceedsProofFormatLimit")
+          .withArgs("mpc", 256, 255);
+      });
     });
 
     describe("Update public decryption threshold", function () {
@@ -1272,6 +1306,12 @@ describe("GatewayConfig", function () {
           .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighPublicDecryptionThreshold")
           .withArgs(highPublicDecryptionThreshold, nKmsNodes);
       });
+
+      it("Should revert because the public decryption threshold exceeds the proof format limit", async function () {
+        await expect(gatewayConfig.connect(owner).updatePublicDecryptionThreshold(256))
+          .to.be.revertedWithCustomError(gatewayConfig, "ThresholdExceedsProofFormatLimit")
+          .withArgs("publicDecryption", 256, 255);
+      });
     });
 
     describe("Update user decryption threshold", function () {
@@ -1313,6 +1353,12 @@ describe("GatewayConfig", function () {
           .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighUserDecryptionThreshold")
           .withArgs(highUserDecryptionThreshold, nKmsNodes);
       });
+
+      it("Should revert because the user decryption threshold exceeds the proof format limit", async function () {
+        await expect(gatewayConfig.connect(owner).updateUserDecryptionThreshold(256))
+          .to.be.revertedWithCustomError(gatewayConfig, "ThresholdExceedsProofFormatLimit")
+          .withArgs("userDecryption", 256, 255);
+      });
     });
 
     describe("Update KMS generation threshold", function () {
@@ -1350,6 +1396,12 @@ describe("GatewayConfig", function () {
         await expect(gatewayConfig.connect(owner).updateKmsGenThreshold(highKmsGenThreshold))
           .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighKmsGenThreshold")
           .withArgs(highKmsGenThreshold, nKmsNodes);
+      });
+
+      it("Should revert because the KMS generation threshold exceeds the proof format limit", async function () {
+        await expect(gatewayConfig.connect(owner).updateKmsGenThreshold(256))
+          .to.be.revertedWithCustomError(gatewayConfig, "ThresholdExceedsProofFormatLimit")
+          .withArgs("kmsGen", 256, 255);
       });
     });
 

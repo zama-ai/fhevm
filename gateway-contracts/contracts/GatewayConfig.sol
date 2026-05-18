@@ -25,6 +25,15 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     uint256 internal constant MAX_CHAIN_ID = type(uint64).max;
 
+    /**
+     * @notice Upper bound on the KMS committee size and on every per-context threshold.
+     * @dev Mirrors `ProtocolConfig.MAX_KMS_SIGNERS` on the host side. Driven by the proof format
+     *      consumed in `KMSVerifier.verifyDecryptionEIP712KMSSignatures`, which encodes the
+     *      signature count in a single byte (`uint8(decryptionProof[0])`). Both registries cap
+     *      at registration time so a misconfiguration is rejected loudly on either side.
+     */
+    uint256 internal constant MAX_KMS_SIGNERS = type(uint8).max;
+
     // ----------------------------------------------------------------------------------------------
     // Contract information:
     // ----------------------------------------------------------------------------------------------
@@ -727,6 +736,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         if (newKmsNodes.length == 0) {
             revert EmptyKmsNodes();
         }
+        if (newKmsNodes.length > MAX_KMS_SIGNERS) {
+            revert KmsSignerSetExceedsProofFormatLimit(newKmsNodes.length, MAX_KMS_SIGNERS);
+        }
 
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
 
@@ -857,6 +869,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         // Check that the MPC threshold `t` is valid. It must verify:
         // - `t >= 0` : it is already a uint256 so this is always true
         // - `t < n` : it should be strictly less than the number of registered KMS nodes
+        if (newMpcThreshold > MAX_KMS_SIGNERS) {
+            revert ThresholdExceedsProofFormatLimit("mpc", newMpcThreshold, MAX_KMS_SIGNERS);
+        }
         if (newMpcThreshold >= nKmsNodes) {
             revert InvalidHighMpcThreshold(newMpcThreshold, nKmsNodes);
         }
@@ -879,6 +894,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         if (newPublicDecryptionThreshold == 0) {
             revert InvalidNullPublicDecryptionThreshold();
         }
+        if (newPublicDecryptionThreshold > MAX_KMS_SIGNERS) {
+            revert ThresholdExceedsProofFormatLimit("publicDecryption", newPublicDecryptionThreshold, MAX_KMS_SIGNERS);
+        }
         if (newPublicDecryptionThreshold > nKmsNodes) {
             revert InvalidHighPublicDecryptionThreshold(newPublicDecryptionThreshold, nKmsNodes);
         }
@@ -900,6 +918,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         // - `t <= n` : it should be less than or equal to the number of registered KMS nodes
         if (newUserDecryptionThreshold == 0) {
             revert InvalidNullUserDecryptionThreshold();
+        }
+        if (newUserDecryptionThreshold > MAX_KMS_SIGNERS) {
+            revert ThresholdExceedsProofFormatLimit("userDecryption", newUserDecryptionThreshold, MAX_KMS_SIGNERS);
         }
         if (newUserDecryptionThreshold > nKmsNodes) {
             revert InvalidHighUserDecryptionThreshold(newUserDecryptionThreshold, nKmsNodes);
@@ -943,6 +964,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         // - `t <= n` : it should be less than or equal to the number of registered KMS nodes
         if (newKmsGenThreshold == 0) {
             revert InvalidNullKmsGenThreshold();
+        }
+        if (newKmsGenThreshold > MAX_KMS_SIGNERS) {
+            revert ThresholdExceedsProofFormatLimit("kmsGen", newKmsGenThreshold, MAX_KMS_SIGNERS);
         }
         if (newKmsGenThreshold > nKmsNodes) {
             revert InvalidHighKmsGenThreshold(newKmsGenThreshold, nKmsNodes);

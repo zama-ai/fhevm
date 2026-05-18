@@ -254,6 +254,23 @@ interface IGatewayConfig {
     error InvalidNullKmsContextId();
 
     /**
+     * @notice Error emitted when the KMS signer set exceeds the proof format limit (`uint8`
+     *         signature count in the `decryptionProof` payload consumed by `KMSVerifier`).
+     * @param signerCount The number of signers in the rejected set.
+     * @param maxAllowed The maximum size the proof format can carry.
+     */
+    error KmsSignerSetExceedsProofFormatLimit(uint256 signerCount, uint256 maxAllowed);
+
+    /**
+     * @notice Error emitted when a per-context threshold exceeds the proof format limit (`uint8`
+     *         signature count in the `decryptionProof` payload consumed by `KMSVerifier`).
+     * @param thresholdName The name of the invalid threshold.
+     * @param threshold The invalid threshold value.
+     * @param maxAllowed The maximum value the proof format can carry.
+     */
+    error ThresholdExceedsProofFormatLimit(string thresholdName, uint256 threshold, uint256 maxAllowed);
+
+    /**
      * @notice Error emitted when the KMS context ID is not strictly greater than the current one.
      * @param contextId The provided context ID.
      * @param currentKmsContextId The current KMS context ID.
