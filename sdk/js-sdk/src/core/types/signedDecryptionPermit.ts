@@ -29,7 +29,7 @@ export type SignedDecryptionPermitBase = {
    */
   readonly encryptedDataOwnerAddress: ChecksummedAddress;
   /** The E2E transport public key embedded in the EIP-712 message. */
-  readonly e2eTransportPublicKey: BytesHex;
+  readonly transportPublicKey: BytesHex;
 
   /** @throws If the permit has expired based on `startTimestamp` + `durationDays`. */
   assertNotExpired(): void;

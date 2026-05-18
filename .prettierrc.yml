@@ -4,7 +4,7 @@ plugins:
   - "prettier-plugin-solidity"
 printWidth: 120
 proseWrap: "always"
-singleQuote: false
+singleQuote: true
 tabWidth: 2
 trailingComma: "all"
 
