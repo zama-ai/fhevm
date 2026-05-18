@@ -12,3 +12,5 @@ Becoming an approved contributor involves signing our Contributor License Agreem
 Solve challenges and earn rewards:
 
 - [bounty-program](https://github.com/zama-ai/bounty-program) - Zama's FHE Bounty Program
+
+test
