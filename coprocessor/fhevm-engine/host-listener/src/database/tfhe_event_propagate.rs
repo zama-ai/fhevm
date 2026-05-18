@@ -395,14 +395,14 @@ impl Database {
     ) -> Result<bool, SqlxError> {
         let dependencies =
             dependencies.iter().map(|d| d.to_vec()).collect::<Vec<_>>();
-        let group_id = results
-            .first()
-            .ok_or_else(|| {
-                SqlxError::Protocol(
-                    "insert_multi_output_computation: results is empty".into(),
-                )
-            })?
-            .to_vec();
+        let group_id = match results.first() {
+            Some(h) => h.to_vec(),
+            None => {
+                warn!(target: "host_listener",
+                    "multi-output event has no results; skipping event");
+                return Ok(false);
+            }
+        };
         let mut any_inserted = false;
         for (idx, result) in results.iter().enumerate() {
             let output_index = match i16::try_from(idx) {
