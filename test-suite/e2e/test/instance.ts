@@ -2,8 +2,28 @@ import { MainnetConfig, SepoliaConfig, createInstance as createFhevmInstance } f
 import { network } from 'hardhat';
 import { vars } from 'hardhat/config';
 
+import { relayer_sdk_version } from './_relayer_sdk_version';
+import { FhevmSdk } from './sdk/fhevm-sdk/sdk';
+import { RelayerSdk } from './sdk/relayer-sdk/sdk';
 import type { Signers } from './signers';
 import { FhevmInstances } from './types';
+
+console.log(`=========================================================`);
+console.log(`relayer_sdk_version=${relayer_sdk_version}`);
+console.log(`process.env.RELAYER_SDK_VERSION=${process.env.RELAYER_SDK_VERSION}`);
+
+let useFhevmSdk = false;
+if (!(typeof process.env.RELAYER_SDK_VERSION === 'string' && process.env.RELAYER_SDK_VERSION.length > 0)) {
+  useFhevmSdk = true;
+}
+
+console.log(`useFhevmSdk=${useFhevmSdk}`);
+console.log(`=========================================================`);
+
+// By default use @fhevm/sdk
+// const useFhevmSdk =
+//   !(typeof process.env.RELAYER_SDK_VERSION === "string" && process.env.RELAYER_SDK_VERSION.length > 0) && false;
+//const useFhevmSdk = true;
 
 const defaults = (() => {
   const chainId = network.config.chainId;
@@ -70,18 +90,22 @@ export const createInstances = async (accounts: Signers): Promise<FhevmInstances
 };
 
 export const createInstance = async () => {
-  return createFhevmInstance({
+  const cfg = {
     verifyingContractAddressDecryption,
     verifyingContractAddressInputVerification,
     kmsContractAddress: kmsVerifierAddress,
     inputVerifierContractAddress: inputAdd,
     aclContractAddress: aclAddress,
-    network: network.config.url,
+    rpcUrl: (network.config as { url: string }).url,
     relayerUrl,
     gatewayChainId: gatewayChainID,
     chainId: hostChainID,
     ...(auth ? { auth } : {}),
-  });
+  };
+  if (useFhevmSdk) {
+    return FhevmSdk.create(cfg);
+  }
+  return RelayerSdk.create(cfg);
 };
 
 // Export coprocessor config addresses for smoke tests
