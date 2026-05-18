@@ -246,7 +246,7 @@ mod test {
 
         assert!(err
             .to_string()
-            .contains("Compressed server key does not have noise squashing"));
+            .contains("Compressed server key is missing the noise squashing"));
 
         Ok(())
     }
