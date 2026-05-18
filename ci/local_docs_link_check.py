@@ -13,6 +13,8 @@ import linkcheckmd as lc
 # A regex that matches [foo (bar)](my_link) and returns the my_link
 # used to find all links made in our markdown files.
 MARKDOWN_LINK_REGEX = [re.compile(r"\[[^\]]*\]\(([^\)]*)\)"), re.compile(r"href=\"[^\"]*\"")]
+FENCED_CODE_BLOCK_REGEX = re.compile(r"```.*?```", re.DOTALL)
+INLINE_CODE_REGEX = re.compile(r"`[^`\n]*`")
 
 
 def should_skip_link(link: str) -> bool:
@@ -37,6 +39,13 @@ def should_skip_link(link: str) -> bool:
     return False
 
 
+def strip_markdown_code(content: str) -> str:
+    """Remove fenced and inline code before markdown link extraction."""
+    content = FENCED_CODE_BLOCK_REGEX.sub("", content)
+    content = INLINE_CODE_REGEX.sub("", content)
+    return content
+
+
 # pylint: disable-next=too-many-branches
 def check_content_for_dead_links(
     content: str, file_path: Path, cell_id: Optional[int] = None
@@ -54,6 +63,7 @@ def check_content_for_dead_links(
         List[str]: a list of errors (dead-links) found.
     """
     errors: List[str] = []
+    content = strip_markdown_code(content)
     links = []
     for regex in MARKDOWN_LINK_REGEX:
         links_found = regex.findall(content)
