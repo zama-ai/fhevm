@@ -126,6 +126,7 @@ interface IGatewayConfig {
     function isKmsTxSender(address kmsTxSenderAddress) external view returns (bool);
     function isKmsTxSenderForContext(uint256 contextId, address txSenderAddress) external view returns (bool);
     function isPauser(address account) external view returns (bool);
+    function isValidKmsContext(uint256 contextId) external view returns (bool);
     function pauseAllGatewayContracts() external;
     function removeHostChain(uint256 chainId) external;
     function unpauseAllGatewayContracts() external;
@@ -919,6 +920,25 @@ interface IGatewayConfig {
         "name": "account",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isValidKmsContext",
+    "inputs": [
+      {
+        "name": "contextId",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [
@@ -13792,6 +13812,162 @@ function isPauser(address account) external view returns (bool);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `isValidKmsContext(uint256)` and selector `0xbf9b16c8`.
+```solidity
+function isValidKmsContext(uint256 contextId) external view returns (bool);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct isValidKmsContextCall {
+        #[allow(missing_docs)]
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`isValidKmsContext(uint256)`](isValidKmsContextCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct isValidKmsContextReturn {
+        #[allow(missing_docs)]
+        pub _0: bool,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<isValidKmsContextCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: isValidKmsContextCall) -> Self {
+                    (value.contextId,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isValidKmsContextCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { contextId: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (bool,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<isValidKmsContextReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: isValidKmsContextReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isValidKmsContextReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for isValidKmsContextCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = bool;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "isValidKmsContext(uint256)";
+            const SELECTOR: [u8; 4] = [191u8, 155u8, 22u8, 200u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: isValidKmsContextReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: isValidKmsContextReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `pauseAllGatewayContracts()` and selector `0x9a5a3bc4`.
 ```solidity
 function pauseAllGatewayContracts() external;
@@ -15654,6 +15830,8 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
         #[allow(missing_docs)]
         isPauser(isPauserCall),
         #[allow(missing_docs)]
+        isValidKmsContext(isValidKmsContextCall),
+        #[allow(missing_docs)]
         pauseAllGatewayContracts(pauseAllGatewayContractsCall),
         #[allow(missing_docs)]
         removeHostChain(removeHostChainCall),
@@ -15724,6 +15902,7 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
             [177u8, 129u8, 205u8, 167u8],
             [180u8, 114u8, 43u8, 196u8],
             [186u8, 31u8, 49u8, 210u8],
+            [191u8, 155u8, 22u8, 200u8],
             [191u8, 243u8, 170u8, 186u8],
             [192u8, 174u8, 100u8, 247u8],
             [195u8, 170u8, 170u8, 90u8],
@@ -15743,7 +15922,7 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
     impl alloy_sol_types::SolInterface for IGatewayConfigCalls {
         const NAME: &'static str = "IGatewayConfigCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 48usize;
+        const COUNT: usize = 49usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -15856,6 +16035,9 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                     <isKmsTxSenderForContextCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::isPauser(_) => <isPauserCall as alloy_sol_types::SolCall>::SELECTOR,
+                Self::isValidKmsContext(_) => {
+                    <isValidKmsContextCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::pauseAllGatewayContracts(_) => {
                     <pauseAllGatewayContractsCall as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -16296,6 +16478,17 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                             .map(IGatewayConfigCalls::getCustodianSigners)
                     }
                     getCustodianSigners
+                },
+                {
+                    fn isValidKmsContext(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <isValidKmsContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::isValidKmsContext)
+                    }
+                    isValidKmsContext
                 },
                 {
                     fn isHostChainRegistered(
@@ -16854,6 +17047,17 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                     getCustodianSigners
                 },
                 {
+                    fn isValidKmsContext(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <isValidKmsContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::isValidKmsContext)
+                    }
+                    isValidKmsContext
+                },
+                {
                     fn isHostChainRegistered(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
@@ -17191,6 +17395,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 Self::isPauser(inner) => {
                     <isPauserCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
+                Self::isValidKmsContext(inner) => {
+                    <isValidKmsContextCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::pauseAllGatewayContracts(inner) => {
                     <pauseAllGatewayContractsCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
@@ -17469,6 +17678,12 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 }
                 Self::isPauser(inner) => {
                     <isPauserCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::isValidKmsContext(inner) => {
+                    <isValidKmsContextCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -19818,6 +20033,13 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             account: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, isPauserCall, N> {
             self.call_builder(&isPauserCall { account })
+        }
+        ///Creates a new call builder for the [`isValidKmsContext`] function.
+        pub fn isValidKmsContext(
+            &self,
+            contextId: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<&P, isValidKmsContextCall, N> {
+            self.call_builder(&isValidKmsContextCall { contextId })
         }
         ///Creates a new call builder for the [`pauseAllGatewayContracts`] function.
         pub fn pauseAllGatewayContracts(
