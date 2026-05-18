@@ -133,7 +133,10 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
      * @param handlesList       The list of handles, which where requested to be decrypted.
      * @param decryptedResult   A bytes array representing the abi-encoding of all requested decrypted values.
      * @param decryptionProof   Decryption proof containing KMS signatures and extra data.
-     * @return isVerified       true if enough provided signatures are valid, false otherwise.
+     * @return isVerified       true if enough unique provided signatures are valid, false otherwise.
+     * @dev                     Reverts on malformed proof or extraData, invalid context, missing or below-threshold
+     *                          signatures, failed recovery, or an unregistered signer. Returns false only when the
+     *                          unique valid signer threshold is not reached.
      */
     function verifyDecryptionEIP712KMSSignatures(
         bytes32[] memory handlesList,
