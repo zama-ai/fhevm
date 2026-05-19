@@ -13,16 +13,11 @@ contract DecryptionMock {
         uint256 durationDays;
     }
 
-    struct RequestValiditySeconds {
-        uint256 startTimestamp;
-        uint256 durationSeconds;
-    }
-
     struct UserDecryptionRequestPayload {
         address userAddress;
         bytes publicKey;
         address[] allowedContracts;
-        RequestValiditySeconds requestValidity;
+        uint256 requestDeadline;
         bytes extraData;
         bytes signature;
     }

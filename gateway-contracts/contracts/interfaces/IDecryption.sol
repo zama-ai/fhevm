@@ -23,8 +23,8 @@ interface IDecryption {
      * @notice A struct that specifies the validity period of a request, starting at "startTimestamp"
      * and remaining valid for "durationDays".
      * @custom:deprecated Used by the legacy user decryption paths. Removed when the relayer-sdk
-     * deprecation window for old-format signatures closes. Use `RequestValiditySeconds` with the
-     * unified EIP-712 `userDecryptionRequest(HandleEntry[], ...)` instead.
+     * deprecation window for old-format signatures closes. Use the unified EIP-712
+     * `userDecryptionRequest(HandleEntry[], ...)` instead, which takes a single `requestDeadline`.
      */
     struct RequestValidity {
         /**
@@ -34,25 +34,6 @@ interface IDecryption {
         uint256 startTimestamp;
         /// @notice The duration in days for the user decryption to be processed.
         uint256 durationDays;
-    }
-
-    /**
-     * @notice A struct that specifies the validity period of a unified EIP-712 user decryption
-     * request, starting at `startTimestamp` and remaining valid for `durationSeconds`.
-     * @dev Named `RequestValiditySeconds` (not `RequestValidity`) because Solidity does not allow
-     * two types with the same name to coexist in scope, and the legacy `RequestValidity` (with
-     * `durationDays`) must remain throughout the relayer-sdk deprecation window. The EIP-712
-     * signed struct still uses flat `startTimestamp` + `durationSeconds` fields, so digests
-     * match the unified EIP-712 specification byte-for-byte.
-     */
-    struct RequestValiditySeconds {
-        /**
-         * @notice The start timestamp of the user decryption request. This is a regular Unix timestamp
-         * in seconds representing the time elapsed since midnight, January 1, 1970 Universal Coordinated Time (UTC).
-         */
-        uint256 startTimestamp;
-        /// @notice The duration in seconds for the user decryption to be processed.
-        uint256 durationSeconds;
     }
 
     /**
@@ -70,8 +51,11 @@ interface IDecryption {
         bytes publicKey;
         /// @notice Optional contract allowlist. Empty = permissive mode.
         address[] allowedContracts;
-        /// @notice The validity window (startTimestamp + durationSeconds).
-        RequestValiditySeconds requestValidity;
+        /**
+         * @notice Unix timestamp (seconds) after which the gateway no longer accepts the request.
+         * Bounded above by `block.timestamp + MAX_USER_DECRYPT_DURATION_SECONDS` at submission time.
+         */
+        uint256 requestDeadline;
         /// @notice Generic bytes metadata for versioned payloads. First byte is the version.
         bytes extraData;
         /// @notice The raw EIP-712 signature; opaque to the gateway.
@@ -265,17 +249,12 @@ interface IDecryption {
     error MaxDurationDaysExceeded(uint256 maxValue, uint256 actualValue);
 
     /**
-     * @notice Error indicating that the durationSeconds of a unified EIP-712 user decryption request is 0.
+     * @notice Error indicating that the `requestDeadline` of a unified EIP-712 user decryption
+     * request is further in the future than `block.timestamp + MAX_USER_DECRYPT_DURATION_SECONDS`.
+     * @param requestDeadline The deadline (Unix timestamp, seconds) supplied in the request.
+     * @param maxAllowed The maximum allowed deadline at the current block.
      */
-    error InvalidNullDurationSeconds();
-
-    /**
-     * @notice Error indicating that the durationSeconds of a unified EIP-712 user decryption request
-     * exceeds the maximum allowed.
-     * @param maxValue The maximum durationSeconds allowed.
-     * @param actualValue The actual durationSeconds requested.
-     */
-    error MaxDurationSecondsExceeded(uint256 maxValue, uint256 actualValue);
+    error RequestDeadlineTooFarInTheFuture(uint256 requestDeadline, uint256 maxAllowed);
 
     /**
      * @notice Error indicating that the input list of handle entries is empty in a unified EIP-712 format
@@ -301,11 +280,14 @@ interface IDecryption {
     error UserDecryptionRequestExpired(uint256 currentTimestamp, RequestValidity requestValidity);
 
     /**
-     * @notice Error indicating that a unified EIP-712 user decryption request has expired.
+     * @notice Error indicating that a unified EIP-712 user decryption request has expired
+     * (`block.timestamp > requestDeadline`).
      * @param currentTimestamp The block timestamp at which the user decryption request was made.
-     * @param requestValidity The validity period of the user decryption request (seconds-based).
+     * @param requestDeadline The deadline (Unix timestamp, seconds) supplied in the request.
+     * @dev The `Seconds` suffix is retained only to avoid a name clash with the legacy
+     * `UserDecryptionRequestExpired`; once the legacy paths are removed this should be renamed.
      */
-    error UserDecryptionRequestExpiredSeconds(uint256 currentTimestamp, RequestValiditySeconds requestValidity);
+    error UserDecryptionRequestExpiredSeconds(uint256 currentTimestamp, uint256 requestDeadline);
 
     /**
      * @notice Error indicating that the user address is included in the contract addresses list.
@@ -391,7 +373,7 @@ interface IDecryption {
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      * @custom:deprecated Kept to accept old-format signed payloads from older relayer-sdk versions.
      * Removed when the relayer-sdk deprecation window for old-format signatures closes. Use
-     * `userDecryptionRequest(HandleEntry[], address, bytes, address[], RequestValiditySeconds, bytes, bytes)`
+     * `userDecryptionRequest(HandleEntry[], address, bytes, address[], uint256 requestDeadline, bytes, bytes)`
      * for unified EIP-712 traffic.
      */
     function userDecryptionRequest(
@@ -441,7 +423,8 @@ interface IDecryption {
      * @param userAddress The identity asserting authorization.
      * @param publicKey The user's public key used for reencryption.
      * @param allowedContracts Optional contract allowlist. Empty = permissive mode.
-     * @param requestValidity The validity window (startTimestamp + durationSeconds).
+     * @param requestDeadline Unix timestamp (seconds) after which the gateway no longer accepts
+     * this request. Must not exceed `block.timestamp + MAX_USER_DECRYPT_DURATION_SECONDS`.
      * @param signature The raw EIP-712 signature; opaque to the gateway.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is the version.
      */
@@ -450,7 +433,7 @@ interface IDecryption {
         address userAddress,
         bytes calldata publicKey,
         address[] calldata allowedContracts,
-        RequestValiditySeconds calldata requestValidity,
+        uint256 requestDeadline,
         bytes calldata signature,
         bytes calldata extraData
     ) external;

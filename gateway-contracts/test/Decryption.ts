@@ -2262,9 +2262,9 @@ describe("Decryption", function () {
     // Canonical overload signatures (needed because Solidity event/function overloading produces
     // ambiguous lookups in ethers without an explicit signature).
     const UNIFIED_REQUEST_SIG =
-      "userDecryptionRequest((bytes32,address,address)[],address,bytes,address[],(uint256,uint256),bytes,bytes)";
+      "userDecryptionRequest((bytes32,address,address)[],address,bytes,address[],uint256,bytes,bytes)";
     const UNIFIED_EVENT_SIG =
-      "UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],(bytes32,address,address)[],(address,bytes,address[],(uint256,uint256),bytes,bytes))";
+      "UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],(bytes32,address,address)[],(address,bytes,address[],uint256,bytes,bytes))";
     const LEGACY_EVENT_SIG = "UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)";
     const UNIFIED_READY_SIG = "isUserDecryptionReady((bytes32,address,address)[],bytes)";
 
@@ -2277,12 +2277,8 @@ describe("Decryption", function () {
     const contractAddress = createRandomAddress();
     const secondContractAddress = createRandomAddress();
     const publicKey = createByteInput();
-    const startTimestamp = getDateInSeconds();
-    const durationSeconds = 120 * 24 * 60 * 60; // 120 days
-    const requestValidity = {
-      startTimestamp,
-      durationSeconds,
-    };
+    // 120 days from now. Stays within MAX_USER_DECRYPT_DURATION_SECONDS.
+    const requestDeadline = getDateInSeconds() + 120 * 24 * 60 * 60;
 
     // Handles with `ownerAddress == userAddress` (direct access).
     const directHandles = ctHandles.map((ctHandle) => ({
@@ -2312,7 +2308,7 @@ describe("Decryption", function () {
         .connect(tokenFundedTxSender)
         [
           UNIFIED_REQUEST_SIG
-        ](directHandles, user.address, publicKey, allowedContracts, requestValidity, opaqueSignature, extraDataV0);
+        ](directHandles, user.address, publicKey, allowedContracts, requestDeadline, opaqueSignature, extraDataV0);
 
       await expect(tx)
         .to.emit(decryption, UNIFIED_EVENT_SIG)
@@ -2320,7 +2316,7 @@ describe("Decryption", function () {
           decryptionId,
           toValues(snsCiphertextMaterials),
           toValues(directHandles),
-          [user.address, publicKey, allowedContracts, toValues(requestValidity), extraDataV0, opaqueSignature],
+          [user.address, publicKey, allowedContracts, requestDeadline, extraDataV0, opaqueSignature],
         );
     });
 
@@ -2339,7 +2335,7 @@ describe("Decryption", function () {
         .connect(tokenFundedTxSender)
         [
           UNIFIED_REQUEST_SIG
-        ](mixedHandles, user.address, publicKey, allowedContracts, requestValidity, opaqueSignature, extraDataV0);
+        ](mixedHandles, user.address, publicKey, allowedContracts, requestDeadline, opaqueSignature, extraDataV0);
 
       await expect(tx)
         .to.emit(decryption, UNIFIED_EVENT_SIG)
@@ -2347,7 +2343,7 @@ describe("Decryption", function () {
           decryptionId,
           toValues(snsCiphertextMaterials),
           toValues(mixedHandles),
-          [user.address, publicKey, allowedContracts, toValues(requestValidity), extraDataV0, opaqueSignature],
+          [user.address, publicKey, allowedContracts, requestDeadline, extraDataV0, opaqueSignature],
         );
     });
 
@@ -2356,7 +2352,7 @@ describe("Decryption", function () {
         .connect(tokenFundedTxSender)
         [
           UNIFIED_REQUEST_SIG
-        ](directHandles, user.address, publicKey, [], requestValidity, opaqueSignature, extraDataV0);
+        ](directHandles, user.address, publicKey, [], requestDeadline, opaqueSignature, extraDataV0);
 
       await expect(tx)
         .to.emit(decryption, UNIFIED_EVENT_SIG)
@@ -2364,7 +2360,7 @@ describe("Decryption", function () {
           decryptionId,
           toValues(snsCiphertextMaterials),
           toValues(directHandles),
-          [user.address, publicKey, [], toValues(requestValidity), extraDataV0, opaqueSignature],
+          [user.address, publicKey, [], requestDeadline, extraDataV0, opaqueSignature],
         );
     });
 
@@ -2375,7 +2371,7 @@ describe("Decryption", function () {
         .connect(tokenFundedTxSender)
         [
           UNIFIED_REQUEST_SIG
-        ](directHandles, user.address, publicKey, allowedContracts, requestValidity, opaqueSignature, extraDataV0);
+        ](directHandles, user.address, publicKey, allowedContracts, requestDeadline, opaqueSignature, extraDataV0);
 
       await expect(tx)
         .to.emit(decryption, UNIFIED_EVENT_SIG)
@@ -2383,7 +2379,7 @@ describe("Decryption", function () {
           decryptionId,
           toValues(snsCiphertextMaterials),
           toValues(directHandles),
-          [user.address, publicKey, allowedContracts, toValues(requestValidity), extraDataV0, opaqueSignature],
+          [user.address, publicKey, allowedContracts, requestDeadline, extraDataV0, opaqueSignature],
         );
     });
 
@@ -2396,7 +2392,7 @@ describe("Decryption", function () {
         .connect(tokenFundedTxSender)
         [
           UNIFIED_REQUEST_SIG
-        ](directHandles, user.address, publicKey, [contractAddress], requestValidity, bogusSignature, extraDataV0);
+        ](directHandles, user.address, publicKey, [contractAddress], requestDeadline, bogusSignature, extraDataV0);
 
       await expect(tx)
         .to.emit(decryption, UNIFIED_EVENT_SIG)
@@ -2404,7 +2400,7 @@ describe("Decryption", function () {
           decryptionId,
           toValues(snsCiphertextMaterials),
           toValues(directHandles),
-          [user.address, publicKey, [contractAddress], toValues(requestValidity), extraDataV0, bogusSignature],
+          [user.address, publicKey, [contractAddress], requestDeadline, extraDataV0, bogusSignature],
         );
     });
 
@@ -2413,7 +2409,7 @@ describe("Decryption", function () {
         .connect(tokenFundedTxSender)
         [
           UNIFIED_REQUEST_SIG
-        ](directHandles, user.address, publicKey, [contractAddress], requestValidity, opaqueSignature, extraDataV0);
+        ](directHandles, user.address, publicKey, [contractAddress], requestDeadline, opaqueSignature, extraDataV0);
 
       await expect(tx).to.not.emit(decryption, LEGACY_EVENT_SIG);
     });
@@ -2424,7 +2420,7 @@ describe("Decryption", function () {
           .connect(tokenFundedTxSender)
           [
             UNIFIED_REQUEST_SIG
-          ]([], user.address, publicKey, [contractAddress], requestValidity, opaqueSignature, extraDataV0),
+          ]([], user.address, publicKey, [contractAddress], requestDeadline, opaqueSignature, extraDataV0),
       ).to.be.revertedWithCustomError(decryption, "EmptyHandles");
     });
 
@@ -2436,67 +2432,37 @@ describe("Decryption", function () {
           .connect(tokenFundedTxSender)
           [
             UNIFIED_REQUEST_SIG
-          ](directHandles, user.address, publicKey, tooMany, requestValidity, opaqueSignature, extraDataV0),
+          ](directHandles, user.address, publicKey, tooMany, requestDeadline, opaqueSignature, extraDataV0),
       )
         .to.be.revertedWithCustomError(decryption, "ContractAddressesMaxLengthExceeded")
         .withArgs(MAX_USER_DECRYPT_CONTRACT_ADDRESSES, tooMany.length);
     });
 
-    it("Should revert when durationSeconds is zero", async function () {
-      const invalidValidity = { startTimestamp, durationSeconds: 0 };
+    it("Should revert when the deadline is further in the future than the maximum window", async function () {
+      // Pin block.timestamp so we can build a deadline that's strictly above the contract's cap.
+      const pinned = (await hre.ethers.provider.getBlock("latest"))!.timestamp;
+      await hre.network.provider.send("evm_setNextBlockTimestamp", [pinned + 1]);
+      const farFutureDeadline = pinned + 1 + MAX_USER_DECRYPT_DURATION_SECONDS + 1;
 
       await expect(
         decryption
           .connect(tokenFundedTxSender)
           [
             UNIFIED_REQUEST_SIG
-          ](directHandles, user.address, publicKey, [contractAddress], invalidValidity, opaqueSignature, extraDataV0),
-      ).to.be.revertedWithCustomError(decryption, "InvalidNullDurationSeconds");
+          ](directHandles, user.address, publicKey, [contractAddress], farFutureDeadline, opaqueSignature, extraDataV0),
+      ).to.be.revertedWithCustomError(decryption, "RequestDeadlineTooFarInTheFuture");
     });
 
-    it("Should revert when durationSeconds exceeds the maximum", async function () {
-      const invalidValidity = {
-        startTimestamp,
-        durationSeconds: MAX_USER_DECRYPT_DURATION_SECONDS + 1,
-      };
+    it("Should revert when the deadline has already passed", async function () {
+      const latest = (await hre.ethers.provider.getBlock("latest"))!.timestamp;
+      const pastDeadline = latest - 1;
 
       await expect(
         decryption
           .connect(tokenFundedTxSender)
           [
             UNIFIED_REQUEST_SIG
-          ](directHandles, user.address, publicKey, [contractAddress], invalidValidity, opaqueSignature, extraDataV0),
-      )
-        .to.be.revertedWithCustomError(decryption, "MaxDurationSecondsExceeded")
-        .withArgs(MAX_USER_DECRYPT_DURATION_SECONDS, invalidValidity.durationSeconds);
-    });
-
-    it("Should revert when startTimestamp is in the future", async function () {
-      const futureStart = startTimestamp + 10_000;
-      const invalidValidity = { startTimestamp: futureStart, durationSeconds };
-
-      await expect(
-        decryption
-          .connect(tokenFundedTxSender)
-          [
-            UNIFIED_REQUEST_SIG
-          ](directHandles, user.address, publicKey, [contractAddress], invalidValidity, opaqueSignature, extraDataV0),
-      ).to.be.revertedWithCustomError(decryption, "StartTimestampInFuture");
-    });
-
-    it("Should revert when the request validity window has expired", async function () {
-      const expiredValidity = {
-        // Start well in the past, short duration — window already ended.
-        startTimestamp: startTimestamp - 2 * 24 * 60 * 60,
-        durationSeconds: 60,
-      };
-
-      await expect(
-        decryption
-          .connect(tokenFundedTxSender)
-          [
-            UNIFIED_REQUEST_SIG
-          ](directHandles, user.address, publicKey, [contractAddress], expiredValidity, opaqueSignature, extraDataV0),
+          ](directHandles, user.address, publicKey, [contractAddress], pastDeadline, opaqueSignature, extraDataV0),
       ).to.be.revertedWithCustomError(decryption, "UserDecryptionRequestExpiredSeconds");
     });
 
@@ -2511,7 +2477,7 @@ describe("Decryption", function () {
           .connect(tokenFundedTxSender)
           [
             UNIFIED_REQUEST_SIG
-          ](mismatchedHandles, user.address, publicKey, [contractAddress], requestValidity, opaqueSignature, extraDataV0),
+          ](mismatchedHandles, user.address, publicKey, [contractAddress], requestDeadline, opaqueSignature, extraDataV0),
       ).to.be.revertedWithCustomError(decryption, "CtHandleChainIdDiffersFromContractChainId");
     });
 
@@ -2523,7 +2489,7 @@ describe("Decryption", function () {
           .connect(tokenFundedTxSender)
           [
             UNIFIED_REQUEST_SIG
-          ](unregisteredHandles, user.address, publicKey, [contractAddress], requestValidity, opaqueSignature, extraDataV0),
+          ](unregisteredHandles, user.address, publicKey, [contractAddress], requestDeadline, opaqueSignature, extraDataV0),
       )
         .to.be.revertedWithCustomError(decryption, "HostChainNotRegistered")
         .withArgs(fakeHostChainId);

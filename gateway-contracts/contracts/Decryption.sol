@@ -622,7 +622,7 @@ contract Decryption is
         address userAddress,
         bytes calldata publicKey,
         address[] calldata allowedContracts,
-        RequestValiditySeconds calldata requestValidity,
+        uint256 requestDeadline,
         bytes calldata signature,
         bytes calldata extraData
     ) external virtual whenNotPaused {
@@ -633,7 +633,7 @@ contract Decryption is
         if (allowedContracts.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
             revert ContractAddressesMaxLengthExceeded(MAX_USER_DECRYPT_CONTRACT_ADDRESSES, allowedContracts.length);
         }
-        _checkUserDecryptionRequestValiditySeconds(requestValidity);
+        _checkUserDecryptionRequestDeadline(requestDeadline);
 
         // Pack the signed EIP-712 fields and the signature into a single memory struct. Doing so
         // consolidates six calldata refs into one memory pointer and keeps the subsequent emit
@@ -642,7 +642,7 @@ contract Decryption is
         payload.userAddress = userAddress;
         payload.publicKey = publicKey;
         payload.allowedContracts = allowedContracts;
-        payload.requestValidity = requestValidity;
+        payload.requestDeadline = requestDeadline;
         payload.extraData = extraData;
         payload.signature = signature;
 
@@ -1273,7 +1273,7 @@ contract Decryption is
      * @notice Checks if a user decryption request's start timestamp and duration days are valid.
      * @param requestValidity The RequestValidity structure
      * @custom:deprecated Used only by the legacy user decryption paths. Use
-     * `_checkUserDecryptionRequestValiditySeconds` for the unified EIP-712 path.
+     * `_checkUserDecryptionRequestDeadline` for the unified EIP-712 path.
      */
     function _checkUserDecryptionRequestValidity(RequestValidity memory requestValidity) internal view virtual {
         // Check the durationDays is not null.
@@ -1300,23 +1300,23 @@ contract Decryption is
     }
 
     /**
-     * @notice Checks a unified-path user decryption request's start timestamp and `durationSeconds`.
-     * @param requestValidity The `RequestValiditySeconds` struct.
+     * @notice Checks that a unified-path user decryption `requestDeadline` is within the
+     * allowed window.
+     * @param requestDeadline The Unix timestamp (seconds) after which the gateway no longer
+     * accepts the request.
+     * @dev Replaces the four named constraints of the legacy `startTimestamp + durationDays`
+     * encoding with two: `requestDeadline` not past, and `requestDeadline` no further than
+     * `MAX_USER_DECRYPT_DURATION_SECONDS` from now. The legacy upper bound implicitly capped
+     * `startTimestamp` to "not in the future" to prevent bypassing the duration limit; the
+     * deadline encoding makes that bypass impossible by construction.
      */
-    function _checkUserDecryptionRequestValiditySeconds(
-        RequestValiditySeconds memory requestValidity
-    ) internal view virtual {
-        if (requestValidity.durationSeconds == 0) {
-            revert InvalidNullDurationSeconds();
+    function _checkUserDecryptionRequestDeadline(uint256 requestDeadline) internal view virtual {
+        uint256 maxAllowed = block.timestamp + MAX_USER_DECRYPT_DURATION_SECONDS;
+        if (requestDeadline > maxAllowed) {
+            revert RequestDeadlineTooFarInTheFuture(requestDeadline, maxAllowed);
         }
-        if (requestValidity.durationSeconds > MAX_USER_DECRYPT_DURATION_SECONDS) {
-            revert MaxDurationSecondsExceeded(MAX_USER_DECRYPT_DURATION_SECONDS, requestValidity.durationSeconds);
-        }
-        if (requestValidity.startTimestamp > block.timestamp) {
-            revert StartTimestampInFuture(block.timestamp, requestValidity.startTimestamp);
-        }
-        if (requestValidity.startTimestamp + requestValidity.durationSeconds < block.timestamp) {
-            revert UserDecryptionRequestExpiredSeconds(block.timestamp, requestValidity);
+        if (requestDeadline < block.timestamp) {
+            revert UserDecryptionRequestExpiredSeconds(block.timestamp, requestDeadline);
         }
     }
 
