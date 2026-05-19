@@ -96,7 +96,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
     /**
      * @notice Migration initializer: seeds the migrated context from the existing GatewayConfig state.
-     * @dev GatewayConfig mirrors KMSVerifier per RFC-013 and carries the extra KMS node fields
+     * @dev GatewayConfig mirrors KMSVerifier per RFC-003 and carries the extra KMS node fields
      *      needed for the migration.
      * @param existingContextId The currnet context ID. The counter is seeded to
      *        `existingContextId - 1` so that `_defineKmsContext` increments to the exact
