@@ -21,7 +21,7 @@ use crate::logging::UserDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::metrics::{observe_raw_eta_seconds, HttpApiVersion, RetryAfterRequestType};
 use crate::orchestrator::{ContentHasher, Orchestrator};
-use crate::readiness::throttler::{DelegatedUserDecryptReadinessTask, UserDecryptReadinessTask};
+use crate::readiness::throttler::UserDecryptReadinessTask;
 use crate::store::sql::models::{
     req_status_enum_model::ReqStatus, user_decrypt_req_model::UserDecryptReqData,
 };
@@ -51,7 +51,6 @@ pub struct UserDecryptHandler {
     user_decrypt_repo: Arc<UserDecryptRepository>,
     user_decrypt_shares_threshold: u32,
     user_decrypt_queue_checker: BounceChecker<UserDecryptReadinessTask>,
-    delegated_queue_checker: BounceChecker<DelegatedUserDecryptReadinessTask>,
     retry_after_state: Arc<RetryAfterState>,
     host_chain_id_checker: Arc<HostChainIdChecker>,
 }
@@ -64,7 +63,6 @@ impl UserDecryptHandler {
         user_decrypt_repo: Arc<UserDecryptRepository>,
         user_decrypt_shares_threshold: u32,
         user_decrypt_queue_checker: BounceChecker<UserDecryptReadinessTask>,
-        delegated_queue_checker: BounceChecker<DelegatedUserDecryptReadinessTask>,
         retry_after_state: Arc<RetryAfterState>,
         host_chain_id_checker: Arc<HostChainIdChecker>,
     ) -> Self {
@@ -74,7 +72,6 @@ impl UserDecryptHandler {
             user_decrypt_repo,
             user_decrypt_shares_threshold,
             user_decrypt_queue_checker,
-            delegated_queue_checker,
             retry_after_state,
             host_chain_id_checker,
         }
@@ -207,12 +204,12 @@ impl UserDecryptHandler {
         info!("Successfully parsed and validated request");
 
         // Check early to avoid filling the queue with handles of unsupported chains
-        let pairs = match &user_decrypt_request.attestation {
-            crate::core::event::AttestationFormat::LegacyDirect {
+        let pairs = match &user_decrypt_request {
+            crate::core::event::UserDecryptRequest::LegacyDirect {
                 ct_handle_contract_pairs,
                 ..
             } => ct_handle_contract_pairs,
-            _ => unreachable!("v2 /user-decrypt always produces AttestationFormat::LegacyDirect"),
+            _ => unreachable!("v2 /user-decrypt always produces UserDecryptRequest::LegacyDirect"),
         };
         if let Err(chain_id) = self
             .host_chain_id_checker
@@ -446,13 +443,13 @@ impl UserDecryptHandler {
         info!("Successfully parsed and validated delegated user decryption request.");
 
         // Check early to avoid filling the queue with handles of unsupported chains
-        let pairs = match &delegated_user_decrypt_request.attestation {
-            crate::core::event::AttestationFormat::LegacyDelegated {
+        let pairs = match &delegated_user_decrypt_request {
+            crate::core::event::UserDecryptRequest::LegacyDelegated {
                 ct_handle_contract_pairs,
                 ..
             } => ct_handle_contract_pairs,
             _ => unreachable!(
-                "v2 /delegated-user-decrypt always produces AttestationFormat::LegacyDelegated"
+                "v2 /delegated-user-decrypt always produces UserDecryptRequest::LegacyDelegated"
             ),
         };
         if let Err(chain_id) = self
@@ -478,7 +475,7 @@ impl UserDecryptHandler {
             Ok(res) => {
                 if res.is_none() {
                     // In this case, we check queue full and bounce the request with 429
-                    if let Err(retry_after) = self.delegated_queue_checker.check().await {
+                    if let Err(retry_after) = self.user_decrypt_queue_checker.check().await {
                         info!("Delegated user decryption v2 is bounced by full queue.");
                         return RelayerV2ResponseFailed::protocol_overloaded(
                             "relayer is currently processing too many requests",
@@ -574,12 +571,12 @@ impl UserDecryptHandler {
 
         // Compute dynamic retry-after based on dual queue state
         let readiness_queue_info = self
-            .delegated_queue_checker
+            .user_decrypt_queue_checker
             .readiness_throttler()
             .get_queue_info()
             .await;
         let tx_queue_info = self
-            .delegated_queue_checker
+            .user_decrypt_queue_checker
             .tx_throttler()
             .get_queue_info()
             .await;

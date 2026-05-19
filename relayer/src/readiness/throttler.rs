@@ -27,9 +27,6 @@ pub struct ReadinessQueueInfo {
 pub struct ReadinessThrottlers {
     pub user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
     pub user_decrypt_readiness_worker: ReadinessWorker<UserDecryptReadinessTask>,
-    pub delegated_user_decrypt_readiness_throttler:
-        ReadinessSender<DelegatedUserDecryptReadinessTask>,
-    pub delegated_user_decrypt_readiness_worker: ReadinessWorker<DelegatedUserDecryptReadinessTask>,
     pub public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
     pub public_decrypt_readiness_worker: ReadinessWorker<PublicDecryptReadinessTask>,
 }
@@ -38,18 +35,12 @@ impl ReadinessThrottlers {
     pub fn new(
         user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
         user_decrypt_readiness_worker: ReadinessWorker<UserDecryptReadinessTask>,
-        delegated_user_decrypt_readiness_throttler: ReadinessSender<
-            DelegatedUserDecryptReadinessTask,
-        >,
-        delegated_user_decrypt_readiness_worker: ReadinessWorker<DelegatedUserDecryptReadinessTask>,
         public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
         public_decrypt_readiness_worker: ReadinessWorker<PublicDecryptReadinessTask>,
     ) -> Self {
         Self {
             user_decrypt_readiness_throttler,
             user_decrypt_readiness_worker,
-            delegated_user_decrypt_readiness_throttler,
-            delegated_user_decrypt_readiness_worker,
             public_decrypt_readiness_throttler,
             public_decrypt_readiness_worker,
         }
@@ -58,22 +49,16 @@ impl ReadinessThrottlers {
 
 pub struct ReadinessSenders {
     pub user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
-    pub delegated_user_decrypt_readiness_throttler:
-        ReadinessSender<DelegatedUserDecryptReadinessTask>,
     pub public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
 }
 
 impl ReadinessSenders {
     pub fn new(
         user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
-        delegated_user_decrypt_readiness_throttler: ReadinessSender<
-            DelegatedUserDecryptReadinessTask,
-        >,
         public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
     ) -> Self {
         Self {
             user_decrypt_readiness_throttler,
-            delegated_user_decrypt_readiness_throttler,
             public_decrypt_readiness_throttler,
         }
     }
@@ -127,7 +112,8 @@ impl ReadinessItem for PublicDecryptReadinessTask {
     }
 }
 
-/// The unit of work for the Readiness Throttler.
+/// The unit of work for the Readiness Throttler. Carries any
+/// `UserDecryptRequest` variant; the processor dispatches per-variant.
 #[derive(Debug, Clone)]
 pub struct UserDecryptReadinessTask {
     pub id: String,
@@ -136,25 +122,6 @@ pub struct UserDecryptReadinessTask {
 }
 
 impl ReadinessItem for UserDecryptReadinessTask {
-    fn get_id(&self) -> String {
-        self.id.clone()
-    }
-}
-
-/// The unit of work for the Readiness Throttler.
-///
-/// Same task shape as `UserDecryptReadinessTask`; kept as a separate type
-/// only so the two throttlers have distinct generic instantiations and can
-/// be tuned independently. `request.payload` will always be
-/// `UserDecryptPayload::LegacyDelegated` here.
-#[derive(Debug, Clone)]
-pub struct DelegatedUserDecryptReadinessTask {
-    pub id: String,
-    pub job_id: JobId,
-    pub request: UserDecryptRequest,
-}
-
-impl ReadinessItem for DelegatedUserDecryptReadinessTask {
     fn get_id(&self) -> String {
         self.id.clone()
     }

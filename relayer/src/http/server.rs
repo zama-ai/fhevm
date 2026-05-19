@@ -100,17 +100,6 @@ pub async fn run_http_server(
                 .clone(),
             config.api_retry_after_seconds,
         ),
-        BounceChecker::new(
-            bouncer_throttlers
-                .tx_throttlers
-                .user_decrypt_tx_throttler
-                .clone(),
-            bouncer_throttlers
-                .readiness_throttling_senders
-                .delegated_user_decrypt_readiness_throttler
-                .clone(),
-            config.api_retry_after_seconds,
-        ),
         retry_after_state.clone(),
         host_chain_id_checker.clone(),
     ));

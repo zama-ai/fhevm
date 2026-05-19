@@ -1,14 +1,10 @@
 use crate::{
     config::settings::GatewayConfig,
-    core::{
-        errors::EventProcessingError,
-        event::{AttestationFormat, UserDecryptRequest},
-        job_id::JobId,
-    },
+    core::{errors::EventProcessingError, event::UserDecryptRequest, job_id::JobId},
     gateway::ciphertext_checker::CiphertextChecker,
     host::{HostAclChecker, HostAclError},
 };
-use alloy::primitives::{Address, Bytes, FixedBytes};
+use alloy::primitives::{Bytes, FixedBytes};
 use std::fmt;
 
 /// Steps for readiness checker operations
@@ -83,77 +79,68 @@ impl ReadinessChecker {
             .await
     }
 
+    /// Host ACL pre-check covering all three attestation types. The shape
+    /// of the check is dictated by the request variant:
+    /// - `LegacyDirect`: per-pair `isAllowed(handle, user) +
+    ///   isAllowed(handle, contract)`.
+    /// - `LegacyDelegated`: per-pair `isHandleDelegatedForUserDecryption`
+    ///   for the single (delegator, delegate) couple.
+    /// - `Eip712UnifiedV1`: per-`HandleEntry` direct vs delegated split
+    ///   based on `owner_address == user_address`.
     pub async fn check_host_acl_user_decrypt(
         &self,
         job_id: &JobId,
         request: &UserDecryptRequest,
     ) -> Result<(), ReadinessCheckError> {
-        let (pairs, user_address) = match &request.attestation {
-            AttestationFormat::LegacyDirect {
+        let result = match request {
+            UserDecryptRequest::LegacyDirect {
                 ct_handle_contract_pairs,
                 user_address,
                 ..
-            } => (ct_handle_contract_pairs.as_slice(), *user_address),
-            // Callers pick the host-ACL helper that matches the
-            // attestation type; LegacyDelegated should go through
-            // `check_host_acl_delegated_user_decrypt`.
-            AttestationFormat::LegacyDelegated { .. } => unreachable!(
-                "LegacyDelegated must call check_host_acl_delegated_user_decrypt"
-            ),
-            // unified EIP-712 flow: per-handle ACL is enforced by the gateway
-            // contract using the owner_address attached to each HandleEntry,
-            // so the relayer skips its host-ACL pre-check here.
-            AttestationFormat::Eip712UnifiedV1 { .. } => return Ok(()),
+            } => {
+                self.host_acl
+                    .check_user_decrypt(job_id, ct_handle_contract_pairs, *user_address)
+                    .await
+            }
+            UserDecryptRequest::LegacyDelegated {
+                ct_handle_contract_pairs,
+                delegator_address,
+                delegate_address,
+                ..
+            } => {
+                self.host_acl
+                    .check_delegated_user_decrypt(
+                        job_id,
+                        ct_handle_contract_pairs,
+                        *delegator_address,
+                        *delegate_address,
+                    )
+                    .await
+            }
+            UserDecryptRequest::Eip712UnifiedV1 {
+                handles,
+                user_address,
+                ..
+            } => {
+                self.host_acl
+                    .check_unified_user_decrypt(job_id, handles, *user_address)
+                    .await
+            }
         };
-        self.host_acl
-            .check_user_decrypt(job_id, pairs, user_address)
-            .await
-            .map_err(|e| match &e {
-                HostAclError::NotAllowed { .. } => ReadinessCheckError::NotAllowedOnHostAcl(e),
-                _ => ReadinessCheckError::HostAclFailed(e),
-            })
+        result.map_err(|e| match &e {
+            HostAclError::NotAllowed { .. } => ReadinessCheckError::NotAllowedOnHostAcl(e),
+            _ => ReadinessCheckError::HostAclFailed(e),
+        })
     }
 
     pub async fn check_user_decryption_readiness(
         &self,
         job_id: &JobId,
-        address: Address,
         pairs: &[crate::core::event::HandleContractPair],
         extra_data: Bytes,
     ) -> Result<(), ReadinessCheckError> {
         self.ciphertext
-            .check_user_decryption_readiness(job_id, address, pairs, extra_data)
+            .check_user_decryption_readiness(job_id, pairs, extra_data)
             .await
-    }
-
-    pub async fn check_host_acl_delegated_user_decrypt(
-        &self,
-        job_id: &JobId,
-        request: &UserDecryptRequest,
-    ) -> Result<(), ReadinessCheckError> {
-        let (pairs, delegator_address, delegate_address) = match &request.attestation {
-            AttestationFormat::LegacyDelegated {
-                ct_handle_contract_pairs,
-                delegator_address,
-                delegate_address,
-                ..
-            } => (
-                ct_handle_contract_pairs.as_slice(),
-                *delegator_address,
-                *delegate_address,
-            ),
-            // Mirror of `check_host_acl_user_decrypt`: only the
-            // LegacyDelegated path should call into here.
-            AttestationFormat::LegacyDirect { .. } | AttestationFormat::Eip712UnifiedV1 { .. } => {
-                unreachable!("non-LegacyDelegated must call check_host_acl_user_decrypt")
-            }
-        };
-        self.host_acl
-            .check_delegated_user_decrypt(job_id, pairs, delegator_address, delegate_address)
-            .await
-            .map_err(|e| match &e {
-                HostAclError::NotAllowed { .. } => ReadinessCheckError::NotAllowedOnHostAcl(e),
-                _ => ReadinessCheckError::HostAclFailed(e),
-            })
     }
 }

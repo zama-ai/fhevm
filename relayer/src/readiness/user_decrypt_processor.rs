@@ -2,8 +2,8 @@ use crate::{
     core::{
         errors::EventProcessingError,
         event::{
-            ApiCategory, ApiVersion, AttestationFormat, HandleContractPair, RelayerEvent,
-            RelayerEventData, UserDecryptEventData, UserDecryptRequest,
+            ApiCategory, ApiVersion, HandleContractPair, RelayerEvent, RelayerEventData,
+            UserDecryptEventData, UserDecryptRequest,
         },
         job_id::JobId,
     },
@@ -86,25 +86,29 @@ impl UserDecryptReadinessProcessor {
         }
 
         // 2. GATEWAY CIPHERTEXT CHECK
-        // The gateway's `isUserDecryptionReady_1(CtHandleContractPair[], …)`
-        // takes only the handle pairs and extra_data, so LegacyDirect and
-        // Eip712UnifiedV1 share this readiness call. For Eip712UnifiedV1
-        // we project `HandleEntry { ct_handle, contract_address, _ }`
-        // down to `HandleContractPair` for the readiness check (the
-        // per-handle owner addresses only feed the actual decryption
-        // call).
-        let (user_address, pairs): (_, Vec<HandleContractPair>) = match &task.request.attestation {
-            AttestationFormat::LegacyDirect {
-                user_address,
+        // All three attestation types use the same
+        // `isUserDecryptionReady_1((bytes32,address)[], bytes)` overload:
+        // the gateway only verifies that ciphertext material exists for
+        // each handle, so we just need a `HandleContractPair` projection.
+        // For `Eip712UnifiedV1` we drop `owner_address` from each
+        // `HandleEntry` — that field only feeds the gateway's per-handle
+        // ACL on the decryption call itself.
+        let (pairs, extra_data): (Vec<HandleContractPair>, _) = match &task.request {
+            UserDecryptRequest::LegacyDirect {
                 ct_handle_contract_pairs,
+                extra_data,
                 ..
-            } => (*user_address, ct_handle_contract_pairs.clone()),
-            AttestationFormat::Eip712UnifiedV1 {
-                user_address,
+            }
+            | UserDecryptRequest::LegacyDelegated {
+                ct_handle_contract_pairs,
+                extra_data,
+                ..
+            } => (ct_handle_contract_pairs.clone(), extra_data.clone()),
+            UserDecryptRequest::Eip712UnifiedV1 {
                 handles,
+                extra_data,
                 ..
             } => (
-                *user_address,
                 handles
                     .iter()
                     .map(|h| HandleContractPair {
@@ -112,21 +116,11 @@ impl UserDecryptReadinessProcessor {
                         contract_address: h.contract_address,
                     })
                     .collect(),
-            ),
-            // `GatewayHandler::handle_event` routes `LegacyDelegated`
-            // to the delegated readiness throttler, so this processor
-            // never sees it.
-            AttestationFormat::LegacyDelegated { .. } => unreachable!(
-                "LegacyDelegated must be routed to DelegatedUserDecryptReadinessProcessor"
+                extra_data.clone(),
             ),
         };
         let result = checker
-            .check_user_decryption_readiness(
-                &task.job_id,
-                user_address,
-                &pairs,
-                task.request.extra_data.clone(),
-            )
+            .check_user_decryption_readiness(&task.job_id, &pairs, extra_data)
             .await;
 
         // 3. DISPATCH RESULT

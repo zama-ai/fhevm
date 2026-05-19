@@ -7,28 +7,23 @@ use uuid::Uuid;
 
 use alloy::primitives::{Address, Bytes, U256};
 
-use crate::core::event::{
-    AttestationFormat, HandleContractPair, RequestValidity, UserDecryptRequest,
-};
+use crate::core::event::{HandleContractPair, RequestValidity, UserDecryptRequest};
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
 
 /// Enum representing the type of user decrypt request. Maps to the
 /// `user_decrypt_req_type` SQL enum.
 ///
-/// Should be removed once the legacy EIP-712 formats (direct +
-/// delegated) are deprecated; at that point only `Unified` remains and
-/// the discriminator becomes redundant.
+/// `UserDecrypt` and `DelegatedUserDecrypt` are deprecated: kept only to
+/// keep already-persisted v2 rows readable until the legacy EIP-712
+/// formats (direct + delegated) are removed. New writes use `Unified`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type, Serialize, Deserialize)]
 #[sqlx(type_name = "user_decrypt_req_type", rename_all = "snake_case")]
 pub enum UserDecryptReqType {
-    /// Legacy requests (existing format before type distinction).
-    /// Should be removed once the legacy EIP-712 formats are deprecated.
-    Legacy,
     /// Legacy EIP-712 direct user decryption request.
-    /// Should be removed once the legacy EIP-712 formats are deprecated.
+    /// Deprecated; should be removed once the legacy EIP-712 formats are removed.
     UserDecrypt,
     /// Legacy EIP-712 delegated user decryption request.
-    /// Should be removed once the legacy EIP-712 formats are deprecated.
+    /// Deprecated; should be removed once the legacy EIP-712 formats are removed.
     DelegatedUserDecrypt,
     /// Unified EIP-712 user decryption request.
     Unified,
@@ -36,25 +31,23 @@ pub enum UserDecryptReqType {
 
 /// Typed wrapper for user decrypt request data.
 ///
-/// `UserDecrypt`, `DelegatedUserDecrypt`, and `Unified` all carry the same
-/// in-memory `UserDecryptRequest`; the variant discriminator is preserved so
-/// the `user_decrypt_req_type` SQL enum maps cleanly without dropping
-/// existing on-disk values. `parse_req_data` knows how to lift pre-refactor
-/// rows (which had flat top-level fields) into the new tagged shape.
+/// All three variants carry the same in-memory `UserDecryptRequest`; the
+/// variant discriminator drives the `user_decrypt_req_type` SQL enum so
+/// existing on-disk rows keep their type tag. `parse_req_data` lifts
+/// pre-refactor v2 rows (which serialized the request struct in its
+/// old flat shape) into the current tagged form on read.
 ///
-/// `Legacy` / `UserDecrypt` / `DelegatedUserDecrypt` should be removed
-/// once the legacy EIP-712 formats are deprecated.
+/// `UserDecrypt` and `DelegatedUserDecrypt` are deprecated and should be
+/// removed once the legacy EIP-712 formats (direct + delegated) are
+/// removed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum UserDecryptReqData {
-    /// Legacy requests stored as raw JSON (for backward compatibility).
-    /// Should be removed once the legacy EIP-712 formats are deprecated.
-    Legacy(Value),
     /// Legacy EIP-712 direct user decryption (payload = LegacyDirect).
-    /// Should be removed once the legacy EIP-712 formats are deprecated.
+    /// Deprecated; should be removed once the legacy EIP-712 formats are removed.
     UserDecrypt(UserDecryptRequest),
     /// Legacy EIP-712 delegated user decryption (payload = LegacyDelegated).
-    /// Should be removed once the legacy EIP-712 formats are deprecated.
+    /// Deprecated; should be removed once the legacy EIP-712 formats are removed.
     DelegatedUserDecrypt(UserDecryptRequest),
     /// Unified EIP-712 user decryption (payload = Eip712UnifiedV1).
     Unified(UserDecryptRequest),
@@ -64,7 +57,6 @@ impl UserDecryptReqData {
     /// Convert to JSON Value for database storage
     pub fn to_value(&self) -> Result<Value, serde_json::Error> {
         match self {
-            UserDecryptReqData::Legacy(v) => Ok(v.clone()),
             UserDecryptReqData::UserDecrypt(req)
             | UserDecryptReqData::DelegatedUserDecrypt(req)
             | UserDecryptReqData::Unified(req) => serde_json::to_value(req),
@@ -73,7 +65,6 @@ impl UserDecryptReqData {
 
     pub fn req_type(&self) -> UserDecryptReqType {
         match self {
-            UserDecryptReqData::Legacy(_) => UserDecryptReqType::Legacy,
             UserDecryptReqData::UserDecrypt(_) => UserDecryptReqType::UserDecrypt,
             UserDecryptReqData::DelegatedUserDecrypt(_) => UserDecryptReqType::DelegatedUserDecrypt,
             UserDecryptReqData::Unified(_) => UserDecryptReqType::Unified,
@@ -99,17 +90,15 @@ struct LegacyDirectFlatRow {
 
 impl From<LegacyDirectFlatRow> for UserDecryptRequest {
     fn from(v: LegacyDirectFlatRow) -> Self {
-        UserDecryptRequest {
+        UserDecryptRequest::LegacyDirect {
+            ct_handle_contract_pairs: v.ct_handle_contract_pairs,
+            request_validity: v.request_validity,
+            contracts_chain_id: v.contracts_chain_id,
+            contract_addresses: v.contract_addresses,
+            user_address: v.user_address,
             signature: v.signature,
             public_key: v.public_key,
             extra_data: v.extra_data,
-            attestation: AttestationFormat::LegacyDirect {
-                ct_handle_contract_pairs: v.ct_handle_contract_pairs,
-                request_validity: v.request_validity,
-                contracts_chain_id: v.contracts_chain_id,
-                contract_addresses: v.contract_addresses,
-                user_address: v.user_address,
-            },
         }
     }
 }
@@ -137,21 +126,19 @@ struct LegacyDelegatedFlatRow {
 
 impl From<LegacyDelegatedFlatRow> for UserDecryptRequest {
     fn from(v: LegacyDelegatedFlatRow) -> Self {
-        UserDecryptRequest {
+        UserDecryptRequest::LegacyDelegated {
+            ct_handle_contract_pairs: v.ct_handle_contract_pairs,
+            request_validity: RequestValidity {
+                start_timestamp: v.start_timestamp,
+                duration_days: v.duration_days,
+            },
+            contracts_chain_id: v.contracts_chain_id,
+            contract_addresses: v.contract_addresses,
+            delegator_address: v.delegator_address,
+            delegate_address: v.delegate_address,
             signature: v.signature,
             public_key: v.public_key,
             extra_data: v.extra_data,
-            attestation: AttestationFormat::LegacyDelegated {
-                ct_handle_contract_pairs: v.ct_handle_contract_pairs,
-                request_validity: RequestValidity {
-                    start_timestamp: v.start_timestamp,
-                    duration_days: v.duration_days,
-                },
-                contracts_chain_id: v.contracts_chain_id,
-                contract_addresses: v.contract_addresses,
-                delegator_address: v.delegator_address,
-                delegate_address: v.delegate_address,
-            },
         }
     }
 }
@@ -197,7 +184,6 @@ impl UserDecryptReq {
     /// pre-refactor flat shape (for rows written by older relayer versions).
     pub fn parse_req_data(&self) -> Result<UserDecryptReqData, serde_json::Error> {
         match self.req_type {
-            UserDecryptReqType::Legacy => Ok(UserDecryptReqData::Legacy(self.req.clone())),
             UserDecryptReqType::UserDecrypt => {
                 let req = deserialize_user_decrypt_request_compat(self.req.clone(), |v| {
                     serde_json::from_value::<LegacyDirectFlatRow>(v).map(UserDecryptRequest::from)

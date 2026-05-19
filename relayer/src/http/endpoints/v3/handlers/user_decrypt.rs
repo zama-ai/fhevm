@@ -172,10 +172,10 @@ impl UserDecryptHandler {
         info!("Successfully parsed and validated v3 request");
 
         // Early host-chain rejection: handle prefixes encode the chain id.
-        let handles = match &user_decrypt_request.attestation {
-            crate::core::event::AttestationFormat::Eip712UnifiedV1 { handles, .. } => handles,
+        let handles = match &user_decrypt_request {
+            crate::core::event::UserDecryptRequest::Eip712UnifiedV1 { handles, .. } => handles,
             _ => {
-                unreachable!("v3 /user-decrypt always produces AttestationFormat::Eip712UnifiedV1")
+                unreachable!("v3 /user-decrypt always produces UserDecryptRequest::Eip712UnifiedV1")
             }
         };
         if let Err(chain_id) = self

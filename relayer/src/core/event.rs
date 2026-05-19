@@ -449,23 +449,12 @@ pub struct PublicDecryptRequest {
     pub extra_data: Bytes,
 }
 
-/// A user-decryption request. Only the truly format-agnostic fields
-/// (`signature`, `public_key`, `extra_data`) live at the top level; every
-/// field that differs across attestation formats — handle vector layout,
-/// validity-window unit, on-chain caller, allowed contracts, host chain
-/// id — lives inside the variant in `attestation`. The compiler then
-/// enforces that every consumer handles each format exhaustively.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
-pub struct UserDecryptRequest {
-    pub signature: Bytes,
-    pub public_key: Bytes,
-    pub extra_data: Bytes,
-    pub attestation: AttestationFormat,
-}
-
-/// The attestation/signature format used for this user-decrypt request.
-/// Each variant owns the complete set of fields that format expects on
-/// the wire and on the gateway.
+/// A user-decryption request. Each variant owns the complete set of
+/// fields its attestation format expects on the wire and on the
+/// gateway — including the `signature`, `public_key`, and `extra_data`
+/// fields that all current formats happen to share. Pattern-matching
+/// on the request hands the caller every field for that format in one
+/// place, with no cross-format envelope.
 ///
 /// `LegacyDirect` and `LegacyDelegated` should be removed once the
 /// legacy EIP-712 formats (direct + delegated) are deprecated; at that
@@ -473,7 +462,7 @@ pub struct UserDecryptRequest {
 /// struct.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum AttestationFormat {
+pub enum UserDecryptRequest {
     /// Legacy EIP-712 direct user-decryption: maps to
     /// `userDecryptionRequest(CtHandleContractPair[], RequestValidity,
     /// ContractsInfo, address userAddress, …)` on the gateway.
@@ -484,6 +473,9 @@ pub enum AttestationFormat {
         contracts_chain_id: u64,
         contract_addresses: Vec<Address>,
         user_address: Address,
+        signature: Bytes,
+        public_key: Bytes,
+        extra_data: Bytes,
     },
     /// Legacy EIP-712 delegated user-decryption: maps to
     /// `delegatedUserDecryptionRequest(CtHandleContractPair[],
@@ -496,8 +488,11 @@ pub enum AttestationFormat {
         contract_addresses: Vec<Address>,
         delegator_address: Address,
         delegate_address: Address,
+        signature: Bytes,
+        public_key: Bytes,
+        extra_data: Bytes,
     },
-    /// unified EIP-712 user-decryption (attestation_type
+    /// Unified EIP-712 user-decryption (attestation_type
     /// `"eip712-unified-user-decrypt-v1"`): maps to
     /// `userDecryptionRequest(HandleEntry[], address userAddress,
     /// bytes publicKey, address[] allowedContracts,
@@ -509,22 +504,25 @@ pub enum AttestationFormat {
         user_address: Address,
         allowed_contracts: Vec<Address>,
         request_validity: RequestValiditySeconds,
+        signature: Bytes,
+        public_key: Bytes,
+        extra_data: Bytes,
     },
 }
 
 impl UserDecryptRequest {
     /// Short label for logs / metrics. Matches the serde tag values.
     pub fn attestation_kind(&self) -> &'static str {
-        match self.attestation {
-            AttestationFormat::LegacyDirect { .. } => "legacy_direct",
-            AttestationFormat::LegacyDelegated { .. } => "legacy_delegated",
-            AttestationFormat::Eip712UnifiedV1 { .. } => "eip712_unified_v1",
+        match self {
+            UserDecryptRequest::LegacyDirect { .. } => "legacy_direct",
+            UserDecryptRequest::LegacyDelegated { .. } => "legacy_delegated",
+            UserDecryptRequest::Eip712UnifiedV1 { .. } => "eip712_unified_v1",
         }
     }
 
     /// Whether this request uses the unified EIP-712 gateway overload.
     pub fn is_unified(&self) -> bool {
-        matches!(self.attestation, AttestationFormat::Eip712UnifiedV1 { .. })
+        matches!(self, UserDecryptRequest::Eip712UnifiedV1 { .. })
     }
 }
 
@@ -649,17 +647,15 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
         // Parse extraData (validated at HTTP layer)
         let extra_data = Bytes::from_str(&value.extra_data)?;
 
-        Ok(UserDecryptRequest {
+        Ok(UserDecryptRequest::LegacyDirect {
+            ct_handle_contract_pairs,
+            request_validity,
+            contracts_chain_id,
+            contract_addresses: contract_addresses.clone(),
+            user_address: Address::from_str(&value.user_address)?,
             signature: Bytes::from_str(&value.signature)?,
             public_key: Bytes::from_str(&value.public_key)?,
             extra_data,
-            attestation: AttestationFormat::LegacyDirect {
-                ct_handle_contract_pairs,
-                request_validity,
-                contracts_chain_id,
-                contract_addresses: contract_addresses.clone(),
-                user_address: Address::from_str(&value.user_address)?,
-            },
         })
     }
 }
@@ -715,21 +711,19 @@ impl TryFrom<DelegatedUserDecryptRequestJson> for UserDecryptRequest {
         // Parse extraData (validated at HTTP layer)
         let extra_data = Bytes::from_str(&value.extra_data)?;
 
-        Ok(UserDecryptRequest {
+        Ok(UserDecryptRequest::LegacyDelegated {
+            ct_handle_contract_pairs,
+            request_validity: RequestValidity {
+                start_timestamp: U256::from_str(&value.start_timestamp)?,
+                duration_days,
+            },
+            contracts_chain_id,
+            contract_addresses: contract_addresses.clone(),
+            delegator_address: Address::from_str(&value.delegator_address)?,
+            delegate_address: Address::from_str(&value.delegate_address)?,
             signature: Bytes::from_str(&value.signature)?,
             public_key: Bytes::from_str(&value.public_key)?,
             extra_data,
-            attestation: AttestationFormat::LegacyDelegated {
-                ct_handle_contract_pairs,
-                request_validity: RequestValidity {
-                    start_timestamp: U256::from_str(&value.start_timestamp)?,
-                    duration_days,
-                },
-                contracts_chain_id,
-                contract_addresses: contract_addresses.clone(),
-                delegator_address: Address::from_str(&value.delegator_address)?,
-                delegate_address: Address::from_str(&value.delegate_address)?,
-            },
         })
     }
 }
@@ -778,16 +772,14 @@ impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
             duration_seconds: U256::from_str(&payload_inner.request_validity.duration_seconds)?,
         };
 
-        Ok(UserDecryptRequest {
+        Ok(UserDecryptRequest::Eip712UnifiedV1 {
+            handles,
+            user_address: Address::from_str(&payload_inner.user_address)?,
+            allowed_contracts,
+            request_validity,
             signature: Bytes::from_str(&value.signature)?,
             public_key: Bytes::from_str(&payload_inner.public_key)?,
             extra_data: Bytes::from_str(&payload_inner.extra_data)?,
-            attestation: AttestationFormat::Eip712UnifiedV1 {
-                handles,
-                user_address: Address::from_str(&payload_inner.user_address)?,
-                allowed_contracts,
-                request_validity,
-            },
         })
     }
 }
