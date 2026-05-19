@@ -71,7 +71,7 @@ jobs:
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
 
       - name: Login to Docker Registry
-        uses: zama-ai/ci-templates/.github/actions/retry@f3b6046d0ce6f2eab83353e0fb788bd781be9f2e # main
+        uses: zama-ai/ci-templates/.github/actions/retry@f3b6046d0ce6f2eab83353e0fb788bd781be9f2e # v1.0.6
         env:
           GHCR_USERNAME: ${{ github.actor }}
           GHCR_PASSWORD: ${{ secrets.GHCR_READ_TOKEN }}
