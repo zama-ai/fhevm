@@ -13,7 +13,7 @@ on:
       runbook:
         description: "TypeScript rollout runbook path"
         type: string
-      test_profile:
+      test-profile:
         description: "Rollout test depth"
         default: "rollout-standard"
         type: choice
@@ -39,7 +39,7 @@ jobs:
     runs-on: large_ubuntu_32
     env:
       GH_TOKEN: ${{ github.token }}
-      ROLLOUT_TEST_PROFILE: ${{ github.event.inputs.test_profile || 'rollout-standard' }}
+      ROLLOUT_TEST_PROFILE: ${{ inputs.test-profile || 'rollout-standard' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -58,7 +58,7 @@ jobs:
 
       - name: Resolve rollout runbook
         env:
-          INPUT_RUNBOOK: ${{ github.event.inputs.runbook }}
+          INPUT_RUNBOOK: ${{ inputs.runbook }}
           BASE_REF: ${{ github.base_ref }}
         run: |
           set -euo pipefail
