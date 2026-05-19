@@ -12,6 +12,9 @@ use fhevm_engine_common::utils::{
 /// `CompressedXofKeySet` blob as published by kms-core; it is `Some`
 /// when the source was a CompressedXofKeySet and `None` when the
 /// source was a plain ServerKey blob (the legacy path).
+/// `embedded_public_key` is the public key produced by whole-keyset
+/// decompression and is used only to warn if the separately downloaded
+/// PublicKey does not byte-match it.
 ///
 /// The compressed blob has to be stored unmodified: subkey
 /// decompression advances a shared XOF state, so dropping any subkey
@@ -24,6 +27,7 @@ pub(crate) struct PreparedServerKey {
     pub sns_pk: Vec<u8>,
     pub sks_key: Vec<u8>,
     pub compressed_xof_keyset: Option<Vec<u8>>,
+    pub embedded_public_key: Option<Vec<u8>>,
 }
 
 /// Builds a [`PreparedServerKey`] from a serialized
@@ -41,6 +45,7 @@ pub(crate) fn prepare_xof_key_set_for_db(
             sns_pk: b"key_bytes".to_vec(),
             sks_key: b"key_bytes".to_vec(),
             compressed_xof_keyset: Some(b"key_bytes".to_vec()),
+            embedded_public_key: Some(b"key_bytes".to_vec()),
         });
     }
 
@@ -52,8 +57,9 @@ pub(crate) fn prepare_xof_key_set_for_db(
     // ServerKey. The compressed blob itself is kept verbatim so
     // sns-worker (and GPU readers) can re-do the same whole-keyset
     // decompression at consumption time.
-    let (_public_key, server_key) =
+    let (public_key, server_key) =
         compressed_key_set.decompress()?.into_raw_parts();
+    let embedded_public_key = safe_serialize_key(&public_key);
     let sns_pk = safe_serialize_key(&server_key);
     let sks_key = extract_server_key_without_ns_from_server_key(server_key)?;
 
@@ -61,6 +67,7 @@ pub(crate) fn prepare_xof_key_set_for_db(
         sns_pk,
         sks_key,
         compressed_xof_keyset: Some(key_bytes.to_vec()),
+        embedded_public_key: Some(embedded_public_key),
     })
 }
 
@@ -79,6 +86,7 @@ pub(crate) fn prepare_legacy_server_key_for_db(
             sns_pk: b"key_bytes".to_vec(),
             sks_key: b"key_bytes".to_vec(),
             compressed_xof_keyset: None,
+            embedded_public_key: None,
         });
     }
 
@@ -88,6 +96,7 @@ pub(crate) fn prepare_legacy_server_key_for_db(
         sns_pk: key_bytes.to_vec(),
         sks_key,
         compressed_xof_keyset: None,
+        embedded_public_key: None,
     })
 }
 

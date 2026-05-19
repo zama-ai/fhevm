@@ -80,7 +80,7 @@ async fn test_fetch_latest_refreshes_cache_after_key_rotation(
     let compressed_xof_keyset = row.compressed_xof_keyset;
     let cks_key = row.cks_key;
 
-    let new_key_id = random_key_id();
+    let new_key_id = initial.key_id.clone();
     let new_key_id_gw = random_key_id();
     sqlx::query!(
         "INSERT INTO keys (key_id, key_id_gw, pks_key, sks_key, compressed_xof_keyset, cks_key) VALUES ($1, $2, $3, $4, $5, $6)",

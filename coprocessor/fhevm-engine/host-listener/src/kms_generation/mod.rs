@@ -2,7 +2,8 @@ use alloy::primitives::Uint;
 use alloy::rpc::types::Log;
 use anyhow::anyhow;
 use fhevm_engine_common::chain_id::ChainId;
-use sqlx::{Pool, Postgres, Transaction};
+use sqlx::{Pool, Postgres, Row, Transaction};
+use std::ops::DerefMut;
 use tracing::{error, info, warn};
 
 use crate::contracts::KMSGeneration::{self, KMSGenerationEvents};
@@ -274,12 +275,73 @@ async fn download_and_store_key_activation<
                 }
                 None => None,
             };
+            let staged_public_key = if public_key.is_none()
+                && prepared
+                    .as_ref()
+                    .and_then(|prepared| prepared.embedded_public_key.as_ref())
+                    .is_some()
+            {
+                fetch_staged_public_key(tx, activation).await?
+            } else {
+                None
+            };
+            warn_on_public_key_mismatch(
+                activation,
+                prepared.as_ref(),
+                public_key.as_deref().or(staged_public_key.as_deref()),
+            );
             Ok(
                 set_ready_key_activation(tx, activation, prepared, public_key)
                     .await?,
             )
         }
         (Err(err), _) | (_, Err(err)) => anyhow::bail!(err),
+    }
+}
+
+async fn fetch_staged_public_key(
+    tx: &mut Transaction<'_, Postgres>,
+    activation: &PendingKeyActivation,
+) -> anyhow::Result<Option<Vec<u8>>> {
+    let row = sqlx::query(
+        "SELECT key_content_public
+         FROM kms_key_activation_events
+         WHERE chain_id = $1 AND block_hash = $2 AND key_id = $3",
+    )
+    .bind(activation.chain_id.as_i64())
+    .bind(&activation.block_hash)
+    .bind(&activation.key_id)
+    .fetch_optional(tx.deref_mut())
+    .await?;
+
+    row.map(|row| row.try_get("key_content_public"))
+        .transpose()
+        .map_err(Into::into)
+}
+
+fn warn_on_public_key_mismatch(
+    activation: &PendingKeyActivation,
+    prepared: Option<&crate::kms_generation::sks_key::PreparedServerKey>,
+    public_key: Option<&[u8]>,
+) {
+    let Some(prepared) = prepared else {
+        return;
+    };
+    let Some(embedded_public_key) = prepared.embedded_public_key.as_deref()
+    else {
+        return;
+    };
+    let Some(public_key) = public_key else {
+        return;
+    };
+
+    if embedded_public_key != public_key {
+        warn!(
+            key_id = ?activation.key_id,
+            embedded_public_key_len = embedded_public_key.len(),
+            downloaded_public_key_len = public_key.len(),
+            "Downloaded PublicKey does not byte-match the public key embedded in CompressedXofKeySet; continuing because KMS digests are validated independently"
+        );
     }
 }
 

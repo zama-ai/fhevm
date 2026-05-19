@@ -513,6 +513,7 @@ pub(crate) async fn set_ready_key_activation(
         } else {
             (None, None, None)
         };
+    let server_key_updated = sks_key.is_some();
     let sns_pk_oid = if let Some(sns_pk) = sns_pk {
         Some(write_large_object_in_chunks_tx(tx, &sns_pk, CHUNK_SIZE).await?)
     } else {
@@ -522,17 +523,26 @@ pub(crate) async fn set_ready_key_activation(
         r#"
         UPDATE kms_key_activation_events
         SET
-            status = 'ready',
-            key_content_sns_pk = $1,
-            key_content_sks_key = $2,
-            key_content_public = $3,
-            key_content_compressed_xof_keyset = $4,
+            status = CASE
+                WHEN COALESCE($2, key_content_sks_key) IS NOT NULL
+                     AND COALESCE($3, key_content_public) IS NOT NULL
+                THEN 'ready'
+                ELSE status
+            END,
+            key_content_sns_pk = COALESCE($1, key_content_sns_pk),
+            key_content_sks_key = COALESCE($2, key_content_sks_key),
+            key_content_public = COALESCE($3, key_content_public),
+            key_content_compressed_xof_keyset = CASE
+                WHEN $4 THEN $5
+                ELSE key_content_compressed_xof_keyset
+            END,
             last_updated_at = NOW()
-        WHERE chain_id = $5 AND block_hash = $6 AND key_id = $7
+        WHERE chain_id = $6 AND block_hash = $7 AND key_id = $8
         "#,
         sns_pk_oid,
         sks_key,
         public_key,
+        server_key_updated,
         compressed_xof_keyset,
         activation.chain_id.as_i64(),
         activation.block_hash,
@@ -621,4 +631,95 @@ pub async fn mark_crs_activation_error(
         error!(error = ?err, crs_id = ?activation.crs_id, "Failed to update CRS activation error");
     };
     // no need to bubble up as we already log the error when we catch it, and this is a best effort to update the error message and counter in the database
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fhevm_engine_common::chain_id::ChainId;
+    use sqlx::Row;
+    use test_harness::instance::{setup_test_db, ImportMode};
+
+    #[tokio::test]
+    async fn set_ready_key_activation_preserves_existing_server_content_until_public_arrives(
+    ) -> anyhow::Result<()> {
+        let db = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|err| anyhow::anyhow!("{err}"))?;
+        let pool = sqlx::PgPool::connect(db.db_url()).await?;
+
+        let chain_id = ChainId::try_from(12345_u64)?;
+        let block_hash = vec![1_u8; 32];
+        let key_id = vec![2_u8; 32];
+        let existing_sks = b"existing-sks".to_vec();
+        let public_key = b"public-key".to_vec();
+        let storage_urls: Vec<String> = Vec::new();
+
+        sqlx::query(
+            "INSERT INTO kms_key_activation_events (
+                chain_id,
+                block_hash,
+                block_number,
+                transaction_hash,
+                key_id,
+                key_content_sks_key,
+                key_digest_server,
+                key_digest_public,
+                storage_urls
+            )
+            VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8)",
+        )
+        .bind(chain_id.as_i64())
+        .bind(&block_hash)
+        .bind(vec![3_u8; 32])
+        .bind(&key_id)
+        .bind(&existing_sks)
+        .bind(vec![4_u8; 32])
+        .bind(vec![5_u8; 32])
+        .bind(&storage_urls)
+        .execute(&pool)
+        .await?;
+
+        let activation = PendingKeyActivation {
+            chain_id,
+            block_hash: block_hash.clone(),
+            key_id: key_id.clone(),
+            digest_server: Some(vec![4_u8; 32]),
+            digest_public: Some(vec![5_u8; 32]),
+            has_server_key: true,
+            has_public_key: false,
+            storage_urls,
+        };
+
+        let mut tx = pool.begin().await?;
+        set_ready_key_activation(
+            &mut tx,
+            &activation,
+            None,
+            Some(public_key.clone()),
+        )
+        .await?;
+        tx.commit().await?;
+
+        let row = sqlx::query(
+            "SELECT status, key_content_sks_key, key_content_public
+             FROM kms_key_activation_events
+             WHERE chain_id = $1 AND block_hash = $2 AND key_id = $3",
+        )
+        .bind(chain_id.as_i64())
+        .bind(&block_hash)
+        .bind(&key_id)
+        .fetch_one(&pool)
+        .await?;
+
+        let status: String = row.try_get("status")?;
+        let sks_key: Vec<u8> = row.try_get("key_content_sks_key")?;
+        let stored_public_key: Vec<u8> = row.try_get("key_content_public")?;
+
+        assert_eq!(status, "ready");
+        assert_eq!(sks_key, existing_sks);
+        assert_eq!(stored_public_key, public_key);
+
+        Ok(())
+    }
 }

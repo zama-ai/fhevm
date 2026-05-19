@@ -255,9 +255,6 @@ pub async fn decrypt_ciphertexts(
 
     let mut values = tokio::task::spawn_blocking(move || {
         let client_key = key.cks.unwrap();
-        #[cfg(not(feature = "gpu"))]
-        let sks = key.sks;
-        #[cfg(feature = "gpu")]
         let sks = key.sks;
         tfhe::set_server_key(sks);
 

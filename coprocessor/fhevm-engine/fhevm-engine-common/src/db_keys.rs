@@ -14,22 +14,20 @@ use tfhe::xof_key_set::CompressedXofKeySet;
 
 pub type DbKeyId = Vec<u8>;
 
-#[cfg(not(feature = "gpu"))]
+/// Single row shape for both CPU and GPU builds. `server_key_blob` is
+/// COALESCE'd in SQL to take `compressed_xof_keyset` when present and
+/// fall back to legacy `sks_key` otherwise, so we cross the wire with
+/// exactly one BYTEA per row (~400 MB XOF or ~329 MB legacy) instead
+/// of both. `is_xof` tells the deserializer which encoding came back.
+///
+/// Single query shape across CPU and GPU keeps sqlx-prepare cacheable
+/// without a CUDA toolchain.
 struct DbKeyRow {
     key_id: DbKeyId,
     sequence_number: i64,
     pks_key: Vec<u8>,
-    sks_key: Vec<u8>,
-    compressed_xof_keyset: Option<Vec<u8>>,
-    cks_key: Option<Vec<u8>>,
-}
-
-#[cfg(feature = "gpu")]
-struct DbKeyRow {
-    key_id: DbKeyId,
-    sequence_number: i64,
-    pks_key: Vec<u8>,
-    compressed_xof_keyset: Option<Vec<u8>>,
+    server_key_blob: Vec<u8>,
+    is_xof: bool,
     cks_key: Option<Vec<u8>>,
 }
 
@@ -73,32 +71,27 @@ impl DbKeyCache {
         .ok_or_else(|| anyhow::anyhow!("No keys found in database"))?;
 
         let key_id: DbKeyId = row.key_id;
+        let sequence_number = row.sequence_number;
 
         // Check if already in cache
         {
             let mut cache = self.cache.write().await;
             if let Some(key) = cache.get(&key_id) {
-                return Ok(key.clone());
+                if key.sequence_number == sequence_number {
+                    return Ok(key.clone());
+                }
             }
         }
 
         // Only fetch the heavy key blobs when the latest key is not already cached.
-        #[cfg(not(feature = "gpu"))]
         let row = sqlx::query_as!(
             DbKeyRow,
-            "SELECT key_id, sequence_number, pks_key, sks_key, compressed_xof_keyset, cks_key \
-             FROM keys WHERE key_id = $1",
-            &key_id
-        )
-        .fetch_optional(&mut *executor)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("Latest key disappeared from database"))?;
-        #[cfg(feature = "gpu")]
-        let row = sqlx::query_as!(
-            DbKeyRow,
-            "SELECT key_id, sequence_number, pks_key, compressed_xof_keyset, cks_key \
-             FROM keys WHERE key_id = $1",
-            &key_id
+            "SELECT key_id, sequence_number, pks_key, \
+             COALESCE(compressed_xof_keyset, sks_key) AS \"server_key_blob!\", \
+             (compressed_xof_keyset IS NOT NULL) AS \"is_xof!\", \
+             cks_key \
+             FROM keys WHERE sequence_number = $1",
+            sequence_number
         )
         .fetch_optional(&mut *executor)
         .await?
@@ -172,49 +165,28 @@ impl DbKeyCache {
         T: sqlx::PgExecutor<'a>,
     {
         let rows = if let Some(ref ids) = db_key_ids_to_query {
-            #[cfg(not(feature = "gpu"))]
-            {
-                sqlx::query_as!(
-                    DbKeyRow,
-                    "SELECT key_id, sequence_number, pks_key, sks_key, compressed_xof_keyset, cks_key \
-                     FROM keys WHERE key_id = ANY($1)",
-                    ids
-                )
-                .fetch_all(conn)
-                .await?
-            }
-            #[cfg(feature = "gpu")]
-            {
-                sqlx::query_as!(
-                    DbKeyRow,
-                    "SELECT key_id, sequence_number, pks_key, compressed_xof_keyset, cks_key \
-                     FROM keys WHERE key_id = ANY($1)",
-                    ids
-                )
-                .fetch_all(conn)
-                .await?
-            }
+            sqlx::query_as!(
+                DbKeyRow,
+                "SELECT key_id, sequence_number, pks_key, \
+                 COALESCE(compressed_xof_keyset, sks_key) AS \"server_key_blob!\", \
+                 (compressed_xof_keyset IS NOT NULL) AS \"is_xof!\", \
+                 cks_key \
+                 FROM keys WHERE key_id = ANY($1)",
+                ids
+            )
+            .fetch_all(conn)
+            .await?
         } else {
-            #[cfg(not(feature = "gpu"))]
-            {
-                sqlx::query_as!(
-                    DbKeyRow,
-                    "SELECT key_id, sequence_number, pks_key, sks_key, compressed_xof_keyset, cks_key \
-                     FROM keys"
-                )
-                .fetch_all(conn)
-                .await?
-            }
-            #[cfg(feature = "gpu")]
-            {
-                sqlx::query_as!(
-                    DbKeyRow,
-                    "SELECT key_id, sequence_number, pks_key, compressed_xof_keyset, cks_key \
-                     FROM keys"
-                )
-                .fetch_all(conn)
-                .await?
-            }
+            sqlx::query_as!(
+                DbKeyRow,
+                "SELECT key_id, sequence_number, pks_key, \
+                 COALESCE(compressed_xof_keyset, sks_key) AS \"server_key_blob!\", \
+                 (compressed_xof_keyset IS NOT NULL) AS \"is_xof!\", \
+                 cks_key \
+                 FROM keys"
+            )
+            .fetch_all(conn)
+            .await?
         };
 
         let mut res = Vec::with_capacity(rows.len());
@@ -227,22 +199,22 @@ impl DbKeyCache {
     }
 
     fn deserialize_db_key_row(row: DbKeyRow) -> anyhow::Result<DbKey> {
+        let DbKeyRow {
+            key_id,
+            sequence_number,
+            pks_key,
+            server_key_blob,
+            is_xof,
+            cks_key,
+        } = row;
+        let pks: tfhe::CompactPublicKey = safe_deserialize_key(&pks_key)?;
+        let cks: Option<tfhe::ClientKey> = cks_key
+            .as_ref()
+            .map(|k| safe_deserialize_key(k))
+            .transpose()?;
+
         #[cfg(not(feature = "gpu"))]
         {
-            let DbKeyRow {
-                key_id,
-                sequence_number,
-                pks_key,
-                sks_key,
-                compressed_xof_keyset,
-                cks_key,
-            } = row;
-            let pks: tfhe::CompactPublicKey = safe_deserialize_key(&pks_key)?;
-            let cks: Option<tfhe::ClientKey> = cks_key
-                .as_ref()
-                .map(|k| safe_deserialize_key(k))
-                .transpose()?;
-
             // Prefer the CompressedXofKeySet when present so CPU and
             // GPU readers share a single source of truth. Decompress
             // the whole keyset in one pass (the XOF stream is shared
@@ -253,9 +225,9 @@ impl DbKeyCache {
             //
             // Legacy sks_key fallback is used only for rows that
             // predate XOF keygen (compressed_xof_keyset IS NULL).
-            let sks: tfhe::ServerKey = if let Some(xof_bytes) = compressed_xof_keyset {
-                let kxs: CompressedXofKeySet = crate::utils::safe_deserialize_sns_key(&xof_bytes)
-                    .map_err(|err| {
+            let sks: tfhe::ServerKey = if is_xof {
+                let kxs: CompressedXofKeySet =
+                    crate::utils::safe_deserialize_sns_key(&server_key_blob).map_err(|err| {
                         anyhow::anyhow!(
                             "failed to deserialize CompressedXofKeySet from compressed_xof_keyset: {err}"
                         )
@@ -270,7 +242,7 @@ impl DbKeyCache {
                     .into_raw_parts();
                 strip_ns_from_server_key(server_key)
             } else {
-                safe_deserialize_key(&sks_key)?
+                safe_deserialize_key(&server_key_blob)?
             };
 
             Ok(DbKey {
@@ -283,24 +255,12 @@ impl DbKeyCache {
         }
         #[cfg(feature = "gpu")]
         {
-            let DbKeyRow {
-                key_id,
-                sequence_number,
-                pks_key,
-                compressed_xof_keyset,
-                cks_key,
-            } = row;
-            let pks: tfhe::CompactPublicKey = safe_deserialize_key(&pks_key)?;
-            let cks: Option<tfhe::ClientKey> = cks_key
-                .as_ref()
-                .map(|k| safe_deserialize_key(k))
-                .transpose()?;
-            let compressed_xof_keyset = compressed_xof_keyset.ok_or_else(|| {
-                anyhow::anyhow!(
+            if !is_xof {
+                anyhow::bail!(
                     "GPU coprocessor requires keys.compressed_xof_keyset to be populated; \
                      rotate kms-core to publish CompressedXofKeySet so the host-listener can ingest it"
-                )
-            })?;
+                );
+            }
 
             // The whole CompressedXofKeySet must be decompressed before
             // we extract the server key. The XOF stream is shared across
@@ -308,10 +268,10 @@ impl DbKeyCache {
             // the wrapper and decompressing it alone would skip the
             // public-key portion of the stream.
             let kxs: CompressedXofKeySet =
-                crate::utils::safe_deserialize_sns_key(&compressed_xof_keyset).map_err(|err| {
+                crate::utils::safe_deserialize_sns_key(&server_key_blob).map_err(|err| {
                     anyhow::anyhow!(
-                    "failed to deserialize CompressedXofKeySet from compressed_xof_keyset: {err}"
-                )
+                        "failed to deserialize CompressedXofKeySet from compressed_xof_keyset: {err}"
+                    )
                 })?;
             let (_xof_pks, sks) = kxs
                 .decompress()
@@ -424,7 +384,7 @@ pub async fn read_keys_from_large_object_by_key_id_gw(
 }
 
 /// Encoding of the server-key blob returned by
-/// [`read_compressed_xof_keyset_with_fallback`].
+/// [`read_compressed_xof_keyset_by_sequence_number_with_fallback`].
 ///
 /// `CompressedXof` blobs are `tfhe::xof_key_set::CompressedXofKeySet` —
 /// the whole keyset must be deserialized in one pass to keep the XOF
@@ -437,18 +397,18 @@ pub enum CompressedXofKeysetEncoding {
     Legacy,
 }
 
-/// Reads the server-key blob for `key_id_gw`, preferring the
+/// Reads the server-key blob for `sequence_number`, preferring the
 /// `compressed_xof_keyset` BYTEA column (the raw kms-core
 /// CompressedXofKeySet) when present and falling back to the
 /// decompressed `sns_pk` LOB for rows published before XOF keygen.
-pub async fn read_compressed_xof_keyset_with_fallback(
+pub async fn read_compressed_xof_keyset_by_sequence_number_with_fallback(
     pool: &PgPool,
-    key_id_gw: DbKeyId,
+    sequence_number: i64,
     legacy_capacity: usize,
 ) -> anyhow::Result<(Vec<u8>, CompressedXofKeysetEncoding)> {
     let row = sqlx::query!(
-        "SELECT compressed_xof_keyset, sns_pk FROM keys WHERE key_id_gw = $1",
-        key_id_gw
+        "SELECT compressed_xof_keyset, sns_pk FROM keys WHERE sequence_number = $1",
+        sequence_number
     )
     .fetch_one(pool)
     .await?;
@@ -468,7 +428,7 @@ pub async fn read_compressed_xof_keyset_with_fallback(
     // produce an opaque ColumnDecode failure.
     let legacy = row.sns_pk.ok_or_else(|| {
         anyhow::anyhow!(
-            "keys row for key_id_gw has neither compressed_xof_keyset nor sns_pk populated"
+            "keys row for sequence_number has neither compressed_xof_keyset nor sns_pk populated"
         )
     })?;
     info!("Retrieved legacy sns_pk oid: {:?}", legacy);
