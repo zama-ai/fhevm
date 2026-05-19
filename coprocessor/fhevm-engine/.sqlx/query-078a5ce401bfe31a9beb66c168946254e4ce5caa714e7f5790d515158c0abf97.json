@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT key_id, sequence_number, pks_key, compressed_xof_keyset, cks_key FROM keys",
+  "query": "SELECT key_id, sequence_number, pks_key, sks_key, compressed_xof_keyset, cks_key FROM keys WHERE key_id = $1",
   "describe": {
     "columns": [
       {
@@ -20,19 +20,27 @@
       },
       {
         "ordinal": 3,
-        "name": "compressed_xof_keyset",
+        "name": "sks_key",
         "type_info": "Bytea"
       },
       {
         "ordinal": 4,
+        "name": "compressed_xof_keyset",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
         "name": "cks_key",
         "type_info": "Bytea"
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Bytea"
+      ]
     },
     "nullable": [
+      false,
       false,
       false,
       false,
@@ -40,5 +48,5 @@
       true
     ]
   },
-  "hash": "3cdb059334817f4a49b2a0bcb7a6098a68b8d92bf7c54b88fe586bcdfb9029c8"
+  "hash": "078a5ce401bfe31a9beb66c168946254e4ce5caa714e7f5790d515158c0abf97"
 }

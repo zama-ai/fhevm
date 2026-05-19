@@ -10,7 +10,6 @@ use tracing::info;
 
 #[cfg(all(feature = "gpu", not(feature = "latency")))]
 use tfhe::core_crypto::gpu::get_number_of_gpus;
-#[cfg(feature = "gpu")]
 use tfhe::xof_key_set::CompressedXofKeySet;
 
 pub type DbKeyId = Vec<u8>;
@@ -21,6 +20,7 @@ struct DbKeyRow {
     sequence_number: i64,
     pks_key: Vec<u8>,
     sks_key: Vec<u8>,
+    compressed_xof_keyset: Option<Vec<u8>>,
     cks_key: Option<Vec<u8>>,
 }
 
@@ -86,7 +86,7 @@ impl DbKeyCache {
         #[cfg(not(feature = "gpu"))]
         let row = sqlx::query_as!(
             DbKeyRow,
-            "SELECT key_id, sequence_number, pks_key, sks_key, cks_key \
+            "SELECT key_id, sequence_number, pks_key, sks_key, compressed_xof_keyset, cks_key \
              FROM keys WHERE key_id = $1",
             &key_id
         )
@@ -176,7 +176,7 @@ impl DbKeyCache {
             {
                 sqlx::query_as!(
                     DbKeyRow,
-                    "SELECT key_id, sequence_number, pks_key, sks_key, cks_key \
+                    "SELECT key_id, sequence_number, pks_key, sks_key, compressed_xof_keyset, cks_key \
                      FROM keys WHERE key_id = ANY($1)",
                     ids
                 )
@@ -199,7 +199,7 @@ impl DbKeyCache {
             {
                 sqlx::query_as!(
                     DbKeyRow,
-                    "SELECT key_id, sequence_number, pks_key, sks_key, cks_key \
+                    "SELECT key_id, sequence_number, pks_key, sks_key, compressed_xof_keyset, cks_key \
                      FROM keys"
                 )
                 .fetch_all(conn)
@@ -234,6 +234,7 @@ impl DbKeyCache {
                 sequence_number,
                 pks_key,
                 sks_key,
+                compressed_xof_keyset,
                 cks_key,
             } = row;
             let pks: tfhe::CompactPublicKey = safe_deserialize_key(&pks_key)?;
@@ -241,12 +242,36 @@ impl DbKeyCache {
                 .as_ref()
                 .map(|k| safe_deserialize_key(k))
                 .transpose()?;
-            // CPU path reads the legacy decompressed sks_key BYTEA.
-            // The host-listener dual-writes this column from the
-            // post-decompress strip path, so it's consistent with the
-            // compressed blob even when the source was a
-            // CompressedXofKeySet.
-            let sks: tfhe::ServerKey = safe_deserialize_key(&sks_key)?;
+
+            // Prefer the CompressedXofKeySet when present so CPU and
+            // GPU readers share a single source of truth. Decompress
+            // the whole keyset in one pass (the XOF stream is shared
+            // across subkeys, so taking the embedded CSK out and
+            // decompressing it alone would skip the public-key portion
+            // of the stream), then strip NS material in memory to
+            // match the legacy sks_key shape tfhe-worker expects.
+            //
+            // Legacy sks_key fallback is used only for rows that
+            // predate XOF keygen (compressed_xof_keyset IS NULL).
+            let sks: tfhe::ServerKey = if let Some(xof_bytes) = compressed_xof_keyset {
+                let kxs: CompressedXofKeySet = crate::utils::safe_deserialize_sns_key(&xof_bytes)
+                    .map_err(|err| {
+                        anyhow::anyhow!(
+                            "failed to deserialize CompressedXofKeySet from compressed_xof_keyset: {err}"
+                        )
+                    })?;
+                let (_xof_pks, server_key) = kxs
+                    .decompress()
+                    .map_err(|err| {
+                        anyhow::anyhow!(
+                            "failed to decompress CompressedXofKeySet to ServerKey: {err}"
+                        )
+                    })?
+                    .into_raw_parts();
+                strip_ns_from_server_key(server_key)
+            } else {
+                safe_deserialize_key(&sks_key)?
+            };
 
             Ok(DbKey {
                 key_id,
@@ -332,6 +357,37 @@ impl DbKeyCache {
             })
         }
     }
+}
+
+/// Returns the input `ServerKey` with noise-squashing material
+/// removed. CPU readers don't use NS slots and carrying them ~triples
+/// the per-key memory footprint, so we strip after the whole-keyset
+/// XOF decompression (post-decompress is safe — the shared XOF stream
+/// has already been consumed in order).
+#[cfg(not(feature = "gpu"))]
+fn strip_ns_from_server_key(server_key: tfhe::ServerKey) -> tfhe::ServerKey {
+    let (
+        sks,
+        kskm,
+        compression_key,
+        decompression_key,
+        _noise_squashing_key,
+        _noise_squashing_compression_key,
+        re_randomization_keyswitching_key,
+        oprf_key,
+        tag,
+    ) = server_key.into_raw_parts();
+    tfhe::ServerKey::from_raw_parts(
+        sks,
+        kskm,
+        compression_key,
+        decompression_key,
+        None, // noise squashing key excluded
+        None, // noise squashing compression key excluded
+        re_randomization_keyswitching_key,
+        oprf_key,
+        tag,
+    )
 }
 
 #[derive(Clone)]
