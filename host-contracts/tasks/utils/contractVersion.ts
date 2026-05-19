@@ -4,6 +4,8 @@ import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 import { formatError } from './formatError';
 
 // Asserts the contract at `address` is the expected proxy by checking its getVersion() prefix.
+// Matches on the `"<prefix> v"` separator so a contract whose name merely starts with `versionPrefix`
+// (e.g. a `ProtocolConfigManager` against a `ProtocolConfig` prefix) doesn't collide.
 // Defaults to the local network provider; pass `provider` to check a contract on another chain
 // (e.g. the canonical ProtocolConfig read over a remote RPC).
 export async function assertContractMatchesVersionPrefix(
@@ -23,7 +25,7 @@ export async function assertContractMatchesVersionPrefix(
     );
   }
 
-  if (!version.startsWith(versionPrefix)) {
+  if (!version.startsWith(`${versionPrefix} v`)) {
     throw new Error(`Contract at ${address} reports version "${version}"; expected "${versionPrefix} v…".`);
   }
 }
