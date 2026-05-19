@@ -103,10 +103,7 @@ mod helpers {
                 }],
                 "userAddress": format!("{:?}", user_address),
                 "allowedContracts": [format!("{:?}", contract_address)],
-                "requestValidity": {
-                    "startTimestamp": (now - 1).to_string(),
-                    "durationSeconds": "604800",
-                },
+                "requestDeadline": (now + 604_800).to_string(),
                 "publicKey": random_0x_hex(32),
                 "extraData": "0x00",
             },
@@ -300,7 +297,7 @@ async fn v3_rejects_empty_signature() {
 }
 
 // ---------------------------------------------------------------------------
-// Inner-payload rejection (version, type, handles, requestValidity)
+// Inner-payload rejection (version, type, handles, requestDeadline)
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -381,7 +378,7 @@ async fn v3_rejects_handle_entry_missing_owner_address() {
 }
 
 #[tokio::test]
-async fn v3_rejects_expired_request_validity_window() {
+async fn v3_rejects_expired_request_deadline() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
     let url = helpers::v3_user_decrypt_post_url(&setup);
 
@@ -389,16 +386,12 @@ async fn v3_rejects_expired_request_validity_window() {
         &url,
         helpers::create_v3_envelope(),
         |p: &mut serde_json::Value| {
-            // start a year ago, duration of 1 second — window already
-            // expired, should be rejected.
-            p["attestedPayload"]["requestValidity"] = json!({
-                "startTimestamp": "1000000",
-                "durationSeconds": "1",
-            });
+            // A deadline far in the past — already expired.
+            p["attestedPayload"]["requestDeadline"] = json!("1000000");
         },
         expect_v2_validation_error(
-            "attestedPayload.requestValidity",
-            "requestValidity window has already expired",
+            "attestedPayload.requestDeadline",
+            "requestDeadline has already passed",
         ),
     )
     .await;

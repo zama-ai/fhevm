@@ -501,14 +501,16 @@ pub enum AttestationFormat {
     /// `"eip712-unified-user-decrypt-v1"`): maps to
     /// `userDecryptionRequest(HandleEntry[], address userAddress,
     /// bytes publicKey, address[] allowedContracts,
-    /// RequestValiditySeconds, …)`. `allowed_contracts` may be empty
+    /// uint256 requestDeadline, …)`. `allowed_contracts` may be empty
     /// (permissive mode). Per-handle owner addresses live inside each
     /// `HandleEntry`.
     Eip712UnifiedV1 {
         handles: Vec<HandleEntry>,
         user_address: Address,
         allowed_contracts: Vec<Address>,
-        request_validity: RequestValiditySeconds,
+        /// Unix timestamp (seconds) after which the gateway no longer
+        /// accepts the request.
+        request_deadline: U256,
     },
 }
 
@@ -558,17 +560,6 @@ pub struct RequestValidity {
     pub start_timestamp: U256,
     #[serde(rename = "durationDays")]
     pub duration_days: U256,
-}
-
-/// Request-validity window in seconds (unified EIP-712 shape). Sibling to
-/// `RequestValidity` (v2 days-based shape).
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
-#[allow(non_snake_case)]
-pub struct RequestValiditySeconds {
-    #[serde(rename = "startTimestamp")]
-    pub start_timestamp: U256,
-    #[serde(rename = "durationSeconds")]
-    pub duration_seconds: U256,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -773,10 +764,7 @@ impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
             .map(|addr| Address::from_str(addr))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let request_validity = RequestValiditySeconds {
-            start_timestamp: U256::from_str(&payload_inner.request_validity.start_timestamp)?,
-            duration_seconds: U256::from_str(&payload_inner.request_validity.duration_seconds)?,
-        };
+        let request_deadline = U256::from_str(&payload_inner.request_deadline)?;
 
         Ok(UserDecryptRequest {
             signature: Bytes::from_str(&value.signature)?,
@@ -786,7 +774,7 @@ impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
                 handles,
                 user_address: Address::from_str(&payload_inner.user_address)?,
                 allowed_contracts,
-                request_validity,
+                request_deadline,
             },
         })
     }

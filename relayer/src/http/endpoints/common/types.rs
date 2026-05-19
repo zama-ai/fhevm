@@ -76,15 +76,3 @@ impl Display for HandleEntryJson {
     }
 }
 
-/// Request-validity window for the unified EIP-712 payload. Like
-/// `RequestValidityJson` but in seconds instead of days.
-#[derive(Debug, Deserialize, Clone, Serialize, Validate, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct RequestValiditySecondsJson {
-    /// Unix timestamp (seconds) when this request becomes valid. Decimal string.
-    #[schema(example = "1700000000")]
-    pub start_timestamp: String,
-    /// Number of seconds the request remains valid. Decimal string.
-    #[schema(example = "604800")]
-    pub duration_seconds: String,
-}

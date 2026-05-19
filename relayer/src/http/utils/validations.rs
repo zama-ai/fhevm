@@ -1,5 +1,5 @@
 use crate::http::endpoints::common::types::{
-    HandleContractPairJson, HandleEntryJson, RequestValidityJson, RequestValiditySecondsJson,
+    HandleContractPairJson, HandleEntryJson, RequestValidityJson,
 };
 use alloy::primitives::U256;
 use serde::{de, Deserialize, Deserializer};
@@ -291,29 +291,15 @@ pub fn validate_blockchain_addresses_allow_empty(
     Ok(())
 }
 
-/// Validates the v3 request-validity window: `startTimestamp` not in the
-/// future, `durationSeconds` parses as a u64, and the resulting window
-/// ends in the future (`start_timestamp + duration_seconds > now`).
-pub fn validate_request_validity_seconds(
-    request_validity: &RequestValiditySecondsJson,
-) -> Result<(), ValidationError> {
-    validate_timestamp(&request_validity.start_timestamp)?;
-    validate_u64_string(&request_validity.duration_seconds)?;
+/// Validates the v3 `requestDeadline`: parses as a u64 and is not in the
+/// past. The upper bound (≤ `block.timestamp + MAX_USER_DECRYPT_DURATION_SECONDS`)
+/// is enforced on-chain, so the relayer accepts any future deadline here.
+pub fn validate_request_deadline(value: &str) -> Result<(), ValidationError> {
+    let deadline = value.parse::<u64>().map_err(|_| {
+        ValidationError::new("validation_error")
+            .with_message("requestDeadline must be a valid u64 number".into())
+    })?;
 
-    let start = request_validity
-        .start_timestamp
-        .parse::<u64>()
-        .map_err(|_| {
-            ValidationError::new("validation_error")
-                .with_message("startTimestamp must be a valid u64 number".into())
-        })?;
-    let duration = request_validity
-        .duration_seconds
-        .parse::<u64>()
-        .map_err(|_| {
-            ValidationError::new("validation_error")
-                .with_message("durationSeconds must be a valid u64 number".into())
-        })?;
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_| {
@@ -322,10 +308,9 @@ pub fn validate_request_validity_seconds(
         })?
         .as_secs();
 
-    let end = start.saturating_add(duration);
-    if end <= now {
+    if deadline <= now {
         return Err(ValidationError::new("validation_error")
-            .with_message("requestValidity window has already expired".into()));
+            .with_message("requestDeadline has already passed".into()));
     }
 
     Ok(())

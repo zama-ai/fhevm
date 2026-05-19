@@ -183,7 +183,7 @@ components(
     schemas(AttestedUserDecryptRequestJson, Eip712UnifiedUserDecryptPayloadJson),
     // Common types
     schemas(crate::http::endpoints::common::types::HandleContractPairJson, crate::http::endpoints::common::types::RequestValidityJson),
-    schemas(crate::http::endpoints::common::types::HandleEntryJson, crate::http::endpoints::common::types::RequestValiditySecondsJson),
+    schemas(crate::http::endpoints::common::types::HandleEntryJson),
     schemas(crate::http::endpoints::common::types::ChainId),
 ),
 tags(

@@ -5,10 +5,7 @@ use crate::core::{
 use crate::gateway::arbitrum::bindings::{
     Decryption,
     Decryption::{CtHandleContractPair, HandleEntry as SolHandleEntry},
-    IDecryption::{
-        ContractsInfo, DelegationAccounts, RequestValidity as SolRequestValidity,
-        RequestValiditySeconds as SolRequestValiditySeconds,
-    },
+    IDecryption::{ContractsInfo, DelegationAccounts, RequestValidity as SolRequestValidity},
     InputVerification,
 };
 use alloy::{
@@ -120,7 +117,7 @@ impl ComputeCalldata {
                 handles,
                 user_address,
                 allowed_contracts,
-                request_validity,
+                request_deadline,
             } => {
                 let sol_handles: Vec<SolHandleEntry> = handles
                     .iter()
@@ -130,16 +127,12 @@ impl ComputeCalldata {
                         ownerAddress: h.owner_address,
                     })
                     .collect();
-                let validity = SolRequestValiditySeconds {
-                    startTimestamp: request_validity.start_timestamp,
-                    durationSeconds: request_validity.duration_seconds,
-                };
                 let call = Decryption::userDecryptionRequest_0Call::new((
                     sol_handles,
                     user_address,
                     public_key,
                     allowed_contracts,
-                    validity,
+                    request_deadline,
                     signature,
                     extra_data,
                 ));

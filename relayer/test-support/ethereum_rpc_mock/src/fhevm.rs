@@ -913,9 +913,7 @@ fn build_unified_user_decrypt_request(
     // `decryption::IDecryption::UserDecryptionRequestPayload` (the sol!
     // macro emits it once at the top of `decryption.rs`). Import it
     // directly from the bindings crate.
-    use fhevm_gateway_bindings::decryption::IDecryption::{
-        RequestValiditySeconds, UserDecryptionRequestPayload,
-    };
+    use fhevm_gateway_bindings::decryption::IDecryption::UserDecryptionRequestPayload;
 
     let handle_entries: Vec<Decryption::HandleEntry> = handles
         .iter()
@@ -930,10 +928,7 @@ fn build_unified_user_decrypt_request(
         userAddress: user_address,
         publicKey: Bytes::from(vec![0x00; MOCK_PUBLIC_KEY_SIZE]),
         allowedContracts: vec![],
-        requestValidity: RequestValiditySeconds {
-            startTimestamp: U256::from(0),
-            durationSeconds: U256::from(0),
-        },
+        requestDeadline: U256::from(0),
         extraData: extra_data,
         signature: Bytes::from(vec![0x00; MOCK_SIGNATURE_SIZE]),
     };

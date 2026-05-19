@@ -119,6 +119,7 @@ where
                         "delegateAddress" => "delegate_address",
                         "startTimestamp" => "start_timestamp",
                         "durationDays" => "duration_days",
+                        "requestDeadline" => "request_deadline",
                         "ciphertextWithInputVerification" => "ciphertext_with_input_verification",
                         "extraData" => "extra_data",
                         "ciphertextHandles" => "ciphertext_handles",

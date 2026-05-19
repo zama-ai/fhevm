@@ -53,8 +53,9 @@ rustls = { version = "0.23.36", features = [
   "aws-lc-rs",
 ], default-features = false }
 # Use a pinned version of fhevm gateway bindings contract as the feature branch is still unmerged.
-# Tip of feat/RFC-012-016; contains the unified userDecryptionRequest(HandleEntry[], …) overload (PR #2329).
-fhevm_gateway_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "4d6867ef081ea8620186414b198b2d336f608372", default-features = false }
+# Pins to the unified `userDecryptionRequest(HandleEntry[], ..., uint256 requestDeadline, ...)`
+# overload (N-05 deadline-only validity).
+fhevm_gateway_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "764c2e5f9", default-features = false }
 # Use a pinned version of fhevm host bindings contract as the feature branch is still unmerged.
 fhevm_host_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "2a6cf820b", default-features = false }
 utoipa = { version = "5.4.0", features = ["axum_extras", "preserve_path_order"] }

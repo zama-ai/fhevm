@@ -6,7 +6,7 @@
 //! the payload — `signature` is opaque and forwarded verbatim to the
 //! gateway (the KMS Connector verifies it off-chain, #1288).
 
-use crate::http::endpoints::common::types::{HandleEntryJson, RequestValiditySecondsJson};
+use crate::http::endpoints::common::types::HandleEntryJson;
 use crate::http::utils::redact::redact_len;
 use derivative::Derivative;
 use serde::Deserialize;
@@ -82,9 +82,12 @@ pub struct Eip712UnifiedUserDecryptPayloadJson {
     #[schema(example = json!(["0x1234567890123456789012345678901234567890"]))]
     pub allowed_contracts: Vec<String>,
 
-    /// Validity window for the request, in seconds.
-    #[validate(custom(function = "crate::http::validate_request_validity_seconds"))]
-    pub request_validity: RequestValiditySecondsJson,
+    /// Unix timestamp (seconds) after which the gateway no longer accepts
+    /// this request. Decimal string. Must not exceed
+    /// `block.timestamp + MAX_USER_DECRYPT_DURATION_SECONDS` at submission.
+    #[validate(custom(function = "crate::http::validate_request_deadline"))]
+    #[schema(example = "1700604800")]
+    pub request_deadline: String,
 
     /// User's public key for re-encryption. `0x` + hex, minimum 2 hex
     /// chars after the prefix.

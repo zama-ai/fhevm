@@ -93,7 +93,7 @@ impl ContentHasher for UserDecryptRequest {
                 handles,
                 user_address,
                 allowed_contracts,
-                request_validity: _,
+                request_deadline: _,
             } => {
                 // Variant tag prevents v3 unified hashes from colliding
                 // with v2 legacy hashes that share the same user_address +
@@ -131,7 +131,7 @@ impl ContentHasher for UserDecryptRequest {
 mod tests {
     use super::*;
     use crate::core::event::{
-        AttestationFormat, HandleContractPair, HandleEntry, RequestValidity, RequestValiditySeconds,
+        AttestationFormat, HandleContractPair, HandleEntry, RequestValidity,
     };
     use alloy::primitives::{Address, Bytes, U256};
 
@@ -191,10 +191,8 @@ mod tests {
                 }],
                 user_address: Address::from([2; 20]),
                 allowed_contracts: vec![Address::from([1; 20])],
-                request_validity: RequestValiditySeconds {
-                    start_timestamp: U256::from(1000),
-                    duration_seconds: U256::from(604_800),
-                },
+                // 1000 + 604_800 seconds = 7 days after start.
+                request_deadline: U256::from(605_800u64),
             },
         }
     }
