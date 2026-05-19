@@ -11,96 +11,96 @@ on:
   workflow_dispatch:
     inputs: &shared_inputs
       orchestrated:
-        description: 'Run from the orchestrated image-validation path.'
+        description: "Run from the orchestrated image-validation path."
         default: false
         type: boolean
       build:
-        description: 'Build repo-owned images from the checked out branch on the runner'
+        description: "Build repo-owned images from the checked out branch on the runner"
         default: true
         type: boolean
       coprocessor-db-migration-version:
-        description: 'Coprocessor DB Migration Image Version'
-        default: ''
+        description: "Coprocessor DB Migration Image Version"
+        default: ""
         type: string
       coprocessor-host-listener-version:
-        description: 'Coprocessor Host Listener Image Version'
-        default: ''
+        description: "Coprocessor Host Listener Image Version"
+        default: ""
         type: string
       coprocessor-gw-listener-version:
-        description: 'Coprocessor Gateway Listener Image Version'
-        default: ''
+        description: "Coprocessor Gateway Listener Image Version"
+        default: ""
         type: string
       coprocessor-tx-sender-version:
-        description: 'Coprocessor Transaction Sender Image Version'
-        default: ''
+        description: "Coprocessor Transaction Sender Image Version"
+        default: ""
         type: string
       coprocessor-tfhe-worker-version:
-        description: 'Coprocessor TFHE Worker Image Version'
-        default: ''
+        description: "Coprocessor TFHE Worker Image Version"
+        default: ""
         type: string
       coprocessor-sns-worker-version:
-        description: 'Coprocessor SNS Worker Image Version'
-        default: ''
+        description: "Coprocessor SNS Worker Image Version"
+        default: ""
         type: string
       coprocessor-zkproof-worker-version:
-        description: 'Coprocessor ZKProof Worker Image Version'
-        default: ''
+        description: "Coprocessor ZKProof Worker Image Version"
+        default: ""
         type: string
       listener-core-version:
-        description: 'Listener Core Image Version'
-        default: ''
+        description: "Listener Core Image Version"
+        default: ""
         type: string
       gateway-version:
-        description: 'Gateway version'
-        default: ''
+        description: "Gateway version"
+        default: ""
         type: string
       host-version:
-        description: 'Host version'
-        default: ''
+        description: "Host version"
+        default: ""
         type: string
       connector-db-migration-version:
-        description: 'KMS Connector DB Migration Image Version'
-        default: ''
+        description: "KMS Connector DB Migration Image Version"
+        default: ""
         type: string
       connector-gw-listener-version:
-        description: 'KMS Connector Gateway Listener Image Version'
-        default: ''
+        description: "KMS Connector Gateway Listener Image Version"
+        default: ""
         type: string
       connector-kms-worker-version:
-        description: 'KMS Connector KMS Worker Image Version'
-        default: ''
+        description: "KMS Connector KMS Worker Image Version"
+        default: ""
         type: string
       connector-tx-sender-version:
-        description: 'KMS Connector Transaction Sender Image Version'
-        default: ''
+        description: "KMS Connector Transaction Sender Image Version"
+        default: ""
         type: string
       test-suite-version:
-        description: 'Test suite version'
-        default: ''
+        description: "Test suite version"
+        default: ""
         type: string
       relayer-migrate-version:
-        description: 'Relayer migrate version'
-        default: ''
+        description: "Relayer migrate version"
+        default: ""
         type: string
       relayer-version:
-        description: 'Relayer version'
-        default: ''
+        description: "Relayer version"
+        default: ""
         type: string
       lock-artifact-name:
-        description: 'Uploaded lock artifact name used to freeze the resolved bundle'
-        default: ''
+        description: "Uploaded lock artifact name used to freeze the resolved bundle"
+        default: ""
         type: string
       kms-core-version:
-        description: 'KMS Core version'
-        default: ''
+        description: "KMS Core version"
+        default: ""
         type: string
       scenario:
-        description: 'Deployment scenario (e.g. two-of-three, two-of-three-multi-chain)'
-        default: 'two-of-three-multi-chain'
+        description: "Deployment scenario (e.g. two-of-three, two-of-three-multi-chain)"
+        default: "two-of-three-multi-chain"
         type: string
       test-profile:
-        description: 'Named test profile to run instead of the default standard suite'
-        default: 'standard'
+        description: "Named test profile to run instead of the default standard suite"
+        default: "standard"
         type: string
   workflow_call:
     secrets:
@@ -130,9 +130,9 @@ jobs:
       == github.repository && !startsWith(github.head_ref, 'mergify/merge-queue/') &&
       contains(github.event.pull_request.labels.*.name, 'e2e')) }}
     permissions:
-      contents: 'read' # Required to checkout repository code
-      id-token: 'write' # Required for OIDC authentication
-      packages: 'read' # Required to read GitHub packages/container registry
+      contents: "read" # Required to checkout repository code
+      id-token: "write" # Required for OIDC authentication
+      packages: "read" # Required to read GitHub packages/container registry
     env:
       GH_TOKEN: ${{ github.token }}
       BUILD:
@@ -164,7 +164,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          persist-credentials: 'false'
+          persist-credentials: "false"
           fetch-depth: 0
 
       - name: Setup Docker
