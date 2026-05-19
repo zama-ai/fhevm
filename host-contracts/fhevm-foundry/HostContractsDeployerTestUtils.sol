@@ -274,6 +274,39 @@ abstract contract HostContractsDeployerTestUtils is Test {
         protocolConfigProxy = ProtocolConfig(protocolConfigAdd);
     }
 
+    function _deployProtocolConfigMirror(
+        address owner,
+        uint256 initialContextId,
+        KmsNodeParams[] memory initialKmsNodeParams,
+        IProtocolConfig.KmsThresholds memory initialThresholds
+    ) internal returns (ProtocolConfig protocolConfigProxy, address protocolConfigImplementation) {
+        address emptyProxyImplementation = address(new EmptyUUPSProxy());
+
+        deployCodeTo(
+            "fhevm-foundry/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
+            abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
+            protocolConfigAdd
+        );
+        vm.label(protocolConfigAdd, "ProtocolConfig Mirror Proxy");
+
+        protocolConfigImplementation = address(new ProtocolConfig());
+        vm.label(protocolConfigImplementation, "ProtocolConfig Mirror Implementation");
+
+        PcrValues[] memory pcrValues = new PcrValues[](0);
+        vm.prank(owner);
+        EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
+            protocolConfigImplementation,
+            abi.encodeCall(
+                ProtocolConfig.initializeFromEmptyProxy,
+                (initialKmsNodeParams, initialThresholds, "", pcrValues)
+            )
+        );
+
+        protocolConfigProxy = ProtocolConfig(protocolConfigAdd);
+        vm.prank(owner);
+        protocolConfigProxy.mirrorKmsContext(initialContextId, initialKmsNodeParams, initialThresholds, "", pcrValues);
+    }
+
     function _deployKMSGeneration(
         address owner
     ) internal returns (KMSGeneration kmsGenerationProxy, address kmsGenerationImplementation) {
