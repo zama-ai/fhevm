@@ -255,6 +255,15 @@ interface IDecryption {
     error DecryptionNotRequested(uint256 decryptionId);
 
     /**
+     * @notice Error indicating that a decryption response declares a KMS context ID that differs
+     * from the one pinned at the time of the corresponding request.
+     * @param decryptionId The decryption request ID.
+     * @param requestContextId The context ID pinned at request time.
+     * @param responseContextId The context ID declared in the response's extraData.
+     */
+    error DecryptionContextMismatch(uint256 decryptionId, uint256 requestContextId, uint256 responseContextId);
+
+    /**
      * @notice Requests a public decryption.
      * @param ctHandles The handles of the ciphertexts to decrypt.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
