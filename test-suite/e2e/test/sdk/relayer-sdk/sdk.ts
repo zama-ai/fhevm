@@ -6,6 +6,45 @@ import { createRequire } from "module";
 import type { Auth, ClearValueType, ClearValues, EncryptedInputResult, SdkInstance, TypedValue } from "../types";
 
 type RelayerSdkNodeModule = typeof import("@zama-fhe/relayer-sdk/node");
+type LegacyFhevmInstance = Omit<
+  FhevmInstance,
+  "createEIP712" | "createDelegatedUserDecryptEIP712" | "userDecrypt" | "delegatedUserDecrypt"
+> & {
+  createEIP712(
+    publicKey: string,
+    contractAddresses: string[],
+    startTimestamp: number,
+    durationDays: number,
+  ): ReturnType<FhevmInstance["createEIP712"]>;
+  createDelegatedUserDecryptEIP712(
+    publicKey: string,
+    contractAddresses: string[],
+    delegatorAddress: string,
+    startTimestamp: number,
+    durationDays: number,
+  ): ReturnType<FhevmInstance["createDelegatedUserDecryptEIP712"]>;
+  userDecrypt(
+    handles: Parameters<FhevmInstance["userDecrypt"]>[0],
+    privateKey: string,
+    publicKey: string,
+    signature: string,
+    contractAddresses: string[],
+    userAddress: string,
+    startTimestamp: number,
+    durationDays: number,
+  ): ReturnType<FhevmInstance["userDecrypt"]>;
+  delegatedUserDecrypt(
+    handleContractPairs: Parameters<FhevmInstance["delegatedUserDecrypt"]>[0],
+    privateKey: string,
+    publicKey: string,
+    signature: string,
+    contractAddresses: string[],
+    delegatorAddress: string,
+    delegateAddress: string,
+    startTimestamp: number,
+    durationDays: number,
+  ): ReturnType<FhevmInstance["delegatedUserDecrypt"]>;
+};
 
 const requireFromHere = createRequire(__filename);
 
@@ -18,6 +57,10 @@ const loadCreateInstance = (): RelayerSdkNodeModule["createInstance"] => {
   }
   return createBundledInstance;
 };
+
+const supportsExtraData = (
+  instance: FhevmInstance,
+): instance is FhevmInstance & { getExtraData(): Promise<`0x${string}`> } => "getExtraData" in instance;
 
 export class RelayerSdk implements SdkInstance {
   #instance: FhevmInstance;
@@ -174,9 +217,40 @@ export class RelayerSdk implements SdkInstance {
     const durationDays = 10;
     const contractAddresses = [contractAddress];
 
-    // Build the extraData field
-    const extraData = await this.#instance.getExtraData();
+    if (!supportsExtraData(this.#instance)) {
+      const legacyInstance = this.#instance as LegacyFhevmInstance;
+      const eip712 = legacyInstance.createDelegatedUserDecryptEIP712(
+        delegateTransportKeypair.publicKey,
+        contractAddresses,
+        delegatorAddress,
+        startTimeStamp,
+        durationDays,
+      );
 
+      const delegateSignature = await signer.signTypedData(
+        eip712.domain,
+        {
+          DelegatedUserDecryptRequestVerification: [...eip712.types.DelegatedUserDecryptRequestVerification],
+        },
+        eip712.message,
+      );
+
+      const result = await legacyInstance.delegatedUserDecrypt(
+        handleContractPairs,
+        delegateTransportKeypair.privateKey,
+        delegateTransportKeypair.publicKey,
+        delegateSignature.replace("0x", ""),
+        contractAddresses,
+        delegatorAddress,
+        signer.address,
+        startTimeStamp,
+        durationDays,
+      );
+
+      return result[handle as `0x${string}`];
+    }
+
+    const extraData = await this.#instance.getExtraData();
     // The `delegate` creates a EIP712 with the `delegator` address
     const eip712 = this.#instance.createDelegatedUserDecryptEIP712(
       delegateTransportKeypair.publicKey,
@@ -242,9 +316,31 @@ export class RelayerSdk implements SdkInstance {
     const { publicKey, privateKey } = transportKeypair ?? this.#instance.generateKeypair();
     const contractAddresses = [contractAddress];
 
-    // Build the extraData field
-    const extraData = await this.#instance.getExtraData();
+    if (!supportsExtraData(this.#instance)) {
+      const legacyInstance = this.#instance as LegacyFhevmInstance;
+      const eip712 = legacyInstance.createEIP712(publicKey, contractAddresses, startTimestamp, durationDays);
 
+      const signature = await signer.signTypedData(
+        eip712.domain,
+        {
+          UserDecryptRequestVerification: [...eip712.types.UserDecryptRequestVerification],
+        },
+        eip712.message,
+      );
+
+      return await legacyInstance.userDecrypt(
+        handleContractPairs,
+        privateKey,
+        publicKey,
+        signature.replace("0x", ""),
+        contractAddresses,
+        signer.address,
+        startTimestamp,
+        durationDays,
+      );
+    }
+
+    const extraData = await this.#instance.getExtraData();
     const eip712 = this.#instance.createEIP712(publicKey, contractAddresses, startTimestamp, durationDays, extraData);
 
     const signature = await signer.signTypedData(
