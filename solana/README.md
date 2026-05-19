@@ -10,7 +10,7 @@ It is meant to be a readable base for:
 3. testing Solana behavior against EVM-derived FHEVM invariants
 ```
 
-The PoC is not trying to finish the Solana product shape yet. It is trying to make one host-chain path real enough that ACL, event listening, worker compute, and user decrypt can be reasoned about with code and tests.
+The PoC does not settle the final Solana product shape. It makes one path real enough that ACL, event listening, worker compute, and user decrypt can be discussed from code and tests.
 
 ## Where To Start
 
@@ -35,8 +35,6 @@ coprocessor/fhevm-engine/tfhe-worker/src/tests/solana_poc.rs
 
 ## Global Flow
 
-One picture for the whole PoC:
-
 ```text
 Solana transaction
   |
@@ -60,15 +58,11 @@ zama-host program
   | Anchor self-CPI event bytes
   v
 host-listener Solana adapter
-  converts:
-    SolanaHostEvent
-      -> existing TFHE event / ACL DB model
+  converts SolanaHostEvent into the existing TFHE event / ACL DB model
   |
   v
 coprocessor DB
-  stores:
-    computations
-    allowed handles
+  stores computations and allowed handles
   |
   v
 tfhe-worker
@@ -76,18 +70,17 @@ tfhe-worker
   |
   v
 test decrypt / future KMS path
-  reads result handles
-  verifies ACL-shaped user decrypt model
+  reads result handles and verifies ACL-shaped user decrypt
 ```
 
-Boundary rule of thumb:
+Boundary rule:
 
 ```text
 confidential-token decides app semantics.
 zama-host enforces FHEVM host semantics.
 host-listener normalizes Solana events into the existing coprocessor model.
 tfhe-worker computes ciphertexts from DB work items.
-KMS-style verification must combine signed authorization + handle entry + ACL state.
+KMS-style verification combines signed authorization + handle entry + ACL state.
 ```
 
 ## Vocabulary
@@ -97,39 +90,50 @@ Use these words consistently when discussing this PoC:
 ```text
 handle
   FHEVM opaque pointer to a ciphertext.
-  Never assume the handle is predictable.
+  Do not assume the handle is predictable or derivable.
 
-scope
-  Solana pubkey used as the app/account context for an ACL record.
-  Example: AliceTokenAccount.
+ACL domain key
+  App-wide domain for authorization.
+  In the token PoC: ConfidentialMint / cUSDC mint pubkey.
+
+app account
+  App-owned account that carries the concrete state being authorized.
+  In the token PoC: AliceTokenAccount or BobTokenAccount.
+
+encrypted value label
+  Domain-separated label for one encrypted field inside an app account.
+  In the token PoC: "balance".
+
+nonce key
+  Hash of:
+    "zama-acl-nonce-key-v1"
+    ACL domain key
+    app account
+    encrypted value label
+
+nonce sequence
+  App-maintained monotonic counter for one nonce key.
+  In the token PoC: ConfidentialTokenAccount.next_balance_nonce_sequence.
+
+ACL record
+  PDA owned by zama-host:
+    PDA("acl-record", nonce_key, nonce_sequence)
 
 subject
-  Solana pubkey that receives the permission.
-  Example: Alice for UserDecrypt, fheAuthority for Compute.
+  Pubkey that is allowed by an ACL record.
+  Examples: Alice for user decrypt, computeSigner for compute.
 
-acl_nonce
-  Per-scope nonce used to derive an ACL PDA before the output handle is known.
-
-acl_record
-  PDA owned by zama-host containing:
-    scope
-    subject
-    handle
-    permission
-
-fheAuthority
-  App-chosen Solana pubkey allowed to compute on balance handles.
-  In this token PoC it is PDA("fhe-authority", mint).
-
-appContext
-  User-decrypt request field that maps to ACL scope.
-  It is not the ACL subject.
+compute signer
+  Program-controlled PDA that signs CPI calls into zama-host.
+  In the token PoC: PDA("fhe-compute", ConfidentialMint).
 ```
 
 The current ACL PDA shape is:
 
 ```text
-PDA("acl", scope_pubkey, subject_pubkey, acl_nonce)
+nonce_key = H("zama-acl-nonce-key-v1", acl_domain_key, app_account, encrypted_value_label)
+
+acl_record = PDA("acl-record", nonce_key, nonce_sequence)
 ```
 
 The handle is stored inside the ACL account. The handle is not part of the PDA seed.
@@ -138,7 +142,7 @@ That choice is deliberate:
 
 ```text
 Solana requires accounts up front.
-Computed FHEVM handles are not predictable.
+Computed FHEVM handles are opaque and may be unpredictable.
 Therefore ACL account addresses cannot depend on the computed handle.
 ```
 
@@ -168,47 +172,9 @@ confidential-token
        emits typed Anchor event
 ```
 
-The app program does not perform a separate pre-check for normal compute. It passes the operand ACL accounts to `zama-host`, and `zama-host::fhe_binary_op` rejects the operation before emitting the FHE event if either operand is not allowed for the compute subject.
-
-## Host Program Surface
-
-`programs/zama-host` exposes the protocol-side surface:
-
-```text
-trivial_encrypt(...)
-fhe_rand(...)
-fhe_binary_op(...)
-allow_handle(...)
-input_verified(...)
-bind_acl_record(...)
-assert_acl_record(...)
-```
-
-Current meanings:
-
-```text
-trivial_encrypt
-  Emit a host event asking the worker to create a ciphertext from a public value.
-
-fhe_rand
-  Emit a host event asking the worker to create a random ciphertext.
-
-fhe_binary_op
-  Verify compute ACL for operands, then emit a binary FHE op event.
-
-bind_acl_record
-  Persist one ACL record in a PDA.
-
-assert_acl_record
-  Test/debug helper for directly asserting one ACL record.
-  It is not the normal app compute path.
-```
-
-Each host event uses Anchor `emit_cpi!`. That makes the event IDL-backed and decodable from self-CPI instruction data.
+The app program does not perform a separate pre-check for normal compute. It passes operand ACL accounts to `zama-host`, and `zama-host::fhe_binary_op` rejects the operation before emitting the FHE event if either operand is not allowed for the compute signer.
 
 ## ACL Account Model
-
-The PoC stores permissions in `zama-host` PDA accounts.
 
 ```text
                          owns
@@ -216,22 +182,25 @@ zama-host program --------------------+
                                       |
                                       v
 ACL record PDA
-  address = PDA("acl", scope, subject, nonce)
+  address = PDA("acl-record", nonce_key, nonce_sequence)
   data:
-    scope      = AliceTokenAccount
-    subject    = fheAuthority
-    handle     = hA1
-    permission = Compute
+    handle                = hA1
+    nonce_key             = H(cUSDCMint, AliceTokenAccount, "balance")
+    nonce_sequence        = 7
+    acl_domain_key        = cUSDCMint
+    app_account           = AliceTokenAccount
+    encrypted_value_label = "balance"
+    subjects              = [Alice, computeSigner]
 ```
 
-Writing an ACL record requires the scope to sign:
+Writing an ACL record requires the app account to sign:
 
 ```text
-zama-host::bind_acl_record(scope = AliceTokenAccount, ...)
+zama-host::bind_acl_record(app_account = AliceTokenAccount, ...)
 
 requires:
-  scope_authority.key == AliceTokenAccount
-  scope_authority.is_signer
+  app_account_authority.key == AliceTokenAccount
+  app_account_authority.is_signer
 ```
 
 For token balances, `confidential-token` signs as:
@@ -240,12 +209,13 @@ For token balances, `confidential-token` signs as:
 PDA("token-account", mint, owner)
 ```
 
-`zama-host` does not know the token PDA seeds. It only verifies:
+`zama-host` does not know token PDA seeds. It only verifies:
 
 ```text
-the scope pubkey signed
-the ACL PDA address matches ("acl", scope, subject, nonce)
+the app account pubkey signed
+the ACL PDA address matches ("acl-record", nonce_key, nonce_sequence)
 the stored ACL fields match the instruction fields
+the requested subject is in subjects[]
 ```
 
 That keeps token-specific semantics inside the token program.
@@ -260,15 +230,17 @@ Initial state:
 AliceTokenAccount
   owner = Alice
   balanceHandle = hA0
-  nextAclNonce = 1
+  balanceAclRecord = A0
+  nextBalanceNonceSequence = 1
 
 BobTokenAccount
   owner = Bob
   balanceHandle = hB0
-  nextAclNonce = 1
+  balanceAclRecord = B0
+  nextBalanceNonceSequence = 1
 
-amount handle
-  hX
+computeSigner = PDA("fhe-compute", cUSDCMint)
+amount handle = hX
 ```
 
 Transaction shape:
@@ -280,43 +252,44 @@ Alice signs tx
 confidential-token::confidential_transfer(amount = hX)
   |
   +--> CPI zama-host::fhe_binary_op(Sub)
+  |      compute_subject = computeSigner
   |      checks:
-  |        ACL(scope = AliceTokenAccount, subject = fheAuthority, handle = hA0, permission = Compute)
-  |        ACL(scope = Alice,             subject = fheAuthority, handle = hX,  permission = Compute)
+  |        A0 stores hA0 and subjects includes computeSigner
+  |        X  stores hX  and subjects includes computeSigner
   |      emits:
   |        hA1 = FHE.sub(hA0, hX)
   |
   +--> CPI zama-host::fhe_binary_op(Add)
+  |      compute_subject = computeSigner
   |      checks:
-  |        ACL(scope = BobTokenAccount, subject = fheAuthority, handle = hB0, permission = Compute)
-  |        ACL(scope = Alice,           subject = fheAuthority, handle = hX,  permission = Compute)
+  |        B0 stores hB0 and subjects includes computeSigner
+  |        X  stores hX  and subjects includes computeSigner
   |      emits:
   |        hB1 = FHE.add(hB0, hX)
   |
-  +--> stores:
-  |      AliceTokenAccount.balanceHandle = hA1
-  |      BobTokenAccount.balanceHandle   = hB1
+  +--> CPI zama-host::bind_acl_record(...)
+  |      creates A1 for hA1 with subjects [Alice, computeSigner]
   |
   +--> CPI zama-host::bind_acl_record(...)
-         creates output ACL records for hA1 and hB1
-```
-
-The output ACL records are:
-
-```text
-hA1:
-  UserDecrypt: scope = AliceTokenAccount, subject = Alice
-  Compute:     scope = AliceTokenAccount, subject = fheAuthority
-
-hB1:
-  UserDecrypt: scope = BobTokenAccount, subject = Bob
-  Compute:     scope = BobTokenAccount, subject = fheAuthority
+  |      creates B1 for hB1 with subjects [Bob, computeSigner]
+  |
+  +--> stores:
+         AliceTokenAccount.balanceHandle = hA1
+         AliceTokenAccount.balanceAclRecord = A1
+         AliceTokenAccount.nextBalanceNonceSequence = 2
+         BobTokenAccount.balanceHandle = hB1
+         BobTokenAccount.balanceAclRecord = B1
+         BobTokenAccount.nextBalanceNonceSequence = 2
 ```
 
 The amount handle ACL is temporary PoC glue. Today the tests pre-bind:
 
 ```text
-ACL(scope = Alice, subject = fheAuthority, handle = hX, permission = Compute)
+ACL domain key = Alice
+app account    = Alice
+label          = "input"
+subjects       = [computeSigner]
+handle         = hX
 ```
 
 The real design still needs the Solana equivalent of transient input authorization from the input verifier path.
@@ -345,16 +318,14 @@ wrap_usdc(amount)
   |
   +--> CPI zama-host::fhe_binary_op(Add)
   |      checks:
-  |        ACL(scope = AliceTokenAccount, subject = fheAuthority, handle = hA0,       permission = Compute)
-  |        ACL(scope = Alice,             subject = fheAuthority, handle = hDeposit, permission = Compute)
+  |        current balance ACL stores hA0 and allows computeSigner
+  |        amount ACL stores hDeposit and allows computeSigner
   |      emits:
   |        hA1 = FHE.add(hA0, hDeposit)
   |
-  +--> stores:
-  |      AliceTokenAccount.balanceHandle = hA1
-  |
   +--> CPI zama-host::bind_acl_record(...)
-         creates UserDecrypt + Compute ACL records for hA1
+         creates one output ACL record for hA1:
+           subjects = [Alice, computeSigner]
 ```
 
 The deposit amount is public in this slice because it uses `trivial_encrypt(amount)`. A later encrypted-input path should replace that step with `input_verified(...)` and the real ZKPoK/input verifier boundary.
@@ -367,52 +338,46 @@ The PoC keeps the RFC016-style split:
 Signed by Alice:
   userPubkey = Alice
   reencryptionPublicKey = pkR
-  allowedAccounts = [AliceTokenAccount]
+  allowedAclDomainKeys = [cUSDCMint]
   validity
   extraData
 
 Unsigned handle entry:
   handle = hA1
-  appContext = AliceTokenAccount
   ownerPubkey = Alice
-  aclRecordPubkey = PDA("acl", AliceTokenAccount, Alice, 1)
+  aclRecordPubkey = A1
 ```
 
 KMS-style verification:
 
 ```text
 1. Verify Alice signed the top-level authorization.
-2. Verify appContext is in allowedAccounts.
-3. Read aclRecordPubkey.
-4. Verify the ACL account is owned by zama-host.
-5. Verify the ACL account stores:
-     scope      = appContext
-     subject    = ownerPubkey
-     handle     = handle
-     permission = UserDecrypt
+2. Read aclRecordPubkey.
+3. Verify the ACL account is owned by zama-host.
+4. Verify:
+     expected_nonce_key = H(record.acl_domain_key, record.app_account, record.encrypted_value_label)
+     aclRecordPubkey == PDA("acl-record", expected_nonce_key, record.nonce_sequence)
+     record.acl_domain_key is in allowedAclDomainKeys
+     record.handle == handle
+     record.subjects contains ownerPubkey
 ```
 
 Visual version:
 
 ```text
 Alice signature
-  says: "I allow decrypts for AliceTokenAccount during this validity window"
+  says: "I allow decrypts for cUSDCMint during this validity window"
        |
        v
 Handle entry
-  says: "decrypt hA1 in AliceTokenAccount for Alice"
+  says: "decrypt hA1 for Alice using ACL record A1"
        |
        v
-ACL record PDA
+ACL record A1
   proves on-chain:
-    Alice is allowed to user-decrypt hA1 in AliceTokenAccount
-```
-
-Important mapping:
-
-```text
-appContext == ACL scope
-ownerPubkey == ACL subject for UserDecrypt
+    A1 belongs to cUSDCMint / AliceTokenAccount / balance / sequence 1
+    A1 stores hA1
+    A1 allows Alice
 ```
 
 For the current balance, the frontend does not need to search:
@@ -420,13 +385,14 @@ For the current balance, the frontend does not need to search:
 ```text
 read AliceTokenAccount:
   balanceHandle = hA1
-  nextAclNonce = 2
+  balanceAclRecord = A1
 
-current user-decrypt ACL nonce = nextAclNonce - 1 = 1
-aclRecordPubkey = PDA("acl", AliceTokenAccount, Alice, 1)
+request carries:
+  handle = hA1
+  aclRecordPubkey = A1
 ```
 
-For older handles, this shortcut is not enough. The request must carry an ACL record pubkey that the app observed or indexed from prior transactions. KMS does not guess or scan; it reads the provided account and verifies the stored fields.
+For older handles, the request must carry an older ACL record pubkey that the app observed or indexed from prior transactions. KMS does not guess or scan; it reads the provided account and verifies the stored fields.
 
 ## Listener And Worker Flow
 
@@ -460,23 +426,23 @@ LogTfhe
 listener_db.insert_tfhe_event(...)
 ```
 
-When a Solana ACL event appears in the same transaction as a TFHE event, the adapter marks the TFHE output as allowed before inserting it. This mirrors the EVM listener shape:
+When Solana ACL events appear in the same transaction as TFHE events, the adapter marks the TFHE output as allowed before inserting it. This mirrors the EVM listener shape:
 
 ```text
 tx:
   FHE.add(h0, hDeposit) -> h1
-  allow(h1, AliceTokenAccount)
+  bind ACL record allowing h1
 
 DB:
-  allowed_handles(h1, AliceTokenAccount)
+  allowed_handles(h1, subject)
   computations(output_handle = h1, is_allowed = true)
 ```
 
-Remaining listener boundary:
+Future Solana poller boundary:
 
 ```text
-Future Solana poller must only feed events emitted by the configured zama-host program.
-The adapter does not treat arbitrary bytes as trusted host events.
+Only feed events emitted by the configured zama-host program.
+The adapter must not treat arbitrary bytes as trusted host events.
 ```
 
 ## Worker-Backed E2E
@@ -549,19 +515,20 @@ Current tested invariants:
 ACL records are not derived from handles.
   A computed handle can be stored after the transaction starts.
 
-The ACL scope must sign ACL writes.
+The app account must sign ACL writes.
   A caller cannot create ACL for someone else's token account.
 
 The host op enforces compute ACL before event emission.
-  Wrong scope or wrong fheAuthority rejects the transfer.
+  Wrong current ACL or wrong amount ACL rejects the transfer.
 
 User decrypt checks signed authorization plus on-chain ACL state.
-  Changing allowedAccounts fails.
+  Changing allowedAclDomainKeys fails.
   Signing as Bob for Alice fails.
   Passing the wrong ACL record fails.
+  Passing the wrong handle fails.
 
 Solana events can enter the existing coprocessor DB path.
-  Worker computes real ciphertexts from Solana-origin events.
+  Worker tests compile against the Solana event adapter and use real ciphertexts.
 ```
 
 When adding a feature, prefer a test shaped like:
@@ -579,19 +546,20 @@ Negative case:
 
 ## Budget Snapshot
 
-Current `confidential_transfer` LiteSVM snapshot:
+Current `confidential_transfer` LiteSVM snapshot is tracked in:
 
-| Metric | Current |
-| --- | ---: |
-| Instruction account metas | 14 |
-| Compiled transaction account keys | 15 |
-| Writable instruction metas | 7 |
-| Signer instruction metas | 1 |
-| Inner instructions | 16 |
-| Max CPI depth | 3 |
-| Host compute events | 2 |
-| Output ACL accounts created | 4 |
-| Compute units consumed in LiteSVM | 126,349 |
+```text
+solana/runtime-tests/tests/host_events.rs
+  confidential_transfer_budget_snapshot
+```
+
+The important qualitative points:
+
+```text
+transfer uses one output ACL record per changed balance account
+each output ACL record stores both subjects: user + computeSigner
+max CPI depth remains 3 in the tested direct token -> zama-host -> event-CPI path
+```
 
 Open optimization question: event emission mode.
 
@@ -605,7 +573,7 @@ confidential-token
       -> zama-host event self-CPI
 ```
 
-Anchor `emit!` log events may be cheaper, but it changes the listener and explorer decoding assumptions. Keep `emit_cpi!` for now because this slice optimizes for correctness and typed decoding. Revisit after the ACL and token model stabilize.
+Anchor `emit!` log events may be cheaper, but it changes listener and explorer decoding assumptions. Keep `emit_cpi!` for now because this slice optimizes for correctness and typed decoding. Revisit after the ACL and token model stabilize.
 
 ## Commands
 
@@ -617,54 +585,13 @@ NO_DNA=1 anchor build
 cargo test --workspace
 ```
 
+Worker test compile check:
+
+```bash
+cd coprocessor/fhevm-engine
+SQLX_OFFLINE=true cargo test -p tfhe-worker solana_user_decrypt_acl_invariants_match_evm_semantics --no-run
+```
+
+Running the ignored worker-backed tests requires the usual coprocessor Postgres/test harness setup.
+
 `Cargo.lock` is part of this PoC. It keeps the Anchor/Solana dependency graph compatible with the Cargo version embedded in the local Solana SBF toolchain.
-
-Listener adapter tests:
-
-```bash
-cd coprocessor/fhevm-engine
-cargo test -p host-listener solana_adapter --lib
-```
-
-Worker-backed smoke tests:
-
-```bash
-cd coprocessor/fhevm-engine
-
-SQLX_OFFLINE=true cargo test -p tfhe-worker \
-  solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypts \
-  --lib -- --ignored --nocapture
-
-SQLX_OFFLINE=true cargo test -p tfhe-worker \
-  solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts \
-  --lib -- --ignored --nocapture
-
-SQLX_OFFLINE=true cargo test -p tfhe-worker \
-  solana_fhe_rand_creates_ciphertext_and_decrypts \
-  --lib -- --ignored --nocapture
-```
-
-Pre-push checks used on this branch:
-
-```bash
-cd solana
-cargo fmt --check
-cargo test --workspace
-
-cd ../coprocessor/fhevm-engine
-cargo fmt -p host-listener -p tfhe-worker --check
-SQLX_OFFLINE=true cargo clippy -p host-listener -p tfhe-worker --tests -- -D warnings
-```
-
-## Deliberate Non-Goals For This Slice
-
-```text
-No TypeScript client yet.
-No web3.js.
-No KMS payload migration yet.
-No ZK proof metadata migration yet.
-No private SDK input / InputVerifier path yet.
-No KMS quorum decrypt path yet.
-```
-
-Those pieces come after the host-chain event boundary is validated.

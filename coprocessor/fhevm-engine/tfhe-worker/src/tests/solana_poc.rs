@@ -23,7 +23,7 @@ use solana_sdk::{
 };
 use tfhe::prelude::FheTryEncrypt;
 use time::{Date, Month, PrimitiveDateTime, Time};
-use zama_host::{AclPermission, AclRecord};
+use zama_host::{AclPermission, AclRecord, AclSubjectEntry};
 
 use crate::tests::{
     event_helpers::{decrypt_handles, setup_event_harness, wait_until_computed},
@@ -100,12 +100,11 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
         &fixture.svm,
         &signed_user_decrypt_request(
             &fixture.alice,
-            vec![fixture.alice_token],
+            vec![fixture.mint.pubkey()],
             vec![UserDecryptHandleEntry {
                 handle: new_alice_handle,
-                app_context: fixture.alice_token,
                 owner: fixture.alice.pubkey(),
-                acl_record: output.alice_owner,
+                acl_record: output.alice,
             }],
         ),
     ));
@@ -113,12 +112,11 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
         &fixture.svm,
         &signed_user_decrypt_request(
             &fixture.bob,
-            vec![fixture.bob_token],
+            vec![fixture.mint.pubkey()],
             vec![UserDecryptHandleEntry {
                 handle: new_bob_handle,
-                app_context: fixture.bob_token,
                 owner: fixture.bob.pubkey(),
-                acl_record: output.bob_owner,
+                acl_record: output.bob,
             }],
         ),
     ));
@@ -151,38 +149,38 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
     let initial_ixs = vec![
         trivial_encrypt_ix(
             fixture.host_program_id,
-            fixture.fhe_authority,
+            fixture.compute_signer,
             125,
             fixture.alice_initial,
         ),
         allow_handle_ix(
             fixture.host_program_id,
             fixture.alice_initial,
-            fixture.fhe_authority,
+            fixture.compute_signer,
             AclPermission::Compute,
         ),
         trivial_encrypt_ix(
             fixture.host_program_id,
-            fixture.fhe_authority,
+            fixture.compute_signer,
             20,
             fixture.bob_initial,
         ),
         allow_handle_ix(
             fixture.host_program_id,
             fixture.bob_initial,
-            fixture.fhe_authority,
+            fixture.compute_signer,
             AclPermission::Compute,
         ),
         trivial_encrypt_ix(
             fixture.host_program_id,
-            fixture.fhe_authority,
+            fixture.compute_signer,
             100,
             amount_handle,
         ),
         allow_handle_ix(
             fixture.host_program_id,
             amount_handle,
-            fixture.fhe_authority,
+            fixture.compute_signer,
             AclPermission::Compute,
         ),
     ];
@@ -216,12 +214,11 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
         &fixture.svm,
         &signed_user_decrypt_request(
             &fixture.alice,
-            vec![fixture.alice_token],
+            vec![fixture.mint.pubkey()],
             vec![UserDecryptHandleEntry {
                 handle: new_alice_handle,
-                app_context: fixture.alice_token,
                 owner: fixture.alice.pubkey(),
-                acl_record: output.alice_owner,
+                acl_record: output.alice,
             }],
         ),
     ));
@@ -229,12 +226,11 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
         &fixture.svm,
         &signed_user_decrypt_request(
             &fixture.bob,
-            vec![fixture.bob_token],
+            vec![fixture.mint.pubkey()],
             vec![UserDecryptHandleEntry {
                 handle: new_bob_handle,
-                app_context: fixture.bob_token,
                 owner: fixture.bob.pubkey(),
-                acl_record: output.bob_owner,
+                acl_record: output.bob,
             }],
         ),
     ));
@@ -312,24 +308,22 @@ fn solana_user_decrypt_acl_invariants_match_evm_semantics() {
 
     let valid = signed_user_decrypt_request(
         &fixture.alice,
-        vec![fixture.alice_token],
+        vec![fixture.mint.pubkey()],
         vec![UserDecryptHandleEntry {
             handle: new_alice_handle,
-            app_context: fixture.alice_token,
             owner: fixture.alice.pubkey(),
-            acl_record: output.alice_owner,
+            acl_record: output.alice,
         }],
     );
     assert!(kms_like_user_decrypt_check(&fixture.svm, &valid));
 
     let missing_user_acl = signed_user_decrypt_request(
         &fixture.alice,
-        vec![fixture.alice_token],
+        vec![fixture.mint.pubkey()],
         vec![UserDecryptHandleEntry {
             handle: new_alice_handle,
-            app_context: fixture.alice_token,
             owner: fixture.alice.pubkey(),
-            acl_record: output.alice_compute,
+            acl_record: output.bob,
         }],
     );
     assert!(!kms_like_user_decrypt_check(
@@ -337,48 +331,29 @@ fn solana_user_decrypt_acl_invariants_match_evm_semantics() {
         &missing_user_acl
     ));
 
-    let missing_app_scope = signed_user_decrypt_request(
+    let missing_domain = signed_user_decrypt_request(
         &fixture.alice,
-        vec![fixture.bob_token],
+        vec![Pubkey::new_unique()],
         valid.handles.clone(),
     );
-    assert!(!kms_like_user_decrypt_check(
-        &fixture.svm,
-        &missing_app_scope
-    ));
-
-    let wrong_app_context = signed_user_decrypt_request(
-        &fixture.alice,
-        vec![fixture.bob_token],
-        vec![UserDecryptHandleEntry {
-            app_context: fixture.bob_token,
-            ..valid.handles[0]
-        }],
-    );
-    assert!(!kms_like_user_decrypt_check(
-        &fixture.svm,
-        &wrong_app_context
-    ));
+    assert!(!kms_like_user_decrypt_check(&fixture.svm, &missing_domain));
 
     let wrong_owner = signed_user_decrypt_request(
         &fixture.bob,
-        vec![fixture.alice_token],
+        vec![fixture.mint.pubkey()],
         valid.handles.clone(),
     );
     assert!(!kms_like_user_decrypt_check(&fixture.svm, &wrong_owner));
 
-    let user_equals_app_context = signed_user_decrypt_request(
+    let wrong_handle = signed_user_decrypt_request(
         &fixture.alice,
-        vec![fixture.alice.pubkey()],
+        vec![fixture.mint.pubkey()],
         vec![UserDecryptHandleEntry {
-            app_context: fixture.alice.pubkey(),
+            handle: typed_fast_handle(0x7f),
             ..valid.handles[0]
         }],
     );
-    assert!(!kms_like_user_decrypt_check(
-        &fixture.svm,
-        &user_equals_app_context
-    ));
+    assert!(!kms_like_user_decrypt_check(&fixture.svm, &wrong_handle));
 }
 
 struct TokenFixture {
@@ -388,7 +363,7 @@ struct TokenFixture {
     alice: Keypair,
     bob: Keypair,
     mint: Keypair,
-    fhe_authority: Pubkey,
+    compute_signer: Pubkey,
     alice_token: Pubkey,
     bob_token: Pubkey,
     alice_initial: [u8; 32],
@@ -405,17 +380,15 @@ struct HostFixture {
 
 #[derive(Clone, Copy)]
 struct TransferOutputAccounts {
-    alice_owner: Pubkey,
-    alice_compute: Pubkey,
-    bob_owner: Pubkey,
-    bob_compute: Pubkey,
+    alice: Pubkey,
+    bob: Pubkey,
 }
 
 #[derive(Clone)]
 struct UserDecryptAuthorizationPayload {
     user: Pubkey,
     reencryption_public_key: [u8; 32],
-    allowed_accounts: Vec<Pubkey>,
+    allowed_acl_domain_keys: Vec<Pubkey>,
     start_timestamp: i64,
     duration_seconds: u64,
     extra_data: Vec<u8>,
@@ -431,7 +404,6 @@ struct UserDecryptRequest {
 #[derive(Clone, Copy)]
 struct UserDecryptHandleEntry {
     handle: [u8; 32],
-    app_context: Pubkey,
     owner: Pubkey,
     acl_record: Pubkey,
 }
@@ -488,7 +460,6 @@ fn token_fixture() -> TokenFixture {
     svm.airdrop(&bob.pubkey(), 1_000_000_000).unwrap();
     create_spl_mint(&mut svm, &alice, &underlying_mint, 6);
 
-    let fhe_authority = Pubkey::new_unique();
     send_with_signers(
         &mut svm,
         &alice.pubkey(),
@@ -501,11 +472,12 @@ fn token_fixture() -> TokenFixture {
                 system_program: system_program::ID,
             }
             .to_account_metas(None),
-            data: token::instruction::InitializeMint { fhe_authority }.data(),
+            data: token::instruction::InitializeMint {}.data(),
         },
         &[&alice, &mint],
     );
 
+    let compute_signer = token::compute_signer_address(mint.pubkey()).0;
     let alice_token = token_account_address(token_program_id, mint.pubkey(), alice.pubkey());
     let bob_token = token_account_address(token_program_id, mint.pubkey(), bob.pubkey());
     let alice_initial = typed_fast_handle(0x01);
@@ -529,8 +501,9 @@ fn token_fixture() -> TokenFixture {
     );
 
     let alice_current_compute_acl =
-        acl_record_address(host_program_id, alice_token, fhe_authority, 0);
-    let bob_current_compute_acl = acl_record_address(host_program_id, bob_token, fhe_authority, 0);
+        balance_acl_record_address(host_program_id, mint.pubkey(), alice_token, 0);
+    let bob_current_compute_acl =
+        balance_acl_record_address(host_program_id, mint.pubkey(), bob_token, 0);
     authorize_balance_acl(
         BalanceAclTarget {
             token_program_id,
@@ -538,7 +511,7 @@ fn token_fixture() -> TokenFixture {
             mint: mint.pubkey(),
             token_account: alice_token,
             acl_record: alice_current_compute_acl,
-            subject: fhe_authority,
+            compute_signer,
         },
         &mut svm,
         &alice,
@@ -550,7 +523,7 @@ fn token_fixture() -> TokenFixture {
             mint: mint.pubkey(),
             token_account: bob_token,
             acl_record: bob_current_compute_acl,
-            subject: fhe_authority,
+            compute_signer,
         },
         &mut svm,
         &bob,
@@ -563,7 +536,7 @@ fn token_fixture() -> TokenFixture {
         alice,
         bob,
         mint,
-        fhe_authority,
+        compute_signer,
         alice_token,
         bob_token,
         alice_initial,
@@ -604,7 +577,7 @@ struct BalanceAclTarget {
     acl_record: Pubkey,
     mint: Pubkey,
     token_account: Pubkey,
-    subject: Pubkey,
+    compute_signer: Pubkey,
 }
 
 fn authorize_balance_acl(target: BalanceAclTarget, svm: &mut LiteSVM, owner: &Keypair) {
@@ -616,6 +589,7 @@ fn authorize_balance_acl(target: BalanceAclTarget, svm: &mut LiteSVM, owner: &Ke
             accounts: token::accounts::AuthorizeBalanceAcl {
                 owner: owner.pubkey(),
                 mint: target.mint,
+                compute_signer: target.compute_signer,
                 token_account: target.token_account,
                 acl_record: target.acl_record,
                 zama_event_authority: event_authority(target.host_program_id),
@@ -623,40 +597,24 @@ fn authorize_balance_acl(target: BalanceAclTarget, svm: &mut LiteSVM, owner: &Ke
                 system_program: system_program::ID,
             }
             .to_account_metas(None),
-            data: token::instruction::AuthorizeBalanceAcl {
-                subject: target.subject,
-                permission: AclPermission::Compute,
-            }
-            .data(),
+            data: token::instruction::AuthorizeBalanceAcl {}.data(),
         },
     );
 }
 
-fn transfer_output_accounts(fixture: &TokenFixture, acl_nonce: u64) -> TransferOutputAccounts {
+fn transfer_output_accounts(fixture: &TokenFixture, nonce_sequence: u64) -> TransferOutputAccounts {
     TransferOutputAccounts {
-        alice_owner: acl_record_address(
+        alice: balance_acl_record_address(
             fixture.host_program_id,
+            fixture.mint.pubkey(),
             fixture.alice_token,
-            fixture.alice.pubkey(),
-            acl_nonce,
+            nonce_sequence,
         ),
-        alice_compute: acl_record_address(
+        bob: balance_acl_record_address(
             fixture.host_program_id,
-            fixture.alice_token,
-            fixture.fhe_authority,
-            acl_nonce,
-        ),
-        bob_owner: acl_record_address(
-            fixture.host_program_id,
+            fixture.mint.pubkey(),
             fixture.bob_token,
-            fixture.bob.pubkey(),
-            acl_nonce,
-        ),
-        bob_compute: acl_record_address(
-            fixture.host_program_id,
-            fixture.bob_token,
-            fixture.fhe_authority,
-            acl_nonce,
+            nonce_sequence,
         ),
     }
 }
@@ -664,8 +622,11 @@ fn transfer_output_accounts(fixture: &TokenFixture, acl_nonce: u64) -> TransferO
 fn input_compute_acl_address(fixture: &TokenFixture, handle: [u8; 32]) -> Pubkey {
     acl_record_address(
         fixture.host_program_id,
-        fixture.alice.pubkey(),
-        fixture.fhe_authority,
+        token::nonce_key(
+            fixture.alice.pubkey(),
+            fixture.alice.pubkey(),
+            label("input"),
+        ),
         u64::from(handle[0]),
     )
 }
@@ -674,6 +635,11 @@ fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
     // Temporary PoC stand-in for the future Solana InputVerifier/transient
     // authorization path. It lets host::fhe_binary_op enforce both operands.
     let acl_record = input_compute_acl_address(fixture, handle);
+    let acl_domain_key = fixture.alice.pubkey();
+    let app_account = fixture.alice.pubkey();
+    let encrypted_value_label = label("input");
+    let nonce_key = token::nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let nonce_sequence = u64::from(handle[0]);
     send(
         &mut fixture.svm,
         &fixture.alice,
@@ -681,7 +647,7 @@ fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
             program_id: fixture.host_program_id,
             accounts: host::accounts::BindAclRecord {
                 payer: fixture.alice.pubkey(),
-                scope_authority: fixture.alice.pubkey(),
+                app_account_authority: app_account,
                 acl_record,
                 system_program: system_program::ID,
                 event_authority: event_authority(fixture.host_program_id),
@@ -689,11 +655,17 @@ fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
             }
             .to_account_metas(None),
             data: host::instruction::BindAclRecord {
-                acl_nonce: u64::from(handle[0]),
-                scope: fixture.alice.pubkey(),
+                nonce_key,
+                nonce_sequence,
+                acl_domain_key,
+                app_account,
+                encrypted_value_label,
                 handle,
-                subject: fixture.fhe_authority,
-                permission: AclPermission::Compute,
+                subjects: vec![AclSubjectEntry {
+                    pubkey: fixture.compute_signer,
+                    permission: AclPermission::Compute,
+                }],
+                public_decrypt: false,
             }
             .data(),
         },
@@ -714,13 +686,12 @@ fn transfer_ix(
             mint: fixture.mint.pubkey(),
             from_account: fixture.alice_token,
             to_account: fixture.bob_token,
+            compute_signer: fixture.compute_signer,
             from_current_compute_acl: fixture.alice_current_compute_acl,
             to_current_compute_acl: fixture.bob_current_compute_acl,
             amount_compute_acl: input_compute_acl_address(fixture, amount_handle),
-            from_owner_output_acl: output.alice_owner,
-            from_compute_output_acl: output.alice_compute,
-            to_owner_output_acl: output.bob_owner,
-            to_compute_output_acl: output.bob_compute,
+            from_output_acl: output.alice,
+            to_output_acl: output.bob,
             zama_event_authority: event_authority(fixture.host_program_id),
             zama_program: fixture.host_program_id,
             system_program: system_program::ID,
@@ -935,13 +906,13 @@ fn count_acl_events(events: &[SolanaHostEvent]) -> usize {
 
 fn signed_user_decrypt_request(
     signer: &Keypair,
-    allowed_accounts: Vec<Pubkey>,
+    allowed_acl_domain_keys: Vec<Pubkey>,
     handles: Vec<UserDecryptHandleEntry>,
 ) -> UserDecryptRequest {
     let authorization = UserDecryptAuthorizationPayload {
         user: signer.pubkey(),
         reencryption_public_key: [7; 32],
-        allowed_accounts,
+        allowed_acl_domain_keys,
         start_timestamp: 1,
         duration_seconds: 300,
         extra_data: b"zama-solana-poc".to_vec(),
@@ -959,8 +930,8 @@ fn authorization_payload_bytes(authorization: &UserDecryptAuthorizationPayload) 
     let mut bytes = b"Zama Solana UserDecrypt v0".to_vec();
     bytes.extend_from_slice(authorization.user.as_ref());
     bytes.extend_from_slice(&authorization.reencryption_public_key);
-    bytes.extend_from_slice(&(authorization.allowed_accounts.len() as u32).to_le_bytes());
-    for account in &authorization.allowed_accounts {
+    bytes.extend_from_slice(&(authorization.allowed_acl_domain_keys.len() as u32).to_le_bytes());
+    for account in &authorization.allowed_acl_domain_keys {
         bytes.extend_from_slice(account.as_ref());
     }
     bytes.extend_from_slice(&authorization.start_timestamp.to_le_bytes());
@@ -986,27 +957,40 @@ fn kms_like_user_decrypt_check(svm: &LiteSVM, request: &UserDecryptRequest) -> b
     }
 
     request.handles.iter().all(|entry| {
-        if authorization.user != entry.owner
-            || authorization.user == entry.app_context
-            || !authorization.allowed_accounts.contains(&entry.app_context)
-        {
+        if authorization.user != entry.owner {
             return false;
         }
 
-        let Some(record) = read_acl_record(svm, entry.acl_record) else {
+        let Some(raw_account) = svm.get_account(&entry.acl_record) else {
             return false;
         };
-        record.scope == entry.app_context
+        if raw_account.owner != host::id() {
+            return false;
+        }
+        let mut data = raw_account.data.as_slice();
+        let Ok(record) = AclRecord::try_deserialize(&mut data) else {
+            return false;
+        };
+        let expected_nonce_key = token::nonce_key(
+            record.acl_domain_key,
+            record.app_account,
+            record.encrypted_value_label,
+        );
+        let expected_acl_record =
+            acl_record_address(host::id(), expected_nonce_key, record.nonce_sequence);
+
+        authorization
+            .allowed_acl_domain_keys
+            .contains(&record.acl_domain_key)
             && record.handle == entry.handle
-            && record.subject == authorization.user
-            && record.permission == AclPermission::UserDecrypt
+            && record.nonce_key == expected_nonce_key
+            && entry.acl_record == expected_acl_record
+            && record_subjects(&record).contains(&authorization.user)
     })
 }
 
-fn read_acl_record(svm: &LiteSVM, address: Pubkey) -> Option<AclRecord> {
-    let account = svm.get_account(&address)?;
-    let mut data = account.data.as_slice();
-    AclRecord::try_deserialize(&mut data).ok()
+fn record_subjects(record: &AclRecord) -> Vec<Pubkey> {
+    record.subjects[..record.subject_count as usize].to_vec()
 }
 
 fn typed_fast_handle(seed: u8) -> [u8; 32] {
@@ -1042,22 +1026,37 @@ fn token_account_address(program_id: Pubkey, mint: Pubkey, owner: Pubkey) -> Pub
     .0
 }
 
-fn acl_record_address(
-    program_id: Pubkey,
-    scope: Pubkey,
-    subject: Pubkey,
-    acl_nonce: u64,
-) -> Pubkey {
+fn acl_record_address(program_id: Pubkey, nonce_key: [u8; 32], nonce_sequence: u64) -> Pubkey {
     Pubkey::find_program_address(
         &[
-            b"acl",
-            scope.as_ref(),
-            subject.as_ref(),
-            &acl_nonce.to_le_bytes(),
+            b"acl-record",
+            nonce_key.as_ref(),
+            &nonce_sequence.to_le_bytes(),
         ],
         &program_id,
     )
     .0
+}
+
+fn balance_acl_record_address(
+    program_id: Pubkey,
+    acl_domain_key: Pubkey,
+    app_account: Pubkey,
+    nonce_sequence: u64,
+) -> Pubkey {
+    acl_record_address(
+        program_id,
+        token::balance_nonce_key(acl_domain_key, app_account),
+        nonce_sequence,
+    )
+}
+
+fn label(name: &str) -> [u8; 32] {
+    let mut out = [0_u8; 32];
+    let bytes = name.as_bytes();
+    assert!(bytes.len() <= out.len());
+    out[..bytes.len()].copy_from_slice(bytes);
+    out
 }
 
 fn send(svm: &mut LiteSVM, payer: &Keypair, ix: Instruction) {

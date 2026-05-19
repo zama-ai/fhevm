@@ -4,7 +4,7 @@ use zama_host::{
     self, cpi,
     cpi::accounts::{BindAclRecord, EmitProtocolEvent, FheBinaryOp},
     program::ZamaHost,
-    AclPermission, FheBinaryOpCode,
+    AclPermission, AclSubjectEntry, FheBinaryOpCode,
 };
 
 declare_id!("5GKzUSfqBSNjoVW83w3xPtTnAe84srZcDTBstpSoBCR4");
@@ -13,10 +13,12 @@ declare_id!("5GKzUSfqBSNjoVW83w3xPtTnAe84srZcDTBstpSoBCR4");
 pub mod confidential_token {
     use super::*;
 
-    pub fn initialize_mint(ctx: Context<InitializeMint>, fhe_authority: Pubkey) -> Result<()> {
+    pub fn initialize_mint(ctx: Context<InitializeMint>) -> Result<()> {
+        let mint_key = ctx.accounts.mint.key();
         let mint = &mut ctx.accounts.mint;
         mint.authority = ctx.accounts.authority.key();
-        mint.fhe_authority = fhe_authority;
+        mint.acl_domain_key = mint_key;
+        mint.compute_signer = compute_signer_address(mint_key).0;
         mint.underlying_mint = ctx.accounts.underlying_mint.key();
         mint.decimals = ctx.accounts.underlying_mint.decimals;
         Ok(())
@@ -30,16 +32,13 @@ pub mod confidential_token {
         token_account.owner = ctx.accounts.owner.key();
         token_account.mint = ctx.accounts.mint.key();
         token_account.balance_handle = balance_handle;
-        token_account.next_acl_nonce = 1;
+        token_account.balance_acl_record = Pubkey::default();
+        token_account.next_balance_nonce_sequence = 1;
         token_account.bump = ctx.bumps.token_account;
         Ok(())
     }
 
-    pub fn authorize_balance_acl(
-        ctx: Context<AuthorizeBalanceAcl>,
-        subject: Pubkey,
-        permission: AclPermission,
-    ) -> Result<()> {
+    pub fn authorize_balance_acl(ctx: Context<AuthorizeBalanceAcl>) -> Result<()> {
         let token_account = &ctx.accounts.token_account;
         require_keys_eq!(
             token_account.owner,
@@ -51,19 +50,33 @@ pub mod confidential_token {
             ctx.accounts.mint.key(),
             ConfidentialTokenError::MintMismatch
         );
-        let acl_nonce = current_acl_nonce(token_account)?;
+        require_keys_eq!(
+            ctx.accounts.mint.acl_domain_key,
+            ctx.accounts.mint.key(),
+            ConfidentialTokenError::AclDomainKeyMismatch
+        );
+        require_keys_eq!(
+            ctx.accounts.compute_signer.key(),
+            ctx.accounts.mint.compute_signer,
+            ConfidentialTokenError::ComputeSignerMismatch
+        );
+        let nonce_sequence = current_balance_nonce_sequence(token_account)?;
+        let acl_record = ctx.accounts.acl_record.key();
         bind_token_account_acl(
             &ctx.accounts.owner,
+            &ctx.accounts.mint,
+            &ctx.accounts.compute_signer,
             &ctx.accounts.token_account,
             ctx.accounts.acl_record.to_account_info(),
             &ctx.accounts.zama_event_authority,
             &ctx.accounts.zama_program,
             &ctx.accounts.system_program,
-            acl_nonce,
+            nonce_sequence,
             token_account.balance_handle,
-            subject,
-            permission,
-        )
+        )?;
+        let token_account = &mut ctx.accounts.token_account;
+        token_account.balance_acl_record = acl_record;
+        Ok(())
     }
 
     pub fn wrap_usdc(
@@ -73,10 +86,9 @@ pub mod confidential_token {
         new_balance_handle: [u8; 32],
     ) -> Result<()> {
         let mint = &ctx.accounts.mint;
-        let token_account_key = ctx.accounts.token_account.key();
         let token_account = &ctx.accounts.token_account;
-        let nonce = token_account.next_acl_nonce;
-        let fhe_authority = mint.fhe_authority;
+        let nonce_sequence = token_account.next_balance_nonce_sequence;
+        let compute_signer = mint.compute_signer;
 
         require_keys_eq!(
             token_account.owner,
@@ -92,6 +104,11 @@ pub mod confidential_token {
             mint.underlying_mint,
             ctx.accounts.underlying_mint.key(),
             ConfidentialTokenError::UnderlyingMintMismatch
+        );
+        require_keys_eq!(
+            ctx.accounts.compute_signer.key(),
+            compute_signer,
+            ConfidentialTokenError::ComputeSignerMismatch
         );
 
         spl_token::transfer_checked(
@@ -110,7 +127,7 @@ pub mod confidential_token {
         emit_trivial_encrypt(
             &ctx.accounts.zama_event_authority,
             &ctx.accounts.zama_program,
-            fhe_authority,
+            compute_signer,
             amount_to_plaintext(amount),
             5,
             amount_handle,
@@ -118,44 +135,33 @@ pub mod confidential_token {
         emit_binary_op(
             &ctx.accounts.zama_event_authority,
             &ctx.accounts.zama_program,
+            &ctx.accounts.compute_signer,
             ctx.accounts.current_compute_acl.to_account_info(),
-            token_account_key,
             FheBinaryOpCode::Add,
-            fhe_authority,
             token_account.balance_handle,
             ctx.accounts.amount_compute_acl.to_account_info(),
-            ctx.accounts.owner.key(),
             amount_handle,
             new_balance_handle,
+            mint.key(),
+            ctx.bumps.compute_signer,
         )?;
         bind_token_account_acl(
             &ctx.accounts.owner,
+            mint,
+            &ctx.accounts.compute_signer,
             &ctx.accounts.token_account,
-            ctx.accounts.owner_output_acl.to_account_info(),
+            ctx.accounts.output_acl.to_account_info(),
             &ctx.accounts.zama_event_authority,
             &ctx.accounts.zama_program,
             &ctx.accounts.system_program,
-            nonce,
+            nonce_sequence,
             new_balance_handle,
-            token_account.owner,
-            AclPermission::UserDecrypt,
-        )?;
-        bind_token_account_acl(
-            &ctx.accounts.owner,
-            &ctx.accounts.token_account,
-            ctx.accounts.compute_output_acl.to_account_info(),
-            &ctx.accounts.zama_event_authority,
-            &ctx.accounts.zama_program,
-            &ctx.accounts.system_program,
-            nonce,
-            new_balance_handle,
-            fhe_authority,
-            AclPermission::Compute,
         )?;
 
         let token_account = &mut ctx.accounts.token_account;
         token_account.balance_handle = new_balance_handle;
-        token_account.next_acl_nonce = nonce
+        token_account.balance_acl_record = ctx.accounts.output_acl.key();
+        token_account.next_balance_nonce_sequence = nonce_sequence
             .checked_add(1)
             .ok_or(ConfidentialTokenError::AclNonceOverflow)?;
         Ok(())
@@ -168,13 +174,11 @@ pub mod confidential_token {
         new_to_handle: [u8; 32],
     ) -> Result<()> {
         let mint = &ctx.accounts.mint;
-        let from_key = ctx.accounts.from_account.key();
-        let to_key = ctx.accounts.to_account.key();
         let from = &ctx.accounts.from_account;
         let to = &ctx.accounts.to_account;
-        let from_nonce = from.next_acl_nonce;
-        let to_nonce = to.next_acl_nonce;
-        let fhe_authority = mint.fhe_authority;
+        let from_nonce_sequence = from.next_balance_nonce_sequence;
+        let to_nonce_sequence = to.next_balance_nonce_sequence;
+        let compute_signer = mint.compute_signer;
 
         require_keys_eq!(
             from.owner,
@@ -183,92 +187,75 @@ pub mod confidential_token {
         );
         require_keys_eq!(from.mint, mint.key(), ConfidentialTokenError::MintMismatch);
         require_keys_eq!(to.mint, mint.key(), ConfidentialTokenError::MintMismatch);
+        require_keys_eq!(
+            ctx.accounts.compute_signer.key(),
+            compute_signer,
+            ConfidentialTokenError::ComputeSignerMismatch
+        );
 
         emit_binary_op(
             &ctx.accounts.zama_event_authority,
             &ctx.accounts.zama_program,
+            &ctx.accounts.compute_signer,
             ctx.accounts.from_current_compute_acl.to_account_info(),
-            from_key,
             FheBinaryOpCode::Sub,
-            fhe_authority,
             from.balance_handle,
             ctx.accounts.amount_compute_acl.to_account_info(),
-            ctx.accounts.owner.key(),
             amount_handle,
             new_from_handle,
+            mint.key(),
+            ctx.bumps.compute_signer,
         )?;
         emit_binary_op(
             &ctx.accounts.zama_event_authority,
             &ctx.accounts.zama_program,
+            &ctx.accounts.compute_signer,
             ctx.accounts.to_current_compute_acl.to_account_info(),
-            to_key,
             FheBinaryOpCode::Add,
-            fhe_authority,
             to.balance_handle,
             ctx.accounts.amount_compute_acl.to_account_info(),
-            ctx.accounts.owner.key(),
             amount_handle,
             new_to_handle,
+            mint.key(),
+            ctx.bumps.compute_signer,
         )?;
 
         bind_token_account_acl(
             &ctx.accounts.owner,
+            mint,
+            &ctx.accounts.compute_signer,
             &ctx.accounts.from_account,
-            ctx.accounts.from_owner_output_acl.to_account_info(),
+            ctx.accounts.from_output_acl.to_account_info(),
             &ctx.accounts.zama_event_authority,
             &ctx.accounts.zama_program,
             &ctx.accounts.system_program,
-            from_nonce,
+            from_nonce_sequence,
             new_from_handle,
-            from.owner,
-            AclPermission::UserDecrypt,
         )?;
         bind_token_account_acl(
             &ctx.accounts.owner,
-            &ctx.accounts.from_account,
-            ctx.accounts.from_compute_output_acl.to_account_info(),
-            &ctx.accounts.zama_event_authority,
-            &ctx.accounts.zama_program,
-            &ctx.accounts.system_program,
-            from_nonce,
-            new_from_handle,
-            fhe_authority,
-            AclPermission::Compute,
-        )?;
-        bind_token_account_acl(
-            &ctx.accounts.owner,
+            mint,
+            &ctx.accounts.compute_signer,
             &ctx.accounts.to_account,
-            ctx.accounts.to_owner_output_acl.to_account_info(),
+            ctx.accounts.to_output_acl.to_account_info(),
             &ctx.accounts.zama_event_authority,
             &ctx.accounts.zama_program,
             &ctx.accounts.system_program,
-            to_nonce,
+            to_nonce_sequence,
             new_to_handle,
-            to.owner,
-            AclPermission::UserDecrypt,
-        )?;
-        bind_token_account_acl(
-            &ctx.accounts.owner,
-            &ctx.accounts.to_account,
-            ctx.accounts.to_compute_output_acl.to_account_info(),
-            &ctx.accounts.zama_event_authority,
-            &ctx.accounts.zama_program,
-            &ctx.accounts.system_program,
-            to_nonce,
-            new_to_handle,
-            fhe_authority,
-            AclPermission::Compute,
         )?;
 
         let from = &mut ctx.accounts.from_account;
         from.balance_handle = new_from_handle;
-        from.next_acl_nonce = from_nonce
+        from.balance_acl_record = ctx.accounts.from_output_acl.key();
+        from.next_balance_nonce_sequence = from_nonce_sequence
             .checked_add(1)
             .ok_or(ConfidentialTokenError::AclNonceOverflow)?;
 
         let to = &mut ctx.accounts.to_account;
         to.balance_handle = new_to_handle;
-        to.next_acl_nonce = to_nonce
+        to.balance_acl_record = ctx.accounts.to_output_acl.key();
+        to.next_balance_nonce_sequence = to_nonce_sequence
             .checked_add(1)
             .ok_or(ConfidentialTokenError::AclNonceOverflow)?;
         Ok(())
@@ -306,6 +293,10 @@ pub struct AuthorizeBalanceAcl<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
     pub mint: Account<'info, ConfidentialMint>,
+    /// CHECK: Program-controlled compute signer PDA.
+    #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
+    pub compute_signer: UncheckedAccount<'info>,
+    #[account(mut)]
     pub token_account: Account<'info, ConfidentialTokenAccount>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
@@ -339,14 +330,14 @@ pub struct WrapUsdc<'info> {
     /// CHECK: PDA authority for the underlying-token vault.
     #[account(seeds = [b"vault-authority", mint.key().as_ref()], bump)]
     pub vault_authority: UncheckedAccount<'info>,
+    /// CHECK: Program-controlled compute signer PDA.
+    #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
+    pub compute_signer: UncheckedAccount<'info>,
     pub current_compute_acl: Account<'info, zama_host::AclRecord>,
     pub amount_compute_acl: Account<'info, zama_host::AclRecord>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
-    pub owner_output_acl: UncheckedAccount<'info>,
-    /// CHECK: initialized and validated by the Zama host program CPI.
-    #[account(mut)]
-    pub compute_output_acl: UncheckedAccount<'info>,
+    pub output_acl: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     pub zama_program: Program<'info, ZamaHost>,
@@ -363,21 +354,18 @@ pub struct ConfidentialTransfer<'info> {
     pub from_account: Account<'info, ConfidentialTokenAccount>,
     #[account(mut)]
     pub to_account: Account<'info, ConfidentialTokenAccount>,
+    /// CHECK: Program-controlled compute signer PDA.
+    #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
+    pub compute_signer: UncheckedAccount<'info>,
     pub from_current_compute_acl: Account<'info, zama_host::AclRecord>,
     pub to_current_compute_acl: Account<'info, zama_host::AclRecord>,
     pub amount_compute_acl: Account<'info, zama_host::AclRecord>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
-    pub from_owner_output_acl: UncheckedAccount<'info>,
+    pub from_output_acl: UncheckedAccount<'info>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
-    pub from_compute_output_acl: UncheckedAccount<'info>,
-    /// CHECK: initialized and validated by the Zama host program CPI.
-    #[account(mut)]
-    pub to_owner_output_acl: UncheckedAccount<'info>,
-    /// CHECK: initialized and validated by the Zama host program CPI.
-    #[account(mut)]
-    pub to_compute_output_acl: UncheckedAccount<'info>,
+    pub to_output_acl: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     pub zama_program: Program<'info, ZamaHost>,
@@ -387,13 +375,14 @@ pub struct ConfidentialTransfer<'info> {
 #[account]
 pub struct ConfidentialMint {
     pub authority: Pubkey,
-    pub fhe_authority: Pubkey,
+    pub acl_domain_key: Pubkey,
+    pub compute_signer: Pubkey,
     pub underlying_mint: Pubkey,
     pub decimals: u8,
 }
 
 impl ConfidentialMint {
-    pub const SPACE: usize = 32 + 32 + 32 + 1;
+    pub const SPACE: usize = 32 + 32 + 32 + 32 + 1;
 }
 
 #[account]
@@ -401,12 +390,13 @@ pub struct ConfidentialTokenAccount {
     pub owner: Pubkey,
     pub mint: Pubkey,
     pub balance_handle: [u8; 32],
-    pub next_acl_nonce: u64,
+    pub balance_acl_record: Pubkey,
+    pub next_balance_nonce_sequence: u64,
     pub bump: u8,
 }
 
 impl ConfidentialTokenAccount {
-    pub const SPACE: usize = 32 + 32 + 32 + 8 + 1;
+    pub const SPACE: usize = 32 + 32 + 32 + 32 + 8 + 1;
 }
 
 #[error_code]
@@ -421,11 +411,15 @@ pub enum ConfidentialTokenError {
     UnderlyingMintMismatch,
     #[msg("Vault token account authority does not match vault authority PDA")]
     VaultAuthorityMismatch,
+    #[msg("Confidential mint ACL domain key is invalid")]
+    AclDomainKeyMismatch,
+    #[msg("Compute signer does not match confidential mint")]
+    ComputeSignerMismatch,
 }
 
-fn current_acl_nonce(token_account: &ConfidentialTokenAccount) -> Result<u64> {
+fn current_balance_nonce_sequence(token_account: &ConfidentialTokenAccount) -> Result<u64> {
     token_account
-        .next_acl_nonce
+        .next_balance_nonce_sequence
         .checked_sub(1)
         .ok_or(ConfidentialTokenError::AclNonceOverflow.into())
 }
@@ -433,31 +427,32 @@ fn current_acl_nonce(token_account: &ConfidentialTokenAccount) -> Result<u64> {
 fn emit_binary_op<'info>(
     zama_event_authority: &UncheckedAccount<'info>,
     zama_program: &Program<'info, ZamaHost>,
+    compute_signer: &UncheckedAccount<'info>,
     lhs_acl_record: AccountInfo<'info>,
-    lhs_scope: Pubkey,
     op: FheBinaryOpCode,
-    subject: Pubkey,
     lhs: [u8; 32],
     rhs_acl_record: AccountInfo<'info>,
-    rhs_scope: Pubkey,
     rhs: [u8; 32],
     result: [u8; 32],
+    mint: Pubkey,
+    compute_signer_bump: u8,
 ) -> Result<()> {
+    let bump = [compute_signer_bump];
+    let signer_seeds: &[&[&[u8]]] = &[&[b"fhe-compute", mint.as_ref(), &bump]];
     cpi::fhe_binary_op(
-        CpiContext::new(
+        CpiContext::new_with_signer(
             zama_program.to_account_info(),
             FheBinaryOp {
+                compute_subject: compute_signer.to_account_info(),
                 lhs_acl_record,
                 rhs_acl_record,
                 event_authority: zama_event_authority.to_account_info(),
                 program: zama_program.to_account_info(),
             },
+            signer_seeds,
         ),
         op,
-        subject,
-        lhs_scope,
         lhs,
-        rhs_scope,
         rhs,
         false,
         result,
@@ -495,16 +490,18 @@ fn amount_to_plaintext(amount: u64) -> [u8; 32] {
 
 fn bind_token_account_acl<'info>(
     payer: &Signer<'info>,
+    mint: &Account<'info, ConfidentialMint>,
+    compute_signer: &UncheckedAccount<'info>,
     token_account: &Account<'info, ConfidentialTokenAccount>,
     acl_record: AccountInfo<'info>,
     zama_event_authority: &UncheckedAccount<'info>,
     zama_program: &Program<'info, ZamaHost>,
     system_program: &Program<'info, System>,
-    acl_nonce: u64,
+    nonce_sequence: u64,
     handle: [u8; 32],
-    subject: Pubkey,
-    permission: AclPermission,
 ) -> Result<()> {
+    let token_account_key = token_account.key();
+    let nonce_key = balance_nonce_key(mint.key(), token_account_key);
     let bump = [token_account.bump];
     let signer_seeds: &[&[&[u8]]] = &[&[
         b"token-account",
@@ -517,7 +514,7 @@ fn bind_token_account_acl<'info>(
             zama_program.to_account_info(),
             BindAclRecord {
                 payer: payer.to_account_info(),
-                scope_authority: token_account.to_account_info(),
+                app_account_authority: token_account.to_account_info(),
                 acl_record,
                 system_program: system_program.to_account_info(),
                 event_authority: zama_event_authority.to_account_info(),
@@ -525,10 +522,50 @@ fn bind_token_account_acl<'info>(
             },
             signer_seeds,
         ),
-        acl_nonce,
-        token_account.key(),
+        nonce_key,
+        nonce_sequence,
+        mint.key(),
+        token_account_key,
+        balance_label(),
         handle,
-        subject,
-        permission,
+        vec![
+            AclSubjectEntry {
+                pubkey: token_account.owner,
+                permission: AclPermission::UserDecrypt,
+            },
+            AclSubjectEntry {
+                pubkey: compute_signer.key(),
+                permission: AclPermission::Compute,
+            },
+        ],
+        false,
     )
+}
+
+pub fn compute_signer_address(mint: Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[b"fhe-compute", mint.as_ref()], &crate::ID)
+}
+
+pub fn balance_nonce_key(acl_domain_key: Pubkey, app_account: Pubkey) -> [u8; 32] {
+    nonce_key(acl_domain_key, app_account, balance_label())
+}
+
+pub fn balance_label() -> [u8; 32] {
+    *b"balance_________________________"
+}
+
+pub fn nonce_key(
+    acl_domain_key: Pubkey,
+    app_account: Pubkey,
+    encrypted_value_label: [u8; 32],
+) -> [u8; 32] {
+    use anchor_lang::solana_program::hash::hashv;
+
+    hashv(&[
+        b"zama-acl-nonce-key-v1",
+        acl_domain_key.as_ref(),
+        app_account.as_ref(),
+        &encrypted_value_label,
+    ])
+    .to_bytes()
 }
