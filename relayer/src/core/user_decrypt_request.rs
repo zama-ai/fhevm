@@ -5,7 +5,8 @@ use sha2::{Digest, Sha256};
 impl ContentHasher for UserDecryptRequest {
     /// Content hash used for dedup of in-flight requests.
     ///
-    /// Bit-identical to the pre-refactor hash for each v2 dialect:
+    /// Bit-identical to the pre-refactor hash for each legacy EIP-712
+    /// attestation type:
     /// - LegacyDirect: contract_addresses / contracts_chain_id /
     ///   ct_handle_contract_pairs / extra_data / public_key /
     ///   user_address (in that order). Same as the original
@@ -15,8 +16,8 @@ impl ContentHasher for UserDecryptRequest {
     ///   delegator_address / delegate_address. Same as the original
     ///   `DelegatedUserDecryptRequest` impl.
     /// - Eip712UnifiedV1: a `variant:eip712_unified_v1` prefix plus the
-    ///   variant-specific fields so v3 requests for the same handle set
-    ///   produce distinct dedup keys from v2 ones.
+    ///   variant-specific fields so unified-EIP-712 requests for the
+    ///   same handle set produce distinct dedup keys from legacy ones.
     ///
     /// `signature` and the validity-window fields are excluded — they're
     /// consumed on-chain prior to receiving a decryption-id and shouldn't
