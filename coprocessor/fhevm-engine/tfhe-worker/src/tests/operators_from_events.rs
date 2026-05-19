@@ -444,7 +444,7 @@ fn unary_op_to_event(
 
 fn multi_output_op_to_event(
     op: &MultiOutputOperatorTestCase,
-    input: &Handle,
+    inputs: &[Handle],
     results: &[Handle],
 ) -> TfheContractEvents {
     use fhevm_engine_common::types::SupportedFheOperations as S;
@@ -452,20 +452,21 @@ fn multi_output_op_to_event(
     use host_listener::contracts::TfheContract::TfheContractEvents as E;
 
     let caller = zero_address();
-    let input = *input;
 
     match S::try_from(op.operand).unwrap() {
         S::FheSampleMultiOutput => E::FheSampleMultiOutput(C::FheSampleMultiOutput {
             caller,
-            ct: input,
+            ct: inputs[0],
             resultValue: results[0],
             resultFound: results[1],
         }),
-        S::FheSampleMultiOutput100 => E::FheSampleMultiOutput100(C::FheSampleMultiOutput100 {
-            caller,
-            ct: input,
-            results: results.to_vec(),
-        }),
+        S::FheSampleVariableInputOutput => {
+            E::FheSampleVariableInputOutput(C::FheSampleVariableInputOutput {
+                caller,
+                cts: inputs.to_vec(),
+                results: results.to_vec(),
+            })
+        }
         _ => panic!("unknown multi-output operation: {:?}", op.operand),
     }
 }
@@ -571,7 +572,9 @@ async fn test_fhe_multi_output_operands_events() -> Result<(), Box<dyn std::erro
         if op.bits > 256 {
             continue;
         }
-        let input_handle = next_handle_with_type(op.operand_types);
+        let input_handles: Vec<Handle> = (0..op.inps.len())
+            .map(|_| next_handle_with_type(op.operand_types))
+            .collect();
         let result_handles: Vec<Handle> = op
             .expected_outputs
             .iter()
@@ -579,35 +582,37 @@ async fn test_fhe_multi_output_operands_events() -> Result<(), Box<dyn std::erro
             .collect();
         let transaction_id = next_handle();
 
-        let inp_bytes = as_scalar_uint(&op.inp);
-
         println!(
-            "Operations for multi-output test bits:{} op:{} input:{} outputs:{}",
+            "Operations for multi-output test bits:{} op:{} inputs:{} outputs:{}",
             op.bits,
             op.operand,
-            op.inp,
+            op.inps.len(),
             result_handles.len()
         );
 
         let caller = zero_address();
 
         let mut tx = listener_db.new_transaction().await?;
-        insert_event(
-            &listener_db,
-            &mut tx,
-            transaction_id,
-            TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
-                caller,
-                pt: inp_bytes,
-                toType: to_ty(op.operand_types),
-                result: input_handle,
-            }),
-            true,
-        )
-        .await?;
-        allow_handle(&listener_db, &mut tx, &input_handle).await?;
+        // Emit one TrivialEncrypt per input.
+        for (inp_value, inp_handle) in op.inps.iter().zip(input_handles.iter()) {
+            let inp_bytes = as_scalar_uint(inp_value);
+            insert_event(
+                &listener_db,
+                &mut tx,
+                transaction_id,
+                TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                    caller,
+                    pt: inp_bytes,
+                    toType: to_ty(op.operand_types),
+                    result: *inp_handle,
+                }),
+                true,
+            )
+            .await?;
+            allow_handle(&listener_db, &mut tx, inp_handle).await?;
+        }
 
-        let op_event = multi_output_op_to_event(op, &input_handle, &result_handles);
+        let op_event = multi_output_op_to_event(op, &input_handles, &result_handles);
         insert_event(&listener_db, &mut tx, transaction_id, op_event, true).await?;
         for h in &result_handles {
             allow_handle(&listener_db, &mut tx, h).await?;

@@ -613,9 +613,10 @@ impl Database {
                 &NO_SCALAR,
             ).await,
 
-            E::FheSampleMultiOutput100(C::FheSampleMultiOutput100 { ct, results, .. }) => {
+            E::FheSampleVariableInputOutput(C::FheSampleVariableInputOutput { cts, results, .. }) => {
                 let result_refs: Vec<&Handle> = results.iter().collect();
-                insert_multi_output_computation(tx, &result_refs, &[ct], &NO_SCALAR).await
+                let dep_refs: Vec<&Handle> = cts.iter().collect();
+                insert_multi_output_computation(tx, &result_refs, &dep_refs, &NO_SCALAR).await
             }
 
             | E::Initialized(_)
@@ -1254,7 +1255,9 @@ fn event_to_op_int(op: &TfheContractEvents) -> FheOperation {
         E::FheIsIn(_) => O::FheIsIn as i32,
         E::FheMulDiv(_) => O::FheMulDiv as i32,
         E::FheSampleMultiOutput(_) => O::FheSampleMultiOutput as i32,
-        E::FheSampleMultiOutput100(_) => O::FheSampleMultiOutput100 as i32,
+        E::FheSampleVariableInputOutput(_) => {
+            O::FheSampleVariableInputOutput as i32
+        }
         // Not tfhe ops
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => -1,
     }
@@ -1294,7 +1297,7 @@ pub fn event_name(op: &TfheContractEvents) -> &'static str {
         E::FheIsIn(_) => "FheIsIn",
         E::FheMulDiv(_) => "FheMulDiv",
         E::FheSampleMultiOutput(_) => "FheSampleMultiOutput",
-        E::FheSampleMultiOutput100(_) => "FheSampleMultiOutput100",
+        E::FheSampleVariableInputOutput(_) => "FheSampleVariableInputOutput",
         E::Initialized(_) => "Initialized",
         E::Upgraded(_) => "Upgraded",
         E::VerifyInput(_) => "VerifyInput",
@@ -1341,7 +1344,7 @@ pub fn tfhe_result_handles(op: &TfheContractEvents) -> Vec<Handle> {
             resultFound,
             ..
         }) => vec![*resultValue, *resultFound],
-        E::FheSampleMultiOutput100(C::FheSampleMultiOutput100 {
+        E::FheSampleVariableInputOutput(C::FheSampleVariableInputOutput {
             results,
             ..
         }) => results.clone(),
@@ -1538,10 +1541,14 @@ pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
             }
         }
 
-        E::FheSampleMultiOutput(C::FheSampleMultiOutput { ct, .. })
-        | E::FheSampleMultiOutput100(C::FheSampleMultiOutput100 {
-            ct, ..
-        }) => vec![*ct],
+        E::FheSampleMultiOutput(C::FheSampleMultiOutput { ct, .. }) => {
+            vec![*ct]
+        }
+
+        E::FheSampleVariableInputOutput(C::FheSampleVariableInputOutput {
+            cts,
+            ..
+        }) => cts.clone(),
 
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
     }

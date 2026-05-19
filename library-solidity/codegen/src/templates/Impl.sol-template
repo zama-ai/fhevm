@@ -123,12 +123,12 @@ interface IFHEVMExecutor {
     function fheSampleMultiOutput(bytes32 ct) external returns (bytes32 resultValue, bytes32 resultFound);
 
     /**
-     * @notice                  High-arity sample multi-output op (stress test).
-     *                          Returns 100 handles derived from one base hash.
-     * @param ct                Ciphertext input.
-     * @return results          Output handles 0..99 (each = `ct + (i + 1)`).
+     * @notice                  Variable-input sample multi-output op (POC).
+     *                          Takes N inputs of the same FHE type, returns 2 handles.
+     * @param cts               Array of ciphertext inputs (length N >= 1, all same type).
+     * @return results          Output handles 0..1 (each = `cts[i % N] + (i + 1)`).
      */
-    function fheSampleMultiOutput100(bytes32 ct) external returns (bytes32[] memory results);
+    function fheSampleVariableInputOutput(bytes32[] calldata cts) external returns (bytes32[] memory results);
 
     /**
      * @notice                      Returns the address of the InputVerifier contract used by the coprocessor.
@@ -311,9 +311,9 @@ library Impl {
         (resultValue, resultFound) = IFHEVMExecutor($.CoprocessorAddress).fheSampleMultiOutput(ct);
     }
 
-    function sampleMultiOutput100(bytes32 ct) internal returns (bytes32[] memory results) {
+    function sampleVariableInputOutput(bytes32[] memory cts) internal returns (bytes32[] memory results) {
         CoprocessorConfig storage $ = getCoprocessorConfig();
-        results = IFHEVMExecutor($.CoprocessorAddress).fheSampleMultiOutput100(ct);
+        results = IFHEVMExecutor($.CoprocessorAddress).fheSampleVariableInputOutput(cts);
     }
 
     /**

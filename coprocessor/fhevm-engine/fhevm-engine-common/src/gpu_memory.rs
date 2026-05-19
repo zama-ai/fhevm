@@ -1951,15 +1951,21 @@ pub fn get_op_size_on_gpu(
                 }),
             }
         }
-        // FheSampleMultiOutput100 = 100x (a + i); peak holds all 100 outputs before compression.
-        SupportedFheOperations::FheSampleMultiOutput100 => {
-            assert_eq!(input_operands.len(), 1);
+        // FheSampleVariableInputOutput: peak = 2*N scalar adds (M = 2*N).
+        SupportedFheOperations::FheSampleVariableInputOutput => {
+            if input_operands.is_empty() {
+                return Err(FhevmError::UnsupportedFheTypes {
+                    fhe_operation: format!("{:?}", fhe_operation),
+                    input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                });
+            }
+            let m = input_operands.len() * 2;
             match &input_operands[0] {
-                SupportedFheCiphertexts::FheUint8(a) => Ok(100 * a.get_add_size_on_gpu(1u8)),
-                SupportedFheCiphertexts::FheUint16(a) => Ok(100 * a.get_add_size_on_gpu(1u16)),
-                SupportedFheCiphertexts::FheUint32(a) => Ok(100 * a.get_add_size_on_gpu(1u32)),
-                SupportedFheCiphertexts::FheUint64(a) => Ok(100 * a.get_add_size_on_gpu(1u64)),
-                SupportedFheCiphertexts::FheUint128(a) => Ok(100 * a.get_add_size_on_gpu(1u128)),
+                SupportedFheCiphertexts::FheUint8(a) => Ok(m * a.get_add_size_on_gpu(1u8)),
+                SupportedFheCiphertexts::FheUint16(a) => Ok(m * a.get_add_size_on_gpu(1u16)),
+                SupportedFheCiphertexts::FheUint32(a) => Ok(m * a.get_add_size_on_gpu(1u32)),
+                SupportedFheCiphertexts::FheUint64(a) => Ok(m * a.get_add_size_on_gpu(1u64)),
+                SupportedFheCiphertexts::FheUint128(a) => Ok(m * a.get_add_size_on_gpu(1u128)),
                 _ => Err(FhevmError::UnsupportedFheTypes {
                     fhe_operation: format!("{:?}", fhe_operation),
                     input_types: input_operands.iter().map(|i| i.type_name()).collect(),

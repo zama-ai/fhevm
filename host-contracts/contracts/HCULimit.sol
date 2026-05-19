@@ -1687,35 +1687,33 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
-     * @notice HCU check for the high-arity sample multi-output op (100 outputs).
-     *
-     *         On-chain this is a single dispatch — one event, one row group —
-     *         so the HCU cost is sized like a single FHE dispatch rather than
-     *         100x. The coprocessor-side cost of running the 100 internal
-     *         additions does not multiply the per-tx HCU depth budget.
+     * @notice HCU check for the variable-input sample multi-output op.
+     *         Scales linearly with the number of inputs N (one base cost + per-input cost).
      */
-    function checkHCUForFheSampleMultiOutput100(
+    function checkHCUForFheSampleVariableInputOutput(
         FheType inputType,
-        bytes32 ct,
+        bytes32[] memory cts,
         bytes32[] memory results,
         address caller
     ) external virtual {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
-        uint256 opHCU;
+        uint256 baseHCU;
         if (inputType == FheType.Uint8) {
-            opHCU = 200000;
+            baseHCU = 160000;
         } else if (inputType == FheType.Uint16) {
-            opHCU = 250000;
+            baseHCU = 186000;
         } else if (inputType == FheType.Uint32) {
-            opHCU = 300000;
+            baseHCU = 190000;
         } else if (inputType == FheType.Uint64) {
-            opHCU = 400000;
+            baseHCU = 262000;
         } else if (inputType == FheType.Uint128) {
-            opHCU = 500000;
+            baseHCU = 336000;
         } else {
             revert UnsupportedOperation();
         }
-        _adjustAndCheckFheTransactionLimitOneOpMultiResult(opHCU, caller, ct, results);
+        // Per-input cost is half the base — keeps total bounded for moderate N.
+        uint256 opHCU = baseHCU + (baseHCU / 2) * cts.length;
+        _adjustAndCheckFheTransactionLimitVarInMultiResult(opHCU, caller, cts, results);
     }
 
     /**
@@ -1797,6 +1795,37 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         _updateAndVerifyHCUTransactionLimit(opHCU, caller);
 
         uint256 totalHCU = opHCU + _getHCUForHandle(op1);
+        if (totalHCU > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
+            revert HCUTransactionDepthLimitExceeded();
+        }
+
+        for (uint256 i = 0; i < results.length; i++) {
+            _setHCUForHandle(results[i], totalHCU);
+        }
+    }
+
+    /**
+     * @notice Adjusts the sequential HCU for a multi-output op with variable input count.
+     *         The op HCU is charged once at the transaction level (one FHE call),
+     *         and the depth HCU is recorded on every output handle. The per-handle
+     *         depth uses the max depth across all inputs.
+     */
+    function _adjustAndCheckFheTransactionLimitVarInMultiResult(
+        uint256 opHCU,
+        address caller,
+        bytes32[] memory ops,
+        bytes32[] memory results
+    ) internal virtual {
+        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
+
+        uint256 maxInputHCU = 0;
+        for (uint256 i = 0; i < ops.length; i++) {
+            uint256 h = _getHCUForHandle(ops[i]);
+            if (h > maxInputHCU) {
+                maxInputHCU = h;
+            }
+        }
+        uint256 totalHCU = opHCU + maxInputHCU;
         if (totalHCU > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
             revert HCUTransactionDepthLimitExceeded();
         }

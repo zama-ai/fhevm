@@ -412,8 +412,9 @@ pub enum SupportedFheOperations {
     FheGetInputCiphertext = 32,
     // POC multi-output op: returns (input + 1, input != 0).
     FheSampleMultiOutput = 33,
-    // POC multi-output op: returns 100 outputs, output[i] = input + (i + 1).
-    FheSampleMultiOutput100 = 34,
+    // POC multi-output op: N inputs (variable) -> 100 outputs.
+    // Stresses variable fan-in + large fan-out. results[i] = inputs[i % N] + (i + 1) for i in 0..100.
+    FheSampleVariableInputOutput = 35,
 }
 
 #[derive(PartialEq, Eq)]
@@ -877,8 +878,7 @@ impl SupportedFheOperations {
             | SupportedFheOperations::FheMax => FheOperationType::Binary,
             SupportedFheOperations::FheNot
             | SupportedFheOperations::FheNeg
-            | SupportedFheOperations::FheSampleMultiOutput
-            | SupportedFheOperations::FheSampleMultiOutput100 => FheOperationType::Unary,
+            | SupportedFheOperations::FheSampleMultiOutput => FheOperationType::Unary,
             SupportedFheOperations::FheIfThenElse
             | SupportedFheOperations::FheCast
             | SupportedFheOperations::FheTrivialEncrypt
@@ -887,7 +887,8 @@ impl SupportedFheOperations {
             SupportedFheOperations::FheGetInputCiphertext => FheOperationType::Other,
             SupportedFheOperations::FheSum
             | SupportedFheOperations::FheIsIn
-            | SupportedFheOperations::FheMulDiv => FheOperationType::Other,
+            | SupportedFheOperations::FheMulDiv
+            | SupportedFheOperations::FheSampleVariableInputOutput => FheOperationType::Other,
         }
     }
 
@@ -928,17 +929,26 @@ impl SupportedFheOperations {
         }
     }
 
-    /// Number of outputs for multi-output ops; `None` for single-output ops.
+    /// Static output count for multi-output ops whose arity is known at compile time;
+    /// `None` for single-output ops AND for multi-output ops with dynamic arity
+    /// (where output count depends on the inputs — see `is_multi_output`).
     pub fn multi_output_arity(&self) -> Option<u8> {
         match self {
             SupportedFheOperations::FheSampleMultiOutput => Some(2),
-            SupportedFheOperations::FheSampleMultiOutput100 => Some(100),
             _ => None,
         }
     }
 
+    /// Whether this op produces multiple output ciphertexts. Includes both
+    /// static-arity multi-output ops (see `multi_output_arity`) and
+    /// dynamic-arity multi-output ops where the output count is derived from
+    /// the inputs at dispatch time.
     pub fn is_multi_output(&self) -> bool {
-        self.multi_output_arity().is_some()
+        matches!(
+            self,
+            SupportedFheOperations::FheSampleMultiOutput
+                | SupportedFheOperations::FheSampleVariableInputOutput
+        )
     }
 
     pub fn supports_bool_inputs(&self) -> bool {
@@ -987,7 +997,7 @@ impl SupportedFheOperations {
             | SupportedFheOperations::FheIsIn
             | SupportedFheOperations::FheMulDiv
             | SupportedFheOperations::FheSampleMultiOutput
-            | SupportedFheOperations::FheSampleMultiOutput100 => false,
+            | SupportedFheOperations::FheSampleVariableInputOutput => false,
         }
     }
 }
@@ -1029,7 +1039,7 @@ impl TryFrom<i16> for SupportedFheOperations {
             30 => Ok(SupportedFheOperations::FheMulDiv),
             32 => Ok(SupportedFheOperations::FheGetInputCiphertext),
             33 => Ok(SupportedFheOperations::FheSampleMultiOutput),
-            34 => Ok(SupportedFheOperations::FheSampleMultiOutput100),
+            35 => Ok(SupportedFheOperations::FheSampleVariableInputOutput),
             _ => Err(FhevmError::UnknownFheOperation(value as i32)),
         };
 

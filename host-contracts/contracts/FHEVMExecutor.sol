@@ -127,10 +127,11 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         ///      infrastructure. Takes 1 ciphertext, returns 2 handles
         ///      (value = input + 1; found = input != 0). Not a production op.
         fheSampleMultiOutput,
-        /// @dev High-arity sample multi-output op — stress test variant.
-        ///      Takes 1 ciphertext, returns 100 handles
-        ///      (output[i] = input + (i + 1) for i = 0..99). Not a production op.
-        fheSampleMultiOutput100
+        /// @dev Variable-input + variable-output sample multi-output op — output arity is
+        ///      derived from input arity by the op's rule (here M = 2*N).
+        ///      Takes N ciphertexts (N >= 1, all same FHE type), returns 2*N handles
+        ///      (output[i] = inputs[i % N] + (i + 1) for i = 0..2N-1). Not a production op.
+        fheSampleVariableInputOutput
     }
 
     /// @notice Name of the contract.
@@ -793,14 +794,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             )
         );
 
-        resultValue = _appendMetadataToPrehandle(
-            keccak256(abi.encodePacked(base, uint8(0))),
-            typeCt
-        );
-        resultFound = _appendMetadataToPrehandle(
-            keccak256(abi.encodePacked(base, uint8(1))),
-            FheType.Bool
-        );
+        resultValue = _appendMetadataToPrehandle(keccak256(abi.encodePacked(base, uint16(0))), typeCt);
+        resultFound = _appendMetadataToPrehandle(keccak256(abi.encodePacked(base, uint16(1))), FheType.Bool);
 
         ACL.allowTransient(resultValue, msg.sender);
         ACL.allowTransient(resultFound, msg.sender);
@@ -810,29 +805,34 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice              High-arity sample multi-output op — stress test variant.
-     *                      Produces 100 handles, each derived from one base hash
-     *                      with a one-byte index suffix.
-     * @dev                 Every output shares the input's type. Coprocessor
-     *                      computes `results[i] = ct + (i + 1)` for `i = 0..99`.
-     * @param ct            Ciphertext input.
-     * @return results      Output handles ordered by tfhe-rs result tuple index 0..99.
+     * @notice              Variable-input + variable-output sample multi-output op — proof-of-concept.
+     *                      Takes N ciphertexts (N >= 1, all same FHE type), produces M = 2*N outputs.
+     *                      Output arity is derived from input arity by the op's rule (M = 2*N here).
+     *                      Coprocessor computes `results[i] = cts[i % N] + (i + 1)` for `i = 0..2N-1`.
+     * @param cts           Array of ciphertext inputs (N >= 1).
+     * @return results      Output handles, length 2 * N.
      */
-    function fheSampleMultiOutput100(bytes32 ct) public virtual returns (bytes32[] memory results) {
+    function fheSampleVariableInputOutput(bytes32[] calldata cts) public virtual returns (bytes32[] memory results) {
+        // cts[0] below implicitly reverts (Panic 0x32) if cts is empty.
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
             (1 << uint8(FheType.Uint16)) +
             (1 << uint8(FheType.Uint32)) +
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
-        FheType typeCt = _verifyAndReturnType(ct, supportedTypes);
-
-        if (!ACL.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
+        FheType typeCt = _verifyAndReturnType(cts[0], supportedTypes);
+        for (uint256 j = 0; j < cts.length; ) {
+            if (_typeOf(cts[j]) != typeCt) revert UnsupportedType();
+            if (!ACL.isAllowed(cts[j], msg.sender)) revert ACLNotAllowed(cts[j], msg.sender);
+            unchecked {
+                ++j;
+            }
+        }
 
         bytes32 base = keccak256(
             abi.encodePacked(
                 COMPUTATION_DOMAIN_SEPARATOR,
-                Operators.fheSampleMultiOutput100,
-                ct,
+                Operators.fheSampleVariableInputOutput,
+                cts,
                 ACL,
                 block.chainid,
                 blockhash(block.number - 1),
@@ -840,17 +840,17 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             )
         );
 
-        results = new bytes32[](100);
-        for (uint8 i = 0; i < 100; i++) {
-            results[i] = _appendMetadataToPrehandle(
-                keccak256(abi.encodePacked(base, i)),
-                typeCt
-            );
+        results = new bytes32[](cts.length << 1);
+        for (uint256 i = 0; i < results.length; ) {
+            results[i] = _appendMetadataToPrehandle(keccak256(abi.encodePacked(base, uint16(i))), typeCt);
             ACL.allowTransient(results[i], msg.sender);
+            unchecked {
+                ++i;
+            }
         }
 
-        HCU_LIMIT.checkHCUForFheSampleMultiOutput100(typeCt, ct, results, msg.sender);
-        emit FheSampleMultiOutput100(msg.sender, ct, results);
+        HCU_LIMIT.checkHCUForFheSampleVariableInputOutput(typeCt, cts, results, msg.sender);
+        emit FheSampleVariableInputOutput(msg.sender, cts, results);
     }
 
     /**

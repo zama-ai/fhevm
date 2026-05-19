@@ -31,7 +31,7 @@ interface FHEEvents {
     event FheRotl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
     event FheRotr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
     event FheSampleMultiOutput(address indexed caller, bytes32 ct, bytes32 resultValue, bytes32 resultFound);
-    event FheSampleMultiOutput100(address indexed caller, bytes32 ct, bytes32[] results);
+    event FheSampleVariableInputOutput(address indexed caller, bytes32[] cts, bytes32[] results);
     event FheShl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
     event FheShr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
     event FheSub(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
@@ -966,7 +966,7 @@ interface FHEEvents {
   },
   {
     "type": "event",
-    "name": "FheSampleMultiOutput100",
+    "name": "FheSampleVariableInputOutput",
     "inputs": [
       {
         "name": "caller",
@@ -975,10 +975,10 @@ interface FHEEvents {
         "internalType": "address"
       },
       {
-        "name": "ct",
-        "type": "bytes32",
+        "name": "cts",
+        "type": "bytes32[]",
         "indexed": false,
-        "internalType": "bytes32"
+        "internalType": "bytes32[]"
       },
       {
         "name": "results",
@@ -4934,9 +4934,9 @@ event FheSampleMultiOutput(address indexed caller, bytes32 ct, bytes32 resultVal
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `FheSampleMultiOutput100(address,bytes32,bytes32[])` and selector `0xebc0da1fa868c15f4a6bb28b7ca2ed216b43d52eb73c56d0aea85dc4b692c59d`.
+    /**Event with signature `FheSampleVariableInputOutput(address,bytes32[],bytes32[])` and selector `0xa866f5e8adde1b02c243ccb6dcb5692d2d2097757ac82e924a178eee0d050e95`.
 ```solidity
-event FheSampleMultiOutput100(address indexed caller, bytes32 ct, bytes32[] results);
+event FheSampleVariableInputOutput(address indexed caller, bytes32[] cts, bytes32[] results);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -4945,11 +4945,13 @@ event FheSampleMultiOutput100(address indexed caller, bytes32 ct, bytes32[] resu
         clippy::style
     )]
     #[derive(Clone)]
-    pub struct FheSampleMultiOutput100 {
+    pub struct FheSampleVariableInputOutput {
         #[allow(missing_docs)]
         pub caller: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
-        pub ct: alloy::sol_types::private::FixedBytes<32>,
+        pub cts: alloy::sol_types::private::Vec<
+            alloy::sol_types::private::FixedBytes<32>,
+        >,
         #[allow(missing_docs)]
         pub results: alloy::sol_types::private::Vec<
             alloy::sol_types::private::FixedBytes<32>,
@@ -4964,9 +4966,11 @@ event FheSampleMultiOutput100(address indexed caller, bytes32 ct, bytes32[] resu
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[automatically_derived]
-        impl alloy_sol_types::SolEvent for FheSampleMultiOutput100 {
+        impl alloy_sol_types::SolEvent for FheSampleVariableInputOutput {
             type DataTuple<'a> = (
-                alloy::sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Array<
+                    alloy::sol_types::sol_data::FixedBytes<32>,
+                >,
                 alloy::sol_types::sol_data::Array<
                     alloy::sol_types::sol_data::FixedBytes<32>,
                 >,
@@ -4978,11 +4982,11 @@ event FheSampleMultiOutput100(address indexed caller, bytes32 ct, bytes32[] resu
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
-            const SIGNATURE: &'static str = "FheSampleMultiOutput100(address,bytes32,bytes32[])";
+            const SIGNATURE: &'static str = "FheSampleVariableInputOutput(address,bytes32[],bytes32[])";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                235u8, 192u8, 218u8, 31u8, 168u8, 104u8, 193u8, 95u8, 74u8, 107u8, 178u8,
-                139u8, 124u8, 162u8, 237u8, 33u8, 107u8, 67u8, 213u8, 46u8, 183u8, 60u8,
-                86u8, 208u8, 174u8, 168u8, 93u8, 196u8, 182u8, 146u8, 197u8, 157u8,
+                168u8, 102u8, 245u8, 232u8, 173u8, 222u8, 27u8, 2u8, 194u8, 67u8, 204u8,
+                182u8, 220u8, 181u8, 105u8, 45u8, 45u8, 32u8, 151u8, 117u8, 122u8, 200u8,
+                46u8, 146u8, 74u8, 23u8, 142u8, 238u8, 13u8, 5u8, 14u8, 149u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -4993,7 +4997,7 @@ event FheSampleMultiOutput100(address indexed caller, bytes32 ct, bytes32[] resu
             ) -> Self {
                 Self {
                     caller: topics.1,
-                    ct: data.0,
+                    cts: data.0,
                     results: data.1,
                 }
             }
@@ -5015,9 +5019,9 @@ event FheSampleMultiOutput100(address indexed caller, bytes32 ct, bytes32[] resu
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::FixedBytes<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self.ct),
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::FixedBytes<32>,
+                    > as alloy_sol_types::SolType>::tokenize(&self.cts),
                     <alloy::sol_types::sol_data::Array<
                         alloy::sol_types::sol_data::FixedBytes<32>,
                     > as alloy_sol_types::SolType>::tokenize(&self.results),
@@ -5045,7 +5049,7 @@ event FheSampleMultiOutput100(address indexed caller, bytes32 ct, bytes32[] resu
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for FheSampleMultiOutput100 {
+        impl alloy_sol_types::private::IntoLogData for FheSampleVariableInputOutput {
             fn to_log_data(&self) -> alloy_sol_types::private::LogData {
                 From::from(self)
             }
@@ -5054,10 +5058,10 @@ event FheSampleMultiOutput100(address indexed caller, bytes32 ct, bytes32[] resu
             }
         }
         #[automatically_derived]
-        impl From<&FheSampleMultiOutput100> for alloy_sol_types::private::LogData {
+        impl From<&FheSampleVariableInputOutput> for alloy_sol_types::private::LogData {
             #[inline]
             fn from(
-                this: &FheSampleMultiOutput100,
+                this: &FheSampleVariableInputOutput,
             ) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
@@ -5941,7 +5945,7 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
         #[allow(missing_docs)]
         FheSampleMultiOutput(FheSampleMultiOutput),
         #[allow(missing_docs)]
-        FheSampleMultiOutput100(FheSampleMultiOutput100),
+        FheSampleVariableInputOutput(FheSampleVariableInputOutput),
         #[allow(missing_docs)]
         FheShl(FheShl),
         #[allow(missing_docs)]
@@ -6045,6 +6049,11 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                 103u8, 199u8, 58u8, 209u8, 222u8, 131u8, 2u8, 119u8, 104u8, 192u8,
             ],
             [
+                168u8, 102u8, 245u8, 232u8, 173u8, 222u8, 27u8, 2u8, 194u8, 67u8, 204u8,
+                182u8, 220u8, 181u8, 105u8, 45u8, 45u8, 32u8, 151u8, 117u8, 122u8, 200u8,
+                46u8, 146u8, 74u8, 23u8, 142u8, 238u8, 13u8, 5u8, 14u8, 149u8,
+            ],
+            [
                 168u8, 182u8, 76u8, 163u8, 35u8, 196u8, 107u8, 232u8, 173u8, 64u8, 135u8,
                 244u8, 109u8, 133u8, 151u8, 108u8, 211u8, 171u8, 11u8, 218u8, 50u8,
                 225u8, 113u8, 168u8, 85u8, 10u8, 108u8, 155u8, 124u8, 81u8, 154u8, 138u8,
@@ -6114,11 +6123,6 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                 109u8, 120u8, 243u8, 72u8, 125u8, 101u8, 132u8, 134u8, 40u8, 114u8,
                 194u8, 159u8, 253u8, 63u8, 144u8, 115u8, 110u8, 233u8, 155u8, 115u8,
                 147u8,
-            ],
-            [
-                235u8, 192u8, 218u8, 31u8, 168u8, 104u8, 193u8, 95u8, 74u8, 107u8, 178u8,
-                139u8, 124u8, 162u8, 237u8, 33u8, 107u8, 67u8, 213u8, 46u8, 183u8, 60u8,
-                86u8, 208u8, 174u8, 168u8, 93u8, 196u8, 182u8, 146u8, 197u8, 157u8,
             ],
             [
                 248u8, 218u8, 251u8, 194u8, 205u8, 132u8, 94u8, 49u8, 220u8, 87u8, 46u8,
@@ -6266,13 +6270,13 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                         .map(Self::FheSampleMultiOutput)
                 }
                 Some(
-                    <FheSampleMultiOutput100 as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                    <FheSampleVariableInputOutput as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
                 ) => {
-                    <FheSampleMultiOutput100 as alloy_sol_types::SolEvent>::decode_raw_log(
+                    <FheSampleVariableInputOutput as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
                         )
-                        .map(Self::FheSampleMultiOutput100)
+                        .map(Self::FheSampleVariableInputOutput)
                 }
                 Some(<FheShl as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
                     <FheShl as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
@@ -6400,7 +6404,7 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                 Self::FheSampleMultiOutput(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::FheSampleMultiOutput100(inner) => {
+                Self::FheSampleVariableInputOutput(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::FheShl(inner) => {
@@ -6503,7 +6507,7 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                 Self::FheSampleMultiOutput(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
-                Self::FheSampleMultiOutput100(inner) => {
+                Self::FheSampleVariableInputOutput(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::FheShl(inner) => {
@@ -6812,11 +6816,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::Event<&P, FheSampleMultiOutput, N> {
             self.event_filter::<FheSampleMultiOutput>()
         }
-        ///Creates a new event filter for the [`FheSampleMultiOutput100`] event.
-        pub fn FheSampleMultiOutput100_filter(
+        ///Creates a new event filter for the [`FheSampleVariableInputOutput`] event.
+        pub fn FheSampleVariableInputOutput_filter(
             &self,
-        ) -> alloy_contract::Event<&P, FheSampleMultiOutput100, N> {
-            self.event_filter::<FheSampleMultiOutput100>()
+        ) -> alloy_contract::Event<&P, FheSampleVariableInputOutput, N> {
+            self.event_filter::<FheSampleVariableInputOutput>()
         }
         ///Creates a new event filter for the [`FheShl`] event.
         pub fn FheShl_filter(&self) -> alloy_contract::Event<&P, FheShl, N> {

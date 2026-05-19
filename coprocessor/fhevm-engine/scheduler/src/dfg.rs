@@ -921,20 +921,34 @@ mod multi_output_tests {
     }
 
     #[test]
-    fn high_arity_multi_output_op_registers_all_100_handles() {
-        let handles: Vec<Handle> = (0u8..100).map(h).collect();
-        let op = DFGOp {
-            output_handles: handles.clone(),
-            fhe_op: SupportedFheOperations::FheSampleMultiOutput100,
-            inputs: vec![],
+    fn variable_input_output_op_registers_all_inputs_as_dependencies() {
+        // Producers emit single outputs h(1)..h(3); consumer is a variable-input
+        // multi-output op taking all three as inputs and producing 2 outputs.
+        let producer_a = single_op(h(1));
+        let producer_b = single_op(h(2));
+        let producer_c = single_op(h(3));
+        let consumer = DFGOp {
+            output_handles: vec![h(10), h(11)],
+            fhe_op: SupportedFheOperations::FheSampleVariableInputOutput,
+            inputs: vec![
+                DFGTaskInput::Dependence(h(1)),
+                DFGTaskInput::Dependence(h(2)),
+                DFGTaskInput::Dependence(h(3)),
+            ],
             is_allowed: true,
         };
-        let (components, _) = build_component_nodes(vec![op], &h(0xff)).unwrap();
-        assert_eq!(components.len(), 1);
-        let c = &components[0];
-        assert_eq!(c.results.len(), 100);
-        for handle in handles {
-            assert!(c.results.contains(&handle));
+        let (components, _) =
+            build_component_nodes(vec![producer_a, producer_b, producer_c, consumer], &h(0xff))
+                .unwrap();
+        // All producer outputs and both consumer outputs must appear in some
+        // component's results — no handle lost.
+        let all_results: Vec<Handle> = components.iter().flat_map(|c| c.results.clone()).collect();
+        for handle in [h(1), h(2), h(3), h(10), h(11)] {
+            assert!(
+                all_results.contains(&handle),
+                "handle {:?} missing from results",
+                handle
+            );
         }
     }
 

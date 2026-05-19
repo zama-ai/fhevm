@@ -34,7 +34,7 @@ pub struct ExpectedOutput {
 
 pub struct MultiOutputOperatorTestCase {
     pub bits: i32,
-    pub inp: BigInt,
+    pub inps: Vec<BigInt>,
     pub operand: i32,
     pub operand_types: i32,
     pub expected_outputs: Vec<ExpectedOutput>,
@@ -254,10 +254,18 @@ const BOOL_DB_TYPE: i32 = 0;
 fn multi_output_supports_bits(op: SupportedFheOperations, bits: i32) -> bool {
     match op {
         SupportedFheOperations::FheSampleMultiOutput
-        | SupportedFheOperations::FheSampleMultiOutput100 => {
+        | SupportedFheOperations::FheSampleVariableInputOutput => {
             matches!(bits, 8 | 16 | 32 | 64 | 128)
         }
         _ => true,
+    }
+}
+
+// Input arity sweeps for variable-input ops. Single arity for fixed-input ops.
+fn multi_output_input_arities(op: SupportedFheOperations) -> &'static [usize] {
+    match op {
+        SupportedFheOperations::FheSampleVariableInputOutput => &[1, 3, 5],
+        _ => &[1],
     }
 }
 
@@ -272,21 +280,31 @@ pub fn generate_multi_output_test_cases() -> Vec<MultiOutputOperatorTestCase> {
             if !op.is_multi_output() || !multi_output_supports_bits(op, bits) {
                 continue;
             }
-            let inp = {
-                let mut res = BigInt::from(3);
-                res <<= shift_by;
-                res
-            };
             let operand_types = supported_bits_to_bit_type_in_db(bits);
-            let expected_outputs =
-                compute_expected_multi_output_outputs(&inp, op, operand_types, &max_bits_value);
-            cases.push(MultiOutputOperatorTestCase {
-                bits,
-                operand: op as i32,
-                operand_types,
-                inp,
-                expected_outputs,
-            });
+            let arities = multi_output_input_arities(op);
+
+            for n in arities {
+                let inps: Vec<BigInt> = (0..*n)
+                    .map(|i| {
+                        let mut res = BigInt::from(3 + (i as i64));
+                        res <<= shift_by;
+                        res
+                    })
+                    .collect();
+                let expected_outputs = compute_expected_multi_output_outputs(
+                    &inps,
+                    op,
+                    operand_types,
+                    &max_bits_value,
+                );
+                cases.push(MultiOutputOperatorTestCase {
+                    bits,
+                    operand: op as i32,
+                    operand_types,
+                    inps,
+                    expected_outputs,
+                });
+            }
         }
     }
 
@@ -294,13 +312,14 @@ pub fn generate_multi_output_test_cases() -> Vec<MultiOutputOperatorTestCase> {
 }
 
 fn compute_expected_multi_output_outputs(
-    inp: &BigInt,
+    inps: &[BigInt],
     op: SupportedFheOperations,
     operand_types: i32,
     max_bits_value: &BigInt,
 ) -> Vec<ExpectedOutput> {
     match op {
         SupportedFheOperations::FheSampleMultiOutput => {
+            let inp = &inps[0];
             let found = if *inp == BigInt::from(0) {
                 BigInt::from(0)
             } else {
@@ -317,12 +336,16 @@ fn compute_expected_multi_output_outputs(
                 },
             ]
         }
-        SupportedFheOperations::FheSampleMultiOutput100 => (1..=100i64)
-            .map(|i| ExpectedOutput {
-                value: (inp + i) & max_bits_value,
-                fhe_type: operand_types,
-            })
-            .collect(),
+        SupportedFheOperations::FheSampleVariableInputOutput => {
+            // M = 2*N: results[i] = inps[i % N] + (i + 1) for i in 0..2N
+            let n = inps.len();
+            (0..(n * 2))
+                .map(|i| ExpectedOutput {
+                    value: (&inps[i % n] + (i as i64 + 1)) & max_bits_value,
+                    fhe_type: operand_types,
+                })
+                .collect()
+        }
         other => panic!("unsupported multi-output operation: {:?}", other),
     }
 }
