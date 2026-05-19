@@ -9,6 +9,7 @@ import {
   CiphertextCommits,
   Decryption,
   Decryption__factory,
+  GatewayConfig,
   IDecryption,
   ProtocolPayment,
   ZamaOFT,
@@ -167,6 +168,8 @@ describe("Decryption", function () {
   describe("Public Decryption", function () {
     let ciphertextCommits: CiphertextCommits;
     let decryption: Decryption;
+    let gatewayConfig: GatewayConfig;
+    let owner: Wallet;
     let protocolPayment: ProtocolPayment;
     let mockedZamaOFT: ZamaOFT;
     let pauser: Wallet;
@@ -219,6 +222,8 @@ describe("Decryption", function () {
       const fixtureData = await loadFixture(preparePublicDecryptEIP712Fixture);
       ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
+      gatewayConfig = fixtureData.gatewayConfig;
+      owner = fixtureData.owner;
       protocolPayment = fixtureData.protocolPayment;
       mockedZamaOFT = fixtureData.mockedZamaOFT;
       mockedFeesSenderToBurnerAddress = fixtureData.mockedFeesSenderToBurnerAddress;
@@ -304,6 +309,17 @@ describe("Decryption", function () {
       await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(newCtHandles, extraDataV0))
         .to.be.revertedWithCustomError(ciphertextCommits, "CiphertextMaterialNotFound")
         .withArgs(newCtHandles[0]);
+    });
+
+    it("Should revert because the handle's chain ID corresponds to a disabled host chain", async function () {
+      // publicDecryptionRequest has no top-level chain modifier and gates transitively through
+      // CiphertextCommits.getSnsCiphertextMaterials, which rejects handles from disabled chains.
+      const handleChainId = hostChainId;
+      await gatewayConfig.connect(owner).disableHostChain(handleChainId);
+
+      await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0))
+        .to.be.revertedWithCustomError(ciphertextCommits, "HostChainDisabled")
+        .withArgs(handleChainId);
     });
 
     it("Should revert because the message sender is not a KMS transaction sender", async function () {
@@ -710,6 +726,8 @@ describe("Decryption", function () {
   describe("User Decryption", function () {
     let ciphertextCommits: CiphertextCommits;
     let decryption: Decryption;
+    let gatewayConfig: GatewayConfig;
+    let owner: Wallet;
     let protocolPayment: ProtocolPayment;
     let mockedZamaOFT: ZamaOFT;
     let pauser: Wallet;
@@ -819,6 +837,8 @@ describe("Decryption", function () {
       const fixtureData = await loadFixture(prepareUserDecryptEIP712Fixture);
       ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
+      gatewayConfig = fixtureData.gatewayConfig;
+      owner = fixtureData.owner;
       protocolPayment = fixtureData.protocolPayment;
       mockedZamaOFT = fixtureData.mockedZamaOFT;
       mockedFeesSenderToBurnerAddress = fixtureData.mockedFeesSenderToBurnerAddress;
@@ -941,6 +961,28 @@ describe("Decryption", function () {
             extraDataV0,
           ),
       ).to.be.revertedWithCustomError(decryption, "HostChainNotRegistered");
+    });
+
+    it("Should revert because contract chain ID corresponds to a disabled host chain", async function () {
+      // Disabled chains revert with HostChainDisabled (distinct from HostChainNotRegistered)
+      // so callers can distinguish unknown from disabled.
+      await gatewayConfig.connect(owner).disableHostChain(contractsInfo.chainId as number);
+
+      await expect(
+        decryption
+          .connect(tokenFundedTxSender)
+          .userDecryptionRequest(
+            ctHandleContractPairs,
+            requestValidity,
+            contractsInfo,
+            user.address,
+            publicKey,
+            userSignature,
+            extraDataV0,
+          ),
+      )
+        .to.be.revertedWithCustomError(decryption, "HostChainDisabled")
+        .withArgs(contractsInfo.chainId);
     });
 
     it("Should revert because contract addresses is empty", async function () {
@@ -1709,6 +1751,8 @@ describe("Decryption", function () {
   describe("Delegated User Decryption", function () {
     let ciphertextCommits: CiphertextCommits;
     let decryption: Decryption;
+    let gatewayConfig: GatewayConfig;
+    let owner: Wallet;
     let protocolPayment: ProtocolPayment;
     let mockedZamaOFT: ZamaOFT;
     let pauser: Wallet;
@@ -1824,6 +1868,8 @@ describe("Decryption", function () {
       const fixtureData = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
       ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
+      gatewayConfig = fixtureData.gatewayConfig;
+      owner = fixtureData.owner;
       protocolPayment = fixtureData.protocolPayment;
       mockedZamaOFT = fixtureData.mockedZamaOFT;
       mockedFeesSenderToBurnerAddress = fixtureData.mockedFeesSenderToBurnerAddress;
@@ -1955,6 +2001,28 @@ describe("Decryption", function () {
             extraDataV0,
           ),
       ).to.be.revertedWithCustomError(decryption, "HostChainNotRegistered");
+    });
+
+    it("Should revert because contract chain ID corresponds to a disabled host chain", async function () {
+      // Disabled chains revert with HostChainDisabled (distinct from HostChainNotRegistered)
+      // so callers can distinguish unknown from disabled.
+      await gatewayConfig.connect(owner).disableHostChain(contractsInfo.chainId as number);
+
+      await expect(
+        decryption
+          .connect(tokenFundedTxSender)
+          .delegatedUserDecryptionRequest(
+            ctHandleContractPairs,
+            requestValidity,
+            delegationAccounts,
+            contractsInfo,
+            publicKey,
+            delegateSignature,
+            extraDataV0,
+          ),
+      )
+        .to.be.revertedWithCustomError(decryption, "HostChainDisabled")
+        .withArgs(contractsInfo.chainId);
     });
 
     it("Should revert because contract addresses is empty", async function () {
