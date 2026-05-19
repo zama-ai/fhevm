@@ -91,11 +91,6 @@ spec:
             {{- if and $serviceName (not (has "service-name" $disabled)) }}
             - --service-name={{ $serviceName }}
             {{- end }}
-            {{- with $.Values.commonConfig.tenantApiKey }}
-            {{- if and (or .value .valueFrom) (not (has "coprocessor-api-key" $disabled)) }}
-            - --coprocessor-api-key=$(TENANT_API_KEY)
-            {{- end }}
-            {{- end }}
             {{- with $.Values.hostListenerConsumerShared.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -157,15 +152,6 @@ spec:
                 {{- toYaml .valueFrom | nindent 16 }}
               {{- end }}
             {{- end }}
-            {{- end }}
-            {{- with $.Values.commonConfig.tenantApiKey }}
-            - name: TENANT_API_KEY
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
-              {{- end }}
             {{- end }}
             {{- with $.Values.hostListenerConsumerShared.config.brokerUrl }}
             {{- if or .value .valueFrom }}

@@ -599,7 +599,7 @@ hostListenerConsumerShared:
   # Template-injected args: --database-url, --acl-contract-address,
   #   --tfhe-contract-address, --kms-generation-address, --chain-id (from
   #   chains[].chainId), --broker-url (from config.brokerUrl), --health-port,
-  #   --metrics-addr, --service-name, --coprocessor-api-key
+  #   --metrics-addr, --service-name
   extraArgs: []
 
   # Service ports configuration
@@ -663,14 +663,16 @@ hostListenerConsumerShared:
 # -----------------------------------------------------------------------------
 # Chains
 # -----------------------------------------------------------------------------
-# Each entry deploys up to three host listener variants for a given chain.
-# The top-level hostListenerShared / hostListenerPollerShared / hostListenerCatchupOnlyShared
-# blocks define shared settings used by every enabled chain for that listener
-# type. Chain entries do not deep-merge or override arbitrary top-level fields.
+# Each entry deploys up to four host listener variants for a given chain.
+# The top-level hostListenerShared / hostListenerPollerShared /
+# hostListenerCatchupOnlyShared / hostListenerConsumerShared blocks define
+# shared settings used by every enabled chain for that listener type. Chain
+# entries do not deep-merge or override arbitrary top-level fields.
 #
 # What each chain entry provides:
 #   - required chain-specific connection values (wsUrl or wsUrlValueFrom,
 #     httpUrl or httpUrlValueFrom, and contracts as literal values or valueFrom refs)
+#   - chainId (quoted string), consumed by hostListenerConsumer via --chain-id
 #   - enabled toggles per listener type
 #   - additive env and extraArgs
 #   - optional serviceName override
@@ -685,6 +687,7 @@ hostListenerConsumerShared:
 # Example:
 # chains:
 #   - name: ethereum
+#     chainId: "11155111"               # required by hostListenerConsumer (--chain-id); quote to avoid YAML float coercion
 #     wsUrl: "ws://eth-node:8546"       # required by hostListener + hostListenerCatchupOnly unless wsUrlValueFrom is set
 #     # wsUrlValueFrom:                 # secret/config-backed alternative to wsUrl
 #     #   secretKeyRef:
@@ -723,6 +726,12 @@ hostListenerConsumerShared:
 #       serviceName:
 #       extraArgs: []         # appended after top-level hostListenerCatchupOnlyShared.extraArgs
 #       env: []               # appended after top-level hostListenerCatchupOnlyShared.env
+#     hostListenerConsumer:
+#       enabled: true
+#       useLegacyName: true   # often required: <release>-host-listener-consumer-<chain> can exceed K8s's 63-char name limit
+#       serviceName:
+#       extraArgs: []         # appended after top-level hostListenerConsumerShared.extraArgs
+#       env: []               # appended after top-level hostListenerConsumerShared.env
 chains: []
 
 # -----------------------------------------------------------------------------
