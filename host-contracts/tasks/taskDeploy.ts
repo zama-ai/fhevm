@@ -405,20 +405,46 @@ task('task:deployPauserSet').setAction(async function (_, hre) {
 // ProtocolConfig helpers
 ////////////////////////////////////////////////////////////////////////////////
 
-export function buildKmsNodes(): {
+export function buildKmsNodeParams(): {
   txSenderAddress: string;
   signerAddress: string;
   ipAddress: string;
   storageUrl: string;
+  partyId: number;
+  mpcIdentity: string;
+  caCert: string;
+  storagePrefix: string;
 }[] {
   const numNodes = +getRequiredEnvVar('NUM_KMS_NODES');
-  const nodes: { txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }[] = [];
+  const nodes: {
+    txSenderAddress: string;
+    signerAddress: string;
+    ipAddress: string;
+    storageUrl: string;
+    partyId: number;
+    mpcIdentity: string;
+    caCert: string;
+    storagePrefix: string;
+  }[] = [];
   for (let idx = 0; idx < numNodes; idx++) {
     const txSenderAddress = getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`);
     const signerAddress = getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`);
     const ipAddress = process.env[`KMS_NODE_IP_${idx}`] || '';
     const storageUrl = getRequiredEnvVar(`KMS_NODE_STORAGE_URL_${idx}`);
-    nodes.push({ txSenderAddress, signerAddress, ipAddress, storageUrl });
+    const partyId = process.env[`KMS_NODE_PARTY_ID_${idx}`] ? +getRequiredEnvVar(`KMS_NODE_PARTY_ID_${idx}`) : idx;
+    const mpcIdentity = process.env[`KMS_NODE_MPC_IDENTITY_${idx}`] || ipAddress;
+    const caCert = process.env[`KMS_NODE_CA_CERT_${idx}`] || '0x';
+    const storagePrefix = process.env[`KMS_NODE_STORAGE_PREFIX_${idx}`] || '';
+    nodes.push({
+      txSenderAddress,
+      signerAddress,
+      ipAddress,
+      storageUrl,
+      partyId,
+      mpcIdentity,
+      caCert,
+      storagePrefix,
+    });
   }
   return nodes;
 }
@@ -430,6 +456,21 @@ export function buildKmsThresholds() {
     kmsGen: +getRequiredEnvVar('KMS_GEN_THRESHOLD'),
     mpc: +getRequiredEnvVar('MPC_THRESHOLD'),
   };
+}
+
+export function buildPcrValues(): { pcr0: string; pcr1: string; pcr2: string }[] {
+  return JSON.parse(getRequiredEnvVar('KMS_PCR_VALUES'));
+}
+
+// Shared by `initializeFromEmptyProxy` (deploy) and `reinitializeV2` (upgrade): both compute the
+// same context anchor hash, so they must build these arguments identically.
+export function buildProtocolConfigContextArgs(): [
+  ReturnType<typeof buildKmsNodeParams>,
+  ReturnType<typeof buildKmsThresholds>,
+  string,
+  ReturnType<typeof buildPcrValues>,
+] {
+  return [buildKmsNodeParams(), buildKmsThresholds(), getRequiredEnvVar('KMS_SOFTWARE_VERSION'), buildPcrValues()];
 }
 
 task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
@@ -444,16 +485,16 @@ task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
 
   const protocolConfig = new hre.ethers.Contract(
     protocolConfigAddress,
-    ['function getCurrentKmsContextId() view returns (uint256)'],
+    ['function getCurrentKmsContextAndEpoch() view returns (uint256, uint256)'],
     hre.ethers.provider,
   );
 
   let currentKmsContextId: bigint;
   try {
-    currentKmsContextId = await protocolConfig.getCurrentKmsContextId();
+    [currentKmsContextId] = await protocolConfig.getCurrentKmsContextAndEpoch();
   } catch (err) {
     throw new Error(
-      `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigAddress} is not initialized (reading current context reverted: ${formatError(err)}).`,
+      `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigAddress} is not initialized (reading active context reverted: ${formatError(err)}).`,
     );
   }
 
@@ -543,13 +584,11 @@ task('task:deployProtocolConfig').setAction(async function (_taskArguments: Task
   const parsedEnv = readHostEnv();
   const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-  const initialKmsNodes = buildKmsNodes();
-  const thresholds = buildKmsThresholds();
 
   await upgrades.upgradeProxy(proxy, newImplem, {
     call: {
       fn: 'initializeFromEmptyProxy',
-      args: [initialKmsNodes, thresholds],
+      args: buildProtocolConfigContextArgs(),
     },
   });
   // On interval-mining networks, upgradeProxy can return before the tx is mined.

@@ -18,6 +18,13 @@ export type ProtocolConfigMigrationKmsNode = {
   storageUrl: string;
 };
 
+export type ProtocolConfigMigrationKmsNodeParams = ProtocolConfigMigrationKmsNode & {
+  partyId: number;
+  mpcIdentity: string;
+  caCert: string;
+  storagePrefix: string;
+};
+
 export type ProtocolConfigMigrationThresholds = {
   publicDecryption: number;
   userDecryption: number;
@@ -27,13 +34,27 @@ export type ProtocolConfigMigrationThresholds = {
 
 export function buildProtocolConfigInitializeFromMigrationArgs(): [
   bigint,
-  ProtocolConfigMigrationKmsNode[],
+  ProtocolConfigMigrationKmsNodeParams[],
   ProtocolConfigMigrationThresholds,
 ] {
   const migrationContextId = BigInt(getRequiredEnvVar('MIGRATION_CONTEXT_ID'));
-  const kmsNodes: ProtocolConfigMigrationKmsNode[] = JSON.parse(getRequiredEnvVar('MIGRATION_KMS_NODES'));
+  // MIGRATION_KMS_NODES may carry only the four stored KmsNode fields (gateway reconstruction reads
+  // on-chain storage, which does not retain MPC metadata), so synthesize the missing params.
+  const rawNodes: Array<ProtocolConfigMigrationKmsNode & Partial<ProtocolConfigMigrationKmsNodeParams>> = JSON.parse(
+    getRequiredEnvVar('MIGRATION_KMS_NODES'),
+  );
+  const kmsNodeParams: ProtocolConfigMigrationKmsNodeParams[] = rawNodes.map((node, idx) => ({
+    txSenderAddress: node.txSenderAddress,
+    signerAddress: node.signerAddress,
+    ipAddress: node.ipAddress,
+    storageUrl: node.storageUrl,
+    partyId: node.partyId ?? idx,
+    mpcIdentity: node.mpcIdentity ?? node.ipAddress,
+    caCert: node.caCert ?? '0x',
+    storagePrefix: node.storagePrefix ?? '',
+  }));
   const thresholds: ProtocolConfigMigrationThresholds = JSON.parse(getRequiredEnvVar('MIGRATION_KMS_THRESHOLDS'));
-  return [migrationContextId, kmsNodes, thresholds];
+  return [migrationContextId, kmsNodeParams, thresholds];
 }
 
 export const {

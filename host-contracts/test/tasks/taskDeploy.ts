@@ -12,6 +12,7 @@ import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import { executeUpgradeProposal } from '../../tasks/utils/upgradeProposal';
 import type { KMSGeneration, ProtocolConfig } from '../../types';
 import {
+  buildControllableKmsCommittee,
   buildProtocolConfigNodes,
   buildProtocolConfigThresholds,
   deployFreshEmptyUUPSProxy,
@@ -19,6 +20,7 @@ import {
   deployFreshProtocolConfigProxy,
   deployFreshUninitializedProtocolConfigProxy,
   readHostAddress,
+  rotateToNewKmsContext,
 } from './taskHelpers';
 
 describe('task:deployAllHostContracts', function () {
@@ -72,7 +74,7 @@ describe('task:assertNoPendingKeyManagementRequest', function () {
     await expect(
       run('task:assertNoPendingKeyManagementRequest', { address: protocolConfigAddress }),
     ).to.be.rejectedWith(
-      `Contract at ${protocolConfigAddress} reports version "ProtocolConfig v0.1.0"; expected "KMSGeneration v…".`,
+      `Contract at ${protocolConfigAddress} reports version "ProtocolConfig v0.2.0"; expected "KMSGeneration v…".`,
     );
   });
 
@@ -184,11 +186,9 @@ describe('canonical snapshot apply (canonical → secondary deploy flow)', funct
   });
 
   it('pins canonical reads to a historical block under a rotation', async function () {
-    const canonicalAddress = await deployFreshProtocolConfigProxy(
-      deployer,
-      buildProtocolConfigNodes(),
-      buildProtocolConfigThresholds(),
-    );
+    // A controllable committee lets us drive the epoch lifecycle so the active context actually advances.
+    const committee = await buildControllableKmsCommittee();
+    const canonicalAddress = await deployFreshProtocolConfigProxy(deployer, committee.nodes, committee.thresholds);
     const canonical = (await ethers.getContractAt(
       'ProtocolConfig',
       canonicalAddress,
@@ -200,9 +200,7 @@ describe('canonical snapshot apply (canonical → secondary deploy flow)', funct
     const pinnedBlock = snapshot.blockNumber;
     const pinnedContextId = snapshot.currentKmsContextId;
 
-    const rotatedNodes = buildProtocolConfigNodes().slice(0, 2);
-    const rotatedThresholds = { publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1 };
-    await canonical.defineNewKmsContext(rotatedNodes, rotatedThresholds);
+    await rotateToNewKmsContext(canonicalAddress, deployer, committee);
     const latestContextId = await canonical.getCurrentKmsContextId();
     expect(latestContextId).to.not.equal(pinnedContextId);
 
@@ -273,16 +271,8 @@ describe('canonical snapshot export (readCanonicalSnapshot)', function () {
   });
 
   it('reproduces a pinned snapshot after a rotation, while a latest re-read drifts', async function () {
-    const canonicalAddress = await deployFreshProtocolConfigProxy(
-      deployer,
-      buildProtocolConfigNodes(),
-      buildProtocolConfigThresholds(),
-    );
-    const canonical = (await ethers.getContractAt(
-      'ProtocolConfig',
-      canonicalAddress,
-      deployer,
-    )) as unknown as ProtocolConfig;
+    const committee = await buildControllableKmsCommittee();
+    const canonicalAddress = await deployFreshProtocolConfigProxy(deployer, committee.nodes, committee.thresholds);
 
     const exported = await readCanonicalSnapshot(hre, {
       canonicalProvider: ethers.provider,
@@ -290,12 +280,7 @@ describe('canonical snapshot export (readCanonicalSnapshot)', function () {
     });
 
     // Rotate the canonical committee so "latest" no longer matches the exported block.
-    await canonical.defineNewKmsContext(buildProtocolConfigNodes().slice(0, 2), {
-      publicDecryption: 1,
-      userDecryption: 1,
-      kmsGen: 1,
-      mpc: 1,
-    });
+    await rotateToNewKmsContext(canonicalAddress, deployer, committee);
 
     // Re-reading latest drifts: this is exactly what a signer would get with no block pin.
     const atLatest = await readCanonicalSnapshot(hre, {

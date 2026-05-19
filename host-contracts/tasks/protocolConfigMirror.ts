@@ -117,11 +117,24 @@ export async function buildCanonicalUpgradeProposal(
     `Mirroring ProtocolConfig from canonical chain ${snapshot.canonicalChainId} at block ${snapshot.blockNumber} (${snapshot.blockHash}): contextId=${snapshot.currentKmsContextId}, kmsNodes=${snapshot.kmsNodes.length}.`,
   );
 
+  // initializeFromMigration takes KmsNodeParams (txSender/signer/ip/storageUrl plus MPC metadata:
+  // partyId, mpcIdentity, caCert, storagePrefix). Only the first four are persisted in the on-chain
+  // KmsNode struct, so the MPC metadata can't be read back from canonical and isn't part of the
+  // mirrored state. _storeKmsContext neither stores nor validates those fields, so we fill them with
+  // deterministic placeholders; the replica's stored node set still matches canonical exactly.
+  const kmsNodeParams = snapshot.kmsNodes.map((node, index) => ({
+    ...node,
+    partyId: index,
+    mpcIdentity: '',
+    caCert: '0x',
+    storagePrefix: '',
+  }));
+
   return buildUpgradeProposal(hre, {
     proxyAddress,
     contractName: 'ProtocolConfig',
     innerFunctionName: 'initializeFromMigration',
-    decodedArgs: [snapshot.currentKmsContextId, snapshot.kmsNodes, snapshot.thresholds],
+    decodedArgs: [snapshot.currentKmsContextId, kmsNodeParams, snapshot.thresholds],
   });
 }
 

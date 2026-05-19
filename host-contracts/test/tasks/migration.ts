@@ -6,7 +6,7 @@ import os from 'os';
 import path from 'path';
 
 import { buildSnapshotArtifact, readCanonicalSnapshot } from '../../tasks/protocolConfigMirror';
-import { buildKmsNodes, buildKmsThresholds } from '../../tasks/taskDeploy';
+import { buildKmsNodeParams, buildKmsThresholds } from '../../tasks/taskDeploy';
 import { makeEnvHelpers } from '../../tasks/utils/envSnapshot';
 import { KMS_CONTEXT_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
@@ -93,7 +93,7 @@ describe('Migration prepare tasks', function () {
       const migratedContextId = KMS_CONTEXT_COUNTER_BASE + BigInt(3);
       const protocolConfigMigrationEnv: ProtocolConfigMigrationEnv = {
         MIGRATION_CONTEXT_ID: migratedContextId.toString(),
-        MIGRATION_KMS_NODES: JSON.stringify(buildKmsNodes()),
+        MIGRATION_KMS_NODES: JSON.stringify(buildKmsNodeParams()),
         MIGRATION_KMS_THRESHOLDS: JSON.stringify(buildKmsThresholds()),
       };
       applyProtocolConfigMigrationEnv(protocolConfigMigrationEnv);
@@ -128,7 +128,7 @@ describe('Migration prepare tasks', function () {
       const migratedContextId = KMS_CONTEXT_COUNTER_BASE + BigInt(4);
       const protocolConfigMigrationEnv: ProtocolConfigMigrationEnv = {
         MIGRATION_CONTEXT_ID: migratedContextId.toString(),
-        MIGRATION_KMS_NODES: JSON.stringify(buildKmsNodes()),
+        MIGRATION_KMS_NODES: JSON.stringify(buildKmsNodeParams()),
         MIGRATION_KMS_THRESHOLDS: JSON.stringify(buildKmsThresholds()),
       };
       applyProtocolConfigMigrationEnv(protocolConfigMigrationEnv);
@@ -138,8 +138,9 @@ describe('Migration prepare tasks', function () {
       const protocolConfig = await ethers.getContractAt('ProtocolConfig', proxyAddress);
 
       expect(await readImplementationSlot(proxyAddress)).to.not.equal(implementationSlotBefore);
-      expect(await protocolConfig.getVersion()).to.equal('ProtocolConfig v0.1.0');
-      expect(await protocolConfig.getCurrentKmsContextId()).to.equal(migratedContextId);
+      expect(await protocolConfig.getVersion()).to.equal('ProtocolConfig v0.2.0');
+      const [activeContextIdAfterMigration] = await protocolConfig.getCurrentKmsContextAndEpoch();
+      expect(activeContextIdAfterMigration).to.equal(migratedContextId);
       expect(await protocolConfig.getPublicDecryptionThreshold()).to.equal(
         BigInt(getRequiredEnvVar('PUBLIC_DECRYPTION_THRESHOLD')),
       );
@@ -230,7 +231,10 @@ describe('Migration prepare tasks', function () {
       const newImplementation = await ethers.getContractFactory('ProtocolConfig', deployer);
       const proxy = await upgrades.forceImport(protocolConfigProxyAddress, currentImplementation);
       const protocolConfig = await upgrades.upgradeProxy(proxy, newImplementation, {
-        call: { fn: 'initializeFromEmptyProxy', args: [buildProtocolConfigNodes(), buildProtocolConfigThresholds()] },
+        call: {
+          fn: 'initializeFromEmptyProxy',
+          args: [buildProtocolConfigNodes(), buildProtocolConfigThresholds(), '', []],
+        },
       });
       await protocolConfig.waitForDeployment();
 
