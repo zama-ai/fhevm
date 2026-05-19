@@ -1,11 +1,11 @@
 {{- range $i, $chain := .Values.chains }}
-{{- if (($chain.listenerConsumer).enabled) }}
-{{- $useLegacyName := $chain.listenerConsumer.useLegacyName | default false -}}
-{{- $deploymentName := ternary (printf "%s-listener-consumer" $.Release.Name) (printf "%s-listener-consumer-%s" $.Release.Name $chain.name) $useLegacyName -}}
-{{- $appLabel := ternary "coprocessor-listener-consumer" (printf "coprocessor-listener-consumer-%s" $chain.name) $useLegacyName -}}
-{{- $args := default (dict) $.Values.listenerConsumerShared.args -}}
-{{- $disabled := default (list) $.Values.listenerConsumerShared.disabledArgs -}}
-{{- $serviceName := coalesce $chain.listenerConsumer.serviceName (get $args "serviceName") -}}
+{{- if (($chain.hostListenerConsumer).enabled) }}
+{{- $useLegacyName := $chain.hostListenerConsumer.useLegacyName | default false -}}
+{{- $deploymentName := ternary (printf "%s-host-listener-consumer" $.Release.Name) (printf "%s-host-listener-consumer-%s" $.Release.Name $chain.name) $useLegacyName -}}
+{{- $appLabel := ternary "coprocessor-host-listener-consumer" (printf "coprocessor-host-listener-consumer-%s" $chain.name) $useLegacyName -}}
+{{- $args := default (dict) $.Values.hostListenerConsumerShared.args -}}
+{{- $disabled := default (list) $.Values.hostListenerConsumerShared.disabledArgs -}}
+{{- $serviceName := coalesce $chain.hostListenerConsumer.serviceName (get $args "serviceName") -}}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -15,13 +15,13 @@ metadata:
     app.kubernetes.io/name: {{ $deploymentName }}
   name: {{ $deploymentName }}
 spec:
-  replicas: {{ $.Values.listenerConsumerShared.replicas }}
+  replicas: {{ $.Values.hostListenerConsumerShared.replicas }}
   selector:
     matchLabels:
       app: {{ $appLabel }}
-  {{- if $.Values.listenerConsumerShared.updateStrategy }}
+  {{- if $.Values.hostListenerConsumerShared.updateStrategy }}
   strategy:
-    {{- toYaml $.Values.listenerConsumerShared.updateStrategy | nindent 4 }}
+    {{- toYaml $.Values.hostListenerConsumerShared.updateStrategy | nindent 4 }}
   {{- end }}
   template:
     metadata:
@@ -31,7 +31,7 @@ spec:
         {{- with $.Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-        {{- with $.Values.listenerConsumerShared.podLabels }}
+        {{- with $.Values.hostListenerConsumerShared.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       {{- with $.Values.podAnnotations }}
@@ -42,24 +42,24 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
-      {{- with $.Values.listenerConsumerShared.nodeSelector }}
+      {{- with $.Values.hostListenerConsumerShared.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with $.Values.listenerConsumerShared.affinity }}
+      {{- with $.Values.hostListenerConsumerShared.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with $.Values.listenerConsumerShared.tolerations }}
+      {{- with $.Values.hostListenerConsumerShared.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if $.Values.listenerConsumerShared.serviceAccountName }}
-      serviceAccountName: {{ $.Values.listenerConsumerShared.serviceAccountName }}
+      {{- if $.Values.hostListenerConsumerShared.serviceAccountName }}
+      serviceAccountName: {{ $.Values.hostListenerConsumerShared.serviceAccountName }}
       {{- end }}
       containers:
-        - name: coprocessor-listener-consumer
-          image: {{ $.Values.listenerConsumerShared.image.name }}:{{ $.Values.listenerConsumerShared.image.tag }}
+        - name: coprocessor-host-listener-consumer
+          image: {{ $.Values.hostListenerConsumerShared.image.name }}:{{ $.Values.hostListenerConsumerShared.image.tag }}
           command: ["host_listener_consumer"]
           args:
             {{- if not (has "database-url" $disabled) }}
@@ -74,11 +74,19 @@ spec:
             {{- if not (has "kms-generation-address" $disabled) }}
             - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
             {{- end }}
+            {{- if and $chain.chainId (not (has "chain-id" $disabled)) }}
+            - --chain-id={{ $chain.chainId }}
+            {{- end }}
+            {{- with $.Values.hostListenerConsumerShared.config.brokerUrl }}
+            {{- if and (or .value .valueFrom) (not (has "broker-url" $disabled)) }}
+            - --broker-url=$(BROKER_URL)
+            {{- end }}
+            {{- end }}
             {{- if not (has "health-port" $disabled) }}
-            - --health-port={{ $.Values.listenerConsumerShared.ports.healthcheck }}
+            - --health-port={{ $.Values.hostListenerConsumerShared.ports.healthcheck }}
             {{- end }}
             {{- if not (has "metrics-addr" $disabled) }}
-            - --metrics-addr=0.0.0.0:{{ $.Values.listenerConsumerShared.ports.metrics }}
+            - --metrics-addr=0.0.0.0:{{ $.Values.hostListenerConsumerShared.ports.metrics }}
             {{- end }}
             {{- if and $serviceName (not (has "service-name" $disabled)) }}
             - --service-name={{ $serviceName }}
@@ -88,10 +96,10 @@ spec:
             - --coprocessor-api-key=$(TENANT_API_KEY)
             {{- end }}
             {{- end }}
-            {{- with $.Values.listenerConsumerShared.extraArgs }}
+            {{- with $.Values.hostListenerConsumerShared.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-            {{- with $chain.listenerConsumer.extraArgs }}
+            {{- with $chain.hostListenerConsumer.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
@@ -159,6 +167,17 @@ spec:
                 {{- toYaml .valueFrom | nindent 16 }}
               {{- end }}
             {{- end }}
+            {{- with $.Values.hostListenerConsumerShared.config.brokerUrl }}
+            {{- if or .value .valueFrom }}
+            - name: BROKER_URL
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- end }}
             {{- if or $chain.aclContractAddress $chain.aclContractAddressValueFrom }}
             - name: ACL_CONTRACT_ADDRESS
               {{- if $chain.aclContractAddress }}
@@ -186,12 +205,12 @@ spec:
                 {{- toYaml $chain.kmsGenerationContractAddressValueFrom | nindent 16 }}
               {{- end }}
             {{- end }}
-          {{- if default $.Values.commonConfig.tracing.enabled $.Values.listenerConsumerShared.tracing.enabled }}
+          {{- if default $.Values.commonConfig.tracing.enabled $.Values.hostListenerConsumerShared.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ $.Values.commonConfig.tracing.endpoint | quote }}
             - name: OTEL_SERVICE_NAME
-              {{- if $.Values.listenerConsumerShared.tracing.service }}
-              value: {{ $.Values.listenerConsumerShared.tracing.service | quote }}
+              {{- if $.Values.hostListenerConsumerShared.tracing.service }}
+              value: {{ $.Values.hostListenerConsumerShared.tracing.service | quote }}
               {{- else }}
               valueFrom:
                 fieldRef:
@@ -201,32 +220,32 @@ spec:
           {{- with $.Values.commonConfig.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with $.Values.listenerConsumerShared.env }}
+          {{- with $.Values.hostListenerConsumerShared.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with $chain.listenerConsumer.env }}
+          {{- with $chain.hostListenerConsumer.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
           ports:
-            {{- range $portName, $portValue := $.Values.listenerConsumerShared.ports }}
+            {{- range $portName, $portValue := $.Values.hostListenerConsumerShared.ports }}
             - name: {{ $portName }}
               containerPort: {{ $portValue }}
               protocol: TCP
             {{- end }}
           resources:
             requests:
-              cpu: {{ $.Values.listenerConsumerShared.resources.requests.cpu | default "100m" }}
-              memory: {{ $.Values.listenerConsumerShared.resources.requests.memory | default "256Mi" }}
+              cpu: {{ $.Values.hostListenerConsumerShared.resources.requests.cpu | default "100m" }}
+              memory: {{ $.Values.hostListenerConsumerShared.resources.requests.memory | default "256Mi" }}
             limits:
-              cpu: {{ $.Values.listenerConsumerShared.resources.limits.cpu | default "500m" }}
-              memory: {{ $.Values.listenerConsumerShared.resources.limits.memory | default "512Mi" }}
-          {{- if and $.Values.listenerConsumerShared.probes $.Values.listenerConsumerShared.probes.liveness.enabled }}
+              cpu: {{ $.Values.hostListenerConsumerShared.resources.limits.cpu | default "500m" }}
+              memory: {{ $.Values.hostListenerConsumerShared.resources.limits.memory | default "512Mi" }}
+          {{- if and $.Values.hostListenerConsumerShared.probes $.Values.hostListenerConsumerShared.probes.liveness.enabled }}
           livenessProbe:
-            {{- toYaml (omit $.Values.listenerConsumerShared.probes.liveness "enabled") | nindent 12 }}
+            {{- toYaml (omit $.Values.hostListenerConsumerShared.probes.liveness "enabled") | nindent 12 }}
           {{- end }}
-          {{- if and $.Values.listenerConsumerShared.probes $.Values.listenerConsumerShared.probes.readiness.enabled }}
+          {{- if and $.Values.hostListenerConsumerShared.probes $.Values.hostListenerConsumerShared.probes.readiness.enabled }}
           readinessProbe:
-            {{- toYaml (omit $.Values.listenerConsumerShared.probes.readiness "enabled") | nindent 12 }}
+            {{- toYaml (omit $.Values.hostListenerConsumerShared.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
 {{- end }}
 {{- end }}
