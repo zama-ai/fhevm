@@ -257,12 +257,14 @@ contract Decryption is
         /// @notice The number of user decryption requests, used to generate request IDs (`decryptionId`)
         /// @notice (including delegated user decryption requests).
         uint256 userDecryptionCounter;
-        // prettier-ignore
         /// @notice The KMS context ID pinned to a decryption request at request time.
         /// @dev Pinning the context at request time prevents responses signed by KMS nodes from a
         /// different context (e.g. across a context rotation) from being accumulated together in the
         /// `consensusTxSenderAddresses` bucket and silently crossing the threshold with a quorum that
         /// does not actually share a single threshold-FHE keyset.
+        /// @dev A value of 0 marks a request that was recorded before context pinning was introduced;
+        /// response handlers fall back to the context declared in the response's extraData in that
+        /// case, preserving the pre-pinning behavior for such in-flight requests.
         mapping(uint256 decryptionId => uint256 contextId) decryptionContextId;
     }
 
@@ -344,8 +346,7 @@ contract Decryption is
         // The handles are used during response calls for the EIP712 signature validation.
         $.publicCtHandles[publicDecryptionId] = ctHandles;
 
-        // Pin the KMS context at request time so all responses are evaluated against the same
-        // signer set and threshold, even if the current KMS context rotates before consensus.
+        // Pin the KMS context at request time. See `decryptionContextId` storage docs.
         $.decryptionContextId[publicDecryptionId] = _extractContextId(extraData);
 
         // Collect the fee from the transaction sender for this public decryption request.
@@ -384,13 +385,14 @@ contract Decryption is
         // Compute the digest of the PublicDecryptVerification structure.
         bytes32 digest = _hashPublicDecryptVerification(publicDecryptVerification);
 
-        // Use the context ID pinned at request time, and reject responses whose extraData
-        // declares a different context. This is what guarantees the response's signer set and
-        // threshold are evaluated against the same context the request was issued under, even
-        // across a context rotation between request and response.
+        // Validate the response's context against the one pinned at request time, falling back
+        // to the response's declared context for requests recorded before context pinning.
+        // See `decryptionContextId` storage docs.
         uint256 requestContextId = $.decryptionContextId[decryptionId];
         uint256 responseContextId = _extractContextId(extraData);
-        if (responseContextId != requestContextId) {
+        if (requestContextId == 0) {
+            requestContextId = responseContextId;
+        } else if (responseContextId != requestContextId) {
             revert DecryptionContextMismatch(decryptionId, requestContextId, responseContextId);
         }
 
@@ -646,14 +648,15 @@ contract Decryption is
         // Compute the digest of the UserDecryptResponseVerification structure.
         bytes32 digest = _hashUserDecryptResponseVerification(userDecryptResponseVerification);
 
-        // Use the context ID pinned at request time, and reject responses whose extraData
-        // declares a different context. This prevents mixed-context shares from being
-        // accumulated together in the [decryptionId][0] bucket and silently crossing the
-        // threshold with a quorum that does not share a single threshold-FHE keyset.
+        // Validate the response's context against the one pinned at request time, falling back
+        // to the response's declared context for requests recorded before context pinning.
+        // See `decryptionContextId` storage docs.
         uint256 requestContextId = $.decryptionContextId[decryptionId];
         {
             uint256 responseContextId = _extractContextId(extraData);
-            if (responseContextId != requestContextId) {
+            if (requestContextId == 0) {
+                requestContextId = responseContextId;
+            } else if (responseContextId != requestContextId) {
                 revert DecryptionContextMismatch(decryptionId, requestContextId, responseContextId);
             }
         }
