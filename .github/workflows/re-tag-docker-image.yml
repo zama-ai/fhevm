@@ -66,17 +66,25 @@ jobs:
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        uses: Wandalen/wretry.action@e68c23e6309f2871ca8ae4763e7629b9c258e1ea # v3.8.0
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          action: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+          attempt_limit: 5
+          attempt_delay: 2000
+          with: |
+            registry: ghcr.io
+            username: ${{ github.actor }}
+            password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Re-tag docker image
+        uses: Wandalen/wretry.action@e68c23e6309f2871ca8ae4763e7629b9c258e1ea # v3.8.0
         env:
           IMAGE_NAME: ${{ inputs.image-name }}
           PREVIOUS_TAG: ${{ needs.prepare-image-tags.outputs.previous-tag }}
           NEW_TAG: ${{ needs.prepare-image-tags.outputs.new-tag }}
-        run: |
-          echo "Creating new tag $NEW_TAG for existing image $IMAGE_NAME:$PREVIOUS_TAG"
-          docker buildx imagetools create "ghcr.io/zama-ai/$IMAGE_NAME:$PREVIOUS_TAG" --tag "ghcr.io/zama-ai/$IMAGE_NAME:$NEW_TAG"
+        with:
+          attempt_limit: 5
+          attempt_delay: 2000
+          command: |
+            echo "Creating new tag $NEW_TAG for existing image $IMAGE_NAME:$PREVIOUS_TAG"
+            docker buildx imagetools create "ghcr.io/zama-ai/$IMAGE_NAME:$PREVIOUS_TAG" --tag "ghcr.io/zama-ai/$IMAGE_NAME:$NEW_TAG"
