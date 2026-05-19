@@ -187,16 +187,27 @@ async fn create_database(
 }
 
 pub async fn get_sns_pk_size(pool: &sqlx::PgPool) -> Result<i64, sqlx::Error> {
+    // Two storage shapes coexist: compressed_xof_keyset is BYTEA
+    // (size = octet_length), sns_pk is an OID pointing at a
+    // large-object (size = SUM(octet_length(data))). Prefer the
+    // compressed column, fall back to the legacy LOB.
     let row = sqlx::query!(
-        r#"SELECT COALESCE(sns_pk_compressed, sns_pk) AS "sns_pk_oid?" FROM keys ORDER BY sequence_number DESC LIMIT 1"#,
+        r#"SELECT octet_length(compressed_xof_keyset)::bigint AS "compressed_size?",
+                  sns_pk AS "sns_pk_oid?"
+           FROM keys ORDER BY sequence_number DESC LIMIT 1"#,
     )
     .fetch_optional(pool)
     .await?;
 
     let Some(row) = row else {
-        info!("No sns_pk found in keys");
+        info!("No keys row found");
         return Ok(0);
     };
+
+    if let Some(size) = row.compressed_size {
+        info!(size = ?bytesize::ByteSize::b(size as u64), "Found compressed_xof_keyset BYTEA");
+        return Ok(size);
+    }
 
     let Some(oid) = row.sns_pk_oid else {
         info!("No sns_pk found in keys");

@@ -70,25 +70,25 @@ async fn test_fetch_latest_refreshes_cache_after_key_rotation(
     let initial = cache.fetch_latest_from_pool(&pool).await?;
 
     let row = sqlx::query!(
-        "SELECT pks_key, sks_key, sks_key_compressed, cks_key FROM keys WHERE key_id = $1",
+        "SELECT pks_key, sks_key, compressed_xof_keyset, cks_key FROM keys WHERE key_id = $1",
         &initial.key_id,
     )
     .fetch_one(&pool)
     .await?;
     let pks_key = row.pks_key;
     let sks_key = row.sks_key;
-    let sks_key_compressed = row.sks_key_compressed;
+    let compressed_xof_keyset = row.compressed_xof_keyset;
     let cks_key = row.cks_key;
 
     let new_key_id = random_key_id();
     let new_key_id_gw = random_key_id();
     sqlx::query!(
-        "INSERT INTO keys (key_id, key_id_gw, pks_key, sks_key, sks_key_compressed, cks_key) VALUES ($1, $2, $3, $4, $5, $6)",
+        "INSERT INTO keys (key_id, key_id_gw, pks_key, sks_key, compressed_xof_keyset, cks_key) VALUES ($1, $2, $3, $4, $5, $6)",
         &new_key_id,
         &new_key_id_gw,
         &pks_key,
         &sks_key,
-        sks_key_compressed.as_deref(),
+        compressed_xof_keyset.as_deref(),
         cks_key.as_deref(),
     )
     .execute(&pool)

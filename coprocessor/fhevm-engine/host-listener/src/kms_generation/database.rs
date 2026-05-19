@@ -240,32 +240,33 @@ pub(crate) async fn activate_ready_key_activations(
             INSERT INTO keys (
                 chain_id, block_hash, key_id_gw, key_id,
                 pks_key, sks_key, sns_pk,
-                sks_key_compressed, sns_pk_compressed
+                compressed_xof_keyset
             )
             SELECT
                 e.chain_id, e.block_hash, e.key_id, e.key_id,
                 e.key_content_public, e.key_content_sks_key, e.key_content_sns_pk,
-                e.key_content_sks_key_compressed, e.key_content_sns_pk_compressed
+                e.key_content_compressed_xof_keyset
             FROM kms_key_activation_events AS e
             WHERE
                 e.chain_id = $1
                 AND e.block_hash = $2
                 AND e.key_id = $3
-                -- For now test on legacy uncompressed as always available
+                -- Legacy decompressed columns are populated by both the
+                -- XOF and legacy ingest paths, so they are the
+                -- always-available gate.
                 AND e.key_content_public IS NOT NULL
                 AND e.key_content_sks_key IS NOT NULL
             ON CONFLICT (chain_id, block_hash, key_id_gw) DO UPDATE
-            SET pks_key            = EXCLUDED.pks_key,
-                sks_key            = EXCLUDED.sks_key,
-                sns_pk             = COALESCE(EXCLUDED.sns_pk, keys.sns_pk),
-                -- Compressed columns must move in lockstep with sks_key /
-                -- sns_pk: readers prefer the compressed blob when present,
-                -- so a format rollback (XOF -> ServerKey) on a replayed
-                -- activation would otherwise leave the legacy blob updated
+            SET pks_key               = EXCLUDED.pks_key,
+                sks_key               = EXCLUDED.sks_key,
+                sns_pk                = COALESCE(EXCLUDED.sns_pk, keys.sns_pk),
+                -- compressed_xof_keyset must move in lockstep with the
+                -- legacy decompressed pair: a format rollback
+                -- (XOF -> ServerKey) on a replayed activation
+                -- would otherwise leave the decompressed blob updated
                 -- but the compressed blob pointing at stale bytes.
-                sks_key_compressed = EXCLUDED.sks_key_compressed,
-                sns_pk_compressed  = EXCLUDED.sns_pk_compressed,
-                key_id_gw          = EXCLUDED.key_id_gw
+                compressed_xof_keyset = EXCLUDED.compressed_xof_keyset,
+                key_id_gw             = EXCLUDED.key_id_gw
             "#,
             chain_id,
             &block_hash,
@@ -502,29 +503,18 @@ pub(crate) async fn set_ready_key_activation(
     server_key: Option<PreparedServerKey>,
     public_key: Option<Vec<u8>>,
 ) -> anyhow::Result<()> {
-    let (sns_pk, sks_key, sns_pk_compressed, sks_key_compressed) =
+    let (sns_pk, sks_key, compressed_xof_keyset) =
         if let Some(prepared) = server_key {
             (
                 Some(prepared.sns_pk),
                 Some(prepared.sks_key),
-                prepared.sns_pk_compressed,
-                prepared.sks_key_compressed,
+                prepared.compressed_xof_keyset,
             )
         } else {
-            (None, None, None, None)
+            (None, None, None)
         };
     let sns_pk_oid = if let Some(sns_pk) = sns_pk {
         Some(write_large_object_in_chunks_tx(tx, &sns_pk, CHUNK_SIZE).await?)
-    } else {
-        None
-    };
-    let sns_pk_compressed_oid = if let Some(sns_pk_compressed) =
-        sns_pk_compressed
-    {
-        Some(
-            write_large_object_in_chunks_tx(tx, &sns_pk_compressed, CHUNK_SIZE)
-                .await?,
-        )
     } else {
         None
     };
@@ -536,16 +526,14 @@ pub(crate) async fn set_ready_key_activation(
             key_content_sns_pk = $1,
             key_content_sks_key = $2,
             key_content_public = $3,
-            key_content_sns_pk_compressed = $4,
-            key_content_sks_key_compressed = $5,
+            key_content_compressed_xof_keyset = $4,
             last_updated_at = NOW()
-        WHERE chain_id = $6 AND block_hash = $7 AND key_id = $8
+        WHERE chain_id = $5 AND block_hash = $6 AND key_id = $7
         "#,
         sns_pk_oid,
         sks_key,
         public_key,
-        sns_pk_compressed_oid,
-        sks_key_compressed,
+        compressed_xof_keyset,
         activation.chain_id.as_i64(),
         activation.block_hash,
         activation.key_id,

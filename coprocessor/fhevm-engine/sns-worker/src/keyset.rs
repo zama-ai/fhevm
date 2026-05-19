@@ -1,9 +1,10 @@
 use fhevm_engine_common::{
-    db_keys::{read_sns_pk_with_fallback, DbKeyId, SnsPkEncoding},
+    db_keys::{read_compressed_xof_keyset_with_fallback, CompressedXofKeysetEncoding, DbKeyId},
     utils::safe_deserialize_sns_key,
 };
 use sqlx::PgPool;
 use std::sync::Arc;
+use tfhe::xof_key_set::CompressedXofKeySet;
 use tokio::sync::RwLock;
 use tracing::info;
 
@@ -12,55 +13,50 @@ use crate::{ExecutionError, KeySet};
 #[cfg(not(feature = "gpu"))]
 fn decode_server_key(
     blob: &[u8],
-    encoding: SnsPkEncoding,
+    encoding: CompressedXofKeysetEncoding,
 ) -> Result<tfhe::ServerKey, ExecutionError> {
     match encoding {
-        SnsPkEncoding::Compressed => {
-            let csks: tfhe::CompressedServerKey = safe_deserialize_sns_key(blob)?;
-            info!("Decompressing compressed sns_pk to ServerKey");
-            Ok(csks.decompress())
+        CompressedXofKeysetEncoding::CompressedXof => {
+            let kxs: CompressedXofKeySet = safe_deserialize_sns_key(blob)?;
+            info!("Decompressing CompressedXofKeySet to ServerKey");
+            let (_public_key, server_key) = kxs.decompress()?.into_raw_parts();
+            Ok(server_key)
         }
-        SnsPkEncoding::Legacy => Ok(safe_deserialize_sns_key(blob)?),
+        CompressedXofKeysetEncoding::Legacy => Ok(safe_deserialize_sns_key(blob)?),
     }
 }
 
-// GPU requires a CompressedServerKey. The XOF ingest path lands one in
-// sns_pk_compressed; the legacy fallback path lands a plain ServerKey
-// in sns_pk which the GPU path cannot consume.
+// GPU requires a CudaServerKey. The XOF ingest path lands a
+// CompressedXofKeySet in compressed_xof_keyset; the legacy fallback
+// path lands a plain ServerKey in sns_pk which the GPU path cannot
+// consume.
 #[cfg(feature = "gpu")]
 fn decode_server_key(
     blob: &[u8],
-    encoding: SnsPkEncoding,
+    encoding: CompressedXofKeysetEncoding,
 ) -> Result<tfhe::CudaServerKey, ExecutionError> {
-    if encoding == SnsPkEncoding::Legacy {
+    if encoding == CompressedXofKeysetEncoding::Legacy {
         return Err(anyhow::anyhow!(
-            "GPU coprocessor cannot read a legacy ServerKey-format key (sns_pk_compressed is NULL); \
+            "GPU coprocessor cannot read a legacy ServerKey-format key (compressed_xof_keyset is NULL); \
              rotate kms-core to publish CompressedXofKeySet so the host-listener can ingest it into the compressed column"
         )
         .into());
     }
 
-    let compressed_server_key: tfhe::CompressedServerKey =
-        safe_deserialize_sns_key(blob).map_err(|err| {
-            anyhow::anyhow!(
-                "failed to deserialize CompressedServerKey from sns_pk_compressed: {err}"
-            )
-        })?;
-    info!("Deserialized sns_pk/sks_ns to CompressedServerKey");
-    let server_key = compressed_server_key.decompress_to_gpu();
-    info!("Decompressed sns_pk/sks_ns to CudaServerKey");
+    let kxs: CompressedXofKeySet = safe_deserialize_sns_key(blob).map_err(|err| {
+        anyhow::anyhow!(
+            "failed to deserialize CompressedXofKeySet from compressed_xof_keyset: {err}"
+        )
+    })?;
+    info!("Deserialized compressed_xof_keyset to CompressedXofKeySet");
+    let (_public_key, server_key) = kxs.decompress_to_gpu()?.into_raw_parts();
+    info!("Decompressed compressed_xof_keyset to CudaServerKey");
     Ok(server_key)
 }
 
 /// Receive-buffer hint for a legacy plain-ServerKey sns_pk LOB. Sized
 /// for the production NS-enabled key (decompressed).
 const SKS_KEY_WITH_NOISE_SQUASHING_SIZE: usize = 1_150 * 1_000_000; // ~1.1 GB
-/// Receive-buffer hint for a CompressedServerKey sns_pk_compressed LOB.
-/// Compressed XOF blobs are ~3-4x smaller than the decompressed
-/// equivalent; sizing the buffer to the legacy capacity would burn
-/// virtual address space (and physical RAM on strict-overcommit
-/// hosts) before any read happens.
-const COMPRESSED_SKS_KEY_WITH_NOISE_SQUASHING_SIZE: usize = 350 * 1_000_000; // ~350 MB
 
 async fn fetch_latest_key_id_gw(pool: &PgPool) -> Result<Option<(DbKeyId, i64)>, ExecutionError> {
     let record = sqlx::query!(
@@ -105,17 +101,16 @@ async fn fetch_keyset_by_id(
 
     info!(key_id_gw = hex::encode(key_id_gw), "Cache miss");
 
-    let (blob, encoding) = read_sns_pk_with_fallback(
+    let (blob, encoding) = read_compressed_xof_keyset_with_fallback(
         pool,
         key_id_gw.clone(),
-        COMPRESSED_SKS_KEY_WITH_NOISE_SQUASHING_SIZE,
         SKS_KEY_WITH_NOISE_SQUASHING_SIZE,
     )
     .await?;
     info!(
         bytes_len = blob.len(),
         ?encoding,
-        "Fetched sns_pk/sks_ns bytes from LOB"
+        "Fetched server-key bytes"
     );
     if blob.is_empty() {
         return Ok(None);
