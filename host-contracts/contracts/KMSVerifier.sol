@@ -7,6 +7,7 @@ import {EIP712UpgradeableCrossChain} from "./shared/EIP712UpgradeableCrossChain.
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
 import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
+import {EXTRA_DATA_V1, EXTRA_DATA_V2} from "./shared/Constants.sol";
 import {protocolConfigAdd} from "../addresses/FHEVMHostAddresses.sol";
 
 /**
@@ -74,7 +75,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 3;
+    uint256 private constant MINOR_VERSION = 4;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -92,8 +93,8 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
         mapping(uint256 => bool) destroyedContexts;
     }
 
-    /// @dev Shared between `initializeFromEmptyProxy` and `reinitializeV3`.
-    uint64 private constant REINITIALIZER_VERSION = 4;
+    /// @dev Shared between `initializeFromEmptyProxy` and `reinitializeV4`.
+    uint64 private constant REINITIALIZER_VERSION = 5;
 
     /// @notice Canonical ProtocolConfig used for context reads.
     IProtocolConfig private constant PROTOCOL_CONFIG = IProtocolConfig(protocolConfigAdd);
@@ -122,7 +123,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
 
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice                  Verifies multiple signatures for a given handlesList and a given decryptedResult.
@@ -304,11 +305,13 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
             return PROTOCOL_CONFIG.getCurrentKmsContextId();
         }
         uint8 version = uint8(extraData[0]);
-        if (version == 0x01) {
-            // v1 (0x01 prefix): reads a 32-byte context ID starting at byte 1.
-            // Trailing bytes after byte 33 are ignored for forward-compatibility
-            // with potential v1 extensions.
-            if (extraData.length < 33) {
+        if (version == EXTRA_DATA_V1 || version == EXTRA_DATA_V2) {
+            // v1: [version(1)] [contextId(32)]
+            // v2: [version(1)] [contextId(32)] [epochId(32)]
+            if (
+                (version == EXTRA_DATA_V1 && extraData.length != 33) ||
+                (version == EXTRA_DATA_V2 && extraData.length != 65)
+            ) {
                 revert DeserializingExtraDataFail();
             }
             uint256 contextId;
