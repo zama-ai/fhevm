@@ -159,7 +159,7 @@ jobs:
   build-relayer-migrate:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.relayer_migrate == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@f3b6046d0ce6f2eab83353e0fb788bd781be9f2e # main
     secrets: &docker_secrets
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
@@ -201,7 +201,7 @@ jobs:
   build-relayer:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.relayer == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@f3b6046d0ce6f2eab83353e0fb788bd781be9f2e # main
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
