@@ -103,7 +103,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         /// @notice Maximum total HCU per transaction.
         uint48 maxHCUPerTx;
         /// @notice Whitelisted callers bypass block-level cap.
-        mapping(address => bool) blockHCUWhitelist;
+        mapping(address account => bool isWhitelisted) blockHCUWhitelist;
     }
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
@@ -1804,7 +1804,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param hcuPerBlock New cap value.
      * @dev Enforces hcuPerBlock >= maxHCUPerTx.
      */
-    function _setHCUPerBlock(uint48 hcuPerBlock) internal {
+    function _setHCUPerBlock(uint48 hcuPerBlock) private {
         HCULimitStorage storage $ = _getHCULimitStorage();
         if (hcuPerBlock < $.maxHCUPerTx) revert HCUPerBlockBelowMaxPerTx();
         $.globalHCUCapPerBlock = hcuPerBlock;
@@ -1816,7 +1816,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param maxHCUDepthPerTx New depth limit.
      * @dev Enforces maxHCUPerTx >= maxHCUDepthPerTx.
      */
-    function _setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) internal {
+    function _setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) private {
         HCULimitStorage storage $ = _getHCULimitStorage();
         if ($.maxHCUPerTx < maxHCUDepthPerTx) revert MaxHCUPerTxBelowDepth();
         $.maxHCUDepthPerTx = maxHCUDepthPerTx;
@@ -1828,7 +1828,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param maxHCUPerTx New transaction limit.
      * @dev Enforces hcuPerBlock >= maxHCUPerTx and maxHCUPerTx >= maxHCUDepthPerTx.
      */
-    function _setMaxHCUPerTx(uint48 maxHCUPerTx) internal {
+    function _setMaxHCUPerTx(uint48 maxHCUPerTx) private {
         HCULimitStorage storage $ = _getHCULimitStorage();
         if ($.globalHCUCapPerBlock < maxHCUPerTx) revert HCUPerBlockBelowMaxPerTx();
         if (maxHCUPerTx < $.maxHCUDepthPerTx) revert MaxHCUPerTxBelowDepth();

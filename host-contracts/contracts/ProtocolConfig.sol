@@ -45,11 +45,11 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         /// @notice KMS nodes per context.
         mapping(uint256 contextId => KmsNode[]) kmsNodesForContext;
         /// @notice Tx sender lookup per context.
-        mapping(uint256 contextId => mapping(address => bool)) isKmsTxSenderForContext;
+        mapping(uint256 contextId => mapping(address txSender => bool isRegistered)) isKmsTxSenderForContext;
         /// @notice Signer lookup per context.
-        mapping(uint256 contextId => mapping(address => bool)) isKmsSignerForContext;
+        mapping(uint256 contextId => mapping(address signer => bool isRegistered)) isKmsSignerForContext;
         /// @notice KmsNode by tx sender per context.
-        mapping(uint256 contextId => mapping(address => KmsNode)) kmsNodeByTxSenderForContext;
+        mapping(uint256 contextId => mapping(address txSender => KmsNode node)) kmsNodeByTxSenderForContext;
         /// @notice Signer addresses per context, in insertion order.
         mapping(uint256 contextId => address[]) kmsSignerAddressesForContext;
         /// @notice Public decryption threshold per context.
