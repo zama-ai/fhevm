@@ -1,7 +1,4 @@
-use crate::core::{
-    errors::EventProcessingError,
-    event::{AttestationFormat, UserDecryptRequest},
-};
+use crate::core::{errors::EventProcessingError, event::UserDecryptRequest};
 use crate::gateway::arbitrum::bindings::{
     Decryption,
     Decryption::{CtHandleContractPair, HandleEntry as SolHandleEntry},
@@ -47,22 +44,18 @@ impl ComputeCalldata {
     pub fn user_decryption_req(
         user_decrypt_request: UserDecryptRequest,
     ) -> Result<Bytes, EventProcessingError> {
-        let UserDecryptRequest {
-            signature,
-            public_key,
-            extra_data,
-            attestation,
-        } = user_decrypt_request;
+        let kind = user_decrypt_request.attestation_kind();
 
-        let kind = attestation_kind(&attestation);
-
-        let calldata = match attestation {
-            AttestationFormat::LegacyDirect {
+        let calldata = match user_decrypt_request {
+            UserDecryptRequest::LegacyDirect {
                 ct_handle_contract_pairs,
                 request_validity,
                 contracts_chain_id,
                 contract_addresses,
                 user_address,
+                signature,
+                public_key,
+                extra_data,
             } => {
                 let pairs = sol_ct_handle_contract_pairs(&ct_handle_contract_pairs);
                 let contracts_info = ContractsInfo {
@@ -84,13 +77,16 @@ impl ComputeCalldata {
                 ));
                 Decryption::userDecryptionRequest_1Call::abi_encode(&call)
             }
-            AttestationFormat::LegacyDelegated {
+            UserDecryptRequest::LegacyDelegated {
                 ct_handle_contract_pairs,
                 request_validity,
                 contracts_chain_id,
                 contract_addresses,
                 delegator_address,
                 delegate_address,
+                signature,
+                public_key,
+                extra_data,
             } => {
                 let pairs = sol_ct_handle_contract_pairs(&ct_handle_contract_pairs);
                 let contracts_info = ContractsInfo {
@@ -116,11 +112,14 @@ impl ComputeCalldata {
                 ));
                 Decryption::delegatedUserDecryptionRequestCall::abi_encode(&call)
             }
-            AttestationFormat::Eip712UnifiedV1 {
+            UserDecryptRequest::Eip712UnifiedV1 {
                 handles,
                 user_address,
                 allowed_contracts,
                 request_validity,
+                signature,
+                public_key,
+                extra_data,
             } => {
                 let sol_handles: Vec<SolHandleEntry> = handles
                     .iter()
@@ -188,12 +187,4 @@ fn sol_ct_handle_contract_pairs(
             contractAddress: d.contract_address,
         })
         .collect()
-}
-
-fn attestation_kind(a: &AttestationFormat) -> &'static str {
-    match a {
-        AttestationFormat::LegacyDirect { .. } => "legacy_direct",
-        AttestationFormat::LegacyDelegated { .. } => "legacy_delegated",
-        AttestationFormat::Eip712UnifiedV1 { .. } => "eip712_unified_v1",
-    }
 }

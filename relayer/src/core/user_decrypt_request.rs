@@ -1,4 +1,4 @@
-use crate::core::event::{AttestationFormat, UserDecryptRequest};
+use crate::core::event::UserDecryptRequest;
 use crate::orchestrator::ContentHasher;
 use sha2::{Digest, Sha256};
 
@@ -22,16 +22,21 @@ impl ContentHasher for UserDecryptRequest {
     /// `signature` and the validity-window fields are excluded — they're
     /// consumed on-chain prior to receiving a decryption-id and shouldn't
     /// gate dedup.
+    ///
+    /// TODO: Consider canonical ordering for list items.
     fn content_hash(&self) -> [u8; 32] {
         let mut hasher = Sha256::new();
 
-        match &self.attestation {
-            AttestationFormat::LegacyDirect {
+        match self {
+            UserDecryptRequest::LegacyDirect {
                 ct_handle_contract_pairs,
                 contracts_chain_id,
                 contract_addresses,
                 user_address,
                 request_validity: _,
+                signature: _,
+                public_key,
+                extra_data,
             } => {
                 hasher.update(b"contract_addresses:"); // 1
                 for address in contract_addresses {
@@ -48,21 +53,24 @@ impl ContentHasher for UserDecryptRequest {
                 }
 
                 hasher.update(b"extra_data:"); // 4
-                hasher.update(&self.extra_data);
+                hasher.update(extra_data);
 
                 hasher.update(b"public_key:"); // 5
-                hasher.update(&self.public_key);
+                hasher.update(public_key);
 
                 hasher.update(b"user_address:"); // 6
                 hasher.update(user_address.as_slice());
             }
-            AttestationFormat::LegacyDelegated {
+            UserDecryptRequest::LegacyDelegated {
                 ct_handle_contract_pairs,
                 contracts_chain_id,
                 contract_addresses,
                 delegator_address,
                 delegate_address,
                 request_validity: _,
+                signature: _,
+                public_key,
+                extra_data,
             } => {
                 hasher.update(b"contract_addresses:"); // 1
                 for address in contract_addresses {
@@ -79,10 +87,10 @@ impl ContentHasher for UserDecryptRequest {
                 }
 
                 hasher.update(b"extra_data:"); // 4
-                hasher.update(&self.extra_data);
+                hasher.update(extra_data);
 
                 hasher.update(b"public_key:"); // 5
-                hasher.update(&self.public_key);
+                hasher.update(public_key);
 
                 hasher.update(b"delegator_address:"); // 6
                 hasher.update(delegator_address.as_slice());
@@ -90,11 +98,14 @@ impl ContentHasher for UserDecryptRequest {
                 hasher.update(b"delegate_address:"); // 7
                 hasher.update(delegate_address.as_slice());
             }
-            AttestationFormat::Eip712UnifiedV1 {
+            UserDecryptRequest::Eip712UnifiedV1 {
                 handles,
                 user_address,
                 allowed_contracts,
                 request_validity: _,
+                signature: _,
+                public_key,
+                extra_data,
             } => {
                 // Variant tag prevents v3 unified hashes from colliding
                 // with v2 legacy hashes that share the same user_address +
@@ -114,10 +125,10 @@ impl ContentHasher for UserDecryptRequest {
                 }
 
                 hasher.update(b"extra_data:");
-                hasher.update(&self.extra_data);
+                hasher.update(extra_data);
 
                 hasher.update(b"public_key:");
-                hasher.update(&self.public_key);
+                hasher.update(public_key);
 
                 hasher.update(b"user_address:");
                 hasher.update(user_address.as_slice());
@@ -132,71 +143,65 @@ impl ContentHasher for UserDecryptRequest {
 mod tests {
     use super::*;
     use crate::core::event::{
-        AttestationFormat, HandleContractPair, HandleEntry, RequestValidity, RequestValiditySeconds,
+        HandleContractPair, HandleEntry, RequestValidity, RequestValiditySeconds,
     };
     use alloy::primitives::{Address, Bytes, U256};
 
     fn sample_legacy_direct() -> UserDecryptRequest {
-        UserDecryptRequest {
+        UserDecryptRequest::LegacyDirect {
+            ct_handle_contract_pairs: vec![HandleContractPair {
+                ct_handle: U256::from(123),
+                contract_address: Address::from([1; 20]),
+            }],
+            request_validity: RequestValidity {
+                start_timestamp: U256::from(1000),
+                duration_days: U256::from(30),
+            },
+            contracts_chain_id: 1337,
+            contract_addresses: vec![Address::from([1; 20])],
+            user_address: Address::from([2; 20]),
             signature: Bytes::from(vec![0xde, 0xad, 0xbe, 0xef]),
             public_key: Bytes::from(vec![0xab, 0xcd]),
             extra_data: Bytes::from(vec![0x00]),
-            attestation: AttestationFormat::LegacyDirect {
-                ct_handle_contract_pairs: vec![HandleContractPair {
-                    ct_handle: U256::from(123),
-                    contract_address: Address::from([1; 20]),
-                }],
-                request_validity: RequestValidity {
-                    start_timestamp: U256::from(1000),
-                    duration_days: U256::from(30),
-                },
-                contracts_chain_id: 1337,
-                contract_addresses: vec![Address::from([1; 20])],
-                user_address: Address::from([2; 20]),
-            },
         }
     }
 
     fn sample_legacy_delegated() -> UserDecryptRequest {
-        UserDecryptRequest {
+        UserDecryptRequest::LegacyDelegated {
+            ct_handle_contract_pairs: vec![HandleContractPair {
+                ct_handle: U256::from(123),
+                contract_address: Address::from([1; 20]),
+            }],
+            request_validity: RequestValidity {
+                start_timestamp: U256::from(1000),
+                duration_days: U256::from(30),
+            },
+            contracts_chain_id: 1337,
+            contract_addresses: vec![Address::from([1; 20])],
+            delegator_address: Address::from([2; 20]),
+            delegate_address: Address::from([3; 20]),
             signature: Bytes::from(vec![0xde, 0xad, 0xbe, 0xef]),
             public_key: Bytes::from(vec![0xab, 0xcd]),
             extra_data: Bytes::from(vec![0x00]),
-            attestation: AttestationFormat::LegacyDelegated {
-                ct_handle_contract_pairs: vec![HandleContractPair {
-                    ct_handle: U256::from(123),
-                    contract_address: Address::from([1; 20]),
-                }],
-                request_validity: RequestValidity {
-                    start_timestamp: U256::from(1000),
-                    duration_days: U256::from(30),
-                },
-                contracts_chain_id: 1337,
-                contract_addresses: vec![Address::from([1; 20])],
-                delegator_address: Address::from([2; 20]),
-                delegate_address: Address::from([3; 20]),
-            },
         }
     }
 
     fn sample_eip712_unified() -> UserDecryptRequest {
-        UserDecryptRequest {
+        UserDecryptRequest::Eip712UnifiedV1 {
+            handles: vec![HandleEntry {
+                ct_handle: U256::from(123),
+                contract_address: Address::from([1; 20]),
+                owner_address: Address::from([2; 20]),
+            }],
+            user_address: Address::from([2; 20]),
+            allowed_contracts: vec![Address::from([1; 20])],
+            request_validity: RequestValiditySeconds {
+                start_timestamp: U256::from(1000),
+                duration_seconds: U256::from(604_800),
+            },
             signature: Bytes::from(vec![0xde, 0xad, 0xbe, 0xef]),
             public_key: Bytes::from(vec![0xab, 0xcd]),
             extra_data: Bytes::from(vec![0x00]),
-            attestation: AttestationFormat::Eip712UnifiedV1 {
-                handles: vec![HandleEntry {
-                    ct_handle: U256::from(123),
-                    contract_address: Address::from([1; 20]),
-                    owner_address: Address::from([2; 20]),
-                }],
-                user_address: Address::from([2; 20]),
-                allowed_contracts: vec![Address::from([1; 20])],
-                request_validity: RequestValiditySeconds {
-                    start_timestamp: U256::from(1000),
-                    duration_seconds: U256::from(604_800),
-                },
-            },
         }
     }
 
@@ -211,9 +216,9 @@ mod tests {
     fn legacy_direct_content_hash_differs_on_chain_id() {
         let r1 = sample_legacy_direct();
         let mut r2 = r1.clone();
-        if let AttestationFormat::LegacyDirect {
+        if let UserDecryptRequest::LegacyDirect {
             contracts_chain_id, ..
-        } = &mut r2.attestation
+        } = &mut r2
         {
             *contracts_chain_id = 1338;
         }
@@ -224,11 +229,13 @@ mod tests {
     fn legacy_direct_excluded_fields_dont_affect_hash() {
         let r1 = sample_legacy_direct();
         let mut r2 = r1.clone();
-        r2.signature = Bytes::from(vec![0xff; 4]);
-        if let AttestationFormat::LegacyDirect {
-            request_validity, ..
-        } = &mut r2.attestation
+        if let UserDecryptRequest::LegacyDirect {
+            signature,
+            request_validity,
+            ..
+        } = &mut r2
         {
+            *signature = Bytes::from(vec![0xff; 4]);
             *request_validity = RequestValidity {
                 start_timestamp: U256::from(999_999),
                 duration_days: U256::from(99_999),
@@ -248,9 +255,9 @@ mod tests {
     fn legacy_delegated_content_hash_differs_on_chain_id() {
         let r1 = sample_legacy_delegated();
         let mut r2 = r1.clone();
-        if let AttestationFormat::LegacyDelegated {
+        if let UserDecryptRequest::LegacyDelegated {
             contracts_chain_id, ..
-        } = &mut r2.attestation
+        } = &mut r2
         {
             *contracts_chain_id = 1338;
         }
@@ -261,11 +268,13 @@ mod tests {
     fn legacy_delegated_excluded_fields_dont_affect_hash() {
         let r1 = sample_legacy_delegated();
         let mut r2 = r1.clone();
-        r2.signature = Bytes::from(vec![0xff; 4]);
-        if let AttestationFormat::LegacyDelegated {
-            request_validity, ..
-        } = &mut r2.attestation
+        if let UserDecryptRequest::LegacyDelegated {
+            signature,
+            request_validity,
+            ..
+        } = &mut r2
         {
+            *signature = Bytes::from(vec![0xff; 4]);
             *request_validity = RequestValidity {
                 start_timestamp: U256::from(999_999),
                 duration_days: U256::from(99_999),

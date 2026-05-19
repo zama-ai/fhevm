@@ -3,9 +3,9 @@ use crate::{
     core::{
         errors::{EventProcessingError, READINESS_CHECK_TIMEOUT_MSG},
         event::{
-            AttestationFormat, GatewayChainEventData, GatewayChainEventId, HandleContractPair,
-            RelayerEvent, RelayerEventData, UserDecryptEventData, UserDecryptEventId,
-            UserDecryptRequest, UserDecryptResponse,
+            GatewayChainEventData, GatewayChainEventId, HandleContractPair, RelayerEvent,
+            RelayerEventData, UserDecryptEventData, UserDecryptEventId, UserDecryptRequest,
+            UserDecryptResponse,
         },
         job_id::JobId,
     },
@@ -27,9 +27,7 @@ use crate::{
         traits::{Event, EventHandler},
         ContentHasher, Orchestrator,
     },
-    readiness::throttler::{
-        DelegatedUserDecryptReadinessTask, ReadinessSender, UserDecryptReadinessTask,
-    },
+    readiness::throttler::{ReadinessSender, UserDecryptReadinessTask},
     store::sql::{
         models::{
             req_status_enum_model::ReqStatus,
@@ -67,7 +65,6 @@ pub struct GatewayHandler {
     dispatcher: Arc<Orchestrator>,
     tx_throttler: TxThrottlingSender<GatewayTxTask>,
     user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
-    delegated_user_decrypt_readiness_throttler: ReadinessSender<DelegatedUserDecryptReadinessTask>,
     user_decrypt_repo: Arc<UserDecryptRepository>,
     config: UserDecryptHandlerConfig,
     threshold_resolver: Arc<ThresholdResolver>,
@@ -78,9 +75,6 @@ impl GatewayHandler {
         dispatcher: Arc<Orchestrator>,
         tx_throttler: TxThrottlingSender<GatewayTxTask>,
         user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
-        delegated_user_decrypt_readiness_throttler: ReadinessSender<
-            DelegatedUserDecryptReadinessTask,
-        >,
         user_decrypt_repo: Arc<UserDecryptRepository>,
         config: UserDecryptHandlerConfig,
         threshold_resolver: Arc<ThresholdResolver>,
@@ -89,7 +83,6 @@ impl GatewayHandler {
             dispatcher: Arc::clone(&dispatcher),
             tx_throttler,
             user_decrypt_readiness_throttler,
-            delegated_user_decrypt_readiness_throttler,
             user_decrypt_repo,
             config,
             threshold_resolver,
@@ -131,24 +124,13 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                     );
                     async {
                         let job_id_hash = decrypt_request.content_hash();
-                        // LegacyDirect + Eip712UnifiedV1 share the readiness
-                        // throttler (gateway uses the same isUserDecryptionReady
-                        // call for the readiness check). LegacyDelegated has its
-                        // own throttler for dedicated capacity.
-                        match decrypt_request.attestation {
-                            AttestationFormat::LegacyDirect { .. }
-                            | AttestationFormat::Eip712UnifiedV1 { .. } => {
-                                self.readiness_check_enqueue(job_id_hash, decrypt_request)
-                                    .await
-                            }
-                            AttestationFormat::LegacyDelegated { .. } => {
-                                self.delegated_user_decrypt_readiness_check_enqueue(
-                                    job_id_hash,
-                                    decrypt_request,
-                                )
-                                .await
-                            }
-                        }
+                        // All three attestation types share the readiness
+                        // throttler: the gateway uses the same
+                        // `isUserDecryptionReady_1((bytes32,address)[], bytes)`
+                        // call regardless of variant, and the host-ACL step
+                        // dispatches per-variant inside `ReadinessChecker`.
+                        self.readiness_check_enqueue(job_id_hash, decrypt_request)
+                            .await
                     }
                     .await
                 }
@@ -266,49 +248,6 @@ impl GatewayHandler {
                 }
                 EventProcessingError::ChannelClosed => {
                     error!("FATAL: Cannot accept request for public readiness check, internal worker is dead.");
-                    return Err(e);
-                }
-                _ => {
-                    return Err(e);
-                }
-            },
-        };
-
-        Ok(())
-    }
-
-    /// Validates that all ciphertext handles are ready and user is authorized for delegated decryption.
-    ///
-    /// Checks if handles exist on fhevm and user has permission to decrypt them.
-    /// Enqueue the readiness check event with a semaphore for throttling requests.
-    async fn delegated_user_decrypt_readiness_check_enqueue(
-        &self,
-        job_id_hash: [u8; 32],
-        decrypt_request: &UserDecryptRequest,
-    ) -> Result<(), EventProcessingError> {
-        let task: DelegatedUserDecryptReadinessTask = DelegatedUserDecryptReadinessTask {
-            id: hex::encode(job_id_hash),
-            job_id: JobId::from(job_id_hash),
-            request: decrypt_request.clone(),
-        };
-
-        match self
-            .delegated_user_decrypt_readiness_throttler
-            .push(task)
-            .await
-        {
-            Ok(()) => {}
-            // The following are termination errors, which means a failure on readiness.
-            // These should NEVER happen with the bouncer.
-            Err(e) => match e {
-                EventProcessingError::QueueFull => {
-                    return Err(EventProcessingError::ProtocolOverload(
-                        "Relayer is full for delegated user readiness check, retry later."
-                            .to_string(),
-                    ));
-                }
-                EventProcessingError::ChannelClosed => {
-                    error!("FATAL: Cannot accept request for delegated user readiness check, internal worker is dead.");
                     return Err(e);
                 }
                 _ => {
