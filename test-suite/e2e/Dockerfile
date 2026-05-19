@@ -28,23 +28,21 @@ COPY test-suite/e2e/package.json ./test-suite/e2e/
 COPY sdk/js-sdk/package.json ./sdk/js-sdk/
 COPY sdk/js-sdk/src/package.json ./sdk/js-sdk/src/
 
-# Install dependencies
-RUN npm ci && \
-    npm prune && \
-    if [ -n "$RELAYER_SDK_VERSION" ]; then \
-      mkdir -p /app/.relayer-sdk && \
-      npm install --prefix /app/.relayer-sdk --omit=dev "@zama-fhe/relayer-sdk@${RELAYER_SDK_VERSION}"; \
-    fi
-
-# Copy sources after deps are cached
 COPY library-solidity ./library-solidity
 COPY test-suite/e2e ./test-suite/e2e
 COPY sdk/js-sdk ./sdk/js-sdk
 
-# Patch sources: emit requested relayer-sdk version into
-# test/_relayer_sdk_version.ts so the e2e tests can branch on it at runtime.
-RUN printf '// Auto-generated at Docker build time. Do not edit.\nexport const relayer_sdk_version = "%s";\n' \
-      "$RELAYER_SDK_VERSION" > test-suite/e2e/test/_relayer_sdk_version.ts
+# Install dependencies. Normal builds stay locked; rollout hotswap builds first
+# update the e2e workspace manifest in the image, then let npm resolve one
+# coherent dependency graph for that requested SDK version.
+RUN if [ -n "$RELAYER_SDK_VERSION" ]; then \
+      npm pkg set -w test-suite/e2e "dependencies.@zama-fhe/relayer-sdk=${RELAYER_SDK_VERSION}" && \
+      npm install && \
+      npm prune; \
+    else \
+      npm ci && \
+      npm prune; \
+    fi
 
 # Compile js-sdk
 WORKDIR /app/sdk/js-sdk
@@ -66,7 +64,6 @@ ARG RELAYER_SDK_VERSION=""
 #   process.env.RELAYER_SDK_VERSION === ""   → use @fhevm/sdk (default)
 #   process.env.RELAYER_SDK_VERSION === "x"  → use @zama-fhe/relayer-sdk@x
 ENV RELAYER_SDK_VERSION=${RELAYER_SDK_VERSION}
-ENV RELAYER_SDK_OVERRIDE_DIR=/app/.relayer-sdk
 
 COPY --from=builder /lib/ /lib/
 COPY --from=builder /bin/ /bin/

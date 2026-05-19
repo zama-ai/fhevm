@@ -1,23 +1,8 @@
 import type { FhevmInstance } from "@zama-fhe/relayer-sdk/node";
-import { createInstance as createBundledInstance } from "@zama-fhe/relayer-sdk/node";
+import { createInstance } from "@zama-fhe/relayer-sdk/node";
 import type { Signer } from "ethers";
-import { createRequire } from "module";
 
 import type { Auth, ClearValueType, ClearValues, EncryptedInputResult, SdkInstance, TypedValue } from "../types";
-
-type RelayerSdkNodeModule = typeof import("@zama-fhe/relayer-sdk/node");
-
-const requireFromHere = createRequire(__filename);
-
-const loadCreateInstance = (): RelayerSdkNodeModule["createInstance"] => {
-  if (process.env.RELAYER_SDK_VERSION && process.env.RELAYER_SDK_OVERRIDE_DIR) {
-    const sdk = requireFromHere(
-      `${process.env.RELAYER_SDK_OVERRIDE_DIR}/node_modules/@zama-fhe/relayer-sdk/node`,
-    ) as RelayerSdkNodeModule;
-    return sdk.createInstance;
-  }
-  return createBundledInstance;
-};
 
 export class RelayerSdk implements SdkInstance {
   #instance: FhevmInstance;
@@ -50,7 +35,7 @@ export class RelayerSdk implements SdkInstance {
       chainId,
       auth,
     } = parameters;
-    const instance = await loadCreateInstance()({
+    const instance = await createInstance({
       verifyingContractAddressDecryption,
       verifyingContractAddressInputVerification,
       kmsContractAddress,
