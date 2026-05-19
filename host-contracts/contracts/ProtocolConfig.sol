@@ -42,7 +42,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         mapping(uint256 contextId => mapping(address signer => bool isRegistered)) isKmsSignerForContext;
         /// @notice KmsNode by tx sender per context.
         mapping(uint256 contextId => mapping(address txSender => KmsNode node)) kmsNodeByTxSenderForContext;
-        /// @notice Signer addresses per context (for ordered iteration).
+        /// @notice Signer addresses per context, in insertion order.
         mapping(uint256 contextId => address[]) kmsSignerAddressesForContext;
         /// @notice Public decryption threshold per context.
         mapping(uint256 contextId => uint256) publicDecryptionThresholdForContext;
