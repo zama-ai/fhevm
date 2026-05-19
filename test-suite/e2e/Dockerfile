@@ -32,7 +32,8 @@ COPY sdk/js-sdk/src/package.json ./sdk/js-sdk/src/
 RUN npm ci && \
     npm prune && \
     if [ -n "$RELAYER_SDK_VERSION" ]; then \
-      npm install -w test-suite/e2e --no-save "@zama-fhe/relayer-sdk@${RELAYER_SDK_VERSION}"; \
+      mkdir -p /app/.relayer-sdk && \
+      npm install --prefix /app/.relayer-sdk --omit=dev "@zama-fhe/relayer-sdk@${RELAYER_SDK_VERSION}"; \
     fi
 
 # Copy sources after deps are cached
@@ -65,6 +66,7 @@ ARG RELAYER_SDK_VERSION=""
 #   process.env.RELAYER_SDK_VERSION === ""   → use @fhevm/sdk (default)
 #   process.env.RELAYER_SDK_VERSION === "x"  → use @zama-fhe/relayer-sdk@x
 ENV RELAYER_SDK_VERSION=${RELAYER_SDK_VERSION}
+ENV RELAYER_SDK_OVERRIDE_DIR=/app/.relayer-sdk
 
 COPY --from=builder /lib/ /lib/
 COPY --from=builder /bin/ /bin/
