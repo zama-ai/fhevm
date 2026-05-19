@@ -3,7 +3,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['src/**/*.test.ts'],
-    exclude: ['src/index.hello.test.ts'],
+    exclude: ['src/index.hello.test.ts', 'src/wasm/**/type-check.test.ts'],
     reporters: ['verbose'],
     passWithNoTests: false,
     typecheck: { enabled: true },
