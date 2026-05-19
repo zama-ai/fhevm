@@ -37,7 +37,7 @@ interface IKMSGeneration {
      * @notice Emitted to trigger an FHE key generation preprocessing.
      * @param prepKeygenId The ID of the preprocessing keygen request.
      * @param paramsType The type of the parameters to use.
-     * @param extraData Additional context data (0x01 || contextId).
+     * @param extraData Additional context data (0x01 || contextId, or 0x02 || contextId || epochId).
      */
     event PrepKeygenRequest(uint256 prepKeygenId, ParamsType paramsType, bytes extraData);
 
@@ -351,6 +351,25 @@ interface IKMSGeneration {
      * @return The KMS transaction sender addresses.
      */
     function getConsensusTxSenders(uint256 requestId) external view returns (address[] memory);
+
+    /**
+     * @notice Get the key IDs that reached consensus.
+     * @return The completed key IDs.
+     */
+    function getCompletedKeyIds() external view returns (uint256[] memory);
+
+    /**
+     * @notice Get the CRS IDs that reached consensus.
+     * @return The completed CRS IDs.
+     */
+    function getCompletedCrsIds() external view returns (uint256[] memory);
+
+    /**
+     * @notice Get the preprocessing keygen ID paired with a key ID.
+     * @param keyId The key ID.
+     * @return The preprocessing keygen ID.
+     */
+    function getPrepKeygenId(uint256 keyId) external view returns (uint256);
 
     /**
      * @notice Get the key materials for a given key ID.

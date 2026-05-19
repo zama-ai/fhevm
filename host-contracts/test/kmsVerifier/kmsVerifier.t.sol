@@ -9,8 +9,9 @@ import {HostContractsDeployerTestUtils} from "@fhevm-foundry/HostContractsDeploy
 import {KMSVerifier} from "@fhevm-host-contracts/contracts/KMSVerifier.sol";
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
 import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
+import {IKMSGeneration} from "@fhevm-host-contracts/contracts/interfaces/IKMSGeneration.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
-import {KmsNode} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
+import {KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {KMS_CONTEXT_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {ACLOwnable} from "../../contracts/shared/ACLOwnable.sol";
@@ -22,6 +23,19 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
 
     address internal constant verifyingContractSource = address(10000);
     address internal constant owner = address(456);
+    uint256 internal constant EPOCH_COUNTER_BASE = uint256(8) << 248;
+    uint256 internal constant PREP_KEYGEN_COUNTER_BASE = uint256(3) << 248;
+    uint256 internal constant KEY_COUNTER_BASE = uint256(4) << 248;
+    uint256 internal constant CRS_COUNTER_BASE = uint256(5) << 248;
+    bytes32 internal constant EIP712_DOMAIN_TYPE_HASH =
+        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+    bytes32 internal constant EIP712_KEY_DIGEST_TYPE_HASH = keccak256("KeyDigest(uint8 keyType,bytes digest)");
+    bytes32 internal constant EIP712_KEYGEN_TYPE_HASH =
+        keccak256(
+            "KeygenVerification(uint256 prepKeygenId,uint256 keyId,KeyDigest[] keyDigests,bytes extraData)KeyDigest(uint8 keyType,bytes digest)"
+        );
+    bytes32 internal constant EIP712_CRSGEN_TYPE_HASH =
+        keccak256("CrsgenVerification(uint256 crsId,uint256 maxBitLength,bytes crsDigest,bytes extraData)");
 
     /// @dev Signer variables.
     uint256 internal constant privateKeySigner0 = 0x100;
@@ -43,7 +57,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         signer3 = vm.addr(privateKeySigner3);
 
         _deployACL(owner);
-        (protocolConfig, ) = _deployProtocolConfig(owner, _makeKmsNodes(3), _defaultThresholds());
+        (protocolConfig, ) = _deployProtocolConfig(owner, _makeKmsNodeParams(3), _defaultThresholds());
         (kmsGeneration, ) = _deployKMSGeneration(owner);
 
         (kmsVerifier, ) = _deployKMSVerifier(owner, verifyingContractSource, uint64(block.chainid));
@@ -53,6 +67,14 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    function _defineNewKmsContextAndEpoch(
+        KmsNodeParams[] memory nodes,
+        IProtocolConfig.KmsThresholds memory thresholds
+    ) internal {
+        PcrValues[] memory pcrValues = new PcrValues[](0);
+        protocolConfig.defineNewKmsContextAndEpoch(nodes, thresholds, "", pcrValues);
+    }
 
     function _computeDigest(
         bytes32[] memory handlesList,
@@ -87,6 +109,19 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
             );
     }
 
+    function _computeProtocolConfigDomainSeparator() internal view returns (bytes32) {
+        return
+            keccak256(
+                abi.encode(
+                    EIP712_DOMAIN_TYPE_HASH,
+                    keccak256(bytes("ProtocolConfig")),
+                    keccak256(bytes("1")),
+                    block.chainid,
+                    address(protocolConfig)
+                )
+            );
+    }
+
     function _generateMockHandlesList(uint256 numberHandles) internal pure returns (bytes32[] memory handlesList) {
         assert(numberHandles < 250);
         handlesList = new bytes32[](numberHandles);
@@ -97,6 +132,119 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
 
     function _mockDecryptedResult() internal pure returns (bytes memory) {
         return abi.encodePacked(keccak256("test"));
+    }
+
+    function _emptyIds() internal pure returns (uint256[] memory ids) {
+        ids = new uint256[](0);
+    }
+
+    function _prepKeygenIdForKeyId(uint256 keyId) internal pure returns (uint256) {
+        return PREP_KEYGEN_COUNTER_BASE + (keyId - KEY_COUNTER_BASE);
+    }
+
+    function _mockKeyDigests() internal pure returns (IKMSGeneration.KeyDigest[] memory) {
+        IKMSGeneration.KeyDigest[] memory digests = new IKMSGeneration.KeyDigest[](1);
+        digests[0] = IKMSGeneration.KeyDigest({keyType: IKMSGeneration.KeyType.Server, digest: hex"aabbccdd"});
+        return digests;
+    }
+
+    function _hashKeyDigests(IKMSGeneration.KeyDigest[] memory keyDigests) internal pure returns (bytes32) {
+        bytes32[] memory digestHashes = new bytes32[](keyDigests.length);
+        for (uint256 i = 0; i < keyDigests.length; i++) {
+            digestHashes[i] = keccak256(
+                abi.encode(EIP712_KEY_DIGEST_TYPE_HASH, keyDigests[i].keyType, keccak256(keyDigests[i].digest))
+            );
+        }
+        return keccak256(abi.encodePacked(digestHashes));
+    }
+
+    function _hashProtocolConfigKeygen(
+        uint256 prepKeygenId,
+        uint256 keyId,
+        IKMSGeneration.KeyDigest[] memory keyDigests,
+        bytes memory extraData
+    ) internal view returns (bytes32) {
+        bytes32 structHash = keccak256(
+            abi.encode(EIP712_KEYGEN_TYPE_HASH, prepKeygenId, keyId, _hashKeyDigests(keyDigests), keccak256(extraData))
+        );
+        return MessageHashUtils.toTypedDataHash(_computeProtocolConfigDomainSeparator(), structHash);
+    }
+
+    function _hashProtocolConfigCrsgen(
+        uint256 crsId,
+        uint256 maxBitLength,
+        bytes memory crsDigest,
+        bytes memory extraData
+    ) internal view returns (bytes32) {
+        bytes32 structHash = keccak256(
+            abi.encode(
+                EIP712_CRSGEN_TYPE_HASH,
+                crsId,
+                maxBitLength,
+                keccak256(abi.encodePacked(crsDigest)),
+                keccak256(extraData)
+            )
+        );
+        return MessageHashUtils.toTypedDataHash(_computeProtocolConfigDomainSeparator(), structHash);
+    }
+
+    function _confirmContextCreation(uint256 contextId, uint256 pk) internal {
+        vm.prank(vm.addr(pk));
+        protocolConfig.confirmKmsContextCreation(contextId);
+    }
+
+    function _confirmEpochActivation(
+        uint256 contextId,
+        uint256 epochId,
+        uint256 pk,
+        address txSender,
+        uint256 keyId,
+        uint256 crsId
+    ) internal {
+        bytes memory extraData = abi.encodePacked(uint8(0x02), contextId, epochId);
+        IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](keyId == 0 ? 0 : 1);
+        if (keyId != 0) {
+            IKMSGeneration.KeyDigest[] memory keyDigests = _mockKeyDigests();
+            uint256 prepKeygenId = _prepKeygenIdForKeyId(keyId);
+            keys[0] = IProtocolConfig.EpochKeyResult({
+                prepKeygenId: prepKeygenId,
+                keyId: keyId,
+                keyDigests: keyDigests,
+                signature: _computeSignature(pk, _hashProtocolConfigKeygen(prepKeygenId, keyId, keyDigests, extraData))
+            });
+        }
+
+        IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](crsId == 0 ? 0 : 1);
+        if (crsId != 0) {
+            crsList[0] = IProtocolConfig.EpochCrsResult({
+                crsId: crsId,
+                maxBitLength: 4096,
+                crsDigest: hex"deadbeef",
+                signature: _computeSignature(pk, _hashProtocolConfigCrsgen(crsId, 4096, hex"deadbeef", extraData))
+            });
+        }
+
+        vm.prank(txSender);
+        protocolConfig.confirmEpochActivation(epochId, keys, crsList);
+    }
+
+    function _activatePendingSingleSignerContext(uint256 contextId, uint256 epochId, uint256 pk) internal {
+        _confirmContextCreation(contextId, privateKeySigner0);
+        _confirmContextCreation(contextId, privateKeySigner1);
+        _confirmContextCreation(contextId, privateKeySigner2);
+        if (pk != privateKeySigner0 && pk != privateKeySigner1 && pk != privateKeySigner2) {
+            _confirmContextCreation(contextId, pk);
+        }
+        _confirmEpochActivation(contextId, epochId, pk, address(0xA1), 0, 0);
+    }
+
+    function _activatePendingThreeNodeContext(uint256 contextId, uint256 epochId) internal {
+        _confirmContextCreation(contextId, privateKeySigner0);
+        _confirmContextCreation(contextId, privateKeySigner1);
+        _confirmContextCreation(contextId, privateKeySigner2);
+        _confirmEpochActivation(contextId, epochId, privateKeySigner0, address(0xA1), 0, 0);
+        _confirmEpochActivation(contextId, epochId, privateKeySigner1, address(0xA2), 0, 0);
+        _confirmEpochActivation(contextId, epochId, privateKeySigner2, address(0xA3), 0, 0);
     }
 
     function _buildSingleSignerProof(
@@ -120,7 +268,8 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
 
         address[] memory newSigners = _makeSingleSignerList(signer3);
         vm.prank(owner);
-        protocolConfig.defineNewKmsContext(_makeKmsNodesFromSigners(newSigners), _defaultThresholds());
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParamsFromSigners(newSigners), _defaultThresholds());
+        _activatePendingSingleSignerContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, privateKeySigner3);
         currentCtx = protocolConfig.getCurrentKmsContextId();
     }
 
@@ -129,13 +278,15 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         thresholds.publicDecryption = 2;
 
         vm.prank(owner);
-        protocolConfig.defineNewKmsContext(_makeKmsNodes(3), thresholds);
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(3), thresholds);
+        _activatePendingThreeNodeContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2);
         assertEq(protocolConfig.getPublicDecryptionThreshold(), 2);
     }
 
     function _assertCurrentContextDelegatesToProtocolConfig() internal view {
         uint256 currentCtx = protocolConfig.getCurrentKmsContextId();
-        assertEq(kmsVerifier.getCurrentKmsContextId(), currentCtx);
+        uint256 verifierCtx = kmsVerifier.getCurrentKmsContextId();
+        assertEq(verifierCtx, currentCtx);
         assertEq(kmsVerifier.getKmsSigners(), protocolConfig.getKmsSignersForContext(currentCtx));
     }
 
@@ -144,7 +295,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
     // -----------------------------------------------------------------------
 
     function test_PostProxyUpgradeCheck() public {
-        assertEq(kmsVerifier.getVersion(), "KMSVerifier v0.3.0");
+        assertEq(kmsVerifier.getVersion(), "KMSVerifier v0.4.0");
         _assertCurrentContextDelegatesToProtocolConfig();
     }
 
@@ -159,19 +310,24 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
     }
 
     function test_DelegationGetCurrentKmsContextId() public {
-        assertEq(kmsVerifier.getCurrentKmsContextId(), protocolConfig.getCurrentKmsContextId());
+        uint256 verifierCtx = kmsVerifier.getCurrentKmsContextId();
+        (uint256 configCtx, ) = protocolConfig.getCurrentKmsContextAndEpoch();
+        assertEq(verifierCtx, configCtx);
     }
 
     function test_ProtocolConfigStateChangeReflectedInVerifier() public {
         uint256 currentCtx = protocolConfig.getCurrentKmsContextId();
-        assertEq(kmsVerifier.getCurrentKmsContextId(), currentCtx);
+        uint256 verifierCtx = kmsVerifier.getCurrentKmsContextId();
+        assertEq(verifierCtx, currentCtx);
 
         address[] memory nextSigners = _makeSingleSignerList(signer3);
         vm.prank(owner);
-        protocolConfig.defineNewKmsContext(_makeKmsNodesFromSigners(nextSigners), _defaultThresholds());
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParamsFromSigners(nextSigners), _defaultThresholds());
+        _activatePendingSingleSignerContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, privateKeySigner3);
 
         uint256 nextCtx = protocolConfig.getCurrentKmsContextId();
-        assertEq(kmsVerifier.getCurrentKmsContextId(), nextCtx);
+        uint256 verifierCtxAfter = kmsVerifier.getCurrentKmsContextId();
+        assertEq(verifierCtxAfter, nextCtx);
         assertEq(kmsVerifier.getKmsSigners(), protocolConfig.getKmsSignersForContext(nextCtx));
         assertTrue(kmsVerifier.isSigner(signer3));
         assertFalse(kmsVerifier.isSigner(signer0));
@@ -226,7 +382,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
 
         address[] memory nextSigners = _makeSingleSignerList(signer3);
         vm.prank(owner);
-        protocolConfig.defineNewKmsContext(_makeKmsNodesFromSigners(nextSigners), _defaultThresholds());
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParamsFromSigners(nextSigners), _defaultThresholds());
 
         address[] memory historicalSigners = kmsVerifier.getSignersForKmsContext(historicalCtx);
         assertEq(historicalSigners.length, 3);
@@ -260,7 +416,8 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
     function test_VerifyDecryptionEIP712KMSSignaturesFailAsExpectedIfNoSignerAdded() public {
         // Rotate to a single-signer context (only signer0)
         vm.prank(owner);
-        protocolConfig.defineNewKmsContext(_makeKmsNodes(1), _defaultThresholds());
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(1), _defaultThresholds());
+        _activatePendingSingleSignerContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, privateKeySigner0);
 
         bytes32[] memory handlesList = _generateMockHandlesList(3);
 
@@ -371,16 +528,18 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         IProtocolConfig.KmsThresholds memory t2 = _defaultThresholds();
         t2.publicDecryption = 2;
         vm.prank(owner);
-        protocolConfig.defineNewKmsContext(_makeKmsNodes(3), t2);
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(3), t2);
+        _activatePendingThreeNodeContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2);
         uint256 historicalCtx = protocolConfig.getCurrentKmsContextId();
         assertEq(protocolConfig.getPublicDecryptionThreshold(), 2);
 
         // Rotate again to a single-signer context with threshold=1 (now current)
         vm.prank(owner);
-        protocolConfig.defineNewKmsContext(
-            _makeKmsNodesFromSigners(_makeSingleSignerList(signer3)),
+        _defineNewKmsContextAndEpoch(
+            _makeKmsNodeParamsFromSigners(_makeSingleSignerList(signer3)),
             _defaultThresholds()
         );
+        _activatePendingSingleSignerContext(KMS_CONTEXT_COUNTER_BASE + 3, EPOCH_COUNTER_BASE + 3, privateKeySigner3);
         assertEq(protocolConfig.getPublicDecryptionThreshold(), 1);
 
         // Verify against historical context with only 1 signature — must fail (threshold=2)
@@ -423,6 +582,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         vm.assume(extraData.length != 0);
         vm.assume(uint8(extraData[0]) != 0x00);
         vm.assume(uint8(extraData[0]) != 0x01);
+        vm.assume(uint8(extraData[0]) != 0x02);
         uint8 version = uint8(extraData[0]);
         (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) = _buildSingleSignerProof(
             privateKeySigner0,
@@ -445,8 +605,32 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
     }
 
+    function test_VerificationWithV1ExtraDataIgnoresTrailingBytes() public {
+        uint256 ctx1 = kmsVerifier.getCurrentKmsContextId();
+        bytes memory extraData = abi.encodePacked(uint8(0x01), ctx1, uint256(12345));
+        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) = _buildSingleSignerProof(
+            privateKeySigner0,
+            extraData
+        );
+
+        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
+    }
+
+    function testFuzz_VerificationFailsWithMalformedV2ExtraData(bytes calldata malformedSuffix) public {
+        vm.assume(malformedSuffix.length != 64);
+        bytes memory extraData = abi.encodePacked(uint8(0x02), malformedSuffix);
+        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) = _buildSingleSignerProof(
+            privateKeySigner0,
+            extraData
+        );
+
+        vm.expectRevert(KMSVerifier.DeserializingExtraDataFail.selector);
+        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
+    }
+
     function testFuzz_VerificationFailsForInvalidContextWithV1ExtraData(uint256 invalidCtx) public {
-        vm.assume(invalidCtx != kmsVerifier.getCurrentKmsContextId());
+        uint256 activeCtx = kmsVerifier.getCurrentKmsContextId();
+        vm.assume(invalidCtx != activeCtx);
         (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) = _buildSingleSignerProof(
             privateKeySigner0,
             abi.encodePacked(uint8(0x01), invalidCtx)
@@ -480,7 +664,19 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
     function test_VerificationSucceedsWithV1ExtraDataForCurrentContext() public {
         uint256 currentCtx = kmsVerifier.getCurrentKmsContextId();
 
-        bytes memory extraData = abi.encodePacked(uint8(0x01), currentCtx, uint256(12345));
+        bytes memory extraData = abi.encodePacked(uint8(0x01), currentCtx);
+        (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) = _buildSingleSignerProof(
+            privateKeySigner0,
+            extraData
+        );
+
+        assertTrue(kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof));
+    }
+
+    function test_VerificationSucceedsWithV2ExtraDataForCurrentContext() public {
+        (uint256 currentCtx, uint256 currentEpoch) = protocolConfig.getCurrentKmsContextAndEpoch();
+
+        bytes memory extraData = abi.encodePacked(uint8(0x02), currentCtx, currentEpoch);
         (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) = _buildSingleSignerProof(
             privateKeySigner0,
             extraData
@@ -513,14 +709,14 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         this.upgrade(owner);
     }
 
-    function test_ReinitializeV3CannotBeCalledTwice() public {
+    function test_ReinitializeV4CannotBeCalledTwice() public {
         vm.prank(owner);
         vm.expectRevert(Initializable.InvalidInitialization.selector);
-        kmsVerifier.reinitializeV3();
+        kmsVerifier.reinitializeV4();
     }
 
     function test_GetContextSignersAndThresholdFromExtraData() public {
-        uint256 ctx1 = kmsVerifier.getCurrentKmsContextId();
+        (uint256 ctx1, uint256 epoch1) = protocolConfig.getCurrentKmsContextAndEpoch();
 
         (address[] memory v0Signers, uint256 v0Threshold) = kmsVerifier.getContextSignersAndThresholdFromExtraData(
             hex"00"
@@ -529,10 +725,6 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         assertEq(v0Signers[0], signer0);
         assertEq(v0Threshold, 1);
 
-        address[] memory nextSigners = _makeSingleSignerList(signer3);
-        vm.prank(owner);
-        protocolConfig.defineNewKmsContext(_makeKmsNodesFromSigners(nextSigners), _defaultThresholds());
-
         bytes memory v1ExtraData = abi.encodePacked(uint8(0x01), ctx1);
         (address[] memory oldCtxSigners, uint256 oldCtxThreshold) = kmsVerifier
             .getContextSignersAndThresholdFromExtraData(v1ExtraData);
@@ -540,9 +732,19 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         assertEq(oldCtxSigners[0], signer0);
         assertEq(oldCtxThreshold, 1);
 
+        bytes memory v2ExtraData = abi.encodePacked(uint8(0x02), ctx1, epoch1);
+        (address[] memory oldCtxV2Signers, uint256 oldCtxV2Threshold) = kmsVerifier
+            .getContextSignersAndThresholdFromExtraData(v2ExtraData);
+        assertEq(oldCtxV2Signers.length, 3);
+        assertEq(oldCtxV2Signers[0], signer0);
+        assertEq(oldCtxV2Threshold, 1);
+
+        address[] memory nextSigners = _makeSingleSignerList(signer3);
         vm.prank(owner);
-        protocolConfig.destroyKmsContext(ctx1);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, ctx1));
-        kmsVerifier.getContextSignersAndThresholdFromExtraData(v1ExtraData);
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParamsFromSigners(nextSigners), _defaultThresholds());
+        uint256 pendingCtx = ctx1 + 1;
+        bytes memory pendingV1ExtraData = abi.encodePacked(uint8(0x01), pendingCtx);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, pendingCtx));
+        kmsVerifier.getContextSignersAndThresholdFromExtraData(pendingV1ExtraData);
     }
 }

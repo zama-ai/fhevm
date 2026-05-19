@@ -14,7 +14,7 @@ import {EmptyUUPSProxyACL} from "@fhevm-host-contracts/contracts/emptyProxyACL/E
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
 import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
-import {KmsNode} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
+import {KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd, protocolConfigAdd, kmsGenerationAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 
 /**
@@ -168,7 +168,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         address kmsVerifyingSource,
         address inputVerifyingSource,
         uint64 chainIDSource,
-        KmsNode[] memory initialKmsNodes,
+        KmsNodeParams[] memory initialKmsNodeParams,
         IProtocolConfig.KmsThresholds memory initialThresholds,
         address[] memory inputSigners,
         uint256 inputThreshold
@@ -177,7 +177,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         PauserSet pauserSet = _deployPauserSet();
         (FHEVMExecutor fheExecutor, ) = _deployFHEVMExecutor(owner);
         _deployHCULimit(owner);
-        (ProtocolConfig protocolConfigProxy, ) = _deployProtocolConfig(owner, initialKmsNodes, initialThresholds);
+        (ProtocolConfig protocolConfigProxy, ) = _deployProtocolConfig(owner, initialKmsNodeParams, initialThresholds);
         _deployKMSGeneration(owner);
         _deployKMSVerifier(owner, kmsVerifyingSource, chainIDSource);
         _deployInputVerifier(owner, inputVerifyingSource, chainIDSource, inputSigners, inputThreshold);
@@ -188,7 +188,8 @@ abstract contract HostContractsDeployerTestUtils is Test {
         require(fheExecutor.getACLAddress() == aclAdd, "executor ACL wiring");
         require(fheExecutor.getHCULimitAddress() == hcuLimitAdd, "executor HCU wiring");
         require(aclProxy.getPauserSetAddress() == pauserSetAdd, "ACL PauserSet wiring");
-        require(protocolConfigProxy.getCurrentKmsContextId() != 0, "ProtocolConfig wiring");
+        (uint256 activeProtocolContextId, ) = protocolConfigProxy.getCurrentKmsContextAndEpoch();
+        require(activeProtocolContextId != 0, "ProtocolConfig wiring");
         require(
             protocolConfigProxy.getPublicDecryptionThreshold() == initialThresholds.publicDecryption,
             "KMS threshold wiring"
@@ -198,7 +199,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
 
     function _deployProtocolConfig(
         address owner,
-        KmsNode[] memory initialKmsNodes,
+        KmsNodeParams[] memory initialKmsNodeParams,
         IProtocolConfig.KmsThresholds memory initialThresholds
     ) internal returns (ProtocolConfig protocolConfigProxy, address protocolConfigImplementation) {
         address emptyProxyImplementation = address(new EmptyUUPSProxy());
@@ -213,10 +214,15 @@ abstract contract HostContractsDeployerTestUtils is Test {
         protocolConfigImplementation = address(new ProtocolConfig());
         vm.label(protocolConfigImplementation, "ProtocolConfig Implementation");
 
+        PcrValues[] memory pcrValues = new PcrValues[](0);
+
         vm.prank(owner);
         EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
             protocolConfigImplementation,
-            abi.encodeCall(ProtocolConfig.initializeFromEmptyProxy, (initialKmsNodes, initialThresholds))
+            abi.encodeCall(
+                ProtocolConfig.initializeFromEmptyProxy,
+                (initialKmsNodeParams, initialThresholds, "", pcrValues)
+            )
         );
 
         protocolConfigProxy = ProtocolConfig(protocolConfigAdd);
@@ -261,22 +267,43 @@ abstract contract HostContractsDeployerTestUtils is Test {
         return abi.encodePacked(r, s, v);
     }
 
-    function _makeKmsNodes(uint256 count) internal pure returns (KmsNode[] memory nodes) {
-        nodes = new KmsNode[](count);
+    function _makeKmsNodeParams(uint256 count) internal pure returns (KmsNodeParams[] memory params) {
+        params = new KmsNodeParams[](count);
         for (uint256 i = 0; i < count; i++) {
-            nodes[i] = KmsNode({
+            string memory ipAddress = string.concat("127.0.0.", vm.toString(i + 1));
+            params[i] = KmsNodeParams({
                 txSenderAddress: address(uint160(0xA1 + i)),
                 signerAddress: vm.addr((i + 1) * 0x100),
-                ipAddress: string.concat("127.0.0.", vm.toString(i + 1)),
-                storageUrl: string.concat("https://s", vm.toString(i), ".example.com")
+                ipAddress: ipAddress,
+                storageUrl: string.concat("https://s", vm.toString(i), ".example.com"),
+                partyId: int32(uint32(i)),
+                mpcIdentity: ipAddress,
+                caCert: "",
+                storagePrefix: string.concat("kms/node", vm.toString(i))
             });
         }
     }
 
-    function _makeKmsNodesFromSigners(address[] memory signers) internal pure returns (KmsNode[] memory nodes) {
-        nodes = _makeKmsNodes(signers.length);
+    function _makeKmsNodeParamsFromSigners(
+        address[] memory signers
+    ) internal pure returns (KmsNodeParams[] memory params) {
+        params = _makeKmsNodeParams(signers.length);
         for (uint256 i = 0; i < signers.length; i++) {
-            nodes[i].signerAddress = signers[i];
+            params[i].signerAddress = signers[i];
+        }
+    }
+
+    /// @dev Projection of _makeKmsNodeParams onto the stored KmsNode shape, for getKmsNodesForContext assertions.
+    function _makeKmsNodes(uint256 count) internal pure returns (KmsNode[] memory nodes) {
+        KmsNodeParams[] memory params = _makeKmsNodeParams(count);
+        nodes = new KmsNode[](count);
+        for (uint256 i = 0; i < count; i++) {
+            nodes[i] = KmsNode({
+                txSenderAddress: params[i].txSenderAddress,
+                signerAddress: params[i].signerAddress,
+                ipAddress: params[i].ipAddress,
+                storageUrl: params[i].storageUrl
+            });
         }
     }
 }

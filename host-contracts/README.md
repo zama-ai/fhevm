@@ -95,7 +95,7 @@ Notes:
 `ProtocolConfig` state. Off-chain consumers should move to the `ProtocolConfig` emitter at
 `protocolConfigAdd` (`addresses/FHEVMHostAddresses.sol`):
 
-- `KMSVerifier.NewContextSet(uint256,address[],uint256)` -> `ProtocolConfig.NewKmsContext(uint256,KmsNode[],KmsThresholds)`
+- `KMSVerifier.NewContextSet(uint256,address[],uint256)` -> `ProtocolConfig.NewKmsContext(uint256,uint256,KmsNodeParams[],KmsThresholds,string,PcrValues[])`
 - `KMSVerifier.KMSContextDestroyed(uint256)` -> `ProtocolConfig.KmsContextDestroyed(uint256)`
 
 ## Host Deployment Role

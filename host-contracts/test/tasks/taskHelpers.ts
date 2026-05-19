@@ -22,6 +22,10 @@ export function buildProtocolConfigNodes(): Array<{
   signerAddress: string;
   ipAddress: string;
   storageUrl: string;
+  partyId: number;
+  mpcIdentity: string;
+  caCert: string;
+  storagePrefix: string;
 }> {
   return [
     {
@@ -29,24 +33,40 @@ export function buildProtocolConfigNodes(): Array<{
       signerAddress: '0x0000000000000000000000000000000000002222',
       ipAddress: '127.0.0.1',
       storageUrl: 'https://s0.example.com',
+      partyId: 0,
+      mpcIdentity: '127.0.0.1',
+      caCert: '0x',
+      storagePrefix: '',
     },
     {
       txSenderAddress: '0x0000000000000000000000000000000000003333',
       signerAddress: '0x0000000000000000000000000000000000004444',
       ipAddress: '127.0.0.2',
       storageUrl: 'https://s1.example.com',
+      partyId: 1,
+      mpcIdentity: '127.0.0.2',
+      caCert: '0x',
+      storagePrefix: '',
     },
     {
       txSenderAddress: '0x0000000000000000000000000000000000005555',
       signerAddress: '0x0000000000000000000000000000000000006666',
       ipAddress: '127.0.0.3',
       storageUrl: 'https://s2.example.com',
+      partyId: 2,
+      mpcIdentity: '127.0.0.3',
+      caCert: '0x',
+      storagePrefix: '',
     },
     {
       txSenderAddress: '0x0000000000000000000000000000000000007777',
       signerAddress: '0x0000000000000000000000000000000000008888',
       ipAddress: '127.0.0.4',
       storageUrl: 'https://s3.example.com',
+      partyId: 3,
+      mpcIdentity: '127.0.0.4',
+      caCert: '0x',
+      storagePrefix: '',
     },
   ];
 }

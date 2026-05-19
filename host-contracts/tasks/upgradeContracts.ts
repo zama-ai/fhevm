@@ -2,6 +2,7 @@ import { Interface, Wallet } from 'ethers';
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 
+import { buildProtocolConfigContextArgs } from './taskDeploy';
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 
 const REINITIALIZE_FUNCTION_PREFIX = 'reinitializeV'; // Prefix for reinitialize functions
@@ -416,7 +417,13 @@ task('task:upgradeProtocolConfig')
     types.boolean,
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    await upgradeContract('ProtocolConfig', 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', taskArgs, hre);
+    await upgradeContract(
+      'ProtocolConfig',
+      'PROTOCOL_CONFIG_CONTRACT_ADDRESS',
+      taskArgs,
+      hre,
+      buildProtocolConfigContextArgs(),
+    );
   });
 
 task('task:prepareUpgradeProtocolConfig')
@@ -441,7 +448,13 @@ task('task:prepareUpgradeProtocolConfig')
     types.boolean,
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    await prepareUpgradeContract('ProtocolConfig', 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', taskArgs, hre);
+    await prepareUpgradeContract(
+      'ProtocolConfig',
+      'PROTOCOL_CONFIG_CONTRACT_ADDRESS',
+      taskArgs,
+      hre,
+      buildProtocolConfigContextArgs(),
+    );
   });
 
 task('task:upgradeInputVerifier')
