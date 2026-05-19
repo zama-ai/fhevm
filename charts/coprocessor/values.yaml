@@ -553,6 +553,102 @@ hostListenerCatchupOnlyShared:
       maxUnavailable: 0
 
 # -----------------------------------------------------------------------------
+# Listener Consumer Shared
+# -----------------------------------------------------------------------------
+# Consumes listener events from the database / queue (no chain RPC).
+# Shared/default configuration for every chain entry that enables
+# listenerConsumer. This block is the primary source for image, replicas,
+# resources, ports, probes, tracing, scheduling, and structured args.
+# Per-chain listenerConsumer config does not deep-override this block; it only:
+#   - enables the consumer for that chain
+#   - provides required chain-specific contracts via the parent chain entry
+#   - appends env and extraArgs
+#   - may override serviceName
+#   - may claim the unsuffixed legacy resource name via useLegacyName
+listenerConsumerShared:
+  image:
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/host-listener
+    tag: v0.11.0
+
+  replicas: 1
+
+  # Additional environment variables.
+  env: []
+
+  # Structured args. serviceName is the only modeled key; per-chain
+  # chains[].listenerConsumer.serviceName takes precedence when set.
+  args:
+    # serviceName: listener-consumer
+
+  # Suppress any template-injected arg above. Values are kebab-case flag names
+  # (no leading `--`).
+  disabledArgs: []
+
+  # Additional raw CLI flags, appended after template-injected args.
+  # Template-injected args: --database-url, --acl-contract-address,
+  #   --tfhe-contract-address, --kms-generation-address, --health-port,
+  #   --metrics-addr, --service-name, --coprocessor-api-key
+  extraArgs: []
+
+  # Service ports configuration
+  ports:
+    metrics: 9100
+    healthcheck: 8080
+
+  serviceMonitor:
+    enabled: false
+
+  # serviceAccountName: existing SA for workload identity (e.g. IRSA). Unset = namespace default.
+  serviceAccountName:
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Health check probes
+  probes:
+    liveness:
+      enabled: false
+      httpGet:
+        path: /liveness
+        port: healthcheck
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: false
+      httpGet:
+        path: /healthz
+        port: healthcheck
+      initialDelaySeconds: 5
+      periodSeconds: 10
+
+  # Distributed tracing (inherits from commonConfig but can be overridden)
+  tracing:
+    enabled: false
+    # Stable logical service name for OTEL traces. If empty, OTEL_SERVICE_NAME
+    # falls back to the pod name (metadata.name), which fragments traces across
+    # pod replicas and rollouts. Set a stable string per environment.
+    service: ""
+
+  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
+  podLabels: {}
+
+  # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
+  nodeSelector:
+  affinity:
+  tolerations:
+
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+# -----------------------------------------------------------------------------
 # Chains
 # -----------------------------------------------------------------------------
 # Each entry deploys up to three host listener variants for a given chain.
