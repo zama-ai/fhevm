@@ -22,9 +22,9 @@ pub use fhevm_gateway_bindings::decryption::Decryption;
 pub use fhevm_gateway_bindings::input_verification::InputVerification;
 
 /// Selects which user-decryption gateway overload the mock should match
-/// when registering a success pattern. `Direct` / `Delegated` are the v2
-/// dialects (legacy `_1Call` / `delegatedUserDecryptionRequestCall`);
-/// `Unified` is the unified EIP-712 v3 overload (`_0Call`).
+/// when registering a success pattern. `Direct` / `Delegated` are the
+/// legacy EIP-712 types (`_1Call` / `delegatedUserDecryptionRequestCall`);
+/// `Unified` is the unified EIP-712 overload (`_0Call`).
 #[derive(Debug, Clone, Copy)]
 pub enum UserDecryptKind {
     Direct,
@@ -341,11 +341,11 @@ impl FhevmMockWrapper {
     // Shared internals for user / delegated-user decryption
 
     /// Internal: register a user-decrypt success pattern for the given
-    /// dialect. The request log emitted in the immediate response uses
-    /// `UserDecryptionRequest_0` for `Direct` / `Delegated` (legacy v2) and
-    /// `UserDecryptionRequest_1` for `Unified` (unified EIP-712 v3). The 10
-    /// `UserDecryptionResponse` shares emitted afterwards are
-    /// dialect-agnostic and identical across all variants.
+    /// attestation type. The request log emitted in the immediate
+    /// response uses `UserDecryptionRequest_0` for `Direct` / `Delegated`
+    /// (legacy EIP-712) and `UserDecryptionRequest_1` for `Unified`
+    /// (unified EIP-712). The 10 `UserDecryptionResponse` shares emitted
+    /// afterwards are the same for every attestation type.
     fn register_user_decrypt_success(
         &self,
         kind: UserDecryptKind,
@@ -370,7 +370,7 @@ impl FhevmMockWrapper {
         let extra_data = Bytes::from(vec![0x00]); // Same extraData for all events in a decryption
 
         // Build the request log (immediate response). Pick the event
-        // signature that matches the dialect: the relayer's
+        // signature that matches the attestation type: the relayer's
         // `on_receipt_received` scans the receipt for both
         // `UserDecryptionRequest_0` (legacy) and `_1` (unified).
         let request_log = match kind {
