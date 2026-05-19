@@ -13,7 +13,10 @@ import {HCULimit} from "@fhevm-host-contracts/contracts/HCULimit.sol";
 import {PauserSet} from "@fhevm-host-contracts/contracts/immutable/PauserSet.sol";
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
 import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
-import {KmsNode} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
+import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
+import {KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
+import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
+import {Vm} from "forge-std/Test.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
 contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
@@ -49,8 +52,8 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
     function test_DeployKMSVerifier_UsesProxyUpgradeFlow() public {
         // KMSVerifier inherits ACLOwnable as well, ensuring the ACL proxy is in place avoids upgrade reverts.
         _deployACL(OWNER);
-        KmsNode[] memory initialKmsNodes = _makeKmsNodes(2);
-        _deployProtocolConfig(OWNER, initialKmsNodes, _defaultThresholds());
+        KmsNodeParams[] memory initialKmsNodeParams = _makeKmsNodeParams(2);
+        _deployProtocolConfig(OWNER, initialKmsNodeParams, _defaultThresholds());
 
         (KMSVerifier kmsVerifierProxy, address kmsVerifierImplementation) = _deployKMSVerifier(
             OWNER,
@@ -60,12 +63,12 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
 
         assertEq(address(kmsVerifierProxy), kmsVerifierAdd, "KMSVerifier proxy address mismatch");
         assertNotEq(kmsVerifierImplementation, address(0), "Implementation not deployed");
-        assertEq(kmsVerifierProxy.getVersion(), "KMSVerifier v0.3.0", "Version mismatch");
+        assertEq(kmsVerifierProxy.getVersion(), "KMSVerifier v0.4.0", "Version mismatch");
         assertEq(kmsVerifierProxy.getThreshold(), _defaultThresholds().publicDecryption, "Threshold mismatch");
         address[] memory storedSigners = kmsVerifierProxy.getKmsSigners();
-        assertEq(storedSigners.length, initialKmsNodes.length, "Signers length mismatch");
-        assertEq(storedSigners[0], initialKmsNodes[0].signerAddress, "Signer[0] mismatch");
-        assertEq(storedSigners[1], initialKmsNodes[1].signerAddress, "Signer[1] mismatch");
+        assertEq(storedSigners.length, initialKmsNodeParams.length, "Signers length mismatch");
+        assertEq(storedSigners[0], initialKmsNodeParams[0].signerAddress, "Signer[0] mismatch");
+        assertEq(storedSigners[1], initialKmsNodeParams[1].signerAddress, "Signer[1] mismatch");
         assertEq(_readImplementationSlot(kmsVerifierAdd), kmsVerifierImplementation, "Implementation slot mismatch");
     }
 
@@ -128,7 +131,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
     }
 
     function test_DeployFullHostStack_DeploysAndWiresAllContracts() public {
-        KmsNode[] memory initialKmsNodes = _makeKmsNodes(1);
+        KmsNodeParams[] memory initialKmsNodeParams = _makeKmsNodeParams(1);
         address[] memory inputSigners = new address[](1);
         inputSigners[0] = address(0x8888);
         address pauser = address(0xbeef);
@@ -139,7 +142,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
             GATEWAY_SOURCE_CONTRACT,
             GATEWAY_SOURCE_CONTRACT,
             GATEWAY_CHAIN_ID,
-            initialKmsNodes,
+            initialKmsNodeParams,
             _defaultThresholds(),
             inputSigners,
             1
@@ -177,13 +180,17 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
     function test_DeployProtocolConfig_UsesProxyUpgradeFlow() public {
         _deployACL(OWNER);
 
-        KmsNode[] memory nodes = _makeKmsNodes(2);
+        KmsNodeParams[] memory nodeParams = _makeKmsNodeParams(2);
 
-        (ProtocolConfig pcProxy, address pcImplementation) = _deployProtocolConfig(OWNER, nodes, _defaultThresholds());
+        (ProtocolConfig pcProxy, address pcImplementation) = _deployProtocolConfig(
+            OWNER,
+            nodeParams,
+            _defaultThresholds()
+        );
 
         assertEq(address(pcProxy), protocolConfigAdd, "ProtocolConfig proxy address mismatch");
         assertNotEq(pcImplementation, address(0), "Implementation not deployed");
-        assertEq(pcProxy.getVersion(), "ProtocolConfig v0.1.0", "Version mismatch");
+        assertEq(pcProxy.getVersion(), "ProtocolConfig v0.2.0", "Version mismatch");
         assertEq(pcProxy.getPublicDecryptionThreshold(), 1, "Public decryption threshold mismatch");
         assertEq(pcProxy.getUserDecryptionThreshold(), 1, "User decryption threshold mismatch");
         assertEq(pcProxy.getKmsGenThreshold(), 1, "KmsGen threshold mismatch");
@@ -191,12 +198,100 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         assertEq(_readImplementationSlot(protocolConfigAdd), pcImplementation, "Implementation slot mismatch");
     }
 
+    function test_DeployProtocolConfigMirror_UsesProxyUpgradeFlow() public {
+        _deployACL(OWNER);
+
+        KmsNodeParams[] memory nodeParams = _makeKmsNodeParams(2);
+        uint256 canonicalContextId = KMS_CONTEXT_COUNTER_BASE + 7;
+        IProtocolConfig.KmsThresholds memory thresholds = IProtocolConfig.KmsThresholds({
+            publicDecryption: 1,
+            userDecryption: 2,
+            kmsGen: 2,
+            mpc: 1
+        });
+
+        (ProtocolConfig pcProxy, address pcImplementation) = _deployProtocolConfigMirror(
+            OWNER,
+            canonicalContextId,
+            nodeParams,
+            thresholds
+        );
+
+        assertEq(address(pcProxy), protocolConfigAdd, "ProtocolConfig proxy address mismatch");
+        assertNotEq(pcImplementation, address(0), "Implementation not deployed");
+        assertEq(pcProxy.getVersion(), "ProtocolConfig v0.2.0", "Version mismatch");
+        assertEq(pcProxy.getCurrentKmsContextId(), canonicalContextId, "Context ID mismatch");
+        assertEq(pcProxy.getUserDecryptionThreshold(), 2, "User decryption threshold mismatch");
+        // The mirror bootstrap opens the genesis epoch (EPOCH_COUNTER_BASE+1) then advances it on the
+        // mirror (EPOCH_COUNTER_BASE+2) — the literal subject of the epoch-lifecycle commit.
+        (uint256 activeContextId, uint256 activeEpochId) = pcProxy.getCurrentKmsContextAndEpoch();
+        assertEq(activeContextId, canonicalContextId, "Active context mismatch");
+        assertEq(activeEpochId, EPOCH_COUNTER_BASE + 2, "Active epoch mismatch");
+        assertEq(_readImplementationSlot(protocolConfigAdd), pcImplementation, "Implementation slot mismatch");
+    }
+
+    /// @dev the four MPC-metadata fields added to KmsNodeParams (partyId/mpcIdentity/caCert/
+    ///      storagePrefix) are not stored on KmsNode and only survive through the MirrorKmsContext
+    ///      event. The four stored fields survive into KmsNode storage. A transposition of any field
+    ///      would fail this round-trip assertion.
+    function test_MirrorKmsContext_PreservesAllNodeParamFields() public {
+        _deployACL(OWNER);
+        KmsNodeParams[] memory bootstrap = _makeKmsNodeParams(1);
+        _deployProtocolConfig(OWNER, bootstrap, _defaultThresholds());
+        ProtocolConfig pcProxy = ProtocolConfig(protocolConfigAdd);
+
+        KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
+        IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
+        uint256 mirroredContextId = KMS_CONTEXT_COUNTER_BASE + 4;
+
+        vm.recordLogs();
+        vm.prank(OWNER);
+        pcProxy.mirrorKmsContext(mirroredContextId, nodes, thresholds, "kms-v3", new PcrValues[](0));
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        // Decode MirrorKmsContext to recover the full (8-field) KmsNodeParams array.
+        KmsNodeParams[] memory emitted;
+        bool found;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == IProtocolConfig.MirrorKmsContext.selector) {
+                (emitted, , , ) = abi.decode(
+                    logs[i].data,
+                    (KmsNodeParams[], IProtocolConfig.KmsThresholds, string, PcrValues[])
+                );
+                found = true;
+                break;
+            }
+        }
+        assertTrue(found, "MirrorKmsContext not emitted");
+        assertEq(emitted.length, nodes.length, "node count mismatch");
+        for (uint256 i = 0; i < nodes.length; i++) {
+            assertEq(emitted[i].txSenderAddress, nodes[i].txSenderAddress, "txSender mismatch");
+            assertEq(emitted[i].signerAddress, nodes[i].signerAddress, "signer mismatch");
+            assertEq(emitted[i].ipAddress, nodes[i].ipAddress, "ipAddress mismatch");
+            assertEq(emitted[i].storageUrl, nodes[i].storageUrl, "storageUrl mismatch");
+            assertEq(emitted[i].partyId, nodes[i].partyId, "partyId mismatch");
+            assertEq(emitted[i].mpcIdentity, nodes[i].mpcIdentity, "mpcIdentity mismatch");
+            assertEq(emitted[i].caCert, nodes[i].caCert, "caCert mismatch");
+            assertEq(emitted[i].storagePrefix, nodes[i].storagePrefix, "storagePrefix mismatch");
+        }
+
+        // The four stored fields also survive into KmsNode storage.
+        KmsNode[] memory stored = pcProxy.getKmsNodesForContext(mirroredContextId);
+        assertEq(stored.length, nodes.length, "stored node count mismatch");
+        for (uint256 i = 0; i < nodes.length; i++) {
+            assertEq(stored[i].txSenderAddress, nodes[i].txSenderAddress, "stored txSender mismatch");
+            assertEq(stored[i].signerAddress, nodes[i].signerAddress, "stored signer mismatch");
+            assertEq(stored[i].ipAddress, nodes[i].ipAddress, "stored ipAddress mismatch");
+            assertEq(stored[i].storageUrl, nodes[i].storageUrl, "stored storageUrl mismatch");
+        }
+    }
+
     function test_DeployKMSGeneration_UsesProxyUpgradeFlow() public {
         _deployACL(OWNER);
 
         // KMSGeneration reads from ProtocolConfig so we need it deployed
-        KmsNode[] memory nodes = _makeKmsNodes(1);
-        _deployProtocolConfig(OWNER, nodes, _defaultThresholds());
+        KmsNodeParams[] memory nodeParams = _makeKmsNodeParams(1);
+        _deployProtocolConfig(OWNER, nodeParams, _defaultThresholds());
 
         (KMSGeneration kgProxy, address kgImplementation) = _deployKMSGeneration(OWNER);
 

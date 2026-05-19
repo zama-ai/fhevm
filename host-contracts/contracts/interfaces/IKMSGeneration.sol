@@ -34,10 +34,24 @@ interface IKMSGeneration {
     }
 
     /**
+     * @notice The full record of a completed key, used to seed resharing of previous materials.
+     * @param prepKeygenId The preprocessing keygen ID the key derives from.
+     * @param keyId The key ID.
+     * @param paramsType The key parameters type.
+     * @param keyDigests The per-type digests of the key.
+     */
+    struct KeyInfo {
+        uint256 prepKeygenId;
+        uint256 keyId;
+        ParamsType paramsType;
+        KeyDigest[] keyDigests;
+    }
+
+    /**
      * @notice Emitted to trigger an FHE key generation preprocessing.
      * @param prepKeygenId The ID of the preprocessing keygen request.
      * @param paramsType The type of the parameters to use.
-     * @param extraData Additional context data (0x01 || contextId).
+     * @param extraData Additional context data (0x01 || contextId, or 0x02 || contextId || epochId).
      */
     event PrepKeygenRequest(uint256 prepKeygenId, ParamsType paramsType, bytes extraData);
 
@@ -353,11 +367,30 @@ interface IKMSGeneration {
     function getConsensusTxSenders(uint256 requestId) external view returns (address[] memory);
 
     /**
+     * @notice Get the key IDs that reached consensus.
+     * @return The completed key IDs.
+     */
+    function getCompletedKeyIds() external view returns (uint256[] memory);
+
+    /**
+     * @notice Get the CRS IDs that reached consensus.
+     * @return The completed CRS IDs.
+     */
+    function getCompletedCrsIds() external view returns (uint256[] memory);
+
+    /**
      * @notice Get the key materials for a given key ID.
      * @param keyId The ID of the key.
      * @return The key materials (storage URLs, key digests).
      */
     function getKeyMaterials(uint256 keyId) external view returns (string[] memory, KeyDigest[] memory);
+
+    /**
+     * @notice Get the full completed-key record for a given key ID, in a single call.
+     * @param keyId The ID of the key.
+     * @return The key record (prepKeygenId, keyId, paramsType, key digests).
+     */
+    function getKeyInfo(uint256 keyId) external view returns (KeyInfo memory);
 
     /**
      * @notice Get the CRS materials for a given CRS ID.

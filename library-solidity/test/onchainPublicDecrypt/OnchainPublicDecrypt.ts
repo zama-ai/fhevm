@@ -80,10 +80,17 @@ describe('OnchainPublicDecrypt', function () {
       signerAddress: address,
       ipAddress: `127.0.0.${index + 1}`,
       storageUrl: `https://kms-${index + 1}.example.com`,
+      partyId: index,
+      mpcIdentity: `127.0.0.${index + 1}`,
+      caCert: '0x',
+      storagePrefix: '',
     }));
     const newThresholds = { publicDecryption: 2, userDecryption: 2, kmsGen: 2, mpc: 2 };
-    const txNewConfig = await protocolConfig.connect(deployer).defineNewKmsContext(newNodes, newThresholds);
-    await txNewConfig.wait();
+    await activateNewKmsContext(protocolConfig, deployer, newNodes, newThresholds, accounts.slice(7, 10), [
+      accounts[7],
+      accounts[8],
+      accounts[9],
+    ]);
     expect(await protocolConfig.getPublicDecryptionThreshold()).to.equal(2);
     expect(await kmsVerifier.getKmsSigners()).to.deep.equal(signerAddresses); /// Now KMS_SIGNER_ADDRESS_0, KMS_SIGNER_ADDRESS_1 and KMS_SIGNER_ADDRESS_2 are all signers, threshold is 2
 
@@ -130,15 +137,66 @@ describe('OnchainPublicDecrypt', function () {
         signerAddress: signerAddresses[0],
         ipAddress: '127.0.0.1',
         storageUrl: 'https://kms-1.example.com',
+        partyId: 0,
+        mpcIdentity: '127.0.0.1',
+        caCert: '0x',
+        storagePrefix: '',
       },
     ];
     const resetThresholds = { publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1 };
-    const txResetConfig = await protocolConfig.connect(deployer).defineNewKmsContext(resetNodes, resetThresholds);
-    await txResetConfig.wait();
+    await activateNewKmsContext(protocolConfig, deployer, resetNodes, resetThresholds, [accounts[7], accounts[8]], [
+      accounts[7],
+    ]);
     expect(await protocolConfig.getPublicDecryptionThreshold()).to.equal(1);
     expect(await kmsVerifier.getKmsSigners()).to.deep.equal([signerAddresses[0]]);
   });
 });
+
+async function activateNewKmsContext(
+  protocolConfig: any,
+  deployer: any,
+  nodes: any[],
+  thresholds: { publicDecryption: number; userDecryption: number; kmsGen: number; mpc: number },
+  contextCreationConfirmers: any[],
+  epochActivationConfirmers: any[],
+) {
+  const txNewConfig = await protocolConfig
+    .connect(deployer)
+    .defineNewKmsContextAndEpoch(nodes, thresholds, '', []);
+  const newConfigReceipt = await txNewConfig.wait();
+  const contextId = findEventArgs(protocolConfig, newConfigReceipt, 'NewKmsContext').contextId;
+
+  let epochId;
+  for (const signer of contextCreationConfirmers) {
+    const txConfirmContext = await protocolConfig.connect(signer).confirmKmsContextCreation(contextId);
+    const confirmReceipt = await txConfirmContext.wait();
+    // The pending epoch ID is only known once enough confirmations reach the context-creation quorum,
+    // which emits NewKmsEpoch carrying that epoch ID.
+    const createdEvent = findEventArgs(protocolConfig, confirmReceipt, 'NewKmsEpoch');
+    if (createdEvent !== undefined) {
+      epochId = createdEvent.epochId;
+    }
+  }
+  for (const signer of epochActivationConfirmers) {
+    const txConfirmEpoch = await protocolConfig.connect(signer).confirmEpochActivation(epochId, [], []);
+    await txConfirmEpoch.wait();
+  }
+}
+
+function findEventArgs(protocolConfig: any, receipt: any, eventName: string): any {
+  for (const log of receipt.logs) {
+    let parsed;
+    try {
+      parsed = protocolConfig.interface.parseLog(log);
+    } catch {
+      continue;
+    }
+    if (parsed?.name === eventName) {
+      return parsed.args;
+    }
+  }
+  return undefined;
+}
 
 async function getPublicDecryptionFromReceipt(
   receipt: any,

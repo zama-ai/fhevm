@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {IKMSGeneration} from "./interfaces/IKMSGeneration.sol";
 import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
 import {KmsNode} from "./shared/Structs.sol";
+import {PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE, EXTRA_DATA_V1, EXTRA_DATA_V2} from "./shared/Constants.sol";
 import {protocolConfigAdd} from "../addresses/FHEVMHostAddresses.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {EIP712Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
@@ -89,30 +90,6 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     IProtocolConfig private constant PROTOCOL_CONFIG = IProtocolConfig(protocolConfigAdd);
 
     // ----------------------------------------------------------------------------------------------
-    // Request type tags:
-    // ----------------------------------------------------------------------------------------------
-
-    // Top-byte request type tags kept compatible with the existing protocol encoding.
-    uint8 private constant PREP_KEYGEN_REQUEST_TYPE = 3;
-    uint8 private constant KEYGEN_REQUEST_TYPE = 4;
-    uint8 private constant CRSGEN_REQUEST_TYPE = 5;
-
-    // ----------------------------------------------------------------------------------------------
-    // Counter bases:
-    // ----------------------------------------------------------------------------------------------
-
-    uint256 private constant REQUEST_TYPE_SHIFT = 248;
-
-    // Preprocessing keygen requestId format in bytes: [0000 0011 | counter_1..31]
-    uint256 private constant PREP_KEYGEN_COUNTER_BASE = uint256(PREP_KEYGEN_REQUEST_TYPE) << REQUEST_TYPE_SHIFT;
-
-    // Keygen requestId format in bytes: [0000 0100 | counter_1..31]
-    uint256 private constant KEY_COUNTER_BASE = uint256(KEYGEN_REQUEST_TYPE) << REQUEST_TYPE_SHIFT;
-
-    // CRS generation requestId format in bytes: [0000 0101 | counter_1..31]
-    uint256 private constant CRS_COUNTER_BASE = uint256(CRSGEN_REQUEST_TYPE) << REQUEST_TYPE_SHIFT;
-
-    // ----------------------------------------------------------------------------------------------
     // Contract information:
     // ----------------------------------------------------------------------------------------------
 
@@ -125,11 +102,6 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 2;
     uint256 private constant PATCH_VERSION = 0;
-
-    /**
-     * @dev Extra data versions
-     */
-    uint8 private constant EXTRA_DATA_V1 = 0x01;
 
     /**
      * @dev Constant used for making sure the version number used in the `reinitializer` modifier
@@ -189,8 +161,12 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         // ----------------------------------------------------------------------------------------------
         /// @notice The parameters type used for the request
         mapping(uint256 requestId => ParamsType paramsType) requestParamsType;
-        /// @notice The extra data associated with each request (0x01 || contextId)
+        /// @notice Request extra data: v1 for migrated/imported state, v2 for new requests.
         mapping(uint256 requestId => bytes extraData) requestExtraData;
+        /// @notice Key IDs that reached consensus.
+        uint256[] completedKeyIds;
+        /// @notice CRS IDs that reached consensus.
+        uint256[] completedCrsIds;
     }
 
     /**
@@ -243,7 +219,24 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+
+        // Backfill completed key/CRS IDs from pre-V2 state. These arrays were added in V2: existing
+        // deployments reached consensus without populating them. "Completed" means consensus was
+        // reached, which is recorded by a non-zero consensusDigest, unlike `isRequestDone`, which is
+        // also set on abort (see abortKeygen/abortCrsgen).
+        for (uint256 keyId = KEY_COUNTER_BASE + 1; keyId <= $.keyCounter; keyId++) {
+            if ($.consensusDigest[keyId] != bytes32(0)) {
+                $.completedKeyIds.push(keyId);
+            }
+        }
+        for (uint256 crsId = CRS_COUNTER_BASE + 1; crsId <= $.crsCounter; crsId++) {
+            if ($.consensusDigest[crsId] != bytes32(0)) {
+                $.completedCrsIds.push(crsId);
+            }
+        }
+    }
 
     /**
      * @notice See {IKMSGeneration-keygen}.
@@ -283,8 +276,8 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         // has been generated
         $.requestParamsType[prepKeygenId] = paramsType;
 
-        uint256 contextId = PROTOCOL_CONFIG.getCurrentKmsContextId();
-        bytes memory extraData = _encodeRequestExtraData(contextId);
+        (uint256 contextId, uint256 epochId) = PROTOCOL_CONFIG.getCurrentKmsContextAndEpoch();
+        bytes memory extraData = _encodeRequestExtraDataV2(contextId, epochId);
         $.requestExtraData[prepKeygenId] = extraData;
         $.requestExtraData[keyId] = extraData;
 
@@ -405,6 +398,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
             // Set the active keyId
             $.activeKeyId = keyId;
+            $.completedKeyIds.push(keyId);
             string[] memory consensusUrls = _buildConsensusStorageUrls(contextId, consensusTxSenders);
 
             emit ActivateKey(keyId, consensusUrls, keyDigests);
@@ -438,8 +432,8 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         // been generated
         $.requestParamsType[crsId] = paramsType;
 
-        uint256 contextId = PROTOCOL_CONFIG.getCurrentKmsContextId();
-        bytes memory extraData = _encodeRequestExtraData(contextId);
+        (uint256 contextId, uint256 epochId) = PROTOCOL_CONFIG.getCurrentKmsContextAndEpoch();
+        bytes memory extraData = _encodeRequestExtraDataV2(contextId, epochId);
         $.requestExtraData[crsId] = extraData;
 
         emit CrsgenRequest(crsId, maxBitLength, paramsType, extraData);
@@ -492,6 +486,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
             // Set the active CRS ID
             $.activeCrsId = crsId;
+            $.completedCrsIds.push(crsId);
 
             string[] memory consensusUrls = _buildConsensusStorageUrls(contextId, consensusTxSenders);
             emit ActivateCrs(crsId, consensusUrls, crsDigest);
@@ -634,6 +629,22 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     }
 
     /**
+     * @notice See {IKMSGeneration-getCompletedKeyIds}.
+     */
+    function getCompletedKeyIds() external view virtual returns (uint256[] memory) {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+        return $.completedKeyIds;
+    }
+
+    /**
+     * @notice See {IKMSGeneration-getCompletedCrsIds}.
+     */
+    function getCompletedCrsIds() external view virtual returns (uint256[] memory) {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+        return $.completedCrsIds;
+    }
+
+    /**
      * @notice See {IKMSGeneration-getKeyMaterials}.
      */
     function getKeyMaterials(uint256 keyId) external view virtual returns (string[] memory, KeyDigest[] memory) {
@@ -651,6 +662,27 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         string[] memory consensusUrls = _buildConsensusStorageUrls(contextId, consensusTxSenders);
 
         return (consensusUrls, $.keyDigests[keyId]);
+    }
+
+    /**
+     * @notice See {IKMSGeneration-getKeyInfo}.
+     */
+    function getKeyInfo(uint256 keyId) external view virtual returns (KeyInfo memory) {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+        if (!$.isRequestDone[keyId]) {
+            revert KeyNotGenerated(keyId);
+        }
+        if ($.consensusDigest[keyId] == bytes32(0)) {
+            revert KeyAborted(keyId);
+        }
+        uint256 prepKeygenId = $.keygenIdPairs[keyId];
+        return
+            KeyInfo({
+                prepKeygenId: prepKeygenId,
+                keyId: keyId,
+                paramsType: $.requestParamsType[prepKeygenId],
+                keyDigests: $.keyDigests[keyId]
+            });
     }
 
     /**
@@ -864,7 +896,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     }
 
     /**
-     * @notice Extracts the KMS context ID from request extraData.
+     * @notice Extracts the context ID from the request extraData.
      * @param extraData The stored extra data.
      * @return contextId The extracted context ID, or the current context if extraData is empty.
      */
@@ -876,21 +908,27 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         }
 
         uint8 version = uint8(extraData[0]);
-        if (version != EXTRA_DATA_V1) {
+        if (version != EXTRA_DATA_V1 && version != EXTRA_DATA_V2) {
             revert UnsupportedExtraDataVersion(version);
         }
-        if (extraData.length < 33) {
+        if (version == EXTRA_DATA_V1 && extraData.length != 33) {
+            revert DeserializingExtraDataFail();
+        }
+        if (version == EXTRA_DATA_V2 && extraData.length != 65) {
             revert DeserializingExtraDataFail();
         }
         // v1 extraData layout: [version(1)] [contextId(32)]
+        // v2 extraData layout: [version(1)] [contextId(32)] [epochId(32)]
         // mload at offset 33 reads 32 bytes starting after the 1-byte version prefix.
         assembly {
             contextId := mload(add(extraData, 33))
         }
     }
 
-    function _encodeRequestExtraData(uint256 contextId) internal pure virtual returns (bytes memory) {
-        // Encode V1 (contextId only) until resharing (RFC 005) is implemented.
-        return abi.encodePacked(EXTRA_DATA_V1, contextId);
+    function _encodeRequestExtraDataV2(
+        uint256 contextId,
+        uint256 epochId
+    ) internal pure virtual returns (bytes memory) {
+        return abi.encodePacked(EXTRA_DATA_V2, contextId, epochId);
     }
 }

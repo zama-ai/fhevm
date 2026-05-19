@@ -95,7 +95,7 @@ Notes:
 `ProtocolConfig` state. Off-chain consumers should move to the `ProtocolConfig` emitter at
 `protocolConfigAdd` (`addresses/FHEVMHostAddresses.sol`):
 
-- `KMSVerifier.NewContextSet(uint256,address[],uint256)` -> `ProtocolConfig.NewKmsContext(uint256,KmsNode[],KmsThresholds)`
+- `KMSVerifier.NewContextSet(uint256,address[],uint256)` -> `ProtocolConfig.NewKmsContext(uint256,uint256,KmsNodeParams[],KmsThresholds,string,PcrValues[])`
 - `KMSVerifier.KMSContextDestroyed(uint256)` -> `ProtocolConfig.KmsContextDestroyed(uint256)`
 
 ## Host Deployment Role
@@ -110,16 +110,34 @@ npx hardhat task:deployAllHostContracts --with-kms-generation false  # non-canon
 `KMSGeneration` is deployed only on the canonical host chain. Non-canonical host chains
 deploy the common host contracts only.
 
-### Non-canonical host chains
+### One contract, many chains: canonical vs. non-canonical
 
-`KMSGeneration` is NOT deployed on non-canonical host chains. `ProtocolConfig` on
-non-canonical chains is a replica whose state is mirrored manually (Phase 1) or via
-LayerZero / LzRead (Phase 2) from the canonical chain. Operators mirroring a canonical
-rotation to non-canonical chains call `defineNewKmsContext` directly on each non-canonical
-`ProtocolConfig`, using the same `kmsNodes` and `thresholds` as the canonical rotation.
+**Ethereum is the canonical host — the single source of truth for KMS context/epoch state. The
+lifecycle runs only there.** Governance opens a context/epoch
+(`defineNewKmsContextAndEpoch` / `defineNewEpochForCurrentKmsContext`) and KMS signers reach
+quorum (`confirmKmsContextCreation`, `confirmEpochActivation`) before it activates. `KMSGeneration`
+is deployed only here.
 
-No on-chain guard prevents a non-canonical replica from drifting if a mirror transaction is
-skipped. Operators are responsible for fan-out correctness.
+The **same** `ProtocolConfig` contract is deployed on every other host chain too (there is no
+separate "multichain" contract), but those non-canonical hosts (e.g. Polygon) are read-replicas:
+they never run the lifecycle/quorum path, since KMS resharing and attestations happen once, on
+Ethereum. They have no `KMSGeneration`, and their only write path is the mirror methods below.
+
+### Mirror methods (non-canonical write path)
+
+`mirrorKmsContext` and `mirrorKmsEpoch` are how a replica tracks Ethereum. They are `onlyACLOwner`
+and bypass the confirmation quorum — a replica can't re-run the MPC attestations, so it trusts the
+operator to import state Ethereum has already finalized, landing it as immediately `Active`:
+
+- `mirrorKmsContext(contextId, kmsNodeParams, thresholds, softwareVersion, pcrValues)` — imports a
+  context as the new active context; emits `MirrorKmsContext`.
+- `mirrorKmsEpoch(contextId, epochId)` — advances the active epoch of the mirrored context; emits
+  `MirrorKmsEpoch`.
+
+IDs must be **strictly increasing** — the only on-chain guard, preventing rollback. Gaps are fine
+(contexts/epochs aborted or never activated on Ethereum are just never mirrored). Nothing stops a
+replica from **drifting** if a mirror call is skipped or applied out of order: replaying each
+Ethereum rotation to every replica, in order, is the operator's responsibility.
 
 ### Initializing a non-canonical ProtocolConfig from the canonical chain
 
@@ -146,12 +164,12 @@ contract address, the current KMS context id, the KMS node set, and all four thr
 (bigints serialized as strings).
 
 **2. Review.** All reads happen at one block, so reviewers (e.g. DAO signers) reproduce the
-artifact byte-for-byte — even after a later `defineNewKmsContext` rotation — by re-running the
+artifact byte-for-byte — even after a later `defineNewKmsContextAndEpoch` rotation — by re-running the
 export with `--block-number <N>` from the artifact and diffing the output.
 
 **3. Apply** the reviewed artifact to the local `ProtocolConfig` proxy. Both environments run the
 same prepare step — deploy the implementation and build the
-`upgradeToAndCall(initializeFromMigration(…))` payload, landing the replica on canonical's
+`upgradeToAndCall(mirrorKmsContext(…))` payload, landing the replica on canonical's
 `currentKmsContextId` instead of a fresh counter. They differ only in who executes that payload:
 the devnet task sends it immediately with the deployer key, so **what runs on devnet is
 byte-identical to what the DAO signs**.
@@ -179,4 +197,5 @@ When deploying a full non-canonical host stack, `task:deployAllHostContracts
 runs the mirror in sequence with the other host contracts (this is what the fhevm-cli multi-chain
 stack uses, so e2e seeds non-canonical chains exactly like production).
 
-Later canonical rotations are mirrored manually with `defineNewKmsContext`, as described above.
+Later canonical rotations are mirrored manually with `mirrorKmsContext` / `mirrorKmsEpoch`, as
+described in [Mirror methods](#mirror-methods-non-canonical-write-path).
