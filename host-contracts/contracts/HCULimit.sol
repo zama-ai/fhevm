@@ -50,6 +50,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned if the operation is not scalar.
     error OnlyScalarOperationsAreSupported();
 
+    /// @notice Returned if a handle is the zero handle.
+    /// @dev Handle slot zero is reserved for the transaction HCU accumulator.
+    error InvalidZeroHandle();
+
     /// @notice Emitted when the global block HCU cap is updated.
     /// @param hcuPerBlock New global block HCU cap.
     event HCUPerBlockSet(uint48 hcuPerBlock);
@@ -1597,6 +1601,56 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
+     * @notice Check the homomorphic complexity units limit for FheMulDiv.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param lhs The left-hand side operand.
+     * @param rhs The right-hand side operand.
+     * @param result Result.
+     * @param caller Original dapp caller address from FHEVMExecutor.
+     */
+    function checkHCUForFheMulDiv(
+        FheType resultType,
+        bytes1 scalarByte,
+        bytes32 lhs,
+        bytes32 rhs,
+        bytes32 result,
+        address caller
+    ) external virtual {
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
+        uint256 opHCU;
+        if (scalarByte == 0x01) {
+            if (resultType == FheType.Uint8) {
+                opHCU = 495000;
+            } else if (resultType == FheType.Uint16) {
+                opHCU = 703000;
+            } else if (resultType == FheType.Uint32) {
+                opHCU = 1080000;
+            } else if (resultType == FheType.Uint64) {
+                opHCU = 1921000;
+            } else {
+                revert UnsupportedOperation();
+            }
+
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
+        } else {
+            if (resultType == FheType.Uint8) {
+                opHCU = 524000;
+            } else if (resultType == FheType.Uint16) {
+                opHCU = 766000;
+            } else if (resultType == FheType.Uint32) {
+                opHCU = 1311000;
+            } else if (resultType == FheType.Uint64) {
+                opHCU = 2911000;
+            } else {
+                revert UnsupportedOperation();
+            }
+
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, lhs, rhs, result);
+        }
+    }
+
+    /**
      * @notice Sets the block-level HCU limit for non-whitelisted callers.
      * @param hcuPerBlock New block-level cap.
      */
@@ -1752,6 +1806,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @dev This function uses inline assembly to load the HCU from a specific storage location.
      */
     function _getHCUForHandle(bytes32 handle) internal view virtual returns (uint256 handleHCU) {
+        // Handle slot zero is reserved for _getHCUForTransaction.
+        if (handle == bytes32(0)) revert InvalidZeroHandle();
         assembly {
             handleHCU := tload(handle)
         }
@@ -1775,6 +1831,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @dev This function uses inline assembly to store the HCU in a specific transient storage slot.
      */
     function _setHCUForHandle(bytes32 handle, uint256 handleHCU) internal virtual {
+        // Handle slot zero is reserved for _setHCUForTransaction.
+        if (handle == bytes32(0)) revert InvalidZeroHandle();
         assembly {
             tstore(handle, handleHCU)
         }

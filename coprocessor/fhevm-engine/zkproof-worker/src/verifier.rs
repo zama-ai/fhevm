@@ -16,6 +16,7 @@ use sqlx::{postgres::PgListener, PgPool};
 use sqlx::{Postgres, Transaction};
 use std::str::FromStr;
 use tfhe::integer::ciphertext::IntegerProvenCompactCiphertextListConformanceParams;
+use tfhe::prelude::CiphertextList;
 use tfhe::ReRandomizationContext;
 use tokio::sync::RwLock;
 use tokio::task::JoinSet;
@@ -37,10 +38,10 @@ use tracing::{debug, error, info};
 pub const MAX_CACHED_KEYS: usize = 100;
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
-const RAW_CT_HASH_DOMAIN_SEPARATOR: [u8; 8] = *b"ZK-w_rct";
-const HANDLE_HASH_DOMAIN_SEPARATOR: [u8; 8] = *b"ZK-w_hdl";
-const RERANDOMISATION_DOMAIN_SEPARATOR: [u8; 8] = *b"ZKw_Rrnd";
-const COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Enc";
+pub(crate) const RAW_CT_HASH_DOMAIN_SEPARATOR: [u8; 8] = *b"ZK-w_rct";
+pub(crate) const HANDLE_HASH_DOMAIN_SEPARATOR: [u8; 8] = *b"ZK-w_hdl";
+pub(crate) const RERANDOMISATION_DOMAIN_SEPARATOR: [u8; 8] = *b"ZKw_Rrnd";
+pub(crate) const COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Enc";
 
 pub(crate) struct Ciphertext {
     handle: Vec<u8>,
@@ -422,25 +423,22 @@ pub(crate) fn verify_proof(
     let verified_list = verify_proof_only(request_id, raw_ct, key, crs, aux_data)
         .inspect_err(telemetry::set_current_span_error)?;
 
-    // Step 2: Expand the verified ciphertext list
-    let mut cts = expand_verified_list(request_id, &verified_list)
-        .inspect_err(telemetry::set_current_span_error)?;
-
-    // Step 3: Compute blob hash and set re-randomization metadata on all ciphertexts
+    // Step 2: Compute blob hash used to seed the compact-list re-randomization
     let mut h = Keccak256::new();
     h.update(RAW_CT_HASH_DOMAIN_SEPARATOR);
     h.update(raw_ct);
     let blob_hash = h.finalize().to_vec();
 
+    // Step 3: Re-randomize the verified compact list, then expand
+    let mut cts = rerand_and_expand_verified_list(request_id, &verified_list, &blob_hash, &key.pks)
+        .inspect_err(telemetry::set_current_span_error)?;
+
+    // Step 4: Compute handle hashes
     let handles: Vec<Vec<u8>> = cts
         .iter_mut()
         .enumerate()
-        .map(|(idx, ct)| set_ciphertext_metadata(&blob_hash, idx, ct, aux_data))
+        .map(|(idx, _ct)| compute_handle_hash(&blob_hash, idx, aux_data))
         .collect::<Result<Vec<_>, ExecutionError>>()
-        .inspect_err(telemetry::set_current_span_error)?;
-
-    // Step 4: Re-randomize all ciphertexts before compression
-    re_randomise_ciphertexts(&mut cts, &blob_hash, &key.pks)
         .inspect_err(telemetry::set_current_span_error)?;
 
     // Step 5: Compress and build final ciphertext records
@@ -509,18 +507,42 @@ fn verify_proof_only(
 }
 
 #[tracing::instrument(name = "expand_ciphertext_list", skip_all, fields(count = tracing::field::Empty))]
-fn expand_verified_list(
+fn rerand_and_expand_verified_list(
     request_id: i64,
     the_list: &tfhe::ProvenCompactCiphertextList,
+    blob_hash: &[u8],
+    cpk: &tfhe::CompactPublicKey,
 ) -> Result<Vec<SupportedFheCiphertexts>, ExecutionError> {
     if the_list.is_empty() {
         return Ok(vec![]);
     }
 
-    let expanded: tfhe::CompactCiphertextListExpander = the_list
-        .expand_without_verification()
-        .map_err(|err| ExecutionError::InvalidProof(request_id, err.to_string()))
-        .inspect_err(telemetry::set_current_span_error)?;
+    let mut re_rand_context = ReRandomizationContext::new(
+        RERANDOMISATION_DOMAIN_SEPARATOR,
+        [blob_hash],
+        COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR,
+    );
+    re_rand_context.add_ciphertext(the_list);
+    let mut seed_gen = re_rand_context.finalize();
+    let seed = seed_gen
+        .next_seed()
+        .map_err(FhevmError::ReRandomisationError)?;
+
+    let rerand_expand_span = tracing::info_span!(
+        "rerandomize_and_expand_ciphertext_list",
+        request_id,
+        input_count = the_list.len(),
+        expanded_count = tracing::field::Empty,
+    );
+    let expanded: tfhe::CompactCiphertextListExpander = rerand_expand_span.in_scope(|| {
+        let expanded = the_list
+            .re_randomize_and_expand_without_verification(cpk, seed)
+            .map_err(|err| ExecutionError::InvalidProof(request_id, err.to_string()))
+            .inspect_err(telemetry::set_current_span_error)?;
+
+        tracing::Span::current().record("expanded_count", expanded.len());
+        Ok::<_, ExecutionError>(expanded)
+    })?;
 
     let cts = extract_ct_list(&expanded)
         .map_err(ExecutionError::from)
@@ -529,12 +551,11 @@ fn expand_verified_list(
     Ok(cts)
 }
 
-/// Computes the handle hash and sets re-randomization metadata on a ciphertext.
+/// Computes the handle hash
 /// Returns the full 256-bit handle hash (before index/chain/type/version are patched in).
-fn set_ciphertext_metadata(
+fn compute_handle_hash(
     blob_hash: &[u8],
     ct_idx: usize,
-    the_ct: &mut SupportedFheCiphertexts,
     aux_data: &auxiliary::ZkData,
 ) -> Result<Vec<u8>, ExecutionError> {
     if ct_idx > MAX_INPUT_INDEX as usize {
@@ -556,36 +577,7 @@ fn set_ciphertext_metadata(
     let handle = handle_hash.finalize().to_vec();
     assert_eq!(handle.len(), 32);
 
-    // Add the full 256bit hash as re-randomization metadata, NOT the
-    // truncated hash of the handle
-    the_ct.add_re_randomization_metadata(&handle);
-
     Ok(handle)
-}
-
-/// Re-randomizes all ciphertexts using the compact public key.
-#[tracing::instrument(name = "rerandomise_cts", skip_all)]
-fn re_randomise_ciphertexts(
-    cts: &mut [SupportedFheCiphertexts],
-    blob_hash: &[u8],
-    cpk: &tfhe::CompactPublicKey,
-) -> Result<(), ExecutionError> {
-    let mut re_rand_context = ReRandomizationContext::new(
-        RERANDOMISATION_DOMAIN_SEPARATOR,
-        [blob_hash],
-        COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR,
-    );
-    for ct in cts.iter() {
-        ct.add_to_re_randomization_context(&mut re_rand_context);
-    }
-    let mut seed_gen = re_rand_context.finalize();
-    for ct in cts.iter_mut() {
-        let seed = seed_gen
-            .next_seed()
-            .map_err(FhevmError::ReRandomisationError)?;
-        ct.re_randomise(cpk, seed)?;
-    }
-    Ok(())
 }
 
 /// Compresses the ciphertext and builds the final Ciphertext record with patched handle.

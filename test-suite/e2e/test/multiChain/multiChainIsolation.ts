@@ -179,9 +179,15 @@ describe('Multi-Chain State Isolation', function () {
       expect(this.chainA.erc20Address).to.eq(this.chainB.erc20Address);
 
       const instanceA = await createInstance(this.chains[0]);
-      const inputA = instanceA.createEncryptedInput(this.chainA.erc20Address, this.deployerA.address);
-      inputA.add64(125);
-      const encryptedA = await inputA.encrypt();
+
+      // const inputA = instanceA.createEncryptedInput(this.chainA.erc20Address, this.deployerA.address);
+      // inputA.add64(125);
+      // const encryptedA = await inputA.encrypt();
+      const encryptedA = await instanceA.encryptUint64({
+        contractAddress: this.chainA.erc20Address,
+        userAddress: this.deployerA.address,
+        value: 125,
+      });
 
       const txA = await (erc20A.connect(this.deployerA) as EncryptedERC20)['transfer(address,bytes32,bytes)'](
         this.signersA.dave.address,
@@ -261,17 +267,14 @@ describe('Multi-Chain State Isolation', function () {
       expect(await aclB.isAllowed(balanceHandleBobA, this.signersB.bob.address)).to.eq(false);
 
       const instanceBobB = await createInstance(this.chains[1]);
-      const { publicKey: pubKeyBobB, privateKey: privKeyBobB } = instanceBobB.generateKeypair();
       let crossChainDecryptSucceeded = false;
       try {
-        await userDecryptSingleHandle(
-          balanceHandleBobA,
-          this.chainB.erc20Address,
-          instanceBobB,
-          this.signersB.bob,
-          privKeyBobB,
-          pubKeyBobB,
-        );
+        await instanceBobB.userDecryptSingleHandle({
+          handle: balanceHandleBobA,
+          contractAddress: this.chainB.erc20Address,
+          signer: this.signersB.bob,
+        });
+
         crossChainDecryptSucceeded = true;
       } catch {
         // Expected: Chain A ACL permission should not authorize Chain B decryption.

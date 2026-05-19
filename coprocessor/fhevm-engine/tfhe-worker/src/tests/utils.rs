@@ -1,10 +1,12 @@
 use crate::daemon_cli::Args;
 use fhevm_engine_common::crs::{Crs, CrsCache};
 use fhevm_engine_common::db_keys::{DbKey, DbKeyCache};
+use fhevm_engine_common::drift_revert::WatcherTimeouts;
 use fhevm_engine_common::telemetry::MetricsConfig;
 use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 use std::collections::BTreeMap;
+use std::time::Duration;
 use test_harness::db_utils::setup_test_key;
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
 use tokio::sync::watch::Receiver;
@@ -94,6 +96,13 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
         processed_dcid_ttl_sec: 0,
         dcid_max_no_progress_cycles: 2,
         dcid_ignore_dependency_count_threshold: 100,
+        // Heavy FHE tests can saturate a test Postgres instance for tens of seconds;
+        // relax the watcher's production-tuned thresholds so fail-fast doesn't trip
+        // on slow polls during the test workload.
+        drift_revert_watcher_timeouts: WatcherTimeouts {
+            poll_query_timeout: Duration::from_secs(300),
+            db_down_limit: Duration::from_secs(1800),
+        },
     };
 
     std::thread::spawn(move || {

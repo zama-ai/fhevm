@@ -175,6 +175,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         drift_revert_pool,
         cancel_token.clone(),
         None,
+        fhevm_engine_common::drift_revert::WatcherTimeouts::default(),
     )
     .await?;
 

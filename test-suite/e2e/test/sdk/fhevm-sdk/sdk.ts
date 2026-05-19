@@ -1,7 +1,7 @@
-import { defineFhevmChain } from "@fhevm/sdk/chains";
-import { createFhevmClient, hasFhevmRuntimeConfig, setFhevmRuntimeConfig } from "@fhevm/sdk/ethers";
-import type { Signer } from "ethers";
-import { JsonRpcProvider, getBytes, hexlify } from "ethers";
+import { defineFhevmChain } from '@fhevm/sdk/chains';
+import { createFhevmClient, hasFhevmRuntimeConfig, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
+import type { Signer } from 'ethers';
+import { JsonRpcProvider, getBytes, hexlify } from 'ethers';
 
 import type {
   ClearValueType,
@@ -10,11 +10,11 @@ import type {
   Auth as RelayerSdkAuth,
   SdkInstance,
   TypedValue,
-} from "../types";
+} from '../types';
 
 type FhevmClient = ReturnType<typeof createFhevmClient>;
 type CreateFhevmClientParameters = Parameters<typeof createFhevmClient>[0];
-type FhevmClientProvider = CreateFhevmClientParameters["provider"];
+type FhevmClientProvider = CreateFhevmClientParameters['provider'];
 type Auth = any;
 
 export class FhevmSdk implements SdkInstance {
@@ -27,39 +27,39 @@ export class FhevmSdk implements SdkInstance {
   }
 
   getUserDecryptErrorMessage(parameters: {
-    readonly type: "user-unauthorized" | "user-equal-contract" | "contract-unauthorized" | "permit-expired";
+    readonly type: 'user-unauthorized' | 'user-equal-contract' | 'contract-unauthorized' | 'permit-expired';
     readonly signer: Signer & { readonly address: string };
     readonly handle?: string | undefined;
     readonly contractAddress?: string | undefined;
   }): string {
-    if (parameters.type === "user-unauthorized") {
+    if (parameters.type === 'user-unauthorized') {
       return `User ${parameters.signer.address} is not authorized to decrypt handle ${parameters.handle}!`;
-    } else if (parameters.type === "user-equal-contract") {
+    } else if (parameters.type === 'user-equal-contract') {
       return `userAddress ${parameters.signer.address} should not be equal to contractAddress when requesting user decryption!`;
-    } else if (parameters.type === "contract-unauthorized") {
+    } else if (parameters.type === 'contract-unauthorized') {
       return `Dapp contract ${parameters.contractAddress} is not authorized to user decrypt handle ${parameters.handle}!`;
-    } else if (parameters.type === "permit-expired") {
-      return "request has expired";
+    } else if (parameters.type === 'permit-expired') {
+      return 'request has expired';
     } else {
-      return "unknown error type";
+      return 'unknown error type';
     }
   }
 
   getDelegatedUserDecryptErrorMessage(parameters: {
-    readonly type: "revocation" | "contract-unauthorized" | "permit-expired" | "delegation-does-not-exist";
+    readonly type: 'revocation' | 'contract-unauthorized' | 'permit-expired' | 'delegation-does-not-exist';
     readonly signer: Signer & { readonly address: string };
     readonly handle?: string | undefined;
     readonly contractAddress?: string | undefined;
     readonly delegatorAddress?: string | undefined;
   }): string {
-    if (parameters.type === "revocation" || parameters.type === "delegation-does-not-exist") {
+    if (parameters.type === 'revocation' || parameters.type === 'delegation-does-not-exist') {
       return `Delegate ${parameters.signer.address} is not delegated by ${parameters.delegatorAddress} to user decrypt handle ${parameters.handle} on contract ${parameters.contractAddress}`;
-    } else if (parameters.type === "contract-unauthorized") {
+    } else if (parameters.type === 'contract-unauthorized') {
       return `Delegate ${parameters.signer.address} is not delegated by ${parameters.delegatorAddress} to user decrypt handle ${parameters.handle} on contract ${parameters.contractAddress}`;
-    } else if (parameters.type === "permit-expired") {
-      return "request has expired";
+    } else if (parameters.type === 'permit-expired') {
+      return 'request has expired';
     } else {
-      return "unknown error type";
+      return 'unknown error type';
     }
   }
 
@@ -88,7 +88,7 @@ export class FhevmSdk implements SdkInstance {
       auth,
     } = parameters;
     let sanitizedRelayerUrl = relayerUrl;
-    if (relayerUrl.endsWith("/v1") || relayerUrl.endsWith("/v2")) {
+    if (relayerUrl.endsWith('/v1') || relayerUrl.endsWith('/v2')) {
       sanitizedRelayerUrl = relayerUrl.slice(0, -3);
     }
     if (!hasFhevmRuntimeConfig()) {
@@ -165,7 +165,7 @@ export class FhevmSdk implements SdkInstance {
       encryptedValue: handle,
     });
 
-    if (typeof res.value === "number") {
+    if (typeof res.value === 'number') {
       return BigInt(res.value);
     }
     return res.value;
@@ -205,7 +205,7 @@ export class FhevmSdk implements SdkInstance {
       encryptedValue: handle,
     });
 
-    if (typeof res.value === "number") {
+    if (typeof res.value === 'number') {
       return BigInt(res.value);
     }
     return res.value;
@@ -222,9 +222,9 @@ export class FhevmSdk implements SdkInstance {
     const clearValues: Record<`0x${string}`, bigint | boolean | `0x${string}`> = {};
     for (let i = 0; i < handles.length; i++) {
       const h = handles[i];
-      const handleHex = (typeof h === "string" ? h : hexlify(h)) as `0x${string}`;
+      const handleHex = (typeof h === 'string' ? h : hexlify(h)) as `0x${string}`;
       const v = res.clearValues[i].value;
-      clearValues[handleHex] = typeof v === "number" ? BigInt(v) : v;
+      clearValues[handleHex] = typeof v === 'number' ? BigInt(v) : v;
     }
 
     return {
@@ -259,7 +259,7 @@ export class FhevmSdk implements SdkInstance {
     const res = await this.#fullClient.encryptValue({
       contractAddress: parameters.contractAddress,
       userAddress: parameters.userAddress,
-      value: { type: "uint64", value: parameters.value },
+      value: { type: 'uint64', value: parameters.value },
     });
     return {
       handles: [getBytes(res.encryptedValue)],
@@ -283,7 +283,7 @@ export class FhevmSdk implements SdkInstance {
     }>;
     readonly transportKeypair?: { readonly publicKey: string; readonly privateKey: string } | undefined;
   }): Promise<Readonly<Record<`0x${string}`, ClearValueType>>> {
-    throw new Error("Not Implemented");
+    throw new Error('Not Implemented');
   }
 }
 
@@ -292,11 +292,11 @@ function toSdkAuth(auth: RelayerSdkAuth | undefined): Auth | undefined {
     return undefined;
   }
   switch (auth.__type) {
-    case "BearerToken":
-      return { type: "BearerToken", token: auth.token };
-    case "ApiKeyHeader":
-      return { type: "ApiKeyHeader", header: auth.header, value: auth.value };
-    case "ApiKeyCookie":
-      return { type: "ApiKeyCookie", cookie: auth.cookie, value: auth.value };
+    case 'BearerToken':
+      return { type: 'BearerToken', token: auth.token };
+    case 'ApiKeyHeader':
+      return { type: 'ApiKeyHeader', header: auth.header, value: auth.value };
+    case 'ApiKeyCookie':
+      return { type: 'ApiKeyCookie', cookie: auth.cookie, value: auth.value };
   }
 }

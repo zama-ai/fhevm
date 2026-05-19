@@ -104,6 +104,16 @@ interface IFHEVMExecutor {
     function fheIsIn(bytes32 value, bytes32[] calldata values, FheType valueType) external returns (bytes32 result);
 
     /**
+     * @notice              Computes fheMulDiv operation: (lhs * rhs) / divisor with intermediate widening.
+     * @param lhs           LHS (always encrypted).
+     * @param rhs           RHS (encrypted when scalarByte=0x00, plaintext scalar when scalarByte=0x01).
+     * @param divisor       Divisor (always a plaintext scalar encoded as bytes32).
+     * @param scalarByte    Scalar byte.
+     * @return result       Result.
+     */
+    function fheMulDiv(bytes32 lhs, bytes32 rhs, bytes32 divisor, bytes1 scalarByte) external returns (bytes32 result);
+
+    /**
      * @notice                      Returns the address of the InputVerifier contract used by the coprocessor.
      * @return inputVerifierAddress Address of the InputVerifier.
      */
@@ -337,6 +347,12 @@ library Impl {
     function isIn(bytes32 value, bytes32[] memory values, FheType valueType) internal returns (bytes32 result) {
         CoprocessorConfig storage $ = getCoprocessorConfig();
         result = IFHEVMExecutor($.CoprocessorAddress).fheIsIn(value, values, valueType);
+    }
+
+    function mulDiv(bytes32 lhs, bytes32 rhs, bytes32 divisor, bool scalar) internal returns (bytes32 result) {
+        CoprocessorConfig storage $ = getCoprocessorConfig();
+        bytes1 scalarByte = scalar ? bytes1(0x01) : bytes1(0x00);
+        result = IFHEVMExecutor($.CoprocessorAddress).fheMulDiv(lhs, rhs, divisor, scalarByte);
     }
 
     /**

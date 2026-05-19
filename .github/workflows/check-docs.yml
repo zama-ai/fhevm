@@ -1,0 +1,49 @@
+name: check-docs
+
+on:
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-changes:
+    name: check-docs/check-changes
+    # job permissions
+    permissions:
+      actions: read # Required to read workflow run information
+      contents: read # Required to checkout repository code
+      pull-requests: read # Required to read pull request information
+    runs-on: ubuntu-latest
+    outputs:
+      changes-docs: ${{ steps.filter.outputs.docs }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: true
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        with:
+          # Define paths that trigger specific component workflows
+          # Changes to observability affect multiple components
+          filters: |
+            docs:
+              - 'docs/**'
+
+  check-docs:
+    name: check-docs/check-docs
+    needs: [check-changes]
+    if: needs.check-changes.outputs.changes-docs == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: python:3.10.17-bullseye@sha256:0b9be13617fed7d883b30e31a47371a8bdd60a4bb5e45fcda63cb4a3846f6d98
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - run: python3 -m pip install linkcheckmd
+      - name: Check dead-link
+        run: python3 ./ci/local_docs_link_check.py

@@ -885,8 +885,6 @@ interface Decryption {
     error MaxDurationDaysExceeded(uint256 maxValue, uint256 actualValue);
     error NotCoprocessorSigner(address signerAddress);
     error NotCoprocessorTxSender(address txSenderAddress);
-    error NotCustodianSigner(address signerAddress);
-    error NotCustodianTxSender(address txSenderAddress);
     error NotGatewayOwner(address sender);
     error NotInitializing();
     error NotInitializingFromEmptyProxy();
@@ -2167,28 +2165,6 @@ interface Decryption {
   {
     "type": "error",
     "name": "NotCoprocessorTxSender",
-    "inputs": [
-      {
-        "name": "txSenderAddress",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "NotCustodianSigner",
-    "inputs": [
-      {
-        "name": "signerAddress",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "NotCustodianTxSender",
     "inputs": [
       {
         "name": "txSenderAddress",
@@ -5617,166 +5593,6 @@ error NotCoprocessorTxSender(address txSenderAddress);
             > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "NotCoprocessorTxSender(address)";
             const SELECTOR: [u8; 4] = [82u8, 215u8, 37u8, 245u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.txSenderAddress,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `NotCustodianSigner(address)` and selector `0x391672a7`.
-```solidity
-error NotCustodianSigner(address signerAddress);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct NotCustodianSigner {
-        #[allow(missing_docs)]
-        pub signerAddress: alloy::sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<NotCustodianSigner> for UnderlyingRustTuple<'_> {
-            fn from(value: NotCustodianSigner) -> Self {
-                (value.signerAddress,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotCustodianSigner {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { signerAddress: tuple.0 }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for NotCustodianSigner {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "NotCustodianSigner(address)";
-            const SELECTOR: [u8; 4] = [57u8, 22u8, 114u8, 167u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.signerAddress,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `NotCustodianTxSender(address)` and selector `0xf924a0cf`.
-```solidity
-error NotCustodianTxSender(address txSenderAddress);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct NotCustodianTxSender {
-        #[allow(missing_docs)]
-        pub txSenderAddress: alloy::sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<NotCustodianTxSender> for UnderlyingRustTuple<'_> {
-            fn from(value: NotCustodianTxSender) -> Self {
-                (value.txSenderAddress,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotCustodianTxSender {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { txSenderAddress: tuple.0 }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for NotCustodianTxSender {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "NotCustodianTxSender(address)";
-            const SELECTOR: [u8; 4] = [249u8, 36u8, 160u8, 207u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -12805,10 +12621,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         #[allow(missing_docs)]
         NotCoprocessorTxSender(NotCoprocessorTxSender),
         #[allow(missing_docs)]
-        NotCustodianSigner(NotCustodianSigner),
-        #[allow(missing_docs)]
-        NotCustodianTxSender(NotCustodianTxSender),
-        #[allow(missing_docs)]
         NotGatewayOwner(NotGatewayOwner),
         #[allow(missing_docs)]
         NotInitializing(NotInitializing),
@@ -12856,7 +12668,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             [48u8, 52u8, 128u8, 64u8],
             [50u8, 149u8, 24u8, 99u8],
             [56u8, 137u8, 22u8, 187u8],
-            [57u8, 22u8, 114u8, 167u8],
             [76u8, 156u8, 140u8, 227u8],
             [82u8, 215u8, 37u8, 245u8],
             [87u8, 207u8, 162u8, 23u8],
@@ -12890,7 +12701,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             [231u8, 244u8, 137u8, 93u8],
             [242u8, 76u8, 8u8, 135u8],
             [246u8, 69u8, 238u8, 223u8],
-            [249u8, 36u8, 160u8, 207u8],
             [249u8, 46u8, 232u8, 169u8],
             [252u8, 230u8, 152u8, 247u8],
         ];
@@ -12899,7 +12709,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
     impl alloy_sol_types::SolInterface for DecryptionErrors {
         const NAME: &'static str = "DecryptionErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 47usize;
+        const COUNT: usize = 45usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -12995,12 +12805,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::NotCoprocessorTxSender(_) => {
                     <NotCoprocessorTxSender as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::NotCustodianSigner(_) => {
-                    <NotCustodianSigner as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::NotCustodianTxSender(_) => {
-                    <NotCustodianTxSender as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::NotGatewayOwner(_) => {
                     <NotGatewayOwner as alloy_sol_types::SolError>::SELECTOR
@@ -13170,17 +12974,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                             .map(DecryptionErrors::NotPauserOrGatewayConfig)
                     }
                     NotPauserOrGatewayConfig
-                },
-                {
-                    fn NotCustodianSigner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<DecryptionErrors> {
-                        <NotCustodianSigner as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(DecryptionErrors::NotCustodianSigner)
-                    }
-                    NotCustodianSigner
                 },
                 {
                     fn ERC1967InvalidImplementation(
@@ -13546,17 +13339,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     ECDSAInvalidSignature
                 },
                 {
-                    fn NotCustodianTxSender(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<DecryptionErrors> {
-                        <NotCustodianTxSender as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(DecryptionErrors::NotCustodianTxSender)
-                    }
-                    NotCustodianTxSender
-                },
-                {
                     fn InvalidInitialization(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
@@ -13707,17 +13489,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                             .map(DecryptionErrors::NotPauserOrGatewayConfig)
                     }
                     NotPauserOrGatewayConfig
-                },
-                {
-                    fn NotCustodianSigner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<DecryptionErrors> {
-                        <NotCustodianSigner as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(DecryptionErrors::NotCustodianSigner)
-                    }
-                    NotCustodianSigner
                 },
                 {
                     fn ERC1967InvalidImplementation(
@@ -14085,17 +13856,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     ECDSAInvalidSignature
                 },
                 {
-                    fn NotCustodianTxSender(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<DecryptionErrors> {
-                        <NotCustodianTxSender as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(DecryptionErrors::NotCustodianTxSender)
-                    }
-                    NotCustodianTxSender
-                },
-                {
                     fn InvalidInitialization(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
@@ -14277,16 +14037,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::NotCoprocessorTxSender(inner) => {
                     <NotCoprocessorTxSender as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::NotCustodianSigner(inner) => {
-                    <NotCustodianSigner as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::NotCustodianTxSender(inner) => {
-                    <NotCustodianTxSender as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -14542,18 +14292,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::NotCoprocessorTxSender(inner) => {
                     <NotCoprocessorTxSender as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::NotCustodianSigner(inner) => {
-                    <NotCustodianSigner as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::NotCustodianTxSender(inner) => {
-                    <NotCustodianTxSender as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

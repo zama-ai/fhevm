@@ -4,7 +4,6 @@ import { ALL_OPERATORS_PRICES } from '@fhevm/solidity/lib-js/operatorsPrices';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { toBufferBE } from 'bigint-buffer';
 import { ContractMethodArgs, Log, TransactionReceipt, Typed } from 'ethers';
-import { Signer } from 'ethers';
 import { ethers, network } from 'hardhat';
 import hre from 'hardhat';
 
@@ -121,114 +120,6 @@ export const bigIntToBytes128 = (value: bigint) => {
 export const bigIntToBytes256 = (value: bigint) => {
   return new Uint8Array(toBufferBE(value, 256));
 };
-
-// export const userDecryptSingleHandle = async (
-//   handle: string,
-//   contractAddress: string,
-//   instance: any,
-//   signer: Signer,
-//   privateKey: string,
-//   publicKey: string,
-// ): Promise<bigint | boolean | string> => {
-//   const HandleContractPairs = [
-//     {
-//       handle: handle,
-//       contractAddress: contractAddress,
-//     },
-//   ];
-//   const startTimeStamp = Math.floor(Date.now() / 1000);
-//   const durationDays = 10; // Relayer-sdk expects numbers from now on
-//   const contractAddresses = [contractAddress];
-
-//   // Build the extraData field
-//   const extraData = await instance.getExtraData();
-
-//   // Use the new createEIP712 function
-//   const eip712 = instance.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays, extraData);
-
-//   // Update the signing to match the new primaryType
-//   const signature = await signer.signTypedData(
-//     eip712.domain,
-//     {
-//       UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification,
-//     },
-//     eip712.message,
-//   );
-
-//   const signerAddress = await signer.getAddress();
-//   const result = await instance.userDecrypt(
-//     HandleContractPairs,
-//     privateKey,
-//     publicKey,
-//     signature.replace('0x', ''),
-//     contractAddresses,
-//     signerAddress,
-//     startTimeStamp,
-//     durationDays,
-//     extraData,
-//   );
-
-//   const decryptedValue = result[handle];
-//   return decryptedValue;
-// };
-
-// export const delegatedUserDecryptSingleHandle = async (
-//   instance: any,
-//   handle: string,
-//   contractAddress: string,
-//   delegatorAddress: string,
-//   delegateAddress: string,
-//   signer: Signer,
-//   delegatePrivateKey: string,
-//   delegatePublicKey: string,
-// ): Promise<bigint | boolean | string> => {
-//   const handleContractPairs = [
-//     {
-//       handle,
-//       contractAddress,
-//     },
-//   ];
-//   const startTimeStamp = Math.floor(Date.now() / 1000);
-//   const durationDays = 10;
-//   const contractAddresses = [contractAddress];
-
-//   // Build the extraData field
-//   const extraData = await instance.getExtraData();
-
-//   // The `delegate` creates a EIP712 with the `delegator` address
-//   const eip712 = instance.createDelegatedUserDecryptEIP712(
-//     delegatePublicKey,
-//     contractAddresses,
-//     delegatorAddress,
-//     startTimeStamp,
-//     durationDays,
-//     extraData,
-//   );
-
-//   // Update the signing to match the new primaryType
-//   const delegateSignature = await signer.signTypedData(
-//     eip712.domain,
-//     {
-//       DelegatedUserDecryptRequestVerification: eip712.types.DelegatedUserDecryptRequestVerification,
-//     },
-//     eip712.message,
-//   );
-
-//   const result = await instance.delegatedUserDecrypt(
-//     handleContractPairs,
-//     delegatePrivateKey,
-//     delegatePublicKey,
-//     delegateSignature.replace('0x', ''),
-//     contractAddresses,
-//     delegatorAddress,
-//     delegateAddress,
-//     startTimeStamp,
-//     durationDays,
-//     extraData,
-//   );
-
-//   return result[handle];
-// };
 
 const abi = [
   'event FheAdd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result)',

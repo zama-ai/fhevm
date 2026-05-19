@@ -5,6 +5,8 @@ use fhevm_engine_common::pg_pool::PostgresPoolManager;
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 use fhevm_engine_common::utils::{safe_deserialize_conformant, safe_serialize};
+use sha3::Digest;
+use sha3::Keccak256;
 use sqlx::Row;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -223,6 +225,63 @@ pub(crate) async fn compress_inputs_without_rerandomization(
         let expanded = verified_list.expand_without_verification()?;
         let cts = extract_ct_list(&expanded)?;
         cts.into_iter()
+            .map(|ct| ct.compress().map_err(anyhow::Error::from))
+            .collect()
+    })
+    .await?
+}
+
+pub(crate) async fn compress_inputs_with_compact_list_rerandomization(
+    pool: &sqlx::PgPool,
+    raw_ct: &[u8],
+    aux_data: &ZkData,
+) -> anyhow::Result<Vec<Vec<u8>>> {
+    let db_key_cache = DbKeyCache::new(MAX_CACHED_KEYS).expect("create db key cache");
+    let latest_key = db_key_cache.fetch_latest_from_pool(pool).await?;
+    let latest_crs = CrsCache::load(pool)
+        .await?
+        .get_latest()
+        .cloned()
+        .expect("latest CRS");
+    let aux_data_bytes = aux_data.assemble()?;
+
+    let verified_list: tfhe::ProvenCompactCiphertextList = safe_deserialize_conformant(
+        raw_ct,
+        &IntegerProvenCompactCiphertextListConformanceParams::from_public_key_encryption_parameters_and_crs_parameters(
+            latest_key.pks.parameters(),
+            &latest_crs.crs,
+        ),
+    )?;
+
+    if verified_list.is_empty() {
+        return Ok(vec![]);
+    }
+
+    assert!(verified_list
+        .verify(&latest_crs.crs, &latest_key.pks, &aux_data_bytes)
+        .is_valid());
+
+    let mut hasher = Keccak256::new();
+    hasher.update(crate::verifier::RAW_CT_HASH_DOMAIN_SEPARATOR);
+    hasher.update(raw_ct);
+    let blob_hash = hasher.finalize().to_vec();
+
+    tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<Vec<u8>>> {
+        tfhe::set_server_key(latest_key.sks.clone());
+
+        let mut re_rand_context = tfhe::ReRandomizationContext::new(
+            crate::verifier::RERANDOMISATION_DOMAIN_SEPARATOR,
+            [blob_hash.as_slice()],
+            crate::verifier::COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR,
+        );
+        re_rand_context.add_ciphertext(&verified_list);
+
+        let mut seed_gen = re_rand_context.finalize();
+        let expanded = verified_list
+            .re_randomize_and_expand_without_verification(&latest_key.pks, seed_gen.next_seed()?)?;
+
+        let mut cts = extract_ct_list(&expanded)?;
+        cts.iter_mut()
             .map(|ct| ct.compress().map_err(anyhow::Error::from))
             .collect()
     })
