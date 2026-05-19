@@ -94,9 +94,11 @@ impl ReadinessChecker {
                 user_address,
                 ..
             } => (ct_handle_contract_pairs.as_slice(), *user_address),
+            // Callers pick the host-ACL helper that matches the
+            // attestation type; LegacyDelegated should go through
+            // `check_host_acl_delegated_user_decrypt`.
             AttestationFormat::LegacyDelegated { .. } => unreachable!(
-                "check_host_acl_user_decrypt called with LegacyDelegated payload; \
-                 use check_host_acl_delegated_user_decrypt instead"
+                "LegacyDelegated must call check_host_acl_delegated_user_decrypt"
             ),
             // unified EIP-712 flow: per-handle ACL is enforced by the gateway
             // contract using the owner_address attached to each HandleEntry,
@@ -140,10 +142,10 @@ impl ReadinessChecker {
                 *delegator_address,
                 *delegate_address,
             ),
+            // Mirror of `check_host_acl_user_decrypt`: only the
+            // LegacyDelegated path should call into here.
             AttestationFormat::LegacyDirect { .. } | AttestationFormat::Eip712UnifiedV1 { .. } => {
-                unreachable!(
-                    "check_host_acl_delegated_user_decrypt called with non-LegacyDelegated payload"
-                )
+                unreachable!("non-LegacyDelegated must call check_host_acl_user_decrypt")
             }
         };
         self.host_acl

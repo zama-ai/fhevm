@@ -91,9 +91,12 @@ impl DelegatedUserDecryptReadinessProcessor {
                 ct_handle_contract_pairs,
                 ..
             } => (*delegator_address, ct_handle_contract_pairs.as_slice()),
+            // `GatewayHandler::handle_event` routes everything except
+            // `LegacyDelegated` to the direct readiness throttler, so
+            // this processor only ever sees the delegated path.
             AttestationFormat::LegacyDirect { .. } | AttestationFormat::Eip712UnifiedV1 { .. } => {
                 unreachable!(
-                    "DelegatedUserDecryptReadinessProcessor reached with non-LegacyDelegated payload"
+                    "non-LegacyDelegated must be routed to UserDecryptReadinessProcessor"
                 )
             }
         };

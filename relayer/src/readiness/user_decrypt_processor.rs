@@ -113,9 +113,12 @@ impl UserDecryptReadinessProcessor {
                     })
                     .collect(),
             ),
-            AttestationFormat::LegacyDelegated { .. } => {
-                unreachable!("UserDecryptReadinessProcessor reached with LegacyDelegated payload")
-            }
+            // `GatewayHandler::handle_event` routes `LegacyDelegated`
+            // to the delegated readiness throttler, so this processor
+            // never sees it.
+            AttestationFormat::LegacyDelegated { .. } => unreachable!(
+                "LegacyDelegated must be routed to DelegatedUserDecryptReadinessProcessor"
+            ),
         };
         let result = checker
             .check_user_decryption_readiness(
