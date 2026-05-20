@@ -40,13 +40,21 @@ const collectHex = (value: string, previous: string[] = []): string[] => [
 ];
 
 const printJson = (value: unknown) => {
-  consola.log(
+  process.stdout.write(
     JSON.stringify(
       value,
       (_key, item) => (typeof item === "bigint" ? item.toString() : item),
       2,
-    ),
+    ) + "\n",
   );
+};
+
+const createProgressReporter = () => {
+  const startedAt = performance.now();
+  return (message: string) => {
+    const elapsedSeconds = ((performance.now() - startedAt) / 1000).toFixed(1);
+    process.stderr.write(`[${elapsedSeconds}s] ${message}\n`);
+  };
 };
 
 type GlobalOptions = Readonly<{
@@ -95,6 +103,7 @@ program
       rpcUrl: globals.rpcUrl,
       contractAddress: options.contract as Hex | undefined,
       userAddress: options.user as Hex | undefined,
+      onProgress: createProgressReporter(),
     });
 
     printJson({
@@ -136,6 +145,7 @@ publicDecryptCommand
       rpcUrl: globals.rpcUrl,
       decryptType: options.type,
       handles: normalizeHexArray(options.handle),
+      onProgress: createProgressReporter(),
     });
 
     printJson(result);
@@ -172,6 +182,7 @@ publicDecryptCommand
       contractAddress: options.contract as Hex,
       privateKey: options.privateKey as Hex | undefined,
       mnemonic: options.mnemonic,
+      onProgress: createProgressReporter(),
     });
 
     printJson({
