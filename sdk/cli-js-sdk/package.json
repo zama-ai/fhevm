@@ -1,17 +1,20 @@
 {
   "name": "cli-relayer-sdk",
-  "module": "index.ts",
   "type": "module",
   "private": true,
+  "packageManager": "pnpm@10.28.2",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
   "scripts": {
-    "cli": "bun run index.ts",
+    "cli": "tsx index.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
+    "@types/node": "^22.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.0.4"
   },
   "dependencies": {
     "@commander-js/extra-typings": "^14.0.0",

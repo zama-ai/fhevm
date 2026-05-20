@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 import { Command, InvalidArgumentError } from "@commander-js/extra-typings";
 import { consola } from "consola";
 import type { Hex } from "viem";

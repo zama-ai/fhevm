@@ -1,8 +1,8 @@
 # Agent Guidance
 
-This is a TypeScript/Bun project for a CLI that uses Zama's relayer-sdk to send input proof and public decryption requests to a given url.
+This is a TypeScript/Node.js project managed with pnpm for a CLI that uses `@fhevm/sdk` to send input proof and public decryption requests to a given relayer URL.
 
-This is not a Node.JS project, make sure to read `docs/agents/ENGINE.md` before running commands from the Node ecosystem.
+Use pnpm scripts for project commands, and read `docs/agents/ENGINE.md` before running package-manager or TypeScript commands.
 
 For focused guidance:
 

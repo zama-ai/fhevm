@@ -70,7 +70,7 @@ export const resolveChain = (options: ClientOptions): FhevmChain => {
 };
 
 export const resolveRpcUrl = (rpcUrl?: string): string =>
-  rpcUrl ?? Bun.env.SEPOLIA_RPC_URL ?? DEFAULT_TESTNET_RPC_URL;
+  rpcUrl ?? process.env.SEPOLIA_RPC_URL ?? DEFAULT_TESTNET_RPC_URL;
 
 export const createClients = (options: ClientOptions) => {
   if (!hasFhevmRuntimeConfig()) {
@@ -93,9 +93,9 @@ export const createClients = (options: ClientOptions) => {
 };
 
 export const loadAccount = (privateKey?: Hex, mnemonic?: string): Account => {
-  const resolvedMnemonic = mnemonic ?? Bun.env.MNEMONIC;
+  const resolvedMnemonic = mnemonic ?? process.env.MNEMONIC;
   const resolvedPrivateKey =
-    privateKey ?? (Bun.env.PRIVATE_KEY as Hex | undefined);
+    privateKey ?? (process.env.PRIVATE_KEY as Hex | undefined);
 
   if (resolvedMnemonic) return mnemonicToAccount(resolvedMnemonic);
   if (resolvedPrivateKey) return privateKeyToAccount(resolvedPrivateKey);
