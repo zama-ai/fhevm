@@ -1205,7 +1205,7 @@ mod tests {
         let config = CatchupConfig::default();
         assert_eq!(config.prefetch, 5);
         assert_eq!(config.claim_min_idle_secs, 3600);
-        assert_eq!(config.catchup_max_sub_range, 1000);
+        assert_eq!(config.catchup_max_sub_range, 100);
         assert_eq!(config.range_prefetch, 1);
     }
 

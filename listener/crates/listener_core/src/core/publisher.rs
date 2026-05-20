@@ -471,20 +471,34 @@ pub async fn publish_catchup_block_events(
         filter_index.build_block_payloads(fetched_block, chain_id, BlockFlow::Catchup)?;
 
     // 3. Publish the target consumer's payload (if any) to catchup-event.
-    //    With single-consumer filters indexed, payloads contains 0 or 1 entry.
-    if let Some((_, payload)) = payloads.into_iter().find(|(cid, _)| cid == consumer_id) {
-        let routing_key = consumer_catchup_event_routing(consumer_id.to_string());
-        publish_payload_to_consumer(
-            broker,
-            event_publisher,
-            publish_config,
-            consumer_id,
-            &routing_key,
-            &payload,
-            chain_id,
-        )
-        .await?;
+    //    With single-consumer filters indexed, payloads contains 0 or 1 entry,
+    //    and that entry's cid is always `consumer_id` (upstream
+    //    get_filters_by_consumer_id guarantees it).
+    if payloads.is_empty() {
+        return Ok(());
     }
+    if payloads.len() > 1 {
+        error!(
+            consumer_id,
+            payloads_len = payloads.len(),
+            "Expected at most 1 payload for single-consumer catchup; using first"
+        );
+    }
+    let (_, payload) = payloads
+        .into_iter()
+        .next()
+        .expect("payloads is non-empty (checked above)");
+    let routing_key = consumer_catchup_event_routing(consumer_id.to_string());
+    publish_payload_to_consumer(
+        broker,
+        event_publisher,
+        publish_config,
+        consumer_id,
+        &routing_key,
+        &payload,
+        chain_id,
+    )
+    .await?;
 
     Ok(())
 }

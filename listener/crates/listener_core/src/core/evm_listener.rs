@@ -985,8 +985,11 @@ impl EvmListener {
         }
 
         let effective_end = std::cmp::min(payload.block_end, chain_height);
-        let chunks =
-            split_catchup_range(payload.block_start, effective_end, self.catchup_max_sub_range);
+        let chunks = split_catchup_range(
+            payload.block_start,
+            effective_end,
+            self.catchup_max_sub_range,
+        );
 
         info!(
             consumer_id = %payload.consumer_id,
