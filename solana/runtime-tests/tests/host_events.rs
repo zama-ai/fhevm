@@ -105,12 +105,25 @@ fn bind_acl_record_persists_keyed_nonce_record_without_handle_derived_address() 
     let subject = payer.pubkey();
     let handle = [9; 32];
     let acl_record = acl_record_address(program_id, nonce_key, nonce_sequence);
+    let authorizing_acl_record = seed_authorizing_acl_record(
+        &mut svm,
+        program_id,
+        nonce_key,
+        nonce_sequence - 1,
+        acl_domain_key,
+        app_account,
+        encrypted_value_label,
+        handle,
+        payer.pubkey(),
+    );
 
     let ix = Instruction {
         program_id,
         accounts: host::accounts::BindAclRecord {
             payer: payer.pubkey(),
+            authority: payer.pubkey(),
             app_account_authority: app_account,
+            authorizing_acl_record,
             acl_record,
             system_program: system_program::ID,
             event_authority: event_authority(program_id),
@@ -192,12 +205,26 @@ fn bind_acl_record_rejects_nonce_key_not_derived_from_acl_fields() {
     let wrong_nonce_key = [42; 32];
     let nonce_sequence = 42;
     let acl_record = acl_record_address(program_id, wrong_nonce_key, nonce_sequence);
+    let handle = [9; 32];
+    let authorizing_acl_record = seed_authorizing_acl_record(
+        &mut svm,
+        program_id,
+        token::nonce_key(acl_domain_key, app_account, encrypted_value_label),
+        nonce_sequence - 1,
+        acl_domain_key,
+        app_account,
+        encrypted_value_label,
+        handle,
+        payer.pubkey(),
+    );
 
     let ix = Instruction {
         program_id,
         accounts: host::accounts::BindAclRecord {
             payer: payer.pubkey(),
+            authority: payer.pubkey(),
             app_account_authority: app_account,
+            authorizing_acl_record,
             acl_record,
             system_program: system_program::ID,
             event_authority: event_authority(program_id),
@@ -210,7 +237,7 @@ fn bind_acl_record_rejects_nonce_key_not_derived_from_acl_fields() {
             acl_domain_key,
             app_account,
             encrypted_value_label,
-            handle: [9; 32],
+            handle,
             subjects: vec![AclSubjectEntry {
                 pubkey: payer.pubkey(),
                 permission: AclPermission::Compute,
@@ -328,12 +355,25 @@ fn bind_acl_record_cannot_rebind_existing_acl_record() {
     let original_handle = [9; 32];
     let replacement_handle = [7; 32];
     let acl_record = acl_record_address(program_id, nonce_key, nonce_sequence);
+    let authorizing_acl_record = seed_authorizing_acl_record(
+        &mut svm,
+        program_id,
+        nonce_key,
+        nonce_sequence - 1,
+        acl_domain_key,
+        app_account,
+        encrypted_value_label,
+        original_handle,
+        payer.pubkey(),
+    );
 
     let build_ix = |handle| Instruction {
         program_id,
         accounts: host::accounts::BindAclRecord {
             payer: payer.pubkey(),
+            authority: payer.pubkey(),
             app_account_authority: app_account,
+            authorizing_acl_record,
             acl_record,
             system_program: system_program::ID,
             event_authority: event_authority(program_id),
@@ -408,11 +448,25 @@ fn bind_acl_record_rejects_app_account_without_matching_authority() {
     let encrypted_value_label = label("balance");
     let nonce_key = token::nonce_key(acl_domain_key, app_account, encrypted_value_label);
     let acl_record = acl_record_address(program_id, nonce_key, 0);
+    let handle = [9; 32];
+    let authorizing_acl_record = seed_authorizing_acl_record(
+        &mut svm,
+        program_id,
+        nonce_key,
+        1,
+        acl_domain_key,
+        app_account,
+        encrypted_value_label,
+        handle,
+        payer.pubkey(),
+    );
     let ix = Instruction {
         program_id,
         accounts: host::accounts::BindAclRecord {
             payer: payer.pubkey(),
+            authority: payer.pubkey(),
             app_account_authority: payer.pubkey(),
+            authorizing_acl_record,
             acl_record,
             system_program: system_program::ID,
             event_authority: event_authority(program_id),
@@ -425,7 +479,7 @@ fn bind_acl_record_rejects_app_account_without_matching_authority() {
             acl_domain_key,
             app_account,
             encrypted_value_label,
-            handle: [9; 32],
+            handle,
             subjects: vec![AclSubjectEntry {
                 pubkey: payer.pubkey(),
                 permission: AclPermission::Compute,
@@ -436,6 +490,87 @@ fn bind_acl_record_rejects_app_account_without_matching_authority() {
     };
 
     assert!(try_send(&mut svm, &payer, ix).is_err());
+}
+
+#[test]
+fn bind_acl_record_rejects_handle_laundering_by_unallowed_authority() {
+    let program_id = host::id();
+    let program_path = host_program_so_path();
+    assert!(
+        program_path.exists(),
+        "missing {}; run `cd solana && anchor build` before this runtime test",
+        program_path.display()
+    );
+
+    let mut svm = LiteSVM::new();
+    svm.add_program_from_file(program_id, &program_path)
+        .unwrap();
+
+    let alice = Keypair::new();
+    let mallory = Keypair::new();
+    let mallory_app_account = Keypair::new();
+    svm.airdrop(&mallory.pubkey(), 1_000_000_000).unwrap();
+
+    let acl_domain_key = Pubkey::new_unique();
+    let encrypted_value_label = label("balance");
+    let handle = [7; 32];
+    let source_app_account = Pubkey::new_unique();
+    let source_nonce_key =
+        token::nonce_key(acl_domain_key, source_app_account, encrypted_value_label);
+    let authorizing_acl_record = seed_authorizing_acl_record(
+        &mut svm,
+        program_id,
+        source_nonce_key,
+        0,
+        acl_domain_key,
+        source_app_account,
+        encrypted_value_label,
+        handle,
+        alice.pubkey(),
+    );
+
+    let target_nonce_key = token::nonce_key(
+        acl_domain_key,
+        mallory_app_account.pubkey(),
+        encrypted_value_label,
+    );
+    let target_acl_record = acl_record_address(program_id, target_nonce_key, 0);
+    let ix = Instruction {
+        program_id,
+        accounts: host::accounts::BindAclRecord {
+            payer: mallory.pubkey(),
+            authority: mallory.pubkey(),
+            app_account_authority: mallory_app_account.pubkey(),
+            authorizing_acl_record,
+            acl_record: target_acl_record,
+            system_program: system_program::ID,
+            event_authority: event_authority(program_id),
+            program: program_id,
+        }
+        .to_account_metas(None),
+        data: host::instruction::BindAclRecord {
+            nonce_key: target_nonce_key,
+            nonce_sequence: 0,
+            acl_domain_key,
+            app_account: mallory_app_account.pubkey(),
+            encrypted_value_label,
+            handle,
+            subjects: vec![AclSubjectEntry {
+                pubkey: mallory.pubkey(),
+                permission: AclPermission::UserDecrypt,
+            }],
+            public_decrypt: false,
+        }
+        .data(),
+    };
+
+    assert!(send_with_signers(
+        &mut svm,
+        &mallory.pubkey(),
+        ix,
+        &[&mallory, &mallory_app_account],
+    )
+    .is_err());
 }
 
 #[test]
@@ -1095,50 +1230,39 @@ fn token_fixture() -> TokenFixture {
     let compute_signer = token::compute_signer_address(mint.pubkey()).0;
     let alice_token = token_account_address(token_program_id, mint.pubkey(), alice.pubkey());
     let bob_token = token_account_address(token_program_id, mint.pubkey(), bob.pubkey());
-    let alice_initial = [1; 32];
-    let bob_initial = [2; 32];
-
-    initialize_confidential_token_account(
-        &mut svm,
-        token_program_id,
-        &alice,
-        mint.pubkey(),
-        alice_token,
-        alice_initial,
-    );
-    initialize_confidential_token_account(
-        &mut svm,
-        token_program_id,
-        &bob,
-        mint.pubkey(),
-        bob_token,
-        bob_initial,
-    );
-
     let alice_current_compute_acl =
         balance_acl_record_address(host_program_id, mint.pubkey(), alice_token, 0);
     let bob_current_compute_acl =
         balance_acl_record_address(host_program_id, mint.pubkey(), bob_token, 0);
-    authorize_balance_acl(
+
+    initialize_confidential_token_account(
         &mut svm,
-        &alice,
         token_program_id,
         host_program_id,
-        alice_current_compute_acl,
+        &alice,
         mint.pubkey(),
         alice_token,
         compute_signer,
+        alice_current_compute_acl,
+        125,
     );
-    authorize_balance_acl(
+    initialize_confidential_token_account(
         &mut svm,
-        &bob,
         token_program_id,
         host_program_id,
-        bob_current_compute_acl,
+        &bob,
         mint.pubkey(),
         bob_token,
         compute_signer,
+        bob_current_compute_acl,
+        20,
     );
+    let alice_initial = read_acl_record(&svm, alice_current_compute_acl)
+        .expect("expected Alice initial ACL")
+        .handle;
+    let bob_initial = read_acl_record(&svm, bob_current_compute_acl)
+        .expect("expected Bob initial ACL")
+        .handle;
 
     TokenFixture {
         svm,
@@ -1163,10 +1287,13 @@ fn token_fixture() -> TokenFixture {
 fn initialize_confidential_token_account(
     svm: &mut LiteSVM,
     token_program_id: Pubkey,
+    host_program_id: Pubkey,
     owner: &Keypair,
     mint: Pubkey,
     token_account: Pubkey,
-    balance_handle: [u8; 32],
+    compute_signer: Pubkey,
+    acl_record: Pubkey,
+    initial_balance: u64,
 ) {
     send(
         svm,
@@ -1176,11 +1303,15 @@ fn initialize_confidential_token_account(
             accounts: token::accounts::InitializeTokenAccount {
                 owner: owner.pubkey(),
                 mint,
+                compute_signer,
                 token_account,
+                acl_record,
+                zama_event_authority: event_authority(host_program_id),
+                zama_program: host_program_id,
                 system_program: system_program::ID,
             }
             .to_account_metas(None),
-            data: token::instruction::InitializeTokenAccount { balance_handle }.data(),
+            data: token::instruction::InitializeTokenAccount { initial_balance }.data(),
         },
     );
 }
@@ -1257,7 +1388,8 @@ fn transfer_output_accounts(fixture: &TokenFixture, nonce_sequence: u64) -> Tran
 
 fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
     // Temporary PoC stand-in for the future Solana InputVerifier/transient
-    // authorization path. It lets host::fhe_binary_op enforce both operands.
+    // authorization path. It lets host::fhe_binary_op enforce both operands
+    // without using the generic persistent-grant path for first birth.
     let acl_domain_key = fixture.alice.pubkey();
     let app_account = fixture.alice.pubkey();
     let encrypted_value_label = label("input");
@@ -1266,27 +1398,28 @@ fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
     let acl_record = acl_record_address(fixture.host_program_id, nonce_key, nonce_sequence);
     let ix = Instruction {
         program_id: fixture.host_program_id,
-        accounts: host::accounts::BindAclRecord {
+        accounts: host::accounts::InputVerifiedAndBind {
             payer: fixture.alice.pubkey(),
             app_account_authority: app_account,
-            acl_record,
+            output_acl_record: acl_record,
             system_program: system_program::ID,
             event_authority: event_authority(fixture.host_program_id),
             program: fixture.host_program_id,
         }
         .to_account_metas(None),
-        data: host::instruction::BindAclRecord {
-            nonce_key,
-            nonce_sequence,
-            acl_domain_key,
-            app_account,
-            encrypted_value_label,
-            handle,
-            subjects: vec![AclSubjectEntry {
+        data: host::instruction::InputVerifiedAndBind {
+            input_handle: handle,
+            user: fixture.alice.pubkey(),
+            output_nonce_key: nonce_key,
+            output_nonce_sequence: nonce_sequence,
+            output_acl_domain_key: acl_domain_key,
+            output_app_account: app_account,
+            output_encrypted_value_label: encrypted_value_label,
+            output_subjects: vec![AclSubjectEntry {
                 pubkey: fixture.compute_signer,
                 permission: AclPermission::Compute,
             }],
-            public_decrypt: false,
+            output_public_decrypt: false,
         }
         .data(),
     };
@@ -1419,37 +1552,6 @@ fn allow_for_decryption_ix(
         .to_account_metas(None),
         data: host::instruction::AllowForDecryption { handle }.data(),
     }
-}
-
-fn authorize_balance_acl(
-    svm: &mut LiteSVM,
-    owner: &Keypair,
-    token_program_id: Pubkey,
-    host_program_id: Pubkey,
-    acl_record: Pubkey,
-    mint: Pubkey,
-    token_account: Pubkey,
-    compute_signer: Pubkey,
-) {
-    send(
-        svm,
-        owner,
-        Instruction {
-            program_id: token_program_id,
-            accounts: token::accounts::AuthorizeBalanceAcl {
-                owner: owner.pubkey(),
-                mint,
-                compute_signer,
-                token_account,
-                acl_record,
-                zama_event_authority: event_authority(host_program_id),
-                zama_program: host_program_id,
-                system_program: system_program::ID,
-            }
-            .to_account_metas(None),
-            data: token::instruction::AuthorizeBalanceAcl {}.data(),
-        },
-    );
 }
 
 fn create_spl_mint(svm: &mut LiteSVM, payer: &Keypair, mint: &Keypair, decimals: u8) {
@@ -1723,6 +1825,52 @@ fn serialized_acl_record(record: AclRecord) -> Vec<u8> {
     let mut data = Vec::new();
     record.try_serialize(&mut data).unwrap();
     data
+}
+
+fn seed_authorizing_acl_record(
+    svm: &mut LiteSVM,
+    program_id: Pubkey,
+    nonce_key: [u8; 32],
+    nonce_sequence: u64,
+    acl_domain_key: Pubkey,
+    app_account: Pubkey,
+    encrypted_value_label: [u8; 32],
+    handle: [u8; 32],
+    authority: Pubkey,
+) -> Pubkey {
+    let (address, bump) = Pubkey::find_program_address(
+        &[
+            b"acl-record",
+            nonce_key.as_ref(),
+            &nonce_sequence.to_le_bytes(),
+        ],
+        &program_id,
+    );
+    let mut subjects = [Pubkey::default(); host::MAX_ACL_SUBJECTS];
+    subjects[0] = authority;
+    svm.set_account(
+        address,
+        Account {
+            lamports: 1_000_000_000,
+            data: serialized_acl_record(AclRecord {
+                handle,
+                nonce_key,
+                nonce_sequence,
+                acl_domain_key,
+                app_account,
+                encrypted_value_label,
+                subjects,
+                subject_count: 1,
+                public_decrypt: false,
+                bump,
+            }),
+            owner: program_id,
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+    .unwrap();
+    address
 }
 
 fn record_subjects(record: &AclRecord) -> Vec<Pubkey> {
