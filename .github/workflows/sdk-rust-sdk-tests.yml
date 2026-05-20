@@ -65,7 +65,6 @@ jobs:
 
       - name: Setup common environment variables
         run: |
-          echo "HOME=/home/ubuntu" >> "${GITHUB_ENV}"
           echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "${GITHUB_ENV}"
 
       - name: Login to GitHub Container Registry
