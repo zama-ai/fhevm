@@ -524,6 +524,26 @@ impl UserDecryptRequest {
     pub fn is_unified(&self) -> bool {
         matches!(self, UserDecryptRequest::Eip712UnifiedV1 { .. })
     }
+
+    /// References to the ciphertext handles, regardless of variant shape.
+    pub fn ct_handles(&self) -> Vec<&U256> {
+        match self {
+            UserDecryptRequest::LegacyDirect {
+                ct_handle_contract_pairs,
+                ..
+            }
+            | UserDecryptRequest::LegacyDelegated {
+                ct_handle_contract_pairs,
+                ..
+            } => ct_handle_contract_pairs
+                .iter()
+                .map(|p| &p.ct_handle)
+                .collect(),
+            UserDecryptRequest::Eip712UnifiedV1 { handles, .. } => {
+                handles.iter().map(|h| &h.ct_handle).collect()
+            }
+        }
+    }
 }
 
 #[allow(non_snake_case)]

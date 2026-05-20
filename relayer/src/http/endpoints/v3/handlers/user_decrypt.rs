@@ -157,6 +157,9 @@ impl UserDecryptHandler {
             }
         };
 
+        // `TryFrom<AttestedUserDecryptRequestJson>` only constructs
+        // `Eip712UnifiedV1`; the downstream `UserDecryptReqData::Unified`
+        // tag relies on it.
         let user_decrypt_request: UserDecryptRequest =
             match parse_and_validate::<AttestedUserDecryptRequestJson, UserDecryptRequest>(&body) {
                 Ok(request) => request,
@@ -172,15 +175,9 @@ impl UserDecryptHandler {
         info!("Successfully parsed and validated v3 request");
 
         // Early host-chain rejection: handle prefixes encode the chain id.
-        let handles = match &user_decrypt_request {
-            crate::core::event::UserDecryptRequest::Eip712UnifiedV1 { handles, .. } => handles,
-            _ => {
-                unreachable!("v3 /user-decrypt always produces UserDecryptRequest::Eip712UnifiedV1")
-            }
-        };
         if let Err(chain_id) = self
             .host_chain_id_checker
-            .validate_u256_handles(handles.iter().map(|h| &h.ct_handle))
+            .validate_u256_handles(user_decrypt_request.ct_handles())
         {
             return RelayerV2ResponseFailed::host_chain_id_not_supported(
                 chain_id,

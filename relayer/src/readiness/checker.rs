@@ -1,6 +1,10 @@
 use crate::{
     config::settings::GatewayConfig,
-    core::{errors::EventProcessingError, event::UserDecryptRequest, job_id::JobId},
+    core::{
+        errors::EventProcessingError,
+        event::{HandleContractPair, UserDecryptRequest},
+        job_id::JobId,
+    },
     gateway::ciphertext_checker::CiphertextChecker,
     host::{HostAclChecker, HostAclError},
 };
@@ -136,7 +140,7 @@ impl ReadinessChecker {
     pub async fn check_user_decryption_readiness(
         &self,
         job_id: &JobId,
-        pairs: &[crate::core::event::HandleContractPair],
+        pairs: &[HandleContractPair],
         extra_data: Bytes,
     ) -> Result<(), ReadinessCheckError> {
         self.ciphertext
