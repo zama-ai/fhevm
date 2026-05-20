@@ -33,8 +33,6 @@ coprocessor/fhevm-engine/tfhe-worker/src/tests/solana_poc.rs
   Worker-backed end-to-end tests with real small TFHE ciphertexts.
 ```
 
-For a shorter contributor guide focused on OpenZeppelin follow-up work, see [`OZ_BRANCH_GUIDE.md`](./OZ_BRANCH_GUIDE.md).
-
 ## Handoff Path
 
 Use this order when picking up the branch:
@@ -58,6 +56,48 @@ Use this order when picking up the branch:
    Every new happy path should have a wrong signer, wrong ACL record, wrong handle,
    or wrong subject test when the feature touches authorization.
 ```
+
+## Collaboration Contract
+
+Use this guide as the central handoff document for the branch. Do not add a second guide unless the
+team decides the branch layout itself has changed.
+
+The PoC can still have breaking changes. The rule is:
+
+```text
+breaking changes are allowed
+silent breaking changes are not allowed
+```
+
+When changing the ZamaHost CPI surface, ACL record shape, event payload, or decrypt-relevant fields,
+update this guide and the affected tests in the same PR.
+
+```text
+Change ACL storage/checking?
+  update zama-host + solana/runtime-tests
+
+Change token behavior?
+  update confidential-token + solana/runtime-tests
+
+Change emitted host events?
+  update zama-host + host-listener solana_adapter + worker tests
+
+Change user decrypt semantics?
+  update runtime KMS model tests + tfhe-worker solana_poc tests
+```
+
+For OpenZeppelin follow-up work, the safe area is:
+
+```text
+solana/programs/confidential-token
+  Improve the confidential token flow against the current ZamaHost CPI surface.
+
+solana/runtime-tests/tests/host_events.rs
+  Add behavior tests here first.
+```
+
+Avoid adding a separate Anchor workspace, a standalone ACL program, or TypeScript-only tests for core
+authorization behavior unless the guild explicitly decides to change direction.
 
 Known gaps for the next iteration:
 
