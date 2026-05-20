@@ -167,6 +167,91 @@ fn bind_acl_record_persists_keyed_nonce_record_without_handle_derived_address() 
 }
 
 #[test]
+fn bind_acl_record_cannot_rebind_existing_acl_record() {
+    let program_id = host::id();
+    let program_path = host_program_so_path();
+    assert!(
+        program_path.exists(),
+        "missing {}; run `cd solana && anchor build` before this runtime test",
+        program_path.display()
+    );
+
+    let mut svm = LiteSVM::new();
+    svm.add_program_from_file(program_id, &program_path)
+        .unwrap();
+
+    let payer = Keypair::new();
+    let app_account_authority = Keypair::new();
+    svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
+
+    let acl_domain_key = Pubkey::new_unique();
+    let app_account = app_account_authority.pubkey();
+    let encrypted_value_label = label("balance");
+    let nonce_key = token::nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let nonce_sequence = 42;
+    let subject = payer.pubkey();
+    let original_handle = [9; 32];
+    let replacement_handle = [7; 32];
+    let acl_record = acl_record_address(program_id, nonce_key, nonce_sequence);
+
+    let build_ix = |handle| Instruction {
+        program_id,
+        accounts: host::accounts::BindAclRecord {
+            payer: payer.pubkey(),
+            app_account_authority: app_account,
+            acl_record,
+            system_program: system_program::ID,
+            event_authority: event_authority(program_id),
+            program: program_id,
+        }
+        .to_account_metas(None),
+        data: host::instruction::BindAclRecord {
+            nonce_key,
+            nonce_sequence,
+            acl_domain_key,
+            app_account,
+            encrypted_value_label,
+            handle,
+            subjects: vec![AclSubjectEntry {
+                pubkey: subject,
+                permission: AclPermission::Compute,
+            }],
+            public_decrypt: false,
+        }
+        .data(),
+    };
+
+    send_with_signers(
+        &mut svm,
+        &payer.pubkey(),
+        build_ix(original_handle),
+        &[&payer, &app_account_authority],
+    )
+    .unwrap();
+
+    assert!(
+        send_with_signers(
+            &mut svm,
+            &payer.pubkey(),
+            build_ix(replacement_handle),
+            &[&payer, &app_account_authority],
+        )
+        .is_err(),
+        "Anchor init must reject rebinding an existing ACL record"
+    );
+
+    let record = read_acl_record(&svm, acl_record).expect("expected ACL record");
+    assert_eq!(record.handle, original_handle);
+    assert_eq!(record.nonce_key, nonce_key);
+    assert_eq!(record.nonce_sequence, nonce_sequence);
+    assert_eq!(record.acl_domain_key, acl_domain_key);
+    assert_eq!(record.app_account, app_account);
+    assert_eq!(record.encrypted_value_label, encrypted_value_label);
+    assert_eq!(record_subjects(&record), vec![subject]);
+    assert!(!record.public_decrypt);
+}
+
+#[test]
 fn bind_acl_record_rejects_app_account_without_matching_authority() {
     let program_id = host::id();
     let program_path = host_program_so_path();
@@ -356,6 +441,7 @@ fn public_decrypt_model_uses_acl_record_flag() {
     };
     assert!(!kms_like_public_decrypt_check(&fixture.svm, &[entry]));
 
+    let before = read_acl_record(&fixture.svm, output.alice).expect("expected ACL record");
     send(
         &mut fixture.svm,
         &fixture.alice,
@@ -368,6 +454,13 @@ fn public_decrypt_model_uses_acl_record_flag() {
     );
 
     let record = read_acl_record(&fixture.svm, output.alice).expect("expected ACL record");
+    assert_eq!(record.handle, before.handle);
+    assert_eq!(record.nonce_key, before.nonce_key);
+    assert_eq!(record.nonce_sequence, before.nonce_sequence);
+    assert_eq!(record.acl_domain_key, before.acl_domain_key);
+    assert_eq!(record.app_account, before.app_account);
+    assert_eq!(record.encrypted_value_label, before.encrypted_value_label);
+    assert_eq!(record_subjects(&record), record_subjects(&before));
     assert!(record.public_decrypt);
     assert!(kms_like_public_decrypt_check(&fixture.svm, &[entry]));
 
