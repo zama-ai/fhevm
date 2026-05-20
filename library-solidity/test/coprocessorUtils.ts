@@ -635,7 +635,8 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
       const divisor = BigInt(event.args[3]);
-      if (event.args[4] === '0x01') {
+      const rhsIsScalar = (BigInt(event.args[4]) & 0x02n) !== 0n;
+      if (rhsIsScalar) {
         clearText = (BigInt(clearLHS) * BigInt(event.args[2])) / divisor;
       } else {
         clearRHS = await getClearText(event.args[2]);
@@ -1420,7 +1421,8 @@ export function getTxHCUFromTxReceipt(
         if (!type) {
           throw new Error(`Invalid FheType index: ${typeIndex}`);
         }
-        if (event.args[4] === '0x01') {
+        const rhsIsScalar = (BigInt(event.args[4]) & 0x02n) !== 0n;
+        if (rhsIsScalar) {
           hcuConsumed = (ALL_OPERATORS_PRICES['fheMulDiv'].scalar as Record<string, number>)[type];
           hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {

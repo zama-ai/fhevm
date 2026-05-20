@@ -2217,7 +2217,6 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         bytes1 scalarByte,
         FheType resultType
     ) internal view returns (bytes32 result) {
-        scalarByte = scalarByte & 0x01;
         result = keccak256(
             abi.encodePacked(
                 COMPUTATION_DOMAIN_SEPARATOR,
@@ -2239,7 +2238,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheMulDiv));
         address sender = address(123);
-        bytes1 scalarByte = 0x00;
+        bytes1 scalarByte = 0x01;
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
         bytes32 rhs = _generateMockHandle(FheType(fheType));
@@ -2261,7 +2260,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheMulDiv));
         address sender = address(123);
-        bytes1 scalarByte = 0x01;
+        // enc×scalar: divisor (bit 0) + rhs (bit 1) both set → 0x03.
+        bytes1 scalarByte = 0x03;
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
         bytes32 rhs = bytes32(uint256(300)); // scalar rhs = 300
@@ -2287,7 +2287,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         bytes32 divisor = bytes32(uint256(1));
 
         vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
-        fhevmExecutor.fheMulDiv(lhs, rhs, divisor, 0x00);
+        fhevmExecutor.fheMulDiv(lhs, rhs, divisor, 0x01);
     }
 
     function test_FheMulDivRevertsOnDivisionByZero(uint8 fheType) public {
@@ -2304,7 +2304,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
 
         vm.prank(sender);
         vm.expectRevert(FHEVMExecutor.DivisionByZero.selector);
-        fhevmExecutor.fheMulDiv(lhs, rhs, zeroDivisor, 0x00);
+        fhevmExecutor.fheMulDiv(lhs, rhs, zeroDivisor, 0x01);
     }
 
     function test_FheMulDivRevertsIfScalarByteIsNotBoolean(uint8 fheType) public {
@@ -2324,6 +2324,23 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheMulDiv(lhs, rhs, divisor, 0x42);
     }
 
+    function test_FheMulDivRevertsIfScalarByteIsZero(uint8 fheType) public {
+        vm.assume(fheType <= uint8(FheType.Int248));
+        vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheMulDiv));
+        address sender = address(123);
+
+        bytes32 lhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 divisor = bytes32(uint256(1));
+
+        _approveHandleInACL(lhs, sender);
+        _approveHandleInACL(rhs, sender);
+
+        vm.prank(sender);
+        vm.expectRevert(FHEVMExecutor.ScalarByteIsNotBoolean.selector);
+        fhevmExecutor.fheMulDiv(lhs, rhs, divisor, 0x00);
+    }
+
     function test_RevertsIfACLNotAllowed_FheMulDiv() public {
         address account = address(123);
         bytes32 lhs = _generateMockHandle(FheType.Uint32);
@@ -2333,7 +2350,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
 
         vm.prank(account);
         vm.expectPartialRevert(FHEVMExecutor.ACLNotAllowed.selector);
-        fhevmExecutor.fheMulDiv(lhs, rhs, divisor, 0x00);
+        fhevmExecutor.fheMulDiv(lhs, rhs, divisor, 0x01);
     }
 
     function test_RevertsIfACLNotAllowed_FheMulDiv_RHS() public {
@@ -2346,7 +2363,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
 
         vm.prank(account);
         vm.expectPartialRevert(FHEVMExecutor.ACLNotAllowed.selector);
-        fhevmExecutor.fheMulDiv(lhs, rhs, divisor, 0x00);
+        fhevmExecutor.fheMulDiv(lhs, rhs, divisor, 0x01);
     }
 
     function test_RevertsIfFheMulDivTypesNotCompatible(uint8 fheTypeLhs, uint8 fheTypeRhs) public {
@@ -2364,7 +2381,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
 
         vm.expectRevert(FHEVMExecutor.IncompatibleTypes.selector);
         vm.prank(account);
-        fhevmExecutor.fheMulDiv(lhs, rhs, divisor, 0x00);
+        fhevmExecutor.fheMulDiv(lhs, rhs, divisor, 0x01);
     }
 
     function test_RevertsIfFheMulDivScalarDivisorTruncatesToZero(uint8 fheType) public {
@@ -2390,7 +2407,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
 
         vm.prank(account);
         vm.expectRevert(FHEVMExecutor.DivisionByZero.selector);
-        fhevmExecutor.fheMulDiv(lhs, rhs, divisor, 0x00);
+        fhevmExecutor.fheMulDiv(lhs, rhs, divisor, 0x01);
     }
 
     function test_FheMulDivRevertsForUint128() public {
@@ -2406,6 +2423,6 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
 
         vm.prank(account);
         vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
-        fhevmExecutor.fheMulDiv(lhs, rhs, divisor, 0x00);
+        fhevmExecutor.fheMulDiv(lhs, rhs, divisor, 0x01);
     }
 }

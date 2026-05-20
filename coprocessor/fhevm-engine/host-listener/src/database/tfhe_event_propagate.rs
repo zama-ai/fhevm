@@ -521,10 +521,10 @@ impl Database {
             }
 
             E::FheMulDiv(C::FheMulDiv { lhs, rhs, divisor, scalarByte, result, .. }) => {
-                if scalarByte.const_is_zero() {
-                    insert_computation_bytes(tx, result, &[lhs, rhs], &[divisor.to_vec()], &NO_SCALAR).await
-                } else {
+                if fhe_mul_div_rhs_is_scalar(scalarByte) {
                     insert_computation_bytes(tx, result, &[lhs], &[rhs.to_vec(), divisor.to_vec()], &HAS_SCALAR).await
+                } else {
+                    insert_computation_bytes(tx, result, &[lhs, rhs], &[divisor.to_vec()], &NO_SCALAR).await
                 }
             }
 
@@ -1324,13 +1324,19 @@ pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
             scalarByte,
             ..
         }) => {
-            if scalarByte.const_is_zero() {
-                vec![*lhs, *rhs]
-            } else {
+            if fhe_mul_div_rhs_is_scalar(scalarByte) {
                 vec![*lhs]
+            } else {
+                vec![*lhs, *rhs]
             }
         }
 
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
     }
+}
+
+/// `fheMulDiv` `scalarByte` bit 1 — rhs is a plaintext scalar (bit 0 is the
+/// always-scalar divisor).
+fn fhe_mul_div_rhs_is_scalar(scalar_byte: &ScalarByte) -> bool {
+    scalar_byte.0[0] & 0b10 != 0
 }

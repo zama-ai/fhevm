@@ -307,7 +307,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     if (data.scalar && data.nonScalar) {
-      output += `if (scalarByte == 0x01) {
+      const scalarVariantByte = operation === 'fheMulDiv' ? '0x03' : '0x01';
+      output += `if (scalarByte == ${scalarVariantByte}) {
           ${generatePriceChecks(data.scalar)}
 
           ${generateCheckTransactionLimit(data.numberInputs, true)}

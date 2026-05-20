@@ -1619,7 +1619,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     ) external virtual {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
-        if (scalarByte == 0x01) {
+        if (scalarByte == 0x03) {
             if (resultType == FheType.Uint8) {
                 opHCU = 495000;
             } else if (resultType == FheType.Uint16) {

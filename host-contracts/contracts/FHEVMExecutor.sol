@@ -722,9 +722,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     /**
      * @notice              Computes FHEMulDiv operation: (lhs * rhs) / divisor with intermediate widening.
      * @param lhs           LHS (always encrypted).
-     * @param rhs           RHS (encrypted when scalarByte=0x00, plaintext scalar when scalarByte=0x01).
+     * @param rhs           RHS (encrypted when scalarByte=0x01, plaintext scalar when scalarByte=0x03).
      * @param divisor       Divisor (always a plaintext scalar encoded as bytes32).
-     * @param scalarByte    0x00 = rhs is encrypted; 0x01 = rhs is scalar.
+     * @param scalarByte    0x01 if rhs is an encrypted handle; 0x03 if rhs is a plaintext scalar.
      * @return result       Result.
      */
     function fheMulDiv(
@@ -1004,10 +1004,10 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         bytes1 scalarByte,
         FheType resultType
     ) internal virtual returns (bytes32 result) {
-        _checkBoolean(scalarByte);
+        if (scalarByte != 0x01 && scalarByte != 0x03) revert ScalarByteIsNotBoolean();
 
         if (!ACL.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
-        if (scalarByte == 0x00) {
+        if (scalarByte == 0x01) {
             if (!ACL.isAllowed(rhs, msg.sender)) revert ACLNotAllowed(rhs, msg.sender);
             // resultType == _typeOf(lhs) (set by the caller's _verifyAndReturnType).
             if (resultType != _typeOf(rhs)) revert IncompatibleTypes();

@@ -106,9 +106,9 @@ interface IFHEVMExecutor {
     /**
      * @notice              Computes fheMulDiv operation: (lhs * rhs) / divisor with intermediate widening.
      * @param lhs           LHS (always encrypted).
-     * @param rhs           RHS (encrypted when scalarByte=0x00, plaintext scalar when scalarByte=0x01).
+     * @param rhs           RHS (encrypted when scalarByte=0x01, plaintext scalar when scalarByte=0x03).
      * @param divisor       Divisor (always a plaintext scalar encoded as bytes32).
-     * @param scalarByte    Scalar byte.
+     * @param scalarByte    0x01 if rhs is an encrypted handle; 0x03 if rhs is a plaintext scalar.
      * @return result       Result.
      */
     function fheMulDiv(bytes32 lhs, bytes32 rhs, bytes32 divisor, bytes1 scalarByte) external returns (bytes32 result);
@@ -351,7 +351,7 @@ library Impl {
 
     function mulDiv(bytes32 lhs, bytes32 rhs, bytes32 divisor, bool scalar) internal returns (bytes32 result) {
         CoprocessorConfig storage $ = getCoprocessorConfig();
-        bytes1 scalarByte = scalar ? bytes1(0x01) : bytes1(0x00);
+        bytes1 scalarByte = scalar ? bytes1(0x03) : bytes1(0x01);
         result = IFHEVMExecutor($.CoprocessorAddress).fheMulDiv(lhs, rhs, divisor, scalarByte);
     }
 
