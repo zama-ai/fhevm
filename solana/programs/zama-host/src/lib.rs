@@ -111,6 +111,10 @@ pub mod zama_host {
             assert_record_allows_handle(&ctx.accounts.rhs_acl_record, rhs, subject)?;
         }
 
+        // Future scalar and ternary ops must keep the EVM scalarByte rule:
+        // bit i flags whether the i-th argument from the right is scalar.
+        // Example for mulDiv(lhs, rhs, divisor):
+        // enc x enc x scalar => 0x01, enc x scalar x scalar => 0x03.
         emit_cpi!(FheBinaryOpEvent {
             version: EVENT_VERSION,
             op,
