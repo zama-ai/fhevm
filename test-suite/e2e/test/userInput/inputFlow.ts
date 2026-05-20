@@ -1,9 +1,8 @@
-import { expect, assert } from 'chai';
+import { assert, expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { userDecryptSingleHandle } from '../utils';
 
 const CIPHERTEXT_DRIFT_FORBIDDEN_NETWORKS = new Set(['sepolia', 'mainnet', 'zwsDev']);
 const activeNetwork = () => process.env.NETWORK ?? process.env.HARDHAT_NETWORK ?? '';
@@ -32,9 +31,13 @@ describe('Input Flow', function () {
     if (CIPHERTEXT_DRIFT_FORBIDDEN_NETWORKS.has(activeNetwork())) {
       this.skip();
     }
-    const inputAlice = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    inputAlice.add64(18446744073709550042n);
-    const encryptedAmount = await inputAlice.encrypt();
+
+    const encryptedAmount = await this.instances.alice.encryptUint64({
+      value: 18446744073709550042n,
+      contractAddress: this.contractAddress,
+      userAddress: this.signers.alice.address,
+    });
+
     encryptedAmount.handles.forEach((handle: any, index: any) => {
       // Assuming handle is a Uint8Array or Buffer
       console.log(`  Handle ${index}: 0x${Buffer.from(handle).toString('hex')}`);
@@ -46,9 +49,12 @@ describe('Input Flow', function () {
   });
 
   it('test add 42 to uint64 input and decrypt', async function () {
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    input.add64(7n);
-    const encryptedInput = await input.encrypt();
+    const encryptedInput = await this.instances.alice.encryptUint64({
+      value: 7n,
+      contractAddress: this.contractAddress,
+      userAddress: this.signers.alice.address,
+    });
+
     encryptedInput.handles.forEach((handle: any, index: any) => {
       // Assuming handle is a Uint8Array or Buffer
       console.log(`  Handle ${index}: 0x${Buffer.from(handle).toString('hex')}`);
@@ -61,15 +67,11 @@ describe('Input Flow', function () {
     const handle = await this.contract.resUint64();
 
     // User decrypt the result - should be 7 + 42 = 49.
-    const { publicKey, privateKey } = this.instances.alice.generateKeypair();
-    const decryptedValue = await userDecryptSingleHandle(
+    const decryptedValue = await this.instances.alice.userDecryptSingleHandle({
       handle,
-      this.contractAddress,
-      this.instances.alice,
-      this.signers.alice,
-      privateKey,
-      publicKey,
-    );
+      contractAddress: this.contractAddress,
+      signer: this.signers.alice,
+    });
     expect(decryptedValue).to.equal(49n);
 
     // Public decrypt the result - should be 49.

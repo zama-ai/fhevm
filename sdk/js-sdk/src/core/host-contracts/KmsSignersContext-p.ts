@@ -70,7 +70,7 @@ class KmsSignersContextImpl implements KmsSignersContext {
   }
 
   public has(signer: string): boolean {
-    return this.#kmsSignersSet.has(signer);
+    return this.#kmsSignersSet.has(signer.toLowerCase());
   }
 
   public static [VERIFY_FUNC](instance: unknown, owner: FhevmRuntime): void {

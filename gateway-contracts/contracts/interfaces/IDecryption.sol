@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import "../shared/Structs.sol";
+import { SnsCiphertextMaterial, CtHandleContractPair } from "../shared/Structs.sol";
 
 /**
  * @title Interface for the Decryption contract.
@@ -255,6 +255,15 @@ interface IDecryption {
     error DecryptionNotRequested(uint256 decryptionId);
 
     /**
+     * @notice Error indicating that a decryption response declares a KMS context ID that differs
+     * from the one pinned at the time of the corresponding request.
+     * @param decryptionId The decryption request ID.
+     * @param requestContextId The context ID pinned at request time.
+     * @param responseContextId The context ID declared in the response's extraData.
+     */
+    error DecryptionContextMismatch(uint256 decryptionId, uint256 requestContextId, uint256 responseContextId);
+
+    /**
      * @notice Requests a public decryption.
      * @param ctHandles The handles of the ciphertexts to decrypt.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
@@ -330,7 +339,8 @@ interface IDecryption {
     ) external;
 
     /**
-     * @notice Indicates if handles are ready to be decrypted publicly.
+     * @notice Indicates if ciphertext material exists for public decryption.
+     * @dev Checks only ciphertext-material availability. ACL checks happen off-chain in the KMS.
      * @param ctHandles The ciphertext handles.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
@@ -340,7 +350,8 @@ interface IDecryption {
     ) external view returns (bool);
 
     /**
-     * @notice Indicates if handles are ready to be decrypted by a user.
+     * @notice Indicates if ciphertext material exists for user decryption.
+     * @dev Checks only ciphertext-material availability. ACL checks happen off-chain in the KMS.
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
@@ -350,7 +361,8 @@ interface IDecryption {
     ) external view returns (bool);
 
     /**
-     * @notice Indicates if handles are ready to be decrypted by a user.
+     * @notice Indicates if ciphertext material exists for user decryption.
+     * @dev Checks only ciphertext-material availability. ACL checks happen off-chain in the KMS.
      * @param userAddress The user's address (unused, kept for backward compatibility).
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
@@ -363,7 +375,8 @@ interface IDecryption {
     ) external view returns (bool);
 
     /**
-     * @notice Indicates if the handles are ready to be decrypted by the delegate address in delegation accounts.
+     * @notice Indicates if ciphertext material exists for delegated user decryption.
+     * @dev Checks only ciphertext-material availability. ACL checks happen off-chain in the KMS.
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
