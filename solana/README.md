@@ -45,6 +45,8 @@ Use this order when picking up the branch:
 
 2. Read the flow
    Start with "Global Flow", then "Confidential Transfer", then "User Decrypt Shape".
+   The canonical product-shaped test is:
+     confidential_token_e2e_wrap_transfer_and_decrypts_current_and_historical_balances
 
 3. Change the PoC
    App behavior usually belongs in confidential-token.
@@ -113,6 +115,8 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 - [x] Confidential token can initialize a mint and token accounts.
 - [x] Confidential token can wrap SPL-like USDC into a confidential balance handle.
 - [x] Confidential token can transfer by rotating Alice and Bob balance handles.
+- [x] Canonical confidential token scenario covers wrap, transfer, current decrypt, historical
+      decrypt, and expected failures.
 - [x] Compute-time ACL is enforced by `zama-host::fhe_binary_op` before event emission.
 - [x] Keyed-nonce ACL records avoid deriving Solana account addresses from opaque handles.
 - [x] User decrypt is modeled with signed authorization plus ACL record verification.
@@ -140,8 +144,8 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 - [ ] Decide how subject overflow works without imposing a small protocol-level subject limit.
 - [ ] Decide account cleanup, rent refund, compaction, and archival rules.
 - [ ] Wire the KMS connector to verify Solana ACL records instead of using only test-local checks.
-- [ ] Add a fuller confidential token scenario for OpenZeppelin to iterate on:
-      wrap, transfer, current decrypt, historical decrypt, and expected failures.
+- [ ] Extend the canonical confidential token scenario when adding new token features, instead of
+      creating a second product flow.
 - [ ] Keep RFC 024 aligned when the PoC proves or disproves a design choice.
 
 ## Global Flow
