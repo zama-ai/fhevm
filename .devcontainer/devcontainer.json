@@ -13,8 +13,7 @@
                 "rust-lang.rust-analyzer",
                 "vadimcn.vscode-lldb",
                 "juanblanco.solidity",
-                "eamodio.gitlens",
-                "-vscode.npm"
+                "eamodio.gitlens"
             ],
             "settings": {
                 "git.allowForcePush": true,
