@@ -6,6 +6,15 @@ ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
 MANUAL_PACK_DIRNAME="manual-pack"
 PACK_DIR="$SCRIPT_DIR/../$MANUAL_PACK_DIRNAME"
 
+PROFILE="dev"
+for arg in "$@"; do
+  case "$arg" in
+    --profile=dev)  PROFILE="dev" ;;
+    --profile=prod) PROFILE="prod" ;;
+    --profile=*)    echo "Error: unknown --profile value '${arg#--profile=}'. Use 'dev' or 'prod'." >&2; exit 1 ;;
+  esac
+done
+
 GREEN='\033[0;32m'
 NC='\033[0m'
 
@@ -18,8 +27,8 @@ mkdir -p "$PACK_DIR"
 PACK_DIR=$(cd "$PACK_DIR" && pwd)
 
 # Build
-echo -e "${GREEN}Building project...${NC}"
-(cd "$ROOT_DIR" && npm run build)
+echo -e "${GREEN}Building project (profile: $PROFILE)...${NC}"
+(cd "$ROOT_DIR" && npm run "build:$PROFILE")
 
 # Pack from src/ which holds the real package.json for distribution
 echo -e "${GREEN}Packing project...${NC}"

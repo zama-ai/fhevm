@@ -7,6 +7,9 @@ test/fheTest/.keys
 
 .env
 
+# agent-traces
+.agent-traces
+
 # Foundry
 cache
 out

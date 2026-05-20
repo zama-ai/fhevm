@@ -41,7 +41,7 @@
     "test:localcleartext:v12": "./test/scripts/localcleartext-run-tests.sh --profile=v12",
     "test:localcleartext:v13": "./test/scripts/localcleartext-run-tests.sh --profile=v13",
     "test:localcleartext": "./test/scripts/localcleartext-run-tests.sh",
-    "test:localcleartext:pack": "./test/scripts/rebuild_sdk_and_pack.sh && ./test/scripts/localcleartext-run-tests.sh --use-pack",
+    "test:localcleartext:pack": "./test/scripts/rebuild_sdk_and_pack.sh --profile=prod && ./test/scripts/localcleartext-run-tests.sh --use-pack",
     "test:examples": "tsx ./examples/node-ethers/test-run.ts && tsx ./examples/node-viem/test-run.ts",
     "test": "npm run test:unit && npm run test:localcleartext:pack",
     "version": "node ./scripts/generate-version.cjs"

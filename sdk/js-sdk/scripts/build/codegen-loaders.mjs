@@ -63,6 +63,10 @@ function renderVersionList(versions) {
   return versions.map((v) => `'${v}'`).join(', ');
 }
 
+function renderDisplayVersionList(versions) {
+  return versions.map((v) => `v${v}`).join(', ');
+}
+
 function renderVersionUnion(versions) {
   return versions.length === 0 ? 'never' : versions.map((v) => `'${v}'`).join(' | ');
 }
@@ -366,8 +370,8 @@ if (isMain) {
   }
 
   console.log(`[codegen-loaders] ${check ? 'checked' : 'generated'} profile=${profile}`);
-  console.log(`[codegen-loaders]   TFHE versions: ${tfheVersions.join(', ') || '(none)'}`);
+  console.log(`[codegen-loaders]   TFHE versions:   ${renderDisplayVersionList(tfheVersions) || '(none)'}`);
   console.log(`[codegen-loaders]   TFHE API anchor: v${tfheApiAnchorVersion}`);
-  console.log(`[codegen-loaders]   KMS versions:  ${kmsVersions.join(', ') || '(none)'}`);
+  console.log(`[codegen-loaders]   KMS versions:    ${renderDisplayVersionList(kmsVersions) || '(none)'}`);
   console.log(`[codegen-loaders]   KMS API anchor:  v${kmsApiAnchorVersion}`);
 }
