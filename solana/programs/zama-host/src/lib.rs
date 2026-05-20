@@ -93,6 +93,19 @@ pub mod zama_host {
         Ok(())
     }
 
+    pub fn allow_for_decryption(ctx: Context<AllowForDecryption>, handle: [u8; 32]) -> Result<()> {
+        let subject = ctx.accounts.authority.key();
+        assert_record_allows_handle(&ctx.accounts.acl_record, handle, subject)?;
+        ctx.accounts.acl_record.public_decrypt = true;
+        emit_cpi!(AclAllowedEvent {
+            version: EVENT_VERSION,
+            handle,
+            subject,
+            permission: AclPermission::PublicDecrypt,
+        });
+        Ok(())
+    }
+
     pub fn fhe_binary_op(
         ctx: Context<FheBinaryOp>,
         op: FheBinaryOpCode,
@@ -206,6 +219,14 @@ pub struct BindAclRecord<'info> {
 
 #[derive(Accounts)]
 pub struct AssertAclRecord<'info> {
+    pub acl_record: Account<'info, AclRecord>,
+}
+
+#[derive(Accounts)]
+#[event_cpi]
+pub struct AllowForDecryption<'info> {
+    pub authority: Signer<'info>,
+    #[account(mut)]
     pub acl_record: Account<'info, AclRecord>,
 }
 

@@ -430,6 +430,53 @@ request carries:
 
 For older handles, the request must carry an older ACL record pubkey that the app observed or indexed from prior transactions. KMS does not guess or scan; it reads the provided account and verifies the stored fields.
 
+## Public Decrypt Shape
+
+Public decrypt is a durable flag on the canonical ACL record.
+
+```text
+Alice already allowed on A1 for hA1
+  |
+  v
+zama-host::allow_for_decryption(handle = hA1, aclRecord = A1)
+  checks:
+    A1 stores hA1
+    A1 subjects includes Alice
+  writes:
+    A1.publicDecrypt = true
+```
+
+The public decrypt request does not need a user signature:
+
+```text
+request carries:
+  handle = hA1
+  aclRecordPubkey = A1
+```
+
+KMS-style verification:
+
+```text
+1. Read aclRecordPubkey.
+2. Verify the ACL account is owned by zama-host.
+3. Recompute:
+     expected_nonce_key = H(record.acl_domain_key, record.app_account, record.encrypted_value_label)
+     aclRecordPubkey == PDA("acl-record", expected_nonce_key, record.nonce_sequence)
+4. Verify:
+     record.handle == handle
+     record.publicDecrypt == true
+```
+
+This is separate from ordinary `allow`.
+
+```text
+allow subject on handle
+  -> subject can compute / user-decrypt through ACL checks
+
+allow_for_decryption on handle
+  -> anyone can request public decrypt for that handle
+```
+
 ## Operator Encoding Notes
 
 The current PoC only models encrypted/encrypted binary ops, so scalar metadata is still simplified. When adding scalar or ternary operators, Solana host events must preserve the EVM `scalarByte` convention.
