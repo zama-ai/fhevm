@@ -157,7 +157,7 @@ ACL record
 
 subject
   Pubkey that is allowed by an ACL record.
-  Examples: Alice for user decrypt, computeSigner for compute.
+  Examples: Alice for user decrypt, compute_signer for compute.
 
 compute signer
   Program-controlled PDA that signs CPI calls into zama-host.
@@ -226,7 +226,7 @@ ACL record PDA
     acl_domain_key        = cUSDCMint
     app_account           = AliceTokenAccount
     encrypted_value_label = "balance"
-    subjects              = [Alice, computeSigner]
+    subjects              = [Alice, compute_signer]
 ```
 
 Writing an ACL record requires the app account to sign:
@@ -265,17 +265,17 @@ Initial state:
 ```text
 AliceTokenAccount
   owner = Alice
-  balanceHandle = hA0
-  balanceAclRecord = A0
-  nextBalanceNonceSequence = 1
+  balance_handle = hA0
+  balance_acl_record = A0
+  next_balance_nonce_sequence = 1
 
 BobTokenAccount
   owner = Bob
-  balanceHandle = hB0
-  balanceAclRecord = B0
-  nextBalanceNonceSequence = 1
+  balance_handle = hB0
+  balance_acl_record = B0
+  next_balance_nonce_sequence = 1
 
-computeSigner = PDA("fhe-compute", cUSDCMint)
+compute_signer = PDA("fhe-compute", cUSDCMint)
 amount handle = hX
 ```
 
@@ -288,34 +288,34 @@ Alice signs tx
 confidential-token::confidential_transfer(amount = hX)
   |
   +--> CPI zama-host::fhe_binary_op(Sub)
-  |      compute_subject = computeSigner
+  |      compute_subject = compute_signer
   |      checks:
-  |        A0 stores hA0 and subjects includes computeSigner
-  |        X  stores hX  and subjects includes computeSigner
+  |        A0 stores hA0 and subjects includes compute_signer
+  |        X  stores hX  and subjects includes compute_signer
   |      emits:
   |        hA1 = FHE.sub(hA0, hX)
   |
   +--> CPI zama-host::fhe_binary_op(Add)
-  |      compute_subject = computeSigner
+  |      compute_subject = compute_signer
   |      checks:
-  |        B0 stores hB0 and subjects includes computeSigner
-  |        X  stores hX  and subjects includes computeSigner
+  |        B0 stores hB0 and subjects includes compute_signer
+  |        X  stores hX  and subjects includes compute_signer
   |      emits:
   |        hB1 = FHE.add(hB0, hX)
   |
   +--> CPI zama-host::bind_acl_record(...)
-  |      creates A1 for hA1 with subjects [Alice, computeSigner]
+  |      creates A1 for hA1 with subjects [Alice, compute_signer]
   |
   +--> CPI zama-host::bind_acl_record(...)
-  |      creates B1 for hB1 with subjects [Bob, computeSigner]
+  |      creates B1 for hB1 with subjects [Bob, compute_signer]
   |
   +--> stores:
-         AliceTokenAccount.balanceHandle = hA1
-         AliceTokenAccount.balanceAclRecord = A1
-         AliceTokenAccount.nextBalanceNonceSequence = 2
-         BobTokenAccount.balanceHandle = hB1
-         BobTokenAccount.balanceAclRecord = B1
-         BobTokenAccount.nextBalanceNonceSequence = 2
+         AliceTokenAccount.balance_handle = hA1
+         AliceTokenAccount.balance_acl_record = A1
+         AliceTokenAccount.next_balance_nonce_sequence = 2
+         BobTokenAccount.balance_handle = hB1
+         BobTokenAccount.balance_acl_record = B1
+         BobTokenAccount.next_balance_nonce_sequence = 2
 ```
 
 The amount handle ACL is temporary PoC glue. Today the tests pre-bind:
@@ -324,7 +324,7 @@ The amount handle ACL is temporary PoC glue. Today the tests pre-bind:
 ACL domain key = Alice
 app account    = Alice
 label          = "input"
-subjects       = [computeSigner]
+subjects       = [compute_signer]
 handle         = hX
 ```
 
@@ -354,14 +354,14 @@ wrap_usdc(amount)
   |
   +--> CPI zama-host::fhe_binary_op(Add)
   |      checks:
-  |        current balance ACL stores hA0 and allows computeSigner
-  |        amount ACL stores hDeposit and allows computeSigner
+  |        current balance ACL stores hA0 and allows compute_signer
+  |        amount ACL stores hDeposit and allows compute_signer
   |      emits:
   |        hA1 = FHE.add(hA0, hDeposit)
   |
   +--> CPI zama-host::bind_acl_record(...)
          creates one output ACL record for hA1:
-           subjects = [Alice, computeSigner]
+           subjects = [Alice, compute_signer]
 ```
 
 The deposit amount is public in this slice because it uses `trivial_encrypt(amount)`. A later encrypted-input path should replace that step with `input_verified(...)` and the real ZKPoK/input verifier boundary.
@@ -372,30 +372,30 @@ The PoC keeps the RFC016-style split:
 
 ```text
 Signed by Alice:
-  userPubkey = Alice
-  reencryptionPublicKey = pkR
-  allowedAclDomainKeys = [cUSDCMint]
+  user_pubkey = Alice
+  reencryption_public_key = pkR
+  allowed_acl_domain_keys = [cUSDCMint]
   validity
-  extraData
+  extra_data
 
 Unsigned handle entry:
   handle = hA1
-  ownerPubkey = Alice
-  aclRecordPubkey = A1
+  owner_pubkey = Alice
+  acl_record_pubkey = A1
 ```
 
 KMS-style verification:
 
 ```text
 1. Verify Alice signed the top-level authorization.
-2. Read aclRecordPubkey.
+2. Read acl_record_pubkey.
 3. Verify the ACL account is owned by zama-host.
 4. Verify:
      expected_nonce_key = H(record.acl_domain_key, record.app_account, record.encrypted_value_label)
-     aclRecordPubkey == PDA("acl-record", expected_nonce_key, record.nonce_sequence)
-     record.acl_domain_key is in allowedAclDomainKeys
+     acl_record_pubkey == PDA("acl-record", expected_nonce_key, record.nonce_sequence)
+     record.acl_domain_key is in allowed_acl_domain_keys
      record.handle == handle
-     record.subjects contains ownerPubkey
+     record.subjects contains owner_pubkey
 ```
 
 Visual version:
@@ -420,12 +420,12 @@ For the current balance, the frontend does not need to search:
 
 ```text
 read AliceTokenAccount:
-  balanceHandle = hA1
-  balanceAclRecord = A1
+  balance_handle = hA1
+  balance_acl_record = A1
 
 request carries:
   handle = hA1
-  aclRecordPubkey = A1
+  acl_record_pubkey = A1
 ```
 
 For older handles, the request must carry an older ACL record pubkey that the app observed or indexed from prior transactions. KMS does not guess or scan; it reads the provided account and verifies the stored fields.
@@ -438,12 +438,12 @@ Public decrypt is a durable flag on the canonical ACL record.
 Alice already allowed on A1 for hA1
   |
   v
-zama-host::allow_for_decryption(handle = hA1, aclRecord = A1)
+zama-host::allow_for_decryption(handle = hA1, acl_record = A1)
   checks:
     A1 stores hA1
     A1 subjects includes Alice
   writes:
-    A1.publicDecrypt = true
+    A1.public_decrypt = true
 ```
 
 The public decrypt request does not need a user signature:
@@ -451,20 +451,20 @@ The public decrypt request does not need a user signature:
 ```text
 request carries:
   handle = hA1
-  aclRecordPubkey = A1
+  acl_record_pubkey = A1
 ```
 
 KMS-style verification:
 
 ```text
-1. Read aclRecordPubkey.
+1. Read acl_record_pubkey.
 2. Verify the ACL account is owned by zama-host.
 3. Recompute:
      expected_nonce_key = H(record.acl_domain_key, record.app_account, record.encrypted_value_label)
-     aclRecordPubkey == PDA("acl-record", expected_nonce_key, record.nonce_sequence)
+     acl_record_pubkey == PDA("acl-record", expected_nonce_key, record.nonce_sequence)
 4. Verify:
      record.handle == handle
-     record.publicDecrypt == true
+     record.public_decrypt == true
 ```
 
 This is separate from ordinary `allow`.
@@ -631,7 +631,7 @@ The host op enforces compute ACL before event emission.
   Wrong current ACL or wrong amount ACL rejects the transfer.
 
 User decrypt checks signed authorization plus on-chain ACL state.
-  Changing allowedAclDomainKeys fails.
+  Changing allowed_acl_domain_keys fails.
   Signing as Bob for Alice fails.
   Passing the wrong ACL record fails.
   Passing the wrong handle fails.
@@ -666,7 +666,7 @@ The important qualitative points:
 
 ```text
 transfer uses one output ACL record per changed balance account
-each output ACL record stores both subjects: user + computeSigner
+each output ACL record stores both subjects: user + compute_signer
 max CPI depth remains 3 in the tested direct token -> zama-host -> event-CPI path
 ```
 
