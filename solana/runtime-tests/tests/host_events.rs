@@ -443,11 +443,13 @@ fn confidential_transfer_rotates_balance_handles_and_binds_output_acl() {
     let mut fixture = token_fixture();
     let amount_handle = [9; 32];
     authorize_input_compute_acl(&mut fixture, amount_handle);
-    let new_alice = [3; 32];
-    let new_bob = [4; 32];
     let output = transfer_output_accounts(&fixture, 1);
-    let transfer_ix = transfer_ix(&fixture, output, amount_handle, new_alice, new_bob);
+    let transfer_ix = transfer_ix(&fixture, output, amount_handle);
     let (meta, account_keys) = send_with_meta(&mut fixture.svm, &fixture.alice, transfer_ix);
+    let alice_record = read_acl_record(&fixture.svm, output.alice).expect("expected Alice ACL");
+    let bob_record = read_acl_record(&fixture.svm, output.bob).expect("expected Bob ACL");
+    let new_alice = alice_record.handle;
+    let new_bob = bob_record.handle;
     let events = binary_op_events(&meta, &account_keys, fixture.host_program_id);
     assert_eq!(events.len(), 2);
     assert_eq!(events[0].version, 0);
@@ -499,13 +501,14 @@ fn user_decrypt_model_uses_acl_domain_key_and_acl_record_authentication() {
     let mut fixture = token_fixture();
     let amount_handle = [9; 32];
     authorize_input_compute_acl(&mut fixture, amount_handle);
-    let first_alice = [3; 32];
     let first_output = transfer_output_accounts(&fixture, 1);
-    let first_ix = transfer_ix(&fixture, first_output, amount_handle, first_alice, [4; 32]);
+    let first_ix = transfer_ix(&fixture, first_output, amount_handle);
     send(&mut fixture.svm, &fixture.alice, first_ix);
+    let first_alice = read_acl_record(&fixture.svm, first_output.alice)
+        .expect("expected first Alice ACL")
+        .handle;
 
     authorize_input_compute_acl(&mut fixture, [8; 32]);
-    let second_alice = [5; 32];
     let second_output = transfer_output_accounts(&fixture, 2);
     let second_ix = transfer_ix_with_current_acl(
         &fixture,
@@ -513,10 +516,11 @@ fn user_decrypt_model_uses_acl_domain_key_and_acl_record_authentication() {
         first_output.bob,
         second_output,
         [8; 32],
-        second_alice,
-        [6; 32],
     );
     send(&mut fixture.svm, &fixture.alice, second_ix);
+    let second_alice = read_acl_record(&fixture.svm, second_output.alice)
+        .expect("expected second Alice ACL")
+        .handle;
 
     let current_request =
         signed_current_balance_user_decrypt_request(&fixture, fixture.alice_token, &fixture.alice);
@@ -565,10 +569,12 @@ fn public_decrypt_model_uses_acl_record_flag() {
     let mut fixture = token_fixture();
     let amount_handle = [9; 32];
     authorize_input_compute_acl(&mut fixture, amount_handle);
-    let alice_handle = [3; 32];
     let output = transfer_output_accounts(&fixture, 1);
-    let transfer_ix = transfer_ix(&fixture, output, amount_handle, alice_handle, [4; 32]);
+    let transfer_ix = transfer_ix(&fixture, output, amount_handle);
     send(&mut fixture.svm, &fixture.alice, transfer_ix);
+    let alice_handle = read_acl_record(&fixture.svm, output.alice)
+        .expect("expected Alice ACL")
+        .handle;
 
     let entry = PublicDecryptHandleEntry {
         handle: alice_handle,
@@ -620,10 +626,12 @@ fn allow_for_decryption_rejects_unallowed_signer() {
     let mut fixture = token_fixture();
     let amount_handle = [9; 32];
     authorize_input_compute_acl(&mut fixture, amount_handle);
-    let alice_handle = [3; 32];
     let output = transfer_output_accounts(&fixture, 1);
-    let transfer_ix = transfer_ix(&fixture, output, amount_handle, alice_handle, [4; 32]);
+    let transfer_ix = transfer_ix(&fixture, output, amount_handle);
     send(&mut fixture.svm, &fixture.alice, transfer_ix);
+    let alice_handle = read_acl_record(&fixture.svm, output.alice)
+        .expect("expected Alice ACL")
+        .handle;
 
     let ix = allow_for_decryption_ix(
         fixture.host_program_id,
@@ -643,9 +651,8 @@ fn wrap_usdc_escrows_spl_tokens_and_rotates_confidential_balance() {
     let amount = 100_000_000;
     let amount_handle = [9; 32];
     authorize_input_compute_acl(&mut fixture, amount_handle);
-    let new_alice = [5; 32];
     let output = wrap_output_accounts(&fixture, 1);
-    let ix = wrap_usdc_ix(&fixture, output, amount, amount_handle, new_alice);
+    let ix = wrap_usdc_ix(&fixture, output, amount, amount_handle);
 
     let alice_usdc_before = spl_token_amount(&fixture.svm, fixture.alice_usdc);
     let vault_usdc_before = spl_token_amount(&fixture.svm, fixture.vault_usdc);
@@ -667,6 +674,8 @@ fn wrap_usdc_escrows_spl_tokens_and_rotates_confidential_balance() {
     assert_eq!(trivial_events[0].result, amount_handle);
 
     let events = binary_op_events(&meta, &account_keys, fixture.host_program_id);
+    let output_record = read_acl_record(&fixture.svm, output.balance).expect("expected output ACL");
+    let new_alice = output_record.handle;
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].op, FheBinaryOpCode::Add);
     assert_eq!(events[0].subject, fixture.compute_signer);
@@ -697,17 +706,13 @@ fn confidential_token_e2e_wrap_transfer_and_decrypts_current_and_historical_bala
     // 1. Alice wraps underlying USDC into her confidential balance.
     let wrap_amount = 100_000_000;
     let wrap_amount_handle = [9; 32];
-    let alice_after_wrap = [5; 32];
     authorize_input_compute_acl(&mut fixture, wrap_amount_handle);
     let wrap_output = wrap_output_accounts(&fixture, 1);
-    let wrap_ix = wrap_usdc_ix(
-        &fixture,
-        wrap_output,
-        wrap_amount,
-        wrap_amount_handle,
-        alice_after_wrap,
-    );
+    let wrap_ix = wrap_usdc_ix(&fixture, wrap_output, wrap_amount, wrap_amount_handle);
     send(&mut fixture.svm, &fixture.alice, wrap_ix);
+    let alice_after_wrap = read_acl_record(&fixture.svm, wrap_output.balance)
+        .expect("expected wrap ACL")
+        .handle;
 
     let alice_account_after_wrap = token_account(&fixture.svm, fixture.alice_token);
     assert_eq!(alice_account_after_wrap.balance_handle, alice_after_wrap);
@@ -728,8 +733,6 @@ fn confidential_token_e2e_wrap_transfer_and_decrypts_current_and_historical_bala
 
     // 2. Alice transfers a confidential amount to Bob.
     let transfer_amount_handle = [8; 32];
-    let alice_after_transfer = [6; 32];
-    let bob_after_transfer = [7; 32];
     authorize_input_compute_acl(&mut fixture, transfer_amount_handle);
     let transfer_output = TransferOutputAccounts {
         alice: balance_acl_record_address(
@@ -751,10 +754,14 @@ fn confidential_token_e2e_wrap_transfer_and_decrypts_current_and_historical_bala
         fixture.bob_current_compute_acl,
         transfer_output,
         transfer_amount_handle,
-        alice_after_transfer,
-        bob_after_transfer,
     );
     send(&mut fixture.svm, &fixture.alice, transfer_ix);
+    let alice_after_transfer = read_acl_record(&fixture.svm, transfer_output.alice)
+        .expect("expected Alice transfer ACL")
+        .handle;
+    let bob_after_transfer = read_acl_record(&fixture.svm, transfer_output.bob)
+        .expect("expected Bob transfer ACL")
+        .handle;
 
     let alice_account_after_transfer = token_account(&fixture.svm, fixture.alice_token);
     let bob_account_after_transfer = token_account(&fixture.svm, fixture.bob_token);
@@ -853,7 +860,7 @@ fn confidential_transfer_budget_snapshot() {
     let mut fixture = token_fixture();
     authorize_input_compute_acl(&mut fixture, [9; 32]);
     let output = transfer_output_accounts(&fixture, 1);
-    let transfer_ix = transfer_ix(&fixture, output, [9; 32], [3; 32], [4; 32]);
+    let transfer_ix = transfer_ix(&fixture, output, [9; 32]);
     let top_level_metas = transfer_ix.accounts.len();
     let writable_metas = transfer_ix
         .accounts
@@ -893,17 +900,11 @@ fn confidential_transfer_rejects_stale_current_acl() {
     let mut fixture = token_fixture();
     authorize_input_compute_acl(&mut fixture, [9; 32]);
     let first_output = transfer_output_accounts(&fixture, 1);
-    let first_ix = transfer_ix(&fixture, first_output, [9; 32], [3; 32], [4; 32]);
+    let first_ix = transfer_ix(&fixture, first_output, [9; 32]);
     send(&mut fixture.svm, &fixture.alice, first_ix);
 
     authorize_input_compute_acl(&mut fixture, [8; 32]);
-    let stale_ix = transfer_ix(
-        &fixture,
-        transfer_output_accounts(&fixture, 2),
-        [8; 32],
-        [5; 32],
-        [6; 32],
-    );
+    let stale_ix = transfer_ix(&fixture, transfer_output_accounts(&fixture, 2), [8; 32]);
     assert!(try_send(&mut fixture.svm, &fixture.alice, stale_ix).is_err());
 }
 
@@ -917,8 +918,6 @@ fn confidential_transfer_rejects_wrong_current_acl_record() {
         fixture.bob_current_compute_acl,
         transfer_output_accounts(&fixture, 1),
         [9; 32],
-        [3; 32],
-        [4; 32],
     );
     assert!(try_send(&mut fixture.svm, &fixture.alice, ix).is_err());
 }
@@ -938,8 +937,6 @@ fn confidential_transfer_rejects_wrong_amount_acl() {
         input_compute_acl_address(&fixture, wrong_amount_handle),
         output,
         amount_handle,
-        [3; 32],
-        [4; 32],
     );
 
     assert!(try_send(&mut fixture.svm, &fixture.alice, ix).is_err());
@@ -1311,8 +1308,6 @@ fn transfer_ix(
     fixture: &TokenFixture,
     output: TransferOutputAccounts,
     amount_handle: [u8; 32],
-    new_from_handle: [u8; 32],
-    new_to_handle: [u8; 32],
 ) -> Instruction {
     transfer_ix_with_current_acl(
         fixture,
@@ -1320,8 +1315,6 @@ fn transfer_ix(
         fixture.bob_current_compute_acl,
         output,
         amount_handle,
-        new_from_handle,
-        new_to_handle,
     )
 }
 
@@ -1331,8 +1324,6 @@ fn transfer_ix_with_current_acl(
     to_current_compute_acl: Pubkey,
     output: TransferOutputAccounts,
     amount_handle: [u8; 32],
-    new_from_handle: [u8; 32],
-    new_to_handle: [u8; 32],
 ) -> Instruction {
     transfer_ix_with_amount_acl(
         fixture,
@@ -1341,8 +1332,6 @@ fn transfer_ix_with_current_acl(
         input_compute_acl_address(fixture, amount_handle),
         output,
         amount_handle,
-        new_from_handle,
-        new_to_handle,
     )
 }
 
@@ -1353,8 +1342,6 @@ fn transfer_ix_with_amount_acl(
     amount_compute_acl: Pubkey,
     output: TransferOutputAccounts,
     amount_handle: [u8; 32],
-    new_from_handle: [u8; 32],
-    new_to_handle: [u8; 32],
 ) -> Instruction {
     Instruction {
         program_id: fixture.token_program_id,
@@ -1374,12 +1361,7 @@ fn transfer_ix_with_amount_acl(
             system_program: system_program::ID,
         }
         .to_account_metas(None),
-        data: token::instruction::ConfidentialTransfer {
-            amount_handle,
-            new_from_handle,
-            new_to_handle,
-        }
-        .data(),
+        data: token::instruction::ConfidentialTransfer { amount_handle }.data(),
     }
 }
 
@@ -1388,7 +1370,6 @@ fn wrap_usdc_ix(
     output: WrapOutputAccounts,
     amount: u64,
     amount_handle: [u8; 32],
-    new_balance_handle: [u8; 32],
 ) -> Instruction {
     Instruction {
         program_id: fixture.token_program_id,
@@ -1416,7 +1397,6 @@ fn wrap_usdc_ix(
         data: token::instruction::WrapUsdc {
             amount,
             amount_handle,
-            new_balance_handle,
         }
         .data(),
     }
