@@ -5,7 +5,10 @@ use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
 use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
 use fhevm_engine_common::{
-    drift_revert::{self, RevertRunnerConfig},
+    drift_revert::{
+        self, RevertRunnerConfig, WatcherTimeouts, DRIFT_REVERT_DB_DOWN_LIMIT,
+        MIN_GRACE_PERIOD_MULTIPLIER,
+    },
     metrics_server, telemetry,
     utils::DatabaseURL,
 };
@@ -17,6 +20,20 @@ use sqlx::postgres::PgPoolOptions;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Level};
+
+/// Parse `drift_auto_revert_grace_period` and reject values below
+/// `MIN_GRACE_PERIOD_MULTIPLIER * DRIFT_REVERT_DB_DOWN_LIMIT`.
+fn parse_grace_period(s: &str) -> Result<Duration, String> {
+    let d = parse_duration(s).map_err(|e| e.to_string())?;
+    let min = DRIFT_REVERT_DB_DOWN_LIMIT * MIN_GRACE_PERIOD_MULTIPLIER;
+    if d < min {
+        return Err(format!(
+            "must be at least {}x DRIFT_REVERT_DB_DOWN_LIMIT ({:?}) = {:?}, got {:?}",
+            MIN_GRACE_PERIOD_MULTIPLIER, DRIFT_REVERT_DB_DOWN_LIMIT, min, d,
+        ));
+    }
+    Ok(d)
+}
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -103,9 +120,11 @@ struct Conf {
     drift_post_consensus_grace: Duration,
 
     /// How long to wait after detecting a pending drift-revert signal before
-    /// running the revert SQL. Gives other services time to see the signal and
-    /// re-exec before the DB state changes.
-    #[arg(long, default_value = "60s", value_parser = parse_duration)]
+    /// running the revert SQL. Gives other services time to see the signal
+    /// and re-exec (or fail-fast and be restarted) before the DB state
+    /// changes. Must be ≥ `MIN_GRACE_PERIOD_MULTIPLIER * DRIFT_REVERT_DB_DOWN_LIMIT`;
+    /// the service refuses to start otherwise.
+    #[arg(long, default_value = "120s", value_parser = parse_grace_period)]
     drift_auto_revert_grace_period: Duration,
 
     /// Enable automatic drift recovery. When false (default), the drift
@@ -240,6 +259,7 @@ async fn main() -> anyhow::Result<()> {
             max_recent_attempts: conf.drift_auto_revert_max_recent_attempts,
             recent_attempts_window: conf.drift_auto_revert_recent_attempts_window,
         }),
+        WatcherTimeouts::default(),
     )
     .await?;
 
@@ -260,4 +280,47 @@ async fn main() -> anyhow::Result<()> {
     info!("Gateway listener and HTTP health check server stopped gracefully");
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_grace_period_accepts_exactly_min() {
+        let min = DRIFT_REVERT_DB_DOWN_LIMIT * MIN_GRACE_PERIOD_MULTIPLIER;
+        let s = format!("{}s", min.as_secs());
+        let parsed = parse_grace_period(&s).expect("min must be accepted");
+        assert_eq!(parsed, min);
+    }
+
+    #[test]
+    fn parse_grace_period_accepts_above_min() {
+        let min = DRIFT_REVERT_DB_DOWN_LIMIT * MIN_GRACE_PERIOD_MULTIPLIER;
+        let above = min + Duration::from_secs(1);
+        let s = format!("{}s", above.as_secs());
+        assert_eq!(parse_grace_period(&s).unwrap(), above);
+    }
+
+    #[test]
+    fn parse_grace_period_rejects_below_min() {
+        let min = DRIFT_REVERT_DB_DOWN_LIMIT * MIN_GRACE_PERIOD_MULTIPLIER;
+        let below = min - Duration::from_secs(1);
+        let s = format!("{}s", below.as_secs());
+        let err = parse_grace_period(&s).expect_err("below min must be rejected");
+        assert!(
+            err.contains("must be at least"),
+            "error should explain the lower bound, got: {err}"
+        );
+    }
+
+    #[test]
+    fn parse_grace_period_rejects_invalid_duration() {
+        let err = parse_grace_period("not-a-duration").expect_err("must reject garbage");
+        // Surfaces the humantime parse error rather than the bound check.
+        assert!(
+            !err.contains("must be at least"),
+            "invalid duration should not surface bound-check error, got: {err}"
+        );
+    }
 }
