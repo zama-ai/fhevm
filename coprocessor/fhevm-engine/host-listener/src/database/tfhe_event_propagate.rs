@@ -447,12 +447,9 @@ impl Database {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
         let group_id_vec = group_id.map(|g| g.to_vec());
-        // Op-level fields live on the primary row only (single-output ops are their own primary).
+        // Dependencies live only on the primary row to avoid duplication
         let is_primary = group_id.is_none() || output_index == 0;
-        let deps_opt = is_primary.then_some(dependencies);
-        let fhe_op_opt = is_primary.then_some(fhe_operation as i16);
-        let is_scalar_opt = is_primary.then_some(is_scalar);
-        let is_allowed_opt = is_primary.then_some(log.is_allowed);
+        let deps_for_row = if is_primary { dependencies } else { Vec::new() };
         let query = sqlx::query!(
             r#"
             INSERT INTO computations (
@@ -475,12 +472,12 @@ impl Database {
             ON CONFLICT (output_handle, transaction_id) DO NOTHING
             "#,
             output_handle,
-            deps_opt.as_deref(),
-            fhe_op_opt,
-            is_scalar_opt,
+            deps_for_row.as_slice(),
+            fhe_operation as i16,
+            is_scalar,
             log.dependence_chain.to_vec(),
             log.transaction_hash.map(|txh| txh.to_vec()),
-            is_allowed_opt,
+            log.is_allowed,
             log.block_timestamp
                 .saturating_add(TimeDuration::microseconds(
                     log.tx_depth_size as i64

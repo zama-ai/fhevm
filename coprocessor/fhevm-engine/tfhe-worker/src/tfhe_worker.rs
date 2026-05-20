@@ -426,37 +426,30 @@ WHERE c.transaction_id IN (
                 let mut group_rows = by_group.remove(key).expect("group key present");
                 group_rows.sort_by_key(|w| w.output_index);
                 let first = group_rows[0];
-                // Op-level fields live on the primary row (output_index = 0) only.
-                // If the contract is violated, mark every handle in the group errored
-                // and skip rather than panicking the worker.
-                let (fhe_op_raw, dependencies, is_scalar, is_allowed) = match (
-                    first.output_index,
-                    first.fhe_operation,
-                    first.dependencies.as_ref(),
-                    first.is_scalar,
-                    first.is_allowed,
-                ) {
-                    (0, Some(op), Some(deps), Some(scal), Some(allow)) => {
-                        (op, deps, scal, allow)
+                // Op-level scalar fields are duplicated on every row; dependencies live
+                // only on the primary (output_index = 0). If the primary is missing,
+                // mark every handle in the group errored rather than panicking the worker.
+                if first.output_index != 0 {
+                    error!(target: "tfhe_worker",
+                        { output_handle = ?first.output_handle, transaction_id = ?hex::encode(transaction_id), output_index = first.output_index },
+                        "multi-output primary row missing");
+                    let e = SchedulerError::DataflowGraphError;
+                    for w in group_rows.iter() {
+                        set_computation_error(
+                            &w.output_handle,
+                            transaction_id,
+                            &e,
+                            trx,
+                            deps_chain_mngr,
+                        )
+                        .await?;
                     }
-                    _ => {
-                        error!(target: "tfhe_worker",
-                            { output_handle = ?first.output_handle, transaction_id = ?hex::encode(transaction_id), output_index = first.output_index },
-                            "multi-output primary row missing op metadata");
-                        let e = SchedulerError::DataflowGraphError;
-                        for w in group_rows.iter() {
-                            set_computation_error(
-                                &w.output_handle,
-                                transaction_id,
-                                &e,
-                                trx,
-                                deps_chain_mngr,
-                            )
-                            .await?;
-                        }
-                        continue;
-                    }
-                };
+                    continue;
+                }
+                let fhe_op_raw = first.fhe_operation;
+                let dependencies = &first.dependencies;
+                let is_scalar = first.is_scalar;
+                let is_allowed = first.is_allowed;
 
                 let fhe_op: SupportedFheOperations = match fhe_op_raw.try_into() {
                     Ok(op) => op,
