@@ -2412,7 +2412,6 @@ dependencies = [
  "alloy",
  "anyhow",
  "async-trait",
- "fhevm_gateway_bindings",
  "hex",
  "indexmap 2.13.0",
  "jsonrpsee",

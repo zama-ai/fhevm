@@ -74,6 +74,7 @@ governor = "0.10.4"
 indexmap = "2.13.0"
 ethereum_rpc_mock = { path = "test-support/ethereum_rpc_mock", optional = true }
 serde_yaml = "0.9"
+rand = "0.10.0"
 
 [build-dependencies]
 built = { version = "0.8", features = [
@@ -87,7 +88,6 @@ built = { version = "0.8", features = [
 
 [dev-dependencies]
 tempfile = "3.25.0"
-rand = "0.10.0"
 rstest = "0.26.1"
 serde_yaml = "0.9.34"
 serial_test = "3.4.0"

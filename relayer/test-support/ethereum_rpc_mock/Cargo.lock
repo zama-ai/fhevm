@@ -1531,7 +1531,6 @@ dependencies = [
  "alloy",
  "anyhow",
  "async-trait",
- "fhevm_gateway_bindings",
  "futures",
  "futures-util",
  "hex",
@@ -1581,15 +1580,6 @@ checksum = "c0b50bfb653653f9ca9095b427bed08ab8d75a137839d9ad64eb11810d5b6393"
 dependencies = [
  "rand_core 0.6.4",
  "subtle",
-]
-
-[[package]]
-name = "fhevm_gateway_bindings"
-version = "0.1.0-rc14"
-source = "git+https://github.com/zama-ai/fhevm.git?rev=4d6867ef081ea8620186414b198b2d336f608372#4d6867ef081ea8620186414b198b2d336f608372"
-dependencies = [
- "alloy",
- "serde",
 ]
 
 [[package]]

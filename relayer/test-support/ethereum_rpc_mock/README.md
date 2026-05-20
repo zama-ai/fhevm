@@ -25,6 +25,31 @@ This is different from using Anvil with deployed contracts:
 
 That makes tests useful as executable documentation: each test states the relevant RPC input, mocked output, and expected component behavior.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    Component["Component under test<br/>relayer, kms-connector, ..."]
+    Provider["Ethereum provider<br/>alloy / web3"]
+    Setup["Component-owned setup layer<br/>uses that component's bindings"]
+    Mock["ethereum_rpc_mock::MockServer<br/>HTTP + WebSocket JSON-RPC"]
+    Patterns["Pattern matcher<br/>selector + args -> response"]
+    Chain["Mock chain state<br/>balance, nonce, code, storage, receipts"]
+    Events["Scheduled events<br/>logs, blocks, subscription targets"]
+
+    Component --> Provider
+    Provider --> Mock
+    Setup --> Mock
+    Setup --> Patterns
+    Setup --> Chain
+    Setup --> Events
+    Mock --> Patterns
+    Mock --> Chain
+    Mock --> Events
+```
+
+The setup layer is deliberately outside this crate. For relayer tests it is `fhevm_relayer::test_support::fhevm_setup`; for KMS connector tests it should be a KMS-owned test-support module using the KMS connector's binding versions.
+
 ## Basic Usage
 
 ```rust,no_run
