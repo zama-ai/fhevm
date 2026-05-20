@@ -1,0 +1,237 @@
+{{- range $i, $chain := .Values.chains }}
+{{- if (($chain.hostListenerConsumer).enabled) }}
+{{- $useLegacyName := $chain.hostListenerConsumer.useLegacyName | default false -}}
+{{- $deploymentName := ternary (printf "%s-host-listener-consumer" $.Release.Name) (printf "%s-host-listener-consumer-%s" $.Release.Name $chain.name) $useLegacyName -}}
+{{- $appLabel := ternary "coprocessor-host-listener-consumer" (printf "coprocessor-host-listener-consumer-%s" $chain.name) $useLegacyName -}}
+{{- $args := default (dict) $.Values.hostListenerConsumerShared.args -}}
+{{- $disabled := default (list) $.Values.hostListenerConsumerShared.disabledArgs -}}
+{{- $serviceName := coalesce $chain.hostListenerConsumer.serviceName (get $args "serviceName") -}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: {{ $appLabel }}
+    app.kubernetes.io/name: {{ $deploymentName }}
+  name: {{ $deploymentName }}
+spec:
+  replicas: {{ $.Values.hostListenerConsumerShared.replicas }}
+  selector:
+    matchLabels:
+      app: {{ $appLabel }}
+  {{- if $.Values.hostListenerConsumerShared.updateStrategy }}
+  strategy:
+    {{- toYaml $.Values.hostListenerConsumerShared.updateStrategy | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: {{ $appLabel }}
+        app.kubernetes.io/name: {{ $deploymentName }}
+        {{- with $.Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with $.Values.hostListenerConsumerShared.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with $.Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      {{- with $.Values.hostListenerConsumerShared.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $.Values.hostListenerConsumerShared.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $.Values.hostListenerConsumerShared.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if $.Values.hostListenerConsumerShared.serviceAccountName }}
+      serviceAccountName: {{ $.Values.hostListenerConsumerShared.serviceAccountName }}
+      {{- end }}
+      containers:
+        - name: coprocessor-host-listener-consumer
+          image: {{ $.Values.hostListenerConsumerShared.image.name }}:{{ $.Values.hostListenerConsumerShared.image.tag }}
+          command: ["host_listener_consumer"]
+          args:
+            {{- if not (has "database-url" $disabled) }}
+            - --database-url=$(DATABASE_URL)
+            {{- end }}
+            {{- if not (has "acl-contract-address" $disabled) }}
+            - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
+            {{- end }}
+            {{- if not (has "tfhe-contract-address" $disabled) }}
+            - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+            {{- end }}
+            {{- if not (has "kms-generation-address" $disabled) }}
+            - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
+            {{- end }}
+            {{- if and $chain.chainId (not (has "chain-id" $disabled)) }}
+            - --chain-id={{ $chain.chainId }}
+            {{- end }}
+            {{- with $.Values.hostListenerConsumerShared.config.brokerUrl }}
+            {{- if and (or .value .valueFrom) (not (has "broker-url" $disabled)) }}
+            - --broker-url=$(BROKER_URL)
+            {{- end }}
+            {{- end }}
+            {{- if not (has "health-port" $disabled) }}
+            - --health-port={{ $.Values.hostListenerConsumerShared.ports.healthcheck }}
+            {{- end }}
+            {{- if not (has "metrics-addr" $disabled) }}
+            - --metrics-addr=0.0.0.0:{{ $.Values.hostListenerConsumerShared.ports.metrics }}
+            {{- end }}
+            {{- if and $serviceName (not (has "service-name" $disabled)) }}
+            - --service-name={{ $serviceName }}
+            {{- end }}
+            {{- with $.Values.hostListenerConsumerShared.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with $chain.hostListenerConsumer.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          env:
+            {{- with $.Values.commonConfig.databaseUser }}
+            - name: DATABASE_USER
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with $.Values.commonConfig.databaseEndpoint }}
+            - name: DATABASE_ENDPOINT
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if eq (include "coprocessorDatabaseAuthMode" $) "password" }}
+            {{- with $.Values.commonConfig.databasePassword }}
+            - name: DATABASE_PASSWORD
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with $.Values.commonConfig.databaseUrl }}
+            - name: DATABASE_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if eq (include "coprocessorDatabaseAuthMode" $) "iam" }}
+            - name: DATABASE_IAM_AUTH_ENABLED
+              value: "true"
+            {{- with $.Values.commonConfig.databaseIamRegion }}
+            - name: DATABASE_IAM_REGION
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with $.Values.commonConfig.databaseSslRootCertPath }}
+            - name: DATABASE_SSL_ROOT_CERT_PATH
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with $.Values.hostListenerConsumerShared.config.brokerUrl }}
+            {{- if or .value .valueFrom }}
+            - name: BROKER_URL
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- if or $chain.aclContractAddress $chain.aclContractAddressValueFrom }}
+            - name: ACL_CONTRACT_ADDRESS
+              {{- if $chain.aclContractAddress }}
+              value: {{ $chain.aclContractAddress | quote }}
+              {{- else if $chain.aclContractAddressValueFrom }}
+              valueFrom:
+                {{- toYaml $chain.aclContractAddressValueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if or $chain.fhevmExecutorContractAddress $chain.fhevmExecutorContractAddressValueFrom }}
+            - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
+              {{- if $chain.fhevmExecutorContractAddress }}
+              value: {{ $chain.fhevmExecutorContractAddress | quote }}
+              {{- else if $chain.fhevmExecutorContractAddressValueFrom }}
+              valueFrom:
+                {{- toYaml $chain.fhevmExecutorContractAddressValueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if or $chain.kmsGenerationContractAddress $chain.kmsGenerationContractAddressValueFrom }}
+            - name: KMS_GENERATION_ADDRESS
+              {{- if $chain.kmsGenerationContractAddress }}
+              value: {{ $chain.kmsGenerationContractAddress | quote }}
+              {{- else if $chain.kmsGenerationContractAddressValueFrom }}
+              valueFrom:
+                {{- toYaml $chain.kmsGenerationContractAddressValueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+          {{- if default $.Values.commonConfig.tracing.enabled $.Values.hostListenerConsumerShared.tracing.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ $.Values.commonConfig.tracing.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              {{- if $.Values.hostListenerConsumerShared.tracing.service }}
+              value: {{ $.Values.hostListenerConsumerShared.tracing.service | quote }}
+              {{- else }}
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+              {{- end }}
+          {{- end }}
+          {{- with $.Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $.Values.hostListenerConsumerShared.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $chain.hostListenerConsumer.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            {{- range $portName, $portValue := $.Values.hostListenerConsumerShared.ports }}
+            - name: {{ $portName }}
+              containerPort: {{ $portValue }}
+              protocol: TCP
+            {{- end }}
+          resources:
+            requests:
+              cpu: {{ $.Values.hostListenerConsumerShared.resources.requests.cpu | default "100m" }}
+              memory: {{ $.Values.hostListenerConsumerShared.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ $.Values.hostListenerConsumerShared.resources.limits.cpu | default "500m" }}
+              memory: {{ $.Values.hostListenerConsumerShared.resources.limits.memory | default "512Mi" }}
+          {{- if and $.Values.hostListenerConsumerShared.probes $.Values.hostListenerConsumerShared.probes.liveness.enabled }}
+          livenessProbe:
+            {{- toYaml (omit $.Values.hostListenerConsumerShared.probes.liveness "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if and $.Values.hostListenerConsumerShared.probes $.Values.hostListenerConsumerShared.probes.readiness.enabled }}
+          readinessProbe:
+            {{- toYaml (omit $.Values.hostListenerConsumerShared.probes.readiness "enabled") | nindent 12 }}
+          {{- end }}
+{{- end }}
+{{- end }}
