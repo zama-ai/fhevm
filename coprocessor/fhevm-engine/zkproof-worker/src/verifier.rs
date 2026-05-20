@@ -269,7 +269,7 @@ async fn execute_verify_proof_routine(
 ) -> Result<(), ExecutionError> {
     let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
     if let Ok(row) = sqlx::query!(
-        "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id
+        "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id, block_number
             FROM verify_proofs
             WHERE verified IS NULL
             ORDER BY zk_proof_id ASC
@@ -289,6 +289,7 @@ async fn execute_verify_proof_routine(
         let contract_address = row.contract_address;
         let user_address = row.user_address;
         let transaction_id: Option<Vec<u8>> = row.transaction_id;
+        let block_number: Option<i64> = row.block_number;
 
         info!(
             message = "Process zk-verify request",
@@ -356,6 +357,10 @@ async fn execute_verify_proof_routine(
                     verified = true;
                     let count = cts.len();
                     insert_ciphertexts(&mut txn, cts, blob_hash).await?;
+                    if let Some(bn) = block_number {
+                        insert_input_handles(&mut txn, cts, bn).await?;
+                        upsert_state_hash_for_block(&mut txn, host_chain_id_raw, bn).await?;
+                    }
                     tracing::Span::current().record("count", count);
 
                     info!(message = "Ciphertexts inserted", request_id, count);
@@ -650,9 +655,9 @@ pub(crate) async fn insert_ciphertexts(
         sqlx::query!(
             r#"
             INSERT INTO ciphertexts (
-                handle, ciphertext, ciphertext_version, ciphertext_type, 
-                input_blob_hash, input_blob_index, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+                handle, ciphertext, ciphertext_version, ciphertext_type,
+                input_blob_hash, input_blob_index, is_input, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, TRUE, NOW())
             ON CONFLICT (handle, ciphertext_version) DO NOTHING;
             "#,
             &ct.handle,
@@ -674,6 +679,85 @@ pub(crate) async fn insert_ciphertexts(
     )
     .execute(db_txn.as_mut())
     .await?;
+    Ok(())
+}
+
+// Record the handles of verified input ciphertexts produced by a ZK proof
+// against the host-chain block where the VerifyProofRequest was emitted.
+// Input handles do not flow through the scheduler and so are not represented
+// as `computations` rows; they live here purely so that block-level state
+// hashing can find every ciphertext that contributes to a given block.
+pub(crate) async fn insert_input_handles(
+    db_txn: &mut Transaction<'_, Postgres>,
+    cts: &[Ciphertext],
+    block_number: i64,
+) -> Result<(), ExecutionError> {
+    if cts.is_empty() {
+        return Ok(());
+    }
+    let handles: Vec<Vec<u8>> = cts.iter().map(|ct| ct.handle.clone()).collect();
+    sqlx::query(
+        r#"
+        INSERT INTO input_handles (handle, block_number)
+        SELECT h, $2
+        FROM unnest($1::BYTEA[]) AS t(h)
+        ON CONFLICT (handle) DO NOTHING
+        "#,
+    )
+    .bind(&handles)
+    .bind(block_number)
+    .execute(db_txn.as_mut())
+    .await?;
+    Ok(())
+}
+
+// Compute the state hash for (chain_id, block_number) using the canonical
+// aggregation query and insert it into `state_hash`. The query returns a NULL
+// hash unless every computation for that block is completed, so partial blocks
+// are silently skipped.
+pub(crate) async fn upsert_state_hash_for_block(
+    db_txn: &mut Transaction<'_, Postgres>,
+    chain_id: i64,
+    block_number: i64,
+) -> Result<(), ExecutionError> {
+    // From zkproof-worker's perspective the state at this block is the set of
+    // input ciphertexts it just materialised, so the hash is computed over
+    // `input_handles` for the block rather than over `computations` outputs.
+    let row: Option<(Option<String>, i64)> = sqlx::query_as(
+        "SELECT
+            encode(
+                sha256(
+                    string_agg(ct.ciphertext, ''::bytea ORDER BY ct.handle, ct.ciphertext_version)
+                ),
+                'hex'
+            ) AS state_hash,
+            COUNT(*) AS ciphertext_count
+        FROM input_handles ih
+        JOIN ciphertexts ct ON ct.handle = ih.handle
+        WHERE ih.block_number = $1",
+    )
+    .bind(block_number)
+    .fetch_optional(db_txn.as_mut())
+    .await?;
+
+    if let Some((Some(state_hash), _count)) = row {
+        sqlx::query(
+            "INSERT INTO state_hash (chain_id, block_number, state_hash)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (chain_id, block_number) DO NOTHING",
+        )
+        .bind(chain_id)
+        .bind(block_number)
+        .bind(&state_hash)
+        .execute(db_txn.as_mut())
+        .await?;
+        info!(
+            chain_id,
+            block_number,
+            state_hash = %state_hash,
+            "inserted state_hash for block"
+        );
+    }
     Ok(())
 }
 

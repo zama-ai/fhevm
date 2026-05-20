@@ -441,14 +441,20 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         )
         .await;
 
+        let block_number: Option<i64> = log
+            .block_number
+            .map(|n| n.try_into())
+            .transpose()
+            .map_err(|err| anyhow::anyhow!("block_number does not fit in i64: {err}"))?;
+
         // TODO: check if we can avoid the cast from u256 to i64
         sqlx::query!(
             "WITH ins AS (
-                INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, input, extra_data, transaction_id)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, input, extra_data, transaction_id, block_number)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 ON CONFLICT(zk_proof_id) DO NOTHING
             )
-            SELECT pg_notify($8, '')",
+            SELECT pg_notify($9, '')",
             request.zkProofId.to::<i64>(),
             chain_id.as_i64(),
             request.contractAddress.to_string(),
@@ -456,6 +462,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             Some(request.ciphertextWithZKProof.as_ref()),
             request.extraData.as_ref(),
             transaction_id,
+            block_number,
             self.conf.verify_proof_req_db_channel
         )
         .execute(db_pool)

@@ -207,11 +207,17 @@ async fn tfhe_worker_cycle(
             &health_check,
             &mut trx,
             &dcid_mngr,
+            args.start_block_height,
         )
         .instrument(loop_span.clone())
         .await?;
         let has_progressed =
-            upload_transaction_graph_results(&mut tx_graph, &mut trx, &mut dcid_mngr)
+            upload_transaction_graph_results(
+                &mut tx_graph,
+                &mut trx,
+                &mut dcid_mngr,
+                args.start_block_height,
+            )
                 .instrument(loop_span.clone())
                 .await?;
         if has_progressed {
@@ -247,27 +253,69 @@ async fn tfhe_worker_cycle(
 async fn query_ciphertexts<'a>(
     cts_to_query: &[Vec<u8>],
     trx: &mut sqlx::Transaction<'a, Postgres>,
+    start_block_height: Option<i64>,
 ) -> Result<HashMap<Vec<u8>, (i16, Vec<u8>)>, Box<dyn std::error::Error + Send + Sync>> {
-    // TODO: select all the ciphertexts where they're contained in the tuples
-    let ciphertexts_rows = query!(
-        "
-                SELECT handle, ciphertext, ciphertext_type
-                FROM ciphertexts
-                WHERE handle = ANY($1::BYTEA[])
-            ",
-        &cts_to_query
-    )
-    .fetch_all(trx.as_mut())
-    .await
-    .map_err(|err| {
-        error!(target: "tfhe_worker", { error = %err }, "error while querying ciphertexts");
-        err
-    })?;
+    // The BCS queries ciphertexts ONLY from the parent table,
+    // while the GCS queries ciphertexts from both the parent and the child table (PG inheritance).
+    // During the upgrade period, we want to make sure we query the correct table based on the mode the worker is running in.
+
+    let gcs_mode_enabled = start_block_height.is_some();
+    let only = if gcs_mode_enabled { "" } else { "ONLY " };
+    let sql = format!(
+        "SELECT tableoid::regclass::text, handle, ciphertext, ciphertext_type
+         FROM {only}ciphertexts
+         WHERE handle = ANY($1::BYTEA[])"
+    );
+    let ciphertexts_rows: Vec<(String, Vec<u8>, Vec<u8>, i16)> = sqlx::query_as(&sql)
+        .bind(cts_to_query)
+        .fetch_all(trx.as_mut())
+        .await
+        .map_err(|err| {
+            error!(target: "tfhe_worker", { error = %err }, "error while querying ciphertexts");
+            err
+        })?;
+
+    // In GCS mode, collect the handles whose producing computation is at or below
+    // the snapshot height. Handles newer than the snapshot are excluded from the set.
+    // This query should not be executed in BCS mode to avoid any overhead.
+    let pre_snapshot_handles: std::collections::HashSet<Vec<u8>> = if let Some(
+        start_block_height,
+    ) = start_block_height
+    {
+        let rows: Vec<(Vec<u8>,)> = sqlx::query_as(
+                "SELECT output_handle
+                 FROM computations
+                 WHERE output_handle = ANY($1::BYTEA[])
+                   AND block_number <= $2",
+            )
+            .bind(cts_to_query)
+            .bind(start_block_height)
+            .fetch_all(trx.as_mut())
+            .await
+            .map_err(|err| {
+                error!(target: "tfhe_worker", { error = %err }, "error while querying computations block_number");
+                err
+            })?;
+        rows.into_iter().map(|(h,)| h).collect()
+    } else {
+        std::collections::HashSet::new()
+    };
+
     // index ciphertexts in hashmap
     let mut ciphertext_map: HashMap<Vec<u8>, (i16, Vec<u8>)> =
         HashMap::with_capacity(ciphertexts_rows.len());
-    for row in ciphertexts_rows {
-        let _ = ciphertext_map.insert(row.handle, (row.ciphertext_type, row.ciphertext));
+    for (tableoid, handle, ciphertext, ciphertext_type) in ciphertexts_rows {
+        if gcs_mode_enabled {
+            // handle <= start_block_height THEN accept the ciphertext
+            // handle > start_block_height AND handle is from GCS table THEN accept the ciphertext
+            // handle > start_block_height AND handle is from BCS table THEN ignore the ciphertext
+            if !pre_snapshot_handles.contains(&handle) && tableoid == "ciphertexts" {
+                // Ignoring all ciphertexts that were produced after the snapshot block by the BCS
+                continue;
+            }
+        }
+
+        let _ = ciphertext_map.insert(handle, (ciphertext_type, ciphertext));
     }
     Ok(ciphertext_map)
 }
@@ -452,6 +500,7 @@ async fn build_transaction_graph_and_execute<'a>(
     health_check: &crate::health_check::HealthCheck,
     trx: &mut sqlx::Transaction<'a, Postgres>,
     dcid_mngr: &dependence_chain::LockMngr,
+    start_block_height: Option<i64>,
 ) -> Result<DFComponentGraph, Box<dyn std::error::Error + Send + Sync>> {
     let mut tx_graph = DFComponentGraph::default();
     if let Err(e) = tx_graph.build(txs) {
@@ -462,7 +511,7 @@ async fn build_transaction_graph_and_execute<'a>(
         return Ok(tx_graph);
     }
     let cts_to_query = tx_graph.needed_map.keys().cloned().collect::<Vec<_>>();
-    let ciphertext_map = query_ciphertexts(&cts_to_query, trx).await?;
+    let ciphertext_map = query_ciphertexts(&cts_to_query, trx, start_block_height).await?;
     let fetched_handles: std::collections::HashSet<_> = ciphertext_map.keys().cloned().collect();
     if cts_to_query.len() != fetched_handles.len() {
         if let Some(dcid_lock) = dcid_mngr.get_current_lock() {
@@ -530,7 +579,14 @@ async fn upload_transaction_graph_results<'a>(
     tx_graph: &mut DFComponentGraph,
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_mngr: &mut dependence_chain::LockMngr,
+    start_block_height: Option<i64>,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+    let gcs_mode_enabled = start_block_height.is_some();
+    let ciphertexts_table = if gcs_mode_enabled {
+        "ciphertexts_staging"
+    } else {
+        "ciphertexts"
+    };
     // Get computation results
     let graph_results = tx_graph.get_results();
     let mut handles_to_update = vec![];
@@ -601,6 +657,37 @@ async fn upload_transaction_graph_results<'a>(
             }
         }
     }
+    // In GCS mode, skip any result whose producing computation is at or below
+    // the snapshot height — those handles are already covered by the BCS state
+    // copied at snapshot and must not be re-stored into ciphertexts_staging.
+    if let Some(start_block_height) = start_block_height {
+        if !cts_to_insert.is_empty() {
+            let candidate_handles: Vec<Vec<u8>> =
+                cts_to_insert.iter().map(|(h, _)| h.clone()).collect();
+            let pre_snapshot_handles: std::collections::HashSet<Vec<u8>> = sqlx::query_as(
+                "SELECT output_handle
+                 FROM computations
+                 WHERE output_handle = ANY($1::BYTEA[])
+                   AND block_number <= $2",
+            )
+            .bind(&candidate_handles)
+            .bind(start_block_height)
+            .fetch_all(trx.as_mut())
+            .await
+            .map_err(|err| {
+                error!(target: "tfhe_worker", { error = %err }, "error while querying computations block_number for insert filtering");
+                err
+            })?
+            .into_iter()
+            .map(|(h,): (Vec<u8>,)| h)
+            .collect();
+            if !pre_snapshot_handles.is_empty() {
+                cts_to_insert.retain(|(h, _)| !pre_snapshot_handles.contains(h));
+                handles_to_update.retain(|(h, _)| !pre_snapshot_handles.contains(h));
+            }
+        }
+    }
+
     if !cts_to_insert.is_empty() {
         let s_insert = tracing::info_span!("insert_ct_into_db", count = cts_to_insert.len());
         let cts_inserted = async {
@@ -609,14 +696,16 @@ async fn upload_transaction_graph_results<'a>(
                 Vec<_>,
                 (Vec<_>, (Vec<_>, Vec<_>)),
             ) = cts_to_insert.into_iter().unzip();
-            let cts_inserted = query!(
-                "
-            INSERT INTO ciphertexts(handle, ciphertext, ciphertext_version, ciphertext_type)
-            SELECT * FROM UNNEST($1::BYTEA[], $2::BYTEA[], $3::SMALLINT[], $4::SMALLINT[])
-            ON CONFLICT (handle, ciphertext_version) DO NOTHING
-            ",
-                &handles, &ciphertexts, &ciphertext_versions, &ciphertext_types
-            )
+            let insert_sql = format!(
+                "INSERT INTO {ciphertexts_table}(handle, ciphertext, ciphertext_version, ciphertext_type)
+                 SELECT * FROM UNNEST($1::BYTEA[], $2::BYTEA[], $3::SMALLINT[], $4::SMALLINT[])
+                 ON CONFLICT (handle, ciphertext_version) DO NOTHING"
+            );
+            let cts_inserted = sqlx::query(&insert_sql)
+                .bind(&handles)
+                .bind(&ciphertexts)
+                .bind(&ciphertext_versions)
+                .bind(&ciphertext_types)
                 .execute(trx.as_mut())
                 .await.map_err(|err| {
                     error!(target: "tfhe_worker", { error = %err }, "error while inserting new ciphertexts");
@@ -655,6 +744,11 @@ async fn upload_transaction_graph_results<'a>(
                 error!(target: "tfhe_worker", { error = %err }, "error while updating computations as completed");
                 err
             })?.rows_affected();
+
+            if comp_updated > 0 {
+                upsert_state_hash_for_completed_blocks(&handles_vec, &txn_ids_vec, trx).await?;
+            }
+
             Ok::<u64, Box<dyn std::error::Error + Send + Sync>>(comp_updated)
         }
         .instrument(s_update)
@@ -662,6 +756,90 @@ async fn upload_transaction_graph_results<'a>(
         res |= comp_updated > 0;
     }
     Ok(res)
+}
+
+// For each (host_chain_id, block_number) touched by the just-completed
+// computations, compute the block's state hash with the canonical query and
+// upsert it into the state_hash table. The state_hash query returns a NULL
+// hash unless every computation for that block is completed, so blocks that
+// are not yet fully done are skipped.
+#[tracing::instrument(skip_all)]
+async fn upsert_state_hash_for_completed_blocks<'a>(
+    handles_vec: &[Vec<u8>],
+    txn_ids_vec: &[Vec<u8>],
+    trx: &mut sqlx::Transaction<'a, Postgres>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let affected_blocks: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT DISTINCT host_chain_id, block_number
+         FROM computations
+         WHERE (output_handle, transaction_id) IN (
+             SELECT * FROM unnest($1::BYTEA[], $2::BYTEA[])
+         )
+         AND block_number IS NOT NULL",
+    )
+    .bind(handles_vec)
+    .bind(txn_ids_vec)
+    .fetch_all(trx.as_mut())
+    .await
+    .map_err(|err| {
+        error!(target: "tfhe_worker", { error = %err }, "error while querying affected blocks for state_hash");
+        err
+    })?;
+
+    for (chain_id, block_number) in affected_blocks {
+        let row: Option<(Option<String>, i64)> = sqlx::query_as(
+            "WITH block_computations AS (
+                SELECT output_handle, tenant_id, is_completed
+                FROM computations
+                WHERE block_number = $1
+            ),
+            validated AS (
+                SELECT 1
+                FROM block_computations
+                HAVING bool_and(is_completed)
+            )
+            SELECT
+                encode(
+                    sha256(
+                        string_agg(ct.ciphertext, ''::bytea ORDER BY ct.handle, ct.ciphertext_version)
+                    ),
+                    'hex'
+                ) AS state_hash,
+                COUNT(*) AS ciphertext_count
+            FROM validated v
+            CROSS JOIN block_computations bc
+            JOIN ciphertexts ct
+                ON ct.tenant_id = bc.tenant_id
+                AND ct.handle = bc.output_handle",
+        )
+        .bind(block_number)
+        .fetch_optional(trx.as_mut())
+        .await
+        .map_err(|err| {
+            error!(target: "tfhe_worker", { error = %err, block_number = block_number }, "error while computing state_hash for block");
+            err
+        })?;
+
+        if let Some((Some(state_hash), _count)) = row {
+            sqlx::query(
+                "INSERT INTO state_hash (chain_id, block_number, state_hash)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (chain_id, block_number) DO NOTHING",
+            )
+            .bind(chain_id)
+            .bind(block_number)
+            .bind(&state_hash)
+            .execute(trx.as_mut())
+            .await
+            .map_err(|err| {
+                error!(target: "tfhe_worker", { error = %err, chain_id = chain_id, block_number = block_number }, "error while inserting state_hash");
+                err
+            })?;
+            info!(target: "tfhe_worker", chain_id = chain_id, block_number = block_number, state_hash = %state_hash, "inserted state_hash for block");
+        }
+    }
+
+    Ok(())
 }
 
 #[tracing::instrument(skip_all)]

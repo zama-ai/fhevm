@@ -115,6 +115,17 @@ pub struct Args {
     #[arg(long, default_value = "0.2:5.0:0.05", value_parser = clap::value_parser!(MetricsConfig))]
     pub metric_fhe_batch_latency: MetricsConfig,
 
+    /// Used during blue/green (GCS) upgrade migrations.
+    /// When set, the worker runs in gcs_mode: ciphertext queries read from the
+    /// inherited tables and are restricted to computations with
+    /// `block_number <= start_block_height`. When unset, the worker runs in
+    /// bcs_mode and queries use `FROM ONLY ciphertexts`.
+    #[arg(long, value_parser = clap::value_parser!(i64))]
+    pub start_block_height: Option<i64>,
+
+    #[arg(long, value_parser = clap::value_parser!(i64))]
+    pub end_block_height: Option<i64>,
+
     /// Not exposed via CLI — `#[arg(skip)]` initializes the field to `WatcherTimeouts::default()`
     /// on `Args::parse()`.
     #[arg(skip)]
