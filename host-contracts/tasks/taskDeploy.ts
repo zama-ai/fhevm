@@ -12,6 +12,7 @@ import { getRequiredEnvVar } from './utils/loadVariables';
 const ADDRESSES_DIR = path.join(__dirname, '../addresses');
 const HOST_ENV_FILE = path.join(ADDRESSES_DIR, '.env.host');
 const HOST_ADDRESSES_FILE = path.join(ADDRESSES_DIR, 'FHEVMHostAddresses.sol');
+const BRIDGE_ADDRESSES_FILE = path.join(ADDRESSES_DIR, 'BridgeAddresses.sol');
 const LEGACY_DEPLOY_ALL_HOST_CONTRACTS_WARNING = `task:deployLegacyAllHostContracts is deprecated and will be removed after the v0.13 rollout.
 It deploys KMSGeneration and is valid only for canonical-host deployments.
 Use task:deployAllHostContracts --with-kms-generation true instead.`;
@@ -30,6 +31,16 @@ function writeHostEnvLine(content: string, mode: 'w' | 'a') {
 
 function writeHostAddressesSol(content: string, mode: 'w' | 'a') {
   fs.writeFileSync(HOST_ADDRESSES_FILE, content, { encoding: 'utf8', flag: mode });
+}
+
+function writeBridgeAddressesSol(confidentialBridge: string) {
+  const content = `// SPDX-License-Identifier: BSD-3-Clause-Clear
+
+pragma solidity ^0.8.24;
+
+address constant confidentialBridgeAdd = ${confidentialBridge};
+`;
+  fs.writeFileSync(BRIDGE_ADDRESSES_FILE, content, { encoding: 'utf8', flag: 'w' });
 }
 
 export function readExistingHostEnv(): Record<string, string> {
@@ -232,6 +243,12 @@ task('task:deployEmptyUUPSProxies')
       const kmsGenerationAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
       await run('task:setKMSGenerationAddress', { address: kmsGenerationAddress });
     }
+
+    // Initialize bridge addresses to address(0). They are populated separately
+    // by task:deployBridge once LayerZero endpoint coordinates are known for
+    // the chain. The defaults make ACL compile cleanly even when no bridge is
+    // deployed (no allowTransient bypass beyond FHEVMExecutor in that case).
+    await run('task:initBridgeAddresses');
   });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -379,6 +396,40 @@ task('task:deployPauserSet').setAction(async function (_, hre) {
     address: pauserSetAddress,
   });
 });
+
+////////////////////////////////////////////////////////////////////////////////
+// Bridge (ConfidentialBridge)
+//
+// Deploys the unified bridge contract as a non-upgradeable LayerZero V2 OApp.
+// ConfidentialBridge merges the source-side `HandlesSender` and destination-side
+// `HandlesReceiver` mixins into a single artifact so any chain can act as source
+// or destination through one address. Run this AFTER task:deployEmptyUUPSProxies
+// (so aclAdd is resolvable) and BEFORE task:deployACL (so the ACL implementation
+// can bake in the bridge address as a compile-time constant).
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:deployBridge')
+  .addParam('lzEndpoint', 'LayerZero V2 endpoint address on this chain')
+  .setAction(async function (taskArguments: TaskArguments, hre) {
+    const { ethers } = hre;
+    const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
+
+    console.log('Deploying ConfidentialBridge...');
+    const bridgeFactory = await ethers.getContractFactory('ConfidentialBridge', deployer);
+    const bridge = await bridgeFactory.deploy(taskArguments.lzEndpoint, deployer.address);
+    await bridge.waitForDeployment();
+    const bridgeAddress = await bridge.getAddress();
+    console.log(`ConfidentialBridge deployed at ${bridgeAddress}`);
+
+    await hre.run('task:setBridgeAddresses', {
+      confidentialBridge: bridgeAddress,
+    });
+
+    console.log(
+      'Bridge deployment done. Re-compile and re-upgrade ACL (task:deployACL) so the new bridge address is picked up as a compile-time constant.',
+    );
+  });
 
 ////////////////////////////////////////////////////////////////////////////////
 // ProtocolConfig helpers
@@ -745,6 +796,33 @@ address constant protocolConfigAdd = ${taskArguments.address};\n`;
     } catch (error) {
       throw new Error(`Failed to write ${HOST_ADDRESSES_FILE}: ${String(error)}`);
     }
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// Bridge address (ConfidentialBridge)
+//
+// The bridge address lives in addresses/BridgeAddresses.sol, written as a single
+// file (not appended). It defaults to address(0) when no bridge is deployed.
+// The task:deployBridge task deploys the non-upgradeable ConfidentialBridge and
+// rewrites the file with its real address. ACL and other contracts then need to
+// be re-compiled and the ACL proxy re-upgraded for the new address to take
+// effect.
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:initBridgeAddresses').setAction(async function () {
+  ensureAddressesDirectoryExists();
+  writeBridgeAddressesSol('address(0)');
+  console.log(`${BRIDGE_ADDRESSES_FILE} initialized with address(0) default`);
+});
+
+task('task:setBridgeAddresses')
+  .addParam('confidentialBridge', 'Address of the ConfidentialBridge contract')
+  .setAction(async function (taskArguments: TaskArguments) {
+    ensureAddressesDirectoryExists();
+    const envLines = `CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS=${taskArguments.confidentialBridge}\n`;
+    writeHostEnvLine(envLines, 'a');
+    writeBridgeAddressesSol(taskArguments.confidentialBridge);
+    console.log(`Bridge address written: confidentialBridge=${taskArguments.confidentialBridge}`);
   });
 
 ////////////////////////////////////////////////////////////////////////////////

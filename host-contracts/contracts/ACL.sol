@@ -7,6 +7,7 @@ import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol"
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {fhevmExecutorAdd, pauserSetAdd} from "../addresses/FHEVMHostAddresses.sol";
+import {confidentialBridgeAdd} from "../addresses/BridgeAddresses.sol";
 import {IPauserSet} from "./interfaces/IPauserSet.sol";
 
 import {ACLEvents} from "./ACLEvents.sol";
@@ -168,6 +169,11 @@ contract ACL is
     /// @notice PauserSet contract.
     IPauserSet private constant PAUSER_SET = IPauserSet(pauserSetAdd);
 
+    /// @notice ConfidentialBridge address. The bridge unifies the source-side
+    ///         `HandlesSender` and destination-side `HandlesReceiver` roles into a
+    ///         single deployed contract per chain.
+    address private constant CONFIDENTIAL_BRIDGE_ADDRESS = confidentialBridgeAdd;
+
     /**
      * @notice Sentinel address for user-decryption delegation that applies to every app contract.
      * @dev `type(uint160).max` (EIP-55: 0xFFfFfFffFFfffFFfFFfFFFFFffFFFffffFfFFFfF). No contract can be deployed here.
@@ -276,7 +282,7 @@ contract ACL is
      * @param account Address of the account.
      */
     function allowTransient(bytes32 handle, address account) public virtual whenNotPaused {
-        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) {
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS && msg.sender != CONFIDENTIAL_BRIDGE_ADDRESS) {
             if (isAccountDenied(msg.sender)) {
                 revert SenderDenied(msg.sender);
             }
@@ -466,6 +472,14 @@ contract ACL is
      */
     function getFHEVMExecutorAddress() public view virtual returns (address) {
         return FHEVM_EXECUTOR_ADDRESS;
+    }
+
+    /**
+     * @notice Getter function for the ConfidentialBridge contract address.
+     * @return confidentialBridgeAddress Address of the ConfidentialBridge contract.
+     */
+    function getConfidentialBridgeAddress() public view virtual returns (address) {
+        return CONFIDENTIAL_BRIDGE_ADDRESS;
     }
 
     /**

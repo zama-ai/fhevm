@@ -20,6 +20,7 @@
   "overrides": {
     "webpack": {
       "@types/eslint-scope": "3.7.6"
-    }
+    },
+    "@openzeppelin/contracts": "5.1.0"
   }
 }
