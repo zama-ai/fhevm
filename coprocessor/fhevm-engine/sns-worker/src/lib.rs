@@ -59,6 +59,7 @@ type ServerKey = tfhe::ServerKey;
 #[derive(Clone)]
 pub struct KeySet {
     pub key_id_gw: DbKeyId,
+    pub sequence_number: i64,
     /// Optional ClientKey for decrypting on testing
     pub client_key: Option<tfhe::ClientKey>,
     pub server_key: ServerKey,
