@@ -77,12 +77,15 @@ program
     });
   });
 
-const publicDecryptCommand = program.command("public-decrypt").description("Public decrypt flows");
+const supportedDecryptTypes = DECRYPT_TYPES.join(", ");
+const publicDecryptCommand = program
+  .command("public-decrypt")
+  .description(`Public decrypt flows. Supported types: ${supportedDecryptTypes}`);
 
 publicDecryptCommand
   .command("cached")
   .description("Public decrypt existing publicly decryptable handles")
-  .option("-t, --type <type>", "default cached handle set to use", parseDecryptType, "bool")
+  .option("-t, --type <type>", `value type (${supportedDecryptTypes})`, parseDecryptType, "bool")
   .option("--handle <handle>", "encrypted handle to decrypt; repeat for multiple", collectHex, [])
   .action(async (options, command) => {
     const globals = getGlobalOptions(command);
@@ -100,7 +103,7 @@ publicDecryptCommand
 publicDecryptCommand
   .command("fresh")
   .description("Encrypt new values, make them publicly decryptable on-chain, then public decrypt them")
-  .option("-t, --type <type>", "value type to encrypt", parseDecryptType, "bool")
+  .option("-t, --type <type>", `value type to encrypt (${supportedDecryptTypes})`, parseDecryptType, "bool")
   .option("--contract <address>", "contract to call", TESTNET_RELAYER_SDK_TEST_CONTRACT)
   .option("--private-key <privateKey>", "wallet private key; falls back to PRIVATE_KEY")
   .option("--mnemonic <mnemonic>", "wallet mnemonic; falls back to MNEMONIC")

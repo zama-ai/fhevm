@@ -1,5 +1,3 @@
-import { fetchEncryptedValues } from "@fhevm/sdk/actions/base";
-import { generateZkProof } from "@fhevm/sdk/actions/encrypt";
 import type { FhevmChain } from "@fhevm/sdk/chains";
 import type { Hex } from "viem";
 
@@ -24,12 +22,11 @@ export const requestInputProof = async (options: RequestInputProofOptions): Prom
   const userAddress = options.userAddress ?? "0x0000000000000000000000000000000000000002";
   const values = options.values ?? createInputProofValues();
 
-  const zkProof = await generateZkProof(fhevm, {
+  const encrypted = await fhevm.encryptValues({
     contractAddress,
     userAddress,
     values,
   });
-  const encrypted = await fetchEncryptedValues(fhevm, { zkProof });
 
   return {
     contractAddress,

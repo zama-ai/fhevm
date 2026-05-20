@@ -22,7 +22,7 @@ Input proof request, equivalent to the old frontend flow through `requestZKPVeri
 bun run index.ts --network testnet input-proof
 ```
 
-Cached public decrypt request, using built-in alpha-format testnet handles for `bool` and `uint8`, or repeated `--handle` values for other types:
+Public decrypt supports `bool`, `uint8`, `uint128`, `address`, and `mixed`. Cached public decrypt has built-in alpha-format testnet handles for `bool` and `uint8`; pass repeated `--handle` values for other cached types:
 
 ```bash
 bun run index.ts --network testnet public-decrypt cached --type bool
