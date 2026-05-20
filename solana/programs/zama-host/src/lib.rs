@@ -213,6 +213,8 @@ pub struct BindAclRecord<'info> {
         seeds = [b"acl-record", nonce_key.as_ref(), &nonce_sequence.to_le_bytes()],
         bump
     )]
+    // PoC records are born Bound through Anchor `init`. A future predeclared-account
+    // flow should add an explicit Empty -> Bound state machine.
     pub acl_record: Account<'info, AclRecord>,
     pub system_program: Program<'info, System>,
 }
