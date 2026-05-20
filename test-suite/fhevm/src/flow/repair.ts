@@ -75,6 +75,7 @@ export const resumeSteadyStateServices = (state: State) => {
   const listenerSuffixes = coprocessorListenerSuffixes(state);
   return {
     "base": ["fhevm-minio", "coprocessor-and-kms-db", KMS_CORE_CONTAINER, "gateway-node", ...chains.map((chain) => chain.node)],
+    ...(supportsHostListenerConsumer(state) ? { "listener-core": ["listener-redis", "listener-publisher-for-anvil"] } : {}),
     "coprocessor": [
       ...Array.from({ length: topology.count }, (_, index) => {
         const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
