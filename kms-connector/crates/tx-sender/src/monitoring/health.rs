@@ -37,7 +37,11 @@ impl Healthcheck for State {
         let (db_res, gw_res, eth_res) = tokio::join!(
             database_healthcheck(&self.db_pool, self.healthcheck_timeout),
             rpc_node_healthcheck(&self.gateway_provider, self.healthcheck_timeout, "Gateway"),
-            rpc_node_healthcheck(&self.ethereum_provider, self.healthcheck_timeout, "Ethereum"),
+            rpc_node_healthcheck(
+                &self.ethereum_provider,
+                self.healthcheck_timeout,
+                "Ethereum"
+            ),
         );
 
         let mut errors = vec![];
