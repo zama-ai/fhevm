@@ -430,6 +430,32 @@ request carries:
 
 For older handles, the request must carry an older ACL record pubkey that the app observed or indexed from prior transactions. KMS does not guess or scan; it reads the provided account and verifies the stored fields.
 
+## Operator Encoding Notes
+
+The current PoC only models encrypted/encrypted binary ops, so scalar metadata is still simplified. When adding scalar or ternary operators, Solana host events must preserve the EVM `scalarByte` convention.
+
+```text
+scalarByte is a bitmask of scalar arguments.
+Index from the right-most argument.
+Set bit i to 1 iff that argument is plaintext scalar.
+No argument is implicit, even if it is always scalar today.
+```
+
+Examples:
+
+```text
+op(arg2, arg1, arg0)
+  arg0 scalar => 0x01
+  arg1 scalar => 0x02
+  arg2 scalar => 0x04
+
+mulDiv(lhs, rhs, divisor)
+  enc x enc x scalar    => 0x01
+  enc x scalar x scalar => 0x03
+```
+
+This is not an ACL rule. It is an event/worker compatibility rule so Solana compute events remain interpretable by the same coprocessor semantics as EVM events.
+
 ## Listener And Worker Flow
 
 The Solana adapter lives in:
