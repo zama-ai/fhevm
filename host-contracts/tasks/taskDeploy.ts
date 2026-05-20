@@ -109,10 +109,7 @@ task('task:deployAllHostContracts')
     types.string,
   )
   .setAction(async function (
-    {
-      withKmsGeneration,
-      protocolConfigSource,
-    }: { withKmsGeneration: boolean; protocolConfigSource: string },
+    { withKmsGeneration, protocolConfigSource }: { withKmsGeneration: boolean; protocolConfigSource: string },
     hre,
   ) {
     if (!PROTOCOL_CONFIG_SOURCES.includes(protocolConfigSource as ProtocolConfigSource)) {
