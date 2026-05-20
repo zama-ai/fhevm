@@ -99,15 +99,50 @@ solana/runtime-tests/tests/host_events.rs
 Avoid adding a separate Anchor workspace, a standalone ACL program, or TypeScript-only tests for core
 authorization behavior unless the guild explicitly decides to change direction.
 
-Known gaps for the next iteration:
+## PoC Progress
 
-```text
-input handles still use PoC glue instead of a real Solana input verifier path
-transient allow semantics are not modeled yet
-account growth / rent cleanup is intentionally unresolved
-historical handle indexing is app/indexer responsibility for now
-KMS verification is modeled in tests, not wired to the real KMS connector
-```
+Use this checklist to see where the branch stands. Keep it updated when a PR changes the PoC surface.
+
+### Working Now
+
+- [x] Anchor workspace with `zama-host`, `confidential-token`, and LiteSVM runtime tests.
+- [x] ZamaHost emits typed Anchor CPI events for `trivial_encrypt`, `fhe_rand`, `fhe_binary_op`, and
+      ACL binding.
+- [x] Solana host events normalize into the existing coprocessor DB event shape.
+- [x] Worker-backed tests use real small TFHE ciphertexts for Solana-originated events.
+- [x] Confidential token can initialize a mint and token accounts.
+- [x] Confidential token can wrap SPL-like USDC into a confidential balance handle.
+- [x] Confidential token can transfer by rotating Alice and Bob balance handles.
+- [x] Compute-time ACL is enforced by `zama-host::fhe_binary_op` before event emission.
+- [x] Keyed-nonce ACL records avoid deriving Solana account addresses from opaque handles.
+- [x] User decrypt is modeled with signed authorization plus ACL record verification.
+- [x] Current and historical balance decrypt are both modeled when the relevant ACL record still
+      exists.
+- [x] Public decrypt is modeled through `allow_for_decryption`.
+- [x] Negative tests cover wrong signer, wrong ACL record, wrong handle, wrong domain key, stale
+      current ACL, and unauthorized public decrypt.
+
+### Partly Modeled
+
+- [ ] KMS verification is modeled in Rust tests, not wired into the real KMS connector.
+- [ ] Input handles use PoC glue instead of a real Solana input verifier or transciphering path.
+- [ ] `fhe_rand` exists in the host and worker-backed tests, but is not yet integrated into the
+      confidential token flow.
+- [ ] ACL records are born bound through Anchor `init`; the future predeclared
+      `Empty -> Bound` account lifecycle is documented but not implemented.
+- [ ] The subject list has a PoC capacity. Overflow/chunking is not designed yet.
+- [ ] Historical handle lookup is assumed to be app/indexer responsibility for now.
+
+### Missing Next
+
+- [ ] Define and implement the real Solana input path for external encrypted inputs.
+- [ ] Model transient allow semantics for same-transaction intermediate handles.
+- [ ] Decide how subject overflow works without imposing a small protocol-level subject limit.
+- [ ] Decide account cleanup, rent refund, compaction, and archival rules.
+- [ ] Wire the KMS connector to verify Solana ACL records instead of using only test-local checks.
+- [ ] Add a fuller confidential token scenario for OpenZeppelin to iterate on:
+      wrap, transfer, current decrypt, historical decrypt, and expected failures.
+- [ ] Keep RFC 024 aligned when the PoC proves or disproves a design choice.
 
 ## Global Flow
 
