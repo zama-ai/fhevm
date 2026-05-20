@@ -559,13 +559,5 @@ pub fn nonce_key(
     app_account: Pubkey,
     encrypted_value_label: [u8; 32],
 ) -> [u8; 32] {
-    use anchor_lang::solana_program::hash::hashv;
-
-    hashv(&[
-        b"zama-acl-nonce-key-v1",
-        acl_domain_key.as_ref(),
-        app_account.as_ref(),
-        &encrypted_value_label,
-    ])
-    .to_bytes()
+    zama_host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label)
 }
