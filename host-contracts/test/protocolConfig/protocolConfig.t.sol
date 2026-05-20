@@ -266,6 +266,31 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _revertThreshold(t, abi.encodeWithSelector(IProtocolConfig.InvalidHighThreshold.selector, "mpc", 5, 1));
     }
 
+    function test_revertSignerSetExceedsProofFormatLimit() public {
+        _setupEmptyProxy();
+        KmsNode[] memory tooManyNodes = _makeKmsNodes(256);
+        _upgradeProxyExpectRevert(
+            tooManyNodes,
+            _defaultThresholds(),
+            abi.encodeWithSelector(IProtocolConfig.KmsSignerSetExceedsProofFormatLimit.selector, 256, 255)
+        );
+    }
+
+    function test_revertThresholdExceedsProofFormatLimit() public {
+        // A threshold above the proof-format limit is rejected before the per-node-count check.
+        IProtocolConfig.KmsThresholds memory t = _defaultThresholds();
+        t.publicDecryption = 256;
+        _revertThreshold(
+            t,
+            abi.encodeWithSelector(
+                IProtocolConfig.ThresholdExceedsProofFormatLimit.selector,
+                "publicDecryption",
+                256,
+                255
+            )
+        );
+    }
+
     // -----------------------------------------------------------------------
     // Context lifecycle tests
     // -----------------------------------------------------------------------
