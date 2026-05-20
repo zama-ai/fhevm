@@ -158,6 +158,48 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         emit KmsContextDestroyed(kmsContextId);
     }
 
+    /// @inheritdoc IProtocolConfig
+    function updatePublicDecryptionThresholdForContext(
+        uint256 kmsContextId,
+        uint256 threshold
+    ) external virtual onlyACLOwner {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        _requireValidContext(kmsContextId);
+        _checkThreshold("publicDecryption", threshold, $.kmsNodesForContext[kmsContextId].length);
+        $.publicDecryptionThresholdForContext[kmsContextId] = threshold;
+        emit PublicDecryptionThresholdUpdated(kmsContextId, threshold);
+    }
+
+    /// @inheritdoc IProtocolConfig
+    function updateUserDecryptionThresholdForContext(
+        uint256 kmsContextId,
+        uint256 threshold
+    ) external virtual onlyACLOwner {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        _requireValidContext(kmsContextId);
+        _checkThreshold("userDecryption", threshold, $.kmsNodesForContext[kmsContextId].length);
+        $.userDecryptionThresholdForContext[kmsContextId] = threshold;
+        emit UserDecryptionThresholdUpdated(kmsContextId, threshold);
+    }
+
+    /// @inheritdoc IProtocolConfig
+    function updateKmsGenThresholdForContext(uint256 kmsContextId, uint256 threshold) external virtual onlyACLOwner {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        _requireValidContext(kmsContextId);
+        _checkThreshold("kmsGen", threshold, $.kmsNodesForContext[kmsContextId].length);
+        $.kmsGenThresholdForContext[kmsContextId] = threshold;
+        emit KmsGenThresholdUpdated(kmsContextId, threshold);
+    }
+
+    /// @inheritdoc IProtocolConfig
+    function updateMpcThresholdForContext(uint256 kmsContextId, uint256 threshold) external virtual onlyACLOwner {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        _requireValidContext(kmsContextId);
+        _checkThreshold("mpc", threshold, $.kmsNodesForContext[kmsContextId].length);
+        $.mpcThresholdForContext[kmsContextId] = threshold;
+        emit MpcThresholdUpdated(kmsContextId, threshold);
+    }
+
     // -----------------------------------------------------------------------------------------
     // View functions
     // -----------------------------------------------------------------------------------------
