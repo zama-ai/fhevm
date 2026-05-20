@@ -480,6 +480,16 @@ export function generateTypeScriptTestCode(
             }
           })
           .join(', ');
+        const typedValues = t.inputs
+          .map((v, index) => {
+            if (o.arguments[index].type == ArgumentType.Euint) {
+              return `{ type: 'uint${o.arguments[index].bits}', value: ${v}n }`;
+            } else {
+              return '';
+            }
+          })
+          .filter((s) => s !== '')
+          .join(', ');
         const inputsAdd = t.inputs
           .map((v, index) => {
             if (o.arguments[index].type == ArgumentType.Euint) {
@@ -495,9 +505,11 @@ export function generateTypeScriptTestCode(
         if (options.publicDecrypt) {
           res.push(`
                 it('${testName} test ${testIndex} (${testArgs})', async function () {
-                    const input = this.instance.createEncryptedInput(this.contract${os.shardNumber}Address, this.signer.address);
-                    ${inputsAdd}
-                    const encryptedAmount = await input.encrypt();
+                    const encryptedAmount = await this.instance.encryptTypedValues({
+                      values: [${typedValues}],
+                      contractAddress: this.contract${os.shardNumber}Address,
+                      userAddress: this.signer.address,
+                    });
                     const tx = await this.contract${os.shardNumber}.${methodName}(${testArgsEncrypted}, encryptedAmount.inputProof);
                     await tx.wait();
                     const handle = await this.contract${os.shardNumber}.res${o.returnType.type === 1 ? `Euint${o.returnType.bits}` : 'Ebool'}();
