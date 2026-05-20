@@ -36,6 +36,12 @@ pub mod zama_host {
         subjects: Vec<AclSubjectEntry>,
         public_decrypt: bool,
     ) -> Result<()> {
+        assert_nonce_key_matches_fields(
+            nonce_key,
+            acl_domain_key,
+            app_account,
+            encrypted_value_label,
+        )?;
         require_keys_eq!(
             ctx.accounts.app_account_authority.key(),
             app_account,
@@ -81,6 +87,7 @@ pub mod zama_host {
         subject: Pubkey,
     ) -> Result<()> {
         assert_record(
+            &ctx.accounts.acl_record.to_account_info(),
             &ctx.accounts.acl_record,
             nonce_key,
             nonce_sequence,
@@ -95,6 +102,10 @@ pub mod zama_host {
 
     pub fn allow_for_decryption(ctx: Context<AllowForDecryption>, handle: [u8; 32]) -> Result<()> {
         let subject = ctx.accounts.authority.key();
+        assert_canonical_acl_record(
+            &ctx.accounts.acl_record.to_account_info(),
+            &ctx.accounts.acl_record,
+        )?;
         assert_record_allows_handle(&ctx.accounts.acl_record, handle, subject)?;
         ctx.accounts.acl_record.public_decrypt = true;
         emit_cpi!(AclAllowedEvent {
@@ -119,8 +130,16 @@ pub mod zama_host {
         // Match the EVM executor boundary: no compute event is emitted until
         // the host program verifies that the compute subject can use the
         // operand handles.
+        assert_canonical_acl_record(
+            &ctx.accounts.lhs_acl_record.to_account_info(),
+            &ctx.accounts.lhs_acl_record,
+        )?;
         assert_record_allows_handle(&ctx.accounts.lhs_acl_record, lhs, subject)?;
         if !scalar {
+            assert_canonical_acl_record(
+                &ctx.accounts.rhs_acl_record.to_account_info(),
+                &ctx.accounts.rhs_acl_record,
+            )?;
             assert_record_allows_handle(&ctx.accounts.rhs_acl_record, rhs, subject)?;
         }
 
@@ -329,6 +348,8 @@ pub enum ZamaHostError {
     AppAccountAuthorityMismatch,
     #[msg("ACL record nonce key does not match")]
     AclNonceKeyMismatch,
+    #[msg("ACL record address is not the canonical PDA for its nonce key")]
+    AclRecordPdaMismatch,
     #[msg("ACL record nonce sequence does not match")]
     AclNonceSequenceMismatch,
     #[msg("ACL record domain key does not match")]
@@ -374,6 +395,7 @@ fn write_acl_record(
 }
 
 fn assert_record(
+    record_info: &AccountInfo,
     record: &Account<AclRecord>,
     nonce_key: [u8; 32],
     nonce_sequence: u64,
@@ -383,6 +405,13 @@ fn assert_record(
     handle: [u8; 32],
     subject: Pubkey,
 ) -> Result<()> {
+    assert_nonce_key_matches_fields(
+        nonce_key,
+        acl_domain_key,
+        app_account,
+        encrypted_value_label,
+    )?;
+    assert_canonical_acl_record(record_info, record)?;
     require!(
         record.nonce_key == nonce_key,
         ZamaHostError::AclNonceKeyMismatch
@@ -406,6 +435,64 @@ fn assert_record(
         ZamaHostError::AclEncryptedValueLabelMismatch
     );
     assert_record_allows_handle(record, handle, subject)
+}
+
+fn assert_canonical_acl_record(
+    record_info: &AccountInfo,
+    record: &Account<AclRecord>,
+) -> Result<()> {
+    assert_nonce_key_matches_fields(
+        record.nonce_key,
+        record.acl_domain_key,
+        record.app_account,
+        record.encrypted_value_label,
+    )?;
+
+    let expected = Pubkey::create_program_address(
+        &[
+            b"acl-record",
+            record.nonce_key.as_ref(),
+            &record.nonce_sequence.to_le_bytes(),
+            &[record.bump],
+        ],
+        &crate::ID,
+    )
+    .map_err(|_| error!(ZamaHostError::AclRecordPdaMismatch))?;
+    require_keys_eq!(
+        record_info.key(),
+        expected,
+        ZamaHostError::AclRecordPdaMismatch
+    );
+    Ok(())
+}
+
+fn assert_nonce_key_matches_fields(
+    nonce_key: [u8; 32],
+    acl_domain_key: Pubkey,
+    app_account: Pubkey,
+    encrypted_value_label: [u8; 32],
+) -> Result<()> {
+    require!(
+        nonce_key == acl_nonce_key(acl_domain_key, app_account, encrypted_value_label),
+        ZamaHostError::AclNonceKeyMismatch
+    );
+    Ok(())
+}
+
+pub fn acl_nonce_key(
+    acl_domain_key: Pubkey,
+    app_account: Pubkey,
+    encrypted_value_label: [u8; 32],
+) -> [u8; 32] {
+    use anchor_lang::solana_program::hash::hashv;
+
+    hashv(&[
+        b"zama-acl-nonce-key-v1",
+        acl_domain_key.as_ref(),
+        app_account.as_ref(),
+        &encrypted_value_label,
+    ])
+    .to_bytes()
 }
 
 fn assert_record_allows_handle(

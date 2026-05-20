@@ -328,7 +328,9 @@ PDA("token-account", mint, owner)
 
 ```text
 the app account pubkey signed
-the ACL PDA address matches ("acl-record", nonce_key, nonce_sequence)
+expected_nonce_key = H(acl_domain_key, app_account, encrypted_value_label)
+record.nonce_key == expected_nonce_key
+the ACL PDA address matches ("acl-record", expected_nonce_key, nonce_sequence, bump)
 the stored ACL fields match the instruction fields
 the requested subject is in subjects[]
 ```

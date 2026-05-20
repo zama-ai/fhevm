@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use anchor_lang::{
-    AccountDeserialize, AnchorDeserialize, Discriminator, InstructionData, ToAccountMetas,
+    AccountDeserialize, AccountSerialize, AnchorDeserialize, Discriminator, InstructionData,
+    ToAccountMetas,
 };
 use anchor_spl::token::spl_token;
 use confidential_token as token;
@@ -10,6 +11,7 @@ use litesvm::{
     LiteSVM,
 };
 use solana_sdk::{
+    account::Account,
     instruction::Instruction,
     message::{Message, VersionedMessage},
     program_pack::Pack,
@@ -164,6 +166,139 @@ fn bind_acl_record_persists_keyed_nonce_record_without_handle_derived_address() 
         .data(),
     };
     send(&mut svm, &payer, assert_ix);
+}
+
+#[test]
+fn bind_acl_record_rejects_nonce_key_not_derived_from_acl_fields() {
+    let program_id = host::id();
+    let program_path = host_program_so_path();
+    assert!(
+        program_path.exists(),
+        "missing {}; run `cd solana && anchor build` before this runtime test",
+        program_path.display()
+    );
+
+    let mut svm = LiteSVM::new();
+    svm.add_program_from_file(program_id, &program_path)
+        .unwrap();
+
+    let payer = Keypair::new();
+    let app_account_authority = Keypair::new();
+    svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
+
+    let acl_domain_key = Pubkey::new_unique();
+    let app_account = app_account_authority.pubkey();
+    let encrypted_value_label = label("balance");
+    let wrong_nonce_key = [42; 32];
+    let nonce_sequence = 42;
+    let acl_record = acl_record_address(program_id, wrong_nonce_key, nonce_sequence);
+
+    let ix = Instruction {
+        program_id,
+        accounts: host::accounts::BindAclRecord {
+            payer: payer.pubkey(),
+            app_account_authority: app_account,
+            acl_record,
+            system_program: system_program::ID,
+            event_authority: event_authority(program_id),
+            program: program_id,
+        }
+        .to_account_metas(None),
+        data: host::instruction::BindAclRecord {
+            nonce_key: wrong_nonce_key,
+            nonce_sequence,
+            acl_domain_key,
+            app_account,
+            encrypted_value_label,
+            handle: [9; 32],
+            subjects: vec![AclSubjectEntry {
+                pubkey: payer.pubkey(),
+                permission: AclPermission::Compute,
+            }],
+            public_decrypt: false,
+        }
+        .data(),
+    };
+
+    assert!(send_with_signers(
+        &mut svm,
+        &payer.pubkey(),
+        ix,
+        &[&payer, &app_account_authority],
+    )
+    .is_err());
+}
+
+#[test]
+fn assert_acl_record_rejects_noncanonical_acl_record_address() {
+    let program_id = host::id();
+    let program_path = host_program_so_path();
+    assert!(
+        program_path.exists(),
+        "missing {}; run `cd solana && anchor build` before this runtime test",
+        program_path.display()
+    );
+
+    let mut svm = LiteSVM::new();
+    svm.add_program_from_file(program_id, &program_path)
+        .unwrap();
+
+    let payer = Keypair::new();
+    svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
+
+    let acl_domain_key = Pubkey::new_unique();
+    let app_account = Pubkey::new_unique();
+    let encrypted_value_label = label("balance");
+    let nonce_key = token::nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let nonce_sequence = 42;
+    let subject = payer.pubkey();
+    let handle = [9; 32];
+    let noncanonical_acl_record = Pubkey::new_unique();
+    let mut subjects = [Pubkey::default(); host::MAX_ACL_SUBJECTS];
+    subjects[0] = subject;
+
+    svm.set_account(
+        noncanonical_acl_record,
+        Account {
+            lamports: 1_000_000_000,
+            data: serialized_acl_record(AclRecord {
+                handle,
+                nonce_key,
+                nonce_sequence,
+                acl_domain_key,
+                app_account,
+                encrypted_value_label,
+                subjects,
+                subject_count: 1,
+                public_decrypt: false,
+                bump: 0,
+            }),
+            owner: program_id,
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+    .unwrap();
+
+    let ix = Instruction {
+        program_id,
+        accounts: host::accounts::AssertAclRecord {
+            acl_record: noncanonical_acl_record,
+        }
+        .to_account_metas(None),
+        data: host::instruction::AssertAclRecord {
+            nonce_key,
+            nonce_sequence,
+            acl_domain_key,
+            app_account,
+            encrypted_value_label,
+            handle,
+            subject,
+        }
+        .data(),
+    };
+
+    assert!(try_send(&mut svm, &payer, ix).is_err());
 }
 
 #[test]
@@ -1602,6 +1737,12 @@ fn read_acl_record(svm: &LiteSVM, address: Pubkey) -> Option<AclRecord> {
     let account = svm.get_account(&address)?;
     let mut data = account.data.as_slice();
     AclRecord::try_deserialize(&mut data).ok()
+}
+
+fn serialized_acl_record(record: AclRecord) -> Vec<u8> {
+    let mut data = Vec::new();
+    record.try_serialize(&mut data).unwrap();
+    data
 }
 
 fn record_subjects(record: &AclRecord) -> Vec<Pubkey> {
