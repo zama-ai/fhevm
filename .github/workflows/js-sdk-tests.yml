@@ -59,8 +59,8 @@ jobs:
       #    prompting interactively.
       # -----------------------------------------------------------------------
       - name: Install safe-chain
-        run: |
-          curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
+        shell: bash
+        run: curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
 
       # -----------------------------------------------------------------------
       # 4. Foundry setup
