@@ -69,7 +69,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
 
     /// @notice Returned if the collection size is invalid for the requested operation.
     /// @param size     The actual collection size.
-    /// @param limit    The violated bound: the maximum allowed (if too large) or the minimum required (if too small).
+    /// @param limit    The violated bound: the maximum allowed.
     error FHECollectionSizeInvalid(uint256 size, uint256 limit);
 
     /**
@@ -662,9 +662,10 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice          Computes FHESum operation over an array of ciphertexts of the same type.
-     * @param values    Array of ciphertext handles. All must be the same FheType.
-     * @return result   Result handle of the same FheType as the inputs.
+     * @notice              Computes FHESum operation over an array of ciphertexts of the same type.
+     * @param values        Array of ciphertext handles. All must be the same FheType.
+     * @param resultType    FheType of the inputs and the result.
+     * @return result       Result handle of the same FheType as the inputs.
      */
     function fheSum(bytes32[] calldata values, FheType resultType) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
