@@ -413,7 +413,7 @@ fn host_fixture() -> HostFixture {
     let host_program_path = host_program_so_path();
     assert!(
         host_program_path.exists(),
-        "missing {}; run `cd solana && NO_DNA=1 anchor build` before this test",
+        "missing {}; run `cd solana && anchor build` before this test",
         host_program_path.display()
     );
 
@@ -437,12 +437,12 @@ fn token_fixture() -> TokenFixture {
     let token_program_path = token_program_so_path();
     assert!(
         host_program_path.exists(),
-        "missing {}; run `cd solana && NO_DNA=1 anchor build` before this test",
+        "missing {}; run `cd solana && anchor build` before this test",
         host_program_path.display()
     );
     assert!(
         token_program_path.exists(),
-        "missing {}; run `cd solana && NO_DNA=1 anchor build` before this test",
+        "missing {}; run `cd solana && anchor build` before this test",
         token_program_path.display()
     );
 

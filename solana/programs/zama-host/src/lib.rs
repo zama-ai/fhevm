@@ -164,14 +164,14 @@ pub mod zama_host {
         input_handle: [u8; 32],
         result_handle: [u8; 32],
         user: Pubkey,
-        app_context: Pubkey,
+        acl_domain_key: Pubkey,
     ) -> Result<()> {
         emit_cpi!(InputVerifiedEvent {
             version: EVENT_VERSION,
             input_handle,
             result_handle,
             user,
-            app_context,
+            acl_domain_key,
         });
         drop(ctx);
         Ok(())
@@ -280,7 +280,7 @@ pub struct InputVerifiedEvent {
     pub input_handle: [u8; 32],
     pub result_handle: [u8; 32],
     pub user: Pubkey,
-    pub app_context: Pubkey,
+    pub acl_domain_key: Pubkey,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
