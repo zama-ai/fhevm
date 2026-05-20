@@ -108,7 +108,7 @@ pub struct EvmListener {
     loop_delay_ms: u64,
     finality_depth: u64,
     max_exponential_backoff_ms: u64,
-    catchup_max_range: u64,
+    catchup_max_sub_range: u64,
 }
 
 impl EvmListener {
@@ -139,7 +139,7 @@ impl EvmListener {
             loop_delay_ms: blockchain_settings.strategy.loop_delay_ms,
             finality_depth: blockchain_settings.finality_depth,
             max_exponential_backoff_ms: blockchain_settings.strategy.max_exponential_backoff_ms,
-            catchup_max_range: blockchain_settings.catchup.catchup_max_range,
+            catchup_max_sub_range: blockchain_settings.catchup.catchup_max_sub_range,
         }
     }
 
@@ -944,8 +944,8 @@ impl EvmListener {
     ///   Catchup is a bounded one-shot — the user asked for blocks that don't
     ///   exist yet. The caller can re-issue the request later.
     /// - Otherwise, clamps `block_end` down to `chain_height` and splits
-    ///   `[block_start, effective_end]` into chunks of `catchup_max_range`
-    ///   blocks (configured via `catchup.catchup_max_range`).
+    ///   `[block_start, effective_end]` into chunks of `catchup_max_sub_range`
+    ///   blocks (configured via `catchup.catchup_max_sub_range`).
     /// - Returns the chunks as ready-to-publish [`CatchupPayload`]s.
     ///
     /// # Upper bound
@@ -986,7 +986,7 @@ impl EvmListener {
 
         let effective_end = std::cmp::min(payload.block_end, chain_height);
         let chunks =
-            split_catchup_range(payload.block_start, effective_end, self.catchup_max_range);
+            split_catchup_range(payload.block_start, effective_end, self.catchup_max_sub_range);
 
         info!(
             consumer_id = %payload.consumer_id,
@@ -1014,7 +1014,7 @@ impl EvmListener {
     /// `range-catchup` queue. The caller (typically [`Self::dispatch_catchup_range`])
     /// is responsible for clamping `block_end` to chain head and chunking
     /// arbitrarily-large requests into bounded sub-ranges of
-    /// `catchup.catchup_max_range` blocks. This function trusts that contract
+    /// `catchup.catchup_max_sub_range` blocks. This function trusts that contract
     /// and **does not re-check the chain head**.
     ///
     /// # Behavior
@@ -1287,6 +1287,7 @@ async fn catchup_processing(
         let fetched_block = tokio::select! {
             biased;
             _ = cancel_token.cancelled() => {
+                error!(block_start=range_start, length=range_length, consumer_id=consumer_id, "catchup_processing has been canceled");
                 return Err(EvmListenerError::CouldNotFetchBlock {
                     source: BlockFetchError::Cancelled,
                 });
@@ -1404,6 +1405,10 @@ async fn fetch_blocks_in_parallel(
                 cancel_token.cancel();
                 // Drain remaining tasks to avoid abandoned futures
                 while join_set.join_next().await.is_some() {}
+                error!(
+                    "Fetch blocks in parallel task resulted to an error: Draining remaining tasks: {}",
+                    e
+                );
                 return Err(e);
             }
 
@@ -1411,7 +1416,7 @@ async fn fetch_blocks_in_parallel(
             Err(join_err) => {
                 cancel_token.cancel();
                 while join_set.join_next().await.is_some() {}
-                error!(error = %join_err, "Fetch task panicked");
+                error!(error = %join_err, "Fetch task panicked: Cancelling all the remaining tasks");
                 return Err(EvmListenerError::CouldNotFetchBlock {
                     source: BlockFetchError::Cancelled,
                 });
@@ -1427,7 +1432,7 @@ async fn fetch_blocks_in_parallel(
 /// Returns inclusive `(start, end)` tuples in ascending order. Caller must
 /// ensure `start <= end` and `max > 0` (the orchestrator validates both
 /// upstream — the payload validator rejects inverted ranges and the config
-/// validator rejects `catchup_max_range == 0`).
+/// validator rejects `catchup_max_sub_range == 0`).
 ///
 /// Saturating arithmetic + early-exit on `chunk_end == u64::MAX` guarantee
 /// the loop terminates even on the pathological `[0, u64::MAX]` input.
