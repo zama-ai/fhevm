@@ -134,7 +134,7 @@ pub enum AttestationError {
     #[error("serde error: {0}")]
     Serde(#[from] serde_json::Error),
     #[error("signer error: {0}")]
-    Signer(alloy_signer::Error),
+    Signer(#[from] alloy_signer::Error),
 }
 
 pub(crate) mod hex_bytes {

@@ -22,7 +22,7 @@ const V1_PAYLOAD_LEN: usize = 8 + 1 + 32 + 32 + 32 + 32 + 32;
 impl CiphertextAttestationPayload {
     /// Canonical `abi.encodePacked`-equivalent bytes for this payload. The
     /// exact message that gets keccak'd and signed.
-    pub fn canonical_bytes(&self) -> Result<Vec<u8>, AttestationError> {
+    pub fn canonical_bytes(&self) -> Vec<u8> {
         match self.version {
             Version::V1 => {
                 let mut out = Vec::with_capacity(V1_PAYLOAD_LEN);
@@ -33,14 +33,14 @@ impl CiphertextAttestationPayload {
                 out.extend_from_slice(&self.coprocessor_context_id.to_be_bytes::<32>());
                 out.extend_from_slice(self.ciphertext_digest.as_slice());
                 out.extend_from_slice(self.sns_ciphertext_digest.as_slice());
-                Ok(out)
+                out
             }
         }
     }
 
     /// Keccak-256 of [`Self::canonical_bytes`] — the prehash the signer signs.
-    pub fn canonical_digest(&self) -> Result<B256, AttestationError> {
-        self.canonical_bytes().map(|bytes| keccak_b256(&bytes))
+    pub fn canonical_digest(&self) -> B256 {
+        keccak_b256(&self.canonical_bytes())
     }
 
     /// Consume the payload and produce a signed [`CiphertextAttestation`].
@@ -50,11 +50,7 @@ impl CiphertextAttestationPayload {
         self,
         signer: &S,
     ) -> Result<CiphertextAttestation, AttestationError> {
-        let digest = self.canonical_digest()?;
-        let sig = signer
-            .sign_hash(&digest)
-            .await
-            .map_err(AttestationError::Signer)?;
+        let sig = signer.sign_hash(&self.canonical_digest()).await?;
         Ok(CiphertextAttestation {
             version: self.version,
             key_id: self.key_id,
@@ -87,7 +83,7 @@ impl CiphertextAttestation {
             ciphertext_digest: self.ciphertext_digest,
             sns_ciphertext_digest: self.sns_ciphertext_digest,
         };
-        let digest = payload.canonical_digest()?;
+        let digest = payload.canonical_digest();
 
         let sig = Signature::try_from(self.signature.as_slice())
             .map_err(|e| AttestationError::MalformedSignature(e.to_string()))?;
@@ -129,8 +125,7 @@ mod tests {
 
     #[test]
     fn v1_canonical_bytes_length() {
-        let bytes = sample_payload().canonical_bytes().unwrap();
-        assert_eq!(bytes.len(), V1_PAYLOAD_LEN);
+        assert_eq!(sample_payload().canonical_bytes().len(), V1_PAYLOAD_LEN);
     }
 
     async fn signed(signer: &PrivateKeySigner) -> CiphertextAttestation {
@@ -185,6 +180,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn rejects_replaced_key_id() {
+        let signer = PrivateKeySigner::random();
+        let mut att = signed(&signer).await;
+        att.key_id = KEY_ID + U256::ONE;
+        let err = att.verify(HANDLE, CTX).unwrap_err();
+        assert!(matches!(err, AttestationError::SignerMismatch { .. }));
+    }
+
+    #[tokio::test]
+    async fn rejects_replaced_sns_digest() {
+        let signer = PrivateKeySigner::random();
+        let mut att = signed(&signer).await;
+        let mut bytes = att.sns_ciphertext_digest.0;
+        bytes[0] ^= 0x01;
+        att.sns_ciphertext_digest = B256::from(bytes);
+        let err = att.verify(HANDLE, CTX).unwrap_err();
+        assert!(matches!(err, AttestationError::SignerMismatch { .. }));
+    }
+
+    #[tokio::test]
     async fn rejects_bad_signature_length() {
         let signer = PrivateKeySigner::random();
         let mut att = signed(&signer).await;
@@ -206,11 +221,11 @@ mod tests {
             b256!("2222222222222222222222222222222222222222222222222222222222222222"),
         );
         assert_eq!(
-            hex::encode(payload.canonical_bytes().unwrap()),
+            hex::encode(payload.canonical_bytes()),
             "464845564d43544101aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000007000000000000000000000000000000000000000000000000000000000000000011111111111111111111111111111111111111111111111111111111111111112222222222222222222222222222222222222222222222222222222222222222",
         );
         assert_eq!(
-            hex::encode(payload.canonical_digest().unwrap().as_slice()),
+            hex::encode(payload.canonical_digest().as_slice()),
             "c05f49d95c51e004afbf94dce1aa0e1adadaae1587f43bb56ceaf5c6baa2b78b",
         );
     }

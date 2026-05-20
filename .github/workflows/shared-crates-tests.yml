@@ -33,7 +33,6 @@ jobs:
       id: filter
       with:
         # Define paths that trigger specific component workflows
-        # Changes to conf-trace affect multiple components
         filters: |
           ciphertext-attestation:
             - shared/ciphertext-attestation/**
