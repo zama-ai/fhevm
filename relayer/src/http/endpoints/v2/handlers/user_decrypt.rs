@@ -204,16 +204,9 @@ impl UserDecryptHandler {
         info!("Successfully parsed and validated request");
 
         // Check early to avoid filling the queue with handles of unsupported chains
-        let pairs = match &user_decrypt_request {
-            crate::core::event::UserDecryptRequest::LegacyDirect {
-                ct_handle_contract_pairs,
-                ..
-            } => ct_handle_contract_pairs,
-            _ => unreachable!("v2 /user-decrypt always produces UserDecryptRequest::LegacyDirect"),
-        };
         if let Err(chain_id) = self
             .host_chain_id_checker
-            .validate_u256_handles(pairs.iter().map(|p| &p.ct_handle))
+            .validate_u256_handles(user_decrypt_request.ct_handles())
         {
             return RelayerV2ResponseFailed::host_chain_id_not_supported(
                 chain_id,
@@ -443,18 +436,9 @@ impl UserDecryptHandler {
         info!("Successfully parsed and validated delegated user decryption request.");
 
         // Check early to avoid filling the queue with handles of unsupported chains
-        let pairs = match &delegated_user_decrypt_request {
-            crate::core::event::UserDecryptRequest::LegacyDelegated {
-                ct_handle_contract_pairs,
-                ..
-            } => ct_handle_contract_pairs,
-            _ => unreachable!(
-                "v2 /delegated-user-decrypt always produces UserDecryptRequest::LegacyDelegated"
-            ),
-        };
         if let Err(chain_id) = self
             .host_chain_id_checker
-            .validate_u256_handles(pairs.iter().map(|p| &p.ct_handle))
+            .validate_u256_handles(delegated_user_decrypt_request.ct_handles())
         {
             return RelayerV2ResponseFailed::host_chain_id_not_supported(
                 chain_id,

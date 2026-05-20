@@ -524,6 +524,29 @@ impl UserDecryptRequest {
     pub fn is_unified(&self) -> bool {
         matches!(self, UserDecryptRequest::Eip712UnifiedV1 { .. })
     }
+
+    /// Borrowing iterator over the ciphertext handles carried by this
+    /// request, independent of attestation type. Lets callers run
+    /// per-handle checks (e.g. host-chain-id validation) without having
+    /// to match on the variant or duplicate extraction logic.
+    pub fn ct_handles(&self) -> Vec<&U256> {
+        match self {
+            UserDecryptRequest::LegacyDirect {
+                ct_handle_contract_pairs,
+                ..
+            }
+            | UserDecryptRequest::LegacyDelegated {
+                ct_handle_contract_pairs,
+                ..
+            } => ct_handle_contract_pairs
+                .iter()
+                .map(|p| &p.ct_handle)
+                .collect(),
+            UserDecryptRequest::Eip712UnifiedV1 { handles, .. } => {
+                handles.iter().map(|h| &h.ct_handle).collect()
+            }
+        }
+    }
 }
 
 #[allow(non_snake_case)]

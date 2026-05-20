@@ -1,4 +1,7 @@
-use crate::core::{errors::EventProcessingError, event::UserDecryptRequest};
+use crate::core::{
+    errors::EventProcessingError,
+    event::{HandleContractPair, UserDecryptRequest},
+};
 use crate::gateway::arbitrum::bindings::{
     Decryption,
     Decryption::{CtHandleContractPair, HandleEntry as SolHandleEntry},
@@ -177,9 +180,7 @@ impl ComputeCalldata {
     }
 }
 
-fn sol_ct_handle_contract_pairs(
-    pairs: &[crate::core::event::HandleContractPair],
-) -> Vec<CtHandleContractPair> {
+fn sol_ct_handle_contract_pairs(pairs: &[HandleContractPair]) -> Vec<CtHandleContractPair> {
     pairs
         .iter()
         .map(|d| CtHandleContractPair {
