@@ -24,13 +24,13 @@ use alloy::primitives::{Address, Bytes, B256};
 use alloy::sol_types::SolCall;
 use common::utils::{host_acl_multicall_allow_response, random_handle};
 use ethereum_rpc_mock::{
-    fhevm::{FhevmMockWrapper, UserDecryptKind},
     MockConfig, MockServer, MockServerHandle, Response, SubscriptionTarget, UsageLimit,
 };
 use fhevm_host_bindings::acl::ACL;
 use fhevm_relayer::config::settings::{Settings, StorageConfig};
 use fhevm_relayer::run_fhevm_relayer;
 use fhevm_relayer::store::sql::repositories::Repositories;
+use fhevm_relayer::test_support::fhevm_setup::{RelayerFhevmSetup, UserDecryptKind};
 use fhevm_relayer::tracing::init_tracing_once;
 use serde_json::json;
 use sqlx::postgres::PgPoolOptions;
@@ -53,8 +53,8 @@ struct RecoveryTestSetup {
     working_gateway_port: u16,
     host_port: u16,
     host_server: MockServer,
-    broken_gateway: FhevmMockWrapper,
-    working_gateway: FhevmMockWrapper,
+    broken_gateway: RelayerFhevmSetup,
+    working_gateway: RelayerFhevmSetup,
     _broken_handle: MockServerHandle,
     _working_handle: MockServerHandle,
     _host_handle: MockServerHandle,
@@ -101,7 +101,7 @@ impl RecoveryTestSetup {
             ..MockConfig::new()
         };
         let broken_server = MockServer::new(broken_config);
-        let broken_gateway = FhevmMockWrapper::new(
+        let broken_gateway = RelayerFhevmSetup::new(
             broken_server.clone(),
             decryption_addr,
             input_verification_addr,
@@ -117,7 +117,7 @@ impl RecoveryTestSetup {
             ..MockConfig::new()
         };
         let working_server = MockServer::new(working_config);
-        let working_gateway = FhevmMockWrapper::new(
+        let working_gateway = RelayerFhevmSetup::new(
             working_server.clone(),
             decryption_addr,
             input_verification_addr,

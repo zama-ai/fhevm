@@ -1,11 +1,21 @@
-use crate::{
-    blockchain::ScheduledTransaction,
-    mock_server::{self, rpc_types::Response, MockServer},
-    pattern_matcher::UsageLimit,
-};
+//! Relayer-oriented FHEVM setup helpers.
+//!
+//! This module is a layer over the generic [`ethereum_rpc_mock::MockServer`]. It uses
+//! FHEVM gateway contract bindings to register relayer-specific selectors,
+//! contract bytecode, request receipts, readiness call results, and scheduled
+//! gateway response events.
+//!
+//! Keep generic JSON-RPC behavior in `mock_server`, `blockchain`, or
+//! `pattern_matcher`. Add setup here only when it describes a relayer test
+//! scenario.
+
 use alloy::primitives::{Address, Bytes, B256, U256};
 use alloy::primitives::{Log, LogData};
 use alloy::sol_types::{SolCall, SolEvent};
+use ethereum_rpc_mock::{
+    CallParams, MockServer, Response, ResponseData, ScheduledTransaction, SubscriptionTarget,
+    TxParams, UsageLimit,
+};
 use rand::{Rng, RngExt};
 use std::{
     str::FromStr,
@@ -68,8 +78,8 @@ fn random_hash() -> B256 {
 fn matches_contract_and_selector_for_call(
     contract: Address,
     selector: [u8; 4],
-) -> impl Fn(&crate::mock_server::CallParams) -> bool + Send + Sync + 'static {
-    move |params: &crate::mock_server::CallParams| -> bool {
+) -> impl Fn(&CallParams) -> bool + Send + Sync + 'static {
+    move |params: &CallParams| -> bool {
         params.to == contract && params.input.len() >= 4 && params.input[0..4] == selector
     }
 }
@@ -78,23 +88,23 @@ fn matches_contract_and_selector_for_call(
 fn matches_contract_and_selector_for_txn(
     contract: Address,
     selector: [u8; 4],
-) -> impl Fn(&crate::mock_server::TxParams) -> bool + Send + Sync + 'static {
-    move |params: &crate::mock_server::TxParams| -> bool {
+) -> impl Fn(&TxParams) -> bool + Send + Sync + 'static {
+    move |params: &TxParams| -> bool {
         params.to == Some(contract) && params.data.len() >= 4 && params.data[0..4] == selector
     }
 }
 
-/// FHEVM mock wrapper with simplified direct API
+/// Relayer-oriented FHEVM setup with a simplified direct API.
 #[derive(Clone)]
-pub struct FhevmMockWrapper {
+pub struct RelayerFhevmSetup {
     json_rpc_server: MockServer,
     next_zk_proof_id: Arc<AtomicU64>,
     pub decryption_contract: Address,
     pub input_proof_contract: Address,
 }
 
-impl FhevmMockWrapper {
-    /// Create new FHEVM mock wrapper with contract addresses
+impl RelayerFhevmSetup {
+    /// Create a relayer FHEVM setup with contract addresses.
     pub fn new(
         json_rpc_server: MockServer,
         decryption_contract: Address,
@@ -103,7 +113,7 @@ impl FhevmMockWrapper {
         info!(
             decryption_contract = %decryption_contract,
             input_proof_contract = %input_proof_contract,
-            "Initializing FHEVM mock wrapper"
+            "Initializing relayer FHEVM setup"
         );
 
         // Set up contract bytecode in the blockchain state
@@ -246,7 +256,7 @@ impl FhevmMockWrapper {
 
         let readiness_response = Response::Success {
             hash: None,
-            data: crate::mock_server::ResponseData::Bytes(Bytes::from_str(response_value).unwrap()),
+            data: ResponseData::Bytes(Bytes::from_str(response_value).unwrap()),
             scheduled_transactions: Vec::new(),
         };
 
@@ -279,7 +289,7 @@ impl FhevmMockWrapper {
         operation_type: &str,
         contract: Address,
         selector: [u8; 4],
-        target: mock_server::SubscriptionTarget,
+        target: SubscriptionTarget,
         usage_limit: UsageLimit,
         log_creator: F,
     ) where
@@ -307,7 +317,7 @@ impl FhevmMockWrapper {
         kind: UserDecryptKind,
         handles: Vec<B256>,
         user: Address,
-        target: mock_server::SubscriptionTarget,
+        target: SubscriptionTarget,
     ) {
         self.register_user_decrypt_success(
             kind,
@@ -328,7 +338,7 @@ impl FhevmMockWrapper {
         kind: UserDecryptKind,
         handles: Vec<B256>,
         user: Address,
-        targets: Vec<mock_server::SubscriptionTarget>,
+        targets: Vec<SubscriptionTarget>,
     ) {
         self.register_user_decrypt_success(kind, handles, user, targets, UsageLimit::Once);
     }
@@ -351,7 +361,7 @@ impl FhevmMockWrapper {
         kind: UserDecryptKind,
         handles: Vec<B256>,
         user: Address,
-        targets: Vec<mock_server::SubscriptionTarget>,
+        targets: Vec<SubscriptionTarget>,
         usage_limit: UsageLimit,
     ) {
         let selector = kind.selector();
@@ -513,7 +523,7 @@ impl FhevmMockWrapper {
         // Create immediate response with request log and scheduled transaction
         let immediate_response = Response::Success {
             hash: Some(random_hash()),
-            data: crate::mock_server::ResponseData::Logs(vec![request_log]),
+            data: ResponseData::Logs(vec![request_log]),
             scheduled_transactions: vec![scheduled_tx],
         };
 
@@ -547,7 +557,7 @@ impl FhevmMockWrapper {
         &self,
         handles: Vec<B256>,
         values: Vec<u64>,
-        target: mock_server::SubscriptionTarget,
+        target: SubscriptionTarget,
     ) {
         // Set up readiness check patterns to return true (ready)
         self.set_readiness_success();
@@ -589,7 +599,7 @@ impl FhevmMockWrapper {
         user: Address,
         data: Bytes,
         count: usize,
-        target: mock_server::SubscriptionTarget,
+        target: SubscriptionTarget,
     ) {
         self.register_dynamic_input_proof_pattern(user, data, true, count, target);
     }
@@ -601,7 +611,7 @@ impl FhevmMockWrapper {
             data,
             false,
             count,
-            mock_server::SubscriptionTarget::All,
+            SubscriptionTarget::All,
         );
     }
 
@@ -612,7 +622,7 @@ impl FhevmMockWrapper {
         data: Bytes,
         success: bool,
         count: usize,
-        target: mock_server::SubscriptionTarget,
+        target: SubscriptionTarget,
     ) {
         for _i in 0..count {
             let id = self.next_zk_proof_id();
@@ -635,7 +645,7 @@ impl FhevmMockWrapper {
 
             let response = Response::Success {
                 hash: Some(random_hash()),
-                data: crate::mock_server::ResponseData::Logs(vec![request_log]),
+                data: ResponseData::Logs(vec![request_log]),
                 scheduled_transactions: vec![scheduled_tx],
             };
 
@@ -658,7 +668,7 @@ impl FhevmMockWrapper {
 
         let response = Response::Success {
             hash: Some(random_hash()),
-            data: crate::mock_server::ResponseData::Logs(vec![request_log]),
+            data: ResponseData::Logs(vec![request_log]),
             scheduled_transactions: vec![], // NO response event - will timeout
         };
 
@@ -733,7 +743,7 @@ impl FhevmMockWrapper {
             "user decryption error",
             self.decryption_contract,
             kind.selector(),
-            mock_server::SubscriptionTarget::All,
+            SubscriptionTarget::All,
             UsageLimit::Once,
             |id, contract| {
                 let request_log = build_legacy_user_decrypt_request(contract, id, user, handles);
@@ -749,7 +759,7 @@ impl FhevmMockWrapper {
             "public decryption error",
             self.decryption_contract,
             Decryption::publicDecryptionRequestCall::SELECTOR,
-            mock_server::SubscriptionTarget::All,
+            SubscriptionTarget::All,
             UsageLimit::Once,
             |id, contract| {
                 let request_log = build_public_decrypt_request(contract, id, handles);
@@ -776,10 +786,10 @@ impl FhevmMockWrapper {
     fn resolve_targets(
         &self,
         event_count: usize,
-        targets: Vec<mock_server::SubscriptionTarget>,
-    ) -> Vec<mock_server::SubscriptionTarget> {
+        targets: Vec<SubscriptionTarget>,
+    ) -> Vec<SubscriptionTarget> {
         if targets.is_empty() {
-            return vec![mock_server::SubscriptionTarget::All; event_count];
+            return vec![SubscriptionTarget::All; event_count];
         }
         if targets.len() == 1 {
             return vec![targets[0].clone(); event_count];
@@ -796,7 +806,7 @@ impl FhevmMockWrapper {
         selector: [u8; 4],
         request_log: Log,
         response_log: Log,
-        target: mock_server::SubscriptionTarget,
+        target: SubscriptionTarget,
         usage_limit: UsageLimit,
     ) {
         // Create scheduled transaction for delayed response with target
@@ -812,7 +822,7 @@ impl FhevmMockWrapper {
         // Create immediate response with request log and scheduled transaction
         let immediate_response = Response::Success {
             hash: Some(random_hash()),
-            data: crate::mock_server::ResponseData::Logs(vec![request_log]),
+            data: ResponseData::Logs(vec![request_log]),
             scheduled_transactions: vec![scheduled_tx],
         };
 
@@ -831,7 +841,7 @@ impl FhevmMockWrapper {
     fn register_request_only(&self, contract: Address, selector: [u8; 4], request_log: Log) {
         let immediate_response = Response::Success {
             hash: Some(random_hash()),
-            data: crate::mock_server::ResponseData::Logs(vec![request_log]),
+            data: ResponseData::Logs(vec![request_log]),
             scheduled_transactions: vec![], // NO response - will timeout
         };
 
@@ -1188,32 +1198,32 @@ fn create_sns_materials(handles: Vec<B256>) -> Vec<Decryption::SnsCiphertextMate
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{mock_server::MockConfig, mock_server::MockServer};
+    use ethereum_rpc_mock::{MockConfig, MockServer};
 
     #[test]
-    fn test_fhevm_wrapper_creation_and_id_generation() {
+    fn test_relayer_fhevm_setup_creation_and_id_generation() {
         let server = MockServer::new(MockConfig::new());
         let decryption_addr = Address::repeat_byte(1);
         let input_addr = Address::repeat_byte(2);
 
-        let wrapper = FhevmMockWrapper::new(server, decryption_addr, input_addr);
+        let setup = RelayerFhevmSetup::new(server, decryption_addr, input_addr);
 
         assert_eq!(
-            wrapper.decryption_contract, decryption_addr,
+            setup.decryption_contract, decryption_addr,
             "Decryption contract address should match"
         );
         assert_eq!(
-            wrapper.input_proof_contract, input_addr,
+            setup.input_proof_contract, input_addr,
             "Input proof contract address should match"
         );
 
         // Test ID generation
-        let id1 = wrapper.next_decryption_id();
-        let id2 = wrapper.next_decryption_id();
+        let id1 = setup.next_decryption_id();
+        let id2 = setup.next_decryption_id();
         assert_ne!(id1, id2, "Decryption IDs should be unique");
 
-        let proof_id1 = wrapper.next_zk_proof_id();
-        let proof_id2 = wrapper.next_zk_proof_id();
+        let proof_id1 = setup.next_zk_proof_id();
+        let proof_id2 = setup.next_zk_proof_id();
         assert!(proof_id2 > proof_id1, "ZK proof IDs should increment");
     }
 }

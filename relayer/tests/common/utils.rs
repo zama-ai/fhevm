@@ -1,12 +1,11 @@
 use std::net::TcpListener;
 
 use anyhow::Context;
-use ethereum_rpc_mock::{
-    fhevm::FhevmMockWrapper, MockConfig, MockServer, MockServerHandle, Response, UsageLimit,
-};
+use ethereum_rpc_mock::{MockConfig, MockServer, MockServerHandle, Response, UsageLimit};
 use fhevm_relayer::config::settings::{HostChainConfig, Settings, StorageConfig};
 use fhevm_relayer::run_fhevm_relayer;
 use fhevm_relayer::store::sql::client::PgClient;
+use fhevm_relayer::test_support::fhevm_setup::RelayerFhevmSetup;
 use fhevm_relayer::tracing::init_tracing_once;
 
 use alloy::primitives::{Address, Bytes};
@@ -24,7 +23,7 @@ use super::test_schema::TestSchema;
 /// Per-test isolated setup with own ports, database, and mock servers
 #[allow(dead_code)]
 pub struct TestSetup {
-    pub fhevm_mock: FhevmMockWrapper,
+    pub fhevm_mock: RelayerFhevmSetup,
     pub host_server: MockServer,
     pub settings: Settings,
     pub http_port: u16,
@@ -160,7 +159,7 @@ impl TestSetup {
         let gateway_server = MockServer::new(gateway_config);
 
         // Configure FHEVM patterns BEFORE starting the server
-        let fhevm_wrapper = FhevmMockWrapper::new(
+        let fhevm_setup = RelayerFhevmSetup::new(
             gateway_server.clone(),
             decryption_addr,
             input_verification_addr,
@@ -295,7 +294,7 @@ impl TestSetup {
         settings = updated_settings;
 
         Ok(TestSetup {
-            fhevm_mock: fhevm_wrapper,
+            fhevm_mock: fhevm_setup,
             host_server: host_server_clone,
             settings,
             http_port,

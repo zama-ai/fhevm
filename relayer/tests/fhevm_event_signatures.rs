@@ -1,5 +1,5 @@
 use alloy::sol_types::{SolCall, SolEvent};
-use ethereum_rpc_mock::fhevm::{Decryption, InputVerification};
+use fhevm_relayer::test_support::fhevm_setup::{Decryption, InputVerification};
 
 #[test]
 fn print_all_fhevm_event_signatures() {

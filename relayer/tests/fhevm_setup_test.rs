@@ -15,9 +15,11 @@ use alloy::{
     sol_types::SolCall,
 };
 use ethereum_rpc_mock::{
-    fhevm::{Decryption, FhevmMockWrapper, InputVerification, UserDecryptKind},
     test_utils::{create_test_wallet, get_free_port},
     MockConfig, MockServer,
+};
+use fhevm_relayer::test_support::fhevm_setup::{
+    Decryption, InputVerification, RelayerFhevmSetup, UserDecryptKind,
 };
 use futures::StreamExt;
 use tokio::time::timeout;
@@ -139,7 +141,7 @@ async fn test_input_proof_response() {
     });
     let proof_data = Bytes::from([1, 2, 3, 4]);
 
-    FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
+    RelayerFhevmSetup::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
         .on_input_proof_success(
             USER_ADDRESS,
             proof_data.clone(),
@@ -229,7 +231,7 @@ async fn test_input_proof_reject() {
     });
     let proof_data = Bytes::from([1, 2, 3, 4]);
 
-    FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
+    RelayerFhevmSetup::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
         .on_input_proof_error(USER_ADDRESS, proof_data.clone(), 1);
 
     let handle = server.clone().start().await.unwrap();
@@ -286,7 +288,7 @@ async fn test_input_proof_revert() {
     });
 
     let expected_error = "Invalid proof format";
-    FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
+    RelayerFhevmSetup::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
         .on_input_proof_revert(expected_error);
 
     let handle = server.clone().start().await.unwrap();
@@ -340,7 +342,7 @@ async fn test_user_decrypt_response() {
 
     let handle = B256::from([0x42; 32]);
 
-    FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
+    RelayerFhevmSetup::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
         .on_user_decrypt_success(
             UserDecryptKind::Direct,
             vec![handle],
@@ -431,7 +433,7 @@ async fn test_user_decrypt_error() {
 
     let handle = B256::from([0x42; 32]);
 
-    FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
+    RelayerFhevmSetup::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
         .on_user_decrypt_error(UserDecryptKind::Direct, vec![handle], USER_ADDRESS);
 
     let server_handle = server.clone().start().await.unwrap();
@@ -481,7 +483,7 @@ async fn test_user_decrypt_revert() {
     });
 
     let expected_error = "Insufficient permissions";
-    FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
+    RelayerFhevmSetup::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
         .on_user_decrypt_revert(UserDecryptKind::Direct, expected_error);
 
     let handle = server.clone().start().await.unwrap();
@@ -537,7 +539,7 @@ async fn test_public_decrypt_response() {
     let handle2 = B256::from([0x43; 32]);
     let values = vec![42u64, 100u64];
 
-    FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
+    RelayerFhevmSetup::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
         .on_public_decrypt_success(
             vec![handle1, handle2],
             values,
@@ -628,7 +630,7 @@ async fn test_public_decrypt_error() {
     let handle1 = B256::from([0x42; 32]);
     let handle2 = B256::from([0x43; 32]);
 
-    FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
+    RelayerFhevmSetup::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
         .on_public_decrypt_error(vec![handle1, handle2]);
 
     let server_handle = server.clone().start().await.unwrap();
@@ -685,7 +687,7 @@ async fn test_public_decrypt_revert() {
     });
 
     let expected_error = "Decryption not allowed";
-    FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
+    RelayerFhevmSetup::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
         .on_public_decrypt_revert(expected_error);
 
     let handle = server.clone().start().await.unwrap();

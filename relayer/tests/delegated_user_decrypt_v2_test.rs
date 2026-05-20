@@ -11,13 +11,13 @@ use crate::common::validation_helper::{
     test_endpoint_raw_body, with_invalid_field,
 };
 use alloy::primitives::{Address, B256};
-use ethereum_rpc_mock::fhevm::UserDecryptKind;
 use ethereum_rpc_mock::Response;
 use fhevm_relayer::http::endpoints::v2::types::error::ApiResponseStatus;
 use fhevm_relayer::http::endpoints::v2::types::user_decrypt::{
     UserDecryptPostResponseJson, UserDecryptStatusResponseJson,
 };
 use fhevm_relayer::http::validation_messages as constants_validation;
+use fhevm_relayer::test_support::fhevm_setup::UserDecryptKind;
 use rand::{rng, RngExt};
 use rstest::rstest;
 use serde_json::json;
