@@ -1959,7 +1959,7 @@ pub fn get_op_size_on_gpu(
                     input_types: input_operands.iter().map(|i| i.type_name()).collect(),
                 });
             }
-            let m = input_operands.len() * 2;
+            let m: u64 = (input_operands.len() as u64) * 2;
             match &input_operands[0] {
                 SupportedFheCiphertexts::FheUint8(a) => Ok(m * a.get_add_size_on_gpu(1u8)),
                 SupportedFheCiphertexts::FheUint16(a) => Ok(m * a.get_add_size_on_gpu(1u16)),
