@@ -12,7 +12,7 @@
 use crate::{
     AttestationError, CiphertextAttestation, CiphertextAttestationPayload, DOMAIN_TAG, Version,
 };
-use alloy_primitives::{Address, B256, Signature, U256};
+use alloy_primitives::{B256, Signature, U256};
 use alloy_signer::Signer;
 use sha3::{Digest, Keccak256};
 
@@ -67,14 +67,13 @@ impl CiphertextAttestation {
     /// supplied by the caller from the S3 lookup path; both are bound by the
     /// signature, so any mismatch surfaces as [`AttestationError::SignerMismatch`].
     ///
-    /// On success returns the recovered signer address (equal to
-    /// `self.signer`). Membership and threshold/quorum checks are the caller's
-    /// responsibility.
+    /// Membership and threshold/quorum checks against `self.signer` are the
+    /// caller's responsibility.
     pub fn verify(
         &self,
         handle: B256,
         coprocessor_context_id: U256,
-    ) -> Result<Address, AttestationError> {
+    ) -> Result<(), AttestationError> {
         let payload = CiphertextAttestationPayload {
             version: self.version,
             handle,
@@ -96,7 +95,7 @@ impl CiphertextAttestation {
                 expected: self.signer,
             });
         }
-        Ok(recovered)
+        Ok(())
     }
 }
 
@@ -137,8 +136,7 @@ mod tests {
         let signer = PrivateKeySigner::random();
         let att = signed(&signer).await;
         assert_eq!(att.signer, signer.address());
-        let recovered = att.verify(HANDLE, CTX).unwrap();
-        assert_eq!(recovered, signer.address());
+        att.verify(HANDLE, CTX).unwrap();
     }
 
     #[tokio::test]

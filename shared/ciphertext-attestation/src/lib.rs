@@ -17,7 +17,7 @@
 //!
 //! ```ignore
 //! let attestation: CiphertextAttestation = serde_json::from_str(&s3_metadata)?;
-//! let signer = attestation.verify(handle, coprocessor_context_id)?;
+//! attestation.verify(handle, coprocessor_context_id)?;
 //! ```
 //!
 //! See RFC-023 (Off-chain ciphertext commits handling).
