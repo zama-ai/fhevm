@@ -26,6 +26,14 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     /// @dev Shared between `initializeFromEmptyProxy` and `initializeFromMigration`.
     uint64 private constant REINITIALIZER_VERSION = 2;
 
+    /// @notice Upper bound on the KMS committee size and on every per-context threshold.
+    /// @dev Driven by the proof format consumed in
+    ///      `KMSVerifier.verifyDecryptionEIP712KMSSignatures`, which encodes the signature count
+    ///      in a single byte (`uint8(decryptionProof[0])`). A context registered above this
+    ///      bound cannot ever satisfy verification, so the limit is enforced at registration time
+    ///      to reject the misconfiguration loudly rather than silently bricking the context.
+    uint256 private constant MAX_KMS_SIGNERS = type(uint8).max;
+
     // -----------------------------------------------------------------------------------------
     // ERC-7201 namespaced storage
     // -----------------------------------------------------------------------------------------
@@ -283,6 +291,9 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         if (kmsNodes.length == 0) {
             revert EmptyKmsNodes();
         }
+        if (kmsNodes.length > MAX_KMS_SIGNERS) {
+            revert KmsSignerSetExceedsProofFormatLimit(kmsNodes.length, MAX_KMS_SIGNERS);
+        }
 
         _validateThresholds(thresholds, kmsNodes.length);
 
@@ -335,6 +346,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
      */
     function _checkThreshold(string memory name, uint256 value, uint256 nodeCount) internal pure {
         if (value == 0) revert InvalidNullThreshold(name);
+        if (value > MAX_KMS_SIGNERS) revert ThresholdExceedsProofFormatLimit(name, value, MAX_KMS_SIGNERS);
         if (value > nodeCount) revert InvalidHighThreshold(name, value, nodeCount);
     }
 
