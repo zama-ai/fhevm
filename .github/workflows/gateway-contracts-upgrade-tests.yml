@@ -27,7 +27,7 @@ jobs:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
       pull-requests: 'read' # Required to read pull request information
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     outputs:
       changes-gw-contracts: ${{ steps.filter.outputs.gw-contracts }}
     steps:
@@ -49,7 +49,7 @@ jobs:
       contents: 'read' # Required to checkout repository code
       checks: 'write' # Required to create GitHub checks for test results
       packages: 'read' # Required to read GitHub packages/container registry
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     steps:
       - name: Resolve baseline release tag
         id: baseline
@@ -117,7 +117,7 @@ jobs:
 
       # This step prepares the directory for upgrading contracts:
       # 1) Copy contracts from previous version to directory `./previous-contracts`: upgrade tasks
-      # require access to the previous implementations 
+      # require access to the previous implementations
       # 2) Copy addresses from previous version to root directory: the upgrade tasks need to use the
       # internal addresses that have been deployed (ie, the previous version's addresses)
       - name: Prepare contracts for upgrades

@@ -72,7 +72,7 @@ env:
 jobs:
   parse-inputs:
     name: coprocessor-benchmark-gpu/parse-inputs
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     permissions:
       contents: 'read' # Required to checkout repository code
     outputs:
@@ -92,7 +92,7 @@ jobs:
   setup-instance:
     name: coprocessor-benchmark-gpu/setup-instance
     needs: parse-inputs
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     permissions:
       contents: 'read' # Required to checkout repository code
     outputs:
@@ -300,7 +300,7 @@ jobs:
     name: coprocessor-benchmark-gpu/teardown
     if: ${{ always() && needs.setup-instance.result == 'success' }}
     needs: [ setup-instance, benchmark ]
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     permissions:
       contents: 'read' # Required to checkout repository code
     steps:

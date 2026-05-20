@@ -27,7 +27,7 @@ jobs:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
       pull-requests: 'read' # Required to read pull request information
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     outputs:
       changes-host-contracts: ${{ steps.filter.outputs.host-contracts }}
     steps:
@@ -49,7 +49,7 @@ jobs:
       contents: 'read' # Required to checkout repository code
       checks: 'write' # Required to create GitHub checks for test results
       packages: 'read' # Required to read GitHub packages/container registry
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     steps:
       - name: Resolve baseline release tag
         id: baseline

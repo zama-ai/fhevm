@@ -32,7 +32,7 @@ jobs:
     permissions:
       contents: 'read' # Required to checkout repository code
       packages: 'read' # Required to resolve published GitHub Container Registry package tags
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     env:
       GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
     outputs:

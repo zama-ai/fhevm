@@ -18,7 +18,7 @@ jobs:
     name: resolve-baseline
     if: &build-trigger-condition |
       startsWith(github.head_ref, 'mergify/merge-queue/') || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'e2e orchestrate test')
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     permissions:
       contents: 'read' # Required to checkout repository code
     env:
@@ -131,7 +131,7 @@ jobs:
     env:
       NEW_COMMIT_HASH: ${{ github.event.pull_request.head.sha }}
       DOCKER_BUILD_RESULTS: ${{ toJSON(needs) }}
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     outputs:
       coprocessor-db-migration-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-db-migration-version }}
       coprocessor-gw-listener-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-gw-listener-version }}

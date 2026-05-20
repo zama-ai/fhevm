@@ -17,7 +17,7 @@ jobs:
       actions: read # Required to read workflow run information
       contents: read # Required to checkout repository code
       pull-requests: read # Required to read pull request information
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     outputs:
       changes-docs: ${{ steps.filter.outputs.docs }}
     steps:
@@ -37,7 +37,7 @@ jobs:
     name: check-docs/check-docs
     needs: [check-changes]
     if: needs.check-changes.outputs.changes-docs == 'true'
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     container:
       image: python:3.10.17-bullseye@sha256:0b9be13617fed7d883b30e31a47371a8bdd60a4bb5e45fcda63cb4a3846f6d98
     steps:
