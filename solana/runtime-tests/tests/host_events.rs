@@ -341,6 +341,75 @@ fn user_decrypt_model_uses_acl_domain_key_and_acl_record_authentication() {
 }
 
 #[test]
+fn public_decrypt_model_uses_acl_record_flag() {
+    let mut fixture = token_fixture();
+    let amount_handle = [9; 32];
+    authorize_input_compute_acl(&mut fixture, amount_handle);
+    let alice_handle = [3; 32];
+    let output = transfer_output_accounts(&fixture, 1);
+    let transfer_ix = transfer_ix(&fixture, output, amount_handle, alice_handle, [4; 32]);
+    send(&mut fixture.svm, &fixture.alice, transfer_ix);
+
+    let entry = PublicDecryptHandleEntry {
+        handle: alice_handle,
+        acl_record: output.alice,
+    };
+    assert!(!kms_like_public_decrypt_check(&fixture.svm, &[entry]));
+
+    send(
+        &mut fixture.svm,
+        &fixture.alice,
+        allow_for_decryption_ix(
+            fixture.host_program_id,
+            fixture.alice.pubkey(),
+            output.alice,
+            alice_handle,
+        ),
+    );
+
+    let record = read_acl_record(&fixture.svm, output.alice).expect("expected ACL record");
+    assert!(record.public_decrypt);
+    assert!(kms_like_public_decrypt_check(&fixture.svm, &[entry]));
+
+    assert!(!kms_like_public_decrypt_check(
+        &fixture.svm,
+        &[PublicDecryptHandleEntry {
+            handle: [99; 32],
+            acl_record: output.alice,
+        }]
+    ));
+    assert!(!kms_like_public_decrypt_check(
+        &fixture.svm,
+        &[PublicDecryptHandleEntry {
+            handle: [4; 32],
+            acl_record: output.bob,
+        }]
+    ));
+}
+
+#[test]
+fn allow_for_decryption_rejects_unallowed_signer() {
+    let mut fixture = token_fixture();
+    let amount_handle = [9; 32];
+    authorize_input_compute_acl(&mut fixture, amount_handle);
+    let alice_handle = [3; 32];
+    let output = transfer_output_accounts(&fixture, 1);
+    let transfer_ix = transfer_ix(&fixture, output, amount_handle, alice_handle, [4; 32]);
+    send(&mut fixture.svm, &fixture.alice, transfer_ix);
+
+    let ix = allow_for_decryption_ix(
+        fixture.host_program_id,
+        fixture.bob.pubkey(),
+        output.alice,
+        alice_handle,
+    );
+    assert!(try_send(&mut fixture.svm, &fixture.bob, ix).is_err());
+
+    let record = read_acl_record(&fixture.svm, output.alice).expect("expected ACL record");
+    assert!(!record.public_decrypt);
+}
+
+#[test]
 fn wrap_usdc_escrows_spl_tokens_and_rotates_confidential_balance() {
     let mut fixture = token_fixture();
     let amount = 100_000_000;
@@ -550,6 +619,12 @@ struct UserDecryptRequest {
 struct UserDecryptHandleEntry {
     handle: [u8; 32],
     owner: Pubkey,
+    acl_record: Pubkey,
+}
+
+#[derive(Clone, Copy)]
+struct PublicDecryptHandleEntry {
+    handle: [u8; 32],
     acl_record: Pubkey,
 }
 
@@ -961,6 +1036,25 @@ fn wrap_usdc_ix(
     }
 }
 
+fn allow_for_decryption_ix(
+    program_id: Pubkey,
+    authority: Pubkey,
+    acl_record: Pubkey,
+    handle: [u8; 32],
+) -> Instruction {
+    Instruction {
+        program_id,
+        accounts: host::accounts::AllowForDecryption {
+            authority,
+            acl_record,
+            event_authority: event_authority(program_id),
+            program: program_id,
+        }
+        .to_account_metas(None),
+        data: host::instruction::AllowForDecryption { handle }.data(),
+    }
+}
+
 fn authorize_balance_acl(
     svm: &mut LiteSVM,
     owner: &Keypair,
@@ -1218,6 +1312,38 @@ fn kms_like_user_decrypt_check(svm: &LiteSVM, request: &UserDecryptRequest) -> b
             && record.nonce_key == expected_nonce_key
             && entry.acl_record == expected_acl_record
             && record_subjects(&record).contains(&authorization.user)
+    })
+}
+
+fn kms_like_public_decrypt_check(svm: &LiteSVM, entries: &[PublicDecryptHandleEntry]) -> bool {
+    if entries.is_empty() {
+        return false;
+    }
+
+    entries.iter().all(|entry| {
+        let Some(raw_account) = svm.get_account(&entry.acl_record) else {
+            return false;
+        };
+        if raw_account.owner != host::id() {
+            return false;
+        }
+
+        let mut data = raw_account.data.as_slice();
+        let Ok(record) = AclRecord::try_deserialize(&mut data) else {
+            return false;
+        };
+        let expected_nonce_key = token::nonce_key(
+            record.acl_domain_key,
+            record.app_account,
+            record.encrypted_value_label,
+        );
+        let expected_acl_record =
+            acl_record_address(host::id(), expected_nonce_key, record.nonce_sequence);
+
+        record.handle == entry.handle
+            && record.nonce_key == expected_nonce_key
+            && entry.acl_record == expected_acl_record
+            && record.public_decrypt
     })
 }
 
