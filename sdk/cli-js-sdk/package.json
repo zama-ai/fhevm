@@ -1,0 +1,23 @@
+{
+  "name": "cli-relayer-sdk",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "cli": "bun run index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@commander-js/extra-typings": "^14.0.0",
+    "@fhevm/sdk": "1.0.0-alpha.5",
+    "commander": "^14.0.3",
+    "consola": "^3.4.2",
+    "viem": "^2.50.4"
+  }
+}
