@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env -S node --env-file=.env --import tsx
 import { Command, InvalidArgumentError } from "@commander-js/extra-typings";
 import { consola } from "consola";
 import type { Hex } from "viem";
@@ -40,7 +40,7 @@ const collectHex = (value: string, previous: string[] = []): string[] => [
 ];
 
 const printJson = (value: unknown) => {
-  console.log(
+  consola.log(
     JSON.stringify(
       value,
       (_key, item) => (typeof item === "bigint" ? item.toString() : item),

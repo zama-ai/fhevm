@@ -8,7 +8,7 @@
     "pnpm": ">=10.0.0"
   },
   "scripts": {
-    "cli": "tsx index.ts",
+    "cli": "node --env-file=.env --import tsx index.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
