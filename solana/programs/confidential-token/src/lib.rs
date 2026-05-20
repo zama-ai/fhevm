@@ -1,4 +1,4 @@
-use anchor_lang::prelude::*;
+use anchor_lang::{prelude::*, AccountDeserialize};
 use anchor_spl::token::{self as spl_token, Mint as SplMint, Token, TokenAccount, TransferChecked};
 use zama_host::{
     self, cpi,
@@ -8,6 +8,8 @@ use zama_host::{
 };
 
 declare_id!("5GKzUSfqBSNjoVW83w3xPtTnAe84srZcDTBstpSoBCR4");
+
+const BALANCE_FHE_TYPE: u8 = 5;
 
 #[program]
 pub mod confidential_token {
@@ -79,12 +81,7 @@ pub mod confidential_token {
         Ok(())
     }
 
-    pub fn wrap_usdc(
-        ctx: Context<WrapUsdc>,
-        amount: u64,
-        amount_handle: [u8; 32],
-        new_balance_handle: [u8; 32],
-    ) -> Result<()> {
+    pub fn wrap_usdc(ctx: Context<WrapUsdc>, amount: u64, amount_handle: [u8; 32]) -> Result<()> {
         let mint = &ctx.accounts.mint;
         let token_account = &ctx.accounts.token_account;
         let nonce_sequence = token_account.next_balance_nonce_sequence;
@@ -129,33 +126,25 @@ pub mod confidential_token {
             &ctx.accounts.zama_program,
             compute_signer,
             amount_to_plaintext(amount),
-            5,
+            BALANCE_FHE_TYPE,
             amount_handle,
         )?;
-        emit_binary_op(
+        let new_balance_handle = compute_binary_op(
+            &ctx.accounts.owner,
             &ctx.accounts.zama_event_authority,
             &ctx.accounts.zama_program,
             &ctx.accounts.compute_signer,
+            &ctx.accounts.token_account,
             ctx.accounts.current_compute_acl.to_account_info(),
             FheBinaryOpCode::Add,
             token_account.balance_handle,
             ctx.accounts.amount_compute_acl.to_account_info(),
             amount_handle,
-            new_balance_handle,
+            ctx.accounts.output_acl.to_account_info(),
             mint.key(),
             ctx.bumps.compute_signer,
-        )?;
-        bind_token_account_acl(
-            &ctx.accounts.owner,
-            mint,
-            &ctx.accounts.compute_signer,
-            &ctx.accounts.token_account,
-            ctx.accounts.output_acl.to_account_info(),
-            &ctx.accounts.zama_event_authority,
-            &ctx.accounts.zama_program,
             &ctx.accounts.system_program,
             nonce_sequence,
-            new_balance_handle,
         )?;
 
         let token_account = &mut ctx.accounts.token_account;
@@ -170,8 +159,6 @@ pub mod confidential_token {
     pub fn confidential_transfer(
         ctx: Context<ConfidentialTransfer>,
         amount_handle: [u8; 32],
-        new_from_handle: [u8; 32],
-        new_to_handle: [u8; 32],
     ) -> Result<()> {
         let mint = &ctx.accounts.mint;
         let from = &ctx.accounts.from_account;
@@ -193,56 +180,39 @@ pub mod confidential_token {
             ConfidentialTokenError::ComputeSignerMismatch
         );
 
-        emit_binary_op(
+        let new_from_handle = compute_binary_op(
+            &ctx.accounts.owner,
             &ctx.accounts.zama_event_authority,
             &ctx.accounts.zama_program,
             &ctx.accounts.compute_signer,
+            &ctx.accounts.from_account,
             ctx.accounts.from_current_compute_acl.to_account_info(),
             FheBinaryOpCode::Sub,
             from.balance_handle,
             ctx.accounts.amount_compute_acl.to_account_info(),
             amount_handle,
-            new_from_handle,
+            ctx.accounts.from_output_acl.to_account_info(),
             mint.key(),
             ctx.bumps.compute_signer,
+            &ctx.accounts.system_program,
+            from_nonce_sequence,
         )?;
-        emit_binary_op(
+        let new_to_handle = compute_binary_op(
+            &ctx.accounts.owner,
             &ctx.accounts.zama_event_authority,
             &ctx.accounts.zama_program,
             &ctx.accounts.compute_signer,
+            &ctx.accounts.to_account,
             ctx.accounts.to_current_compute_acl.to_account_info(),
             FheBinaryOpCode::Add,
             to.balance_handle,
             ctx.accounts.amount_compute_acl.to_account_info(),
             amount_handle,
-            new_to_handle,
+            ctx.accounts.to_output_acl.to_account_info(),
             mint.key(),
             ctx.bumps.compute_signer,
-        )?;
-
-        bind_token_account_acl(
-            &ctx.accounts.owner,
-            mint,
-            &ctx.accounts.compute_signer,
-            &ctx.accounts.from_account,
-            ctx.accounts.from_output_acl.to_account_info(),
-            &ctx.accounts.zama_event_authority,
-            &ctx.accounts.zama_program,
-            &ctx.accounts.system_program,
-            from_nonce_sequence,
-            new_from_handle,
-        )?;
-        bind_token_account_acl(
-            &ctx.accounts.owner,
-            mint,
-            &ctx.accounts.compute_signer,
-            &ctx.accounts.to_account,
-            ctx.accounts.to_output_acl.to_account_info(),
-            &ctx.accounts.zama_event_authority,
-            &ctx.accounts.zama_program,
             &ctx.accounts.system_program,
             to_nonce_sequence,
-            new_to_handle,
         )?;
 
         let from = &mut ctx.accounts.from_account;
@@ -424,28 +394,47 @@ fn current_balance_nonce_sequence(token_account: &ConfidentialTokenAccount) -> R
         .ok_or(ConfidentialTokenError::AclNonceOverflow.into())
 }
 
-fn emit_binary_op<'info>(
+fn compute_binary_op<'info>(
+    payer: &Signer<'info>,
     zama_event_authority: &UncheckedAccount<'info>,
     zama_program: &Program<'info, ZamaHost>,
     compute_signer: &UncheckedAccount<'info>,
+    token_account: &Account<'info, ConfidentialTokenAccount>,
     lhs_acl_record: AccountInfo<'info>,
     op: FheBinaryOpCode,
     lhs: [u8; 32],
     rhs_acl_record: AccountInfo<'info>,
     rhs: [u8; 32],
-    result: [u8; 32],
+    output_acl_record: AccountInfo<'info>,
     mint: Pubkey,
     compute_signer_bump: u8,
-) -> Result<()> {
-    let bump = [compute_signer_bump];
-    let signer_seeds: &[&[&[u8]]] = &[&[b"fhe-compute", mint.as_ref(), &bump]];
+    system_program: &Program<'info, System>,
+    output_nonce_sequence: u64,
+) -> Result<[u8; 32]> {
+    let compute_bump = [compute_signer_bump];
+    let token_account_bump = [token_account.bump];
+    let compute_signer_seeds: &[&[u8]] = &[b"fhe-compute", mint.as_ref(), &compute_bump];
+    let token_account_seeds: &[&[u8]] = &[
+        b"token-account",
+        token_account.mint.as_ref(),
+        token_account.owner.as_ref(),
+        &token_account_bump,
+    ];
+    let signer_seeds: &[&[&[u8]]] = &[compute_signer_seeds, token_account_seeds];
+    let output_acl_record_for_read = output_acl_record.clone();
+    let token_account_key = token_account.key();
+    let output_nonce_key = balance_nonce_key(mint, token_account_key);
     cpi::fhe_binary_op(
         CpiContext::new_with_signer(
             zama_program.to_account_info(),
             FheBinaryOp {
+                payer: payer.to_account_info(),
                 compute_subject: compute_signer.to_account_info(),
+                app_account_authority: token_account.to_account_info(),
                 lhs_acl_record,
                 rhs_acl_record,
+                output_acl_record,
+                system_program: system_program.to_account_info(),
                 event_authority: zama_event_authority.to_account_info(),
                 program: zama_program.to_account_info(),
             },
@@ -455,8 +444,29 @@ fn emit_binary_op<'info>(
         lhs,
         rhs,
         false,
-        result,
-    )
+        lhs[30],
+        output_nonce_key,
+        output_nonce_sequence,
+        mint,
+        token_account_key,
+        balance_label(),
+        vec![
+            AclSubjectEntry {
+                pubkey: token_account.owner,
+                permission: AclPermission::UserDecrypt,
+            },
+            AclSubjectEntry {
+                pubkey: compute_signer.key(),
+                permission: AclPermission::Compute,
+            },
+        ],
+        false,
+    )?;
+
+    let data = output_acl_record_for_read.try_borrow_data()?;
+    let mut data_slice: &[u8] = &data;
+    let record = zama_host::AclRecord::try_deserialize(&mut data_slice)?;
+    Ok(record.handle)
 }
 
 fn emit_trivial_encrypt<'info>(

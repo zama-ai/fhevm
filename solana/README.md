@@ -118,6 +118,8 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 - [x] Canonical confidential token scenario covers wrap, transfer, current decrypt, historical
       decrypt, and expected failures.
 - [x] Compute-time ACL is enforced by `zama-host::fhe_binary_op` before event emission.
+- [x] Computed output handles are born inside `zama-host`; token instructions pass output ACL
+      record accounts, not caller-chosen output handles.
 - [x] Keyed-nonce ACL records avoid deriving Solana account addresses from opaque handles.
 - [x] User decrypt is modeled with signed authorization plus ACL record verification.
 - [x] Current and historical balance decrypt are both modeled when the relevant ACL record still
@@ -284,10 +286,15 @@ In this Solana PoC:
 confidential-token
   -> CPI zama-host::fhe_binary_op(...)
        checks operand ACL records
+       derives the output handle
+       initializes the output ACL record
        emits typed Anchor event
 ```
 
-The app program does not perform a separate pre-check for normal compute. It passes operand ACL accounts to `zama-host`, and `zama-host::fhe_binary_op` rejects the operation before emitting the FHE event if either operand is not allowed for the compute signer.
+The app program does not perform a separate pre-check for normal compute. It passes operand ACL
+accounts and the predeclared output ACL record account to `zama-host`. `zama-host::fhe_binary_op`
+rejects the operation before emitting the FHE event if either operand is not allowed for the compute
+signer. If checks pass, `zama-host` derives the result handle and stores it in the output ACL record.
 
 ## ACL Account Model
 
@@ -307,6 +314,23 @@ ACL record PDA
     encrypted_value_label = "balance"
     subjects              = [Alice, compute_signer]
 ```
+
+For computed outputs, the address is known before execution but the handle is not:
+
+```text
+before tx:
+  A7 address = PDA("acl-record", nonce_key, 7)
+  h7 is unknown
+
+during zama-host::fhe_binary_op:
+  h7 = H("FHE_comp", op, lhs, rhs, scalar, zama_host, chain_id, previous_bank_hash, timestamp)
+  A7.handle = h7
+  A7.subjects = [Alice, compute_signer]
+```
+
+The PoC uses the previous slot hash when LiteSVM or the cluster exposes it. Local bootstrap tests can
+fall back to zero when no prior slot hash exists; this is test glue, not the intended production
+entropy source.
 
 Writing an ACL record requires the app account to sign:
 
@@ -373,22 +397,20 @@ confidential-token::confidential_transfer(amount = hX)
   |      checks:
   |        A0 stores hA0 and subjects includes compute_signer
   |        X  stores hX  and subjects includes compute_signer
-  |      emits:
+  |      creates A1 and stores:
   |        hA1 = FHE.sub(hA0, hX)
+  |        subjects = [Alice, compute_signer]
+  |      emits FHE.sub(hA0, hX) -> hA1
   |
   +--> CPI zama-host::fhe_binary_op(Add)
   |      compute_subject = compute_signer
   |      checks:
   |        B0 stores hB0 and subjects includes compute_signer
   |        X  stores hX  and subjects includes compute_signer
-  |      emits:
+  |      creates B1 and stores:
   |        hB1 = FHE.add(hB0, hX)
-  |
-  +--> CPI zama-host::bind_acl_record(...)
-  |      creates A1 for hA1 with subjects [Alice, compute_signer]
-  |
-  +--> CPI zama-host::bind_acl_record(...)
-  |      creates B1 for hB1 with subjects [Bob, compute_signer]
+  |        subjects = [Bob, compute_signer]
+  |      emits FHE.add(hB0, hX) -> hB1
   |
   +--> stores:
          AliceTokenAccount.balance_handle = hA1
@@ -437,12 +459,10 @@ wrap_usdc(amount)
   |      checks:
   |        current balance ACL stores hA0 and allows compute_signer
   |        amount ACL stores hDeposit and allows compute_signer
-  |      emits:
+  |      creates one output ACL record and stores:
   |        hA1 = FHE.add(hA0, hDeposit)
-  |
-  +--> CPI zama-host::bind_acl_record(...)
-         creates one output ACL record for hA1:
-           subjects = [Alice, compute_signer]
+  |        subjects = [Alice, compute_signer]
+  |      emits FHE.add(hA0, hDeposit) -> hA1
 ```
 
 The deposit amount is public in this slice because it uses `trivial_encrypt(amount)`. A later encrypted-input path should replace that step with `input_verified(...)` and the real ZKPoK/input verifier boundary.
@@ -649,6 +669,7 @@ Enc(100) = hX
 LiteSVM confidential_transfer(hX)
   -> emits FHE.sub(hA0, hX) -> hA1
   -> emits FHE.add(hB0, hX) -> hB1
+  -> creates output ACL records for hA1/hB1
   -> emits output ACL events for hA1/hB1
 
 host-listener::solana_adapter
@@ -676,6 +697,7 @@ tfhe-worker
 LiteSVM confidential_transfer(hX)
   -> emits FHE.sub(hA0, hX) -> hA1
   -> emits FHE.add(hB0, hX) -> hB1
+  -> creates output ACL records for hA1/hB1
 
 test decrypt
   -> hA1 = 25

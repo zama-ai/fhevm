@@ -45,8 +45,6 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
     let mut fixture = token_fixture();
 
     let amount_handle = typed_fast_handle(0x09);
-    let new_alice_handle = typed_fast_handle(0x0a);
-    let new_bob_handle = typed_fast_handle(0x0b);
 
     seed_real_fast_ciphertexts(
         &harness.pool,
@@ -60,15 +58,15 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
 
     authorize_input_compute_acl(&mut fixture, amount_handle);
     let output = transfer_output_accounts(&fixture, 1);
-    let transfer_ix = transfer_ix(
-        &fixture,
-        output,
-        amount_handle,
-        new_alice_handle,
-        new_bob_handle,
-    );
+    let transfer_ix = transfer_ix(&fixture, output, amount_handle);
     let (meta, account_keys, signature) =
         send_with_meta(&mut fixture.svm, &fixture.alice, transfer_ix);
+    let new_alice_handle = read_acl_record(&fixture.svm, output.alice)
+        .expect("expected Alice output ACL")
+        .handle;
+    let new_bob_handle = read_acl_record(&fixture.svm, output.bob)
+        .expect("expected Bob output ACL")
+        .handle;
     let host_events = host_events(&meta, &account_keys, fixture.host_program_id);
     assert_eq!(count_tfhe_events(&host_events), 2);
     assert_eq!(count_acl_events(&host_events), 4);
@@ -143,8 +141,6 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
     let mut fixture = token_fixture();
 
     let amount_handle = typed_fast_handle(0x19);
-    let new_alice_handle = typed_fast_handle(0x1a);
-    let new_bob_handle = typed_fast_handle(0x1b);
 
     let initial_ixs = vec![
         trivial_encrypt_ix(
@@ -195,15 +191,15 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
 
     authorize_input_compute_acl(&mut fixture, amount_handle);
     let output = transfer_output_accounts(&fixture, 1);
-    let transfer_ix = transfer_ix(
-        &fixture,
-        output,
-        amount_handle,
-        new_alice_handle,
-        new_bob_handle,
-    );
+    let transfer_ix = transfer_ix(&fixture, output, amount_handle);
     let (meta, account_keys, signature) =
         send_with_meta(&mut fixture.svm, &fixture.alice, transfer_ix);
+    let new_alice_handle = read_acl_record(&fixture.svm, output.alice)
+        .expect("expected Alice output ACL")
+        .handle;
+    let new_bob_handle = read_acl_record(&fixture.svm, output.bob)
+        .expect("expected Bob output ACL")
+        .handle;
     let transfer_events = host_events(&meta, &account_keys, fixture.host_program_id);
     assert_eq!(count_tfhe_events(&transfer_events), 2);
     assert_eq!(count_acl_events(&transfer_events), 4);
@@ -294,17 +290,12 @@ fn solana_user_decrypt_acl_invariants_match_evm_semantics() {
     let mut fixture = token_fixture();
     let amount_handle = typed_fast_handle(0x39);
     authorize_input_compute_acl(&mut fixture, amount_handle);
-    let new_alice_handle = typed_fast_handle(0x3a);
-    let new_bob_handle = typed_fast_handle(0x3b);
     let output = transfer_output_accounts(&fixture, 1);
-    let transfer_ix = transfer_ix(
-        &fixture,
-        output,
-        amount_handle,
-        new_alice_handle,
-        new_bob_handle,
-    );
+    let transfer_ix = transfer_ix(&fixture, output, amount_handle);
     send_with_meta(&mut fixture.svm, &fixture.alice, transfer_ix);
+    let new_alice_handle = read_acl_record(&fixture.svm, output.alice)
+        .expect("expected Alice output ACL")
+        .handle;
 
     let valid = signed_user_decrypt_request(
         &fixture.alice,
@@ -676,8 +667,6 @@ fn transfer_ix(
     fixture: &TokenFixture,
     output: TransferOutputAccounts,
     amount_handle: [u8; 32],
-    new_from_handle: [u8; 32],
-    new_to_handle: [u8; 32],
 ) -> Instruction {
     Instruction {
         program_id: fixture.token_program_id,
@@ -697,12 +686,7 @@ fn transfer_ix(
             system_program: system_program::ID,
         }
         .to_account_metas(None),
-        data: token::instruction::ConfidentialTransfer {
-            amount_handle,
-            new_from_handle,
-            new_to_handle,
-        }
-        .data(),
+        data: token::instruction::ConfidentialTransfer { amount_handle }.data(),
     }
 }
 
@@ -991,6 +975,12 @@ fn kms_like_user_decrypt_check(svm: &LiteSVM, request: &UserDecryptRequest) -> b
 
 fn record_subjects(record: &AclRecord) -> Vec<Pubkey> {
     record.subjects[..record.subject_count as usize].to_vec()
+}
+
+fn read_acl_record(svm: &LiteSVM, address: Pubkey) -> Option<AclRecord> {
+    let raw_account = svm.get_account(&address)?;
+    let mut data = raw_account.data.as_slice();
+    AclRecord::try_deserialize(&mut data).ok()
 }
 
 fn typed_fast_handle(seed: u8) -> [u8; 32] {
