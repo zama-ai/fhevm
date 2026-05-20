@@ -3,12 +3,15 @@ import type { ContractTransactionResponse } from 'ethers';
 import { ethers } from 'hardhat';
 
 import { aclAddress, createInstances } from '../instance';
+import { isLiveNetwork } from '../network';
 import { getSigners, initSigners } from '../signers';
 import { delegatedUserDecryptSingleHandle, waitForBlock } from '../utils';
 
 const NOT_ALLOWED_ON_HOST_ACL = 'not_allowed_on_host_acl';
 const DELEGATION_EXPIRY_SECONDS = 75;
+const COMPAT_DELEGATION_EXPIRY_SECONDS = 3660;
 const DELEGATION_EXPIRY_POLL_MS = 2_000;
+const EXPIRATION_DATE_BEFORE_ONE_HOUR_SELECTOR = ethers.id('ExpirationDateBeforeOneHour()').slice(0, 10);
 // Default delegation lifetime for tests that don't intentionally expire mid-run.
 const ONE_DAY_SECONDS = 24 * 60 * 60;
 // Mocha timeout for tests that wait through one or more coprocessor propagation
@@ -37,6 +40,26 @@ const waitForDelegationExpiry = async (expirationTimestamp: number) => {
   }
 };
 
+const expireDelegation = async (expirationTimestamp: number) => {
+  if (!isLiveNetwork()) {
+    const latestBlock = await ethers.provider.getBlock('latest');
+    const secondsUntilExpiry = Math.max(0, expirationTimestamp - latestBlock!.timestamp);
+    await ethers.provider.send('evm_increaseTime', [secondsUntilExpiry + 1]);
+    await ethers.provider.send('evm_mine');
+  }
+  await waitForDelegationExpiry(expirationTimestamp);
+};
+
+const revertSelector = (error: unknown): string | undefined => {
+  if (typeof error !== 'object' || error === null) {
+    return undefined;
+  }
+  const data = (error as { data?: unknown; revert?: { data?: unknown } }).data;
+  const revertData = (error as { revert?: { data?: unknown } }).revert?.data;
+  const selector = typeof data === 'string' ? data : revertData;
+  return typeof selector === 'string' ? selector.slice(0, 10) : undefined;
+};
+
 describe('Delegated user decryption', function () {
   before(async function () {
     await initSigners(5);
@@ -54,6 +77,28 @@ describe('Delegated user decryption', function () {
     this.smartWallet = await smartWalletFactory.connect(this.signers.bob).deploy(this.signers.bob.address);
     await this.smartWallet.waitForDeployment();
     this.smartWalletAddress = await this.smartWallet.getAddress();
+
+    this.getDelegationExpirationTimestamp = async (delegate: string, contractAddress: string) => {
+      const latestBlock = await ethers.provider.getBlock('latest');
+      const shortExpirationTimestamp = latestBlock!.timestamp + DELEGATION_EXPIRY_SECONDS;
+
+      try {
+        // Probe whether the deployed ACL accepts short expiries before sending a tx.
+        await this.smartWallet
+          .connect(this.signers.bob)
+          .delegateUserDecryption.staticCall(delegate, contractAddress, shortExpirationTimestamp);
+        return shortExpirationTimestamp;
+      } catch (error) {
+        // Live v0.11 deployments can require >1h expiries; avoid waiting that long.
+        if (revertSelector(error) !== EXPIRATION_DATE_BEFORE_ONE_HOUR_SELECTOR) {
+          throw error;
+        }
+        if (isLiveNetwork()) {
+          return undefined;
+        }
+        return latestBlock!.timestamp + COMPAT_DELEGATION_EXPIRY_SECONDS;
+      }
+    };
 
     // Alice mints tokens to herself.
     const mintAmount = 1000000n;
@@ -339,14 +384,20 @@ describe('Delegated user decryption', function () {
     });
 
     it('should reject when delegation has expired', async function () {
-      const latestBlock = await ethers.provider.getBlock('latest');
-      const expirationTimestamp = latestBlock!.timestamp + DELEGATION_EXPIRY_SECONDS;
+      const expirationTimestamp = await this.getDelegationExpirationTimestamp(
+        this.signers.eve.address,
+        this.tokenAddress,
+      );
+      if (expirationTimestamp === undefined) {
+        this.skip();
+      }
+
       const tx = await this.smartWallet
         .connect(this.signers.bob)
         .delegateUserDecryption(this.signers.eve.address, this.tokenAddress, expirationTimestamp);
       await tx.wait();
 
-      await waitForDelegationExpiry(expirationTimestamp);
+      await expireDelegation(expirationTimestamp);
 
       const currentBlock = await ethers.provider.getBlockNumber();
       await waitForBlock(currentBlock + PROPAGATION_BLOCKS);
@@ -548,14 +599,20 @@ describe('Delegated user decryption', function () {
     describe('negative paths', function () {
       it('rejects after the wildcard delegation expires', async function () {
         this.timeout(SLOW_TEST_TIMEOUT_MS);
-        const latestBlock = await ethers.provider.getBlock('latest');
-        const expirationTimestamp = latestBlock!.timestamp + DELEGATION_EXPIRY_SECONDS;
+        const expirationTimestamp = await this.getDelegationExpirationTimestamp(
+          this.signers.eve.address,
+          this.wildcardAddress,
+        );
+        if (expirationTimestamp === undefined) {
+          this.skip();
+        }
+
         const tx = await this.smartWallet
           .connect(this.signers.bob)
           .delegateUserDecryption(this.signers.eve.address, this.wildcardAddress, expirationTimestamp);
         await tx.wait();
 
-        await waitForDelegationExpiry(expirationTimestamp);
+        await expireDelegation(expirationTimestamp);
         await waitForBlock((await ethers.provider.getBlockNumber()) + PROPAGATION_BLOCKS);
 
         const kp = this.instances.eve.generateKeypair();
