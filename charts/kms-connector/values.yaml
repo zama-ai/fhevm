@@ -163,6 +163,7 @@ kmsConnectorGwListener:
         port: monitoring
       initialDelaySeconds: 10
       periodSeconds: 10
+      timeoutSeconds: 5
     readiness:
       enabled: true
       httpGet:
@@ -170,6 +171,7 @@ kmsConnectorGwListener:
         port: monitoring
       initialDelaySeconds: 5
       periodSeconds: 10
+      timeoutSeconds: 5
 
   nodeSelector:
   affinity:
@@ -243,6 +245,7 @@ kmsConnectorKmsWorker:
         port: monitoring
       initialDelaySeconds: 10
       periodSeconds: 10
+      timeoutSeconds: 5
     readiness:
       enabled: true
       httpGet:
@@ -250,6 +253,7 @@ kmsConnectorKmsWorker:
         port: monitoring
       initialDelaySeconds: 5
       periodSeconds: 10
+      timeoutSeconds: 5
 
   nodeSelector:
   affinity:
@@ -326,6 +330,7 @@ kmsConnectorTxSender:
         port: monitoring
       initialDelaySeconds: 10
       periodSeconds: 10
+      timeoutSeconds: 5
     readiness:
       enabled: true
       httpGet:
@@ -333,6 +338,7 @@ kmsConnectorTxSender:
         port: monitoring
       initialDelaySeconds: 5
       periodSeconds: 10
+      timeoutSeconds: 5
 
   nodeSelector:
   affinity:
