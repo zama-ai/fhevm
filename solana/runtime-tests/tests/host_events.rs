@@ -556,6 +556,164 @@ fn wrap_usdc_escrows_spl_tokens_and_rotates_confidential_balance() {
 }
 
 #[test]
+fn confidential_token_e2e_wrap_transfer_and_decrypts_current_and_historical_balances() {
+    let mut fixture = token_fixture();
+
+    // 1. Alice wraps underlying USDC into her confidential balance.
+    let wrap_amount = 100_000_000;
+    let wrap_amount_handle = [9; 32];
+    let alice_after_wrap = [5; 32];
+    authorize_input_compute_acl(&mut fixture, wrap_amount_handle);
+    let wrap_output = wrap_output_accounts(&fixture, 1);
+    let wrap_ix = wrap_usdc_ix(
+        &fixture,
+        wrap_output,
+        wrap_amount,
+        wrap_amount_handle,
+        alice_after_wrap,
+    );
+    send(&mut fixture.svm, &fixture.alice, wrap_ix);
+
+    let alice_account_after_wrap = token_account(&fixture.svm, fixture.alice_token);
+    assert_eq!(alice_account_after_wrap.balance_handle, alice_after_wrap);
+    assert_eq!(
+        alice_account_after_wrap.balance_acl_record,
+        wrap_output.balance
+    );
+    assert_eq!(alice_account_after_wrap.next_balance_nonce_sequence, 2);
+    assert_balance_acl(
+        &fixture.svm,
+        wrap_output.balance,
+        fixture.mint.pubkey(),
+        fixture.alice_token,
+        1,
+        alice_after_wrap,
+        &[fixture.alice.pubkey(), fixture.compute_signer],
+    );
+
+    // 2. Alice transfers a confidential amount to Bob.
+    let transfer_amount_handle = [8; 32];
+    let alice_after_transfer = [6; 32];
+    let bob_after_transfer = [7; 32];
+    authorize_input_compute_acl(&mut fixture, transfer_amount_handle);
+    let transfer_output = TransferOutputAccounts {
+        alice: balance_acl_record_address(
+            fixture.host_program_id,
+            fixture.mint.pubkey(),
+            fixture.alice_token,
+            2,
+        ),
+        bob: balance_acl_record_address(
+            fixture.host_program_id,
+            fixture.mint.pubkey(),
+            fixture.bob_token,
+            1,
+        ),
+    };
+    let transfer_ix = transfer_ix_with_current_acl(
+        &fixture,
+        wrap_output.balance,
+        fixture.bob_current_compute_acl,
+        transfer_output,
+        transfer_amount_handle,
+        alice_after_transfer,
+        bob_after_transfer,
+    );
+    send(&mut fixture.svm, &fixture.alice, transfer_ix);
+
+    let alice_account_after_transfer = token_account(&fixture.svm, fixture.alice_token);
+    let bob_account_after_transfer = token_account(&fixture.svm, fixture.bob_token);
+    assert_eq!(
+        alice_account_after_transfer.balance_handle,
+        alice_after_transfer
+    );
+    assert_eq!(
+        alice_account_after_transfer.balance_acl_record,
+        transfer_output.alice
+    );
+    assert_eq!(alice_account_after_transfer.next_balance_nonce_sequence, 3);
+    assert_eq!(
+        bob_account_after_transfer.balance_handle,
+        bob_after_transfer
+    );
+    assert_eq!(
+        bob_account_after_transfer.balance_acl_record,
+        transfer_output.bob
+    );
+    assert_eq!(bob_account_after_transfer.next_balance_nonce_sequence, 2);
+
+    // 3. Alice can decrypt her current balance through the current ACL record.
+    let alice_current_request =
+        signed_current_balance_user_decrypt_request(&fixture, fixture.alice_token, &fixture.alice);
+    assert_eq!(
+        alice_current_request.handles[0].handle,
+        alice_after_transfer
+    );
+    assert_eq!(
+        alice_current_request.handles[0].acl_record,
+        transfer_output.alice
+    );
+    assert!(kms_like_user_decrypt_check(
+        &fixture.svm,
+        &alice_current_request
+    ));
+
+    // 4. Alice can still decrypt the historical wrapped balance while that ACL record exists.
+    let alice_historical_request = signed_user_decrypt_request(
+        &fixture,
+        &fixture.alice,
+        vec![UserDecryptHandleEntry {
+            handle: alice_after_wrap,
+            owner: fixture.alice.pubkey(),
+            acl_record: wrap_output.balance,
+        }],
+    );
+    assert!(kms_like_user_decrypt_check(
+        &fixture.svm,
+        &alice_historical_request
+    ));
+
+    // 5. Bob can decrypt his current balance through Bob's ACL record.
+    let bob_current_request =
+        signed_current_balance_user_decrypt_request(&fixture, fixture.bob_token, &fixture.bob);
+    assert_eq!(bob_current_request.handles[0].handle, bob_after_transfer);
+    assert_eq!(
+        bob_current_request.handles[0].acl_record,
+        transfer_output.bob
+    );
+    assert!(kms_like_user_decrypt_check(
+        &fixture.svm,
+        &bob_current_request
+    ));
+
+    // 6. The same request shape rejects spoofed owner, ACL record, handle, and domain.
+    let mut alice_claims_bob_balance = bob_current_request.clone();
+    alice_claims_bob_balance.authorization.user = fixture.alice.pubkey();
+    alice_claims_bob_balance.signature = fixture.alice.sign_message(&authorization_payload_bytes(
+        &alice_claims_bob_balance.authorization,
+    ));
+    assert!(!kms_like_user_decrypt_check(
+        &fixture.svm,
+        &alice_claims_bob_balance
+    ));
+
+    let mut wrong_acl_record = alice_current_request.clone();
+    wrong_acl_record.handles[0].acl_record = transfer_output.bob;
+    assert!(!kms_like_user_decrypt_check(
+        &fixture.svm,
+        &wrong_acl_record
+    ));
+
+    let mut wrong_handle = alice_current_request.clone();
+    wrong_handle.handles[0].handle = [99; 32];
+    assert!(!kms_like_user_decrypt_check(&fixture.svm, &wrong_handle));
+
+    let mut wrong_domain = alice_current_request;
+    wrong_domain.authorization.allowed_acl_domain_keys = vec![Pubkey::new_unique()];
+    assert!(!kms_like_user_decrypt_check(&fixture.svm, &wrong_domain));
+}
+
+#[test]
 fn confidential_transfer_budget_snapshot() {
     let mut fixture = token_fixture();
     authorize_input_compute_acl(&mut fixture, [9; 32]);
