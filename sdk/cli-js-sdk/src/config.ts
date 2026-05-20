@@ -21,22 +21,6 @@ export const DEFAULT_TESTNET_RPC_URL =
 export const TESTNET_RELAYER_SDK_TEST_CONTRACT: Hex =
   "0x587CefedEA1dD8b937254184B30625a819B447d5";
 
-const locateSdkWasmFile = (file: string): URL => {
-  if (file.startsWith("tfhe") || file.startsWith("startWorkers")) {
-    return new URL(
-      `../node_modules/@fhevm/sdk/wasm/tfhe/${file}`,
-      import.meta.url,
-    );
-  }
-  if (file.startsWith("kms_lib")) {
-    return new URL(
-      `../node_modules/@fhevm/sdk/wasm/tkms/${file}`,
-      import.meta.url,
-    );
-  }
-  return new URL(`../node_modules/@fhevm/sdk/wasm/${file}`, import.meta.url);
-};
-
 export type ClientOptions = Readonly<{
   network: NetworkName;
   relayerUrl?: string;
@@ -74,10 +58,7 @@ export const resolveRpcUrl = (rpcUrl?: string): string =>
 
 export const createClients = (options: ClientOptions) => {
   if (!hasFhevmRuntimeConfig()) {
-    setFhevmRuntimeConfig({
-      locateFile: locateSdkWasmFile,
-      singleThread: true,
-    });
+    setFhevmRuntimeConfig({ singleThread: true });
   }
 
   const chain = resolveChain(options);
