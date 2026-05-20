@@ -345,7 +345,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
     }
 
     /**
-     * @dev Wildcard delegation is active at the exact expiration timestamp and inactive one second later.
+     * @dev Wildcard delegation is active before the expiration timestamp and inactive at that timestamp.
      */
     function test_WildcardDelegationExpiresAtTimestamp(
         bytes32 handle,
@@ -364,11 +364,12 @@ contract ACLTest is HostContractsDeployerTestUtils {
         _allowHandle(handle, sender);
         _allowHandle(handle, contractAddress);
 
-        /// @dev At the exact expiration timestamp, the delegation should still be active.
-        vm.warp(expirationDate);
+        vm.warp(uint256(expirationDate) - 1);
         vm.assertTrue(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
 
-        /// @dev One second after the expiration timestamp, the delegation should be inactive.
+        vm.warp(expirationDate);
+        vm.assertFalse(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
+
         vm.warp(uint256(expirationDate) + 1);
         vm.assertFalse(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
     }
