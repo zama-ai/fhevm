@@ -33,6 +33,40 @@ coprocessor/fhevm-engine/tfhe-worker/src/tests/solana_poc.rs
   Worker-backed end-to-end tests with real small TFHE ciphertexts.
 ```
 
+## Handoff Path
+
+Use this order when picking up the branch:
+
+```text
+1. Run it
+   cd solana
+   anchor build
+   cargo test --workspace
+
+2. Read the flow
+   Start with "Global Flow", then "Confidential Transfer", then "User Decrypt Shape".
+
+3. Change the PoC
+   App behavior usually belongs in confidential-token.
+   Host-chain FHEVM semantics usually belong in zama-host.
+   Event normalization belongs in host-listener/src/solana_adapter.rs.
+   Worker/KMS-shaped checks belong in tfhe-worker/src/tests/solana_poc.rs.
+
+4. Keep the negative tests
+   Every new happy path should have a wrong signer, wrong ACL record, wrong handle,
+   or wrong subject test when the feature touches authorization.
+```
+
+Known gaps for the next iteration:
+
+```text
+input handles still use PoC glue instead of a real Solana input verifier path
+transient allow semantics are not modeled yet
+account growth / rent cleanup is intentionally unresolved
+historical handle indexing is app/indexer responsibility for now
+KMS verification is modeled in tests, not wired to the real KMS connector
+```
+
 ## Global Flow
 
 ```text
@@ -581,7 +615,7 @@ Solana program build and runtime tests:
 
 ```bash
 cd solana
-NO_DNA=1 anchor build
+anchor build
 cargo test --workspace
 ```
 
