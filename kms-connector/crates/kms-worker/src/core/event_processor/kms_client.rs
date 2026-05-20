@@ -7,10 +7,10 @@ use crate::{
 };
 use alloy::primitives::U256;
 use anyhow::anyhow;
-use connector_utils::{
-    conn::{CONNECTION_RETRY_DELAY, CONNECTION_RETRY_NUMBER},
-    types::{KmsGrpcRequest, KmsGrpcResponse, db::EventType, request_id_to_u256, u256_to_u32},
+use connector_utils::types::{
+    KmsGrpcRequest, KmsGrpcResponse, db::EventType, request_id_to_u256, u256_to_u32,
 };
+use std::time::Duration;
 use kms_grpc::{
     kms::v1::{
         CrsGenRequest, KeyGenPreprocRequest, KeyGenRequest, PublicDecryptionRequest, RequestId,
@@ -48,19 +48,32 @@ impl KmsClient {
     pub async fn connect(config: &Config) -> anyhow::Result<Self> {
         let mut channels = vec![];
         for (i, kms_shard_endpoint) in config.kms_core_endpoints.iter().enumerate() {
-            channels.push(KmsClient::connect_single_shard(i, kms_shard_endpoint).await?);
+            channels.push(
+                KmsClient::connect_single_shard(
+                    i,
+                    kms_shard_endpoint,
+                    config.kms_core_startup_retry_number,
+                    config.kms_core_startup_retry_delay,
+                )
+                .await?,
+            );
         }
 
         Ok(Self::new(channels, config.grpc_request_retries))
     }
 
-    async fn connect_single_shard(shard_id: usize, endpoint: &str) -> anyhow::Result<Channel> {
+    async fn connect_single_shard(
+        shard_id: usize,
+        endpoint: &str,
+        retry_number: usize,
+        retry_delay: Duration,
+    ) -> anyhow::Result<Channel> {
         let grpc_endpoint = Channel::from_shared(endpoint.to_string())
             .map_err(|e| anyhow!("Invalid KMS Core shard endpoint #{shard_id} {endpoint}: {e}"))?;
 
-        for i in 1..=CONNECTION_RETRY_NUMBER {
+        for i in 1..=retry_number {
             info!(
-                "Attempting connection to KMS Core shard #{shard_id}... ({i}/{CONNECTION_RETRY_NUMBER})"
+                "Attempting connection to KMS Core shard #{shard_id}... ({i}/{retry_number})"
             );
 
             match grpc_endpoint.connect().await {
@@ -73,8 +86,8 @@ impl KmsClient {
                 }
             }
 
-            if i != CONNECTION_RETRY_NUMBER {
-                tokio::time::sleep(CONNECTION_RETRY_DELAY).await;
+            if i != retry_number {
+                tokio::time::sleep(retry_delay).await;
             }
         }
 

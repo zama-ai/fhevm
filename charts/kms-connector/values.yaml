@@ -211,6 +211,40 @@ kmsConnectorKmsWorker:
 
   # Additional environment variables
   env:
+    - name: KMS_CONNECTOR_KMS_CORE_STARTUP_RETRY_NUMBER
+      value: "15"
+    - name: KMS_CONNECTOR_KMS_CORE_STARTUP_RETRY_DELAY
+      value: "4s"
+
+  # Distributed tracing (inherits from commonConfig but can be overridden)
+# -----------------------------------------------------------------------------
+# Communicates with KMS cores to perform cryptographic operations
+kmsConnectorKmsWorker:
+  enabled: true
+  nameOverride:
+
+  image:
+    name: ghcr.io/zama-ai/fhevm/kms-connector/kms-worker
+    tag: v0.10.0
+
+  replicas: 1
+
+  # Component-specific configuration
+  config:
+    # KMS core endpoints for communication
+    kmsCoreEndpoints: "http://kms-core:50051"
+
+    # List of host chain RPC node endpoints, chain ids, and ACL contract addresses
+    hostChains:
+      - url: "http://host-node:8545"
+        chainId: 12345
+        aclAddress: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
+
+    # Override commonConfig.gatewayUrl if needed
+    # gatewayUrl:
+
+  # Additional environment variables
+  env:
 
   # Distributed tracing (inherits from commonConfig but can be overridden)
   tracing:

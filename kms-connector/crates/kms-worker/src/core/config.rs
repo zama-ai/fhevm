@@ -71,6 +71,12 @@ pub struct Config {
     /// Timeout to connect to a S3 bucket.
     #[serde(with = "humantime_serde", default = "default_s3_connect_timeout")]
     pub s3_connect_timeout: Duration,
+    /// Number of retries when connecting to a KMS Core shard at startup.
+    #[serde(default = "default_kms_core_startup_retry_number")]
+    pub kms_core_startup_retry_number: usize,
+    /// Delay between KMS Core startup connection attempts.
+    #[serde(with = "humantime_serde", default = "default_kms_core_startup_retry_delay")]
+    pub kms_core_startup_retry_delay: Duration,
 
     /// The service name used for tracing.
     #[serde(default = "default_service_name")]
@@ -165,6 +171,14 @@ fn default_s3_connect_timeout() -> Duration {
     Duration::from_secs(3)
 }
 
+fn default_kms_core_startup_retry_number() -> usize {
+    5  // matches the legacy CONNECTION_RETRY_NUMBER constant
+}
+
+fn default_kms_core_startup_retry_delay() -> Duration {
+    Duration::from_secs(2)  // matches the legacy CONNECTION_RETRY_DELAY constant
+}
+
 impl DeserializeConfig for Config {}
 
 // Default implementation for testing purpose
@@ -192,6 +206,8 @@ impl Default for Config {
             max_decryption_attempts: default_max_decryption_attempts(),
             s3_ciphertext_retrieval_retries: default_s3_ciphertext_retrieval_retries(),
             s3_connect_timeout: default_s3_connect_timeout(),
+            kms_core_startup_retry_number: default_kms_core_startup_retry_number(),
+            kms_core_startup_retry_delay: default_kms_core_startup_retry_delay(),
             service_name: default_service_name(),
             task_limit: default_task_limit(),
             monitoring_endpoint: default_monitoring_endpoint(),
@@ -223,6 +239,8 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS");
             env::remove_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_RETRIES");
             env::remove_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT");
+            env::remove_var("KMS_CONNECTOR_KMS_CORE_STARTUP_RETRY_NUMBER");
+            env::remove_var("KMS_CONNECTOR_KMS_CORE_STARTUP_RETRY_DELAY");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
         }
     }
