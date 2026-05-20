@@ -120,6 +120,10 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 - [x] Compute-time ACL is enforced by `zama-host::fhe_binary_op` before event emission.
 - [x] Computed output handles are born inside `zama-host`; token instructions pass output ACL
       record accounts, not caller-chosen output handles.
+- [x] Generic persistent ACL binding requires an already-authorized source ACL record, matching the
+      EVM rule that only an allowed caller can grant durable access.
+- [x] Token account initialization creates the initial balance handle through a host-owned
+      `trivial_encrypt_and_bind` path, not through caller-supplied handle binding.
 - [x] Keyed-nonce ACL records avoid deriving Solana account addresses from opaque handles.
 - [x] User decrypt is modeled with signed authorization plus ACL record verification.
 - [x] Current and historical balance decrypt are both modeled when the relevant ACL record still
@@ -131,7 +135,8 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 ### Partly Modeled
 
 - [ ] KMS verification is modeled in Rust tests, not wired into the real KMS connector.
-- [ ] Input handles use PoC glue instead of a real Solana input verifier or transciphering path.
+- [ ] Input handles use an explicit `input_verified_and_bind` PoC stand-in instead of a real Solana
+      input verifier or transciphering path.
 - [ ] `fhe_rand` exists in the host and worker-backed tests, but is not yet integrated into the
       confidential token flow.
 - [ ] ACL records are born bound through Anchor `init`; the future predeclared
@@ -332,14 +337,42 @@ The PoC uses the previous slot hash when LiteSVM or the cluster exposes it. Loca
 fall back to zero when no prior slot hash exists; this is test glue, not the intended production
 entropy source.
 
-Writing an ACL record requires the app account to sign:
+Creating a persistent ACL record has two shapes in this PoC.
+
+First birth is owned by a trusted host path:
 
 ```text
-zama-host::bind_acl_record(app_account = AliceTokenAccount, ...)
+zama-host::trivial_encrypt_and_bind(...)
+  creates a trivial-encrypt handle and its first ACL record
+
+zama-host::input_verified_and_bind(...)
+  PoC stand-in for future InputVerifier/transciphering birth
+
+zama-host::fhe_binary_op(...)
+  checks operand ACL records, derives the computed handle, and creates the output ACL record
+```
+
+Generic persistent grants are stricter. `bind_acl_record` requires the caller to already be allowed
+on the handle being granted:
+
+```text
+zama-host::bind_acl_record(handle = h7, authority = Alice, authorizing_acl_record = A7, ...)
 
 requires:
+  A7 is owned by zama-host
+  A7 is the canonical PDA for its stored nonce fields
+  A7.handle == h7
+  A7.subjects contains Alice
   app_account_authority.key == AliceTokenAccount
   app_account_authority.is_signer
+```
+
+This prevents handle laundering:
+
+```text
+Mallory sees Alice's handle h7
+Mallory tries to create M1 storing h7 and subjects = [Mallory]
+zama-host rejects it unless Mallory is already allowed by a canonical ACL record for h7
 ```
 
 For token balances, `confidential-token` signs as:
@@ -348,7 +381,7 @@ For token balances, `confidential-token` signs as:
 PDA("token-account", mint, owner)
 ```
 
-`zama-host` does not know token PDA seeds. It only verifies:
+`zama-host` does not know token PDA seeds. For each ACL record it verifies:
 
 ```text
 the app account pubkey signed
@@ -360,6 +393,33 @@ the requested subject is in subjects[]
 ```
 
 That keeps token-specific semantics inside the token program.
+
+## Initial Balance Birth
+
+The token program does not accept a caller-provided initial balance handle anymore.
+
+```text
+confidential-token::initialize_token_account(initial_balance = 125)
+  |
+  +--> CPI zama-host::trivial_encrypt_and_bind(125)
+  |      app_account = AliceTokenAccount
+  |      output ACL = A0
+  |      subjects = [Alice, compute_signer]
+  |      creates hA0 inside zama-host
+  |
+  +--> stores:
+         AliceTokenAccount.balance_handle = hA0
+         AliceTokenAccount.balance_acl_record = A0
+         AliceTokenAccount.next_balance_nonce_sequence = 1
+```
+
+That keeps the same security rule as computed outputs:
+
+```text
+the host creates the handle
+the host creates the first ACL record
+the app stores the resulting handle/account pointer
+```
 
 ## Confidential Transfer
 
@@ -421,7 +481,8 @@ confidential-token::confidential_transfer(amount = hX)
          BobTokenAccount.next_balance_nonce_sequence = 2
 ```
 
-The amount handle ACL is temporary PoC glue. Today the tests pre-bind:
+The amount handle ACL is temporary PoC glue. Today the tests use `input_verified_and_bind` as an
+explicit placeholder for the future input verifier / transciphering boundary:
 
 ```text
 ACL domain key = Alice
@@ -431,7 +492,9 @@ subjects       = [compute_signer]
 handle         = hX
 ```
 
-The real design still needs the Solana equivalent of transient input authorization from the input verifier path.
+This is deliberately not `bind_acl_record`; the first ACL record for an input handle must come from a
+trusted input path, not from a generic grant API. The real design still needs the Solana equivalent
+of transient input authorization from the input verifier path.
 
 ## cUSDC Wrapper
 
@@ -641,7 +704,7 @@ When Solana ACL events appear in the same transaction as TFHE events, the adapte
 ```text
 tx:
   FHE.add(h0, hDeposit) -> h1
-  bind ACL record allowing h1
+  creates/binds ACL record allowing h1
 
 DB:
   allowed_handles(h1, subject)

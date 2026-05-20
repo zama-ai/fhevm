@@ -471,54 +471,43 @@ fn token_fixture() -> TokenFixture {
     let compute_signer = token::compute_signer_address(mint.pubkey()).0;
     let alice_token = token_account_address(token_program_id, mint.pubkey(), alice.pubkey());
     let bob_token = token_account_address(token_program_id, mint.pubkey(), bob.pubkey());
-    let alice_initial = typed_fast_handle(0x01);
-    let bob_initial = typed_fast_handle(0x02);
-
-    initialize_token_account(
-        &mut svm,
-        &alice,
-        token_program_id,
-        mint.pubkey(),
-        alice_token,
-        alice_initial,
-    );
-    initialize_token_account(
-        &mut svm,
-        &bob,
-        token_program_id,
-        mint.pubkey(),
-        bob_token,
-        bob_initial,
-    );
-
     let alice_current_compute_acl =
         balance_acl_record_address(host_program_id, mint.pubkey(), alice_token, 0);
     let bob_current_compute_acl =
         balance_acl_record_address(host_program_id, mint.pubkey(), bob_token, 0);
-    authorize_balance_acl(
-        BalanceAclTarget {
+
+    initialize_token_account(
+        &mut svm,
+        &alice,
+        TokenAccountInit {
             token_program_id,
             host_program_id,
             mint: mint.pubkey(),
             token_account: alice_token,
-            acl_record: alice_current_compute_acl,
             compute_signer,
+            acl_record: alice_current_compute_acl,
+            initial_balance: 125,
         },
-        &mut svm,
-        &alice,
     );
-    authorize_balance_acl(
-        BalanceAclTarget {
+    initialize_token_account(
+        &mut svm,
+        &bob,
+        TokenAccountInit {
             token_program_id,
             host_program_id,
             mint: mint.pubkey(),
             token_account: bob_token,
-            acl_record: bob_current_compute_acl,
             compute_signer,
+            acl_record: bob_current_compute_acl,
+            initial_balance: 20,
         },
-        &mut svm,
-        &bob,
     );
+    let alice_initial = read_acl_record(&svm, alice_current_compute_acl)
+        .expect("expected Alice initial ACL")
+        .handle;
+    let bob_initial = read_acl_record(&svm, bob_current_compute_acl)
+        .expect("expected Bob initial ACL")
+        .handle;
 
     TokenFixture {
         svm,
@@ -537,58 +526,37 @@ fn token_fixture() -> TokenFixture {
     }
 }
 
-fn initialize_token_account(
-    svm: &mut LiteSVM,
-    owner: &Keypair,
-    program_id: Pubkey,
-    mint: Pubkey,
-    token_account: Pubkey,
-    balance_handle: [u8; 32],
-) {
-    send(
-        svm,
-        owner,
-        Instruction {
-            program_id,
-            accounts: token::accounts::InitializeTokenAccount {
-                owner: owner.pubkey(),
-                mint,
-                token_account,
-                system_program: system_program::ID,
-            }
-            .to_account_metas(None),
-            data: token::instruction::InitializeTokenAccount { balance_handle }.data(),
-        },
-    );
-}
-
-struct BalanceAclTarget {
+struct TokenAccountInit {
     token_program_id: Pubkey,
     host_program_id: Pubkey,
-    acl_record: Pubkey,
     mint: Pubkey,
     token_account: Pubkey,
     compute_signer: Pubkey,
+    acl_record: Pubkey,
+    initial_balance: u64,
 }
 
-fn authorize_balance_acl(target: BalanceAclTarget, svm: &mut LiteSVM, owner: &Keypair) {
+fn initialize_token_account(svm: &mut LiteSVM, owner: &Keypair, init: TokenAccountInit) {
     send(
         svm,
         owner,
         Instruction {
-            program_id: target.token_program_id,
-            accounts: token::accounts::AuthorizeBalanceAcl {
+            program_id: init.token_program_id,
+            accounts: token::accounts::InitializeTokenAccount {
                 owner: owner.pubkey(),
-                mint: target.mint,
-                compute_signer: target.compute_signer,
-                token_account: target.token_account,
-                acl_record: target.acl_record,
-                zama_event_authority: event_authority(target.host_program_id),
-                zama_program: target.host_program_id,
+                mint: init.mint,
+                compute_signer: init.compute_signer,
+                token_account: init.token_account,
+                acl_record: init.acl_record,
+                zama_event_authority: event_authority(init.host_program_id),
+                zama_program: init.host_program_id,
                 system_program: system_program::ID,
             }
             .to_account_metas(None),
-            data: token::instruction::AuthorizeBalanceAcl {}.data(),
+            data: token::instruction::InitializeTokenAccount {
+                initial_balance: init.initial_balance,
+            }
+            .data(),
         },
     );
 }
@@ -624,7 +592,8 @@ fn input_compute_acl_address(fixture: &TokenFixture, handle: [u8; 32]) -> Pubkey
 
 fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
     // Temporary PoC stand-in for the future Solana InputVerifier/transient
-    // authorization path. It lets host::fhe_binary_op enforce both operands.
+    // authorization path. It lets host::fhe_binary_op enforce both operands
+    // without using the generic persistent-grant path for first birth.
     let acl_record = input_compute_acl_address(fixture, handle);
     let acl_domain_key = fixture.alice.pubkey();
     let app_account = fixture.alice.pubkey();
@@ -636,27 +605,28 @@ fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
         &fixture.alice,
         Instruction {
             program_id: fixture.host_program_id,
-            accounts: host::accounts::BindAclRecord {
+            accounts: host::accounts::InputVerifiedAndBind {
                 payer: fixture.alice.pubkey(),
                 app_account_authority: app_account,
-                acl_record,
+                output_acl_record: acl_record,
                 system_program: system_program::ID,
                 event_authority: event_authority(fixture.host_program_id),
                 program: fixture.host_program_id,
             }
             .to_account_metas(None),
-            data: host::instruction::BindAclRecord {
-                nonce_key,
-                nonce_sequence,
-                acl_domain_key,
-                app_account,
-                encrypted_value_label,
-                handle,
-                subjects: vec![AclSubjectEntry {
+            data: host::instruction::InputVerifiedAndBind {
+                input_handle: handle,
+                user: fixture.alice.pubkey(),
+                output_nonce_key: nonce_key,
+                output_nonce_sequence: nonce_sequence,
+                output_acl_domain_key: acl_domain_key,
+                output_app_account: app_account,
+                output_encrypted_value_label: encrypted_value_label,
+                output_subjects: vec![AclSubjectEntry {
                     pubkey: fixture.compute_signer,
                     permission: AclPermission::Compute,
                 }],
-                public_decrypt: false,
+                output_public_decrypt: false,
             }
             .data(),
         },
