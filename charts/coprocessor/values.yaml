@@ -553,16 +553,126 @@ hostListenerCatchupOnlyShared:
       maxUnavailable: 0
 
 # -----------------------------------------------------------------------------
+# Host Listener Consumer Shared
+# -----------------------------------------------------------------------------
+# Consumes listener events from the database / broker queue (no chain RPC).
+# Shared/default configuration for every chain entry that enables
+# hostListenerConsumer. This block is the primary source for image, replicas,
+# resources, ports, probes, tracing, scheduling, and structured args.
+# Per-chain hostListenerConsumer config does not deep-override this block; it only:
+#   - enables the consumer for that chain
+#   - provides required chain-specific contracts and chainId via the parent chain entry
+#   - appends env and extraArgs
+#   - may override serviceName
+#   - may claim the unsuffixed legacy resource name via useLegacyName
+hostListenerConsumerShared:
+  image:
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/host-listener
+    tag: v0.11.0
+
+  replicas: 1
+
+  # Component-specific configuration
+  config:
+    # Broker URL (e.g. Redis) consumed by host_listener_consumer. Rendered as the
+    # BROKER_URL env var and injected into args via --broker-url=$(BROKER_URL).
+    # Accepts `value` (literal) or `valueFrom` (secretKeyRef/configMapKeyRef).
+    # Leave unset to inject nothing.
+    # Example:
+    #   brokerUrl:
+    #     value: "redis://coprocessor-redis-master.coproc.svc.cluster.local:6379"
+    brokerUrl: {}
+
+  # Additional environment variables.
+  env: []
+
+  # Structured args. serviceName is the only modeled key; per-chain
+  # chains[].hostListenerConsumer.serviceName takes precedence when set.
+  args:
+    # serviceName: host-listener-consumer
+
+  # Suppress any template-injected arg above. Values are kebab-case flag names
+  # (no leading `--`).
+  disabledArgs: []
+
+  # Additional raw CLI flags, appended after template-injected args.
+  # Template-injected args: --database-url, --acl-contract-address,
+  #   --tfhe-contract-address, --kms-generation-address, --chain-id (from
+  #   chains[].chainId), --broker-url (from config.brokerUrl), --health-port,
+  #   --metrics-addr, --service-name
+  extraArgs: []
+
+  # Service ports configuration
+  ports:
+    metrics: 9100
+    healthcheck: 8080
+
+  serviceMonitor:
+    enabled: false
+
+  # serviceAccountName: existing SA for workload identity (e.g. IRSA). Unset = namespace default.
+  serviceAccountName:
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Health check probes
+  probes:
+    liveness:
+      enabled: false
+      httpGet:
+        path: /liveness
+        port: healthcheck
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: false
+      httpGet:
+        path: /healthz
+        port: healthcheck
+      initialDelaySeconds: 5
+      periodSeconds: 10
+
+  # Distributed tracing (inherits from commonConfig but can be overridden)
+  tracing:
+    enabled: false
+    # Stable logical service name for OTEL traces. If empty, OTEL_SERVICE_NAME
+    # falls back to the pod name (metadata.name), which fragments traces across
+    # pod replicas and rollouts. Set a stable string per environment.
+    service: ""
+
+  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
+  podLabels: {}
+
+  # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
+  nodeSelector:
+  affinity:
+  tolerations:
+
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+# -----------------------------------------------------------------------------
 # Chains
 # -----------------------------------------------------------------------------
-# Each entry deploys up to three host listener variants for a given chain.
-# The top-level hostListenerShared / hostListenerPollerShared / hostListenerCatchupOnlyShared
-# blocks define shared settings used by every enabled chain for that listener
-# type. Chain entries do not deep-merge or override arbitrary top-level fields.
+# Each entry deploys up to four host listener variants for a given chain.
+# The top-level hostListenerShared / hostListenerPollerShared /
+# hostListenerCatchupOnlyShared / hostListenerConsumerShared blocks define
+# shared settings used by every enabled chain for that listener type. Chain
+# entries do not deep-merge or override arbitrary top-level fields.
 #
 # What each chain entry provides:
 #   - required chain-specific connection values (wsUrl or wsUrlValueFrom,
 #     httpUrl or httpUrlValueFrom, and contracts as literal values or valueFrom refs)
+#   - chainId (quoted string), consumed by hostListenerConsumer via --chain-id
 #   - enabled toggles per listener type
 #   - additive env and extraArgs
 #   - optional serviceName override
@@ -577,6 +687,7 @@ hostListenerCatchupOnlyShared:
 # Example:
 # chains:
 #   - name: ethereum
+#     chainId: "11155111"               # required by hostListenerConsumer (--chain-id); quote to avoid YAML float coercion
 #     wsUrl: "ws://eth-node:8546"       # required by hostListener + hostListenerCatchupOnly unless wsUrlValueFrom is set
 #     # wsUrlValueFrom:                 # secret/config-backed alternative to wsUrl
 #     #   secretKeyRef:
@@ -615,6 +726,12 @@ hostListenerCatchupOnlyShared:
 #       serviceName:
 #       extraArgs: []         # appended after top-level hostListenerCatchupOnlyShared.extraArgs
 #       env: []               # appended after top-level hostListenerCatchupOnlyShared.env
+#     hostListenerConsumer:
+#       enabled: true
+#       useLegacyName: true   # often required: <release>-host-listener-consumer-<chain> can exceed K8s's 63-char name limit
+#       serviceName:
+#       extraArgs: []         # appended after top-level hostListenerConsumerShared.extraArgs
+#       env: []               # appended after top-level hostListenerConsumerShared.env
 chains: []
 
 # -----------------------------------------------------------------------------

@@ -1,0 +1,22 @@
+{{- range $i, $chain := .Values.chains }}
+{{- if and (($chain.hostListenerConsumer).enabled) $.Values.hostListenerConsumerShared.serviceMonitor.enabled }}
+{{- $useLegacyName := $chain.hostListenerConsumer.useLegacyName | default false -}}
+{{- $deploymentName := ternary (printf "%s-host-listener-consumer" $.Release.Name) (printf "%s-host-listener-consumer-%s" $.Release.Name $chain.name) $useLegacyName -}}
+{{- $appLabel := ternary "coprocessor-host-listener-consumer" (printf "coprocessor-host-listener-consumer-%s" $chain.name) $useLegacyName -}}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: {{ $appLabel }}
+    app.kubernetes.io/name: {{ $deploymentName }}
+  name: {{ $deploymentName }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ $appLabel }}
+      app.kubernetes.io/name: {{ $deploymentName }}
+  endpoints:
+  - port: metrics
+{{- end }}
+{{- end }}
