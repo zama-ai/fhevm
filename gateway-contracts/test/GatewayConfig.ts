@@ -725,6 +725,33 @@ describe("GatewayConfig", function () {
           ).to.be.revertedWithCustomError(gatewayConfig, "EmptyKmsNodes");
         });
 
+        it("Should revert because the KMS signer set exceeds the proof format limit", async function () {
+          // Build a 256-node set with distinct tx-sender and signer addresses.
+          const tooManyKmsNodes: KmsNodeStruct[] = [];
+          for (let i = 0; i < 256; i++) {
+            tooManyKmsNodes.push({
+              txSenderAddress: createRandomAddress(),
+              signerAddress: createRandomAddress(),
+              ipAddress: `127.0.0.${i}`,
+              storageUrl: `s3://kms-${i}`,
+            });
+          }
+          await expect(
+            gatewayConfig
+              .connect(owner)
+              .updateKmsContext(
+                nextKmsContextId,
+                tooManyKmsNodes,
+                mpcThreshold,
+                publicDecryptionThreshold,
+                userDecryptionThreshold,
+                kmsGenThreshold,
+              ),
+          )
+            .to.be.revertedWithCustomError(gatewayConfig, "KmsSignerSetExceedsProofFormatLimit")
+            .withArgs(256, 255);
+        });
+
         it("Should revert because the MPC threshold is too high", async function () {
           await expect(
             gatewayConfig
