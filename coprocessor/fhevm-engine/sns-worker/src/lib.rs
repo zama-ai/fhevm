@@ -247,15 +247,36 @@ impl HandleItem {
         &self,
         db_txn: &mut Transaction<'_, Postgres>,
     ) -> Result<(), ExecutionError> {
-        sqlx::query!(
-            "INSERT INTO ciphertext_digest (tenant_id, handle, transaction_id)
-            VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
-            self.tenant_id,
-            self.handle,
-            self.transaction_id,
-        )
-        .execute(db_txn.as_mut())
-        .await?;
+        let ct128_format = self.ct128.format();
+
+        if self.ct128.is_empty() || ct128_format == Ciphertext128Format::Unknown {
+            sqlx::query(
+                "INSERT INTO ciphertext_digest (tenant_id, handle, transaction_id)
+                VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+            )
+            .bind(self.tenant_id)
+            .bind(&self.handle)
+            .bind(&self.transaction_id)
+            .execute(db_txn.as_mut())
+            .await?;
+        } else {
+            let ct128_format: i16 = ct128_format.into();
+            sqlx::query(
+                "INSERT INTO ciphertext_digest (
+                    tenant_id, handle, transaction_id, ciphertext128_format
+                )
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (tenant_id, handle) DO UPDATE
+                SET ciphertext128_format = EXCLUDED.ciphertext128_format
+                WHERE ciphertext_digest.ciphertext128 IS NULL",
+            )
+            .bind(self.tenant_id)
+            .bind(&self.handle)
+            .bind(&self.transaction_id)
+            .bind(ct128_format)
+            .execute(db_txn.as_mut())
+            .await?;
+        }
 
         Ok(())
     }
