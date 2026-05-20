@@ -33,6 +33,8 @@ coprocessor/fhevm-engine/tfhe-worker/src/tests/solana_poc.rs
   Worker-backed end-to-end tests with real small TFHE ciphertexts.
 ```
 
+For a shorter contributor guide focused on OpenZeppelin follow-up work, see [`OZ_BRANCH_GUIDE.md`](./OZ_BRANCH_GUIDE.md).
+
 ## Handoff Path
 
 Use this order when picking up the branch:
