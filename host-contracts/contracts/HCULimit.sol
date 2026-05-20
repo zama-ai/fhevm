@@ -1853,7 +1853,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /**
      * @notice Getter function for the FHEVMExecutor contract address.
-     * @return FHEVM_EXECUTOR_ADDRESS Address of the FHEVMExecutor.
+     * @return fhevmExecutorAddress Address of the FHEVMExecutor.
      */
     function getFHEVMExecutorAddress() public view virtual returns (address) {
         return FHEVM_EXECUTOR_ADDRESS;
