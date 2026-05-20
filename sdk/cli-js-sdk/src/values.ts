@@ -1,6 +1,14 @@
 import type { Hex } from "viem";
 
-import { randomAddress, randomUint8, randomUint16, randomUint32, randomUint64, randomUint128, randomUint256 } from "./random";
+import {
+  randomAddress,
+  randomUint8,
+  randomUint16,
+  randomUint32,
+  randomUint64,
+  randomUint128,
+  randomUint256,
+} from "./random";
 import type { DecryptType, EncryptValue } from "./types";
 
 export const createInputProofValues = (): readonly EncryptValue[] => [
@@ -14,7 +22,9 @@ export const createInputProofValues = (): readonly EncryptValue[] => [
   { type: "address", value: randomAddress() },
 ];
 
-export const createFreshDecryptValues = (decryptType: DecryptType): readonly EncryptValue[] => {
+export const createFreshDecryptValues = (
+  decryptType: DecryptType,
+): readonly EncryptValue[] => {
   switch (decryptType) {
     case "bool":
       return [{ type: "bool", value: randomUint8() % 2 === 0 }];
@@ -34,9 +44,15 @@ export const createFreshDecryptValues = (decryptType: DecryptType): readonly Enc
   }
 };
 
-export const serializeValue = (value: EncryptValue): Readonly<{ type: string; value: string }> => ({
+export const serializeValue = (
+  value: EncryptValue,
+): Readonly<{ type: string; value: string }> => ({
   type: value.type,
-  value: typeof value.value === "bigint" ? value.value.toString() : String(value.value),
+  value:
+    typeof value.value === "bigint"
+      ? value.value.toString()
+      : String(value.value),
 });
 
-export const normalizeHexArray = (values: readonly string[]): readonly Hex[] => values.map((value) => value as Hex);
+export const normalizeHexArray = (values: readonly string[]): readonly Hex[] =>
+  values.map((value) => value as Hex);

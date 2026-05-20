@@ -3,22 +3,41 @@ import { Command, InvalidArgumentError } from "@commander-js/extra-typings";
 import { consola } from "consola";
 import type { Hex } from "viem";
 
-import { DEFAULT_NETWORK, TESTNET_RELAYER_SDK_TEST_CONTRACT } from "./src/config";
-import { freshPublicDecrypt, publicDecrypt, requestInputProof } from "./src/flows";
-import { DECRYPT_TYPES, NETWORKS, type DecryptType, type NetworkName } from "./src/types";
+import {
+  DEFAULT_NETWORK,
+  TESTNET_RELAYER_SDK_TEST_CONTRACT,
+} from "./src/config";
+import {
+  freshPublicDecrypt,
+  publicDecrypt,
+  requestInputProof,
+} from "./src/flows";
+import {
+  DECRYPT_TYPES,
+  NETWORKS,
+  type DecryptType,
+  type NetworkName,
+} from "./src/types";
 import { normalizeHexArray, serializeValue } from "./src/values";
 
 const parseNetwork = (value: string): NetworkName => {
   if (NETWORKS.includes(value as NetworkName)) return value as NetworkName;
-  throw new InvalidArgumentError(`Unsupported network "${value}". Supported: ${NETWORKS.join(", ")}`);
+  throw new InvalidArgumentError(
+    `Unsupported network "${value}". Supported: ${NETWORKS.join(", ")}`,
+  );
 };
 
 const parseDecryptType = (value: string): DecryptType => {
   if (DECRYPT_TYPES.includes(value as DecryptType)) return value as DecryptType;
-  throw new InvalidArgumentError(`Unsupported type "${value}". Supported: ${DECRYPT_TYPES.join(", ")}`);
+  throw new InvalidArgumentError(
+    `Unsupported type "${value}". Supported: ${DECRYPT_TYPES.join(", ")}`,
+  );
 };
 
-const collectHex = (value: string, previous: string[] = []): string[] => [...previous, value];
+const collectHex = (value: string, previous: string[] = []): string[] => [
+  ...previous,
+  value,
+];
 
 const printJson = (value: unknown) => {
   console.log(
@@ -49,13 +68,23 @@ const program = new Command()
   .name("cli-relayer-sdk")
   .description("CLI for @fhevm/sdk input proof and public decrypt flows")
   .version("0.1.0")
-  .option("-n, --network <network>", "network to target", parseNetwork, DEFAULT_NETWORK)
-  .option("--relayer-url <url>", "relayer base URL override, for example localhost:3000")
+  .option(
+    "-n, --network <network>",
+    "network to target",
+    parseNetwork,
+    DEFAULT_NETWORK,
+  )
+  .option(
+    "--relayer-url <url>",
+    "relayer base URL override, for example localhost:3000",
+  )
   .option("--rpc-url <url>", "host chain RPC URL override");
 
 program
   .command("input-proof")
-  .description("Generate encrypted inputs and request relayer verified input proof")
+  .description(
+    "Generate encrypted inputs and request relayer verified input proof",
+  )
   .option("--contract <address>", "contract address bound into the proof")
   .option("--user <address>", "user address bound into the proof")
   .action(async (options, command) => {
@@ -80,13 +109,25 @@ program
 const supportedDecryptTypes = DECRYPT_TYPES.join(", ");
 const publicDecryptCommand = program
   .command("public-decrypt")
-  .description(`Public decrypt flows. Supported types: ${supportedDecryptTypes}`);
+  .description(
+    `Public decrypt flows. Supported types: ${supportedDecryptTypes}`,
+  );
 
 publicDecryptCommand
   .command("cached")
   .description("Public decrypt existing publicly decryptable handles")
-  .option("-t, --type <type>", `value type (${supportedDecryptTypes})`, parseDecryptType, "bool")
-  .option("--handle <handle>", "encrypted handle to decrypt; repeat for multiple", collectHex, [])
+  .option(
+    "-t, --type <type>",
+    `value type (${supportedDecryptTypes})`,
+    parseDecryptType,
+    "bool",
+  )
+  .option(
+    "--handle <handle>",
+    "encrypted handle to decrypt; repeat for multiple",
+    collectHex,
+    [],
+  )
   .action(async (options, command) => {
     const globals = getGlobalOptions(command);
     const result = await publicDecrypt({
@@ -102,10 +143,24 @@ publicDecryptCommand
 
 publicDecryptCommand
   .command("fresh")
-  .description("Encrypt new values, make them publicly decryptable on-chain, then public decrypt them")
-  .option("-t, --type <type>", `value type to encrypt (${supportedDecryptTypes})`, parseDecryptType, "bool")
-  .option("--contract <address>", "contract to call", TESTNET_RELAYER_SDK_TEST_CONTRACT)
-  .option("--private-key <privateKey>", "wallet private key; falls back to PRIVATE_KEY")
+  .description(
+    "Encrypt new values, make them publicly decryptable on-chain, then public decrypt them",
+  )
+  .option(
+    "-t, --type <type>",
+    `value type to encrypt (${supportedDecryptTypes})`,
+    parseDecryptType,
+    "bool",
+  )
+  .option(
+    "--contract <address>",
+    "contract to call",
+    TESTNET_RELAYER_SDK_TEST_CONTRACT,
+  )
+  .option(
+    "--private-key <privateKey>",
+    "wallet private key; falls back to PRIVATE_KEY",
+  )
   .option("--mnemonic <mnemonic>", "wallet mnemonic; falls back to MNEMONIC")
   .action(async (options, command) => {
     const globals = getGlobalOptions(command);

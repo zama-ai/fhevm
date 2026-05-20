@@ -3,11 +3,25 @@ import type { Hex } from "viem";
 export const NETWORKS = ["testnet"] as const;
 export type NetworkName = (typeof NETWORKS)[number];
 
-export const DECRYPT_TYPES = ["bool", "uint8", "uint128", "address", "mixed"] as const;
+export const DECRYPT_TYPES = [
+  "bool",
+  "uint8",
+  "uint128",
+  "address",
+  "mixed",
+] as const;
 export type DecryptType = (typeof DECRYPT_TYPES)[number];
 
 export type EncryptValue = Readonly<{
-  type: "bool" | "uint8" | "uint16" | "uint32" | "uint64" | "uint128" | "uint256" | "address";
+  type:
+    | "bool"
+    | "uint8"
+    | "uint16"
+    | "uint32"
+    | "uint64"
+    | "uint128"
+    | "uint256"
+    | "address";
   value: boolean | number | bigint | string;
 }>;
 

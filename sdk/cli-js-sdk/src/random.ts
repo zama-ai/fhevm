@@ -1,6 +1,7 @@
 import type { Hex } from "viem";
 
-const randomBytes = (length: number): Uint8Array => crypto.getRandomValues(new Uint8Array(length));
+const randomBytes = (length: number): Uint8Array =>
+  crypto.getRandomValues(new Uint8Array(length));
 
 export const randomAddress = (): Hex => {
   return `0x${Array.from(randomBytes(20), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
@@ -16,7 +17,7 @@ export const randomUint16 = (): number => {
 export const randomUint32 = (): number => {
   const bytes = randomBytes(4);
   return (
-    ((bytes[0] ?? 0) * 2 ** 24) +
+    (bytes[0] ?? 0) * 2 ** 24 +
     ((bytes[1] ?? 0) << 16) +
     ((bytes[2] ?? 0) << 8) +
     (bytes[3] ?? 0)
@@ -24,7 +25,9 @@ export const randomUint32 = (): number => {
 };
 
 const randomBigUint = (bytesLength: number): bigint => {
-  const hex = Array.from(randomBytes(bytesLength), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const hex = Array.from(randomBytes(bytesLength), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
   return BigInt(`0x${hex}`);
 };
 

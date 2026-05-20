@@ -1,7 +1,11 @@
 export const relayerSdkTestAbi = [
   {
     inputs: [
-      { internalType: "externalEaddress", name: "encryptedAddress", type: "bytes32" },
+      {
+        internalType: "externalEaddress",
+        name: "encryptedAddress",
+        type: "bytes32",
+      },
       { internalType: "bytes", name: "inputProof", type: "bytes" },
     ],
     name: "makePubliclyDecryptableExternalEaddress",
@@ -21,7 +25,11 @@ export const relayerSdkTestAbi = [
   },
   {
     inputs: [
-      { internalType: "externalEuint128", name: "encryptedUint128", type: "bytes32" },
+      {
+        internalType: "externalEuint128",
+        name: "encryptedUint128",
+        type: "bytes32",
+      },
       { internalType: "bytes", name: "inputProof", type: "bytes" },
     ],
     name: "makePubliclyDecryptableExternalEuint128",
@@ -31,7 +39,11 @@ export const relayerSdkTestAbi = [
   },
   {
     inputs: [
-      { internalType: "externalEuint8", name: "encryptedUint8", type: "bytes32" },
+      {
+        internalType: "externalEuint8",
+        name: "encryptedUint8",
+        type: "bytes32",
+      },
       { internalType: "bytes", name: "inputProof", type: "bytes" },
     ],
     name: "makePubliclyDecryptableExternalEuint8",
@@ -42,9 +54,21 @@ export const relayerSdkTestAbi = [
   {
     inputs: [
       { internalType: "externalEbool", name: "encryptedBool", type: "bytes32" },
-      { internalType: "externalEuint8", name: "encryptedUint8", type: "bytes32" },
-      { internalType: "externalEuint128", name: "encryptedUint128", type: "bytes32" },
-      { internalType: "externalEaddress", name: "encryptedAddress", type: "bytes32" },
+      {
+        internalType: "externalEuint8",
+        name: "encryptedUint8",
+        type: "bytes32",
+      },
+      {
+        internalType: "externalEuint128",
+        name: "encryptedUint128",
+        type: "bytes32",
+      },
+      {
+        internalType: "externalEaddress",
+        name: "encryptedAddress",
+        type: "bytes32",
+      },
       { internalType: "bytes", name: "inputProof", type: "bytes" },
     ],
     name: "makePubliclyDecryptableExternalMixed",
