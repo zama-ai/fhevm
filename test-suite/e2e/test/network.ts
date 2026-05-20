@@ -1,4 +1,6 @@
-import { network } from 'hardhat';
+import hardhat from 'hardhat';
+
+const { network } = hardhat;
 
 const LIVE_NETWORKS = new Set(['devnet', 'devnetNative', 'zwsDev', 'sepolia', 'mainnet']);
 
