@@ -24,7 +24,8 @@
                 ],
                 "rust-analyzer.cargo.extraEnv": {
                     "SQLX_OFFLINE": "true"
-                }
+                },
+                "terminal.integrated.suggest.enabled": false
             }
         }
     }
