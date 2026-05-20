@@ -4,7 +4,7 @@ import { expect } from "chai";
 import { Wallet } from "ethers";
 import hre from "hardhat";
 
-import { CiphertextCommits, CiphertextCommits__factory } from "../typechain-types";
+import { CiphertextCommits, CiphertextCommits__factory, GatewayConfig } from "../typechain-types";
 import {
   createBytes32,
   createCtHandle,
@@ -38,6 +38,7 @@ describe("CiphertextCommits", function () {
   const fakeCiphertextDigest = createBytes32();
 
   let ciphertextCommits: CiphertextCommits;
+  let gatewayConfig: GatewayConfig;
   let coprocessorTxSenders: HardhatEthersSigner[];
   let owner: Wallet;
 
@@ -69,6 +70,7 @@ describe("CiphertextCommits", function () {
     const fixture = await loadFixture(prepareFixture);
     coprocessorTxSenders = fixture.coprocessorTxSenders;
     ciphertextCommits = fixture.ciphertextCommits;
+    gatewayConfig = fixture.gatewayConfig;
     owner = fixture.owner;
   });
 
@@ -348,6 +350,24 @@ describe("CiphertextCommits", function () {
         ciphertextCommits,
         "EmptyCtHandles",
       );
+    });
+
+    it("Should revert with HostChainDisabled (SNS) when the handle's chain has been disabled", async function () {
+      // getSnsCiphertextMaterials is the gating point for Decryption.publicDecryptionRequest,
+      // which has no top-level chain modifier. Disabling the chain must reject lookups against
+      // handles from that chain.
+      await gatewayConfig.connect(owner).disableHostChain(hostChainId);
+
+      await expect(ciphertextCommits.getSnsCiphertextMaterials([ctHandle]))
+        .revertedWithCustomError(ciphertextCommits, "HostChainDisabled")
+        .withArgs(hostChainId);
+
+      // Re-enable: the same lookup goes through.
+      await gatewayConfig.connect(owner).enableHostChain(hostChainId);
+      const result = await ciphertextCommits.getSnsCiphertextMaterials([ctHandle]);
+      expect(result).to.be.deep.eq([
+        [ctHandle, keyId, snsCiphertextDigest, usedCoprocessorTxSender.map((s) => s.address)],
+      ]);
     });
   });
 
