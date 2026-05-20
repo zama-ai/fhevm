@@ -7979,6 +7979,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "testcontainers",
+ "tfhe",
  "tokio",
  "tokio-util",
  "tracing",
