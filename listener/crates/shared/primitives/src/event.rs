@@ -53,6 +53,43 @@ impl FilterCommand {
     }
 }
 
+/// Validation errors for [`CatchupPayload`].
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum CatchupPayloadValidationError {
+    #[error("consumer_id must not be empty")]
+    EmptyConsumerId,
+    #[error("block_start must be <= block_end")]
+    InvalidBlockRange,
+}
+
+/// Event payload for the `catchup` consumer.
+///
+/// Requests historical replay of blocks `[block_start, block_end]` (inclusive)
+/// for a single consumer. Chain ID is omitted because the listener injects
+/// chain scope through namespaced routing, like other control-plane payloads.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CatchupPayload {
+    pub consumer_id: String,
+    pub block_start: u64,
+    pub block_end: u64,
+}
+
+impl CatchupPayload {
+    /// Validate the payload. Trims `consumer_id` so the stored value is canonical.
+    /// Allows `block_start == block_end` (single-block replay).
+    #[must_use = "validation result must be checked"]
+    pub fn validate(&mut self) -> Result<(), CatchupPayloadValidationError> {
+        self.consumer_id = self.consumer_id.trim().to_owned();
+        if self.consumer_id.is_empty() {
+            return Err(CatchupPayloadValidationError::EmptyConsumerId);
+        }
+        if self.block_start > self.block_end {
+            return Err(CatchupPayloadValidationError::InvalidBlockRange);
+        }
+        Ok(())
+    }
+}
+
 /// A log with its block-global index.
 ///
 /// Wire format: `{ log_index, address, topics, data }`.
@@ -97,7 +134,7 @@ pub enum BlockFlow {
     Live,
     /// Block republished during a reorg backtrack.
     Reorged,
-    /// Historical catch-up / replay (reserved for future use).
+    /// Historical catch-up / replay published on the `catchup-event` queue.
     Catchup,
 }
 
@@ -451,6 +488,86 @@ mod tests {
 
         let deserialized: FilterCommand = serde_json::from_value(json).unwrap();
         assert_eq!(filter, deserialized);
+    }
+
+    #[test]
+    fn catchup_payload_rejects_empty_consumer_id() {
+        let mut p = CatchupPayload {
+            consumer_id: "".into(),
+            block_start: 1,
+            block_end: 10,
+        };
+        assert_eq!(
+            p.validate().unwrap_err(),
+            CatchupPayloadValidationError::EmptyConsumerId,
+        );
+    }
+
+    #[test]
+    fn catchup_payload_rejects_whitespace_consumer_id() {
+        let mut p = CatchupPayload {
+            consumer_id: "   ".into(),
+            block_start: 1,
+            block_end: 10,
+        };
+        assert_eq!(
+            p.validate().unwrap_err(),
+            CatchupPayloadValidationError::EmptyConsumerId,
+        );
+    }
+
+    #[test]
+    fn catchup_payload_trims_consumer_id() {
+        let mut p = CatchupPayload {
+            consumer_id: "  gw  ".into(),
+            block_start: 1,
+            block_end: 10,
+        };
+        p.validate().unwrap();
+        assert_eq!(p.consumer_id, "gw");
+    }
+
+    #[test]
+    fn catchup_payload_rejects_inverted_range() {
+        let mut p = CatchupPayload {
+            consumer_id: "gateway".into(),
+            block_start: 10,
+            block_end: 5,
+        };
+        assert_eq!(
+            p.validate().unwrap_err(),
+            CatchupPayloadValidationError::InvalidBlockRange,
+        );
+    }
+
+    #[test]
+    fn catchup_payload_accepts_single_block_range() {
+        let mut p = CatchupPayload {
+            consumer_id: "gateway".into(),
+            block_start: 42,
+            block_end: 42,
+        };
+        p.validate().unwrap();
+    }
+
+    #[test]
+    fn catchup_payload_round_trips() {
+        let payload = CatchupPayload {
+            consumer_id: "gateway".into(),
+            block_start: 100,
+            block_end: 200,
+        };
+
+        let json = serde_json::to_value(&payload).unwrap();
+        let expected = json!({
+            "consumer_id": "gateway",
+            "block_start": 100,
+            "block_end": 200,
+        });
+        assert_eq!(json, expected);
+
+        let deserialized: CatchupPayload = serde_json::from_value(json).unwrap();
+        assert_eq!(payload, deserialized);
     }
 
     #[test]
