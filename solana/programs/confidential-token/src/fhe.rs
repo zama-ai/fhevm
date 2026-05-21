@@ -50,7 +50,7 @@ pub fn binary_op<'info>(request: BinaryOp<'_, 'info>) -> Result<[u8; 32]> {
 
     cpi::fhe_binary_op(
         CpiContext::new_with_signer(
-            request.zama_program.to_account_info(),
+            request.zama_program.key(),
             FheBinaryOp {
                 payer: request.payer.to_account_info(),
                 compute_subject: request.compute_signer.to_account_info(),
@@ -119,7 +119,7 @@ pub fn trivial_encrypt_u64<'info>(request: TrivialEncryptU64<'_, 'info>) -> Resu
 
     cpi::trivial_encrypt_and_bind(
         CpiContext::new_with_signer(
-            request.zama_program.to_account_info(),
+            request.zama_program.key(),
             TrivialEncryptAndBind {
                 payer: request.payer.to_account_info(),
                 compute_subject: request.compute_signer.to_account_info(),

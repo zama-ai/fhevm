@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
-use anchor_lang::{AnchorDeserialize, Discriminator};
+use anchor_lang::{prelude::Pubkey, AnchorDeserialize, Discriminator};
 use litesvm::types::TransactionMetadata;
-use solana_sdk::pubkey::Pubkey;
 use zama_host::{FheBinaryOpCode, FheBinaryOpEvent, TrivialEncryptEvent};
 
 pub type Handle = [u8; 32];

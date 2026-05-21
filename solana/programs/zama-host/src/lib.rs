@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::{hash::hashv, sysvar::slot_hashes::PodSlotHashes};
+use solana_sha256_hasher::hashv;
+use solana_sysvar::slot_hashes::PodSlotHashes;
 
 declare_id!("EMhXFu68v61bQV4GrF6ZhZhWNVbH6bHPnTdLtXK8meqn");
 

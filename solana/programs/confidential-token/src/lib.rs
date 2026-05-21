@@ -93,7 +93,7 @@ pub mod confidential_token {
 
         spl_token::transfer_checked(
             CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
+                ctx.accounts.token_program.key(),
                 TransferChecked {
                     from: ctx.accounts.user_usdc.to_account_info(),
                     mint: ctx.accounts.underlying_mint.to_account_info(),
@@ -311,17 +311,17 @@ pub struct WrapUsdc<'info> {
 pub struct ConfidentialTransfer<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
-    pub mint: Account<'info, ConfidentialMint>,
+    pub mint: Box<Account<'info, ConfidentialMint>>,
     #[account(mut)]
-    pub from_account: Account<'info, ConfidentialTokenAccount>,
-    #[account(mut)]
-    pub to_account: Account<'info, ConfidentialTokenAccount>,
+    pub from_account: Box<Account<'info, ConfidentialTokenAccount>>,
+    #[account(mut, dup)]
+    pub to_account: Box<Account<'info, ConfidentialTokenAccount>>,
     /// CHECK: Program-controlled compute signer PDA.
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
-    pub from_current_compute_acl: Account<'info, zama_host::AclRecord>,
-    pub to_current_compute_acl: Account<'info, zama_host::AclRecord>,
-    pub amount_compute_acl: Account<'info, zama_host::AclRecord>,
+    pub from_current_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
+    pub to_current_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
+    pub amount_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
     pub from_output_acl: UncheckedAccount<'info>,
