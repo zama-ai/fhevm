@@ -110,6 +110,10 @@ on:
         description: "Named test profile to run instead of the default standard suite"
         default: "standard"
         type: string
+      test-runner:
+        description: "Test runner backend used by fhevm-cli test"
+        default: "docker"
+        type: string
   workflow_call:
     secrets:
       GHCR_READ_TOKEN:
@@ -159,6 +163,7 @@ jobs:
       ORCHESTRATED: ${{ inputs.orchestrated && 'true' || 'false' }}
       SCENARIO: ${{ inputs.scenario || 'two-of-three-multi-chain' }}
       TEST_PROFILE: ${{ inputs.test-profile || 'standard' }}
+      TEST_RUNNER: ${{ inputs.test-runner || 'docker' }}
     runs-on: large_ubuntu_32
     steps:
       - name: Checkout code
@@ -172,6 +177,16 @@ jobs:
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
+
+      - name: Setup Node.js
+        if: ${{ env.TEST_RUNNER == 'native' }}
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        with:
+          node-version: 20.x
+
+      - name: Install native e2e deps
+        if: ${{ env.TEST_RUNNER == 'native' }}
+        run: npm ci --workspace test-suite/e2e --include-workspace-root=false
 
       - name: Install foundry
         uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
@@ -353,7 +368,8 @@ jobs:
       - name: Selected e2e suite
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli test "$TEST_PROFILE"
+          args=("$TEST_PROFILE")
+          ./fhevm-cli test "${args[@]}" --runner "$TEST_RUNNER"
 
       - name: Host listener consumer only test without drift-revert tests
         if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' }}
@@ -362,7 +378,7 @@ jobs:
           trap 'docker start coprocessor-host-listener coprocessor-host-listener-poller>/dev/null 2>&1 || true' EXIT
           docker stop coprocessor-host-listener coprocessor-host-listener-poller
           for TEST in input-proof input-proof-compute-decrypt user-decryption delegated-user-decryption erc20 public-decrypt-http-ebool public-decrypt-http-mixed; do
-            ./fhevm-cli test $TEST
+            ./fhevm-cli test "$TEST" --runner "$TEST_RUNNER"
           done
           docker start coprocessor-host-listener coprocessor-host-listener-poller
           trap - EXIT
@@ -373,7 +389,8 @@ jobs:
         run: |
           trap 'docker start coprocessor-host-listener coprocessor-host-listener-consumer>/dev/null 2>&1 || true' EXIT
           docker stop coprocessor-host-listener coprocessor-host-listener-consumer
-          ./fhevm-cli test erc20
+          args=(erc20)
+          ./fhevm-cli test "${args[@]}" --runner "$TEST_RUNNER"
           docker start coprocessor-host-listener coprocessor-host-listener-consumer
           trap - EXIT
 
