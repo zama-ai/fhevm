@@ -10,6 +10,7 @@ use anchor_lang::{
     AccountDeserialize, AccountSerialize, AnchorDeserialize, Discriminator, InstructionData,
     ToAccountMetas,
 };
+use anchor_litesvm::{AnchorLiteSVM, Program, TestHelpers};
 use anchor_spl::token::spl_token;
 use confidential_token as token;
 use litesvm::{
@@ -35,35 +36,22 @@ use support::fhe_runtime::{CleartextBackend, FheBackend, TypedClearValue};
 #[test]
 fn test_emit_trivial_encrypt_emits_anchor_cpi_event() {
     let program_id = host::id();
-    let program_path = host_program_so_path();
-    assert!(
-        program_path.exists(),
-        "missing {}; run `cd solana && anchor build` before this runtime test",
-        program_path.display()
-    );
+    let mut svm = svm_with_program(program_id, host_program_so_path());
+    let payer = svm.create_funded_account(1_000_000_000).unwrap();
 
-    let mut svm = LiteSVM::new();
-    svm.add_program_from_file(program_id, &program_path)
-        .unwrap();
-
-    let payer = Keypair::new();
-    svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
-
-    let ix = Instruction {
+    let ix = anchor_ix(
         program_id,
-        accounts: host::accounts::TestEmitProtocolEvent {
+        host::accounts::TestEmitProtocolEvent {
             event_authority: event_authority(program_id),
             program: program_id,
-        }
-        .to_account_metas(None),
-        data: host::instruction::TestEmitTrivialEncrypt {
+        },
+        host::instruction::TestEmitTrivialEncrypt {
             subject: payer.pubkey(),
             plaintext: [7; 32],
             fhe_type: 5,
             result: [8; 32],
-        }
-        .data(),
-    };
+        },
+    );
 
     let message =
         Message::new_with_blockhash(&[ix], Some(&payer.pubkey()), &svm.latest_blockhash());
@@ -88,20 +76,9 @@ fn test_emit_trivial_encrypt_emits_anchor_cpi_event() {
 #[test]
 fn bind_acl_record_persists_keyed_nonce_record_without_handle_derived_address() {
     let program_id = host::id();
-    let program_path = host_program_so_path();
-    assert!(
-        program_path.exists(),
-        "missing {}; run `cd solana && anchor build` before this runtime test",
-        program_path.display()
-    );
-
-    let mut svm = LiteSVM::new();
-    svm.add_program_from_file(program_id, &program_path)
-        .unwrap();
-
-    let payer = Keypair::new();
+    let mut svm = svm_with_program(program_id, host_program_so_path());
+    let payer = svm.create_funded_account(1_000_000_000).unwrap();
     let app_account_authority = Keypair::new();
-    svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
 
     let acl_domain_key = Pubkey::new_unique();
     let app_account = app_account_authority.pubkey();
@@ -123,9 +100,9 @@ fn bind_acl_record_persists_keyed_nonce_record_without_handle_derived_address() 
         payer.pubkey(),
     );
 
-    let ix = Instruction {
+    let ix = anchor_ix(
         program_id,
-        accounts: host::accounts::BindAclRecord {
+        host::accounts::BindAclRecord {
             payer: payer.pubkey(),
             authority: payer.pubkey(),
             app_account_authority: app_account,
@@ -134,9 +111,8 @@ fn bind_acl_record_persists_keyed_nonce_record_without_handle_derived_address() 
             system_program: system_program::ID,
             event_authority: event_authority(program_id),
             program: program_id,
-        }
-        .to_account_metas(None),
-        data: host::instruction::BindAclRecord {
+        },
+        host::instruction::BindAclRecord {
             nonce_key,
             nonce_sequence,
             acl_domain_key,
@@ -145,9 +121,8 @@ fn bind_acl_record_persists_keyed_nonce_record_without_handle_derived_address() 
             handle,
             subjects: vec![AclSubjectEntry { pubkey: subject }],
             public_decrypt: false,
-        }
-        .data(),
-    };
+        },
+    );
 
     send_with_signers(
         &mut svm,
@@ -167,10 +142,10 @@ fn bind_acl_record_persists_keyed_nonce_record_without_handle_derived_address() 
     assert_eq!(record_subjects(&record), vec![subject]);
     assert!(!record.public_decrypt);
 
-    let assert_ix = Instruction {
+    let assert_ix = anchor_ix(
         program_id,
-        accounts: host::accounts::AssertAclRecord { acl_record }.to_account_metas(None),
-        data: host::instruction::AssertAclRecord {
+        host::accounts::AssertAclRecord { acl_record },
+        host::instruction::AssertAclRecord {
             nonce_key,
             nonce_sequence,
             acl_domain_key,
@@ -178,29 +153,17 @@ fn bind_acl_record_persists_keyed_nonce_record_without_handle_derived_address() 
             encrypted_value_label,
             handle,
             subject,
-        }
-        .data(),
-    };
+        },
+    );
     send(&mut svm, &payer, assert_ix);
 }
 
 #[test]
 fn bind_acl_record_rejects_nonce_key_not_derived_from_acl_fields() {
     let program_id = host::id();
-    let program_path = host_program_so_path();
-    assert!(
-        program_path.exists(),
-        "missing {}; run `cd solana && anchor build` before this runtime test",
-        program_path.display()
-    );
-
-    let mut svm = LiteSVM::new();
-    svm.add_program_from_file(program_id, &program_path)
-        .unwrap();
-
-    let payer = Keypair::new();
+    let mut svm = svm_with_program(program_id, host_program_so_path());
+    let payer = svm.create_funded_account(1_000_000_000).unwrap();
     let app_account_authority = Keypair::new();
-    svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
 
     let acl_domain_key = Pubkey::new_unique();
     let app_account = app_account_authority.pubkey();
@@ -221,9 +184,9 @@ fn bind_acl_record_rejects_nonce_key_not_derived_from_acl_fields() {
         payer.pubkey(),
     );
 
-    let ix = Instruction {
+    let ix = anchor_ix(
         program_id,
-        accounts: host::accounts::BindAclRecord {
+        host::accounts::BindAclRecord {
             payer: payer.pubkey(),
             authority: payer.pubkey(),
             app_account_authority: app_account,
@@ -232,9 +195,8 @@ fn bind_acl_record_rejects_nonce_key_not_derived_from_acl_fields() {
             system_program: system_program::ID,
             event_authority: event_authority(program_id),
             program: program_id,
-        }
-        .to_account_metas(None),
-        data: host::instruction::BindAclRecord {
+        },
+        host::instruction::BindAclRecord {
             nonce_key: wrong_nonce_key,
             nonce_sequence,
             acl_domain_key,
@@ -245,9 +207,8 @@ fn bind_acl_record_rejects_nonce_key_not_derived_from_acl_fields() {
                 pubkey: payer.pubkey(),
             }],
             public_decrypt: false,
-        }
-        .data(),
-    };
+        },
+    );
 
     assert!(send_with_signers(
         &mut svm,
@@ -261,19 +222,8 @@ fn bind_acl_record_rejects_nonce_key_not_derived_from_acl_fields() {
 #[test]
 fn assert_acl_record_rejects_noncanonical_acl_record_address() {
     let program_id = host::id();
-    let program_path = host_program_so_path();
-    assert!(
-        program_path.exists(),
-        "missing {}; run `cd solana && anchor build` before this runtime test",
-        program_path.display()
-    );
-
-    let mut svm = LiteSVM::new();
-    svm.add_program_from_file(program_id, &program_path)
-        .unwrap();
-
-    let payer = Keypair::new();
-    svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
+    let mut svm = svm_with_program(program_id, host_program_so_path());
+    let payer = svm.create_funded_account(1_000_000_000).unwrap();
 
     let acl_domain_key = Pubkey::new_unique();
     let app_account = Pubkey::new_unique();
@@ -309,13 +259,12 @@ fn assert_acl_record_rejects_noncanonical_acl_record_address() {
     )
     .unwrap();
 
-    let ix = Instruction {
+    let ix = anchor_ix(
         program_id,
-        accounts: host::accounts::AssertAclRecord {
+        host::accounts::AssertAclRecord {
             acl_record: noncanonical_acl_record,
-        }
-        .to_account_metas(None),
-        data: host::instruction::AssertAclRecord {
+        },
+        host::instruction::AssertAclRecord {
             nonce_key,
             nonce_sequence,
             acl_domain_key,
@@ -323,9 +272,8 @@ fn assert_acl_record_rejects_noncanonical_acl_record_address() {
             encrypted_value_label,
             handle,
             subject,
-        }
-        .data(),
-    };
+        },
+    );
 
     assert!(try_send(&mut svm, &payer, ix).is_err());
 }
@@ -333,20 +281,9 @@ fn assert_acl_record_rejects_noncanonical_acl_record_address() {
 #[test]
 fn bind_acl_record_cannot_rebind_existing_acl_record() {
     let program_id = host::id();
-    let program_path = host_program_so_path();
-    assert!(
-        program_path.exists(),
-        "missing {}; run `cd solana && anchor build` before this runtime test",
-        program_path.display()
-    );
-
-    let mut svm = LiteSVM::new();
-    svm.add_program_from_file(program_id, &program_path)
-        .unwrap();
-
-    let payer = Keypair::new();
+    let mut svm = svm_with_program(program_id, host_program_so_path());
+    let payer = svm.create_funded_account(1_000_000_000).unwrap();
     let app_account_authority = Keypair::new();
-    svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
 
     let acl_domain_key = Pubkey::new_unique();
     let app_account = app_account_authority.pubkey();
@@ -369,30 +306,30 @@ fn bind_acl_record_cannot_rebind_existing_acl_record() {
         payer.pubkey(),
     );
 
-    let build_ix = |handle| Instruction {
-        program_id,
-        accounts: host::accounts::BindAclRecord {
-            payer: payer.pubkey(),
-            authority: payer.pubkey(),
-            app_account_authority: app_account,
-            authorizing_acl_record,
-            acl_record,
-            system_program: system_program::ID,
-            event_authority: event_authority(program_id),
-            program: program_id,
-        }
-        .to_account_metas(None),
-        data: host::instruction::BindAclRecord {
-            nonce_key,
-            nonce_sequence,
-            acl_domain_key,
-            app_account,
-            encrypted_value_label,
-            handle,
-            subjects: vec![AclSubjectEntry { pubkey: subject }],
-            public_decrypt: false,
-        }
-        .data(),
+    let build_ix = |handle| {
+        anchor_ix(
+            program_id,
+            host::accounts::BindAclRecord {
+                payer: payer.pubkey(),
+                authority: payer.pubkey(),
+                app_account_authority: app_account,
+                authorizing_acl_record,
+                acl_record,
+                system_program: system_program::ID,
+                event_authority: event_authority(program_id),
+                program: program_id,
+            },
+            host::instruction::BindAclRecord {
+                nonce_key,
+                nonce_sequence,
+                acl_domain_key,
+                app_account,
+                encrypted_value_label,
+                handle,
+                subjects: vec![AclSubjectEntry { pubkey: subject }],
+                public_decrypt: false,
+            },
+        )
     };
 
     send_with_signers(
@@ -428,19 +365,8 @@ fn bind_acl_record_cannot_rebind_existing_acl_record() {
 #[test]
 fn bind_acl_record_rejects_app_account_without_matching_authority() {
     let program_id = host::id();
-    let program_path = host_program_so_path();
-    assert!(
-        program_path.exists(),
-        "missing {}; run `cd solana && anchor build` before this runtime test",
-        program_path.display()
-    );
-
-    let mut svm = LiteSVM::new();
-    svm.add_program_from_file(program_id, &program_path)
-        .unwrap();
-
-    let payer = Keypair::new();
-    svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
+    let mut svm = svm_with_program(program_id, host_program_so_path());
+    let payer = svm.create_funded_account(1_000_000_000).unwrap();
 
     let acl_domain_key = Pubkey::new_unique();
     let app_account = Pubkey::new_unique();
@@ -459,9 +385,9 @@ fn bind_acl_record_rejects_app_account_without_matching_authority() {
         handle,
         payer.pubkey(),
     );
-    let ix = Instruction {
+    let ix = anchor_ix(
         program_id,
-        accounts: host::accounts::BindAclRecord {
+        host::accounts::BindAclRecord {
             payer: payer.pubkey(),
             authority: payer.pubkey(),
             app_account_authority: payer.pubkey(),
@@ -470,9 +396,8 @@ fn bind_acl_record_rejects_app_account_without_matching_authority() {
             system_program: system_program::ID,
             event_authority: event_authority(program_id),
             program: program_id,
-        }
-        .to_account_metas(None),
-        data: host::instruction::BindAclRecord {
+        },
+        host::instruction::BindAclRecord {
             nonce_key,
             nonce_sequence: 0,
             acl_domain_key,
@@ -483,9 +408,8 @@ fn bind_acl_record_rejects_app_account_without_matching_authority() {
                 pubkey: payer.pubkey(),
             }],
             public_decrypt: false,
-        }
-        .data(),
-    };
+        },
+    );
 
     assert!(try_send(&mut svm, &payer, ix).is_err());
 }
@@ -493,21 +417,10 @@ fn bind_acl_record_rejects_app_account_without_matching_authority() {
 #[test]
 fn bind_acl_record_rejects_handle_laundering_by_unallowed_authority() {
     let program_id = host::id();
-    let program_path = host_program_so_path();
-    assert!(
-        program_path.exists(),
-        "missing {}; run `cd solana && anchor build` before this runtime test",
-        program_path.display()
-    );
-
-    let mut svm = LiteSVM::new();
-    svm.add_program_from_file(program_id, &program_path)
-        .unwrap();
-
+    let mut svm = svm_with_program(program_id, host_program_so_path());
     let alice = Keypair::new();
-    let mallory = Keypair::new();
+    let mallory = svm.create_funded_account(1_000_000_000).unwrap();
     let mallory_app_account = Keypair::new();
-    svm.airdrop(&mallory.pubkey(), 1_000_000_000).unwrap();
 
     let acl_domain_key = Pubkey::new_unique();
     let encrypted_value_label = label("balance");
@@ -533,9 +446,9 @@ fn bind_acl_record_rejects_handle_laundering_by_unallowed_authority() {
         encrypted_value_label,
     );
     let target_acl_record = acl_record_address(program_id, target_nonce_key, 0);
-    let ix = Instruction {
+    let ix = anchor_ix(
         program_id,
-        accounts: host::accounts::BindAclRecord {
+        host::accounts::BindAclRecord {
             payer: mallory.pubkey(),
             authority: mallory.pubkey(),
             app_account_authority: mallory_app_account.pubkey(),
@@ -544,9 +457,8 @@ fn bind_acl_record_rejects_handle_laundering_by_unallowed_authority() {
             system_program: system_program::ID,
             event_authority: event_authority(program_id),
             program: program_id,
-        }
-        .to_account_metas(None),
-        data: host::instruction::BindAclRecord {
+        },
+        host::instruction::BindAclRecord {
             nonce_key: target_nonce_key,
             nonce_sequence: 0,
             acl_domain_key,
@@ -557,9 +469,8 @@ fn bind_acl_record_rejects_handle_laundering_by_unallowed_authority() {
                 pubkey: mallory.pubkey(),
             }],
             public_decrypt: false,
-        }
-        .data(),
-    };
+        },
+    );
 
     assert!(send_with_signers(
         &mut svm,
@@ -1219,46 +1130,48 @@ fn token_program_so_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../target/deploy/confidential_token.so")
 }
 
+fn svm_with_program(program_id: Pubkey, program_path: PathBuf) -> LiteSVM {
+    svm_with_programs(&[(program_id, program_path)])
+}
+
+fn svm_with_programs(programs: &[(Pubkey, PathBuf)]) -> LiteSVM {
+    for (_, path) in programs {
+        assert!(
+            path.exists(),
+            "missing {}; run `cd solana && NO_DNA=1 anchor build --ignore-keys` before this runtime test",
+            path.display()
+        );
+    }
+
+    let program_bytes = programs
+        .iter()
+        .map(|(program_id, path)| (*program_id, std::fs::read(path).unwrap()))
+        .collect::<Vec<_>>();
+    let programs = program_bytes
+        .iter()
+        .map(|(program_id, bytes)| (*program_id, bytes.as_slice()))
+        .collect::<Vec<_>>();
+    AnchorLiteSVM::build_with_programs(&programs).svm
+}
+
 fn token_fixture() -> TokenFixture {
     let host_program_id = host::id();
     let token_program_id = token::id();
-    let host_program_path = host_program_so_path();
-    let token_program_path = token_program_so_path();
-    assert!(
-        host_program_path.exists(),
-        "missing {}; run `cd solana && anchor build` before this runtime test",
-        host_program_path.display()
-    );
-    assert!(
-        token_program_path.exists(),
-        "missing {}; run `cd solana && anchor build` before this runtime test",
-        token_program_path.display()
-    );
+    let mut svm = svm_with_programs(&[
+        (host_program_id, host_program_so_path()),
+        (token_program_id, token_program_so_path()),
+    ]);
 
-    let mut svm = LiteSVM::new();
-    svm.add_program_from_file(host_program_id, &host_program_path)
-        .unwrap();
-    svm.add_program_from_file(token_program_id, &token_program_path)
-        .unwrap();
-
-    let alice = Keypair::new();
-    let bob = Keypair::new();
+    let alice = svm.create_funded_account(2_000_000_000).unwrap();
+    let bob = svm.create_funded_account(1_000_000_000).unwrap();
     let mint = Keypair::new();
-    let underlying_mint = Keypair::new();
-    svm.airdrop(&alice.pubkey(), 2_000_000_000).unwrap();
-    svm.airdrop(&bob.pubkey(), 1_000_000_000).unwrap();
+    let underlying_mint = svm.create_token_mint(&alice, 6).unwrap();
 
-    create_spl_mint(&mut svm, &alice, &underlying_mint, 6);
     let vault_authority = vault_authority_address(token_program_id, mint.pubkey());
-    let alice_usdc = Keypair::new();
+    let alice_usdc = svm
+        .create_token_account(&underlying_mint.pubkey(), &alice)
+        .unwrap();
     let vault_usdc = Keypair::new();
-    create_spl_token_account(
-        &mut svm,
-        &alice,
-        &alice_usdc,
-        underlying_mint.pubkey(),
-        alice.pubkey(),
-    );
     create_spl_token_account(
         &mut svm,
         &alice,
@@ -1266,28 +1179,27 @@ fn token_fixture() -> TokenFixture {
         underlying_mint.pubkey(),
         vault_authority,
     );
-    mint_spl_to(
-        &mut svm,
+    svm.mint_to(
+        &underlying_mint.pubkey(),
+        &alice_usdc.pubkey(),
         &alice,
-        underlying_mint.pubkey(),
-        alice_usdc.pubkey(),
         1_000_000_000,
-    );
+    )
+    .unwrap();
 
     send_with_signers(
         &mut svm,
         &alice.pubkey(),
-        Instruction {
-            program_id: token_program_id,
-            accounts: token::accounts::InitializeMint {
+        anchor_ix(
+            token_program_id,
+            token::accounts::InitializeMint {
                 authority: alice.pubkey(),
                 mint: mint.pubkey(),
                 underlying_mint: underlying_mint.pubkey(),
                 system_program: system_program::ID,
-            }
-            .to_account_metas(None),
-            data: token::instruction::InitializeMint {}.data(),
-        },
+            },
+            token::instruction::InitializeMint {},
+        ),
         &[&alice, &mint],
     )
     .unwrap();
@@ -1363,9 +1275,9 @@ fn initialize_confidential_token_account(
     send(
         svm,
         owner,
-        Instruction {
-            program_id: token_program_id,
-            accounts: token::accounts::InitializeTokenAccount {
+        anchor_ix(
+            token_program_id,
+            token::accounts::InitializeTokenAccount {
                 owner: owner.pubkey(),
                 mint,
                 compute_signer,
@@ -1374,10 +1286,9 @@ fn initialize_confidential_token_account(
                 zama_event_authority: event_authority(host_program_id),
                 zama_program: host_program_id,
                 system_program: system_program::ID,
-            }
-            .to_account_metas(None),
-            data: token::instruction::InitializeTokenAccount { initial_balance }.data(),
-        },
+            },
+            token::instruction::InitializeTokenAccount { initial_balance },
+        ),
     );
 }
 
@@ -1462,18 +1373,17 @@ fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
     let nonce_key = token::nonce_key(acl_domain_key, app_account, encrypted_value_label);
     let nonce_sequence = u64::from(handle[0]);
     let acl_record = acl_record_address(fixture.host_program_id, nonce_key, nonce_sequence);
-    let ix = Instruction {
-        program_id: fixture.host_program_id,
-        accounts: host::accounts::MockInputVerifiedAndBind {
+    let ix = anchor_ix(
+        fixture.host_program_id,
+        host::accounts::MockInputVerifiedAndBind {
             payer: fixture.alice.pubkey(),
             app_account_authority: app_account,
             output_acl_record: acl_record,
             system_program: system_program::ID,
             event_authority: event_authority(fixture.host_program_id),
             program: fixture.host_program_id,
-        }
-        .to_account_metas(None),
-        data: host::instruction::MockInputVerifiedAndBind {
+        },
+        host::instruction::MockInputVerifiedAndBind {
             input_handle: handle,
             user: fixture.alice.pubkey(),
             output_nonce_key: nonce_key,
@@ -1485,9 +1395,8 @@ fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
                 pubkey: fixture.compute_signer,
             }],
             output_public_decrypt: false,
-        }
-        .data(),
-    };
+        },
+    );
     send(&mut fixture.svm, &fixture.alice, ix);
 }
 
@@ -1530,9 +1439,9 @@ fn self_transfer_ix(
     output: TransferOutputAccounts,
     amount_handle: [u8; 32],
 ) -> Instruction {
-    Instruction {
-        program_id: fixture.token_program_id,
-        accounts: token::accounts::ConfidentialTransfer {
+    anchor_ix(
+        fixture.token_program_id,
+        token::accounts::ConfidentialTransfer {
             owner: fixture.alice.pubkey(),
             mint: fixture.mint.pubkey(),
             from_account: fixture.alice_token,
@@ -1546,10 +1455,9 @@ fn self_transfer_ix(
             zama_event_authority: event_authority(fixture.host_program_id),
             zama_program: fixture.host_program_id,
             system_program: system_program::ID,
-        }
-        .to_account_metas(None),
-        data: token::instruction::ConfidentialTransfer { amount_handle }.data(),
-    }
+        },
+        token::instruction::ConfidentialTransfer { amount_handle },
+    )
 }
 
 fn transfer_ix_with_current_acl(
@@ -1577,9 +1485,9 @@ fn transfer_ix_with_amount_acl(
     output: TransferOutputAccounts,
     amount_handle: [u8; 32],
 ) -> Instruction {
-    Instruction {
-        program_id: fixture.token_program_id,
-        accounts: token::accounts::ConfidentialTransfer {
+    anchor_ix(
+        fixture.token_program_id,
+        token::accounts::ConfidentialTransfer {
             owner: fixture.alice.pubkey(),
             mint: fixture.mint.pubkey(),
             from_account: fixture.alice_token,
@@ -1593,16 +1501,15 @@ fn transfer_ix_with_amount_acl(
             zama_event_authority: event_authority(fixture.host_program_id),
             zama_program: fixture.host_program_id,
             system_program: system_program::ID,
-        }
-        .to_account_metas(None),
-        data: token::instruction::ConfidentialTransfer { amount_handle }.data(),
-    }
+        },
+        token::instruction::ConfidentialTransfer { amount_handle },
+    )
 }
 
 fn wrap_usdc_ix(fixture: &TokenFixture, output: WrapOutputAccounts, amount: u64) -> Instruction {
-    Instruction {
-        program_id: fixture.token_program_id,
-        accounts: token::accounts::WrapUsdc {
+    anchor_ix(
+        fixture.token_program_id,
+        token::accounts::WrapUsdc {
             owner: fixture.alice.pubkey(),
             mint: fixture.mint.pubkey(),
             token_account: fixture.alice_token,
@@ -1621,10 +1528,9 @@ fn wrap_usdc_ix(fixture: &TokenFixture, output: WrapOutputAccounts, amount: u64)
             zama_program: fixture.host_program_id,
             token_program: spl_token::id(),
             system_program: system_program::ID,
-        }
-        .to_account_metas(None),
-        data: token::instruction::WrapUsdc { amount }.data(),
-    }
+        },
+        token::instruction::WrapUsdc { amount },
+    )
 }
 
 fn allow_for_decryption_ix(
@@ -1633,44 +1539,16 @@ fn allow_for_decryption_ix(
     acl_record: Pubkey,
     handle: [u8; 32],
 ) -> Instruction {
-    Instruction {
+    anchor_ix(
         program_id,
-        accounts: host::accounts::AllowForDecryption {
+        host::accounts::AllowForDecryption {
             authority,
             acl_record,
             event_authority: event_authority(program_id),
             program: program_id,
-        }
-        .to_account_metas(None),
-        data: host::instruction::AllowForDecryption { handle }.data(),
-    }
-}
-
-fn create_spl_mint(svm: &mut LiteSVM, payer: &Keypair, mint: &Keypair, decimals: u8) {
-    let rent = svm.minimum_balance_for_rent_exemption(spl_token::state::Mint::LEN);
-    send_many_with_signers(
-        svm,
-        &payer.pubkey(),
-        vec![
-            system_instruction::create_account(
-                &payer.pubkey(),
-                &mint.pubkey(),
-                rent,
-                spl_token::state::Mint::LEN as u64,
-                &spl_token::id(),
-            ),
-            spl_token::instruction::initialize_mint2(
-                &spl_token::id(),
-                &mint.pubkey(),
-                &payer.pubkey(),
-                None,
-                decimals,
-            )
-            .unwrap(),
-        ],
-        &[payer, mint],
+        },
+        host::instruction::AllowForDecryption { handle },
     )
-    .unwrap();
 }
 
 fn create_spl_token_account(
@@ -1703,28 +1581,6 @@ fn create_spl_token_account(
         &[payer, token_account],
     )
     .unwrap();
-}
-
-fn mint_spl_to(
-    svm: &mut LiteSVM,
-    mint_authority: &Keypair,
-    mint: Pubkey,
-    token_account: Pubkey,
-    amount: u64,
-) {
-    send(
-        svm,
-        mint_authority,
-        spl_token::instruction::mint_to(
-            &spl_token::id(),
-            &mint,
-            &token_account,
-            &mint_authority.pubkey(),
-            &[],
-            amount,
-        )
-        .unwrap(),
-    );
 }
 
 fn spl_token_amount(svm: &LiteSVM, address: Pubkey) -> u64 {
@@ -2064,6 +1920,18 @@ fn label(name: &str) -> [u8; 32] {
     assert!(bytes.len() <= out.len());
     out[..bytes.len()].copy_from_slice(bytes);
     out
+}
+
+fn anchor_ix<A, D>(program_id: Pubkey, accounts: A, args: D) -> Instruction
+where
+    A: ToAccountMetas,
+    D: InstructionData,
+{
+    Program::new(program_id)
+        .accounts(accounts)
+        .args(args)
+        .instruction()
+        .unwrap()
 }
 
 fn send(svm: &mut LiteSVM, payer: &Keypair, ix: Instruction) {
