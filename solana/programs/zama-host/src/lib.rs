@@ -1,3 +1,7 @@
+// Anchor macros generate framework-shaped code that trips rustc/Clippy checks.
+#![allow(unexpected_cfgs)]
+#![allow(clippy::diverging_sub_expression, clippy::too_many_arguments)]
+
 use anchor_lang::prelude::*;
 use solana_sha256_hasher::hashv;
 use solana_sysvar::slot_hashes::PodSlotHashes;
@@ -33,7 +37,6 @@ pub mod zama_host {
             handle,
             subject,
         });
-        drop(ctx);
         Ok(())
     }
 
@@ -49,21 +52,14 @@ pub mod zama_host {
         public_decrypt: bool,
     ) -> Result<()> {
         let authority = ctx.accounts.authority.key();
-        assert_nonce_key_matches_fields(
+        assert_output_acl_metadata(
+            ctx.accounts.app_account_authority.key(),
             nonce_key,
             acl_domain_key,
             app_account,
             encrypted_value_label,
+            &subjects,
         )?;
-        require_keys_eq!(
-            ctx.accounts.app_account_authority.key(),
-            app_account,
-            ZamaHostError::AppAccountAuthorityMismatch
-        );
-        require!(
-            !subjects.is_empty() && subjects.len() <= MAX_ACL_SUBJECTS,
-            ZamaHostError::AclSubjectCapacityExceeded
-        );
         assert_canonical_acl_record(
             &ctx.accounts.authorizing_acl_record.to_account_info(),
             &ctx.accounts.authorizing_acl_record,
@@ -150,21 +146,14 @@ pub mod zama_host {
         output_public_decrypt: bool,
     ) -> Result<()> {
         let subject = ctx.accounts.compute_subject.key();
-        require_keys_eq!(
+        assert_output_acl_metadata(
             ctx.accounts.app_account_authority.key(),
-            output_app_account,
-            ZamaHostError::AppAccountAuthorityMismatch
-        );
-        assert_nonce_key_matches_fields(
             output_nonce_key,
             output_acl_domain_key,
             output_app_account,
             output_encrypted_value_label,
+            &output_subjects,
         )?;
-        require!(
-            !output_subjects.is_empty() && output_subjects.len() <= MAX_ACL_SUBJECTS,
-            ZamaHostError::AclSubjectCapacityExceeded
-        );
 
         let clock = Clock::get()?;
         let previous_bank_hash = previous_bank_hash(clock.slot)?;
@@ -225,21 +214,14 @@ pub mod zama_host {
         output_subjects: Vec<AclSubjectEntry>,
         output_public_decrypt: bool,
     ) -> Result<()> {
-        require_keys_eq!(
+        assert_output_acl_metadata(
             ctx.accounts.app_account_authority.key(),
-            output_app_account,
-            ZamaHostError::AppAccountAuthorityMismatch
-        );
-        assert_nonce_key_matches_fields(
             output_nonce_key,
             output_acl_domain_key,
             output_app_account,
             output_encrypted_value_label,
+            &output_subjects,
         )?;
-        require!(
-            !output_subjects.is_empty() && output_subjects.len() <= MAX_ACL_SUBJECTS,
-            ZamaHostError::AclSubjectCapacityExceeded
-        );
 
         write_acl_record(
             &mut ctx.accounts.output_acl_record,
@@ -287,21 +269,14 @@ pub mod zama_host {
         output_public_decrypt: bool,
     ) -> Result<()> {
         let subject = ctx.accounts.compute_subject.key();
-        require_keys_eq!(
+        assert_output_acl_metadata(
             ctx.accounts.app_account_authority.key(),
-            output_app_account,
-            ZamaHostError::AppAccountAuthorityMismatch
-        );
-        assert_nonce_key_matches_fields(
             output_nonce_key,
             output_acl_domain_key,
             output_app_account,
             output_encrypted_value_label,
+            &output_subjects,
         )?;
-        require!(
-            !output_subjects.is_empty() && output_subjects.len() <= MAX_ACL_SUBJECTS,
-            ZamaHostError::AclSubjectCapacityExceeded
-        );
 
         // Match the EVM executor boundary: no compute event is emitted until
         // the host program verifies that the compute subject can use the
@@ -387,7 +362,6 @@ pub mod zama_host {
             fhe_type,
             result,
         });
-        drop(ctx);
         Ok(())
     }
 
@@ -409,7 +383,6 @@ pub mod zama_host {
             fhe_type,
             result,
         });
-        drop(ctx);
         Ok(())
     }
 
@@ -432,7 +405,6 @@ pub mod zama_host {
             user,
             acl_domain_key,
         });
-        drop(ctx);
         Ok(())
     }
 }
@@ -692,6 +664,32 @@ fn write_acl_record(
     for (index, subject) in subjects.iter().enumerate() {
         record.subjects[index] = subject.pubkey;
     }
+}
+
+fn assert_output_acl_metadata(
+    app_account_authority: Pubkey,
+    nonce_key: [u8; 32],
+    acl_domain_key: Pubkey,
+    app_account: Pubkey,
+    encrypted_value_label: [u8; 32],
+    subjects: &[AclSubjectEntry],
+) -> Result<()> {
+    require_keys_eq!(
+        app_account_authority,
+        app_account,
+        ZamaHostError::AppAccountAuthorityMismatch
+    );
+    assert_nonce_key_matches_fields(
+        nonce_key,
+        acl_domain_key,
+        app_account,
+        encrypted_value_label,
+    )?;
+    require!(
+        !subjects.is_empty() && subjects.len() <= MAX_ACL_SUBJECTS,
+        ZamaHostError::AclSubjectCapacityExceeded
+    );
+    Ok(())
 }
 
 fn assert_record(

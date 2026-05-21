@@ -1,3 +1,6 @@
+// Test builders mirror Anchor instruction surfaces and LiteSVM result types.
+#![allow(clippy::result_large_err, clippy::too_many_arguments)]
+
 use std::path::PathBuf;
 
 mod support;
