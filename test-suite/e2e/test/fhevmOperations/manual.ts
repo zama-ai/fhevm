@@ -1632,7 +1632,7 @@ describe('FHEVM manual operations', function () {
     await expect(promise).to.be.reverted;
   });
 
-  it('test operator "mulDiv" euint8 enc*enc: (0 * 100) / 50 = 0 (zero lhs)', async function () {
+  it('test operator "mulDiv" euint8 enc*enc: (0 * 100) / 50 = 0 (zero factor1)', async function () {
     const encryptedAmount = await this.instance.encryptTypedValues({
       values: [{ type: 'uint8', value: 0n }, { type: 'uint8', value: 100n }],
       contractAddress: this.contractAddress,
@@ -1650,7 +1650,7 @@ describe('FHEVM manual operations', function () {
     assert.equal(res.clearValues[handle], 0n);
   });
 
-  it('test operator "mulDiv" euint8 enc*enc: (100 * 0) / 50 = 0 (zero rhs encrypted)', async function () {
+  it('test operator "mulDiv" euint8 enc*enc: (100 * 0) / 50 = 0 (zero factor2 encrypted)', async function () {
     const encryptedAmount = await this.instance.encryptTypedValues({
       values: [{ type: 'uint8', value: 100n }, { type: 'uint8', value: 0n }],
       contractAddress: this.contractAddress,
@@ -1668,7 +1668,7 @@ describe('FHEVM manual operations', function () {
     assert.equal(res.clearValues[handle], 0n);
   });
 
-  it('test operator "mulDiv" euint8 enc*scalar: (100 * 0) / 50 = 0 (zero rhs scalar)', async function () {
+  it('test operator "mulDiv" euint8 enc*scalar: (100 * 0) / 50 = 0 (zero factor2 scalar)', async function () {
     const encryptedAmount = await this.instance.encryptTypedValues({
       values: [{ type: 'uint8', value: 100n }],
       contractAddress: this.contractAddress,
