@@ -194,6 +194,19 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
+     * @dev Used by admin operations that mutate KMS context state read by `Decryption`.
+     *      KMS-context rotations, destructions and per-context threshold changes race
+     *      against decryption requests pinned to the affected context, so the operator
+     *      must pause `Decryption` first to drain in-flight requests.
+     */
+    modifier whenDecryptionPaused() {
+        if (!DECRYPTION.paused()) {
+            revert DecryptionMustBePaused();
+        }
+        _;
+    }
+
+    /**
      * @notice Initializes the contract
      * @dev This function needs to be public in order to be called by the UUPS proxy.
      * @param initialMetadata Metadata of the protocol
@@ -273,7 +286,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 newPublicDecryptionThreshold,
         uint256 newUserDecryptionThreshold,
         uint256 newKmsGenThreshold
-    ) public virtual onlyOwner {
+    ) public virtual onlyOwner whenDecryptionPaused {
         if (newContextId == 0) {
             revert InvalidNullKmsContextId();
         }
@@ -311,7 +324,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /**
      * @notice See {IGatewayConfig-destroyKmsContext}.
      */
-    function destroyKmsContext(uint256 kmsContextId) external virtual onlyOwner {
+    function destroyKmsContext(uint256 kmsContextId) external virtual onlyOwner whenDecryptionPaused {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
 
         if (kmsContextId == $.currentKmsContextId) {
@@ -376,7 +389,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /**
      * @notice See {IGatewayConfig-updateMpcThresholdForContext}.
      */
-    function updateMpcThresholdForContext(uint256 contextId, uint256 newMpcThreshold) external virtual onlyOwner {
+    function updateMpcThresholdForContext(
+        uint256 contextId,
+        uint256 newMpcThreshold
+    ) external virtual onlyOwner whenDecryptionPaused {
         _requireValidContext(contextId);
         _setMpcThreshold(contextId, newMpcThreshold);
         emit UpdateMpcThresholdForContext(contextId, newMpcThreshold);
@@ -388,7 +404,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function updatePublicDecryptionThresholdForContext(
         uint256 contextId,
         uint256 newPublicDecryptionThreshold
-    ) external virtual onlyOwner {
+    ) external virtual onlyOwner whenDecryptionPaused {
         _requireValidContext(contextId);
         _setPublicDecryptionThreshold(contextId, newPublicDecryptionThreshold);
         emit UpdatePublicDecryptionThresholdForContext(contextId, newPublicDecryptionThreshold);
@@ -400,7 +416,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function updateUserDecryptionThresholdForContext(
         uint256 contextId,
         uint256 newUserDecryptionThreshold
-    ) external virtual onlyOwner {
+    ) external virtual onlyOwner whenDecryptionPaused {
         _requireValidContext(contextId);
         _setUserDecryptionThreshold(contextId, newUserDecryptionThreshold);
         emit UpdateUserDecryptionThresholdForContext(contextId, newUserDecryptionThreshold);
@@ -409,7 +425,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /**
      * @notice See {IGatewayConfig-updateKmsGenThresholdForContext}.
      */
-    function updateKmsGenThresholdForContext(uint256 contextId, uint256 newKmsGenThreshold) external virtual onlyOwner {
+    function updateKmsGenThresholdForContext(
+        uint256 contextId,
+        uint256 newKmsGenThreshold
+    ) external virtual onlyOwner whenDecryptionPaused {
         _requireValidContext(contextId);
         _setKmsGenThreshold(contextId, newKmsGenThreshold);
         emit UpdateKmsGenThresholdForContext(contextId, newKmsGenThreshold);
