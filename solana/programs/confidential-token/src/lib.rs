@@ -1,3 +1,7 @@
+// Anchor macros generate framework-shaped code that trips rustc/Clippy checks.
+#![allow(unexpected_cfgs)]
+#![allow(clippy::diverging_sub_expression, clippy::too_many_arguments)]
+
 mod fhe;
 
 use anchor_lang::prelude::*;
@@ -120,9 +124,7 @@ pub mod confidential_token {
             output_encrypted_value_label: wrap_amount_label(),
             plaintext: amount,
             fhe_type: BALANCE_FHE_TYPE,
-            output_subjects: vec![AclSubjectEntry {
-                pubkey: compute_signer,
-            }],
+            output_subjects: compute_acl_subject(compute_signer),
             output_public_decrypt: false,
         })?;
 
@@ -314,6 +316,8 @@ pub struct ConfidentialTransfer<'info> {
     pub mint: Box<Account<'info, ConfidentialMint>>,
     #[account(mut)]
     pub from_account: Box<Account<'info, ConfidentialTokenAccount>>,
+    // Anchor 1 rejects duplicate mutable Account<T> values unless the account opts in.
+    // A self-transfer is a supported no-op, so from_account and to_account may be equal.
     #[account(mut, dup)]
     pub to_account: Box<Account<'info, ConfidentialTokenAccount>>,
     /// CHECK: Program-controlled compute signer PDA.
@@ -416,14 +420,7 @@ fn compute_binary_op<'info>(
         output_nonce_key: balance_nonce_key(mint, token_account_key),
         output_nonce_sequence,
         output_encrypted_value_label: balance_label(),
-        output_subjects: vec![
-            AclSubjectEntry {
-                pubkey: token_account.owner,
-            },
-            AclSubjectEntry {
-                pubkey: compute_signer.key(),
-            },
-        ],
+        output_subjects: balance_acl_subjects(token_account.owner, compute_signer.key()),
         output_public_decrypt: false,
     })
 }
@@ -456,16 +453,24 @@ fn trivial_encrypt_balance_acl<'info>(
         output_encrypted_value_label: balance_label(),
         plaintext,
         fhe_type: BALANCE_FHE_TYPE,
-        output_subjects: vec![
-            AclSubjectEntry {
-                pubkey: token_account.owner,
-            },
-            AclSubjectEntry {
-                pubkey: compute_signer.key(),
-            },
-        ],
+        output_subjects: balance_acl_subjects(token_account.owner, compute_signer.key()),
         output_public_decrypt: false,
     })
+}
+
+fn balance_acl_subjects(owner: Pubkey, compute_signer: Pubkey) -> Vec<AclSubjectEntry> {
+    vec![
+        AclSubjectEntry { pubkey: owner },
+        AclSubjectEntry {
+            pubkey: compute_signer,
+        },
+    ]
+}
+
+fn compute_acl_subject(compute_signer: Pubkey) -> Vec<AclSubjectEntry> {
+    vec![AclSubjectEntry {
+        pubkey: compute_signer,
+    }]
 }
 
 pub fn compute_signer_address(mint: Pubkey) -> (Pubkey, u8) {

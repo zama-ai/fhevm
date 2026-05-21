@@ -42,7 +42,7 @@ Use this order when picking up the branch:
 ```text
 1. Run it
    cd solana
-   anchor build
+   NO_DNA=1 anchor build --ignore-keys
    cargo test --workspace
 
 2. Read the flow
@@ -902,7 +902,7 @@ Solana program build and runtime tests:
 
 ```bash
 cd solana
-anchor build
+NO_DNA=1 anchor build --ignore-keys
 cargo test --workspace
 ```
 
