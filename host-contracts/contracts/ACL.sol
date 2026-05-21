@@ -597,7 +597,7 @@ contract ACL is
         address delegate,
         address contractAddress
     ) private view returns (bool) {
-        return $.userDecryptionDelegations[delegator][delegate][contractAddress].expirationDate >= block.timestamp;
+        return $.userDecryptionDelegations[delegator][delegate][contractAddress].expirationDate > block.timestamp;
     }
 
     /**

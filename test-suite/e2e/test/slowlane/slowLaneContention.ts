@@ -18,9 +18,11 @@ describe('Slow lane deterministic contention', function () {
   });
 
   it('creates one heavy chain and one light chain', async function () {
-    const heavyInput = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    heavyInput.add64(1);
-    const heavyEncryptedInput = await heavyInput.encrypt();
+    const heavyEncryptedInput = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint64', value: 1 }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
 
     const heavyTx = await this.contract.runAddChain(
       heavyEncryptedInput.handles[0],
@@ -30,9 +32,11 @@ describe('Slow lane deterministic contention', function () {
     const heavyReceipt = await heavyTx.wait();
     expect(heavyReceipt?.status).to.eq(1);
 
-    const lightInput = this.instance.createEncryptedInput(this.contractAddress, this.signer.address);
-    lightInput.add64(1);
-    const lightEncryptedInput = await lightInput.encrypt();
+    const lightEncryptedInput = await this.instance.encryptTypedValues({
+      values: [{ type: 'uint64', value: 1 }],
+      contractAddress: this.contractAddress,
+      userAddress: this.signer.address,
+    });
 
     const lightTx = await this.contract.runAddChain(
       lightEncryptedInput.handles[0],

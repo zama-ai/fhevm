@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
+import {Vm} from "forge-std/Test.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {HostContractsDeployerTestUtils} from "@fhevm-foundry/HostContractsDeployerTestUtils.sol";
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
@@ -408,6 +409,49 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             impl,
             abi.encodeCall(ProtocolConfig.initializeFromMigration, (invalidContextId, nodes, thresholds))
         );
+    }
+
+    function test_emptyProxyInitializer_emitsNewKmsContext() public {
+        _setupEmptyProxy();
+
+        address impl = address(new ProtocolConfig());
+        KmsNode[] memory nodes = _makeKmsNodes(2);
+        IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
+
+        vm.expectEmit(true, false, false, true, protocolConfigAdd);
+        emit IProtocolConfig.NewKmsContext(KMS_CONTEXT_COUNTER_BASE + 1, nodes, thresholds);
+
+        vm.prank(owner);
+        EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
+            impl,
+            abi.encodeCall(ProtocolConfig.initializeFromEmptyProxy, (nodes, thresholds))
+        );
+    }
+
+    function test_migrationInitializer_doesNotEmitNewKmsContext() public {
+        _setupEmptyProxy();
+
+        address impl = address(new ProtocolConfig());
+        uint256 migratedContextId = KMS_CONTEXT_COUNTER_BASE + 3;
+
+        vm.recordLogs();
+        vm.prank(owner);
+        EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
+            impl,
+            abi.encodeCall(
+                ProtocolConfig.initializeFromMigration,
+                (migratedContextId, _makeKmsNodes(2), _defaultThresholds())
+            )
+        );
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics.length == 0) continue;
+            assertTrue(
+                logs[i].topics[0] != IProtocolConfig.NewKmsContext.selector,
+                "initializeFromMigration must not emit NewKmsContext"
+            );
+        }
     }
 
     function test_migrationGapContextsRemainInvalid() public {
