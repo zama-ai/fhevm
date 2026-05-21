@@ -8,6 +8,56 @@
   },
   "instructions": [
     {
+      "name": "allow_acl_subjects",
+      "discriminator": [
+        155,
+        157,
+        74,
+        6,
+        155,
+        238,
+        165,
+        130
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "acl_record",
+          "writable": true
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "handle",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "subjects",
+          "type": {
+            "vec": {
+              "defined": {
+                "name": "AclSubjectEntry"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "allow_for_decryption",
       "discriminator": [
         130,
@@ -111,68 +161,30 @@
       ]
     },
     {
-      "name": "bind_acl_record",
+      "name": "fhe_binary_op",
       "discriminator": [
-        12,
-        9,
-        149,
-        230,
-        215,
-        105,
-        145,
-        214
+        159,
+        109,
+        195,
+        103,
+        136,
+        153,
+        47,
+        225
       ],
       "accounts": [
         {
-          "name": "payer",
-          "writable": true,
+          "name": "compute_subject",
           "signer": true
         },
         {
-          "name": "authority",
-          "signer": true
+          "name": "lhs_acl_record"
         },
         {
-          "name": "app_account_authority",
-          "signer": true
-        },
-        {
-          "name": "authorizing_acl_record"
-        },
-        {
-          "name": "acl_record",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  97,
-                  99,
-                  108,
-                  45,
-                  114,
-                  101,
-                  99,
-                  111,
-                  114,
-                  100
-                ]
-              },
-              {
-                "kind": "arg",
-                "path": "nonce_key"
-              },
-              {
-                "kind": "arg",
-                "path": "nonce_sequence"
-              }
-            ]
-          }
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
+          "name": "rhs_acl_record",
+          "docs": [
+            "instruction body; scalar RHS operands deliberately skip this account."
+          ]
         },
         {
           "name": "event_authority"
@@ -183,71 +195,61 @@
       ],
       "args": [
         {
-          "name": "nonce_key",
+          "name": "op",
           "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "nonce_sequence",
-          "type": "u64"
-        },
-        {
-          "name": "acl_domain_key",
-          "type": "pubkey"
-        },
-        {
-          "name": "app_account",
-          "type": "pubkey"
-        },
-        {
-          "name": "encrypted_value_label",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "handle",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "subjects",
-          "type": {
-            "vec": {
-              "defined": {
-                "name": "AclSubjectEntry"
-              }
+            "defined": {
+              "name": "FheBinaryOpCode"
             }
           }
         },
         {
-          "name": "public_decrypt",
+          "name": "lhs",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "rhs",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "scalar",
           "type": "bool"
+        },
+        {
+          "name": "output_fhe_type",
+          "type": "u8"
+        },
+        {
+          "name": "result",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
         }
       ]
     },
     {
-      "name": "bind_computed_binary_output",
+      "name": "fhe_binary_op_and_bind_output",
       "discriminator": [
-        58,
-        5,
-        86,
-        103,
-        95,
-        210,
-        174,
-        177
+        61,
+        248,
+        239,
+        28,
+        74,
+        79,
+        31,
+        205
       ],
       "accounts": [
         {
@@ -401,85 +403,6 @@
         {
           "name": "output_public_decrypt",
           "type": "bool"
-        }
-      ]
-    },
-    {
-      "name": "fhe_binary_op",
-      "discriminator": [
-        159,
-        109,
-        195,
-        103,
-        136,
-        153,
-        47,
-        225
-      ],
-      "accounts": [
-        {
-          "name": "compute_subject",
-          "signer": true
-        },
-        {
-          "name": "lhs_acl_record"
-        },
-        {
-          "name": "rhs_acl_record",
-          "docs": [
-            "instruction body; scalar RHS operands deliberately skip this account."
-          ]
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
-        {
-          "name": "op",
-          "type": {
-            "defined": {
-              "name": "FheBinaryOpCode"
-            }
-          }
-        },
-        {
-          "name": "lhs",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "rhs",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "scalar",
-          "type": "bool"
-        },
-        {
-          "name": "output_fhe_type",
-          "type": "u8"
-        },
-        {
-          "name": "result",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
         }
       ]
     },
@@ -622,8 +545,9 @@
         "Test-only event shim.",
         "",
         "This bypasses ACL record verification and exists only to feed listener /",
-        "worker tests. Protocol flows should create ACL state through",
-        "`bind_acl_record`, `trivial_encrypt_and_bind`, or an input verifier.",
+        "worker tests. Protocol flows should create ACL state through authenticated",
+        "handle-producing instructions such as `trivial_encrypt_and_bind` or an",
+        "input verifier.",
         "Input flows may use `mock_input_verified_and_bind` only as a temporary mock",
         "short-circuit until the verifier/transciphering boundary exists."
       ],

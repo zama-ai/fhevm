@@ -23,8 +23,9 @@ pub mod zama_host {
     /// Test-only event shim.
     ///
     /// This bypasses ACL record verification and exists only to feed listener /
-    /// worker tests. Protocol flows should create ACL state through
-    /// `bind_acl_record`, `trivial_encrypt_and_bind`, or an input verifier.
+    /// worker tests. Protocol flows should create ACL state through authenticated
+    /// handle-producing instructions such as `trivial_encrypt_and_bind` or an
+    /// input verifier.
     /// Input flows may use `mock_input_verified_and_bind` only as a temporary mock
     /// short-circuit until the verifier/transciphering boundary exists.
     pub fn test_emit_acl_allowed(
@@ -40,44 +41,18 @@ pub mod zama_host {
         Ok(())
     }
 
-    pub fn bind_acl_record(
-        ctx: Context<BindAclRecord>,
-        nonce_key: [u8; 32],
-        nonce_sequence: u64,
-        acl_domain_key: Pubkey,
-        app_account: Pubkey,
-        encrypted_value_label: [u8; 32],
+    pub fn allow_acl_subjects(
+        ctx: Context<AllowAclSubjects>,
         handle: [u8; 32],
         subjects: Vec<AclSubjectEntry>,
-        public_decrypt: bool,
     ) -> Result<()> {
         let authority = ctx.accounts.authority.key();
-        assert_output_acl_metadata(
-            ctx.accounts.app_account_authority.key(),
-            nonce_key,
-            acl_domain_key,
-            app_account,
-            encrypted_value_label,
-            &subjects,
-        )?;
         assert_canonical_acl_record(
-            &ctx.accounts.authorizing_acl_record.to_account_info(),
-            &ctx.accounts.authorizing_acl_record,
+            &ctx.accounts.acl_record.to_account_info(),
+            &ctx.accounts.acl_record,
         )?;
-        assert_record_allows_handle(&ctx.accounts.authorizing_acl_record, handle, authority)?;
-
-        write_acl_record(
-            &mut ctx.accounts.acl_record,
-            nonce_key,
-            nonce_sequence,
-            acl_domain_key,
-            app_account,
-            encrypted_value_label,
-            handle,
-            &subjects,
-            public_decrypt,
-            ctx.bumps.acl_record,
-        );
+        assert_record_allows_handle(&ctx.accounts.acl_record, handle, authority)?;
+        extend_acl_subjects(&mut ctx.accounts.acl_record, &subjects)?;
 
         for subject in subjects {
             emit_cpi!(AclAllowedEvent {
@@ -313,8 +288,8 @@ pub mod zama_host {
         Ok(())
     }
 
-    pub fn bind_computed_binary_output(
-        ctx: Context<BindComputedBinaryOutput>,
+    pub fn fhe_binary_op_and_bind_output(
+        ctx: Context<FheBinaryOpAndBindOutput>,
         op: FheBinaryOpCode,
         lhs: [u8; 32],
         rhs: [u8; 32],
@@ -354,7 +329,7 @@ pub mod zama_host {
 
         let clock = Clock::get()?;
         let previous_bank_hash = previous_bank_hash(clock.slot)?;
-        let expected_result = computed_binary_handle(
+        let expected_result = computed_bound_binary_handle(
             op,
             lhs,
             rhs,
@@ -363,11 +338,23 @@ pub mod zama_host {
             SOLANA_POC_CHAIN_ID,
             previous_bank_hash,
             clock.unix_timestamp,
+            output_nonce_key,
+            output_nonce_sequence,
         );
         require!(
             result == expected_result,
             ZamaHostError::ComputedHandleMismatch
         );
+
+        emit_cpi!(FheBinaryOpEvent {
+            version: EVENT_VERSION,
+            op,
+            subject: subject.to_bytes(),
+            lhs,
+            rhs,
+            scalar,
+            result,
+        });
 
         write_acl_record(
             &mut ctx.accounts.output_acl_record,
@@ -464,25 +451,11 @@ pub mod zama_host {
 pub struct TestEmitProtocolEvent {}
 
 #[derive(Accounts)]
-#[instruction(nonce_key: [u8; 32], nonce_sequence: u64)]
 #[event_cpi]
-pub struct BindAclRecord<'info> {
-    #[account(mut)]
-    pub payer: Signer<'info>,
+pub struct AllowAclSubjects<'info> {
     pub authority: Signer<'info>,
-    pub app_account_authority: Signer<'info>,
-    pub authorizing_acl_record: Account<'info, AclRecord>,
-    #[account(
-        init,
-        payer = payer,
-        space = 8 + AclRecord::SPACE,
-        seeds = [b"acl-record", nonce_key.as_ref(), &nonce_sequence.to_le_bytes()],
-        bump
-    )]
-    // PoC records are born Bound through Anchor `init`. A future predeclared-account
-    // flow should add an explicit Empty -> Bound state machine.
+    #[account(mut)]
     pub acl_record: Account<'info, AclRecord>,
-    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -578,7 +551,7 @@ pub struct FheBinaryOp<'info> {
     output_nonce_sequence: u64
 )]
 #[event_cpi]
-pub struct BindComputedBinaryOutput<'info> {
+pub struct FheBinaryOpAndBindOutput<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     pub compute_subject: Signer<'info>,
@@ -735,6 +708,31 @@ fn write_acl_record(
     for (index, subject) in subjects.iter().enumerate() {
         record.subjects[index] = subject.pubkey;
     }
+}
+
+fn extend_acl_subjects(
+    record: &mut Account<AclRecord>,
+    subjects: &[AclSubjectEntry],
+) -> Result<()> {
+    require!(
+        !subjects.is_empty(),
+        ZamaHostError::AclSubjectCapacityExceeded
+    );
+
+    let mut subject_count = record.subject_count as usize;
+    for subject in subjects {
+        if record.subjects[..subject_count].contains(&subject.pubkey) {
+            continue;
+        }
+        require!(
+            subject_count < MAX_ACL_SUBJECTS,
+            ZamaHostError::AclSubjectCapacityExceeded
+        );
+        record.subjects[subject_count] = subject.pubkey;
+        subject_count += 1;
+    }
+    record.subject_count = subject_count as u8;
+    Ok(())
 }
 
 fn assert_output_acl_metadata(
@@ -902,6 +900,31 @@ pub fn computed_binary_handle_for_current_slot(
     ))
 }
 
+pub fn computed_bound_binary_handle_for_current_slot(
+    op: FheBinaryOpCode,
+    lhs: [u8; 32],
+    rhs: [u8; 32],
+    scalar: bool,
+    fhe_type: u8,
+    output_nonce_key: [u8; 32],
+    output_nonce_sequence: u64,
+) -> Result<[u8; 32]> {
+    let clock = Clock::get()?;
+    let previous_bank_hash = previous_bank_hash(clock.slot)?;
+    Ok(computed_bound_binary_handle(
+        op,
+        lhs,
+        rhs,
+        scalar,
+        fhe_type,
+        SOLANA_POC_CHAIN_ID,
+        previous_bank_hash,
+        clock.unix_timestamp,
+        output_nonce_key,
+        output_nonce_sequence,
+    ))
+}
+
 pub fn computed_binary_handle(
     op: FheBinaryOpCode,
     lhs: [u8; 32],
@@ -934,6 +957,42 @@ pub fn computed_binary_handle(
     result[22..30].copy_from_slice(&chain_id_bytes);
     result[30] = fhe_type;
     result[31] = HANDLE_VERSION;
+    result
+}
+
+pub fn computed_bound_binary_handle(
+    op: FheBinaryOpCode,
+    lhs: [u8; 32],
+    rhs: [u8; 32],
+    scalar: bool,
+    fhe_type: u8,
+    chain_id: u64,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+    output_nonce_key: [u8; 32],
+    output_nonce_sequence: u64,
+) -> [u8; 32] {
+    let sequence_bytes = output_nonce_sequence.to_be_bytes();
+    let base_result = computed_binary_handle(
+        op,
+        lhs,
+        rhs,
+        scalar,
+        fhe_type,
+        chain_id,
+        previous_bank_hash,
+        unix_timestamp,
+    );
+    let mut result = base_result;
+    result[..21].copy_from_slice(
+        &hashv(&[
+            b"FHE_bound_output",
+            &base_result,
+            &output_nonce_key,
+            &sequence_bytes,
+        ])
+        .to_bytes()[..21],
+    );
     result
 }
 

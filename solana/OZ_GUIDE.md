@@ -41,14 +41,11 @@ initialize mint/account
 wrap_usdc
   -> SPL transfer_checked into vault
   -> trivial_encrypt_and_bind amount
-  -> fhe_binary_op Add into current balance
-  -> bind_computed_binary_output for the new balance
+  -> fhe_binary_op_and_bind_output Add into current balance
 
 confidential_transfer
-  -> fhe_binary_op Sub for sender
-  -> bind_computed_binary_output for sender balance
-  -> fhe_binary_op Add for receiver
-  -> bind_computed_binary_output for receiver balance
+  -> fhe_binary_op_and_bind_output Sub for sender balance
+  -> fhe_binary_op_and_bind_output Add for receiver balance
   -> rotates balance handle + ACL record for each changed token account
 
 BalanceHandleUpdatedEvent
@@ -111,6 +108,10 @@ Input path:
 Public decrypt:
   allow_for_decryption is modeled, but the production authority rule is not final.
   A compute_signer should not automatically be able to flip public_decrypt.
+
+Persistent grants:
+  allow_acl_subjects mutates the existing canonical ACL record.
+  It does not create a second ACL record for the same handle.
 
 Subjects:
   subjects[] is a plain Pubkey list.
