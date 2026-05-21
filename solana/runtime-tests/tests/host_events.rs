@@ -33,6 +33,8 @@ use zama_host::{
 
 use support::fhe_runtime::{CleartextBackend, FheBackend, TypedClearValue};
 
+const DEFAULT_INPUT_NONCE_SEQUENCE: u64 = 0;
+
 #[test]
 fn test_emit_trivial_encrypt_emits_anchor_cpi_event() {
     let program_id = host::id();
@@ -279,6 +281,114 @@ fn assert_acl_record_rejects_noncanonical_acl_record_address() {
 }
 
 #[test]
+fn fhe_binary_op_scalar_rhs_skips_rhs_acl_but_encrypted_rhs_requires_it() {
+    let program_id = host::id();
+    let mut svm = svm_with_program(program_id, host_program_so_path());
+    let payer = svm.create_funded_account(1_000_000_000).unwrap();
+    let dummy_rhs_account = svm.create_funded_account(1_000_000).unwrap();
+
+    let acl_domain_key = Pubkey::new_unique();
+    let app_account = payer.pubkey();
+    let encrypted_value_label = label("balance");
+    let nonce_key = token::nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let lhs = [7; 32];
+    let lhs_acl_record = seed_authorizing_acl_record(
+        &mut svm,
+        program_id,
+        nonce_key,
+        0,
+        acl_domain_key,
+        app_account,
+        encrypted_value_label,
+        lhs,
+        payer.pubkey(),
+    );
+    let output_acl_record = acl_record_address(program_id, nonce_key, 1);
+    let rhs_scalar = amount_plaintext(5);
+
+    let scalar_ix = anchor_ix(
+        program_id,
+        host::accounts::FheBinaryOp {
+            payer: payer.pubkey(),
+            compute_subject: payer.pubkey(),
+            app_account_authority: app_account,
+            lhs_acl_record,
+            rhs_acl_record: dummy_rhs_account.pubkey(),
+            output_acl_record,
+            system_program: system_program::ID,
+            event_authority: event_authority(program_id),
+            program: program_id,
+        },
+        host::instruction::FheBinaryOp {
+            op: FheBinaryOpCode::Add,
+            lhs,
+            rhs: rhs_scalar,
+            scalar: true,
+            output_fhe_type: 5,
+            output_nonce_key: nonce_key,
+            output_nonce_sequence: 1,
+            output_acl_domain_key: acl_domain_key,
+            output_app_account: app_account,
+            output_encrypted_value_label: encrypted_value_label,
+            output_subjects: vec![AclSubjectEntry {
+                pubkey: payer.pubkey(),
+            }],
+            output_public_decrypt: false,
+        },
+    );
+
+    let mut cleartext = CleartextBackend::default();
+    cleartext.seed_cleartext(lhs, TypedClearValue::uint64(10));
+    let (meta, account_keys) = send_with_meta(&mut svm, &payer, scalar_ix);
+    cleartext
+        .ingest_transaction(&meta, &account_keys, program_id)
+        .unwrap();
+    let output_record = read_acl_record(&svm, output_acl_record).expect("expected output ACL");
+    let events = binary_op_events(&meta, &account_keys, program_id);
+    assert_eq!(events.len(), 1);
+    assert!(events[0].scalar);
+    assert_eq!(events[0].rhs, rhs_scalar);
+    assert_eq!(
+        cleartext.decrypt_cleartext(output_record.handle),
+        Some(TypedClearValue::uint64(15))
+    );
+
+    let encrypted_rhs_output = acl_record_address(program_id, nonce_key, 2);
+    let encrypted_rhs_ix = anchor_ix(
+        program_id,
+        host::accounts::FheBinaryOp {
+            payer: payer.pubkey(),
+            compute_subject: payer.pubkey(),
+            app_account_authority: app_account,
+            lhs_acl_record,
+            rhs_acl_record: dummy_rhs_account.pubkey(),
+            output_acl_record: encrypted_rhs_output,
+            system_program: system_program::ID,
+            event_authority: event_authority(program_id),
+            program: program_id,
+        },
+        host::instruction::FheBinaryOp {
+            op: FheBinaryOpCode::Add,
+            lhs,
+            rhs: [9; 32],
+            scalar: false,
+            output_fhe_type: 5,
+            output_nonce_key: nonce_key,
+            output_nonce_sequence: 2,
+            output_acl_domain_key: acl_domain_key,
+            output_app_account: app_account,
+            output_encrypted_value_label: encrypted_value_label,
+            output_subjects: vec![AclSubjectEntry {
+                pubkey: payer.pubkey(),
+            }],
+            output_public_decrypt: false,
+        },
+    );
+    assert!(try_send(&mut svm, &payer, encrypted_rhs_ix).is_err());
+    assert!(read_acl_record(&svm, encrypted_rhs_output).is_none());
+}
+
+#[test]
 fn bind_acl_record_cannot_rebind_existing_acl_record() {
     let program_id = host::id();
     let mut svm = svm_with_program(program_id, host_program_so_path());
@@ -490,7 +600,7 @@ fn confidential_transfer_rotates_balance_handles_and_binds_output_acl() {
     cleartext.seed_cleartext(fixture.bob_initial, TypedClearValue::uint64(20));
     cleartext.seed_cleartext(amount_handle, TypedClearValue::uint64(9));
 
-    authorize_input_compute_acl(&mut fixture, amount_handle);
+    authorize_input_compute_acl(&mut fixture, amount_handle, DEFAULT_INPUT_NONCE_SEQUENCE);
     let output = transfer_output_accounts(&fixture, 1);
     let transfer_ix = transfer_ix(&fixture, output, amount_handle);
     let (meta, account_keys) = send_with_meta(&mut fixture.svm, &fixture.alice, transfer_ix);
@@ -559,7 +669,7 @@ fn confidential_transfer_rotates_balance_handles_and_binds_output_acl() {
 fn confidential_self_transfer_is_no_op() {
     let mut fixture = token_fixture();
     let amount_handle = [9; 32];
-    authorize_input_compute_acl(&mut fixture, amount_handle);
+    authorize_input_compute_acl(&mut fixture, amount_handle, DEFAULT_INPUT_NONCE_SEQUENCE);
     let output = transfer_output_accounts(&fixture, 2);
     let ix = self_transfer_ix(&fixture, output, amount_handle);
 
@@ -586,7 +696,7 @@ fn confidential_self_transfer_is_no_op() {
 fn user_decrypt_model_uses_acl_domain_key_and_acl_record_authentication() {
     let mut fixture = token_fixture();
     let amount_handle = [9; 32];
-    authorize_input_compute_acl(&mut fixture, amount_handle);
+    authorize_input_compute_acl(&mut fixture, amount_handle, DEFAULT_INPUT_NONCE_SEQUENCE);
     let first_output = transfer_output_accounts(&fixture, 1);
     let first_ix = transfer_ix(&fixture, first_output, amount_handle);
     send(&mut fixture.svm, &fixture.alice, first_ix);
@@ -594,14 +704,15 @@ fn user_decrypt_model_uses_acl_domain_key_and_acl_record_authentication() {
         .expect("expected first Alice ACL")
         .handle;
 
-    authorize_input_compute_acl(&mut fixture, [8; 32]);
+    authorize_input_compute_acl(&mut fixture, [8; 32], 1);
     let second_output = transfer_output_accounts(&fixture, 2);
-    let second_ix = transfer_ix_with_current_acl(
+    let second_ix = transfer_ix_with_current_acl_and_amount_nonce(
         &fixture,
         first_output.alice,
         first_output.bob,
         second_output,
         [8; 32],
+        1,
     );
     send(&mut fixture.svm, &fixture.alice, second_ix);
     let second_alice = read_acl_record(&fixture.svm, second_output.alice)
@@ -654,7 +765,7 @@ fn user_decrypt_model_uses_acl_domain_key_and_acl_record_authentication() {
 fn public_decrypt_model_uses_acl_record_flag() {
     let mut fixture = token_fixture();
     let amount_handle = [9; 32];
-    authorize_input_compute_acl(&mut fixture, amount_handle);
+    authorize_input_compute_acl(&mut fixture, amount_handle, DEFAULT_INPUT_NONCE_SEQUENCE);
     let output = transfer_output_accounts(&fixture, 1);
     let transfer_ix = transfer_ix(&fixture, output, amount_handle);
     send(&mut fixture.svm, &fixture.alice, transfer_ix);
@@ -711,7 +822,7 @@ fn public_decrypt_model_uses_acl_record_flag() {
 fn allow_for_decryption_rejects_unallowed_signer() {
     let mut fixture = token_fixture();
     let amount_handle = [9; 32];
-    authorize_input_compute_acl(&mut fixture, amount_handle);
+    authorize_input_compute_acl(&mut fixture, amount_handle, DEFAULT_INPUT_NONCE_SEQUENCE);
     let output = transfer_output_accounts(&fixture, 1);
     let transfer_ix = transfer_ix(&fixture, output, amount_handle);
     send(&mut fixture.svm, &fixture.alice, transfer_ix);
@@ -843,7 +954,11 @@ fn confidential_token_e2e_wrap_transfer_and_decrypts_current_and_historical_bala
 
     // 2. Alice transfers a confidential amount to Bob.
     let transfer_amount_handle = [8; 32];
-    authorize_input_compute_acl(&mut fixture, transfer_amount_handle);
+    authorize_input_compute_acl(
+        &mut fixture,
+        transfer_amount_handle,
+        DEFAULT_INPUT_NONCE_SEQUENCE,
+    );
     let transfer_output = TransferOutputAccounts {
         alice: balance_acl_record_address(
             fixture.host_program_id,
@@ -968,7 +1083,7 @@ fn confidential_token_e2e_wrap_transfer_and_decrypts_current_and_historical_bala
 #[test]
 fn confidential_transfer_budget_snapshot() {
     let mut fixture = token_fixture();
-    authorize_input_compute_acl(&mut fixture, [9; 32]);
+    authorize_input_compute_acl(&mut fixture, [9; 32], DEFAULT_INPUT_NONCE_SEQUENCE);
     let output = transfer_output_accounts(&fixture, 1);
     let transfer_ix = transfer_ix(&fixture, output, [9; 32]);
     let top_level_metas = transfer_ix.accounts.len();
@@ -1008,20 +1123,21 @@ fn confidential_transfer_budget_snapshot() {
 #[test]
 fn confidential_transfer_rejects_stale_current_acl() {
     let mut fixture = token_fixture();
-    authorize_input_compute_acl(&mut fixture, [9; 32]);
+    authorize_input_compute_acl(&mut fixture, [9; 32], DEFAULT_INPUT_NONCE_SEQUENCE);
     let first_output = transfer_output_accounts(&fixture, 1);
     let first_ix = transfer_ix(&fixture, first_output, [9; 32]);
     send(&mut fixture.svm, &fixture.alice, first_ix);
 
-    authorize_input_compute_acl(&mut fixture, [8; 32]);
-    let stale_ix = transfer_ix(&fixture, transfer_output_accounts(&fixture, 2), [8; 32]);
+    authorize_input_compute_acl(&mut fixture, [8; 32], 1);
+    let stale_ix =
+        transfer_ix_with_amount_nonce(&fixture, transfer_output_accounts(&fixture, 2), [8; 32], 1);
     assert!(try_send(&mut fixture.svm, &fixture.alice, stale_ix).is_err());
 }
 
 #[test]
 fn confidential_transfer_rejects_wrong_current_acl_record() {
     let mut fixture = token_fixture();
-    authorize_input_compute_acl(&mut fixture, [9; 32]);
+    authorize_input_compute_acl(&mut fixture, [9; 32], DEFAULT_INPUT_NONCE_SEQUENCE);
     let ix = transfer_ix_with_current_acl(
         &fixture,
         fixture.bob_current_compute_acl,
@@ -1037,14 +1153,18 @@ fn confidential_transfer_rejects_wrong_amount_acl() {
     let mut fixture = token_fixture();
     let amount_handle = [9; 32];
     let wrong_amount_handle = [8; 32];
-    authorize_input_compute_acl(&mut fixture, wrong_amount_handle);
+    authorize_input_compute_acl(
+        &mut fixture,
+        wrong_amount_handle,
+        DEFAULT_INPUT_NONCE_SEQUENCE,
+    );
 
     let output = transfer_output_accounts(&fixture, 1);
     let ix = transfer_ix_with_amount_acl(
         &fixture,
         fixture.alice_current_compute_acl,
         fixture.bob_current_compute_acl,
-        input_compute_acl_address(&fixture, wrong_amount_handle),
+        input_compute_acl_address(&fixture, DEFAULT_INPUT_NONCE_SEQUENCE),
         output,
         amount_handle,
     );
@@ -1059,6 +1179,58 @@ fn confidential_transfer_rejects_wrong_amount_acl() {
         fixture.bob_initial
     );
     assert_eq!(created_acl_count(&fixture.svm, output), 0);
+}
+
+#[test]
+fn confidential_transfer_rejects_output_acl_for_wrong_token_account() {
+    let mut fixture = token_fixture();
+    authorize_input_compute_acl(&mut fixture, [9; 32], DEFAULT_INPUT_NONCE_SEQUENCE);
+    let correct_output = transfer_output_accounts(&fixture, 1);
+    let swapped_output = TransferOutputAccounts {
+        alice: correct_output.bob,
+        bob: correct_output.alice,
+    };
+
+    let ix = transfer_ix(&fixture, swapped_output, [9; 32]);
+
+    assert!(try_send(&mut fixture.svm, &fixture.alice, ix).is_err());
+    assert_eq!(
+        token_account(&fixture.svm, fixture.alice_token).balance_handle,
+        fixture.alice_initial
+    );
+    assert_eq!(
+        token_account(&fixture.svm, fixture.bob_token).balance_handle,
+        fixture.bob_initial
+    );
+    assert_eq!(created_acl_count(&fixture.svm, correct_output), 0);
+}
+
+#[test]
+fn confidential_transfer_rejects_reused_output_acl_record() {
+    let mut fixture = token_fixture();
+    authorize_input_compute_acl(&mut fixture, [9; 32], DEFAULT_INPUT_NONCE_SEQUENCE);
+    let output = TransferOutputAccounts {
+        alice: fixture.alice_current_compute_acl,
+        bob: balance_acl_record_address(
+            fixture.host_program_id,
+            fixture.mint.pubkey(),
+            fixture.bob_token,
+            1,
+        ),
+    };
+
+    let ix = transfer_ix(&fixture, output, [9; 32]);
+
+    assert!(try_send(&mut fixture.svm, &fixture.alice, ix).is_err());
+    assert_eq!(
+        token_account(&fixture.svm, fixture.alice_token).balance_handle,
+        fixture.alice_initial
+    );
+    assert_eq!(
+        token_account(&fixture.svm, fixture.bob_token).balance_handle,
+        fixture.bob_initial
+    );
+    assert!(read_acl_record(&fixture.svm, output.bob).is_none());
 }
 
 struct TokenFixture {
@@ -1333,7 +1505,7 @@ fn balance_acl_record_address(
     )
 }
 
-fn input_compute_acl_address(fixture: &TokenFixture, handle: [u8; 32]) -> Pubkey {
+fn input_compute_acl_address(fixture: &TokenFixture, nonce_sequence: u64) -> Pubkey {
     acl_record_address(
         fixture.host_program_id,
         token::nonce_key(
@@ -1341,7 +1513,7 @@ fn input_compute_acl_address(fixture: &TokenFixture, handle: [u8; 32]) -> Pubkey
             fixture.alice.pubkey(),
             label("input"),
         ),
-        u64::from(handle[0]),
+        nonce_sequence,
     )
 }
 
@@ -1362,7 +1534,7 @@ fn transfer_output_accounts(fixture: &TokenFixture, nonce_sequence: u64) -> Tran
     }
 }
 
-fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
+fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32], nonce_sequence: u64) {
     // Temporary mock short-circuit for the future Solana input verifier /
     // transciphering boundary. This deliberately trusts the caller-supplied
     // handle so tests can exercise ACL + compute semantics before the real
@@ -1371,7 +1543,6 @@ fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
     let app_account = fixture.alice.pubkey();
     let encrypted_value_label = label("input");
     let nonce_key = token::nonce_key(acl_domain_key, app_account, encrypted_value_label);
-    let nonce_sequence = u64::from(handle[0]);
     let acl_record = acl_record_address(fixture.host_program_id, nonce_key, nonce_sequence);
     let ix = anchor_ix(
         fixture.host_program_id,
@@ -1425,12 +1596,22 @@ fn transfer_ix(
     output: TransferOutputAccounts,
     amount_handle: [u8; 32],
 ) -> Instruction {
-    transfer_ix_with_current_acl(
+    transfer_ix_with_amount_nonce(fixture, output, amount_handle, DEFAULT_INPUT_NONCE_SEQUENCE)
+}
+
+fn transfer_ix_with_amount_nonce(
+    fixture: &TokenFixture,
+    output: TransferOutputAccounts,
+    amount_handle: [u8; 32],
+    amount_nonce_sequence: u64,
+) -> Instruction {
+    transfer_ix_with_current_acl_and_amount_nonce(
         fixture,
         fixture.alice_current_compute_acl,
         fixture.bob_current_compute_acl,
         output,
         amount_handle,
+        amount_nonce_sequence,
     )
 }
 
@@ -1449,7 +1630,7 @@ fn self_transfer_ix(
             compute_signer: fixture.compute_signer,
             from_current_compute_acl: fixture.alice_current_compute_acl,
             to_current_compute_acl: fixture.alice_current_compute_acl,
-            amount_compute_acl: input_compute_acl_address(fixture, amount_handle),
+            amount_compute_acl: input_compute_acl_address(fixture, DEFAULT_INPUT_NONCE_SEQUENCE),
             from_output_acl: output.alice,
             to_output_acl: output.bob,
             zama_event_authority: event_authority(fixture.host_program_id),
@@ -1467,11 +1648,29 @@ fn transfer_ix_with_current_acl(
     output: TransferOutputAccounts,
     amount_handle: [u8; 32],
 ) -> Instruction {
+    transfer_ix_with_current_acl_and_amount_nonce(
+        fixture,
+        from_current_compute_acl,
+        to_current_compute_acl,
+        output,
+        amount_handle,
+        DEFAULT_INPUT_NONCE_SEQUENCE,
+    )
+}
+
+fn transfer_ix_with_current_acl_and_amount_nonce(
+    fixture: &TokenFixture,
+    from_current_compute_acl: Pubkey,
+    to_current_compute_acl: Pubkey,
+    output: TransferOutputAccounts,
+    amount_handle: [u8; 32],
+    amount_nonce_sequence: u64,
+) -> Instruction {
     transfer_ix_with_amount_acl(
         fixture,
         from_current_compute_acl,
         to_current_compute_acl,
-        input_compute_acl_address(fixture, amount_handle),
+        input_compute_acl_address(fixture, amount_nonce_sequence),
         output,
         amount_handle,
     )

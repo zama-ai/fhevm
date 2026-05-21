@@ -412,6 +412,7 @@ fn compute_binary_op<'info>(
         lhs,
         rhs_acl_record,
         rhs,
+        scalar: false,
         output_acl_record,
         output_fhe_type: BALANCE_FHE_TYPE,
         acl_domain_key: mint,
