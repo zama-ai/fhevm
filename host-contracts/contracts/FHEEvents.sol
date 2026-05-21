@@ -44,8 +44,8 @@ contract FHEEvents {
     event FheIsIn(address indexed caller, bytes32 value, bytes32[] values, bytes32 result);
     event FheMulDiv(
         address indexed caller,
-        bytes32 lhs,
-        bytes32 rhs,
+        bytes32 factor1,
+        bytes32 factor2,
         bytes32 divisor,
         bytes1 scalarByte,
         bytes32 result
