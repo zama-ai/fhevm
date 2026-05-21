@@ -287,11 +287,11 @@ pub mod zama_host {
         )?;
         assert_record_allows_handle(&ctx.accounts.lhs_acl_record, lhs, subject)?;
         if !scalar {
-            assert_canonical_acl_record(
+            assert_unchecked_acl_record_allows_handle(
                 &ctx.accounts.rhs_acl_record.to_account_info(),
-                &ctx.accounts.rhs_acl_record,
+                rhs,
+                subject,
             )?;
-            assert_record_allows_handle(&ctx.accounts.rhs_acl_record, rhs, subject)?;
         }
 
         let clock = Clock::get()?;
@@ -517,7 +517,9 @@ pub struct FheBinaryOp<'info> {
     pub compute_subject: Signer<'info>,
     pub app_account_authority: Signer<'info>,
     pub lhs_acl_record: Account<'info, AclRecord>,
-    pub rhs_acl_record: Account<'info, AclRecord>,
+    /// CHECK: encrypted RHS operands are deserialized and ACL-checked in the
+    /// instruction body; scalar RHS operands deliberately skip this account.
+    pub rhs_acl_record: UncheckedAccount<'info>,
     #[account(
         init,
         payer = payer,
@@ -739,6 +741,10 @@ fn assert_canonical_acl_record(
     record_info: &AccountInfo,
     record: &Account<AclRecord>,
 ) -> Result<()> {
+    assert_canonical_acl_record_data(record_info.key(), record)
+}
+
+fn assert_canonical_acl_record_data(record_key: Pubkey, record: &AclRecord) -> Result<()> {
     assert_nonce_key_matches_fields(
         record.nonce_key,
         record.acl_domain_key,
@@ -756,12 +762,25 @@ fn assert_canonical_acl_record(
         &crate::ID,
     )
     .map_err(|_| error!(ZamaHostError::AclRecordPdaMismatch))?;
+    require_keys_eq!(record_key, expected, ZamaHostError::AclRecordPdaMismatch);
+    Ok(())
+}
+
+fn assert_unchecked_acl_record_allows_handle(
+    record_info: &AccountInfo,
+    handle: [u8; 32],
+    subject: Pubkey,
+) -> Result<()> {
     require_keys_eq!(
-        record_info.key(),
-        expected,
+        *record_info.owner,
+        crate::ID,
         ZamaHostError::AclRecordPdaMismatch
     );
-    Ok(())
+    let data = record_info.try_borrow_data()?;
+    let mut data_slice: &[u8] = &data;
+    let record = AclRecord::try_deserialize(&mut data_slice)?;
+    assert_canonical_acl_record_data(record_info.key(), &record)?;
+    assert_record_allows_handle(&record, handle, subject)
 }
 
 fn assert_nonce_key_matches_fields(
@@ -875,7 +894,7 @@ fn previous_bank_hash(current_slot: u64) -> Result<[u8; 32]> {
 }
 
 fn assert_record_allows_handle(
-    record: &Account<AclRecord>,
+    record: &AclRecord,
     handle: [u8; 32],
     subject: Pubkey,
 ) -> Result<()> {
