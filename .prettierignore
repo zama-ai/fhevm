@@ -21,5 +21,6 @@ types
 .DS_Store
 .pnp.*
 coverage.json
+coprocessor/fhevm-engine/host-listener/idl/zama_host.json
 package-lock.json
 yarn.lock

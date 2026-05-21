@@ -78,6 +78,7 @@ features = ["test_bypass_key_extraction"]
 foundry-compilers = { workspace = true }
 foundry-compilers-artifacts = "0.13"
 semver = { workspace = true }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

@@ -123,16 +123,20 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 - [x] Anchor workspace with `zama-host`, `confidential-token`, and LiteSVM runtime tests.
 - [x] ZamaHost emits typed Anchor CPI events for real host operations and clearly named
       `test_emit_*` shims used by listener / worker tests.
+- [x] Host-listener decodes ZamaHost protocol events through Rust generated at build time from
+      the checked-in ZamaHost Anchor IDL snapshot.
 - [x] Solana host events normalize into the existing coprocessor DB event shape.
 - [x] Worker-backed tests use real small TFHE ciphertexts for Solana-originated events.
 - [x] Confidential token can initialize a mint and token accounts.
 - [x] Confidential token can wrap SPL-like USDC into a confidential balance handle.
 - [x] Confidential token can transfer by rotating Alice and Bob balance handles.
+- [x] Confidential token emits local balance-history events for app/front-end indexing. These
+      events are not consumed by the generic coprocessor listener.
 - [x] Canonical confidential token scenario covers wrap, transfer, current decrypt, historical
       decrypt, and expected failures.
 - [x] Compute-time ACL is enforced by `zama-host::fhe_binary_op` before event emission.
-- [x] Computed output handles are born inside `zama-host`; token instructions pass output ACL
-      record accounts, not caller-chosen output handles.
+- [x] Computed output handles are verified inside `zama-host`; durable ACL records are created by
+      an explicit `bind_computed_binary_output` step after the compute event path.
 - [x] Generic persistent ACL binding requires an already-authorized source ACL record, matching the
       EVM rule that only an allowed caller can grant durable access.
 - [x] Token account initialization creates the initial balance handle through a host-owned
@@ -187,17 +191,21 @@ confidential-token program
   app state:
     ConfidentialMint
     ConfidentialTokenAccount
+  app events:
+    BalanceHandleUpdatedEvent
+      for frontend/app indexers only
   |
   | CPI
   v
 zama-host program
   protocol state:
     ACL record PDAs
-  events:
-    test_emit_trivial_encrypt (test shim)
-    test_emit_fhe_rand (test shim)
-    fhe_binary_op
-    bind_acl_record
+  generic protocol events exposed through the ZamaHost Anchor IDL:
+    FheBinaryOpEvent
+    TrivialEncryptEvent
+    FheRandEvent
+    AclAllowedEvent
+    InputVerifiedEvent
   |
   | Anchor self-CPI event bytes
   v
@@ -225,6 +233,27 @@ zama-host enforces FHEVM host semantics.
 host-listener normalizes Solana events into the existing coprocessor model.
 tfhe-worker computes ciphertexts from DB work items.
 KMS-style verification combines signed authorization + handle entry + ACL state.
+```
+
+The listener boundary is intentionally generic:
+
+```text
+host-listener consumes:
+  ZamaHost protocol events decoded from the ZamaHost Anchor IDL shape
+
+host-listener does not consume:
+  confidential-token BalanceHandleUpdatedEvent
+  token account state
+  cUSDC-specific labels or nonce conventions
+```
+
+App-specific events are still useful, but for a different consumer:
+
+```text
+frontend / app indexer
+  reads BalanceHandleUpdatedEvent
+  learns "AliceTokenAccount moved from A7/h7 to A8/h8"
+  builds current and historical decrypt requests
 ```
 
 `test_emit_*` instructions are not protocol APIs. They emit typed events without proving or writing
@@ -317,15 +346,19 @@ In this Solana PoC:
 confidential-token
   -> CPI zama-host::fhe_binary_op(...)
        checks operand ACL records
-       derives the output handle
-       initializes the output ACL record
+       verifies the output handle against the host formula
        emits typed Anchor event
+  -> CPI zama-host::bind_computed_binary_output(...)
+       verifies the same operands and output handle
+       initializes the output ACL record
 ```
 
 The app program does not perform a separate pre-check for normal compute. It passes operand ACL
-accounts and the predeclared output ACL record account to `zama-host`. `zama-host::fhe_binary_op`
+accounts to `zama-host`. `zama-host::fhe_binary_op`
 rejects the operation before emitting the FHE event if either operand is not allowed for the compute
-signer. If checks pass, `zama-host` derives the result handle and stores it in the output ACL record.
+signer. If checks pass, `zama-host` verifies the result handle and emits the compute event. A
+separate `bind_computed_binary_output` call creates durable ACL state for the result when the app
+wants to keep or decrypt that handle.
 
 ## ACL Account Model
 
@@ -359,7 +392,7 @@ before tx:
   A7 address = PDA("acl-record", nonce_key, 7)
   h7 is unknown
 
-during zama-host::fhe_binary_op:
+during zama-host::fhe_binary_op + bind_computed_binary_output:
   h7 = H("FHE_comp", op, lhs, rhs, scalar, zama_host, chain_id, previous_bank_hash, timestamp)
   A7.handle = h7
   A7.subjects = [Alice, compute_signer]
@@ -381,11 +414,14 @@ zama-host::mock_input_verified_and_bind(...)
   mock short-circuit for future InputVerifier/transciphering birth
 
 zama-host::fhe_binary_op(...)
-  checks operand ACL records, derives the computed handle, and creates the output ACL record
+  checks operand ACL records and emits a compute event for the verified output handle
+
+zama-host::bind_computed_binary_output(...)
+  checks the same operands/output handle and creates the durable output ACL record
 ```
 
-Generic persistent grants are stricter. `bind_acl_record` requires the caller to already be allowed
-on the handle being granted:
+Generic persistent grants are same-handle grants. `bind_acl_record` requires the caller to already
+be allowed on the handle being granted:
 
 ```text
 zama-host::bind_acl_record(handle = h7, authority = Alice, authorizing_acl_record = A7, ...)
@@ -489,18 +525,23 @@ confidential-token::confidential_transfer(amount = hX)
   |      checks:
   |        A0 stores hA0 and subjects includes compute_signer
   |        X  stores hX  and subjects includes compute_signer
-  |      creates A1 and stores:
-  |        hA1 = FHE.sub(hA0, hX)
-  |        subjects = [Alice, compute_signer]
+  |      verifies hA1 = FHE.sub(hA0, hX)
   |      emits FHE.sub(hA0, hX) -> hA1
+  |
+  +--> CPI zama-host::bind_computed_binary_output(Sub)
+  |      re-checks operands and hA1
+  |      creates A1 for hA1 with subjects = [Alice, compute_signer]
   |
   +--> CPI zama-host::fhe_binary_op(Add)
   |      compute_subject = compute_signer
   |      checks:
   |        B0 stores hB0 and subjects includes compute_signer
   |        X  stores hX  and subjects includes compute_signer
-  |      creates B1 and stores:
-  |        hB1 = FHE.add(hB0, hX)
+  |      verifies hB1 = FHE.add(hB0, hX)
+  |
+  +--> CPI zama-host::bind_computed_binary_output(Add)
+  |      re-checks operands and hB1
+  |      creates B1 for hB1 with subjects = [Bob, compute_signer]
   |        subjects = [Bob, compute_signer]
   |      emits FHE.add(hB0, hX) -> hB1
   |
@@ -558,10 +599,13 @@ wrap_usdc(amount)
   |      checks:
   |        current balance ACL stores hA0 and allows compute_signer
   |        amount ACL stores hDeposit and allows compute_signer
-  |      creates one output ACL record and stores:
-  |        hA1 = FHE.add(hA0, hDeposit)
-  |        subjects = [Alice, compute_signer]
+  |      verifies hA1 = FHE.add(hA0, hDeposit)
   |      emits FHE.add(hA0, hDeposit) -> hA1
+  |
+  +--> CPI zama-host::bind_computed_binary_output(Add)
+  |      re-checks operands and hA1
+  |      creates one output ACL record for hA1
+  |      subjects = [Alice, compute_signer]
 ```
 
 The deposit amount is public in this slice because wrapping an underlying token starts from a known
@@ -586,11 +630,16 @@ fhe::trivial_encrypt_u64(...)
   -> CPI zama-host::trivial_encrypt_and_bind(...)
   -> returns the host-born output handle stored in the output ACL record
 
-fhe::binary_op(...)
+fhe::add(...)
+fhe::sub(...)
   -> CPI zama-host::fhe_binary_op(...)
   -> checks operand ACL records inside ZamaHost
-  -> returns the host-born output handle stored in the output ACL record
+  -> CPI zama-host::bind_computed_binary_output(...)
+  -> creates durable ACL state for the output handle
+  -> returns the verified output handle
 ```
+
+The helper module keeps `FheBinaryOpCode` and raw CPI account assembly out of token business logic.
 
 This helper is still token-local. If the shape survives the PoC, it can become the seed for a shared
 Solana FHE app SDK.
