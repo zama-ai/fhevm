@@ -23,7 +23,7 @@ use solana_sdk::{
 };
 use tfhe::prelude::FheTryEncrypt;
 use time::{Date, Month, PrimitiveDateTime, Time};
-use zama_host::{AclPermission, AclRecord, AclSubjectEntry};
+use zama_host::{AclRecord, AclSubjectEntry};
 
 use crate::tests::{
     event_helpers::{decrypt_handles, setup_event_harness, wait_until_computed},
@@ -153,7 +153,6 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
             fixture.host_program_id,
             fixture.alice_initial,
             fixture.compute_signer,
-            AclPermission::Compute,
         ),
         test_emit_trivial_encrypt_ix(
             fixture.host_program_id,
@@ -165,7 +164,6 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
             fixture.host_program_id,
             fixture.bob_initial,
             fixture.compute_signer,
-            AclPermission::Compute,
         ),
         test_emit_trivial_encrypt_ix(
             fixture.host_program_id,
@@ -177,7 +175,6 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
             fixture.host_program_id,
             amount_handle,
             fixture.compute_signer,
-            AclPermission::Compute,
         ),
     ];
     let (meta, account_keys, signature) =
@@ -260,12 +257,7 @@ async fn solana_fhe_rand_creates_ciphertext_and_decrypts() -> Result<(), Box<dyn
             [7_u8; 16],
             rand_handle,
         ),
-        test_emit_acl_allowed_ix(
-            fixture.host_program_id,
-            rand_handle,
-            fixture.payer.pubkey(),
-            AclPermission::UserDecrypt,
-        ),
+        test_emit_acl_allowed_ix(fixture.host_program_id, rand_handle, fixture.payer.pubkey()),
     ];
     let (meta, account_keys, signature) =
         send_many_with_meta(&mut fixture.svm, &fixture.payer, ixs);
@@ -625,7 +617,6 @@ fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
                 output_encrypted_value_label: encrypted_value_label,
                 output_subjects: vec![AclSubjectEntry {
                     pubkey: fixture.compute_signer,
-                    permission: AclPermission::Compute,
                 }],
                 output_public_decrypt: false,
             }
@@ -684,12 +675,7 @@ fn test_emit_trivial_encrypt_ix(
     }
 }
 
-fn test_emit_acl_allowed_ix(
-    program_id: Pubkey,
-    handle: [u8; 32],
-    subject: Pubkey,
-    permission: AclPermission,
-) -> Instruction {
+fn test_emit_acl_allowed_ix(program_id: Pubkey, handle: [u8; 32], subject: Pubkey) -> Instruction {
     Instruction {
         program_id,
         accounts: host::accounts::TestEmitProtocolEvent {
@@ -697,12 +683,7 @@ fn test_emit_acl_allowed_ix(
             program: program_id,
         }
         .to_account_metas(None),
-        data: host::instruction::TestEmitAclAllowed {
-            handle,
-            subject,
-            permission,
-        }
-        .data(),
+        data: host::instruction::TestEmitAclAllowed { handle, subject }.data(),
     }
 }
 

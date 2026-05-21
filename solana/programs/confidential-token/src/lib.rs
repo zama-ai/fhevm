@@ -4,7 +4,7 @@ use zama_host::{
     self, cpi,
     cpi::accounts::{FheBinaryOp, TrivialEncryptAndBind},
     program::ZamaHost,
-    AclPermission, AclSubjectEntry, FheBinaryOpCode,
+    AclSubjectEntry, FheBinaryOpCode,
 };
 
 declare_id!("5GKzUSfqBSNjoVW83w3xPtTnAe84srZcDTBstpSoBCR4");
@@ -121,7 +121,6 @@ pub mod confidential_token {
             wrap_amount_label(),
             vec![AclSubjectEntry {
                 pubkey: compute_signer,
-                permission: AclPermission::Compute,
             }],
         )?;
 
@@ -434,11 +433,9 @@ fn compute_binary_op<'info>(
         vec![
             AclSubjectEntry {
                 pubkey: token_account.owner,
-                permission: AclPermission::UserDecrypt,
             },
             AclSubjectEntry {
                 pubkey: compute_signer.key(),
-                permission: AclPermission::Compute,
             },
         ],
         false,
@@ -483,11 +480,9 @@ fn trivial_encrypt_balance_acl<'info>(
         vec![
             AclSubjectEntry {
                 pubkey: token_account.owner,
-                permission: AclPermission::UserDecrypt,
             },
             AclSubjectEntry {
                 pubkey: compute_signer.key(),
-                permission: AclPermission::Compute,
             },
         ],
     )
