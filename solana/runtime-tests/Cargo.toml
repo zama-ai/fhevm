@@ -6,26 +6,11 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-anchor-lang = "0.31.1"
-anchor-spl = { version = "0.31.1", default-features = false, features = ["token", "token_2022"] }
+anchor-lang = "1.0.2"
+anchor-litesvm = "0.4.0"
+anchor-spl = { version = "1.0.2", default-features = false, features = ["token", "token_2022"] }
 confidential-token = { path = "../programs/confidential-token" }
-litesvm = "=0.5.0"
-solana-address-lookup-table-program = "=2.1.10"
-solana-bpf-loader-program = "=2.1.10"
-solana-compute-budget = "=2.1.10"
-solana-compute-budget-program = "=2.1.10"
-solana-config-program = "=2.1.10"
-solana-fee = "=2.1.10"
-solana-loader-v4-program = "=2.1.10"
-solana-log-collector = "=2.1.10"
-solana-program = "=2.1.10"
-solana-program-runtime = "=2.1.10"
-solana-runtime-transaction = "=2.1.10"
-solana-sdk = "=2.1.10"
-solana-stake-program = "=2.1.10"
-solana-svm = "=2.1.10"
-solana-svm-transaction = "=2.1.10"
-solana-system-program = "=2.1.10"
-solana-timings = "=2.1.10"
-solana-vote-program = "=2.1.10"
+litesvm = "0.11.0"
+solana-program = "3.0.0"
+solana-sdk = "3.0.0"
 zama-host = { path = "../programs/zama-host" }

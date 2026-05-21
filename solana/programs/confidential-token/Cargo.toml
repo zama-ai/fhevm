@@ -19,6 +19,6 @@ no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build", "zama-host/idl-build"]
 
 [dependencies]
-anchor-lang = "0.31.1"
-anchor-spl = { version = "0.31.1", default-features = false, features = ["token", "token_2022"] }
+anchor-lang = "1.0.2"
+anchor-spl = { version = "1.0.2", default-features = false, features = ["token", "token_2022"] }
 zama-host = { path = "../zama-host", features = ["cpi"] }

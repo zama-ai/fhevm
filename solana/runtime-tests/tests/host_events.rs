@@ -3,6 +3,7 @@ use std::path::PathBuf;
 mod support;
 
 use anchor_lang::{
+    prelude::{system_instruction, system_program},
     AccountDeserialize, AccountSerialize, AnchorDeserialize, Discriminator, InstructionData,
     ToAccountMetas,
 };
@@ -19,7 +20,6 @@ use solana_sdk::{
     program_pack::Pack,
     pubkey::Pubkey,
     signature::{Keypair, Signature, Signer},
-    system_instruction, system_program,
     transaction::VersionedTransaction,
 };
 use zama_host as host;
