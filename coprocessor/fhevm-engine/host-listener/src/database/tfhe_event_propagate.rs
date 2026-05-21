@@ -520,11 +520,11 @@ impl Database {
                 insert_computation(tx, result, &deps, &NO_SCALAR).await
             }
 
-            E::FheMulDiv(C::FheMulDiv { lhs, rhs, divisor, scalarByte, result, .. }) => {
-                if fhe_mul_div_rhs_is_scalar(scalarByte) {
-                    insert_computation_bytes(tx, result, &[lhs], &[rhs.to_vec(), divisor.to_vec()], &HAS_SCALAR).await
+            E::FheMulDiv(C::FheMulDiv { factor1, factor2, divisor, scalarByte, result, .. }) => {
+                if fhe_mul_div_factor2_is_scalar(scalarByte) {
+                    insert_computation_bytes(tx, result, &[factor1], &[factor2.to_vec(), divisor.to_vec()], &HAS_SCALAR).await
                 } else {
-                    insert_computation_bytes(tx, result, &[lhs, rhs], &[divisor.to_vec()], &NO_SCALAR).await
+                    insert_computation_bytes(tx, result, &[factor1, factor2], &[divisor.to_vec()], &NO_SCALAR).await
                 }
             }
 
@@ -1319,15 +1319,15 @@ pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
         }
 
         E::FheMulDiv(C::FheMulDiv {
-            lhs,
-            rhs,
+            factor1,
+            factor2,
             scalarByte,
             ..
         }) => {
-            if fhe_mul_div_rhs_is_scalar(scalarByte) {
-                vec![*lhs]
+            if fhe_mul_div_factor2_is_scalar(scalarByte) {
+                vec![*factor1]
             } else {
-                vec![*lhs, *rhs]
+                vec![*factor1, *factor2]
             }
         }
 
@@ -1335,8 +1335,8 @@ pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
     }
 }
 
-/// `fheMulDiv` `scalarByte` bit 1 — rhs is a plaintext scalar (bit 0 is the
+/// `fheMulDiv` `scalarByte` bit 1 — factor2 is a plaintext scalar (bit 0 is the
 /// always-scalar divisor).
-fn fhe_mul_div_rhs_is_scalar(scalar_byte: &ScalarByte) -> bool {
+fn fhe_mul_div_factor2_is_scalar(scalar_byte: &ScalarByte) -> bool {
     scalar_byte.0[0] & 0b10 != 0
 }

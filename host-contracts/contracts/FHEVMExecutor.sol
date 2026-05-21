@@ -720,16 +720,16 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice              Computes FHEMulDiv operation: (lhs * rhs) / divisor with intermediate widening.
-     * @param lhs           LHS (always encrypted).
-     * @param rhs           RHS (encrypted when scalarByte=0x01, plaintext scalar when scalarByte=0x03).
+     * @notice              Computes FHEMulDiv operation: (factor1 * factor2) / divisor with intermediate widening.
+     * @param factor1       First multiplication factor (always encrypted).
+     * @param factor2       Second multiplication factor (encrypted when scalarByte=0x01, plaintext scalar when scalarByte=0x03).
      * @param divisor       Divisor (always a plaintext scalar encoded as bytes32).
-     * @param scalarByte    0x01 if rhs is an encrypted handle; 0x03 if rhs is a plaintext scalar.
+     * @param scalarByte    0x01 if factor2 is an encrypted handle; 0x03 if factor2 is a plaintext scalar.
      * @return result       Result.
      */
     function fheMulDiv(
-        bytes32 lhs,
-        bytes32 rhs,
+        bytes32 factor1,
+        bytes32 factor2,
         bytes32 divisor,
         bytes1 scalarByte
     ) public virtual returns (bytes32 result) {
@@ -737,11 +737,11 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint16)) +
             (1 << uint8(FheType.Uint32)) +
             (1 << uint8(FheType.Uint64));
-        FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        if (_isScalarZeroForType(divisor, lhsType)) revert DivisionByZero();
-        result = _mulDivOp(Operators.fheMulDiv, lhs, rhs, divisor, scalarByte, lhsType);
-        HCU_LIMIT.checkHCUForFheMulDiv(lhsType, scalarByte, lhs, rhs, result, msg.sender);
-        emit FheMulDiv(msg.sender, lhs, rhs, divisor, scalarByte, result);
+        FheType factor1Type = _verifyAndReturnType(factor1, supportedTypes);
+        if (_isScalarZeroForType(divisor, factor1Type)) revert DivisionByZero();
+        result = _mulDivOp(Operators.fheMulDiv, factor1, factor2, divisor, scalarByte, factor1Type);
+        HCU_LIMIT.checkHCUForFheMulDiv(factor1Type, scalarByte, factor1, factor2, result, msg.sender);
+        emit FheMulDiv(msg.sender, factor1, factor2, divisor, scalarByte, result);
     }
 
     /**
@@ -998,26 +998,26 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
 
     function _mulDivOp(
         Operators op,
-        bytes32 lhs,
-        bytes32 rhs,
+        bytes32 factor1,
+        bytes32 factor2,
         bytes32 divisor,
         bytes1 scalarByte,
         FheType resultType
     ) internal virtual returns (bytes32 result) {
         if (scalarByte != 0x01 && scalarByte != 0x03) revert ScalarByteIsNotBoolean();
 
-        if (!ACL.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
+        if (!ACL.isAllowed(factor1, msg.sender)) revert ACLNotAllowed(factor1, msg.sender);
         if (scalarByte == 0x01) {
-            if (!ACL.isAllowed(rhs, msg.sender)) revert ACLNotAllowed(rhs, msg.sender);
-            // resultType == _typeOf(lhs) (set by the caller's _verifyAndReturnType).
-            if (resultType != _typeOf(rhs)) revert IncompatibleTypes();
+            if (!ACL.isAllowed(factor2, msg.sender)) revert ACLNotAllowed(factor2, msg.sender);
+            // resultType == _typeOf(factor1) (set by the caller's _verifyAndReturnType).
+            if (resultType != _typeOf(factor2)) revert IncompatibleTypes();
         }
         result = keccak256(
             abi.encodePacked(
                 COMPUTATION_DOMAIN_SEPARATOR,
                 op,
-                lhs,
-                rhs,
+                factor1,
+                factor2,
                 divisor,
                 scalarByte,
                 ACL,

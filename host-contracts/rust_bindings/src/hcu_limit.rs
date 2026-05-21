@@ -54,7 +54,7 @@ interface HCULimit {
     function checkHCUForFheMax(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
     function checkHCUForFheMin(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
     function checkHCUForFheMul(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
-    function checkHCUForFheMulDiv(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
+    function checkHCUForFheMulDiv(FheType resultType, bytes1 scalarByte, bytes32 factor1, bytes32 factor2, bytes32 result, address caller) external;
     function checkHCUForFheNe(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
     function checkHCUForFheNeg(FheType resultType, bytes32 ct, bytes32 result, address caller) external;
     function checkHCUForFheNot(FheType resultType, bytes32 ct, bytes32 result, address caller) external;
@@ -691,12 +691,12 @@ interface HCULimit {
         "internalType": "bytes1"
       },
       {
-        "name": "lhs",
+        "name": "factor1",
         "type": "bytes32",
         "internalType": "bytes32"
       },
       {
-        "name": "rhs",
+        "name": "factor2",
         "type": "bytes32",
         "internalType": "bytes32"
       },
@@ -7518,7 +7518,7 @@ function checkHCUForFheMul(FheType resultType, bytes1 scalarByte, bytes32 lhs, b
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkHCUForFheMulDiv(uint8,bytes1,bytes32,bytes32,bytes32,address)` and selector `0x0d81a3f1`.
 ```solidity
-function checkHCUForFheMulDiv(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
+function checkHCUForFheMulDiv(FheType resultType, bytes1 scalarByte, bytes32 factor1, bytes32 factor2, bytes32 result, address caller) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -7528,9 +7528,9 @@ function checkHCUForFheMulDiv(FheType resultType, bytes1 scalarByte, bytes32 lhs
         #[allow(missing_docs)]
         pub scalarByte: alloy::sol_types::private::FixedBytes<1>,
         #[allow(missing_docs)]
-        pub lhs: alloy::sol_types::private::FixedBytes<32>,
+        pub factor1: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
-        pub rhs: alloy::sol_types::private::FixedBytes<32>,
+        pub factor2: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
         pub result: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
@@ -7586,8 +7586,8 @@ function checkHCUForFheMulDiv(FheType resultType, bytes1 scalarByte, bytes32 lhs
                     (
                         value.resultType,
                         value.scalarByte,
-                        value.lhs,
-                        value.rhs,
+                        value.factor1,
+                        value.factor2,
                         value.result,
                         value.caller,
                     )
@@ -7601,8 +7601,8 @@ function checkHCUForFheMulDiv(FheType resultType, bytes1 scalarByte, bytes32 lhs
                     Self {
                         resultType: tuple.0,
                         scalarByte: tuple.1,
-                        lhs: tuple.2,
-                        rhs: tuple.3,
+                        factor1: tuple.2,
+                        factor2: tuple.3,
                         result: tuple.4,
                         caller: tuple.5,
                     }
@@ -7686,10 +7686,10 @@ function checkHCUForFheMulDiv(FheType resultType, bytes1 scalarByte, bytes32 lhs
                     > as alloy_sol_types::SolType>::tokenize(&self.scalarByte),
                     <alloy::sol_types::sol_data::FixedBytes<
                         32,
-                    > as alloy_sol_types::SolType>::tokenize(&self.lhs),
+                    > as alloy_sol_types::SolType>::tokenize(&self.factor1),
                     <alloy::sol_types::sol_data::FixedBytes<
                         32,
-                    > as alloy_sol_types::SolType>::tokenize(&self.rhs),
+                    > as alloy_sol_types::SolType>::tokenize(&self.factor2),
                     <alloy::sol_types::sol_data::FixedBytes<
                         32,
                     > as alloy_sol_types::SolType>::tokenize(&self.result),
@@ -16162,8 +16162,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
             resultType: <FheType as alloy::sol_types::SolType>::RustType,
             scalarByte: alloy::sol_types::private::FixedBytes<1>,
-            lhs: alloy::sol_types::private::FixedBytes<32>,
-            rhs: alloy::sol_types::private::FixedBytes<32>,
+            factor1: alloy::sol_types::private::FixedBytes<32>,
+            factor2: alloy::sol_types::private::FixedBytes<32>,
             result: alloy::sol_types::private::FixedBytes<32>,
             caller: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, checkHCUForFheMulDivCall, N> {
@@ -16171,8 +16171,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 &checkHCUForFheMulDivCall {
                     resultType,
                     scalarByte,
-                    lhs,
-                    rhs,
+                    factor1,
+                    factor2,
                     result,
                     caller,
                 },

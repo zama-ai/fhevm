@@ -42,7 +42,7 @@ interface FHEVMExecutor {
     event FheMax(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
     event FheMin(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
     event FheMul(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
-    event FheMulDiv(address indexed caller, bytes32 lhs, bytes32 rhs, bytes32 divisor, bytes1 scalarByte, bytes32 result);
+    event FheMulDiv(address indexed caller, bytes32 factor1, bytes32 factor2, bytes32 divisor, bytes1 scalarByte, bytes32 result);
     event FheNe(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
     event FheNeg(address indexed caller, bytes32 ct, bytes32 result);
     event FheNot(address indexed caller, bytes32 ct, bytes32 result);
@@ -79,7 +79,7 @@ interface FHEVMExecutor {
     function fheMax(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
     function fheMin(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
     function fheMul(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
-    function fheMulDiv(bytes32 lhs, bytes32 rhs, bytes32 divisor, bytes1 scalarByte) external returns (bytes32 result);
+    function fheMulDiv(bytes32 factor1, bytes32 factor2, bytes32 divisor, bytes1 scalarByte) external returns (bytes32 result);
     function fheNe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
     function fheNeg(bytes32 ct) external returns (bytes32 result);
     function fheNot(bytes32 ct) external returns (bytes32 result);
@@ -591,12 +591,12 @@ interface FHEVMExecutor {
     "name": "fheMulDiv",
     "inputs": [
       {
-        "name": "lhs",
+        "name": "factor1",
         "type": "bytes32",
         "internalType": "bytes32"
       },
       {
-        "name": "rhs",
+        "name": "factor2",
         "type": "bytes32",
         "internalType": "bytes32"
       },
@@ -1687,13 +1687,13 @@ interface FHEVMExecutor {
         "internalType": "address"
       },
       {
-        "name": "lhs",
+        "name": "factor1",
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
       },
       {
-        "name": "rhs",
+        "name": "factor2",
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
@@ -6295,7 +6295,7 @@ event FheMul(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheMulDiv(address,bytes32,bytes32,bytes32,bytes1,bytes32)` and selector `0xe5ed6be31c35a5bc572746ab3347fc754669f58bc0e9eaa3257350f10a62321e`.
 ```solidity
-event FheMulDiv(address indexed caller, bytes32 lhs, bytes32 rhs, bytes32 divisor, bytes1 scalarByte, bytes32 result);
+event FheMulDiv(address indexed caller, bytes32 factor1, bytes32 factor2, bytes32 divisor, bytes1 scalarByte, bytes32 result);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -6308,9 +6308,9 @@ event FheMulDiv(address indexed caller, bytes32 lhs, bytes32 rhs, bytes32 diviso
         #[allow(missing_docs)]
         pub caller: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
-        pub lhs: alloy::sol_types::private::FixedBytes<32>,
+        pub factor1: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
-        pub rhs: alloy::sol_types::private::FixedBytes<32>,
+        pub factor2: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
         pub divisor: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
@@ -6357,8 +6357,8 @@ event FheMulDiv(address indexed caller, bytes32 lhs, bytes32 rhs, bytes32 diviso
             ) -> Self {
                 Self {
                     caller: topics.1,
-                    lhs: data.0,
-                    rhs: data.1,
+                    factor1: data.0,
+                    factor2: data.1,
                     divisor: data.2,
                     scalarByte: data.3,
                     result: data.4,
@@ -6384,10 +6384,10 @@ event FheMulDiv(address indexed caller, bytes32 lhs, bytes32 rhs, bytes32 diviso
                 (
                     <alloy::sol_types::sol_data::FixedBytes<
                         32,
-                    > as alloy_sol_types::SolType>::tokenize(&self.lhs),
+                    > as alloy_sol_types::SolType>::tokenize(&self.factor1),
                     <alloy::sol_types::sol_data::FixedBytes<
                         32,
-                    > as alloy_sol_types::SolType>::tokenize(&self.rhs),
+                    > as alloy_sol_types::SolType>::tokenize(&self.factor2),
                     <alloy::sol_types::sol_data::FixedBytes<
                         32,
                     > as alloy_sol_types::SolType>::tokenize(&self.divisor),
@@ -11560,15 +11560,15 @@ function fheMul(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (b
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheMulDiv(bytes32,bytes32,bytes32,bytes1)` and selector `0x94fdeb20`.
 ```solidity
-function fheMulDiv(bytes32 lhs, bytes32 rhs, bytes32 divisor, bytes1 scalarByte) external returns (bytes32 result);
+function fheMulDiv(bytes32 factor1, bytes32 factor2, bytes32 divisor, bytes1 scalarByte) external returns (bytes32 result);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fheMulDivCall {
         #[allow(missing_docs)]
-        pub lhs: alloy::sol_types::private::FixedBytes<32>,
+        pub factor1: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
-        pub rhs: alloy::sol_types::private::FixedBytes<32>,
+        pub factor2: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
         pub divisor: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
@@ -11621,7 +11621,7 @@ function fheMulDiv(bytes32 lhs, bytes32 rhs, bytes32 divisor, bytes1 scalarByte)
             #[doc(hidden)]
             impl ::core::convert::From<fheMulDivCall> for UnderlyingRustTuple<'_> {
                 fn from(value: fheMulDivCall) -> Self {
-                    (value.lhs, value.rhs, value.divisor, value.scalarByte)
+                    (value.factor1, value.factor2, value.divisor, value.scalarByte)
                 }
             }
             #[automatically_derived]
@@ -11629,8 +11629,8 @@ function fheMulDiv(bytes32 lhs, bytes32 rhs, bytes32 divisor, bytes1 scalarByte)
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for fheMulDivCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
-                        lhs: tuple.0,
-                        rhs: tuple.1,
+                        factor1: tuple.0,
+                        factor2: tuple.1,
                         divisor: tuple.2,
                         scalarByte: tuple.3,
                     }
@@ -11697,10 +11697,10 @@ function fheMulDiv(bytes32 lhs, bytes32 rhs, bytes32 divisor, bytes1 scalarByte)
                 (
                     <alloy::sol_types::sol_data::FixedBytes<
                         32,
-                    > as alloy_sol_types::SolType>::tokenize(&self.lhs),
+                    > as alloy_sol_types::SolType>::tokenize(&self.factor1),
                     <alloy::sol_types::sol_data::FixedBytes<
                         32,
-                    > as alloy_sol_types::SolType>::tokenize(&self.rhs),
+                    > as alloy_sol_types::SolType>::tokenize(&self.factor2),
                     <alloy::sol_types::sol_data::FixedBytes<
                         32,
                     > as alloy_sol_types::SolType>::tokenize(&self.divisor),
@@ -18695,15 +18695,15 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`fheMulDiv`] function.
         pub fn fheMulDiv(
             &self,
-            lhs: alloy::sol_types::private::FixedBytes<32>,
-            rhs: alloy::sol_types::private::FixedBytes<32>,
+            factor1: alloy::sol_types::private::FixedBytes<32>,
+            factor2: alloy::sol_types::private::FixedBytes<32>,
             divisor: alloy::sol_types::private::FixedBytes<32>,
             scalarByte: alloy::sol_types::private::FixedBytes<1>,
         ) -> alloy_contract::SolCallBuilder<&P, fheMulDivCall, N> {
             self.call_builder(
                 &fheMulDivCall {
-                    lhs,
-                    rhs,
+                    factor1,
+                    factor2,
                     divisor,
                     scalarByte,
                 },

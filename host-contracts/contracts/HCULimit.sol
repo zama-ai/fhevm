@@ -1604,16 +1604,16 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @notice Check the homomorphic complexity units limit for FheMulDiv.
      * @param resultType Result type.
      * @param scalarByte Scalar byte.
-     * @param lhs The left-hand side operand.
-     * @param rhs The right-hand side operand.
+     * @param factor1 The first multiplication factor.
+     * @param factor2 The second multiplication factor.
      * @param result Result.
      * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheMulDiv(
         FheType resultType,
         bytes1 scalarByte,
-        bytes32 lhs,
-        bytes32 rhs,
+        bytes32 factor1,
+        bytes32 factor2,
         bytes32 result,
         address caller
     ) external virtual {
@@ -1632,7 +1632,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, factor1, result);
         } else {
             if (resultType == FheType.Uint8) {
                 opHCU = 524000;
@@ -1646,7 +1646,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, lhs, rhs, result);
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, factor1, factor2, result);
         }
     }
 
