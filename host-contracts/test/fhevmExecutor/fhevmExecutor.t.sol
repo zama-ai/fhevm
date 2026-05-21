@@ -2307,7 +2307,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheMulDiv(factor1, factor2, zeroDivisor, 0x01);
     }
 
-    function test_FheMulDivRevertsIfScalarByteIsNotBoolean(uint8 fheType) public {
+    function test_FheMulDivRevertsIfScalarByteIsInvalid(uint8 fheType) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheMulDiv));
         address sender = address(123);
@@ -2320,7 +2320,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(factor2, sender);
 
         vm.prank(sender);
-        vm.expectRevert(FHEVMExecutor.ScalarByteIsNotBoolean.selector);
+        vm.expectRevert(FHEVMExecutor.InvalidMulDivScalarByte.selector);
         fhevmExecutor.fheMulDiv(factor1, factor2, divisor, 0x42);
     }
 
@@ -2337,7 +2337,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(factor2, sender);
 
         vm.prank(sender);
-        vm.expectRevert(FHEVMExecutor.ScalarByteIsNotBoolean.selector);
+        vm.expectRevert(FHEVMExecutor.InvalidMulDivScalarByte.selector);
         fhevmExecutor.fheMulDiv(factor1, factor2, divisor, 0x00);
     }
 

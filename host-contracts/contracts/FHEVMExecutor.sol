@@ -61,6 +61,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     /// @dev could become bigger than a bool to act as a bitmask, if more than one operand can be scalar, eg in fheSub
     error ScalarByteIsNotBoolean();
 
+    /// @notice Returned if `scalarByte` is not a legal `fheMulDiv` bitmask (`0x01` enc×enc or `0x03` enc×scalar).
+    error InvalidMulDivScalarByte();
+
     /// @notice Returned if the type is not supported for this operation.
     error UnsupportedType();
 
@@ -1004,7 +1007,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         bytes1 scalarByte,
         FheType resultType
     ) internal virtual returns (bytes32 result) {
-        if (scalarByte != 0x01 && scalarByte != 0x03) revert ScalarByteIsNotBoolean();
+        if (scalarByte != 0x01 && scalarByte != 0x03) revert InvalidMulDivScalarByte();
 
         if (!ACL.isAllowed(factor1, msg.sender)) revert ACLNotAllowed(factor1, msg.sender);
         if (scalarByte == 0x01) {
