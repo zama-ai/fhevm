@@ -242,6 +242,7 @@ async fn upload_ciphertexts(
         info!(
             handle = handle_as_hex,
             len = ?ByteSize::b(ct128_bytes.len() as u64),
+            format = %task.ct128.format(),
             "Uploading ct128"
         );
 
@@ -517,7 +518,14 @@ async fn fetch_pending_uploads(
 
         let ct128 = if !is_ct128_empty {
             match BigCiphertext::new_with_format_id(ct128, row.ciphertext128_format) {
-                Some(ct) => ct,
+                Some(ct) => {
+                    info!(
+                        handle = to_hex(&handle),
+                        format = %ct.format(),
+                        "Recovered pending ct128 upload from DB"
+                    );
+                    ct
+                }
                 None => {
                     error!(
                         handle = to_hex(&handle),
