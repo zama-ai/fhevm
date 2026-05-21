@@ -1,0 +1,24 @@
+userName: ${BROWSERSTACK_USERNAME}
+accessKey: ${BROWSERSTACK_ACCESS_KEY}
+
+projectName: FHEVM SDK (Mobile)
+buildName: bstack-fhevm-sdk-mobile
+buildIdentifier: "#${BUILD_NUMBER}"
+
+platforms:
+    - deviceName: Samsung Galaxy S25 Ultra
+      osVersion: 15.0
+      browserName: chrome
+      browserVersion: latest
+
+parallelsPerPlatform: 1
+
+browserstackLocal: true
+forceLocal: true
+
+debug: false
+networkLogs: true
+consoleLogs: errors
+video: true
+
+testReporting: true
