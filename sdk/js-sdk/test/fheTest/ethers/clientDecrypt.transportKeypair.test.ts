@@ -1,22 +1,26 @@
+import { describe, it, expect, beforeAll } from 'vitest';
+import { createFhevmDecryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
+import { serializeTransportKeyPair, parseTransportKeyPair } from '@fhevm/sdk/actions/chain';
+import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
+import { isCleartext } from '../setupCommon.js';
+
+////////////////////////////////////////////////////////////////////////////////
 //
 // Sepolia Testnet:
 // ----------------
-// npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.transportKeypair.test.ts
+// npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.transportKeyPair.test.ts
 //
 // Devnet:
 // -------
-// npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.transportKeypair.test.ts
+// npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.transportKeyPair.test.ts
 //
 // localhost fhevm:
 // ----------------
-// CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.transportKeypair.test.ts
+// CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.transportKeyPair.test.ts
 //
-import { describe, it, expect, beforeAll } from 'vitest';
-import { createFhevmDecryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import { serializeE2eTransportKeypair, parseE2eTransportKeypair } from '@fhevm/sdk/actions/chain';
-import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
+////////////////////////////////////////////////////////////////////////////////
 
-describe('Decrypt client — e2e transport keypair', () => {
+describe.runIf(!isCleartext(getEthersTestConfig().chainName))('Decrypt client — e2e transport key pair', () => {
   let config: FheTestEthersConfig;
 
   beforeAll(() => {
@@ -29,7 +33,7 @@ describe('Decrypt client — e2e transport keypair', () => {
     });
   });
 
-  it('should generate an e2e transport keypair', async () => {
+  it('should generate an e2e transport key pair', async () => {
     const chain = config.fhevmChain;
     const client = createFhevmDecryptClient({
       chain,
@@ -37,11 +41,11 @@ describe('Decrypt client — e2e transport keypair', () => {
     });
     await client.ready;
 
-    const keypair = await client.generateTransportKeypair();
-    expect(keypair).toBeDefined();
+    const keyPair = await client.generateTransportKeyPair();
+    expect(keyPair).toBeDefined();
   });
 
-  it('should serialize a keypair to hex strings', async () => {
+  it('should serialize a key pair to hex strings', async () => {
     const chain = config.fhevmChain;
     const client = createFhevmDecryptClient({
       chain,
@@ -49,9 +53,9 @@ describe('Decrypt client — e2e transport keypair', () => {
     });
     await client.ready;
 
-    const keypair = await client.generateTransportKeypair();
-    const serialized = serializeE2eTransportKeypair(client, {
-      transportKeypair: keypair,
+    const keyPair = await client.generateTransportKeyPair();
+    const serialized = serializeTransportKeyPair(client, {
+      transportKeyPair: keyPair,
     });
 
     expect(serialized).toBeDefined();
@@ -74,20 +78,20 @@ describe('Decrypt client — e2e transport keypair', () => {
     await client.ready;
 
     // Generate
-    const original = await client.generateTransportKeypair();
+    const original = await client.generateTransportKeyPair();
 
     // Serialize to hex
-    const serialized = serializeE2eTransportKeypair(client, {
-      transportKeypair: original,
+    const serialized = serializeTransportKeyPair(client, {
+      transportKeyPair: original,
     });
 
     // Parse back from hex
-    const parsed = await parseE2eTransportKeypair(client, { serialized });
+    const parsed = await parseTransportKeyPair(client, serialized);
     expect(parsed).toBeDefined();
 
     // Serialize again and compare — should be identical
-    const reSerialized = serializeE2eTransportKeypair(client, {
-      transportKeypair: parsed,
+    const reSerialized = serializeTransportKeyPair(client, {
+      transportKeyPair: parsed,
     });
     expect(reSerialized.publicKey).toBe(serialized.publicKey);
     expect(reSerialized.privateKey).toBe(serialized.privateKey);

@@ -52,7 +52,7 @@ export async function isomorphicCompileWasm(wasmUrl: URL): Promise<WebAssembly.M
     // ArrayBufferLike (includes SharedArrayBuffer), making it incompatible with
     // BufferSource. At runtime Buffer is always backed by ArrayBuffer, so the
     // cast at WebAssembly.compile is safe and avoids copying.
-    bytes = (await readFile(fileURLToPath(wasmUrl))) as BufferSource;
+    bytes = await readFile(fileURLToPath(wasmUrl));
   } else {
     // fetch wasm
     const res = await fetch(wasmUrl);

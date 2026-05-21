@@ -1,7 +1,13 @@
 {
   "extends": "./tsconfig.base.json",
   "include": ["src"],
-  "exclude": ["src/**/*.bench.ts", "src/**/*.bench-d.ts", "src/**/*.test.ts", "src/**/*.test-d.ts"],
+  "exclude": [
+    "src/**/*.bench.ts",
+    "src/**/*.bench-d.ts",
+    "src/**/*.test.ts",
+    "src/**/*.test-d.ts",
+    "src/vitest.config.ts"
+  ],
   "compilerOptions": {
     "sourceMap": true,
     "rootDir": "./src"

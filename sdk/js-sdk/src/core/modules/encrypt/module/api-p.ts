@@ -1,5 +1,5 @@
 import type {
-  BuildWithProofPackedReturnTypeParameters,
+  BuildWithProofPackedParameters,
   BuildWithProofPackedReturnType,
   ParseTFHEProvenCompactCiphertextListParameters,
   ParseTFHEProvenCompactCiphertextListReturnType,
@@ -17,11 +17,9 @@ import type {
 import type {
   FheEncryptionCrs,
   FheEncryptionCrsBrand,
-  FheEncryptionCrsBytes,
   FheEncryptionKeyBytes,
   FheEncryptionPublicKey,
   FheEncryptionPublicKeyBrand,
-  FheEncryptionPublicKeyBytes,
 } from '../../../types/fheEncryptionKey.js';
 import type { CompactCiphertextListBuilder } from '../../../../wasm/tfhe/tfhe.v1.5.3.js';
 import type { Bytes, UintNumber } from '../../../types/primitives.js';
@@ -40,6 +38,7 @@ import { encryptionBitsFromFheTypeId, isFheTypeId } from '../../../handle/FheTyp
 import { EncryptionError } from '../../../errors/EncryptionError.js';
 import { getErrorMessage } from '../../../base/errors/utils.js';
 import { initTfheModule } from './init-p.js';
+import { assertIsTypedValue } from '../../../base/typedValue.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -194,11 +193,11 @@ export async function parseTFHEProvenCompactCiphertextList(
 
 export async function buildWithProofPacked(
   runtime: FhevmRuntime,
-  parameters: BuildWithProofPackedReturnTypeParameters,
+  parameters: BuildWithProofPackedParameters,
 ): Promise<BuildWithProofPackedReturnType> {
   await initTfheModule(runtime);
 
-  const { fheEncryptionKey: publicEncryptionParams, metaData, typedValues } = parameters;
+  const { fheEncryptionKey: publicEncryptionParams, metaData, typedValues, extraData } = parameters;
 
   const tfheCompactPublicKeyImpl = publicEncryptionParams.publicKey;
   const tfheCompactPkeCrsImpl = publicEncryptionParams.crs;
@@ -228,6 +227,7 @@ export async function buildWithProofPacked(
     fheCompactCiphertextListBuilderWasm = CompactCiphertextList.builder(tfheCompactPublicKeyWasm);
 
     for (const typedValue of typedValues) {
+      assertIsTypedValue(typedValue, {});
       switch (typedValue.type) {
         case 'uint8':
           fheCompactCiphertextListBuilderWasm.push_u8(typedValue.value);
@@ -264,7 +264,10 @@ export async function buildWithProofPacked(
 
     ciphertextWithZKProofBytes = tfheProvenCompactCiphertextList.safe_serialize(SERIALIZED_SIZE_LIMIT_CIPHERTEXT);
 
-    return ciphertextWithZKProofBytes;
+    return Object.freeze({
+      ciphertextWithZKProofBytes,
+      extraData,
+    });
   } finally {
     try {
       if (tfheProvenCompactCiphertextList !== undefined) {
@@ -354,7 +357,7 @@ export async function serializeFheEncryptionPublicKey(
   return Object.freeze({
     id: tfhePublicKey.id,
     bytes: tfhePublicKeyBytes,
-  }) as FheEncryptionPublicKeyBytes;
+  });
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -384,7 +387,7 @@ export async function serializeFheEncryptionCrs(
     id: tfheCrs.id,
     capacity: tfheCrs.capacity,
     bytes: tfheCrsBytes,
-  }) as FheEncryptionCrsBytes;
+  });
 }
 
 ////////////////////////////////////////////////////////////////////////////////
