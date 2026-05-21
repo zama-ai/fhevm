@@ -1,0 +1,42 @@
+name: JS-SDK BrowserStack job setup
+description: Common setup for BrowserStack Playwright jobs (Node.js + npm + BrowserStack env + local tunnel)
+inputs:
+    build-name:
+        description: BrowserStack build name to reuse across jobs
+        required: true
+    project-name:
+        description: BrowserStack project name to reuse across jobs
+        required: true
+    local-identifier:
+        description: Identifier for the BrowserStack local tunnel
+        required: true
+    node-version:
+        description: Node.js version to install
+        default: "22.x"
+        required: false
+runs:
+    using: composite
+    steps:
+        - name: Setup NodeJS
+          uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+          with:
+              node-version: ${{ inputs.node-version }}
+
+        - name: Install dependencies
+          shell: bash
+          working-directory: ./sdk/js-sdk
+          run: npm ci
+
+        - name: BrowserStack Env Setup
+          uses: browserstack/github-actions/setup-env@93aebce225b754566349151c0676b26b005e591b # v1.0.4
+          with:
+              username: ${{ env.BROWSERSTACK_USERNAME }}
+              access-key: ${{ env.BROWSERSTACK_ACCESS_KEY }}
+              build-name: ${{ inputs.build-name }}
+              project-name: ${{ inputs.project-name }}
+
+        - name: BrowserStack Local Start
+          uses: browserstack/github-actions/setup-local@93aebce225b754566349151c0676b26b005e591b # v1.0.4
+          with:
+              local-testing: start
+              local-identifier: ${{ inputs.local-identifier }}
