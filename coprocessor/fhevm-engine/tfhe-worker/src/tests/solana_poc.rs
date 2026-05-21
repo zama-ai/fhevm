@@ -143,37 +143,37 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
     let amount_handle = typed_fast_handle(0x19);
 
     let initial_ixs = vec![
-        trivial_encrypt_ix(
+        test_emit_trivial_encrypt_ix(
             fixture.host_program_id,
             fixture.compute_signer,
             125,
             fixture.alice_initial,
         ),
-        allow_handle_ix(
+        test_emit_acl_allowed_ix(
             fixture.host_program_id,
             fixture.alice_initial,
             fixture.compute_signer,
             AclPermission::Compute,
         ),
-        trivial_encrypt_ix(
+        test_emit_trivial_encrypt_ix(
             fixture.host_program_id,
             fixture.compute_signer,
             20,
             fixture.bob_initial,
         ),
-        allow_handle_ix(
+        test_emit_acl_allowed_ix(
             fixture.host_program_id,
             fixture.bob_initial,
             fixture.compute_signer,
             AclPermission::Compute,
         ),
-        trivial_encrypt_ix(
+        test_emit_trivial_encrypt_ix(
             fixture.host_program_id,
             fixture.compute_signer,
             100,
             amount_handle,
         ),
-        allow_handle_ix(
+        test_emit_acl_allowed_ix(
             fixture.host_program_id,
             amount_handle,
             fixture.compute_signer,
@@ -254,13 +254,13 @@ async fn solana_fhe_rand_creates_ciphertext_and_decrypts() -> Result<(), Box<dyn
     let rand_handle = typed_fast_handle(0x29);
 
     let ixs = vec![
-        fhe_rand_ix(
+        test_emit_fhe_rand_ix(
             fixture.host_program_id,
             fixture.payer.pubkey(),
             [7_u8; 16],
             rand_handle,
         ),
-        allow_handle_ix(
+        test_emit_acl_allowed_ix(
             fixture.host_program_id,
             rand_handle,
             fixture.payer.pubkey(),
@@ -660,7 +660,7 @@ fn transfer_ix(
     }
 }
 
-fn trivial_encrypt_ix(
+fn test_emit_trivial_encrypt_ix(
     program_id: Pubkey,
     subject: Pubkey,
     value: u64,
@@ -668,12 +668,12 @@ fn trivial_encrypt_ix(
 ) -> Instruction {
     Instruction {
         program_id,
-        accounts: host::accounts::EmitProtocolEvent {
+        accounts: host::accounts::TestEmitProtocolEvent {
             event_authority: event_authority(program_id),
             program: program_id,
         }
         .to_account_metas(None),
-        data: host::instruction::TrivialEncrypt {
+        data: host::instruction::TestEmitTrivialEncrypt {
             subject,
             plaintext: amount_to_plaintext(value),
             fhe_type: FAST_REAL_FHE_TYPE,
@@ -683,7 +683,7 @@ fn trivial_encrypt_ix(
     }
 }
 
-fn allow_handle_ix(
+fn test_emit_acl_allowed_ix(
     program_id: Pubkey,
     handle: [u8; 32],
     subject: Pubkey,
@@ -691,12 +691,12 @@ fn allow_handle_ix(
 ) -> Instruction {
     Instruction {
         program_id,
-        accounts: host::accounts::EmitProtocolEvent {
+        accounts: host::accounts::TestEmitProtocolEvent {
             event_authority: event_authority(program_id),
             program: program_id,
         }
         .to_account_metas(None),
-        data: host::instruction::AllowHandle {
+        data: host::instruction::TestEmitAclAllowed {
             handle,
             subject,
             permission,
@@ -705,7 +705,7 @@ fn allow_handle_ix(
     }
 }
 
-fn fhe_rand_ix(
+fn test_emit_fhe_rand_ix(
     program_id: Pubkey,
     subject: Pubkey,
     seed: [u8; 16],
@@ -713,12 +713,12 @@ fn fhe_rand_ix(
 ) -> Instruction {
     Instruction {
         program_id,
-        accounts: host::accounts::EmitProtocolEvent {
+        accounts: host::accounts::TestEmitProtocolEvent {
             event_authority: event_authority(program_id),
             program: program_id,
         }
         .to_account_metas(None),
-        data: host::instruction::FheRand {
+        data: host::instruction::TestEmitFheRand {
             subject,
             seed,
             fhe_type: FAST_REAL_FHE_TYPE,
