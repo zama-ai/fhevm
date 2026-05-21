@@ -550,10 +550,11 @@ describe("Decryption", function () {
       ).to.be.revertedWithCustomError(decryption, "DecryptionContextMismatch");
     });
 
-    it("Should revert when extraData pins a null contextId", async function () {
-      // contextId 0 is reserved as the pre-pinning legacy sentinel. A v1 extraData carrying
-      // bytes32(0) would re-engage that legacy fallback in the response handler, so the request
-      // path must reject it before the fee is collected.
+    it("Should revert when extraData with a non-zero version pins a null contextId", async function () {
+      // contextId 0 is reserved as the pre-pinning legacy sentinel. Any non-zero version of
+      // extraData carries a caller-supplied contextId payload (today only v1 is supported);
+      // a zero payload would re-engage that legacy fallback in the response handler, so the
+      // request path must reject it before the fee is collected.
       const nullContextExtraData = extraDataV1(0n);
       await expect(
         decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, nullContextExtraData),
@@ -1581,12 +1582,13 @@ describe("Decryption", function () {
       ).to.be.revertedWithCustomError(decryption, "DecryptionContextMismatch");
     });
 
-    it("Should revert when extraData pins a null contextId", async function () {
-      // contextId 0 is the pre-pinning legacy sentinel. A v1 extraData carrying bytes32(0) would
-      // re-engage the legacy fallback in the response handler, so userDecryptionRequest must
-      // reject it. The user signature commits to extraData, so we need a fresh signature over
-      // the null-context payload to exercise the contextId check (otherwise we would revert at
-      // the signature-validation step first).
+    it("Should revert when extraData with a non-zero version pins a null contextId", async function () {
+      // contextId 0 is the pre-pinning legacy sentinel. Any non-zero version of extraData
+      // carries a caller-supplied contextId payload (today only v1 is supported); a zero
+      // payload would re-engage that legacy fallback in the response handler, so
+      // userDecryptionRequest must reject it. The user signature commits to extraData, so we
+      // need a fresh signature over the null-context payload to exercise the contextId check
+      // (otherwise we would revert at the signature-validation step first).
       const nullContextExtraData = extraDataV1(0n);
       const nullContextRequestMessage = createEIP712RequestUserDecrypt(
         await decryption.getAddress(),
@@ -2551,11 +2553,13 @@ describe("Decryption", function () {
       ).to.be.revertedWithCustomError(decryption, "DecryptionContextMismatch");
     });
 
-    it("Should revert when extraData pins a null contextId", async function () {
-      // contextId 0 is the pre-pinning legacy sentinel. A v1 extraData carrying bytes32(0) would
-      // re-engage the legacy fallback in the response handler. The delegate signature commits to
-      // extraData, so we need a fresh signature over the null-context payload to exercise the
-      // contextId check (otherwise we would revert at the signature-validation step first).
+    it("Should revert when extraData with a non-zero version pins a null contextId", async function () {
+      // contextId 0 is the pre-pinning legacy sentinel. Any non-zero version of extraData
+      // carries a caller-supplied contextId payload (today only v1 is supported); a zero
+      // payload would re-engage that legacy fallback in the response handler. The delegate
+      // signature commits to extraData, so we need a fresh signature over the null-context
+      // payload to exercise the contextId check (otherwise we would revert at the
+      // signature-validation step first).
       const nullContextExtraData = extraDataV1(0n);
       const nullContextRequestMessage = createEIP712RequestDelegatedUserDecrypt(
         await decryption.getAddress(),
