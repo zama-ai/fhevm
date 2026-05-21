@@ -155,8 +155,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     bytes8 private constant SEED_DOMAIN_SEPARATOR = "FHE_seed";
 
     /// `fheMulDiv` `scalarByte` bitmask: bit 0 (divisor) is always set; bit 1 marks `factor2` as scalar.
-    bytes1 private constant FHE_MUL_DIV_SCALAR_BYTE_ENC = 0x01;
-    bytes1 private constant FHE_MUL_DIV_SCALAR_BYTE_SCALAR = 0x03;
+    bytes1 private constant FHE_MUL_DIV_FACTOR2_ENCRYPTED = 0x01;
+    bytes1 private constant FHE_MUL_DIV_FACTOR2_SCALAR = 0x03;
 
     /// Maximum set size for narrow types (Uint8/Uint16/Uint32) in collection operations.
     /// Wide types (Uint64 and above) use a smaller limit because each element costs more HCU.
@@ -1011,12 +1011,12 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         bytes1 scalarByte,
         FheType resultType
     ) internal virtual returns (bytes32 result) {
-        if (scalarByte != FHE_MUL_DIV_SCALAR_BYTE_ENC && scalarByte != FHE_MUL_DIV_SCALAR_BYTE_SCALAR) {
+        if (scalarByte != FHE_MUL_DIV_FACTOR2_ENCRYPTED && scalarByte != FHE_MUL_DIV_FACTOR2_SCALAR) {
             revert InvalidMulDivScalarByte();
         }
 
         if (!ACL.isAllowed(factor1, msg.sender)) revert ACLNotAllowed(factor1, msg.sender);
-        if (scalarByte == FHE_MUL_DIV_SCALAR_BYTE_ENC) {
+        if (scalarByte == FHE_MUL_DIV_FACTOR2_ENCRYPTED) {
             if (!ACL.isAllowed(factor2, msg.sender)) revert ACLNotAllowed(factor2, msg.sender);
             // resultType == _typeOf(factor1) (set by the caller's _verifyAndReturnType).
             if (resultType != _typeOf(factor2)) revert IncompatibleTypes();

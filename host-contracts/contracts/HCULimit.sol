@@ -90,8 +90,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     address private constant FHEVM_EXECUTOR_ADDRESS = fhevmExecutorAdd;
 
     /// `fheMulDiv` `scalarByte` bitmask: bit 0 (divisor) is always set; bit 1 marks `factor2` as scalar.
-    bytes1 private constant FHE_MUL_DIV_SCALAR_BYTE_ENC = 0x01;
-    bytes1 private constant FHE_MUL_DIV_SCALAR_BYTE_SCALAR = 0x03;
+    bytes1 private constant FHE_MUL_DIV_FACTOR2_ENCRYPTED = 0x01;
+    bytes1 private constant FHE_MUL_DIV_FACTOR2_SCALAR = 0x03;
 
     /// @custom:storage-location erc7201:fhevm.storage.HCULimit
     /// @dev All five uint48 fields pack into a single 256-bit slot (5 × 48 = 240 bits).
@@ -1623,7 +1623,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     ) external virtual {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
-        if (scalarByte == FHE_MUL_DIV_SCALAR_BYTE_SCALAR) {
+        if (scalarByte == FHE_MUL_DIV_FACTOR2_SCALAR) {
             if (resultType == FheType.Uint8) {
                 opHCU = 495000;
             } else if (resultType == FheType.Uint16) {
