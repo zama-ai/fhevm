@@ -15,8 +15,14 @@ const HANDLE_VERSION: u8 = 0;
 pub mod zama_host {
     use super::*;
 
-    pub fn allow_handle(
-        ctx: Context<EmitProtocolEvent>,
+    /// Test-only event shim.
+    ///
+    /// This bypasses ACL record verification and exists only to feed listener /
+    /// worker tests. Protocol flows should create ACL state through
+    /// `bind_acl_record`, `trivial_encrypt_and_bind`, `input_verified_and_bind`,
+    /// or `fhe_binary_op`.
+    pub fn test_emit_acl_allowed(
+        ctx: Context<TestEmitProtocolEvent>,
         handle: [u8; 32],
         subject: Pubkey,
         permission: AclPermission,
@@ -356,8 +362,13 @@ pub mod zama_host {
         Ok(())
     }
 
-    pub fn trivial_encrypt(
-        ctx: Context<EmitProtocolEvent>,
+    /// Test-only event shim.
+    ///
+    /// This emits a caller-chosen trivial-encrypt result handle without creating
+    /// an ACL record. App flows should use `trivial_encrypt_and_bind` when they
+    /// need a host-born trivial encryption handle with durable ACL state.
+    pub fn test_emit_trivial_encrypt(
+        ctx: Context<TestEmitProtocolEvent>,
         subject: Pubkey,
         plaintext: [u8; 32],
         fhe_type: u8,
@@ -374,8 +385,12 @@ pub mod zama_host {
         Ok(())
     }
 
-    pub fn fhe_rand(
-        ctx: Context<EmitProtocolEvent>,
+    /// Test-only event shim.
+    ///
+    /// This emits a caller-chosen random result handle. It is useful for worker
+    /// tests and should not be treated as the final random-handle birth API.
+    pub fn test_emit_fhe_rand(
+        ctx: Context<TestEmitProtocolEvent>,
         subject: Pubkey,
         seed: [u8; 16],
         fhe_type: u8,
@@ -392,8 +407,13 @@ pub mod zama_host {
         Ok(())
     }
 
-    pub fn input_verified(
-        ctx: Context<EmitProtocolEvent>,
+    /// Test-only event shim.
+    ///
+    /// This only emits an input-verification event. The PoC ACL-bearing stand-in
+    /// is `input_verified_and_bind`; the final version should require the real
+    /// InputVerifier/transciphering boundary.
+    pub fn test_emit_input_verified(
+        ctx: Context<TestEmitProtocolEvent>,
         input_handle: [u8; 32],
         result_handle: [u8; 32],
         user: Pubkey,
@@ -411,9 +431,10 @@ pub mod zama_host {
     }
 }
 
+/// Accounts for test-only event shims that bypass protocol state writes.
 #[derive(Accounts)]
 #[event_cpi]
-pub struct EmitProtocolEvent {}
+pub struct TestEmitProtocolEvent {}
 
 #[derive(Accounts)]
 #[instruction(nonce_key: [u8; 32], nonce_sequence: u64)]

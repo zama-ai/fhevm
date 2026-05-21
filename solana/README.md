@@ -108,8 +108,8 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 ### Working Now
 
 - [x] Anchor workspace with `zama-host`, `confidential-token`, and LiteSVM runtime tests.
-- [x] ZamaHost emits typed Anchor CPI events for `trivial_encrypt`, `fhe_rand`, `fhe_binary_op`, and
-      ACL binding.
+- [x] ZamaHost emits typed Anchor CPI events for real host operations and clearly named
+      `test_emit_*` shims used by listener / worker tests.
 - [x] Solana host events normalize into the existing coprocessor DB event shape.
 - [x] Worker-backed tests use real small TFHE ciphertexts for Solana-originated events.
 - [x] Confidential token can initialize a mint and token accounts.
@@ -137,8 +137,8 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 - [ ] KMS verification is modeled in Rust tests, not wired into the real KMS connector.
 - [ ] Input handles use an explicit `input_verified_and_bind` PoC stand-in instead of a real Solana
       input verifier or transciphering path.
-- [ ] `fhe_rand` exists in the host and worker-backed tests, but is not yet integrated into the
-      confidential token flow.
+- [ ] `test_emit_fhe_rand` exists for worker-backed tests, but the final random-handle birth API is
+      not designed yet.
 - [ ] ACL records are born bound through Anchor `init`; the future predeclared
       `Empty -> Bound` account lifecycle is documented but not implemented.
 - [ ] The subject list has a PoC capacity. Overflow/chunking is not designed yet.
@@ -172,8 +172,8 @@ zama-host program
   protocol state:
     ACL record PDAs
   events:
-    trivial_encrypt
-    fhe_rand
+    test_emit_trivial_encrypt (test shim)
+    test_emit_fhe_rand (test shim)
     fhe_binary_op
     bind_acl_record
   |
@@ -204,6 +204,10 @@ host-listener normalizes Solana events into the existing coprocessor model.
 tfhe-worker computes ciphertexts from DB work items.
 KMS-style verification combines signed authorization + handle entry + ACL state.
 ```
+
+`test_emit_*` instructions are not protocol APIs. They emit typed events without proving or writing
+the corresponding ACL record and exist only to keep listener / worker tests fast while the real
+Solana input, trivial-encrypt, and random-handle birth paths are still being designed.
 
 ## Vocabulary
 
@@ -515,7 +519,7 @@ Then the confidential balance is updated:
 ```text
 wrap_usdc(amount)
   |
-  +--> CPI zama-host::trivial_encrypt(amount)
+  +--> CPI zama-host::test_emit_trivial_encrypt(amount)
   |      emits hDeposit
   |
   +--> CPI zama-host::fhe_binary_op(Add)
@@ -528,7 +532,7 @@ wrap_usdc(amount)
   |      emits FHE.add(hA0, hDeposit) -> hA1
 ```
 
-The deposit amount is public in this slice because it uses `trivial_encrypt(amount)`. A later encrypted-input path should replace that step with `input_verified(...)` and the real ZKPoK/input verifier boundary.
+The deposit amount is public in this slice because it uses the `test_emit_trivial_encrypt(amount)` shim. A later encrypted-input path should replace that step with `input_verified_and_bind(...)` or the final input path and the real ZKPoK/input verifier boundary.
 
 ## User Decrypt Shape
 
@@ -750,9 +754,9 @@ Solana-born ciphertext transfer:
 
 ```text
 LiteSVM emits:
-  trivial_encrypt(125) -> hA0
-  trivial_encrypt(20)  -> hB0
-  trivial_encrypt(100) -> hX
+  test_emit_trivial_encrypt(125) -> hA0
+  test_emit_trivial_encrypt(20)  -> hB0
+  test_emit_trivial_encrypt(100) -> hX
 
 tfhe-worker
   -> creates real ciphertexts for hA0, hB0, hX
@@ -771,7 +775,7 @@ Random ciphertext creation:
 
 ```text
 LiteSVM emits:
-  fhe_rand(seed, Uint8) -> hRand
+  test_emit_fhe_rand(seed, Uint8) -> hRand
 
 tfhe-worker
   -> creates a real random ciphertext for hRand

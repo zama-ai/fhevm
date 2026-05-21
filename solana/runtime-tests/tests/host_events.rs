@@ -27,7 +27,7 @@ use zama_host::{
 };
 
 #[test]
-fn trivial_encrypt_emits_anchor_cpi_event() {
+fn test_emit_trivial_encrypt_emits_anchor_cpi_event() {
     let program_id = host::id();
     let program_path = host_program_so_path();
     assert!(
@@ -45,12 +45,12 @@ fn trivial_encrypt_emits_anchor_cpi_event() {
 
     let ix = Instruction {
         program_id,
-        accounts: host::accounts::EmitProtocolEvent {
+        accounts: host::accounts::TestEmitProtocolEvent {
             event_authority: event_authority(program_id),
             program: program_id,
         }
         .to_account_metas(None),
-        data: host::instruction::TrivialEncrypt {
+        data: host::instruction::TestEmitTrivialEncrypt {
             subject: payer.pubkey(),
             plaintext: [7; 32],
             fhe_type: 5,

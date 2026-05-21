@@ -2,7 +2,7 @@ use anchor_lang::{prelude::*, AccountDeserialize};
 use anchor_spl::token::{self as spl_token, Mint as SplMint, Token, TokenAccount, TransferChecked};
 use zama_host::{
     self, cpi,
-    cpi::accounts::{EmitProtocolEvent, FheBinaryOp, TrivialEncryptAndBind},
+    cpi::accounts::{FheBinaryOp, TestEmitProtocolEvent, TrivialEncryptAndBind},
     program::ZamaHost,
     AclPermission, AclSubjectEntry, FheBinaryOpCode,
 };
@@ -106,7 +106,7 @@ pub mod confidential_token {
             amount,
             mint.decimals,
         )?;
-        emit_trivial_encrypt(
+        emit_test_trivial_encrypt(
             &ctx.accounts.zama_event_authority,
             &ctx.accounts.zama_program,
             compute_signer,
@@ -437,7 +437,7 @@ fn compute_binary_op<'info>(
     Ok(record.handle)
 }
 
-fn emit_trivial_encrypt<'info>(
+fn emit_test_trivial_encrypt<'info>(
     zama_event_authority: &UncheckedAccount<'info>,
     zama_program: &Program<'info, ZamaHost>,
     subject: Pubkey,
@@ -445,10 +445,10 @@ fn emit_trivial_encrypt<'info>(
     fhe_type: u8,
     result: [u8; 32],
 ) -> Result<()> {
-    cpi::trivial_encrypt(
+    cpi::test_emit_trivial_encrypt(
         CpiContext::new(
             zama_program.to_account_info(),
-            EmitProtocolEvent {
+            TestEmitProtocolEvent {
                 event_authority: zama_event_authority.to_account_info(),
                 program: zama_program.to_account_info(),
             },
