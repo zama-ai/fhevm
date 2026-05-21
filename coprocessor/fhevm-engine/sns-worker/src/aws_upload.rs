@@ -228,18 +228,26 @@ async fn upload_ciphertexts(
 
     let mut jobs = vec![];
 
-    if !task.ct128.is_empty() && task.ct128.format() != Ciphertext128Format::Unknown {
+    if !task.ct128.is_empty() {
+        let ct128_format = task.ct128.format();
+        if ct128_format == Ciphertext128Format::Unknown {
+            return Err(ExecutionError::InvalidCiphertext128Format(format!(
+                "non-empty ct128 has unknown format, tenant_id: {}, handle: {}",
+                task.tenant_id, handle_as_hex,
+            )));
+        }
+
         let ct128_bytes = task.ct128.bytes();
         let ct128_digest = compute_digest(ct128_bytes);
         info!(
             handle = handle_as_hex,
             len = ?ByteSize::b(ct128_bytes.len() as u64),
-            format = %task.ct128.format(),
+            format = %ct128_format,
             tenant_id = task.tenant_id,
             "Uploading ct128"
         );
 
-        let format_as_str = task.ct128.format().to_string();
+        let format_as_str = ct128_format.to_string();
 
         let key = if cfg!(feature = "test_s3_use_handle_as_key") {
             hex::encode(&task.handle)
