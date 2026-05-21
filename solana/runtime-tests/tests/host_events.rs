@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+mod support;
+
 use anchor_lang::{
     AccountDeserialize, AccountSerialize, AnchorDeserialize, Discriminator, InstructionData,
     ToAccountMetas,
@@ -24,6 +26,8 @@ use zama_host as host;
 use zama_host::{
     AclRecord, AclSubjectEntry, FheBinaryOpCode, FheBinaryOpEvent, TrivialEncryptEvent,
 };
+
+use support::fhe_runtime::{CleartextBackend, FheBackend, TypedClearValue};
 
 #[test]
 fn test_emit_trivial_encrypt_emits_anchor_cpi_event() {
@@ -567,10 +571,18 @@ fn bind_acl_record_rejects_handle_laundering_by_unallowed_authority() {
 fn confidential_transfer_rotates_balance_handles_and_binds_output_acl() {
     let mut fixture = token_fixture();
     let amount_handle = [9; 32];
+    let mut cleartext = CleartextBackend::default();
+    cleartext.seed_cleartext(fixture.alice_initial, TypedClearValue::uint64(125));
+    cleartext.seed_cleartext(fixture.bob_initial, TypedClearValue::uint64(20));
+    cleartext.seed_cleartext(amount_handle, TypedClearValue::uint64(9));
+
     authorize_input_compute_acl(&mut fixture, amount_handle);
     let output = transfer_output_accounts(&fixture, 1);
     let transfer_ix = transfer_ix(&fixture, output, amount_handle);
     let (meta, account_keys) = send_with_meta(&mut fixture.svm, &fixture.alice, transfer_ix);
+    cleartext
+        .ingest_transaction(&meta, &account_keys, fixture.host_program_id)
+        .unwrap();
     let alice_record = read_acl_record(&fixture.svm, output.alice).expect("expected Alice ACL");
     let bob_record = read_acl_record(&fixture.svm, output.bob).expect("expected Bob ACL");
     let new_alice = alice_record.handle;
@@ -591,6 +603,14 @@ fn confidential_transfer_rotates_balance_handles_and_binds_output_acl() {
     assert_eq!(events[1].rhs, amount_handle);
     assert!(!events[1].scalar);
     assert_eq!(events[1].result, new_bob);
+    assert_eq!(
+        cleartext.decrypt_cleartext(new_alice),
+        Some(TypedClearValue::uint64(116))
+    );
+    assert_eq!(
+        cleartext.decrypt_cleartext(new_bob),
+        Some(TypedClearValue::uint64(29))
+    );
 
     let alice_account = token_account(&fixture.svm, fixture.alice_token);
     let bob_account = token_account(&fixture.svm, fixture.bob_token);
@@ -774,12 +794,18 @@ fn allow_for_decryption_rejects_unallowed_signer() {
 fn wrap_usdc_escrows_spl_tokens_and_rotates_confidential_balance() {
     let mut fixture = token_fixture();
     let amount = 100_000_000;
+    let mut cleartext = CleartextBackend::default();
+    cleartext.seed_cleartext(fixture.alice_initial, TypedClearValue::uint64(125));
+
     let output = wrap_output_accounts(&fixture, 1);
     let ix = wrap_usdc_ix(&fixture, output, amount);
 
     let alice_usdc_before = spl_token_amount(&fixture.svm, fixture.alice_usdc);
     let vault_usdc_before = spl_token_amount(&fixture.svm, fixture.vault_usdc);
     let (meta, account_keys) = send_with_meta(&mut fixture.svm, &fixture.alice, ix);
+    cleartext
+        .ingest_transaction(&meta, &account_keys, fixture.host_program_id)
+        .unwrap();
 
     assert_eq!(
         spl_token_amount(&fixture.svm, fixture.alice_usdc),
@@ -798,6 +824,10 @@ fn wrap_usdc_escrows_spl_tokens_and_rotates_confidential_balance() {
     let amount_record = read_acl_record(&fixture.svm, output.amount).expect("expected amount ACL");
     let amount_handle = amount_record.handle;
     assert_eq!(trivial_events[0].result, amount_handle);
+    assert_eq!(
+        cleartext.decrypt_cleartext(amount_handle),
+        Some(TypedClearValue::uint64(amount))
+    );
 
     let events = binary_op_events(&meta, &account_keys, fixture.host_program_id);
     let output_record = read_acl_record(&fixture.svm, output.balance).expect("expected output ACL");
@@ -808,6 +838,10 @@ fn wrap_usdc_escrows_spl_tokens_and_rotates_confidential_balance() {
     assert_eq!(events[0].lhs, fixture.alice_initial);
     assert_eq!(events[0].rhs, amount_handle);
     assert_eq!(events[0].result, new_alice);
+    assert_eq!(
+        cleartext.decrypt_cleartext(new_alice),
+        Some(TypedClearValue::uint64(100_000_125))
+    );
 
     assert_acl_record(
         &fixture.svm,
