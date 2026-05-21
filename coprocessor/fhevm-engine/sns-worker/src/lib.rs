@@ -252,7 +252,7 @@ impl HandleItem {
     ) -> Result<(), ExecutionError> {
         let ct128_format = self.ct128.format();
 
-        if self.ct128.is_empty() || ct128_format == Ciphertext128Format::Unknown {
+        if self.ct128.is_empty() {
             sqlx::query(
                 "INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle, transaction_id)
                 VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
@@ -263,6 +263,12 @@ impl HandleItem {
             .bind(&self.transaction_id)
             .execute(db_txn.as_mut())
             .await?;
+        } else if ct128_format == Ciphertext128Format::Unknown {
+            return Err(ExecutionError::InvalidCiphertext128Format(format!(
+                "non-empty ct128 has unknown format, host_chain_id: {}, handle: {}",
+                self.host_chain_id.as_i64(),
+                to_hex(&self.handle),
+            )));
         } else {
             let ct128_format: i16 = ct128_format.into();
             sqlx::query(
@@ -384,6 +390,9 @@ pub enum ExecutionError {
 
     #[error("Deserialization error: {0}")]
     DeserializationError(String),
+
+    #[error("Invalid ciphertext128 format: {0}")]
+    InvalidCiphertext128Format(String),
 
     #[error("Bucket not found {0}")]
     BucketNotFound(String),
