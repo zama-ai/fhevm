@@ -123,6 +123,10 @@ pub mod zama_host {
             &ctx.accounts.acl_record,
         )?;
         assert_record_allows_handle(&ctx.accounts.acl_record, handle, subject)?;
+        // Design note: this PoC uses one ACL subject list for compute and
+        // decryption. A production Solana host must define which subjects may
+        // make a handle publicly decryptable; a compute signer should not gain
+        // that authority just because it may compute on the handle.
         ctx.accounts.acl_record.public_decrypt = true;
         emit_cpi!(AclAllowedEvent {
             version: EVENT_VERSION,

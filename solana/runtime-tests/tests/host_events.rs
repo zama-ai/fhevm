@@ -642,6 +642,33 @@ fn confidential_transfer_rotates_balance_handles_and_binds_output_acl() {
 }
 
 #[test]
+fn confidential_self_transfer_is_no_op() {
+    let mut fixture = token_fixture();
+    let amount_handle = [9; 32];
+    authorize_input_compute_acl(&mut fixture, amount_handle);
+    let output = transfer_output_accounts(&fixture, 2);
+    let ix = self_transfer_ix(&fixture, output, amount_handle);
+
+    let (meta, account_keys) = send_with_meta(&mut fixture.svm, &fixture.alice, ix);
+
+    assert!(binary_op_events(&meta, &account_keys, fixture.host_program_id).is_empty());
+    assert_eq!(
+        token_account(&fixture.svm, fixture.alice_token).balance_handle,
+        fixture.alice_initial
+    );
+    assert_eq!(
+        token_account(&fixture.svm, fixture.alice_token).balance_acl_record,
+        fixture.alice_current_compute_acl
+    );
+    assert_eq!(
+        token_account(&fixture.svm, fixture.alice_token).next_balance_nonce_sequence,
+        1
+    );
+    assert!(read_acl_record(&fixture.svm, output.alice).is_none());
+    assert!(read_acl_record(&fixture.svm, output.bob).is_none());
+}
+
+#[test]
 fn user_decrypt_model_uses_acl_domain_key_and_acl_record_authentication() {
     let mut fixture = token_fixture();
     let amount_handle = [9; 32];
@@ -1493,6 +1520,33 @@ fn transfer_ix(
         output,
         amount_handle,
     )
+}
+
+fn self_transfer_ix(
+    fixture: &TokenFixture,
+    output: TransferOutputAccounts,
+    amount_handle: [u8; 32],
+) -> Instruction {
+    Instruction {
+        program_id: fixture.token_program_id,
+        accounts: token::accounts::ConfidentialTransfer {
+            owner: fixture.alice.pubkey(),
+            mint: fixture.mint.pubkey(),
+            from_account: fixture.alice_token,
+            to_account: fixture.alice_token,
+            compute_signer: fixture.compute_signer,
+            from_current_compute_acl: fixture.alice_current_compute_acl,
+            to_current_compute_acl: fixture.alice_current_compute_acl,
+            amount_compute_acl: input_compute_acl_address(fixture, amount_handle),
+            from_output_acl: output.alice,
+            to_output_acl: output.bob,
+            zama_event_authority: event_authority(fixture.host_program_id),
+            zama_program: fixture.host_program_id,
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+        data: token::instruction::ConfidentialTransfer { amount_handle }.data(),
+    }
 }
 
 fn transfer_ix_with_current_acl(
