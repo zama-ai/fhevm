@@ -22,8 +22,7 @@ use solana_sdk::{
 };
 use zama_host as host;
 use zama_host::{
-    AclPermission, AclRecord, AclSubjectEntry, FheBinaryOpCode, FheBinaryOpEvent,
-    TrivialEncryptEvent,
+    AclRecord, AclSubjectEntry, FheBinaryOpCode, FheBinaryOpEvent, TrivialEncryptEvent,
 };
 
 #[test]
@@ -137,10 +136,7 @@ fn bind_acl_record_persists_keyed_nonce_record_without_handle_derived_address() 
             app_account,
             encrypted_value_label,
             handle,
-            subjects: vec![AclSubjectEntry {
-                pubkey: subject,
-                permission: AclPermission::Compute,
-            }],
+            subjects: vec![AclSubjectEntry { pubkey: subject }],
             public_decrypt: false,
         }
         .data(),
@@ -240,7 +236,6 @@ fn bind_acl_record_rejects_nonce_key_not_derived_from_acl_fields() {
             handle,
             subjects: vec![AclSubjectEntry {
                 pubkey: payer.pubkey(),
-                permission: AclPermission::Compute,
             }],
             public_decrypt: false,
         }
@@ -387,10 +382,7 @@ fn bind_acl_record_cannot_rebind_existing_acl_record() {
             app_account,
             encrypted_value_label,
             handle,
-            subjects: vec![AclSubjectEntry {
-                pubkey: subject,
-                permission: AclPermission::Compute,
-            }],
+            subjects: vec![AclSubjectEntry { pubkey: subject }],
             public_decrypt: false,
         }
         .data(),
@@ -482,7 +474,6 @@ fn bind_acl_record_rejects_app_account_without_matching_authority() {
             handle,
             subjects: vec![AclSubjectEntry {
                 pubkey: payer.pubkey(),
-                permission: AclPermission::Compute,
             }],
             public_decrypt: false,
         }
@@ -557,7 +548,6 @@ fn bind_acl_record_rejects_handle_laundering_by_unallowed_authority() {
             handle,
             subjects: vec![AclSubjectEntry {
                 pubkey: mallory.pubkey(),
-                permission: AclPermission::UserDecrypt,
             }],
             public_decrypt: false,
         }
@@ -1429,7 +1419,6 @@ fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
             output_encrypted_value_label: encrypted_value_label,
             output_subjects: vec![AclSubjectEntry {
                 pubkey: fixture.compute_signer,
-                permission: AclPermission::Compute,
             }],
             output_public_decrypt: false,
         }

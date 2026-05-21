@@ -262,15 +262,10 @@ fn decode_acl_allowed_event(payload: &[u8]) -> Option<SolanaAclAllowedEvent> {
     read_version(&mut cursor)?;
     let handle = Handle::from(cursor.read_bytes()?);
     let subject = format!("0x{}", encode_hex(&cursor.read_bytes()?));
-    let event_type = match cursor.read_u8()? {
-        0 => AllowEvents::AllowedAccount,
-        1 | 2 => AllowEvents::AllowedForDecryption,
-        _ => return None,
-    };
     Some(SolanaAclAllowedEvent {
         handle,
         subject,
-        event_type,
+        event_type: AllowEvents::AllowedAccount,
     })
 }
 
@@ -483,7 +478,6 @@ mod tests {
             let mut payload = vec![SOLANA_EVENT_VERSION];
             payload.extend_from_slice(&[7; 32]);
             payload.extend_from_slice(&[8; 32]);
-            payload.push(1);
             payload
         });
 
@@ -500,7 +494,7 @@ mod tests {
         );
         assert_eq!(
             decoded.event_type as i16,
-            AllowEvents::AllowedForDecryption as i16
+            AllowEvents::AllowedAccount as i16
         );
     }
 

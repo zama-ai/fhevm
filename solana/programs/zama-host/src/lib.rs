@@ -26,13 +26,11 @@ pub mod zama_host {
         ctx: Context<TestEmitProtocolEvent>,
         handle: [u8; 32],
         subject: Pubkey,
-        permission: AclPermission,
     ) -> Result<()> {
         emit_cpi!(AclAllowedEvent {
             version: EVENT_VERSION,
             handle,
             subject,
-            permission,
         });
         drop(ctx);
         Ok(())
@@ -89,7 +87,6 @@ pub mod zama_host {
                 version: EVENT_VERSION,
                 handle,
                 subject: subject.pubkey,
-                permission: subject.permission,
             });
         }
         Ok(())
@@ -131,7 +128,6 @@ pub mod zama_host {
             version: EVENT_VERSION,
             handle,
             subject,
-            permission: AclPermission::PublicDecrypt,
         });
         Ok(())
     }
@@ -200,7 +196,6 @@ pub mod zama_host {
                 version: EVENT_VERSION,
                 handle: result,
                 subject: output_subject.pubkey,
-                permission: output_subject.permission,
             });
         }
         Ok(())
@@ -266,7 +261,6 @@ pub mod zama_host {
                 version: EVENT_VERSION,
                 handle: input_handle,
                 subject: output_subject.pubkey,
-                permission: output_subject.permission,
             });
         }
         Ok(())
@@ -355,7 +349,6 @@ pub mod zama_host {
                 version: EVENT_VERSION,
                 handle: result,
                 subject: output_subject.pubkey,
-                permission: output_subject.permission,
             });
         }
         emit_cpi!(FheBinaryOpEvent {
@@ -562,7 +555,6 @@ pub struct FheBinaryOp<'info> {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AclSubjectEntry {
     pub pubkey: Pubkey,
-    pub permission: AclPermission,
 }
 
 #[account]
@@ -617,7 +609,6 @@ pub struct AclAllowedEvent {
     pub version: u8,
     pub handle: [u8; 32],
     pub subject: Pubkey,
-    pub permission: AclPermission,
 }
 
 #[event]
@@ -642,13 +633,6 @@ impl FheBinaryOpCode {
             Self::Sub => 1,
         }
     }
-}
-
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AclPermission {
-    Compute,
-    UserDecrypt,
-    PublicDecrypt,
 }
 
 #[error_code]

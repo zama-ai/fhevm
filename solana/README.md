@@ -324,6 +324,12 @@ ACL record PDA
     subjects              = [Alice, compute_signer]
 ```
 
+`subjects` is intentionally a plain allow-list. It does not store `Compute` or `UserDecrypt`
+permission kinds. This matches the EVM ACL model: the same `(handle, subject)` authorization is used
+by different verification paths. `zama-host::fhe_binary_op` interprets `compute_signer` membership as
+permission to compute, while the KMS/user-decrypt path interprets Alice membership as permission to
+decrypt. Public decrypt is the separate `public_decrypt` flag on the ACL record.
+
 For computed outputs, the address is known before execution but the handle is not:
 
 ```text
