@@ -24,7 +24,7 @@ pub mod zama_host {
     ///
     /// This bypasses ACL record verification and exists only to feed listener /
     /// worker tests. Protocol flows should create ACL state through
-    /// `bind_acl_record`, `trivial_encrypt_and_bind`, or `fhe_binary_op`.
+    /// `bind_acl_record`, `trivial_encrypt_and_bind`, or an input verifier.
     /// Input flows may use `mock_input_verified_and_bind` only as a temporary mock
     /// short-circuit until the verifier/transciphering boundary exists.
     pub fn test_emit_acl_allowed(
@@ -35,7 +35,7 @@ pub mod zama_host {
         emit_cpi!(AclAllowedEvent {
             version: EVENT_VERSION,
             handle,
-            subject,
+            subject: subject.to_bytes(),
         });
         Ok(())
     }
@@ -83,7 +83,7 @@ pub mod zama_host {
             emit_cpi!(AclAllowedEvent {
                 version: EVENT_VERSION,
                 handle,
-                subject: subject.pubkey,
+                subject: subject.pubkey.to_bytes(),
             });
         }
         Ok(())
@@ -128,7 +128,7 @@ pub mod zama_host {
         emit_cpi!(AclAllowedEvent {
             version: EVENT_VERSION,
             handle,
-            subject,
+            subject: subject.to_bytes(),
         });
         Ok(())
     }
@@ -180,7 +180,7 @@ pub mod zama_host {
 
         emit_cpi!(TrivialEncryptEvent {
             version: EVENT_VERSION,
-            subject,
+            subject: subject.to_bytes(),
             plaintext,
             fhe_type,
             result,
@@ -189,7 +189,7 @@ pub mod zama_host {
             emit_cpi!(AclAllowedEvent {
                 version: EVENT_VERSION,
                 handle: result,
-                subject: output_subject.pubkey,
+                subject: output_subject.pubkey.to_bytes(),
             });
         }
         Ok(())
@@ -240,14 +240,14 @@ pub mod zama_host {
             version: EVENT_VERSION,
             input_handle,
             result_handle: input_handle,
-            user,
-            acl_domain_key: output_acl_domain_key,
+            user: user.to_bytes(),
+            acl_domain_key: output_acl_domain_key.to_bytes(),
         });
         for output_subject in output_subjects {
             emit_cpi!(AclAllowedEvent {
                 version: EVENT_VERSION,
                 handle: input_handle,
-                subject: output_subject.pubkey,
+                subject: output_subject.pubkey.to_bytes(),
             });
         }
         Ok(())
@@ -260,23 +260,9 @@ pub mod zama_host {
         rhs: [u8; 32],
         scalar: bool,
         output_fhe_type: u8,
-        output_nonce_key: [u8; 32],
-        output_nonce_sequence: u64,
-        output_acl_domain_key: Pubkey,
-        output_app_account: Pubkey,
-        output_encrypted_value_label: [u8; 32],
-        output_subjects: Vec<AclSubjectEntry>,
-        output_public_decrypt: bool,
+        result: [u8; 32],
     ) -> Result<()> {
         let subject = ctx.accounts.compute_subject.key();
-        assert_output_acl_metadata(
-            ctx.accounts.app_account_authority.key(),
-            output_nonce_key,
-            output_acl_domain_key,
-            output_app_account,
-            output_encrypted_value_label,
-            &output_subjects,
-        )?;
 
         // Match the EVM executor boundary: no compute event is emitted until
         // the host program verifies that the compute subject can use the
@@ -296,7 +282,7 @@ pub mod zama_host {
 
         let clock = Clock::get()?;
         let previous_bank_hash = previous_bank_hash(clock.slot)?;
-        let result = computed_binary_handle(
+        let expected_result = computed_binary_handle(
             op,
             lhs,
             rhs,
@@ -305,6 +291,82 @@ pub mod zama_host {
             SOLANA_POC_CHAIN_ID,
             previous_bank_hash,
             clock.unix_timestamp,
+        );
+        require!(
+            result == expected_result,
+            ZamaHostError::ComputedHandleMismatch
+        );
+
+        // Future scalar and ternary ops must keep the EVM scalarByte rule:
+        // bit i flags whether the i-th argument from the right is scalar.
+        // Example for mulDiv(lhs, rhs, divisor):
+        // enc x enc x scalar => 0x01, enc x scalar x scalar => 0x03.
+        emit_cpi!(FheBinaryOpEvent {
+            version: EVENT_VERSION,
+            op,
+            subject: subject.to_bytes(),
+            lhs,
+            rhs,
+            scalar,
+            result,
+        });
+        Ok(())
+    }
+
+    pub fn bind_computed_binary_output(
+        ctx: Context<BindComputedBinaryOutput>,
+        op: FheBinaryOpCode,
+        lhs: [u8; 32],
+        rhs: [u8; 32],
+        scalar: bool,
+        output_fhe_type: u8,
+        result: [u8; 32],
+        output_nonce_key: [u8; 32],
+        output_nonce_sequence: u64,
+        output_acl_domain_key: Pubkey,
+        output_app_account: Pubkey,
+        output_encrypted_value_label: [u8; 32],
+        output_subjects: Vec<AclSubjectEntry>,
+        output_public_decrypt: bool,
+    ) -> Result<()> {
+        let subject = ctx.accounts.compute_subject.key();
+        assert_output_acl_metadata(
+            ctx.accounts.app_account_authority.key(),
+            output_nonce_key,
+            output_acl_domain_key,
+            output_app_account,
+            output_encrypted_value_label,
+            &output_subjects,
+        )?;
+
+        assert_canonical_acl_record(
+            &ctx.accounts.lhs_acl_record.to_account_info(),
+            &ctx.accounts.lhs_acl_record,
+        )?;
+        assert_record_allows_handle(&ctx.accounts.lhs_acl_record, lhs, subject)?;
+        if !scalar {
+            assert_unchecked_acl_record_allows_handle(
+                &ctx.accounts.rhs_acl_record.to_account_info(),
+                rhs,
+                subject,
+            )?;
+        }
+
+        let clock = Clock::get()?;
+        let previous_bank_hash = previous_bank_hash(clock.slot)?;
+        let expected_result = computed_binary_handle(
+            op,
+            lhs,
+            rhs,
+            scalar,
+            output_fhe_type,
+            SOLANA_POC_CHAIN_ID,
+            previous_bank_hash,
+            clock.unix_timestamp,
+        );
+        require!(
+            result == expected_result,
+            ZamaHostError::ComputedHandleMismatch
         );
 
         write_acl_record(
@@ -320,26 +382,13 @@ pub mod zama_host {
             ctx.bumps.output_acl_record,
         );
 
-        // Future scalar and ternary ops must keep the EVM scalarByte rule:
-        // bit i flags whether the i-th argument from the right is scalar.
-        // Example for mulDiv(lhs, rhs, divisor):
-        // enc x enc x scalar => 0x01, enc x scalar x scalar => 0x03.
         for output_subject in output_subjects {
             emit_cpi!(AclAllowedEvent {
                 version: EVENT_VERSION,
                 handle: result,
-                subject: output_subject.pubkey,
+                subject: output_subject.pubkey.to_bytes(),
             });
         }
-        emit_cpi!(FheBinaryOpEvent {
-            version: EVENT_VERSION,
-            op,
-            subject,
-            lhs,
-            rhs,
-            scalar,
-            result,
-        });
         Ok(())
     }
 
@@ -357,7 +406,7 @@ pub mod zama_host {
     ) -> Result<()> {
         emit_cpi!(TrivialEncryptEvent {
             version: EVENT_VERSION,
-            subject,
+            subject: subject.to_bytes(),
             plaintext,
             fhe_type,
             result,
@@ -378,7 +427,7 @@ pub mod zama_host {
     ) -> Result<()> {
         emit_cpi!(FheRandEvent {
             version: EVENT_VERSION,
-            subject,
+            subject: subject.to_bytes(),
             seed,
             fhe_type,
             result,
@@ -402,8 +451,8 @@ pub mod zama_host {
             version: EVENT_VERSION,
             input_handle,
             result_handle,
-            user,
-            acl_domain_key,
+            user: user.to_bytes(),
+            acl_domain_key: acl_domain_key.to_bytes(),
         });
         Ok(())
     }
@@ -506,12 +555,30 @@ pub struct AllowForDecryption<'info> {
     lhs: [u8; 32],
     rhs: [u8; 32],
     scalar: bool,
+    output_fhe_type: u8
+)]
+#[event_cpi]
+pub struct FheBinaryOp<'info> {
+    pub compute_subject: Signer<'info>,
+    pub lhs_acl_record: Account<'info, AclRecord>,
+    /// CHECK: encrypted RHS operands are deserialized and ACL-checked in the
+    /// instruction body; scalar RHS operands deliberately skip this account.
+    pub rhs_acl_record: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(
+    op: FheBinaryOpCode,
+    lhs: [u8; 32],
+    rhs: [u8; 32],
+    scalar: bool,
     output_fhe_type: u8,
+    result: [u8; 32],
     output_nonce_key: [u8; 32],
     output_nonce_sequence: u64
 )]
 #[event_cpi]
-pub struct FheBinaryOp<'info> {
+pub struct BindComputedBinaryOutput<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     pub compute_subject: Signer<'info>,
@@ -558,7 +625,7 @@ impl AclRecord {
 pub struct FheBinaryOpEvent {
     pub version: u8,
     pub op: FheBinaryOpCode,
-    pub subject: Pubkey,
+    pub subject: [u8; 32],
     pub lhs: [u8; 32],
     pub rhs: [u8; 32],
     pub scalar: bool,
@@ -568,7 +635,7 @@ pub struct FheBinaryOpEvent {
 #[event]
 pub struct TrivialEncryptEvent {
     pub version: u8,
-    pub subject: Pubkey,
+    pub subject: [u8; 32],
     pub plaintext: [u8; 32],
     pub fhe_type: u8,
     pub result: [u8; 32],
@@ -577,7 +644,7 @@ pub struct TrivialEncryptEvent {
 #[event]
 pub struct FheRandEvent {
     pub version: u8,
-    pub subject: Pubkey,
+    pub subject: [u8; 32],
     pub seed: [u8; 16],
     pub fhe_type: u8,
     pub result: [u8; 32],
@@ -587,7 +654,7 @@ pub struct FheRandEvent {
 pub struct AclAllowedEvent {
     pub version: u8,
     pub handle: [u8; 32],
-    pub subject: Pubkey,
+    pub subject: [u8; 32],
 }
 
 #[event]
@@ -595,8 +662,8 @@ pub struct InputVerifiedEvent {
     pub version: u8,
     pub input_handle: [u8; 32],
     pub result_handle: [u8; 32],
-    pub user: Pubkey,
-    pub acl_domain_key: Pubkey,
+    pub user: [u8; 32],
+    pub acl_domain_key: [u8; 32],
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -638,6 +705,8 @@ pub enum ZamaHostError {
     AclSubjectCapacityExceeded,
     #[msg("previous bank hash is not available")]
     PreviousBankHashUnavailable,
+    #[msg("computed handle does not match host formula")]
+    ComputedHandleMismatch,
 }
 
 fn write_acl_record(
@@ -752,17 +821,19 @@ fn assert_canonical_acl_record_data(record_key: Pubkey, record: &AclRecord) -> R
         record.encrypted_value_label,
     )?;
 
-    let expected = Pubkey::create_program_address(
+    let (expected, expected_bump) = Pubkey::find_program_address(
         &[
             b"acl-record",
             record.nonce_key.as_ref(),
             &record.nonce_sequence.to_le_bytes(),
-            &[record.bump],
         ],
         &crate::ID,
-    )
-    .map_err(|_| error!(ZamaHostError::AclRecordPdaMismatch))?;
+    );
     require_keys_eq!(record_key, expected, ZamaHostError::AclRecordPdaMismatch);
+    require!(
+        record.bump == expected_bump,
+        ZamaHostError::AclRecordPdaMismatch
+    );
     Ok(())
 }
 
@@ -808,6 +879,27 @@ pub fn acl_nonce_key(
         &encrypted_value_label,
     ])
     .to_bytes()
+}
+
+pub fn computed_binary_handle_for_current_slot(
+    op: FheBinaryOpCode,
+    lhs: [u8; 32],
+    rhs: [u8; 32],
+    scalar: bool,
+    fhe_type: u8,
+) -> Result<[u8; 32]> {
+    let clock = Clock::get()?;
+    let previous_bank_hash = previous_bank_hash(clock.slot)?;
+    Ok(computed_binary_handle(
+        op,
+        lhs,
+        rhs,
+        scalar,
+        fhe_type,
+        SOLANA_POC_CHAIN_ID,
+        previous_bank_hash,
+        clock.unix_timestamp,
+    ))
 }
 
 pub fn computed_binary_handle(

@@ -16,7 +16,7 @@ zama-host
   protocol-side host program
   owns ACL records
   checks operand ACL before emitting FHE events
-  creates output ACL records atomically
+  creates durable output ACL records through explicit allow/bind calls
 
 runtime-tests
   LiteSVM behavior tests
@@ -42,11 +42,18 @@ wrap_usdc
   -> SPL transfer_checked into vault
   -> trivial_encrypt_and_bind amount
   -> fhe_binary_op Add into current balance
+  -> bind_computed_binary_output for the new balance
 
 confidential_transfer
   -> fhe_binary_op Sub for sender
+  -> bind_computed_binary_output for sender balance
   -> fhe_binary_op Add for receiver
+  -> bind_computed_binary_output for receiver balance
   -> rotates balance handle + ACL record for each changed token account
+
+BalanceHandleUpdatedEvent
+  -> emitted by confidential-token for app/frontend indexing
+  -> not consumed by the generic coprocessor listener
 
 user decrypt model tests
   -> signed authorization + handle entry + ACL record verification
@@ -68,6 +75,19 @@ ZamaHost checks FHEVM semantics:
   encrypted operand ACL records are canonical
   encrypted operands allow compute_subject
   output ACL record PDA matches supplied nonce metadata
+
+Host listener consumes only generic ZamaHost events:
+  FheBinaryOpEvent
+  TrivialEncryptEvent
+  FheRandEvent
+  AclAllowedEvent
+  InputVerifiedEvent
+
+Those event decoders are generated at host-listener build time from the checked-in ZamaHost Anchor
+IDL snapshot. The listener must not parse confidential-token events.
+
+App indexers consume token-local events:
+  BalanceHandleUpdatedEvent
 
 KMS-style tests check decrypt semantics:
   signature scope

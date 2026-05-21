@@ -12,18 +12,20 @@ use anchor_lang::{
 };
 use anchor_litesvm::{AnchorLiteSVM, Program, TestHelpers};
 use anchor_spl::token::spl_token;
-use confidential_token as token;
+use confidential_token::{self as token, BalanceHandleUpdateReason, BalanceHandleUpdatedEvent};
 use litesvm::{
     types::{TransactionMetadata, TransactionResult},
     LiteSVM,
 };
 use solana_sdk::{
     account::Account,
+    clock::Clock,
     instruction::Instruction,
     message::{Message, VersionedMessage},
     program_pack::Pack,
     pubkey::Pubkey,
     signature::{Keypair, Signature, Signer},
+    slot_hashes::SlotHashes,
     transaction::VersionedTransaction,
 };
 use zama_host as host;
@@ -305,10 +307,29 @@ fn fhe_binary_op_scalar_rhs_skips_rhs_acl_but_encrypted_rhs_requires_it() {
     );
     let output_acl_record = acl_record_address(program_id, nonce_key, 1);
     let rhs_scalar = amount_plaintext(5);
+    let result = current_binary_handle(&svm, FheBinaryOpCode::Add, lhs, rhs_scalar, true, 5);
 
     let scalar_ix = anchor_ix(
         program_id,
         host::accounts::FheBinaryOp {
+            compute_subject: payer.pubkey(),
+            lhs_acl_record,
+            rhs_acl_record: dummy_rhs_account.pubkey(),
+            event_authority: event_authority(program_id),
+            program: program_id,
+        },
+        host::instruction::FheBinaryOp {
+            op: FheBinaryOpCode::Add,
+            lhs,
+            rhs: rhs_scalar,
+            scalar: true,
+            output_fhe_type: 5,
+            result,
+        },
+    );
+    let allow_ix = anchor_ix(
+        program_id,
+        host::accounts::BindComputedBinaryOutput {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
             app_account_authority: app_account,
@@ -319,12 +340,13 @@ fn fhe_binary_op_scalar_rhs_skips_rhs_acl_but_encrypted_rhs_requires_it() {
             event_authority: event_authority(program_id),
             program: program_id,
         },
-        host::instruction::FheBinaryOp {
+        host::instruction::BindComputedBinaryOutput {
             op: FheBinaryOpCode::Add,
             lhs,
             rhs: rhs_scalar,
             scalar: true,
             output_fhe_type: 5,
+            result,
             output_nonce_key: nonce_key,
             output_nonce_sequence: 1,
             output_acl_domain_key: acl_domain_key,
@@ -339,7 +361,7 @@ fn fhe_binary_op_scalar_rhs_skips_rhs_acl_but_encrypted_rhs_requires_it() {
 
     let mut cleartext = CleartextBackend::default();
     cleartext.seed_cleartext(lhs, TypedClearValue::uint64(10));
-    let (meta, account_keys) = send_with_meta(&mut svm, &payer, scalar_ix);
+    let (meta, account_keys) = send_many_with_meta(&mut svm, &payer, vec![scalar_ix, allow_ix]);
     cleartext
         .ingest_transaction(&meta, &account_keys, program_id)
         .unwrap();
@@ -354,16 +376,14 @@ fn fhe_binary_op_scalar_rhs_skips_rhs_acl_but_encrypted_rhs_requires_it() {
     );
 
     let encrypted_rhs_output = acl_record_address(program_id, nonce_key, 2);
+    let encrypted_rhs_result =
+        current_binary_handle(&svm, FheBinaryOpCode::Add, lhs, [9; 32], false, 5);
     let encrypted_rhs_ix = anchor_ix(
         program_id,
         host::accounts::FheBinaryOp {
-            payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            app_account_authority: app_account,
             lhs_acl_record,
             rhs_acl_record: dummy_rhs_account.pubkey(),
-            output_acl_record: encrypted_rhs_output,
-            system_program: system_program::ID,
             event_authority: event_authority(program_id),
             program: program_id,
         },
@@ -373,8 +393,116 @@ fn fhe_binary_op_scalar_rhs_skips_rhs_acl_but_encrypted_rhs_requires_it() {
             rhs: [9; 32],
             scalar: false,
             output_fhe_type: 5,
+            result: encrypted_rhs_result,
+        },
+    );
+    assert!(try_send(&mut svm, &payer, encrypted_rhs_ix).is_err());
+    assert!(read_acl_record(&svm, encrypted_rhs_output).is_none());
+}
+
+#[test]
+fn fhe_binary_op_does_not_create_durable_acl_without_allow_step() {
+    let program_id = host::id();
+    let mut svm = svm_with_program(program_id, host_program_so_path());
+    let payer = svm.create_funded_account(1_000_000_000).unwrap();
+    let dummy_rhs_account = svm.create_funded_account(1_000_000).unwrap();
+
+    let acl_domain_key = Pubkey::new_unique();
+    let app_account = payer.pubkey();
+    let encrypted_value_label = label("balance");
+    let nonce_key = token::nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let lhs = [7; 32];
+    let lhs_acl_record = seed_authorizing_acl_record(
+        &mut svm,
+        program_id,
+        nonce_key,
+        0,
+        acl_domain_key,
+        app_account,
+        encrypted_value_label,
+        lhs,
+        payer.pubkey(),
+    );
+    let rhs_scalar = amount_plaintext(5);
+    let result = current_binary_handle(&svm, FheBinaryOpCode::Add, lhs, rhs_scalar, true, 5);
+    let output_acl_record = acl_record_address(program_id, nonce_key, 1);
+
+    let ix = anchor_ix(
+        program_id,
+        host::accounts::FheBinaryOp {
+            compute_subject: payer.pubkey(),
+            lhs_acl_record,
+            rhs_acl_record: dummy_rhs_account.pubkey(),
+            event_authority: event_authority(program_id),
+            program: program_id,
+        },
+        host::instruction::FheBinaryOp {
+            op: FheBinaryOpCode::Add,
+            lhs,
+            rhs: rhs_scalar,
+            scalar: true,
+            output_fhe_type: 5,
+            result,
+        },
+    );
+
+    let (meta, account_keys) = send_with_meta(&mut svm, &payer, ix);
+
+    let events = binary_op_events(&meta, &account_keys, program_id);
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].result, result);
+    assert!(read_acl_record(&svm, output_acl_record).is_none());
+}
+
+#[test]
+fn bind_computed_binary_output_rejects_wrong_result_handle() {
+    let program_id = host::id();
+    let mut svm = svm_with_program(program_id, host_program_so_path());
+    let payer = svm.create_funded_account(1_000_000_000).unwrap();
+    let dummy_rhs_account = svm.create_funded_account(1_000_000).unwrap();
+
+    let acl_domain_key = Pubkey::new_unique();
+    let app_account = payer.pubkey();
+    let encrypted_value_label = label("balance");
+    let nonce_key = token::nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let lhs = [7; 32];
+    let lhs_acl_record = seed_authorizing_acl_record(
+        &mut svm,
+        program_id,
+        nonce_key,
+        0,
+        acl_domain_key,
+        app_account,
+        encrypted_value_label,
+        lhs,
+        payer.pubkey(),
+    );
+    let output_acl_record = acl_record_address(program_id, nonce_key, 1);
+    let rhs_scalar = amount_plaintext(5);
+    let wrong_result = [42; 32];
+
+    let ix = anchor_ix(
+        program_id,
+        host::accounts::BindComputedBinaryOutput {
+            payer: payer.pubkey(),
+            compute_subject: payer.pubkey(),
+            app_account_authority: app_account,
+            lhs_acl_record,
+            rhs_acl_record: dummy_rhs_account.pubkey(),
+            output_acl_record,
+            system_program: system_program::ID,
+            event_authority: event_authority(program_id),
+            program: program_id,
+        },
+        host::instruction::BindComputedBinaryOutput {
+            op: FheBinaryOpCode::Add,
+            lhs,
+            rhs: rhs_scalar,
+            scalar: true,
+            output_fhe_type: 5,
+            result: wrong_result,
             output_nonce_key: nonce_key,
-            output_nonce_sequence: 2,
+            output_nonce_sequence: 1,
             output_acl_domain_key: acl_domain_key,
             output_app_account: app_account,
             output_encrypted_value_label: encrypted_value_label,
@@ -384,8 +512,9 @@ fn fhe_binary_op_scalar_rhs_skips_rhs_acl_but_encrypted_rhs_requires_it() {
             output_public_decrypt: false,
         },
     );
-    assert!(try_send(&mut svm, &payer, encrypted_rhs_ix).is_err());
-    assert!(read_acl_record(&svm, encrypted_rhs_output).is_none());
+
+    assert!(try_send(&mut svm, &payer, ix).is_err());
+    assert!(read_acl_record(&svm, output_acl_record).is_none());
 }
 
 #[test]
@@ -615,18 +744,43 @@ fn confidential_transfer_rotates_balance_handles_and_binds_output_acl() {
     assert_eq!(events.len(), 2);
     assert_eq!(events[0].version, 0);
     assert_eq!(events[0].op, FheBinaryOpCode::Sub);
-    assert_eq!(events[0].subject, fixture.compute_signer);
+    assert_eq!(events[0].subject, fixture.compute_signer.to_bytes());
     assert_eq!(events[0].lhs, fixture.alice_initial);
     assert_eq!(events[0].rhs, amount_handle);
     assert!(!events[0].scalar);
     assert_eq!(events[0].result, new_alice);
     assert_eq!(events[1].version, 0);
     assert_eq!(events[1].op, FheBinaryOpCode::Add);
-    assert_eq!(events[1].subject, fixture.compute_signer);
+    assert_eq!(events[1].subject, fixture.compute_signer.to_bytes());
     assert_eq!(events[1].lhs, fixture.bob_initial);
     assert_eq!(events[1].rhs, amount_handle);
     assert!(!events[1].scalar);
     assert_eq!(events[1].result, new_bob);
+    let balance_events =
+        balance_handle_updated_events(&meta, &account_keys, fixture.token_program_id);
+    assert_eq!(balance_events.len(), 2);
+    assert_eq!(
+        balance_events[0].reason,
+        BalanceHandleUpdateReason::TransferDebit
+    );
+    assert_eq!(balance_events[0].old_handle, fixture.alice_initial);
+    assert_eq!(balance_events[0].new_handle, new_alice);
+    assert_eq!(
+        balance_events[0].old_acl_record,
+        fixture.alice_current_compute_acl
+    );
+    assert_eq!(balance_events[0].new_acl_record, output.alice);
+    assert_eq!(
+        balance_events[1].reason,
+        BalanceHandleUpdateReason::TransferCredit
+    );
+    assert_eq!(balance_events[1].old_handle, fixture.bob_initial);
+    assert_eq!(balance_events[1].new_handle, new_bob);
+    assert_eq!(
+        balance_events[1].old_acl_record,
+        fixture.bob_current_compute_acl
+    );
+    assert_eq!(balance_events[1].new_acl_record, output.bob);
     assert_eq!(
         cleartext.decrypt_cleartext(new_alice),
         Some(TypedClearValue::uint64(116))
@@ -676,6 +830,9 @@ fn confidential_self_transfer_is_no_op() {
     let (meta, account_keys) = send_with_meta(&mut fixture.svm, &fixture.alice, ix);
 
     assert!(binary_op_events(&meta, &account_keys, fixture.host_program_id).is_empty());
+    assert!(
+        balance_handle_updated_events(&meta, &account_keys, fixture.token_program_id).is_empty()
+    );
     assert_eq!(
         token_account(&fixture.svm, fixture.alice_token).balance_handle,
         fixture.alice_initial
@@ -870,7 +1027,7 @@ fn wrap_usdc_escrows_spl_tokens_and_rotates_confidential_balance() {
 
     let trivial_events = trivial_encrypt_events(&meta, &account_keys, fixture.host_program_id);
     assert_eq!(trivial_events.len(), 1);
-    assert_eq!(trivial_events[0].subject, fixture.compute_signer);
+    assert_eq!(trivial_events[0].subject, fixture.compute_signer.to_bytes());
     assert_eq!(trivial_events[0].plaintext, amount_plaintext(amount));
 
     let amount_record = read_acl_record(&fixture.svm, output.amount).expect("expected amount ACL");
@@ -886,10 +1043,21 @@ fn wrap_usdc_escrows_spl_tokens_and_rotates_confidential_balance() {
     let new_alice = output_record.handle;
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].op, FheBinaryOpCode::Add);
-    assert_eq!(events[0].subject, fixture.compute_signer);
+    assert_eq!(events[0].subject, fixture.compute_signer.to_bytes());
     assert_eq!(events[0].lhs, fixture.alice_initial);
     assert_eq!(events[0].rhs, amount_handle);
     assert_eq!(events[0].result, new_alice);
+    let balance_events =
+        balance_handle_updated_events(&meta, &account_keys, fixture.token_program_id);
+    assert_eq!(balance_events.len(), 1);
+    assert_eq!(balance_events[0].reason, BalanceHandleUpdateReason::Wrap);
+    assert_eq!(balance_events[0].old_handle, fixture.alice_initial);
+    assert_eq!(
+        balance_events[0].old_acl_record,
+        fixture.alice_current_compute_acl
+    );
+    assert_eq!(balance_events[0].new_handle, new_alice);
+    assert_eq!(balance_events[0].new_acl_record, output.balance);
     assert_eq!(
         cleartext.decrypt_cleartext(new_alice),
         Some(TypedClearValue::uint64(100_000_125))
@@ -1101,19 +1269,22 @@ fn confidential_transfer_budget_snapshot() {
     let (meta, account_keys) = send_with_meta(&mut fixture.svm, &fixture.alice, transfer_ix);
     let inner_instructions = meta.inner_instructions.iter().flatten().count();
     let host_events = binary_op_events(&meta, &account_keys, fixture.host_program_id).len();
+    let app_events =
+        balance_handle_updated_events(&meta, &account_keys, fixture.token_program_id).len();
     let max_cpi_depth = max_cpi_depth(&meta);
 
-    assert_eq!(top_level_metas, 13);
+    assert_eq!(top_level_metas, 15);
     assert_eq!(writable_metas, 5);
     assert_eq!(signer_metas, 1);
     assert_eq!(host_events, 2);
+    assert_eq!(app_events, 2);
     assert_eq!(created_acl_count(&fixture.svm, output), 2);
     assert!(
-        inner_instructions <= 12,
+        inner_instructions <= 14,
         "inner instructions: {inner_instructions}"
     );
     assert!(
-        meta.compute_units_consumed <= 150_000,
+        meta.compute_units_consumed <= 160_000,
         "compute units: {}",
         meta.compute_units_consumed
     );
@@ -1458,6 +1629,8 @@ fn initialize_confidential_token_account(
                 zama_event_authority: event_authority(host_program_id),
                 zama_program: host_program_id,
                 system_program: system_program::ID,
+                event_authority: event_authority(token_program_id),
+                program: token_program_id,
             },
             token::instruction::InitializeTokenAccount { initial_balance },
         ),
@@ -1636,6 +1809,8 @@ fn self_transfer_ix(
             zama_event_authority: event_authority(fixture.host_program_id),
             zama_program: fixture.host_program_id,
             system_program: system_program::ID,
+            event_authority: event_authority(fixture.token_program_id),
+            program: fixture.token_program_id,
         },
         token::instruction::ConfidentialTransfer { amount_handle },
     )
@@ -1700,8 +1875,39 @@ fn transfer_ix_with_amount_acl(
             zama_event_authority: event_authority(fixture.host_program_id),
             zama_program: fixture.host_program_id,
             system_program: system_program::ID,
+            event_authority: event_authority(fixture.token_program_id),
+            program: fixture.token_program_id,
         },
         token::instruction::ConfidentialTransfer { amount_handle },
+    )
+}
+
+fn current_binary_handle(
+    svm: &LiteSVM,
+    op: FheBinaryOpCode,
+    lhs: [u8; 32],
+    rhs: [u8; 32],
+    scalar: bool,
+    fhe_type: u8,
+) -> [u8; 32] {
+    let clock: Clock = svm.get_sysvar();
+    let previous_bank_hash = clock
+        .slot
+        .checked_sub(1)
+        .and_then(|slot| {
+            let slot_hashes: SlotHashes = svm.get_sysvar();
+            slot_hashes.get(&slot).map(|hash| hash.to_bytes())
+        })
+        .unwrap_or([0; 32]);
+    host::computed_binary_handle(
+        op,
+        lhs,
+        rhs,
+        scalar,
+        fhe_type,
+        host::SOLANA_POC_CHAIN_ID,
+        previous_bank_hash,
+        clock.unix_timestamp,
     )
 }
 
@@ -1727,6 +1933,8 @@ fn wrap_usdc_ix(fixture: &TokenFixture, output: WrapOutputAccounts, amount: u64)
             zama_program: fixture.host_program_id,
             token_program: spl_token::id(),
             system_program: system_program::ID,
+            event_authority: event_authority(fixture.token_program_id),
+            program: fixture.token_program_id,
         },
         token::instruction::WrapUsdc { amount },
     )
@@ -2079,6 +2287,19 @@ fn trivial_encrypt_events(
         .collect()
 }
 
+fn balance_handle_updated_events(
+    meta: &TransactionMetadata,
+    account_keys: &[Pubkey],
+    program_id: Pubkey,
+) -> Vec<BalanceHandleUpdatedEvent> {
+    meta.inner_instructions
+        .iter()
+        .flatten()
+        .filter(|ix| *ix.instruction.program_id(account_keys) == program_id)
+        .filter_map(|ix| decode_balance_handle_updated_event(&ix.instruction.data))
+        .collect()
+}
+
 fn max_cpi_depth(meta: &TransactionMetadata) -> u64 {
     meta.logs
         .iter()
@@ -2103,6 +2324,12 @@ fn decode_trivial_encrypt_event(data: &[u8]) -> Option<TrivialEncryptEvent> {
     let event_prefix = anchor_event_prefix(TrivialEncryptEvent::DISCRIMINATOR);
     let payload = data.strip_prefix(&event_prefix[..])?;
     TrivialEncryptEvent::deserialize(&mut &*payload).ok()
+}
+
+fn decode_balance_handle_updated_event(data: &[u8]) -> Option<BalanceHandleUpdatedEvent> {
+    let event_prefix = anchor_event_prefix(BalanceHandleUpdatedEvent::DISCRIMINATOR);
+    let payload = data.strip_prefix(&event_prefix[..])?;
+    BalanceHandleUpdatedEvent::deserialize(&mut &*payload).ok()
 }
 
 fn anchor_event_prefix(discriminator: &[u8]) -> Vec<u8> {
@@ -2144,6 +2371,17 @@ fn send_with_meta(
 ) -> (TransactionMetadata, Vec<Pubkey>) {
     let message =
         Message::new_with_blockhash(&[ix], Some(&payer.pubkey()), &svm.latest_blockhash());
+    let account_keys = message.account_keys.clone();
+    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(message), &[payer]).unwrap();
+    (svm.send_transaction(tx).unwrap(), account_keys)
+}
+
+fn send_many_with_meta(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    ixs: Vec<Instruction>,
+) -> (TransactionMetadata, Vec<Pubkey>) {
+    let message = Message::new_with_blockhash(&ixs, Some(&payer.pubkey()), &svm.latest_blockhash());
     let account_keys = message.account_keys.clone();
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(message), &[payer]).unwrap();
     (svm.send_transaction(tx).unwrap(), account_keys)

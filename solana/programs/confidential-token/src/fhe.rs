@@ -1,7 +1,7 @@
 use anchor_lang::{prelude::*, AccountDeserialize};
 use zama_host::{
     cpi,
-    cpi::accounts::{FheBinaryOp, TrivialEncryptAndBind},
+    cpi::accounts::{BindComputedBinaryOutput, FheBinaryOp, TrivialEncryptAndBind},
     program::ZamaHost,
     AclSubjectEntry, FheBinaryOpCode,
 };
@@ -15,7 +15,6 @@ pub struct BinaryOp<'a, 'info> {
     pub compute_signer: &'a UncheckedAccount<'info>,
     pub app_account_authority: &'a Account<'info, ConfidentialTokenAccount>,
     pub lhs_acl_record: AccountInfo<'info>,
-    pub op: FheBinaryOpCode,
     pub lhs: [u8; 32],
     pub rhs_acl_record: AccountInfo<'info>,
     pub rhs: [u8; 32],
@@ -32,7 +31,15 @@ pub struct BinaryOp<'a, 'info> {
     pub output_public_decrypt: bool,
 }
 
-pub fn binary_op<'info>(request: BinaryOp<'_, 'info>) -> Result<[u8; 32]> {
+pub fn add<'info>(request: BinaryOp<'_, 'info>) -> Result<[u8; 32]> {
+    binary_op(FheBinaryOpCode::Add, request)
+}
+
+pub fn sub<'info>(request: BinaryOp<'_, 'info>) -> Result<[u8; 32]> {
+    binary_op(FheBinaryOpCode::Sub, request)
+}
+
+fn binary_op<'info>(op: FheBinaryOpCode, request: BinaryOp<'_, 'info>) -> Result<[u8; 32]> {
     let compute_bump = [request.compute_signer_bump];
     let app_account_bump = [request.app_account_authority.bump];
     let compute_signer_seeds: &[&[u8]] = &[
@@ -47,12 +54,38 @@ pub fn binary_op<'info>(request: BinaryOp<'_, 'info>) -> Result<[u8; 32]> {
         &app_account_bump,
     ];
     let signer_seeds: &[&[&[u8]]] = &[compute_signer_seeds, app_account_seeds];
-    let output_acl_record_for_read = request.output_acl_record.clone();
+    let result = zama_host::computed_binary_handle_for_current_slot(
+        op,
+        request.lhs,
+        request.rhs,
+        request.scalar,
+        request.output_fhe_type,
+    )?;
 
     cpi::fhe_binary_op(
         CpiContext::new_with_signer(
             request.zama_program.key(),
             FheBinaryOp {
+                compute_subject: request.compute_signer.to_account_info(),
+                lhs_acl_record: request.lhs_acl_record.clone(),
+                rhs_acl_record: request.rhs_acl_record.clone(),
+                event_authority: request.event_authority.to_account_info(),
+                program: request.zama_program.to_account_info(),
+            },
+            signer_seeds,
+        ),
+        op,
+        request.lhs,
+        request.rhs,
+        request.scalar,
+        request.output_fhe_type,
+        result,
+    )?;
+
+    cpi::bind_computed_binary_output(
+        CpiContext::new_with_signer(
+            request.zama_program.key(),
+            BindComputedBinaryOutput {
                 payer: request.payer.to_account_info(),
                 compute_subject: request.compute_signer.to_account_info(),
                 app_account_authority: request.app_account_authority.to_account_info(),
@@ -65,11 +98,12 @@ pub fn binary_op<'info>(request: BinaryOp<'_, 'info>) -> Result<[u8; 32]> {
             },
             signer_seeds,
         ),
-        request.op,
+        op,
         request.lhs,
         request.rhs,
         request.scalar,
         request.output_fhe_type,
+        result,
         request.output_nonce_key,
         request.output_nonce_sequence,
         request.acl_domain_key,
@@ -79,7 +113,7 @@ pub fn binary_op<'info>(request: BinaryOp<'_, 'info>) -> Result<[u8; 32]> {
         request.output_public_decrypt,
     )?;
 
-    output_handle(output_acl_record_for_read)
+    Ok(result)
 }
 
 pub struct TrivialEncryptU64<'a, 'info> {

@@ -5,6 +5,12 @@ use fhevm_engine_common::types::AllowEvents;
 use sha2::{Digest, Sha256};
 use sqlx::Error as SqlxError;
 
+use crate::generated::{
+    decode_anchor_cpi_event as decode_zama_host_anchor_cpi_event,
+    FheBinaryOpCode, FheBinaryOpEvent, FheRandEvent, TrivialEncryptEvent,
+    ZamaHostEvent,
+};
+
 use crate::contracts::TfheContract;
 use crate::contracts::TfheContract::TfheContractEvents;
 use crate::database::dependence_chains::dependence_chains;
@@ -12,38 +18,6 @@ use crate::database::tfhe_event_propagate::{
     tfhe_result_handle, ClearConst, Database, Handle, LogTfhe, Transaction,
     TransactionHash,
 };
-
-const ANCHOR_EVENT_IX_TAG_LE: [u8; 8] = 0x1d9acb512ea545e4_u64.to_le_bytes();
-const SOLANA_EVENT_VERSION: u8 = 0;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SolanaFheBinaryOp {
-    Add,
-    Sub,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SolanaFheBinaryOpEvent {
-    pub op: SolanaFheBinaryOp,
-    pub lhs: Handle,
-    pub rhs: Handle,
-    pub scalar: bool,
-    pub result: Handle,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SolanaTrivialEncryptEvent {
-    pub plaintext: [u8; 32],
-    pub fhe_type: u8,
-    pub result: Handle,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SolanaFheRandEvent {
-    pub seed: [u8; 16],
-    pub fhe_type: u8,
-    pub result: Handle,
-}
 
 #[derive(Clone, Debug)]
 pub struct SolanaAclAllowedEvent {
@@ -54,9 +28,9 @@ pub struct SolanaAclAllowedEvent {
 
 #[derive(Clone, Debug)]
 pub enum SolanaHostEvent {
-    FheBinaryOp(SolanaFheBinaryOpEvent),
-    TrivialEncrypt(SolanaTrivialEncryptEvent),
-    FheRand(SolanaFheRandEvent),
+    FheBinaryOp(FheBinaryOpEvent),
+    TrivialEncrypt(TrivialEncryptEvent),
+    FheRand(FheRandEvent),
     AclAllowed(SolanaAclAllowedEvent),
 }
 
@@ -85,29 +59,23 @@ pub fn solana_transaction_id(signature_bytes: &[u8]) -> TransactionHash {
 }
 
 pub fn decode_anchor_cpi_event(data: &[u8]) -> Option<SolanaHostEvent> {
-    let data = data.strip_prefix(&ANCHOR_EVENT_IX_TAG_LE)?;
-    if data.len() < 8 {
-        return None;
+    match decode_zama_host_anchor_cpi_event(data)? {
+        ZamaHostEvent::FheBinaryOp(event) => {
+            Some(SolanaHostEvent::FheBinaryOp(event))
+        }
+        ZamaHostEvent::TrivialEncrypt(event) => {
+            Some(SolanaHostEvent::TrivialEncrypt(event))
+        }
+        ZamaHostEvent::FheRand(event) => Some(SolanaHostEvent::FheRand(event)),
+        ZamaHostEvent::AclAllowed(event) => {
+            Some(SolanaHostEvent::AclAllowed(SolanaAclAllowedEvent {
+                handle: Handle::from(event.handle),
+                subject: format!("0x{}", encode_hex(&event.subject)),
+                event_type: AllowEvents::AllowedAccount,
+            }))
+        }
+        ZamaHostEvent::InputVerified(_) => None,
     }
-    let (discriminator, payload) = data.split_at(8);
-
-    if discriminator == event_discriminator("FheBinaryOpEvent") {
-        return decode_binary_op_event(payload)
-            .map(SolanaHostEvent::FheBinaryOp);
-    }
-    if discriminator == event_discriminator("TrivialEncryptEvent") {
-        return decode_trivial_encrypt_event(payload)
-            .map(SolanaHostEvent::TrivialEncrypt);
-    }
-    if discriminator == event_discriminator("FheRandEvent") {
-        return decode_fhe_rand_event(payload).map(SolanaHostEvent::FheRand);
-    }
-    if discriminator == event_discriminator("AclAllowedEvent") {
-        return decode_acl_allowed_event(payload)
-            .map(SolanaHostEvent::AclAllowed);
-    }
-
-    None
 }
 
 pub fn map_solana_event(event: SolanaHostEvent) -> SolanaMappedEvent {
@@ -215,69 +183,6 @@ pub async fn insert_solana_events(
     })
 }
 
-fn decode_binary_op_event(payload: &[u8]) -> Option<SolanaFheBinaryOpEvent> {
-    let mut cursor = Cursor::new(payload);
-    read_version(&mut cursor)?;
-    let op = match cursor.read_u8()? {
-        0 => SolanaFheBinaryOp::Add,
-        1 => SolanaFheBinaryOp::Sub,
-        _ => return None,
-    };
-    let _subject = cursor.read_bytes()?;
-    Some(SolanaFheBinaryOpEvent {
-        op,
-        lhs: Handle::from(cursor.read_bytes()?),
-        rhs: Handle::from(cursor.read_bytes()?),
-        scalar: cursor.read_u8()? != 0,
-        result: Handle::from(cursor.read_bytes()?),
-    })
-}
-
-fn decode_trivial_encrypt_event(
-    payload: &[u8],
-) -> Option<SolanaTrivialEncryptEvent> {
-    let mut cursor = Cursor::new(payload);
-    read_version(&mut cursor)?;
-    let _subject = cursor.read_bytes()?;
-    Some(SolanaTrivialEncryptEvent {
-        plaintext: cursor.read_bytes()?,
-        fhe_type: cursor.read_u8()?,
-        result: Handle::from(cursor.read_bytes()?),
-    })
-}
-
-fn decode_fhe_rand_event(payload: &[u8]) -> Option<SolanaFheRandEvent> {
-    let mut cursor = Cursor::new(payload);
-    read_version(&mut cursor)?;
-    let _subject = cursor.read_bytes()?;
-    Some(SolanaFheRandEvent {
-        seed: cursor.read_seed()?,
-        fhe_type: cursor.read_u8()?,
-        result: Handle::from(cursor.read_bytes()?),
-    })
-}
-
-fn decode_acl_allowed_event(payload: &[u8]) -> Option<SolanaAclAllowedEvent> {
-    let mut cursor = Cursor::new(payload);
-    read_version(&mut cursor)?;
-    let handle = Handle::from(cursor.read_bytes()?);
-    let subject = format!("0x{}", encode_hex(&cursor.read_bytes()?));
-    Some(SolanaAclAllowedEvent {
-        handle,
-        subject,
-        event_type: AllowEvents::AllowedAccount,
-    })
-}
-
-fn read_version(cursor: &mut Cursor<'_>) -> Option<()> {
-    (cursor.read_u8()? == SOLANA_EVENT_VERSION).then_some(())
-}
-
-fn event_discriminator(name: &str) -> [u8; 8] {
-    let digest = Sha256::digest(format!("event:{name}"));
-    digest[..8].try_into().expect("slice has 8 bytes")
-}
-
 fn encode_hex(bytes: &[u8; 32]) -> String {
     const ALPHABET: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(64);
@@ -286,37 +191,6 @@ fn encode_hex(bytes: &[u8; 32]) -> String {
         out.push(ALPHABET[(byte & 0x0f) as usize] as char);
     }
     out
-}
-
-struct Cursor<'a> {
-    bytes: &'a [u8],
-    offset: usize,
-}
-
-impl<'a> Cursor<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, offset: 0 }
-    }
-
-    fn read_u8(&mut self) -> Option<u8> {
-        let byte = *self.bytes.get(self.offset)?;
-        self.offset += 1;
-        Some(byte)
-    }
-
-    fn read_bytes(&mut self) -> Option<[u8; 32]> {
-        let end = self.offset.checked_add(32)?;
-        let bytes = self.bytes.get(self.offset..end)?;
-        self.offset = end;
-        bytes.try_into().ok()
-    }
-
-    fn read_seed(&mut self) -> Option<[u8; 16]> {
-        let end = self.offset.checked_add(16)?;
-        let bytes = self.bytes.get(self.offset..end)?;
-        self.offset = end;
-        bytes.try_into().ok()
-    }
 }
 
 pub fn to_log_tfhe(
@@ -344,26 +218,26 @@ pub fn to_log_tfhe(
 /// `TfheContractEvents`. Keeping this adapter at the typed-event boundary lets
 /// the Solana listener use native Solana decoding while reusing the existing
 /// computation scheduler and worker unchanged.
-pub fn to_tfhe_event(event: SolanaFheBinaryOpEvent) -> Log<TfheContractEvents> {
+pub fn to_tfhe_event(event: FheBinaryOpEvent) -> Log<TfheContractEvents> {
     let caller = Address::ZERO;
     let scalar_byte = FixedBytes::<1>::from([u8::from(event.scalar)]);
     let data = match event.op {
-        SolanaFheBinaryOp::Add => {
+        FheBinaryOpCode::Add => {
             TfheContractEvents::FheAdd(TfheContract::FheAdd {
                 caller,
-                lhs: event.lhs,
-                rhs: event.rhs,
+                lhs: Handle::from(event.lhs),
+                rhs: Handle::from(event.rhs),
                 scalarByte: scalar_byte,
-                result: event.result,
+                result: Handle::from(event.result),
             })
         }
-        SolanaFheBinaryOp::Sub => {
+        FheBinaryOpCode::Sub => {
             TfheContractEvents::FheSub(TfheContract::FheSub {
                 caller,
-                lhs: event.lhs,
-                rhs: event.rhs,
+                lhs: Handle::from(event.lhs),
+                rhs: Handle::from(event.rhs),
                 scalarByte: scalar_byte,
-                result: event.result,
+                result: Handle::from(event.result),
             })
         }
     };
@@ -375,7 +249,7 @@ pub fn to_tfhe_event(event: SolanaFheBinaryOpEvent) -> Log<TfheContractEvents> {
 }
 
 pub fn to_trivial_encrypt_event(
-    event: SolanaTrivialEncryptEvent,
+    event: TrivialEncryptEvent,
 ) -> Log<TfheContractEvents> {
     let caller = Address::ZERO;
     Log {
@@ -385,13 +259,13 @@ pub fn to_trivial_encrypt_event(
                 caller,
                 pt: ClearConst::from_be_slice(&event.plaintext),
                 toType: event.fhe_type,
-                result: event.result,
+                result: Handle::from(event.result),
             },
         ),
     }
 }
 
-pub fn to_fhe_rand_event(event: SolanaFheRandEvent) -> Log<TfheContractEvents> {
+pub fn to_fhe_rand_event(event: FheRandEvent) -> Log<TfheContractEvents> {
     let caller = Address::ZERO;
     Log {
         address: caller,
@@ -399,7 +273,7 @@ pub fn to_fhe_rand_event(event: SolanaFheRandEvent) -> Log<TfheContractEvents> {
             caller,
             randType: event.fhe_type,
             seed: FixedBytes::<16>::from(event.seed),
-            result: event.result,
+            result: Handle::from(event.result),
         }),
     }
 }
@@ -407,6 +281,9 @@ pub fn to_fhe_rand_event(event: SolanaFheRandEvent) -> Log<TfheContractEvents> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::generated::{
+        anchor_event_discriminator, ANCHOR_EVENT_IX_TAG_LE, EVENT_VERSION,
+    };
     use time::{Date, Month, PrimitiveDateTime, Time};
 
     fn handle(byte: u8) -> Handle {
@@ -444,7 +321,7 @@ mod tests {
     #[test]
     fn decodes_anchor_cpi_trivial_encrypt_event() {
         let encoded = anchor_cpi_event("TrivialEncryptEvent", {
-            let mut payload = vec![SOLANA_EVENT_VERSION];
+            let mut payload = vec![EVENT_VERSION];
             payload.extend_from_slice(&[9; 32]);
             payload.extend_from_slice(&[0; 31]);
             payload.push(7);
@@ -475,7 +352,7 @@ mod tests {
     #[test]
     fn decodes_anchor_cpi_acl_allowed_event() {
         let encoded = anchor_cpi_event("AclAllowedEvent", {
-            let mut payload = vec![SOLANA_EVENT_VERSION];
+            let mut payload = vec![EVENT_VERSION];
             payload.extend_from_slice(&[7; 32]);
             payload.extend_from_slice(&[8; 32]);
             payload
@@ -500,12 +377,14 @@ mod tests {
 
     #[test]
     fn maps_binary_add_to_existing_tfhe_event() {
-        let mapped = to_tfhe_event(SolanaFheBinaryOpEvent {
-            op: SolanaFheBinaryOp::Add,
-            lhs: handle(1),
-            rhs: handle(2),
+        let mapped = to_tfhe_event(FheBinaryOpEvent {
+            version: EVENT_VERSION,
+            op: FheBinaryOpCode::Add,
+            subject: [0; 32],
+            lhs: [1; 32],
+            rhs: [2; 32],
             scalar: false,
-            result: handle(3),
+            result: [3; 32],
         });
 
         assert!(matches!(
@@ -528,10 +407,12 @@ mod tests {
         let mut plaintext = [0_u8; 32];
         plaintext[31] = 7;
 
-        let mapped = to_trivial_encrypt_event(SolanaTrivialEncryptEvent {
+        let mapped = to_trivial_encrypt_event(TrivialEncryptEvent {
+            version: EVENT_VERSION,
+            subject: [0; 32],
             plaintext,
             fhe_type: 5,
-            result: handle(8),
+            result: [8; 32],
         });
 
         assert!(matches!(
@@ -590,12 +471,14 @@ mod tests {
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),
             Time::MIDNIGHT,
         );
-        let event = to_tfhe_event(SolanaFheBinaryOpEvent {
-            op: SolanaFheBinaryOp::Sub,
-            lhs: handle(1),
-            rhs: handle(2),
+        let event = to_tfhe_event(FheBinaryOpEvent {
+            version: EVENT_VERSION,
+            op: FheBinaryOpCode::Sub,
+            subject: [0; 32],
+            lhs: [1; 32],
+            rhs: [2; 32],
             scalar: true,
-            result: handle(3),
+            result: [3; 32],
         });
 
         let log = to_log_tfhe(
@@ -626,12 +509,14 @@ mod tests {
 
         let (tfhe_logs, acl_events) = normalize_solana_events_for_db(
             [
-                SolanaHostEvent::FheBinaryOp(SolanaFheBinaryOpEvent {
-                    op: SolanaFheBinaryOp::Add,
-                    lhs: handle(1),
-                    rhs: handle(2),
+                SolanaHostEvent::FheBinaryOp(FheBinaryOpEvent {
+                    version: EVENT_VERSION,
+                    op: FheBinaryOpCode::Add,
+                    subject: [0; 32],
+                    lhs: [1; 32],
+                    rhs: [2; 32],
                     scalar: false,
-                    result: handle(3),
+                    result: [3; 32],
                 }),
                 SolanaHostEvent::AclAllowed(SolanaAclAllowedEvent {
                     handle: handle(3),
@@ -666,12 +551,14 @@ mod tests {
 
         let (tfhe_logs, acl_events) = normalize_solana_events_for_db(
             [
-                SolanaHostEvent::FheBinaryOp(SolanaFheBinaryOpEvent {
-                    op: SolanaFheBinaryOp::Sub,
-                    lhs: handle(1),
-                    rhs: handle(2),
+                SolanaHostEvent::FheBinaryOp(FheBinaryOpEvent {
+                    version: EVENT_VERSION,
+                    op: FheBinaryOpCode::Sub,
+                    subject: [0; 32],
+                    lhs: [1; 32],
+                    rhs: [2; 32],
                     scalar: false,
-                    result: handle(3),
+                    result: [3; 32],
                 }),
                 SolanaHostEvent::AclAllowed(SolanaAclAllowedEvent {
                     handle: handle(9),
@@ -696,7 +583,7 @@ mod tests {
     fn anchor_cpi_event(name: &str, payload: Vec<u8>) -> Vec<u8> {
         let mut encoded = Vec::new();
         encoded.extend_from_slice(&ANCHOR_EVENT_IX_TAG_LE);
-        encoded.extend_from_slice(&event_discriminator(name));
+        encoded.extend_from_slice(&anchor_event_discriminator(name));
         encoded.extend_from_slice(&payload);
         encoded
     }
@@ -709,7 +596,7 @@ mod tests {
         scalar: bool,
         result: [u8; 32],
     ) -> Vec<u8> {
-        let mut payload = vec![SOLANA_EVENT_VERSION, op];
+        let mut payload = vec![EVENT_VERSION, op];
         payload.extend_from_slice(&subject);
         payload.extend_from_slice(&lhs);
         payload.extend_from_slice(&rhs);
