@@ -520,8 +520,8 @@ Then the confidential balance is updated:
 ```text
 wrap_usdc(amount)
   |
-  +--> CPI zama-host::test_emit_trivial_encrypt(amount)
-  |      emits hDeposit
+  +--> CPI zama-host::trivial_encrypt_and_bind(amount)
+  |      creates amount ACL record and emits hDeposit
   |
   +--> CPI zama-host::fhe_binary_op(Add)
   |      checks:
@@ -533,7 +533,11 @@ wrap_usdc(amount)
   |      emits FHE.add(hA0, hDeposit) -> hA1
 ```
 
-The deposit amount is public in this slice because it uses the `test_emit_trivial_encrypt(amount)` shim. Tests that need an encrypted-input shape can use the `mock_input_verified_and_bind(...)` short-circuit, but app flows should eventually use the final input path and the real ZKPoK/input verifier or transciphering boundary.
+The deposit amount is public in this slice because wrapping an underlying token starts from a known
+SPL amount. The wrapper now uses the host `trivial_encrypt_and_bind(...)` path so the amount handle
+has durable ACL state before it is used by `fhe_binary_op`. Tests that need an encrypted-input shape
+can use the `mock_input_verified_and_bind(...)` short-circuit, but app flows should eventually use
+the final input path and the real ZKPoK/input verifier or transciphering boundary.
 
 ## User Decrypt Shape
 
@@ -755,9 +759,9 @@ Solana-born ciphertext transfer:
 
 ```text
 LiteSVM emits:
-  test_emit_trivial_encrypt(125) -> hA0
-  test_emit_trivial_encrypt(20)  -> hB0
-  test_emit_trivial_encrypt(100) -> hX
+  trivial_encrypt_and_bind(125) -> hA0
+  trivial_encrypt_and_bind(20)  -> hB0
+  trivial_encrypt_and_bind(100) -> hX
 
 tfhe-worker
   -> creates real ciphertexts for hA0, hB0, hX
