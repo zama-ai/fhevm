@@ -135,8 +135,8 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 ### Partly Modeled
 
 - [ ] KMS verification is modeled in Rust tests, not wired into the real KMS connector.
-- [ ] Input handles use an explicit `input_verified_and_bind` PoC stand-in instead of a real Solana
-      input verifier or transciphering path.
+- [ ] Input handles use an explicit `poc_input_verified_and_bind` PoC short-circuit instead of a
+      real Solana input verifier or transciphering path.
 - [ ] `test_emit_fhe_rand` exists for worker-backed tests, but the final random-handle birth API is
       not designed yet.
 - [ ] ACL records are born bound through Anchor `init`; the future predeclared
@@ -349,8 +349,8 @@ First birth is owned by a trusted host path:
 zama-host::trivial_encrypt_and_bind(...)
   creates a trivial-encrypt handle and its first ACL record
 
-zama-host::input_verified_and_bind(...)
-  PoC stand-in for future InputVerifier/transciphering birth
+zama-host::poc_input_verified_and_bind(...)
+  PoC short-circuit for future InputVerifier/transciphering birth
 
 zama-host::fhe_binary_op(...)
   checks operand ACL records, derives the computed handle, and creates the output ACL record
@@ -485,8 +485,8 @@ confidential-token::confidential_transfer(amount = hX)
          BobTokenAccount.next_balance_nonce_sequence = 2
 ```
 
-The amount handle ACL is temporary PoC glue. Today the tests use `input_verified_and_bind` as an
-explicit placeholder for the future input verifier / transciphering boundary:
+The amount handle ACL is temporary PoC glue. Today the tests use `poc_input_verified_and_bind` as an
+explicit short-circuit for the future input verifier / transciphering boundary:
 
 ```text
 ACL domain key = Alice
@@ -496,9 +496,10 @@ subjects       = [compute_signer]
 handle         = hX
 ```
 
-This is deliberately not `bind_acl_record`; the first ACL record for an input handle must come from a
-trusted input path, not from a generic grant API. The real design still needs the Solana equivalent
-of transient input authorization from the input verifier path.
+This instruction deliberately trusts the caller-supplied input handle. It is also deliberately not
+`bind_acl_record`: the first ACL record for an input handle must come from a trusted input path, not
+from a generic grant API. The real design still needs the Solana equivalent of transient input
+authorization from the input verifier path.
 
 ## cUSDC Wrapper
 
@@ -532,7 +533,7 @@ wrap_usdc(amount)
   |      emits FHE.add(hA0, hDeposit) -> hA1
 ```
 
-The deposit amount is public in this slice because it uses the `test_emit_trivial_encrypt(amount)` shim. A later encrypted-input path should replace that step with `input_verified_and_bind(...)` or the final input path and the real ZKPoK/input verifier boundary.
+The deposit amount is public in this slice because it uses the `test_emit_trivial_encrypt(amount)` shim. Tests that need an encrypted-input shape can use the `poc_input_verified_and_bind(...)` short-circuit, but app flows should eventually use the final input path and the real ZKPoK/input verifier or transciphering boundary.
 
 ## User Decrypt Shape
 

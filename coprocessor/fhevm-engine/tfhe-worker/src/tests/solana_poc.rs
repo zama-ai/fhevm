@@ -591,9 +591,10 @@ fn input_compute_acl_address(fixture: &TokenFixture, handle: [u8; 32]) -> Pubkey
 }
 
 fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
-    // Temporary PoC stand-in for the future Solana InputVerifier/transient
-    // authorization path. It lets host::fhe_binary_op enforce both operands
-    // without using the generic persistent-grant path for first birth.
+    // Temporary PoC short-circuit for the future Solana input verifier /
+    // transciphering boundary. This deliberately trusts the caller-supplied
+    // handle so tests can exercise ACL + compute semantics before the real
+    // input proof path exists.
     let acl_record = input_compute_acl_address(fixture, handle);
     let acl_domain_key = fixture.alice.pubkey();
     let app_account = fixture.alice.pubkey();
@@ -605,7 +606,7 @@ fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
         &fixture.alice,
         Instruction {
             program_id: fixture.host_program_id,
-            accounts: host::accounts::InputVerifiedAndBind {
+            accounts: host::accounts::PocInputVerifiedAndBind {
                 payer: fixture.alice.pubkey(),
                 app_account_authority: app_account,
                 output_acl_record: acl_record,
@@ -614,7 +615,7 @@ fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
                 program: fixture.host_program_id,
             }
             .to_account_metas(None),
-            data: host::instruction::InputVerifiedAndBind {
+            data: host::instruction::PocInputVerifiedAndBind {
                 input_handle: handle,
                 user: fixture.alice.pubkey(),
                 output_nonce_key: nonce_key,
