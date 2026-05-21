@@ -250,16 +250,38 @@ impl HandleItem {
         &self,
         db_txn: &mut Transaction<'_, Postgres>,
     ) -> Result<(), ExecutionError> {
-        sqlx::query!(
-            "INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle, transaction_id)
-            VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
-            self.host_chain_id.as_i64(),
-            &self.key_id_gw,
-            self.handle,
-            self.transaction_id,
-        )
-        .execute(db_txn.as_mut())
-        .await?;
+        let ct128_format = self.ct128.format();
+
+        if self.ct128.is_empty() || ct128_format == Ciphertext128Format::Unknown {
+            sqlx::query(
+                "INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle, transaction_id)
+                VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+            )
+            .bind(self.host_chain_id.as_i64())
+            .bind(&self.key_id_gw)
+            .bind(&self.handle)
+            .bind(&self.transaction_id)
+            .execute(db_txn.as_mut())
+            .await?;
+        } else {
+            let ct128_format: i16 = ct128_format.into();
+            sqlx::query(
+                "INSERT INTO ciphertext_digest (
+                    host_chain_id, key_id_gw, handle, transaction_id, ciphertext128_format
+                )
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (handle) DO UPDATE
+                SET ciphertext128_format = EXCLUDED.ciphertext128_format
+                WHERE ciphertext_digest.ciphertext128 IS NULL",
+            )
+            .bind(self.host_chain_id.as_i64())
+            .bind(&self.key_id_gw)
+            .bind(&self.handle)
+            .bind(&self.transaction_id)
+            .bind(ct128_format)
+            .execute(db_txn.as_mut())
+            .await?;
+        }
 
         Ok(())
     }
