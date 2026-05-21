@@ -19,10 +19,7 @@ export type {
 
 /** The subset you actually use - the runtime contract callers depend on. */
 export interface TfheLibApi {
-  // `default` is the wasm-bindgen `__wbg_init` initializer (the module's
-  // default export). Callers usually rename it on destructure:
-  //   const { default: init_tfhe_lib, getWasmInfo, ... } = await loadTfheLib(v);
-  default: typeof import('./v1.5.3/tfhe.js').default;
+  initAsync: typeof import('./v1.5.3/tfhe.js').initAsync;
 
   // --- Free functions used by encrypt/init-p.ts -----------------------------
   init_panic_hook: typeof import('./v1.5.3/tfhe.js').init_panic_hook;

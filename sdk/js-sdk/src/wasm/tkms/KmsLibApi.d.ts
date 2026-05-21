@@ -17,10 +17,7 @@ export type {
 
 /** The subset you actually use - the runtime contract callers depend on. */
 export interface KmsLibApi {
-  // `default` is the wasm-bindgen `__wbg_init` initializer (the module's default
-  // export). Callers usually rename it on destructure:
-  //   const { default: init_kms_lib, getWasmInfo, ... } = await loadKmsLib(v);
-  default: typeof import('./v0.13.10/kms_lib.js').default;
+  initAsync: typeof import('./v0.13.10/kms_lib.js').initAsync;
   getWasmInfo: typeof import('./v0.13.10/kms_lib.js').getWasmInfo;
 
   ml_kem_pke_keygen: typeof import('./v0.13.10/kms_lib.js').ml_kem_pke_keygen;

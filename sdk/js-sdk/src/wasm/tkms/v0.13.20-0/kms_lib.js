@@ -2126,4 +2126,5 @@ function getWasmInfo() {
   };
 }
 
-export { initSync, getWasmInfo, __wbg_init as default };
+export { initSync, getWasmInfo, __wbg_init as initAsync };
+export default __wbg_init;

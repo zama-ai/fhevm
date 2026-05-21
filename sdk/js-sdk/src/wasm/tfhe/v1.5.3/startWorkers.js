@@ -61,7 +61,12 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 function __isBrowserLike() {
-  return typeof addEventListener === 'function' && typeof removeEventListener === 'function';
+  return (
+    typeof Bun === 'undefined' &&
+    typeof process === 'undefined' &&
+    typeof addEventListener === 'function' &&
+    typeof removeEventListener === 'function'
+  );
 }
 
 const __wasmAssetLoadModes = ['embedded-base64', 'verified-blob', 'precheck-direct-url', 'trusted-direct-url', 'auto'];
@@ -332,7 +337,7 @@ let _terminating;
 let _configSet = false;
 let _workerUrl = undefined;
 let _wasmAssetLoadMode = 'auto';
-const _workerUrlSha256 = '3f93fe86a8dfa6e25ae5fcfe28d19833219cba8f45f81c6dd05c2f3cc5323c52';
+const _workerUrlSha256 = "3f93fe86a8dfa6e25ae5fcfe28d19833219cba8f45f81c6dd05c2f3cc5323c52";
 let _verifiedWorkerUrlBytesPromise = undefined;
 let _logger = undefined;
 let _started = false;

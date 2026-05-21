@@ -15,6 +15,10 @@
  * - `__TFHE_DOWNLOAD_FILES_JSON__`
  * - `/* __TFHE_JS_BODY__ *\/`
  * - `/* __TFHE_DTS_BODY__ *\/`
+ * - `__TFHE_TYPE_CHECK_BANNER__`
+ * - `__TFHE_JS_IMPORT__`
+ * - `__TFHE_API_IMPORT__`
+ * - `__CORE_TYPES_FHEVM_RUNTIME_IMPORT__`
  * - `__TFHE_WORKER_URL_SHA256_JSON__`
  * - `__TFHE_WORKER_BASE64_JSON__`
  * - `__TFHE_WORKER_BASE64_SHA256__`
@@ -35,13 +39,18 @@ const tfheDtsTemplatePath = resolve(scriptDir, 'tfhe-dts.template.d.ts');
 const typeCheckTemplatePath = resolve(scriptDir, 'type-check.test.template.ts');
 const typeCheckOutputFileName = 'type-check.test.ts';
 const startWorkersImportDefault = './startWorkers.js';
-const typeCheckCoreTypesImportDefault = '../../../core/types/coreFhevmRuntime.js';
-const typeCheckTfheJsImportDefault = './tfhe.js';
 const startWorkersImportPlaceholder = '__TFHE_START_WORKERS_IMPORT__';
 const tfheVersionJsonPlaceholder = '__TFHE_VERSION_JSON__';
 const tfheDownloadFilesJsonPlaceholder = '__TFHE_DOWNLOAD_FILES_JSON__';
 const tfheJsBodyPlaceholder = '/* __TFHE_JS_BODY__ */';
 const tfheDtsBodyPlaceholder = '/* __TFHE_DTS_BODY__ */';
+const typeCheckBannerPlaceholder = '__TFHE_TYPE_CHECK_BANNER__';
+const typeCheckTfheJsImportPlaceholder = '__TFHE_JS_IMPORT__';
+const typeCheckTfheApiImportPlaceholder = '__TFHE_API_IMPORT__';
+const typeCheckCoreTypesImportPlaceholder = '__CORE_TYPES_FHEVM_RUNTIME_IMPORT__';
+const typeCheckTfheJsImportDefault = './tfhe.js';
+const typeCheckTfheApiImportDefault = '../TfheApi.js';
+const typeCheckCoreTypesImportDefault = '../../../core/types/coreFhevmRuntime.js';
 const workerUrlSha256JsonPlaceholder = '__TFHE_WORKER_URL_SHA256_JSON__';
 const workerBase64JsonPlaceholder = '__TFHE_WORKER_BASE64_JSON__';
 const workerBase64Sha256Placeholder = '__TFHE_WORKER_BASE64_SHA256__';
@@ -162,10 +171,6 @@ function escapeSingleQuotedStringContent(value: string): string {
 
 function parseJs(path: string, text: string): ts.SourceFile {
   return ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-}
-
-function parseTs(path: string, text: string): ts.SourceFile {
-  return ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 }
 
 function readJsonFile(path: string): unknown {
@@ -363,43 +368,18 @@ function renderTfheDts(body: string): string {
   return renderTemplate(tfheDtsTemplatePath, new Map([[tfheDtsBodyPlaceholder, body]]));
 }
 
-function stripTemplateImports(sourceText: string, templatePath: string): string {
-  const sourceFile = parseTs(templatePath, sourceText);
-  const importDeclarations = sourceFile.statements.filter(ts.isImportDeclaration);
+function renderTypeCheckTest(outputDir: string): string {
+  const banner = `sdk/js-sdk/src/wasm/tfhe/${basename(outputDir)}/${typeCheckOutputFileName}`;
 
-  if (importDeclarations.length !== 2) {
-    fail(`Expected exactly two template-only imports in ${templatePath}, found ${importDeclarations.length}.`);
-  }
-
-  return applyReplacements(
-    sourceText,
-    importDeclarations.map((statement) => {
-      return {
-        start: statement.getStart(sourceFile),
-        end: statement.getEnd(),
-        text: '',
-      };
-    }),
-  )
-    .replace(/^\/\/ Template-local imports:.*\n/gm, '')
-    .replace(/^\/\/ Generated import placeholder:.*\n/gm, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
-function renderTypeCheckTest(): string {
-  const templateBody = stripTemplateImports(readFileSync(typeCheckTemplatePath, 'utf8'), typeCheckTemplatePath);
-  const generatedImports = [
-    `import type { WasmAssetLoadMode as CoreWasmAssetLoadMode } from '${typeCheckCoreTypesImportDefault}';`,
-    `import type { WasmAssetLoadMode as TfheWasmAssetLoadMode } from '${typeCheckTfheJsImportDefault}';`,
-  ].join('\n');
-  const headerMatch = /^(\/\*[\s\S]*?\*\/\n+)/.exec(templateBody);
-
-  if (!headerMatch) {
-    return `${generatedImports}\n\n${templateBody}`;
-  }
-
-  return `${headerMatch[0]}${generatedImports}\n\n${templateBody.slice(headerMatch[0].length).trimStart()}`;
+  return renderTemplate(
+    typeCheckTemplatePath,
+    new Map([
+      [typeCheckBannerPlaceholder, banner],
+      [typeCheckTfheJsImportPlaceholder, typeCheckTfheJsImportDefault],
+      [typeCheckTfheApiImportPlaceholder, typeCheckTfheApiImportDefault],
+      [typeCheckCoreTypesImportPlaceholder, typeCheckCoreTypesImportDefault],
+    ]),
+  );
 }
 
 function patchTfheJs(
@@ -577,7 +557,7 @@ writeFileSync(startWorkersOutputPath, startWorkers.code.endsWith('\n') ? startWo
 const patchedTypes = patchDtsIfPresent(outputDir, args.patchTypes);
 
 if (patchedTypes) {
-  const typeCheckTest = renderTypeCheckTest();
+  const typeCheckTest = renderTypeCheckTest(outputDir);
   writeFileSync(typeCheckOutputPath, typeCheckTest.endsWith('\n') ? typeCheckTest : `${typeCheckTest}\n`);
 }
 

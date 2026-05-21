@@ -134,7 +134,7 @@ export async function initTkmsModule(runtime: FhevmRuntime): Promise<KmsLibApi> 
 let moduleInfo: TkmsModuleInfo | undefined = undefined;
 
 async function _initTkmsModule(cfg: ResolvedTkmsModuleConfig): Promise<KmsLibApi> {
-  const libPromise = loadKmsLib(cfg.version);
+  const kmsLib = await loadKmsLib(cfg.version);
 
   // Compile WASM module (see matrix in types.ts)
   let wasmModule;
@@ -149,11 +149,10 @@ async function _initTkmsModule(cfg: ResolvedTkmsModuleConfig): Promise<KmsLibApi
 
   const input: InitTkmsModuleParameters = { module_or_path: wasmModule };
 
-  const lib = await libPromise;
-  await lib.default(input);
+  await kmsLib.initAsync(input);
 
   // Note: init_panic_hook is not exposed by kms_lib
-  const wasmInfo = lib.getWasmInfo();
+  const wasmInfo = kmsLib.getWasmInfo();
 
   moduleInfo = Object.freeze({
     wasmUrl: cfg.wasm.url ? new URL(cfg.wasm.url) : undefined,
@@ -161,7 +160,7 @@ async function _initTkmsModule(cfg: ResolvedTkmsModuleConfig): Promise<KmsLibApi
     name: wasmInfo.name,
   });
 
-  return lib;
+  return kmsLib;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

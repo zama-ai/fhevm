@@ -49,7 +49,7 @@ RUN printf '// Auto-generated at Docker build time. Do not edit.\nexport const r
 WORKDIR /app/sdk/js-sdk
 
 RUN npm install
-RUN npm run build
+RUN npm run build:test-suite-e2e
 
 # Compile test-suite
 WORKDIR /app/test-suite/e2e

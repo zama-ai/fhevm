@@ -1,6 +1,6 @@
 Test plan:
 
-- the test plan only scope is : testing the new multi-wasm support (multiple version supprot)
+- the test plan only scope is : testing the new multi-wasm support (multiple version support)
 - i need a full test suite that tests all possible wasm configs. The test matrix should be defined in a json file
 - it must run against /Users/alex/src/me/zama-ai/fhevm/sdk/js-sdk/test/scripts/localstack-restart.sh
 - if the localstack is running, no need to restart it because it is very long
@@ -15,7 +15,7 @@ Test plan:
 - test suite should live in ./test/multi-wasm
 - first matrix: tfhe: 1.5.3 + tkms: 0.13.10 and tfhe: 1.6.1 + tkms: 0.13.20-0
 - add possibility to run a single matrix coordinate with --tfhe, --kms, and --mode if needed
-- define the JSON shema shape to address the needs
+- define the JSON schema shape to address the needs
 - the goal of this test suite is to test 'wasmAssetLoadMode' 'verified-blob', 'precheck-direct-url' etc.
 - it should also test that if sha is invalid, the test should fail.
 - also, add in the json file, the urls used for CDN testing as done in cdn tests

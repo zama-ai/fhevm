@@ -442,9 +442,9 @@ export function process_user_decryption_resp_from_js(
   agg_resp: any,
   enc_pk: PublicEncKeyMlKem512,
   enc_sk: PrivateEncKeyMlKem512,
-  // Not in original version. Make it compatible with v0.13.20
+    // Not in original version. Make it compatible with v0.13.20
   threshold: number | null | undefined,
-  verify: boolean
+  verify: boolean,
 ): TypedPlaintext[];
 
 export function public_sig_key_to_u8vec(pk: PublicSigKey): Uint8Array;
@@ -483,16 +483,16 @@ export interface InitOutput {
   readonly new_client: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
   readonly new_server_id_addr: (a: number, b: number, c: number) => [number, number, number];
   readonly private_sig_key_to_u8vec: (a: number) => [number, number, number, number];
-  // readonly process_user_decryption_resp: (
-  //   a: number,
-  //   b: number,
-  //   c: number,
-  //   d: number,
-  //   e: number,
-  //   f: number,
-  //   g: number,
-  //   h: number,
-  // ) => [number, number, number, number];
+  readonly process_user_decryption_resp: (
+    a: number,
+    b: number,
+    c: number,
+    d: number,
+    e: number,
+    f: number,
+    g: number,
+    h: number,
+  ) => [number, number, number, number];
   readonly process_user_decryption_resp_from_js: (
     a: number,
     b: any,
@@ -619,6 +619,8 @@ export default function __wbg_init(
 ): Promise<InitOutput>;
 
 ////////////////////////////////////////////////////////////////////////////////
+
+export function initAsync(...args: Parameters<typeof __wbg_init>): ReturnType<typeof __wbg_init>;
 
 export function getWasmInfo(): {
   name: string;
