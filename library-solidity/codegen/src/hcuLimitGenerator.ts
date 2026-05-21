@@ -96,6 +96,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice FHEVMExecutor address.
     address private constant FHEVM_EXECUTOR_ADDRESS = fhevmExecutorAdd;
 
+    /// \`fheMulDiv\` \`scalarByte\` bitmask: bit 0 (divisor) is always set; bit 1 marks \`factor2\` as scalar.
+    bytes1 private constant FHE_MUL_DIV_SCALAR_BYTE_ENC = 0x01;
+    bytes1 private constant FHE_MUL_DIV_SCALAR_BYTE_SCALAR = 0x03;
+
     /// @custom:storage-location erc7201:fhevm.storage.HCULimit
     /// @dev All five uint48 fields pack into a single 256-bit slot (5 × 48 = 240 bits).
     struct HCULimitStorage {
@@ -313,7 +317,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     if (data.scalar && data.nonScalar) {
-      const scalarVariantByte = operation === 'fheMulDiv' ? '0x03' : '0x01';
+      const scalarVariantByte = operation === 'fheMulDiv' ? 'FHE_MUL_DIV_SCALAR_BYTE_SCALAR' : '0x01';
       output += `if (scalarByte == ${scalarVariantByte}) {
           ${generatePriceChecks(data.scalar)}
 

@@ -442,6 +442,10 @@ library Impl {
     bytes32 private constant COPROCESSOR_CONFIG_LOCATION =
         0x9e7b61f58c47dc699ac88507c4f5bb9f121c03808c5676a8078fe583e4649700;
 
+    /// `fheMulDiv` `scalarByte` bitmask: bit 0 (divisor) is always set; bit 1 marks `factor2` as scalar.
+    bytes1 private constant FHE_MUL_DIV_SCALAR_BYTE_ENC = 0x01;
+    bytes1 private constant FHE_MUL_DIV_SCALAR_BYTE_SCALAR = 0x03;
+
     /**
      * @dev Returns the Coprocessor config.
      */
@@ -748,7 +752,7 @@ library Impl {
 
     function mulDiv(bytes32 factor1, bytes32 factor2, bytes32 divisor, bool scalar) internal returns (bytes32 result) {
         CoprocessorConfig storage $ = getCoprocessorConfig();
-        bytes1 scalarByte = scalar ? bytes1(0x03) : bytes1(0x01);
+        bytes1 scalarByte = scalar ? FHE_MUL_DIV_SCALAR_BYTE_SCALAR : FHE_MUL_DIV_SCALAR_BYTE_ENC;
         result = IFHEVMExecutor($.CoprocessorAddress).fheMulDiv(factor1, factor2, divisor, scalarByte);
     }
 
