@@ -5,7 +5,7 @@
     "columns": [],
     "parameters": {
       "Left": [
-        "Int4",
+        "Int8",
         "Bytea",
         "Int8"
       ]
