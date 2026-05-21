@@ -20,7 +20,7 @@ pub mod zama_host {
     /// This bypasses ACL record verification and exists only to feed listener /
     /// worker tests. Protocol flows should create ACL state through
     /// `bind_acl_record`, `trivial_encrypt_and_bind`, or `fhe_binary_op`.
-    /// Input flows may use `poc_input_verified_and_bind` only as a temporary PoC
+    /// Input flows may use `mock_input_verified_and_bind` only as a temporary mock
     /// short-circuit until the verifier/transciphering boundary exists.
     pub fn test_emit_acl_allowed(
         ctx: Context<TestEmitProtocolEvent>,
@@ -206,15 +206,15 @@ pub mod zama_host {
         Ok(())
     }
 
-    /// PoC short-circuit for Solana input birth.
+    /// Mock input-verification short-circuit for Solana input birth.
     ///
     /// This creates an ACL record for a caller-supplied input handle and emits
     /// the same event shape the worker currently consumes. It does not verify a
     /// ZKPoK, ciphertext preimage, or transciphering proof. The final input path
     /// must replace this with a real verifier authority before it is treated as
     /// protocol logic.
-    pub fn poc_input_verified_and_bind(
-        ctx: Context<PocInputVerifiedAndBind>,
+    pub fn mock_input_verified_and_bind(
+        ctx: Context<MockInputVerifiedAndBind>,
         input_handle: [u8; 32],
         user: Pubkey,
         output_nonce_key: [u8; 32],
@@ -418,7 +418,7 @@ pub mod zama_host {
     /// Test-only event shim.
     ///
     /// This only emits an input-verification event. The PoC ACL-bearing stand-in
-    /// is `poc_input_verified_and_bind`; the final version should require the real
+    /// is `mock_input_verified_and_bind`; the final version should require the real
     /// InputVerifier/transciphering boundary.
     pub fn test_emit_input_verified(
         ctx: Context<TestEmitProtocolEvent>,
@@ -490,7 +490,7 @@ pub struct TrivialEncryptAndBind<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// Accounts for the PoC input short-circuit.
+/// Accounts for the mock input short-circuit.
 ///
 /// `app_account_authority` only proves that the app account accepted this input
 /// binding. It is not a cryptographic input verifier.
@@ -502,7 +502,7 @@ pub struct TrivialEncryptAndBind<'info> {
     output_nonce_sequence: u64
 )]
 #[event_cpi]
-pub struct PocInputVerifiedAndBind<'info> {
+pub struct MockInputVerifiedAndBind<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     pub app_account_authority: Signer<'info>,
