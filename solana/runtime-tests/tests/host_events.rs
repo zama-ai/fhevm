@@ -1387,7 +1387,7 @@ fn transfer_output_accounts(fixture: &TokenFixture, nonce_sequence: u64) -> Tran
 }
 
 fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
-    // Temporary PoC short-circuit for the future Solana input verifier /
+    // Temporary mock short-circuit for the future Solana input verifier /
     // transciphering boundary. This deliberately trusts the caller-supplied
     // handle so tests can exercise ACL + compute semantics before the real
     // input proof path exists.
@@ -1399,7 +1399,7 @@ fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
     let acl_record = acl_record_address(fixture.host_program_id, nonce_key, nonce_sequence);
     let ix = Instruction {
         program_id: fixture.host_program_id,
-        accounts: host::accounts::PocInputVerifiedAndBind {
+        accounts: host::accounts::MockInputVerifiedAndBind {
             payer: fixture.alice.pubkey(),
             app_account_authority: app_account,
             output_acl_record: acl_record,
@@ -1408,7 +1408,7 @@ fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
             program: fixture.host_program_id,
         }
         .to_account_metas(None),
-        data: host::instruction::PocInputVerifiedAndBind {
+        data: host::instruction::MockInputVerifiedAndBind {
             input_handle: handle,
             user: fixture.alice.pubkey(),
             output_nonce_key: nonce_key,

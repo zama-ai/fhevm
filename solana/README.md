@@ -135,7 +135,7 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 ### Partly Modeled
 
 - [ ] KMS verification is modeled in Rust tests, not wired into the real KMS connector.
-- [ ] Input handles use an explicit `poc_input_verified_and_bind` PoC short-circuit instead of a
+- [ ] Input handles use an explicit `mock_input_verified_and_bind` mock short-circuit instead of a
       real Solana input verifier or transciphering path.
 - [ ] `test_emit_fhe_rand` exists for worker-backed tests, but the final random-handle birth API is
       not designed yet.
@@ -349,8 +349,8 @@ First birth is owned by a trusted host path:
 zama-host::trivial_encrypt_and_bind(...)
   creates a trivial-encrypt handle and its first ACL record
 
-zama-host::poc_input_verified_and_bind(...)
-  PoC short-circuit for future InputVerifier/transciphering birth
+zama-host::mock_input_verified_and_bind(...)
+  mock short-circuit for future InputVerifier/transciphering birth
 
 zama-host::fhe_binary_op(...)
   checks operand ACL records, derives the computed handle, and creates the output ACL record
@@ -485,7 +485,7 @@ confidential-token::confidential_transfer(amount = hX)
          BobTokenAccount.next_balance_nonce_sequence = 2
 ```
 
-The amount handle ACL is temporary PoC glue. Today the tests use `poc_input_verified_and_bind` as an
+The amount handle ACL is temporary mock glue. Today the tests use `mock_input_verified_and_bind` as an
 explicit short-circuit for the future input verifier / transciphering boundary:
 
 ```text
@@ -533,7 +533,7 @@ wrap_usdc(amount)
   |      emits FHE.add(hA0, hDeposit) -> hA1
 ```
 
-The deposit amount is public in this slice because it uses the `test_emit_trivial_encrypt(amount)` shim. Tests that need an encrypted-input shape can use the `poc_input_verified_and_bind(...)` short-circuit, but app flows should eventually use the final input path and the real ZKPoK/input verifier or transciphering boundary.
+The deposit amount is public in this slice because it uses the `test_emit_trivial_encrypt(amount)` shim. Tests that need an encrypted-input shape can use the `mock_input_verified_and_bind(...)` short-circuit, but app flows should eventually use the final input path and the real ZKPoK/input verifier or transciphering boundary.
 
 ## User Decrypt Shape
 
