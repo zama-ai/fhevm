@@ -5,7 +5,6 @@ import type { EncryptedERC20 } from '../../types/contracts';
 import { createInstance as createHardhatInstance } from '../instance';
 import { isLiveNetwork } from '../network';
 import { getSigners as getHardhatSigners, initSigners } from '../signers';
-import { userDecryptSingleHandle } from '../utils';
 import { deployChainFixture } from './multiChain.fixture';
 import type { ChainConfig } from './multiChainHelper';
 import {
@@ -110,9 +109,16 @@ describe('Multi-Chain State Isolation', function () {
 
       // Chain A: encrypted transfer to carol (unused by other tests)
       const instanceA = await createInstance(this.chains[0]);
-      const inputA = instanceA.createEncryptedInput(this.chainA.erc20Address, this.deployerA.address);
-      inputA.add64(200);
-      const encryptedA = await inputA.encrypt();
+
+      // const inputA = instanceA.createEncryptedInput(this.chainA.erc20Address, this.deployerA.address);
+      // inputA.add64(200);
+      // const encryptedA = await inputA.encrypt();
+
+      const encryptedA = await instanceA.encryptUint64({
+        value: 200,
+        contractAddress: this.chainA.erc20Address,
+        userAddress: this.deployerA.address,
+      });
 
       const txA = await (erc20A.connect(this.deployerA) as EncryptedERC20)['transfer(address,bytes32,bytes)'](
         this.signersA.carol.address,
@@ -127,22 +133,20 @@ describe('Multi-Chain State Isolation', function () {
       expect(balanceHandleCarolA).to.not.eq(ethers.ZeroHash);
       expect(balanceHandleCarolA.slice(46, 62)).to.eq(this.chains[0].chainId.toString(16).padStart(16, '0'));
 
-      const { publicKey: pubKeyA, privateKey: privKeyA } = instanceA.generateKeypair();
-      const decryptedA = await userDecryptSingleHandle(
-        balanceHandleCarolA,
-        this.chainA.erc20Address,
-        instanceA,
-        this.signersA.carol,
-        privKeyA,
-        pubKeyA,
-      );
+      const decryptedA = await instanceA.userDecryptSingleHandle({
+        handle: balanceHandleCarolA,
+        contractAddress: this.chainA.erc20Address,
+        signer: this.signersA.carol,
+      });
       expect(decryptedA).to.equal(200n);
 
       // Chain B: encrypted transfer to carol
       const instanceB = await createInstance(this.chains[1]);
-      const inputB = instanceB.createEncryptedInput(this.chainB.erc20Address, this.deployerB.address);
-      inputB.add64(300);
-      const encryptedB = await inputB.encrypt();
+      const encryptedB = await instanceB.encryptUint64({
+        contractAddress: this.chainB.erc20Address,
+        userAddress: this.deployerB.address,
+        value: 300,
+      });
 
       const txB = await (erc20B.connect(this.deployerB) as EncryptedERC20)['transfer(address,bytes32,bytes)'](
         this.signersB.carol.address,
@@ -157,15 +161,11 @@ describe('Multi-Chain State Isolation', function () {
       expect(balanceHandleCarolB).to.not.eq(ethers.ZeroHash);
       expect(balanceHandleCarolB.slice(46, 62)).to.eq(this.chains[1].chainId.toString(16).padStart(16, '0'));
 
-      const { publicKey: pubKeyB, privateKey: privKeyB } = instanceB.generateKeypair();
-      const decryptedB = await userDecryptSingleHandle(
-        balanceHandleCarolB,
-        this.chainB.erc20Address,
-        instanceB,
-        this.signersB.carol,
-        privKeyB,
-        pubKeyB,
-      );
+      const decryptedB = await instanceB.userDecryptSingleHandle({
+        handle: balanceHandleCarolB,
+        contractAddress: this.chainB.erc20Address,
+        signer: this.signersB.carol,
+      });
       expect(decryptedB).to.equal(300n);
     });
   });
@@ -175,44 +175,71 @@ describe('Multi-Chain State Isolation', function () {
       const erc20A = this.chainA.erc20 as unknown as EncryptedERC20;
       const erc20B = this.chainB.erc20 as unknown as EncryptedERC20;
 
-      const handleA = await erc20A.balanceOf(this.deployerA.address);
-      expect(handleA).to.not.eq(ethers.ZeroHash);
+      expect(this.deployerA.address).to.eq(this.deployerB.address);
+      expect(this.chainA.erc20Address).to.eq(this.chainB.erc20Address);
 
-      expect(handleA.slice(46, 62)).to.eq(this.chains[0].chainId.toString(16).padStart(16, '0'));
+      const instanceA = await createInstance(this.chains[0]);
+
+      // const inputA = instanceA.createEncryptedInput(this.chainA.erc20Address, this.deployerA.address);
+      // inputA.add64(125);
+      // const encryptedA = await inputA.encrypt();
+      const encryptedA = await instanceA.encryptUint64({
+        contractAddress: this.chainA.erc20Address,
+        userAddress: this.deployerA.address,
+        value: 125,
+      });
+
+      const txA = await (erc20A.connect(this.deployerA) as EncryptedERC20)['transfer(address,bytes32,bytes)'](
+        this.signersA.dave.address,
+        encryptedA.handles[0],
+        encryptedA.inputProof,
+        { gasLimit: 10_000_000 },
+      );
+      const receiptA = await txA.wait();
+      expect(receiptA?.status).to.eq(1);
+
+      const balanceHandleDaveA = await erc20A.balanceOf(this.signersA.dave.address);
+      expect(balanceHandleDaveA).to.not.eq(ethers.ZeroHash);
+      expect(balanceHandleDaveA.slice(46, 62)).to.eq(this.chains[0].chainId.toString(16).padStart(16, '0'));
 
       const handleB = await erc20B.balanceOf(this.deployerB.address);
       expect(handleB).to.not.eq(ethers.ZeroHash);
       expect(handleB.slice(46, 62)).to.eq(this.chains[1].chainId.toString(16).padStart(16, '0'));
-      expect(handleA).to.not.eq(handleB);
 
       let crossChainSucceeded = false;
       try {
         const crossChainTx = await (erc20B.connect(this.deployerB) as EncryptedERC20)[
           'transfer(address,bytes32,bytes)'
-        ](this.signersB.bob.address, handleA, '0x', { gasLimit: 10_000_000 });
+        ](this.signersB.bob.address, encryptedA.handles[0], encryptedA.inputProof, { gasLimit: 10_000_000 });
         await crossChainTx.wait();
         crossChainSucceeded = true;
       } catch {
-        // Expected: cross-chain handle should be rejected
+        // Expected: Chain A input should be rejected on Chain B.
       }
       expect(crossChainSucceeded).to.eq(false, 'cross-chain transfer should have reverted');
 
-      const handleAAfter = await erc20A.balanceOf(this.deployerA.address);
-      expect(handleAAfter).to.eq(handleA);
+      expect(await erc20B.balanceOf(this.deployerB.address)).to.eq(handleB);
     });
   });
 
   describe('ACL Permission Isolation', function () {
     it('ACL allow on Chain A does not grant access on Chain B', async function () {
       const erc20A = this.chainA.erc20 as unknown as EncryptedERC20;
-      const erc20B = this.chainB.erc20 as unknown as EncryptedERC20;
 
-      const instanceDeployerA = await createHardhatInstance();
-      const instanceBobA = await createHardhatInstance();
+      expect(this.signersA.bob.address).to.eq(this.signersB.bob.address);
+      expect(this.chainA.erc20Address).to.eq(this.chainB.erc20Address);
 
-      const inputA = instanceDeployerA.createEncryptedInput(this.chainA.erc20Address, this.deployerA.address);
-      inputA.add64(500);
-      const encryptedAmountA = await inputA.encrypt();
+      const instanceDeployerA = await createInstance(this.chains[0]);
+      const instanceBobA = await createInstance(this.chains[0]);
+
+      // const inputA = instanceDeployerA.createEncryptedInput(this.chainA.erc20Address, this.deployerA.address);
+      // inputA.add64(500);
+      // const encryptedAmountA = await inputA.encrypt();
+      const encryptedAmountA = await instanceDeployerA.encryptUint64({
+        contractAddress: this.chainA.erc20Address,
+        userAddress: this.deployerA.address,
+        value: 500,
+      });
 
       const transferTx = await (erc20A.connect(this.deployerA) as EncryptedERC20)['transfer(address,bytes32,bytes)'](
         this.signersA.bob.address,
@@ -226,19 +253,33 @@ describe('Multi-Chain State Isolation', function () {
       const balanceHandleBobA = await erc20A.balanceOf(this.signersA.bob.address);
       expect(balanceHandleBobA).to.not.eq(ethers.ZeroHash);
 
-      const { publicKey: pubKeyBob, privateKey: privKeyBob } = instanceBobA.generateKeypair();
-      const balanceBobA = await userDecryptSingleHandle(
-        balanceHandleBobA,
-        this.chainA.erc20Address,
-        instanceBobA,
-        this.hardhatSigners.bob,
-        privKeyBob,
-        pubKeyBob,
-      );
+      const balanceBobA = await instanceBobA.userDecryptSingleHandle({
+        handle: balanceHandleBobA,
+        contractAddress: this.chainA.erc20Address,
+        signer: this.hardhatSigners.bob,
+      });
       expect(balanceBobA).to.equal(500n);
 
-      const balanceHandleBobB = await erc20B.balanceOf(this.signersB.bob.address);
-      expect(balanceHandleBobB).to.eq(ethers.ZeroHash);
+      const aclAbi = ['function isAllowed(bytes32 handle, address account) view returns (bool)'];
+      const aclA = new ethers.Contract(this.chains[0].aclAddress, aclAbi, getProvider(this.chains[0]));
+      const aclB = new ethers.Contract(this.chains[1].aclAddress, aclAbi, getProvider(this.chains[1]));
+      expect(await aclA.isAllowed(balanceHandleBobA, this.signersA.bob.address)).to.eq(true);
+      expect(await aclB.isAllowed(balanceHandleBobA, this.signersB.bob.address)).to.eq(false);
+
+      const instanceBobB = await createInstance(this.chains[1]);
+      let crossChainDecryptSucceeded = false;
+      try {
+        await instanceBobB.userDecryptSingleHandle({
+          handle: balanceHandleBobA,
+          contractAddress: this.chainB.erc20Address,
+          signer: this.signersB.bob,
+        });
+
+        crossChainDecryptSucceeded = true;
+      } catch {
+        // Expected: Chain A ACL permission should not authorize Chain B decryption.
+      }
+      expect(crossChainDecryptSucceeded).to.eq(false, 'cross-chain user decrypt should have been rejected');
     });
   });
 
@@ -328,27 +369,19 @@ describe('Multi-Chain State Isolation', function () {
       expect(handleB.slice(46, 62)).to.eq(this.chains[1].chainId.toString(16).padStart(16, '0'));
 
       const instanceA = await createInstance(this.chains[0]);
-      const { publicKey: pubKeyA, privateKey: privKeyA } = instanceA.generateKeypair();
-      const decryptedA = await userDecryptSingleHandle(
-        handleA,
-        this.chainA.userDecryptAddress,
-        instanceA,
-        this.deployerA,
-        privKeyA,
-        pubKeyA,
-      );
+      const decryptedA = await instanceA.userDecryptSingleHandle({
+        handle: handleA,
+        contractAddress: this.chainA.userDecryptAddress,
+        signer: this.deployerA,
+      });
       expect(decryptedA).to.equal(18446744073709551600n);
 
       const instanceB = await createInstance(this.chains[1]);
-      const { publicKey: pubKeyB, privateKey: privKeyB } = instanceB.generateKeypair();
-      const decryptedB = await userDecryptSingleHandle(
-        handleB,
-        this.chainB.userDecryptAddress,
-        instanceB,
-        this.deployerB,
-        privKeyB,
-        pubKeyB,
-      );
+      const decryptedB = await instanceB.userDecryptSingleHandle({
+        handle: handleB,
+        contractAddress: this.chainB.userDecryptAddress,
+        signer: this.deployerB,
+      });
       expect(decryptedB).to.equal(18446744073709551600n);
     });
   });
@@ -392,7 +425,7 @@ describe('Multi-Chain State Isolation', function () {
       const instanceA = await createHardhatInstance();
       const valuesA: bigint[] = [];
       for (const handle of handlesA) {
-        const res = await instanceA.publicDecrypt([handle as `0x${string}`]);
+        const res = await instanceA.publicDecrypt([handle]);
         const value = res.clearValues[handle as `0x${string}`] as bigint;
         expect(typeof value).to.eq('bigint');
         valuesA.push(value);

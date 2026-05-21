@@ -23,10 +23,12 @@ export async function signDecryptionPermit(
   fhevm: Fhevm<FhevmChain>,
   parameters: SignSelfDecryptionPermitParameters,
 ): Promise<SignedSelfDecryptionPermit>;
+
 export async function signDecryptionPermit(
   fhevm: Fhevm<FhevmChain>,
   parameters: SignDelegatedDecryptionPermitParameters,
 ): Promise<SignedDelegatedDecryptionPermit>;
+
 export async function signDecryptionPermit(
   fhevm: Fhevm<FhevmChain>,
   parameters: SignDecryptionPermitParameters,
