@@ -784,10 +784,8 @@ fn allow_for_decryption_rejects_unallowed_signer() {
 fn wrap_usdc_escrows_spl_tokens_and_rotates_confidential_balance() {
     let mut fixture = token_fixture();
     let amount = 100_000_000;
-    let amount_handle = [9; 32];
-    authorize_input_compute_acl(&mut fixture, amount_handle);
     let output = wrap_output_accounts(&fixture, 1);
-    let ix = wrap_usdc_ix(&fixture, output, amount, amount_handle);
+    let ix = wrap_usdc_ix(&fixture, output, amount);
 
     let alice_usdc_before = spl_token_amount(&fixture.svm, fixture.alice_usdc);
     let vault_usdc_before = spl_token_amount(&fixture.svm, fixture.vault_usdc);
@@ -806,6 +804,9 @@ fn wrap_usdc_escrows_spl_tokens_and_rotates_confidential_balance() {
     assert_eq!(trivial_events.len(), 1);
     assert_eq!(trivial_events[0].subject, fixture.compute_signer);
     assert_eq!(trivial_events[0].plaintext, amount_plaintext(amount));
+
+    let amount_record = read_acl_record(&fixture.svm, output.amount).expect("expected amount ACL");
+    let amount_handle = amount_record.handle;
     assert_eq!(trivial_events[0].result, amount_handle);
 
     let events = binary_op_events(&meta, &account_keys, fixture.host_program_id);
@@ -817,6 +818,17 @@ fn wrap_usdc_escrows_spl_tokens_and_rotates_confidential_balance() {
     assert_eq!(events[0].lhs, fixture.alice_initial);
     assert_eq!(events[0].rhs, amount_handle);
     assert_eq!(events[0].result, new_alice);
+
+    assert_acl_record(
+        &fixture.svm,
+        output.amount,
+        fixture.mint.pubkey(),
+        fixture.alice_token,
+        token::wrap_amount_label(),
+        1,
+        amount_handle,
+        &[fixture.compute_signer],
+    );
 
     let alice_account = token_account(&fixture.svm, fixture.alice_token);
     assert_eq!(alice_account.balance_handle, new_alice);
@@ -840,10 +852,8 @@ fn confidential_token_e2e_wrap_transfer_and_decrypts_current_and_historical_bala
 
     // 1. Alice wraps underlying USDC into her confidential balance.
     let wrap_amount = 100_000_000;
-    let wrap_amount_handle = [9; 32];
-    authorize_input_compute_acl(&mut fixture, wrap_amount_handle);
     let wrap_output = wrap_output_accounts(&fixture, 1);
-    let wrap_ix = wrap_usdc_ix(&fixture, wrap_output, wrap_amount, wrap_amount_handle);
+    let wrap_ix = wrap_usdc_ix(&fixture, wrap_output, wrap_amount);
     send(&mut fixture.svm, &fixture.alice, wrap_ix);
     let alice_after_wrap = read_acl_record(&fixture.svm, wrap_output.balance)
         .expect("expected wrap ACL")
@@ -1113,6 +1123,7 @@ struct TransferOutputAccounts {
 
 #[derive(Clone, Copy)]
 struct WrapOutputAccounts {
+    amount: Pubkey,
     balance: Pubkey,
 }
 
@@ -1429,6 +1440,15 @@ fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32]) {
 
 fn wrap_output_accounts(fixture: &TokenFixture, nonce_sequence: u64) -> WrapOutputAccounts {
     WrapOutputAccounts {
+        amount: acl_record_address(
+            fixture.host_program_id,
+            token::nonce_key(
+                fixture.mint.pubkey(),
+                fixture.alice_token,
+                token::wrap_amount_label(),
+            ),
+            nonce_sequence,
+        ),
         balance: balance_acl_record_address(
             fixture.host_program_id,
             fixture.mint.pubkey(),
@@ -1499,12 +1519,7 @@ fn transfer_ix_with_amount_acl(
     }
 }
 
-fn wrap_usdc_ix(
-    fixture: &TokenFixture,
-    output: WrapOutputAccounts,
-    amount: u64,
-    amount_handle: [u8; 32],
-) -> Instruction {
+fn wrap_usdc_ix(fixture: &TokenFixture, output: WrapOutputAccounts, amount: u64) -> Instruction {
     Instruction {
         program_id: fixture.token_program_id,
         accounts: token::accounts::WrapUsdc {
@@ -1520,7 +1535,7 @@ fn wrap_usdc_ix(
             ),
             compute_signer: fixture.compute_signer,
             current_compute_acl: fixture.alice_current_compute_acl,
-            amount_compute_acl: input_compute_acl_address(fixture, amount_handle),
+            amount_compute_acl: output.amount,
             output_acl: output.balance,
             zama_event_authority: event_authority(fixture.host_program_id),
             zama_program: fixture.host_program_id,
@@ -1528,11 +1543,7 @@ fn wrap_usdc_ix(
             system_program: system_program::ID,
         }
         .to_account_metas(None),
-        data: token::instruction::WrapUsdc {
-            amount,
-            amount_handle,
-        }
-        .data(),
+        data: token::instruction::WrapUsdc { amount }.data(),
     }
 }
 
@@ -1722,16 +1733,38 @@ fn assert_balance_acl(
     handle: [u8; 32],
     subjects: &[Pubkey],
 ) {
+    assert_acl_record(
+        svm,
+        address,
+        acl_domain_key,
+        app_account,
+        token::balance_label(),
+        nonce_sequence,
+        handle,
+        subjects,
+    );
+}
+
+fn assert_acl_record(
+    svm: &LiteSVM,
+    address: Pubkey,
+    acl_domain_key: Pubkey,
+    app_account: Pubkey,
+    encrypted_value_label: [u8; 32],
+    nonce_sequence: u64,
+    handle: [u8; 32],
+    subjects: &[Pubkey],
+) {
     let record = read_acl_record(svm, address).expect("expected ACL account");
     assert_eq!(record.handle, handle);
     assert_eq!(
         record.nonce_key,
-        token::balance_nonce_key(acl_domain_key, app_account)
+        token::nonce_key(acl_domain_key, app_account, encrypted_value_label)
     );
     assert_eq!(record.nonce_sequence, nonce_sequence);
     assert_eq!(record.acl_domain_key, acl_domain_key);
     assert_eq!(record.app_account, app_account);
-    assert_eq!(record.encrypted_value_label, token::balance_label());
+    assert_eq!(record.encrypted_value_label, encrypted_value_label);
     assert_eq!(record_subjects(&record), subjects);
 }
 
