@@ -1491,5 +1491,5 @@ function getWasmInfo() {
   };
 }
 
-export { initSync, getTfheWorkers, terminateWorkers, setWorkerUrlConfig, getWasmInfo };
+export { initSync, getTfheWorkers, terminateWorkers, setWorkerUrlConfig, getWasmInfo, __wbg_init as initAsync };
 export default __wbg_init;

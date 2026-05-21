@@ -2095,12 +2095,12 @@ async function __wbg_init(module_or_path) {
     }
 
     // if (module_or_path === undefined) {
-        // module_or_path = new URL('kms_lib_bg.wasm', import.meta.url);
+    //     module_or_path = new URL('kms_lib_bg.wasm', import.meta.url);
     // }
     const imports = __wbg_get_imports();
 
     // if (typeof module_or_path === 'string' || (typeof Request === 'function' && module_or_path instanceof Request) || (typeof URL === 'function' && module_or_path instanceof URL)) {
-        // module_or_path = fetch(module_or_path);
+    //     module_or_path = fetch(module_or_path);
     // }
 
     const { instance, module } = await __wbg_load(await module_or_path, imports);
@@ -2121,4 +2121,5 @@ function getWasmInfo() {
   };
 }
 
-export { initSync, getWasmInfo, __wbg_init as default };
+export { initSync, getWasmInfo, __wbg_init as initAsync };
+export default __wbg_init;

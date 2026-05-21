@@ -251,7 +251,7 @@ async function _initTfheModule(cfg: ResolvedTfheModuleConfig): Promise<TfheLibAp
   const input: InitTfheModuleParameters = { module_or_path: wasmModule };
 
   // 2. Load and instantiate the TFHE WASM binary
-  await tfheLib.default(input);
+  await tfheLib.initAsync(input);
 
   // 3. Route WASM panics to console.error instead of silently aborting
   tfheLib.init_panic_hook();

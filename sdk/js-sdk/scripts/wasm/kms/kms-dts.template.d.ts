@@ -2,6 +2,8 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
+export function initAsync(...args: Parameters<typeof __wbg_init>): ReturnType<typeof __wbg_init>;
+
 export function getWasmInfo(): {
   name: string;
   version: string;

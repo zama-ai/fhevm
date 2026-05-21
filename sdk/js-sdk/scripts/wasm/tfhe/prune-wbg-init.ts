@@ -969,10 +969,6 @@ function statementNames(statement: ts.Statement): string[] {
   return [...declaredNamesInStatement(statement), ...importedNamesInStatement(statement)];
 }
 
-function statementPrimaryName(statement: ts.Statement): string | undefined {
-  return statementNames(statement)[0];
-}
-
 function sectionForStatement(statement: ts.Statement): string | undefined {
   const names = statementNames(statement);
   const primaryName = names[0];

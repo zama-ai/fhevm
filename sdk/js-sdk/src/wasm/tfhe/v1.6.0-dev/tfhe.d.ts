@@ -330,6 +330,8 @@ export default function __wbg_init (module_or_path?: { module_or_path: InitInput
 
 ////////////////////////////////////////////////////////////////////////////////
 
+export function initAsync(...args: Parameters<typeof __wbg_init>): ReturnType<typeof __wbg_init>;
+
 export function getWasmInfo(): {
   name: string;
   version: string;

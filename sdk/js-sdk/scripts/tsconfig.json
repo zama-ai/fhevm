@@ -1,0 +1,13 @@
+{
+  "extends": "../tsconfig.base.json",
+  "include": ["**/*.ts"],
+  "exclude": ["**/*.template.d.ts", "**/*.template.ts"],
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": true,
+    "exactOptionalPropertyTypes": false,
+    "noUncheckedIndexedAccess": false,
+    "rootDir": ".",
+    "types": ["node"]
+  }
+}

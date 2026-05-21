@@ -23,6 +23,7 @@ extend-exclude = [
     "lib/openzeppelin-contracts-upgradeable/",
     # Specific docs with known legacy typos (tracked separately)
     "coprocessor/fhevm-engine/host-listener/README.md",
+    "sdk/js-sdk/src/wasm/tfhe/v1.6.1/tfhe-worker.mjs",
 
     # Keys and charts (binary/config data)
     "fhevm-keys/",

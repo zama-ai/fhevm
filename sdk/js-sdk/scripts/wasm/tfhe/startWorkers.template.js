@@ -61,7 +61,12 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 function __isBrowserLike() {
-  return typeof addEventListener === 'function' && typeof removeEventListener === 'function';
+  return (
+    typeof Bun === 'undefined' &&
+    typeof process === 'undefined' &&
+    typeof addEventListener === 'function' &&
+    typeof removeEventListener === 'function'
+  );
 }
 
 const __wasmAssetLoadModes = ['embedded-base64', 'verified-blob', 'precheck-direct-url', 'trusted-direct-url', 'auto'];
