@@ -63,8 +63,9 @@ Use this order when picking up the branch:
 
 ## Collaboration Contract
 
-Use this guide as the central handoff document for the branch. Do not add a second guide unless the
-team decides the branch layout itself has changed.
+Use this guide as the central technical handoff document for the branch. The short
+[`OZ_GUIDE.md`](./OZ_GUIDE.md) file is a role-specific index for OpenZeppelin follow-up work; keep
+technical details here and link back from that file instead of duplicating large sections.
 
 The PoC can still have breaking changes. The rule is:
 
@@ -98,6 +99,16 @@ solana/programs/confidential-token
 
 solana/runtime-tests/tests/host_events.rs
   Add behavior tests here first.
+```
+
+Current OZ handoff assumptions:
+
+```text
+1. Treat zama-host CPI as the protocol boundary.
+2. Keep confidential-token SPL-like and app-owned.
+3. Add LiteSVM tests before changing token behavior.
+4. Do not derive account addresses from handles.
+5. Do not add a separate ACL program unless the guild explicitly changes direction.
 ```
 
 Avoid adding a separate Anchor workspace, a standalone ACL program, or TypeScript-only tests for core
@@ -136,7 +147,10 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
       exists.
 - [x] Public decrypt is modeled through `allow_for_decryption`.
 - [x] Negative tests cover wrong signer, wrong ACL record, wrong handle, wrong domain key, stale
-      current ACL, and unauthorized public decrypt.
+      current ACL, wrong output ACL, reused output ACL, scalar RHS account behavior, and
+      unauthorized public decrypt.
+- [x] Scalar RHS host behavior is modeled: encrypted RHS requires an ACL record; scalar RHS does
+      not.
 
 ### Partly Modeled
 
@@ -145,8 +159,10 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
       real Solana input verifier or transciphering path.
 - [ ] `test_emit_fhe_rand` exists for worker-backed tests, but the final random-handle birth API is
       not designed yet.
-- [ ] ACL records are born bound through Anchor `init`; the future predeclared
-      `Empty -> Bound` account lifecycle is documented but not implemented.
+- [ ] ACL records are created already initialized through Anchor `init`; there is no stored
+      `Empty -> Bound` enum in the PoC.
+- [ ] Public decrypt authority is intentionally incomplete: the PoC uses the same subject list for
+      compute and user-decrypt, but production must decide who may flip `public_decrypt`.
 - [ ] The subject list has a PoC capacity. Overflow/chunking is not designed yet.
 - [ ] Historical handle lookup is assumed to be app/indexer responsibility for now.
 
@@ -508,6 +524,9 @@ subjects       = [compute_signer]
 handle         = hX
 ```
 
+The mock input ACL record uses an explicit test nonce sequence. It must not derive placement from
+the handle bytes; handles are opaque even in tests.
+
 This instruction deliberately trusts the caller-supplied input handle. It is also deliberately not
 `bind_acl_record`: the first ACL record for an input handle must come from a trusted input path, not
 from a generic grant API. The real design still needs the Solana equivalent of transient input
@@ -687,9 +706,40 @@ allow_for_decryption on handle
   -> anyone can request public decrypt for that handle
 ```
 
+Design warning:
+
+```text
+The PoC currently authorizes allow_for_decryption with the same subjects[] list
+used for compute and private user decrypt.
+
+That is not a final authority rule.
+Production must decide who may flip public_decrypt.
+A compute_signer should not automatically gain that power just because it can
+compute on a handle.
+```
+
 ## Operator Encoding Notes
 
-The current PoC only models encrypted/encrypted binary ops, so scalar metadata is still simplified. When adding scalar or ternary operators, Solana host events must preserve the EVM `scalarByte` convention.
+`zama-host::fhe_binary_op` supports the same encrypted/scalar split as EVM-style binary operators:
+
+```text
+scalar = false:
+  lhs is a handle
+  rhs is a handle
+  host checks both lhs_acl_record and rhs_acl_record
+
+scalar = true:
+  lhs is a handle
+  rhs is plaintext scalar bytes
+  host checks lhs_acl_record only
+  rhs_acl_record may be a dummy account and is not deserialized
+```
+
+The current confidential-token transfer/wrap flows only use encrypted/encrypted binary ops. The
+host-level scalar path is covered by LiteSVM tests so future token helpers can pass `scalar = true`
+without changing ZamaHost.
+
+When adding ternary operators, Solana host events must preserve the EVM `scalarByte` convention.
 
 ```text
 scalarByte is a bitmask of scalar arguments.
