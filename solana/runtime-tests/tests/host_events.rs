@@ -78,25 +78,23 @@ fn test_emit_trivial_encrypt_emits_anchor_cpi_event() {
 }
 
 #[test]
-fn bind_acl_record_persists_keyed_nonce_record_without_handle_derived_address() {
+fn allow_acl_subjects_extends_existing_canonical_record() {
     let program_id = host::id();
     let mut svm = svm_with_program(program_id, host_program_so_path());
     let payer = svm.create_funded_account(1_000_000_000).unwrap();
-    let app_account_authority = Keypair::new();
 
     let acl_domain_key = Pubkey::new_unique();
-    let app_account = app_account_authority.pubkey();
+    let app_account = payer.pubkey();
     let encrypted_value_label = label("balance");
     let nonce_key = token::nonce_key(acl_domain_key, app_account, encrypted_value_label);
     let nonce_sequence = 42;
-    let subject = payer.pubkey();
+    let new_subject = Pubkey::new_unique();
     let handle = [9; 32];
-    let acl_record = acl_record_address(program_id, nonce_key, nonce_sequence);
-    let authorizing_acl_record = seed_authorizing_acl_record(
+    let acl_record = seed_authorizing_acl_record(
         &mut svm,
         program_id,
         nonce_key,
-        nonce_sequence - 1,
+        nonce_sequence,
         acl_domain_key,
         app_account,
         encrypted_value_label,
@@ -106,35 +104,21 @@ fn bind_acl_record_persists_keyed_nonce_record_without_handle_derived_address() 
 
     let ix = anchor_ix(
         program_id,
-        host::accounts::BindAclRecord {
-            payer: payer.pubkey(),
+        host::accounts::AllowAclSubjects {
             authority: payer.pubkey(),
-            app_account_authority: app_account,
-            authorizing_acl_record,
             acl_record,
-            system_program: system_program::ID,
             event_authority: event_authority(program_id),
             program: program_id,
         },
-        host::instruction::BindAclRecord {
-            nonce_key,
-            nonce_sequence,
-            acl_domain_key,
-            app_account,
-            encrypted_value_label,
+        host::instruction::AllowAclSubjects {
             handle,
-            subjects: vec![AclSubjectEntry { pubkey: subject }],
-            public_decrypt: false,
+            subjects: vec![AclSubjectEntry {
+                pubkey: new_subject,
+            }],
         },
     );
 
-    send_with_signers(
-        &mut svm,
-        &payer.pubkey(),
-        ix,
-        &[&payer, &app_account_authority],
-    )
-    .unwrap();
+    send(&mut svm, &payer, ix);
 
     let record = read_acl_record(&svm, acl_record).expect("expected ACL record");
     assert_eq!(record.handle, handle);
@@ -143,7 +127,7 @@ fn bind_acl_record_persists_keyed_nonce_record_without_handle_derived_address() 
     assert_eq!(record.acl_domain_key, acl_domain_key);
     assert_eq!(record.app_account, app_account);
     assert_eq!(record.encrypted_value_label, encrypted_value_label);
-    assert_eq!(record_subjects(&record), vec![subject]);
+    assert_eq!(record_subjects(&record), vec![payer.pubkey(), new_subject]);
     assert!(!record.public_decrypt);
 
     let assert_ix = anchor_ix(
@@ -156,31 +140,29 @@ fn bind_acl_record_persists_keyed_nonce_record_without_handle_derived_address() 
             app_account,
             encrypted_value_label,
             handle,
-            subject,
+            subject: new_subject,
         },
     );
     send(&mut svm, &payer, assert_ix);
 }
 
 #[test]
-fn bind_acl_record_rejects_nonce_key_not_derived_from_acl_fields() {
+fn allow_acl_subjects_is_idempotent_for_existing_subject() {
     let program_id = host::id();
     let mut svm = svm_with_program(program_id, host_program_so_path());
     let payer = svm.create_funded_account(1_000_000_000).unwrap();
-    let app_account_authority = Keypair::new();
 
     let acl_domain_key = Pubkey::new_unique();
-    let app_account = app_account_authority.pubkey();
+    let app_account = payer.pubkey();
     let encrypted_value_label = label("balance");
-    let wrong_nonce_key = [42; 32];
+    let nonce_key = token::nonce_key(acl_domain_key, app_account, encrypted_value_label);
     let nonce_sequence = 42;
-    let acl_record = acl_record_address(program_id, wrong_nonce_key, nonce_sequence);
     let handle = [9; 32];
-    let authorizing_acl_record = seed_authorizing_acl_record(
+    let acl_record = seed_authorizing_acl_record(
         &mut svm,
         program_id,
-        token::nonce_key(acl_domain_key, app_account, encrypted_value_label),
-        nonce_sequence - 1,
+        nonce_key,
+        nonce_sequence,
         acl_domain_key,
         app_account,
         encrypted_value_label,
@@ -190,37 +172,24 @@ fn bind_acl_record_rejects_nonce_key_not_derived_from_acl_fields() {
 
     let ix = anchor_ix(
         program_id,
-        host::accounts::BindAclRecord {
-            payer: payer.pubkey(),
+        host::accounts::AllowAclSubjects {
             authority: payer.pubkey(),
-            app_account_authority: app_account,
-            authorizing_acl_record,
             acl_record,
-            system_program: system_program::ID,
             event_authority: event_authority(program_id),
             program: program_id,
         },
-        host::instruction::BindAclRecord {
-            nonce_key: wrong_nonce_key,
-            nonce_sequence,
-            acl_domain_key,
-            app_account,
-            encrypted_value_label,
+        host::instruction::AllowAclSubjects {
             handle,
             subjects: vec![AclSubjectEntry {
                 pubkey: payer.pubkey(),
             }],
-            public_decrypt: false,
         },
     );
 
-    assert!(send_with_signers(
-        &mut svm,
-        &payer.pubkey(),
-        ix,
-        &[&payer, &app_account_authority],
-    )
-    .is_err());
+    send(&mut svm, &payer, ix);
+
+    let record = read_acl_record(&svm, acl_record).expect("expected ACL record");
+    assert_eq!(record_subjects(&record), vec![payer.pubkey()]);
 }
 
 #[test]
@@ -307,29 +276,20 @@ fn fhe_binary_op_scalar_rhs_skips_rhs_acl_but_encrypted_rhs_requires_it() {
     );
     let output_acl_record = acl_record_address(program_id, nonce_key, 1);
     let rhs_scalar = amount_plaintext(5);
-    let result = current_binary_handle(&svm, FheBinaryOpCode::Add, lhs, rhs_scalar, true, 5);
-
-    let scalar_ix = anchor_ix(
-        program_id,
-        host::accounts::FheBinaryOp {
-            compute_subject: payer.pubkey(),
-            lhs_acl_record,
-            rhs_acl_record: dummy_rhs_account.pubkey(),
-            event_authority: event_authority(program_id),
-            program: program_id,
-        },
-        host::instruction::FheBinaryOp {
-            op: FheBinaryOpCode::Add,
-            lhs,
-            rhs: rhs_scalar,
-            scalar: true,
-            output_fhe_type: 5,
-            result,
-        },
+    let result = current_bound_binary_handle(
+        &svm,
+        FheBinaryOpCode::Add,
+        lhs,
+        rhs_scalar,
+        true,
+        5,
+        nonce_key,
+        1,
     );
-    let allow_ix = anchor_ix(
+
+    let compute_and_bind_ix = anchor_ix(
         program_id,
-        host::accounts::BindComputedBinaryOutput {
+        host::accounts::FheBinaryOpAndBindOutput {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
             app_account_authority: app_account,
@@ -340,7 +300,7 @@ fn fhe_binary_op_scalar_rhs_skips_rhs_acl_but_encrypted_rhs_requires_it() {
             event_authority: event_authority(program_id),
             program: program_id,
         },
-        host::instruction::BindComputedBinaryOutput {
+        host::instruction::FheBinaryOpAndBindOutput {
             op: FheBinaryOpCode::Add,
             lhs,
             rhs: rhs_scalar,
@@ -361,7 +321,7 @@ fn fhe_binary_op_scalar_rhs_skips_rhs_acl_but_encrypted_rhs_requires_it() {
 
     let mut cleartext = CleartextBackend::default();
     cleartext.seed_cleartext(lhs, TypedClearValue::uint64(10));
-    let (meta, account_keys) = send_many_with_meta(&mut svm, &payer, vec![scalar_ix, allow_ix]);
+    let (meta, account_keys) = send_with_meta(&mut svm, &payer, compute_and_bind_ix);
     cleartext
         .ingest_transaction(&meta, &account_keys, program_id)
         .unwrap();
@@ -455,7 +415,7 @@ fn fhe_binary_op_does_not_create_durable_acl_without_allow_step() {
 }
 
 #[test]
-fn bind_computed_binary_output_rejects_wrong_result_handle() {
+fn fhe_binary_op_and_bind_output_rejects_wrong_result_handle() {
     let program_id = host::id();
     let mut svm = svm_with_program(program_id, host_program_so_path());
     let payer = svm.create_funded_account(1_000_000_000).unwrap();
@@ -483,7 +443,7 @@ fn bind_computed_binary_output_rejects_wrong_result_handle() {
 
     let ix = anchor_ix(
         program_id,
-        host::accounts::BindComputedBinaryOutput {
+        host::accounts::FheBinaryOpAndBindOutput {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
             app_account_authority: app_account,
@@ -494,7 +454,7 @@ fn bind_computed_binary_output_rejects_wrong_result_handle() {
             event_authority: event_authority(program_id),
             program: program_id,
         },
-        host::instruction::BindComputedBinaryOutput {
+        host::instruction::FheBinaryOpAndBindOutput {
             op: FheBinaryOpCode::Add,
             lhs,
             rhs: rhs_scalar,
@@ -518,106 +478,101 @@ fn bind_computed_binary_output_rejects_wrong_result_handle() {
 }
 
 #[test]
-fn bind_acl_record_cannot_rebind_existing_acl_record() {
+fn fhe_binary_op_and_bind_output_domain_separates_result_by_acl_nonce() {
     let program_id = host::id();
     let mut svm = svm_with_program(program_id, host_program_so_path());
     let payer = svm.create_funded_account(1_000_000_000).unwrap();
-    let app_account_authority = Keypair::new();
+    let dummy_rhs_account = svm.create_funded_account(1_000_000).unwrap();
 
     let acl_domain_key = Pubkey::new_unique();
-    let app_account = app_account_authority.pubkey();
+    let app_account = payer.pubkey();
     let encrypted_value_label = label("balance");
     let nonce_key = token::nonce_key(acl_domain_key, app_account, encrypted_value_label);
-    let nonce_sequence = 42;
-    let subject = payer.pubkey();
-    let original_handle = [9; 32];
-    let replacement_handle = [7; 32];
-    let acl_record = acl_record_address(program_id, nonce_key, nonce_sequence);
-    let authorizing_acl_record = seed_authorizing_acl_record(
+    let lhs = [7; 32];
+    let lhs_acl_record = seed_authorizing_acl_record(
         &mut svm,
         program_id,
         nonce_key,
-        nonce_sequence - 1,
+        0,
         acl_domain_key,
         app_account,
         encrypted_value_label,
-        original_handle,
+        lhs,
         payer.pubkey(),
     );
-
-    let build_ix = |handle| {
+    let rhs_scalar = amount_plaintext(5);
+    let first_output = acl_record_address(program_id, nonce_key, 1);
+    let second_output = acl_record_address(program_id, nonce_key, 2);
+    let build_ix = |output_acl_record, output_nonce_sequence| {
+        let result = current_bound_binary_handle(
+            &svm,
+            FheBinaryOpCode::Add,
+            lhs,
+            rhs_scalar,
+            true,
+            5,
+            nonce_key,
+            output_nonce_sequence,
+        );
         anchor_ix(
             program_id,
-            host::accounts::BindAclRecord {
+            host::accounts::FheBinaryOpAndBindOutput {
                 payer: payer.pubkey(),
-                authority: payer.pubkey(),
+                compute_subject: payer.pubkey(),
                 app_account_authority: app_account,
-                authorizing_acl_record,
-                acl_record,
+                lhs_acl_record,
+                rhs_acl_record: dummy_rhs_account.pubkey(),
+                output_acl_record,
                 system_program: system_program::ID,
                 event_authority: event_authority(program_id),
                 program: program_id,
             },
-            host::instruction::BindAclRecord {
-                nonce_key,
-                nonce_sequence,
-                acl_domain_key,
-                app_account,
-                encrypted_value_label,
-                handle,
-                subjects: vec![AclSubjectEntry { pubkey: subject }],
-                public_decrypt: false,
+            host::instruction::FheBinaryOpAndBindOutput {
+                op: FheBinaryOpCode::Add,
+                lhs,
+                rhs: rhs_scalar,
+                scalar: true,
+                output_fhe_type: 5,
+                result,
+                output_nonce_key: nonce_key,
+                output_nonce_sequence,
+                output_acl_domain_key: acl_domain_key,
+                output_app_account: app_account,
+                output_encrypted_value_label: encrypted_value_label,
+                output_subjects: vec![AclSubjectEntry {
+                    pubkey: payer.pubkey(),
+                }],
+                output_public_decrypt: false,
             },
         )
     };
 
-    send_with_signers(
-        &mut svm,
-        &payer.pubkey(),
-        build_ix(original_handle),
-        &[&payer, &app_account_authority],
-    )
-    .unwrap();
+    let instructions = vec![build_ix(first_output, 1), build_ix(second_output, 2)];
+    send_many_with_signers(&mut svm, &payer.pubkey(), instructions, &[&payer]).unwrap();
 
-    assert!(
-        send_with_signers(
-            &mut svm,
-            &payer.pubkey(),
-            build_ix(replacement_handle),
-            &[&payer, &app_account_authority],
-        )
-        .is_err(),
-        "Anchor init must reject rebinding an existing ACL record"
-    );
-
-    let record = read_acl_record(&svm, acl_record).expect("expected ACL record");
-    assert_eq!(record.handle, original_handle);
-    assert_eq!(record.nonce_key, nonce_key);
-    assert_eq!(record.nonce_sequence, nonce_sequence);
-    assert_eq!(record.acl_domain_key, acl_domain_key);
-    assert_eq!(record.app_account, app_account);
-    assert_eq!(record.encrypted_value_label, encrypted_value_label);
-    assert_eq!(record_subjects(&record), vec![subject]);
-    assert!(!record.public_decrypt);
+    let first = read_acl_record(&svm, first_output).expect("expected first output ACL");
+    let second = read_acl_record(&svm, second_output).expect("expected second output ACL");
+    assert_ne!(first.handle, second.handle);
+    assert_eq!(first.nonce_sequence, 1);
+    assert_eq!(second.nonce_sequence, 2);
 }
 
 #[test]
-fn bind_acl_record_rejects_app_account_without_matching_authority() {
+fn allow_acl_subjects_rejects_wrong_handle() {
     let program_id = host::id();
     let mut svm = svm_with_program(program_id, host_program_so_path());
     let payer = svm.create_funded_account(1_000_000_000).unwrap();
 
     let acl_domain_key = Pubkey::new_unique();
-    let app_account = Pubkey::new_unique();
+    let app_account = payer.pubkey();
     let encrypted_value_label = label("balance");
     let nonce_key = token::nonce_key(acl_domain_key, app_account, encrypted_value_label);
-    let acl_record = acl_record_address(program_id, nonce_key, 0);
     let handle = [9; 32];
-    let authorizing_acl_record = seed_authorizing_acl_record(
+    let acl_record = seed_authorizing_acl_record(
         &mut svm,
         program_id,
         nonce_key,
-        1,
+        0,
         acl_domain_key,
         app_account,
         encrypted_value_label,
@@ -626,98 +581,68 @@ fn bind_acl_record_rejects_app_account_without_matching_authority() {
     );
     let ix = anchor_ix(
         program_id,
-        host::accounts::BindAclRecord {
-            payer: payer.pubkey(),
+        host::accounts::AllowAclSubjects {
             authority: payer.pubkey(),
-            app_account_authority: payer.pubkey(),
-            authorizing_acl_record,
             acl_record,
-            system_program: system_program::ID,
             event_authority: event_authority(program_id),
             program: program_id,
         },
-        host::instruction::BindAclRecord {
-            nonce_key,
-            nonce_sequence: 0,
-            acl_domain_key,
-            app_account,
-            encrypted_value_label,
-            handle,
+        host::instruction::AllowAclSubjects {
+            handle: [7; 32],
             subjects: vec![AclSubjectEntry {
                 pubkey: payer.pubkey(),
             }],
-            public_decrypt: false,
         },
     );
 
     assert!(try_send(&mut svm, &payer, ix).is_err());
+    let record = read_acl_record(&svm, acl_record).expect("expected ACL record");
+    assert_eq!(record_subjects(&record), vec![payer.pubkey()]);
 }
 
 #[test]
-fn bind_acl_record_rejects_handle_laundering_by_unallowed_authority() {
+fn allow_acl_subjects_rejects_unallowed_authority() {
     let program_id = host::id();
     let mut svm = svm_with_program(program_id, host_program_so_path());
     let alice = Keypair::new();
     let mallory = svm.create_funded_account(1_000_000_000).unwrap();
-    let mallory_app_account = Keypair::new();
 
     let acl_domain_key = Pubkey::new_unique();
+    let app_account = Pubkey::new_unique();
     let encrypted_value_label = label("balance");
     let handle = [7; 32];
-    let source_app_account = Pubkey::new_unique();
-    let source_nonce_key =
-        token::nonce_key(acl_domain_key, source_app_account, encrypted_value_label);
-    let authorizing_acl_record = seed_authorizing_acl_record(
+    let nonce_key = token::nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let acl_record = seed_authorizing_acl_record(
         &mut svm,
         program_id,
-        source_nonce_key,
+        nonce_key,
         0,
         acl_domain_key,
-        source_app_account,
+        app_account,
         encrypted_value_label,
         handle,
         alice.pubkey(),
     );
 
-    let target_nonce_key = token::nonce_key(
-        acl_domain_key,
-        mallory_app_account.pubkey(),
-        encrypted_value_label,
-    );
-    let target_acl_record = acl_record_address(program_id, target_nonce_key, 0);
     let ix = anchor_ix(
         program_id,
-        host::accounts::BindAclRecord {
-            payer: mallory.pubkey(),
+        host::accounts::AllowAclSubjects {
             authority: mallory.pubkey(),
-            app_account_authority: mallory_app_account.pubkey(),
-            authorizing_acl_record,
-            acl_record: target_acl_record,
-            system_program: system_program::ID,
+            acl_record,
             event_authority: event_authority(program_id),
             program: program_id,
         },
-        host::instruction::BindAclRecord {
-            nonce_key: target_nonce_key,
-            nonce_sequence: 0,
-            acl_domain_key,
-            app_account: mallory_app_account.pubkey(),
-            encrypted_value_label,
+        host::instruction::AllowAclSubjects {
             handle,
             subjects: vec![AclSubjectEntry {
                 pubkey: mallory.pubkey(),
             }],
-            public_decrypt: false,
         },
     );
 
-    assert!(send_with_signers(
-        &mut svm,
-        &mallory.pubkey(),
-        ix,
-        &[&mallory, &mallory_app_account],
-    )
-    .is_err());
+    assert!(try_send(&mut svm, &mallory, ix).is_err());
+    let record = read_acl_record(&svm, acl_record).expect("expected ACL record");
+    assert_eq!(record_subjects(&record), vec![alice.pubkey()]);
 }
 
 #[test]
@@ -1911,6 +1836,39 @@ fn current_binary_handle(
     )
 }
 
+fn current_bound_binary_handle(
+    svm: &LiteSVM,
+    op: FheBinaryOpCode,
+    lhs: [u8; 32],
+    rhs: [u8; 32],
+    scalar: bool,
+    fhe_type: u8,
+    output_nonce_key: [u8; 32],
+    output_nonce_sequence: u64,
+) -> [u8; 32] {
+    let clock: Clock = svm.get_sysvar();
+    let previous_bank_hash = clock
+        .slot
+        .checked_sub(1)
+        .and_then(|slot| {
+            let slot_hashes: SlotHashes = svm.get_sysvar();
+            slot_hashes.get(&slot).map(|hash| hash.to_bytes())
+        })
+        .unwrap_or([0; 32]);
+    host::computed_bound_binary_handle(
+        op,
+        lhs,
+        rhs,
+        scalar,
+        fhe_type,
+        host::SOLANA_POC_CHAIN_ID,
+        previous_bank_hash,
+        clock.unix_timestamp,
+        output_nonce_key,
+        output_nonce_sequence,
+    )
+}
+
 fn wrap_usdc_ix(fixture: &TokenFixture, output: WrapOutputAccounts, amount: u64) -> Instruction {
     anchor_ix(
         fixture.token_program_id,
@@ -2371,17 +2329,6 @@ fn send_with_meta(
 ) -> (TransactionMetadata, Vec<Pubkey>) {
     let message =
         Message::new_with_blockhash(&[ix], Some(&payer.pubkey()), &svm.latest_blockhash());
-    let account_keys = message.account_keys.clone();
-    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(message), &[payer]).unwrap();
-    (svm.send_transaction(tx).unwrap(), account_keys)
-}
-
-fn send_many_with_meta(
-    svm: &mut LiteSVM,
-    payer: &Keypair,
-    ixs: Vec<Instruction>,
-) -> (TransactionMetadata, Vec<Pubkey>) {
-    let message = Message::new_with_blockhash(&ixs, Some(&payer.pubkey()), &svm.latest_blockhash());
     let account_keys = message.account_keys.clone();
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(message), &[payer]).unwrap();
     (svm.send_transaction(tx).unwrap(), account_keys)

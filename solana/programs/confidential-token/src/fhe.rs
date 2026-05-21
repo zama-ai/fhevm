@@ -1,7 +1,7 @@
 use anchor_lang::{prelude::*, AccountDeserialize};
 use zama_host::{
     cpi,
-    cpi::accounts::{BindComputedBinaryOutput, FheBinaryOp, TrivialEncryptAndBind},
+    cpi::accounts::{FheBinaryOpAndBindOutput, TrivialEncryptAndBind},
     program::ZamaHost,
     AclSubjectEntry, FheBinaryOpCode,
 };
@@ -54,38 +54,20 @@ fn binary_op<'info>(op: FheBinaryOpCode, request: BinaryOp<'_, 'info>) -> Result
         &app_account_bump,
     ];
     let signer_seeds: &[&[&[u8]]] = &[compute_signer_seeds, app_account_seeds];
-    let result = zama_host::computed_binary_handle_for_current_slot(
+    let result = zama_host::computed_bound_binary_handle_for_current_slot(
         op,
         request.lhs,
         request.rhs,
         request.scalar,
         request.output_fhe_type,
+        request.output_nonce_key,
+        request.output_nonce_sequence,
     )?;
 
-    cpi::fhe_binary_op(
+    cpi::fhe_binary_op_and_bind_output(
         CpiContext::new_with_signer(
             request.zama_program.key(),
-            FheBinaryOp {
-                compute_subject: request.compute_signer.to_account_info(),
-                lhs_acl_record: request.lhs_acl_record.clone(),
-                rhs_acl_record: request.rhs_acl_record.clone(),
-                event_authority: request.event_authority.to_account_info(),
-                program: request.zama_program.to_account_info(),
-            },
-            signer_seeds,
-        ),
-        op,
-        request.lhs,
-        request.rhs,
-        request.scalar,
-        request.output_fhe_type,
-        result,
-    )?;
-
-    cpi::bind_computed_binary_output(
-        CpiContext::new_with_signer(
-            request.zama_program.key(),
-            BindComputedBinaryOutput {
+            FheBinaryOpAndBindOutput {
                 payer: request.payer.to_account_info(),
                 compute_subject: request.compute_signer.to_account_info(),
                 app_account_authority: request.app_account_authority.to_account_info(),
