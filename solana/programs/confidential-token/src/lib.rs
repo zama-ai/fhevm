@@ -176,6 +176,9 @@ pub mod confidential_token {
             compute_signer,
             ConfidentialTokenError::ComputeSignerMismatch
         );
+        if from.owner == to.owner && from.mint == to.mint {
+            return Ok(());
+        }
 
         let new_from_handle = compute_binary_op(
             &ctx.accounts.owner,
@@ -406,6 +409,7 @@ fn compute_binary_op<'info>(
         rhs_acl_record,
         rhs,
         output_acl_record,
+        output_fhe_type: BALANCE_FHE_TYPE,
         acl_domain_key: mint,
         compute_signer_bump,
         system_program,
