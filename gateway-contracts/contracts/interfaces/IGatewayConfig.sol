@@ -337,14 +337,6 @@ interface IGatewayConfig {
     error InputVerificationMustBePaused();
 
     /**
-     * @notice Error emitted when an admin operation requires `Decryption` to be paused first.
-     * @dev KMS-context mutators (`updateKmsContext`, `destroyKmsContext`) and per-context
-     *      threshold setters race against decryption requests pinned to the affected context;
-     *      the contract must be paused first to drain in-flight requests.
-     */
-    error DecryptionMustBePaused();
-
-    /**
      * @notice Error emitted when the KMS context ID is not strictly greater than the current one.
      * @param contextId The provided context ID.
      * @param currentKmsContextId The current KMS context ID.
@@ -386,9 +378,8 @@ interface IGatewayConfig {
 
     /**
      * @notice Update the KMS context: nodes and thresholds for a given context ID.
-     * @dev Requires `Decryption` to be paused first — shifting `currentKmsContextId` changes the
-     *      context that new requests with empty extraData get pinned to, and the operator must
-     *      first drain any in-flight requests pinned to the outgoing context.
+     * @dev ⚠️ This function should be used with caution as it can lead to unexpected behavior in
+     * some requests and the contracts should first be paused. It will be deprecated in the future.
      * @param newContextId The new context ID to associate with the KMS nodes.
      * @param newKmsNodes The new KMS nodes.
      * @param newMpcThreshold The new MPC threshold.
@@ -410,11 +401,6 @@ interface IGatewayConfig {
      * @dev Once destroyed, the context's signers and tx senders are reported as not registered by
      *      `isKmsSignerForContext` / `isKmsTxSenderForContext`, and `getKmsNodeForContext` returns
      *      the zero `KmsNode`. The current context cannot be destroyed.
-     *
-     *      Requires `Decryption` to be paused first — any in-flight request pinned to the
-     *      destroyed context becomes permanently unresolvable (its response handler reverts at
-     *      `_requireValidContext`) and the prepaid fee is unrecoverable, so the operator must
-     *      drain pinned requests before destroying.
      * @param kmsContextId The non-current KMS context to destroy.
      */
     function destroyKmsContext(uint256 kmsContextId) external;
@@ -438,9 +424,9 @@ interface IGatewayConfig {
     /**
      * @notice Update the MPC threshold for a given KMS context.
      * @dev The new threshold must verify `0 <= t < n`, with `n` the number of KMS nodes registered
-     *      for the given context. Requires `Decryption` to be paused first — changing the threshold
-     *      of any non-destroyed context affects in-flight decryption requests pinned to that context
-     *      (they may fail to reach the new threshold or reach it earlier than originally configured).
+     *      for the given context. Updating the *current* KMS context's threshold can affect in-flight
+     *      decryption requests pinned to that context (they may fail to reach the new threshold or
+     *      reach it earlier than originally configured); the operator should ensure timing accordingly.
      * @param contextId The KMS context to update.
      * @param newMpcThreshold The new MPC threshold.
      */
@@ -449,8 +435,8 @@ interface IGatewayConfig {
     /**
      * @notice Update the public decryption threshold for a given KMS context.
      * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of KMS nodes registered
-     *      for the given context. Requires `Decryption` to be paused first — changing the threshold
-     *      of any non-destroyed context affects in-flight decryption requests pinned to that context.
+     *      for the given context. Updating the *current* KMS context's threshold can affect in-flight
+     *      decryption requests pinned to that context; the operator should ensure timing accordingly.
      * @param contextId The KMS context to update.
      * @param newPublicDecryptionThreshold The new public decryption threshold.
      */
@@ -462,8 +448,8 @@ interface IGatewayConfig {
     /**
      * @notice Update the user decryption threshold for a given KMS context.
      * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of KMS nodes registered
-     *      for the given context. Requires `Decryption` to be paused first — changing the threshold
-     *      of any non-destroyed context affects in-flight decryption requests pinned to that context.
+     *      for the given context. Updating the *current* KMS context's threshold can affect in-flight
+     *      decryption requests pinned to that context; the operator should ensure timing accordingly.
      * @param contextId The KMS context to update.
      * @param newUserDecryptionThreshold The new user decryption threshold.
      */
@@ -472,8 +458,8 @@ interface IGatewayConfig {
     /**
      * @notice Update the key and CRS generation threshold for a given KMS context.
      * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of KMS nodes registered
-     *      for the given context. Requires `Decryption` to be paused first — kept symmetric with the
-     *      other per-context threshold setters so the operator runbook has a single drain step.
+     *      for the given context. Updating the *current* KMS context's threshold can affect in-flight
+     *      key/CRS generation requests pinned to that context; the operator should ensure timing accordingly.
      * @param contextId The KMS context to update.
      * @param newKmsGenThreshold The new key and CRS generation threshold.
      */

@@ -559,7 +559,6 @@ describe("GatewayConfig", function () {
 
   describe("After deployment", function () {
     let gatewayConfig: GatewayConfig;
-    let decryption: Decryption;
     let inputVerification: InputVerification;
     let owner: Wallet;
     let pauser: Wallet;
@@ -583,7 +582,6 @@ describe("GatewayConfig", function () {
     beforeEach(async function () {
       const fixture = await loadFixture(getInputsForDeployFixture);
       gatewayConfig = fixture.gatewayConfig;
-      decryption = fixture.decryption;
       inputVerification = fixture.inputVerification;
       owner = fixture.owner;
       pauser = fixture.pauser;
@@ -612,12 +610,7 @@ describe("GatewayConfig", function () {
       const newSignerAddress = createRandomAddress();
 
       describe("KMS nodes updates", function () {
-        beforeEach(async function () {
-          await decryption.connect(pauser).pause();
-        });
-
         it("Should update the KMS nodes", async function () {
-
           const newKmsNode: KmsNodeStruct = {
             txSenderAddress: newTxSenderAddress,
             signerAddress: newSignerAddress,
@@ -940,22 +933,12 @@ describe("GatewayConfig", function () {
           expect(await gatewayConfig.getPublicDecryptionThresholdForContext(nextKmsContextId)).to.equal(1);
           expect(await gatewayConfig.getUserDecryptionThresholdForContext(nextKmsContextId)).to.equal(1);
         });
-
-        it("Should revert because Decryption is not paused", async function () {
-          // Rewrite KMS-context consensus state without first pausing Decryption.
-          await decryption.connect(owner).unpause();
-          await expect(
-            gatewayConfig.connect(owner).updateKmsContext(nextKmsContextId, kmsNodes, 0, 1, 1, 1),
-          ).to.be.revertedWithCustomError(gatewayConfig, "DecryptionMustBePaused");
-        });
       });
 
       describe("KMS context destruction", function () {
         let initialKmsContextId: bigint;
 
         beforeEach(async function () {
-          // destroyKmsContext / updateKmsContext now require Decryption to be paused.
-          await decryption.connect(pauser).pause();
           initialKmsContextId = await gatewayConfig.getCurrentKmsContextId();
           // Rotate to a new context so the initial one becomes non-current and can be destroyed.
           await gatewayConfig.connect(owner).updateKmsContext(nextKmsContextId, kmsNodes, 0, 1, 1, 1);
@@ -1019,14 +1002,6 @@ describe("GatewayConfig", function () {
             .to.be.revertedWithCustomError(gatewayConfig, "InvalidKmsContext")
             .withArgs(initialKmsContextId);
         });
-
-        it("Should revert because Decryption is not paused", async function () {
-          // Destroy the previously-rotated-out context without first pausing Decryption.
-          await decryption.connect(owner).unpause();
-          await expect(
-            gatewayConfig.connect(owner).destroyKmsContext(initialKmsContextId),
-          ).to.be.revertedWithCustomError(gatewayConfig, "DecryptionMustBePaused");
-        });
       });
 
       describe("isValidKmsContext", function () {
@@ -1042,8 +1017,6 @@ describe("GatewayConfig", function () {
 
         it("Should return false for a destroyed KMS context", async function () {
           const initialKmsContextId = await gatewayConfig.getCurrentKmsContextId();
-          // updateKmsContext / destroyKmsContext require Decryption to be paused.
-          await decryption.connect(pauser).pause();
           // Rotate so the initial context becomes non-current and destructible.
           await gatewayConfig.connect(owner).updateKmsContext(nextKmsContextId, kmsNodes, 0, 1, 1, 1);
           await gatewayConfig.connect(owner).destroyKmsContext(initialKmsContextId);
@@ -1363,11 +1336,6 @@ describe("GatewayConfig", function () {
     });
 
     describe("Update MPC threshold", function () {
-      beforeEach(async function () {
-        // Per-context threshold setters now require Decryption to be paused.
-        await decryption.connect(pauser).pause();
-      });
-
       it("Should revert because the sender is not the owner", async function () {
         const currentContextId = await gatewayConfig.getCurrentKmsContextId();
         await expect(gatewayConfig.connect(fakeOwner).updateMpcThresholdForContext(currentContextId, 1))
@@ -1410,21 +1378,9 @@ describe("GatewayConfig", function () {
           .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighMpcThreshold")
           .withArgs(highMpcThreshold, nKmsNodes);
       });
-
-      it("Should revert because Decryption is not paused", async function () {
-        const currentContextId = await gatewayConfig.getCurrentKmsContextId();
-        await decryption.connect(owner).unpause();
-        await expect(
-          gatewayConfig.connect(owner).updateMpcThresholdForContext(currentContextId, 0),
-        ).to.be.revertedWithCustomError(gatewayConfig, "DecryptionMustBePaused");
-      });
     });
 
     describe("Update public decryption threshold", function () {
-      beforeEach(async function () {
-        await decryption.connect(pauser).pause();
-      });
-
       it("Should revert because the sender is not the owner", async function () {
         const currentContextId = await gatewayConfig.getCurrentKmsContextId();
         await expect(gatewayConfig.connect(fakeOwner).updatePublicDecryptionThresholdForContext(currentContextId, 1))
@@ -1490,21 +1446,9 @@ describe("GatewayConfig", function () {
           .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighPublicDecryptionThreshold")
           .withArgs(highPublicDecryptionThreshold, nKmsNodes);
       });
-
-      it("Should revert because Decryption is not paused", async function () {
-        const currentContextId = await gatewayConfig.getCurrentKmsContextId();
-        await decryption.connect(owner).unpause();
-        await expect(
-          gatewayConfig.connect(owner).updatePublicDecryptionThresholdForContext(currentContextId, 1),
-        ).to.be.revertedWithCustomError(gatewayConfig, "DecryptionMustBePaused");
-      });
     });
 
     describe("Update user decryption threshold", function () {
-      beforeEach(async function () {
-        await decryption.connect(pauser).pause();
-      });
-
       it("Should revert because the sender is not the owner", async function () {
         const currentContextId = await gatewayConfig.getCurrentKmsContextId();
         await expect(gatewayConfig.connect(fakeOwner).updateUserDecryptionThresholdForContext(currentContextId, 1))
@@ -1570,21 +1514,9 @@ describe("GatewayConfig", function () {
           .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighUserDecryptionThreshold")
           .withArgs(highUserDecryptionThreshold, nKmsNodes);
       });
-
-      it("Should revert because Decryption is not paused", async function () {
-        const currentContextId = await gatewayConfig.getCurrentKmsContextId();
-        await decryption.connect(owner).unpause();
-        await expect(
-          gatewayConfig.connect(owner).updateUserDecryptionThresholdForContext(currentContextId, 1),
-        ).to.be.revertedWithCustomError(gatewayConfig, "DecryptionMustBePaused");
-      });
     });
 
     describe("Update KMS generation threshold", function () {
-      beforeEach(async function () {
-        await decryption.connect(pauser).pause();
-      });
-
       it("Should revert because the sender is not the owner", async function () {
         const currentContextId = await gatewayConfig.getCurrentKmsContextId();
         await expect(gatewayConfig.connect(fakeOwner).updateKmsGenThresholdForContext(currentContextId, 1))
@@ -1639,14 +1571,6 @@ describe("GatewayConfig", function () {
         )
           .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighKmsGenThreshold")
           .withArgs(highKmsGenThreshold, nKmsNodes);
-      });
-
-      it("Should revert because Decryption is not paused", async function () {
-        const currentContextId = await gatewayConfig.getCurrentKmsContextId();
-        await decryption.connect(owner).unpause();
-        await expect(
-          gatewayConfig.connect(owner).updateKmsGenThresholdForContext(currentContextId, 1),
-        ).to.be.revertedWithCustomError(gatewayConfig, "DecryptionMustBePaused");
       });
     });
 

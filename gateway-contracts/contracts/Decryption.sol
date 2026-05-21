@@ -836,13 +836,7 @@ contract Decryption is
             if (extraData.length < 33) {
                 revert InvalidExtraDataLength(extraData.length, 33);
             }
-            contextId = uint256(bytes32(extraData[1:33]));
-            // Reject the all-zeros payload: contextId 0 is reserved for the pre-pinning
-            // legacy fallback and must not be reachable from caller-supplied extraData.
-            if (contextId == 0) {
-                revert InvalidNullContextId();
-            }
-            return contextId;
+            return uint256(bytes32(extraData[1:33]));
         }
 
         // Unsupported version
