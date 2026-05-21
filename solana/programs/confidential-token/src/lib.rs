@@ -1,11 +1,8 @@
-use anchor_lang::{prelude::*, AccountDeserialize};
+mod fhe;
+
+use anchor_lang::prelude::*;
 use anchor_spl::token::{self as spl_token, Mint as SplMint, Token, TokenAccount, TransferChecked};
-use zama_host::{
-    self, cpi,
-    cpi::accounts::{FheBinaryOp, TrivialEncryptAndBind},
-    program::ZamaHost,
-    AclSubjectEntry, FheBinaryOpCode,
-};
+use zama_host::{self, program::ZamaHost, AclSubjectEntry, FheBinaryOpCode};
 
 declare_id!("5GKzUSfqBSNjoVW83w3xPtTnAe84srZcDTBstpSoBCR4");
 
@@ -57,6 +54,7 @@ pub mod confidential_token {
             &ctx.accounts.zama_event_authority,
             &ctx.accounts.zama_program,
             &ctx.accounts.system_program,
+            ctx.bumps.compute_signer,
             0,
             initial_balance,
         )?;
@@ -107,22 +105,26 @@ pub mod confidential_token {
             mint.decimals,
         )?;
 
-        let amount_handle = trivial_encrypt_acl(
-            &ctx.accounts.owner,
-            mint,
-            &ctx.accounts.compute_signer,
-            token_account,
-            ctx.accounts.amount_compute_acl.to_account_info(),
-            &ctx.accounts.zama_event_authority,
-            &ctx.accounts.zama_program,
-            &ctx.accounts.system_program,
-            nonce_sequence,
-            amount,
-            wrap_amount_label(),
-            vec![AclSubjectEntry {
+        let amount_handle = fhe::trivial_encrypt_u64(fhe::TrivialEncryptU64 {
+            payer: &ctx.accounts.owner,
+            event_authority: &ctx.accounts.zama_event_authority,
+            zama_program: &ctx.accounts.zama_program,
+            compute_signer: &ctx.accounts.compute_signer,
+            app_account_authority: token_account,
+            output_acl_record: ctx.accounts.amount_compute_acl.to_account_info(),
+            acl_domain_key: mint.key(),
+            compute_signer_bump: ctx.bumps.compute_signer,
+            system_program: &ctx.accounts.system_program,
+            output_nonce_key: nonce_key(mint.key(), token_account.key(), wrap_amount_label()),
+            output_nonce_sequence: nonce_sequence,
+            output_encrypted_value_label: wrap_amount_label(),
+            plaintext: amount,
+            fhe_type: BALANCE_FHE_TYPE,
+            output_subjects: vec![AclSubjectEntry {
                 pubkey: compute_signer,
             }],
-        )?;
+            output_public_decrypt: false,
+        })?;
 
         let new_balance_handle = compute_binary_op(
             &ctx.accounts.owner,
@@ -391,46 +393,26 @@ fn compute_binary_op<'info>(
     system_program: &Program<'info, System>,
     output_nonce_sequence: u64,
 ) -> Result<[u8; 32]> {
-    let compute_bump = [compute_signer_bump];
-    let token_account_bump = [token_account.bump];
-    let compute_signer_seeds: &[&[u8]] = &[b"fhe-compute", mint.as_ref(), &compute_bump];
-    let token_account_seeds: &[&[u8]] = &[
-        b"token-account",
-        token_account.mint.as_ref(),
-        token_account.owner.as_ref(),
-        &token_account_bump,
-    ];
-    let signer_seeds: &[&[&[u8]]] = &[compute_signer_seeds, token_account_seeds];
-    let output_acl_record_for_read = output_acl_record.clone();
     let token_account_key = token_account.key();
-    let output_nonce_key = balance_nonce_key(mint, token_account_key);
-    cpi::fhe_binary_op(
-        CpiContext::new_with_signer(
-            zama_program.to_account_info(),
-            FheBinaryOp {
-                payer: payer.to_account_info(),
-                compute_subject: compute_signer.to_account_info(),
-                app_account_authority: token_account.to_account_info(),
-                lhs_acl_record,
-                rhs_acl_record,
-                output_acl_record,
-                system_program: system_program.to_account_info(),
-                event_authority: zama_event_authority.to_account_info(),
-                program: zama_program.to_account_info(),
-            },
-            signer_seeds,
-        ),
+    fhe::binary_op(fhe::BinaryOp {
+        payer,
+        event_authority: zama_event_authority,
+        zama_program,
+        compute_signer,
+        app_account_authority: token_account,
+        lhs_acl_record,
         op,
         lhs,
+        rhs_acl_record,
         rhs,
-        false,
-        lhs[30],
-        output_nonce_key,
+        output_acl_record,
+        acl_domain_key: mint,
+        compute_signer_bump,
+        system_program,
+        output_nonce_key: balance_nonce_key(mint, token_account_key),
         output_nonce_sequence,
-        mint,
-        token_account_key,
-        balance_label(),
-        vec![
+        output_encrypted_value_label: balance_label(),
+        output_subjects: vec![
             AclSubjectEntry {
                 pubkey: token_account.owner,
             },
@@ -438,19 +420,8 @@ fn compute_binary_op<'info>(
                 pubkey: compute_signer.key(),
             },
         ],
-        false,
-    )?;
-
-    let data = output_acl_record_for_read.try_borrow_data()?;
-    let mut data_slice: &[u8] = &data;
-    let record = zama_host::AclRecord::try_deserialize(&mut data_slice)?;
-    Ok(record.handle)
-}
-
-fn amount_to_plaintext(amount: u64) -> [u8; 32] {
-    let mut plaintext = [0_u8; 32];
-    plaintext[24..].copy_from_slice(&amount.to_be_bytes());
-    plaintext
+        output_public_decrypt: false,
+    })
 }
 
 fn trivial_encrypt_balance_acl<'info>(
@@ -462,22 +433,26 @@ fn trivial_encrypt_balance_acl<'info>(
     zama_event_authority: &UncheckedAccount<'info>,
     zama_program: &Program<'info, ZamaHost>,
     system_program: &Program<'info, System>,
+    compute_signer_bump: u8,
     nonce_sequence: u64,
     plaintext: u64,
 ) -> Result<[u8; 32]> {
-    trivial_encrypt_acl(
+    fhe::trivial_encrypt_u64(fhe::TrivialEncryptU64 {
         payer,
-        mint,
-        compute_signer,
-        token_account,
-        acl_record,
-        zama_event_authority,
+        event_authority: zama_event_authority,
         zama_program,
+        compute_signer,
+        app_account_authority: token_account,
+        output_acl_record: acl_record,
+        acl_domain_key: mint.key(),
+        compute_signer_bump,
         system_program,
-        nonce_sequence,
+        output_nonce_key: balance_nonce_key(mint.key(), token_account.key()),
+        output_nonce_sequence: nonce_sequence,
+        output_encrypted_value_label: balance_label(),
         plaintext,
-        balance_label(),
-        vec![
+        fhe_type: BALANCE_FHE_TYPE,
+        output_subjects: vec![
             AclSubjectEntry {
                 pubkey: token_account.owner,
             },
@@ -485,66 +460,8 @@ fn trivial_encrypt_balance_acl<'info>(
                 pubkey: compute_signer.key(),
             },
         ],
-    )
-}
-
-fn trivial_encrypt_acl<'info>(
-    payer: &Signer<'info>,
-    mint: &Account<'info, ConfidentialMint>,
-    compute_signer: &UncheckedAccount<'info>,
-    token_account: &Account<'info, ConfidentialTokenAccount>,
-    acl_record: AccountInfo<'info>,
-    zama_event_authority: &UncheckedAccount<'info>,
-    zama_program: &Program<'info, ZamaHost>,
-    system_program: &Program<'info, System>,
-    nonce_sequence: u64,
-    plaintext: u64,
-    encrypted_value_label: [u8; 32],
-    output_subjects: Vec<AclSubjectEntry>,
-) -> Result<[u8; 32]> {
-    let token_account_key = token_account.key();
-    let mint_key = mint.key();
-    let nonce_key = nonce_key(mint.key(), token_account_key, encrypted_value_label);
-    let compute_bump = [compute_signer_address(mint_key).1];
-    let token_account_bump = [token_account.bump];
-    let compute_signer_seeds: &[&[u8]] = &[b"fhe-compute", mint_key.as_ref(), &compute_bump];
-    let token_account_seeds: &[&[u8]] = &[
-        b"token-account",
-        token_account.mint.as_ref(),
-        token_account.owner.as_ref(),
-        &token_account_bump,
-    ];
-    let signer_seeds: &[&[&[u8]]] = &[compute_signer_seeds, token_account_seeds];
-    let output_acl_record_for_read = acl_record.clone();
-    cpi::trivial_encrypt_and_bind(
-        CpiContext::new_with_signer(
-            zama_program.to_account_info(),
-            TrivialEncryptAndBind {
-                payer: payer.to_account_info(),
-                compute_subject: compute_signer.to_account_info(),
-                app_account_authority: token_account.to_account_info(),
-                output_acl_record: acl_record,
-                system_program: system_program.to_account_info(),
-                event_authority: zama_event_authority.to_account_info(),
-                program: zama_program.to_account_info(),
-            },
-            signer_seeds,
-        ),
-        amount_to_plaintext(plaintext),
-        BALANCE_FHE_TYPE,
-        nonce_key,
-        nonce_sequence,
-        mint.key(),
-        token_account_key,
-        encrypted_value_label,
-        output_subjects,
-        false,
-    )?;
-
-    let data = output_acl_record_for_read.try_borrow_data()?;
-    let mut data_slice: &[u8] = &data;
-    let record = zama_host::AclRecord::try_deserialize(&mut data_slice)?;
-    Ok(record.handle)
+        output_public_decrypt: false,
+    })
 }
 
 pub fn compute_signer_address(mint: Pubkey) -> (Pubkey, u8) {

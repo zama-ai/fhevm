@@ -22,9 +22,11 @@ solana/programs/zama-host
 solana/programs/confidential-token
   App-side PoC program.
   Models a minimal confidential token / cUSDC wrapper.
+  Its local fhe.rs module is the current dev-facing wrapper around raw ZamaHost CPI calls.
 
 solana/runtime-tests
   Fast LiteSVM tests for Solana accounts, PDAs, CPI, events, and ACL behavior.
+  tests/support/fhe_runtime.rs adds a cleartext backend that consumes real ZamaHost events.
 
 coprocessor/fhevm-engine/host-listener/src/solana_adapter.rs
   Maps typed Solana host events into the existing coprocessor DB model.
@@ -124,6 +126,10 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
       EVM rule that only an allowed caller can grant durable access.
 - [x] Token account initialization creates the initial balance handle through a host-owned
       `trivial_encrypt_and_bind` path, not through caller-supplied handle binding.
+- [x] Runtime tests include a cleartext FHE backend that consumes emitted ZamaHost events and checks
+      the plaintext semantics of transfer and wrap flows.
+- [x] Confidential token uses a small `fhe` helper module so app logic calls named FHE helpers
+      instead of hand-assembling raw Anchor CPI calls.
 - [x] Keyed-nonce ACL records avoid deriving Solana account addresses from opaque handles.
 - [x] User decrypt is modeled with signed authorization plus ACL record verification.
 - [x] Current and historical balance decrypt are both modeled when the relevant ACL record still
@@ -544,6 +550,31 @@ SPL amount. The wrapper now uses the host `trivial_encrypt_and_bind(...)` path s
 has durable ACL state before it is used by `fhe_binary_op`. Tests that need an encrypted-input shape
 can use the `mock_input_verified_and_bind(...)` short-circuit, but app flows should eventually use
 the final input path and the real ZKPoK/input verifier or transciphering boundary.
+
+## App-Side FHE Helper
+
+The confidential token program intentionally does not call raw generated ZamaHost CPI bindings from
+business logic. It goes through:
+
+```text
+solana/programs/confidential-token/src/fhe.rs
+```
+
+Current helper surface:
+
+```text
+fhe::trivial_encrypt_u64(...)
+  -> CPI zama-host::trivial_encrypt_and_bind(...)
+  -> returns the host-born output handle stored in the output ACL record
+
+fhe::binary_op(...)
+  -> CPI zama-host::fhe_binary_op(...)
+  -> checks operand ACL records inside ZamaHost
+  -> returns the host-born output handle stored in the output ACL record
+```
+
+This helper is still token-local. If the shape survives the PoC, it can become the seed for a shared
+Solana FHE app SDK.
 
 ## User Decrypt Shape
 
