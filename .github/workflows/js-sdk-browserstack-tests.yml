@@ -73,11 +73,13 @@ jobs:
                   DATE_FULL=$(date +%y%m%d.%H%M%S)
                   PACKAGE_VERSION=$(node -p "require('./sdk/js-sdk/package.json').version")
 
-                  echo "date_full=$DATE_FULL" >> "$GITHUB_OUTPUT"
-                  echo "package_version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
-                  echo "build_name=Tests executed at $DATE_FULL" >> "$GITHUB_OUTPUT"
-                  echo "project_name=FHEVM SDK v$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
-                  echo "local_identifier=my-zama-tunnel-${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
+                  {
+                    echo "date_full=$DATE_FULL"
+                    echo "package_version=$PACKAGE_VERSION"
+                    echo "build_name=Tests executed at $DATE_FULL"
+                    echo "project_name=FHEVM SDK v$PACKAGE_VERSION"
+                    echo "local_identifier=my-zama-tunnel-${GITHUB_RUN_ID}"
+                  } >> "$GITHUB_OUTPUT"
 
             - name: Build test matrix
               id: plan
@@ -160,9 +162,11 @@ jobs:
             - name: Set BrowserStack paths
               shell: bash
               run: |
-                  echo "BROWSERSTACK_HOME=$HOME/.browserstack" >> "$GITHUB_ENV"
-                  echo "BROWSERSTACK_SDK_LOGS_DIR=$GITHUB_WORKSPACE/${{ needs.prepare.outputs.sdk_logs_dir }}" >> "$GITHUB_ENV"
-                  echo "OBS_TEST_DETAILS_DIR=$GITHUB_WORKSPACE/${{ needs.prepare.outputs.obs_test_details_dir }}" >> "$GITHUB_ENV"
+                  {
+                    echo "BROWSERSTACK_HOME=$HOME/.browserstack"
+                    echo "BROWSERSTACK_SDK_LOGS_DIR=$GITHUB_WORKSPACE/${{ needs.prepare.outputs.sdk_logs_dir }}"
+                    echo "OBS_TEST_DETAILS_DIR=$GITHUB_WORKSPACE/${{ needs.prepare.outputs.obs_test_details_dir }}"
+                  } >> "$GITHUB_ENV"
 
             - name: Prepare BrowserStack SDK directories
               shell: bash
@@ -286,7 +290,7 @@ jobs:
             - name: Merge blob reports
               shell: bash
               run: |
-                  npx playwright merge-reports --reporter html $GITHUB_WORKSPACE/all-blob-reports
+                  npx playwright merge-reports --reporter html "$GITHUB_WORKSPACE/all-blob-reports"
 
             - name: Upload merged HTML report
               if: ${{ always() }}
