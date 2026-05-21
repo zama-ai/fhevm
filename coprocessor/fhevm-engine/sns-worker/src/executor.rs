@@ -507,6 +507,8 @@ pub async fn query_sns_tasks(
                 handle,
                 ct64_compressed: Arc::new(ciphertext),
                 ct128: Arc::new(BigCiphertext::default()), // to be computed
+                ct64_digest: None,
+                ct128_digest: None,
                 span: task_span,
                 transaction_id,
             })

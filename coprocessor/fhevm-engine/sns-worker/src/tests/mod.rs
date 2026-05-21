@@ -6,15 +6,19 @@ use crate::{
 };
 use alloy::node_bindings::Anvil;
 use alloy::signers::local::PrivateKeySigner;
+use alloy_primitives::{B256, U256};
 use anyhow::{anyhow, Ok};
 use aws_config::BehaviorVersion;
+use ciphertext_attestation::{CiphertextAttestation, S3_METADATA_ATTESTATION_KEY};
 use fhevm_engine_common::db_keys::DbKeyId;
 use fhevm_engine_common::utils::{to_hex, DatabaseURL};
 use serde::{Deserialize, Serialize};
 use serial_test::serial;
+use sqlx::Row;
 use std::{
     fs::File,
     io::{Read, Write},
+    str::FromStr,
     sync::{Arc, OnceLock},
     time::Duration,
 };
@@ -32,6 +36,7 @@ use tokio::{sync::mpsc, time::timeout};
 use tracing::{info, Level};
 
 const LISTEN_CHANNEL: &str = "sns_worker_chan";
+const COPROCESSOR_CONTEXT_ID: U256 = U256::ZERO;
 
 static TRACING_INIT: OnceLock<()> = OnceLock::new();
 
@@ -208,9 +213,9 @@ async fn run_batch_computations(
     let elapsed = start.elapsed();
     info!(elapsed = ?elapsed, batch_size, "Batch execution completed");
 
-    // Assert that all ciphertext128 objects are uploaded to S3
-    assert_ciphertext_s3_object_count(test_env, bucket128, 3 * batch_size as i64).await;
-    assert_ciphertext_s3_object_count(test_env, bucket64, 3 * batch_size as i64).await;
+    // Assert that all ciphertext objects are uploaded to S3
+    assert_ciphertext_s3_object_count(test_env, bucket128, 2 * batch_size as i64).await;
+    assert_ciphertext_s3_object_count(test_env, bucket64, batch_size as i64).await;
 
     anyhow::Result::<()>::Ok(())
 }
@@ -745,14 +750,23 @@ async fn assert_ciphertext128(
     {
         info!("Asserting ciphertext uploaded to S3");
 
+        let expected_ct_format = if with_compression {
+            crate::Ciphertext128Format::CompressedOnCpu
+        } else {
+            crate::Ciphertext128Format::UncompressedOnCpu
+        }
+        .to_string();
+
         assert_ciphertext_uploaded(
             test_env,
             &test_env.conf.s3.bucket_ct128,
             handle,
             Some(ct.len() as i64),
+            Some(&expected_ct_format),
         )
-        .await;
-        assert_ciphertext_uploaded(test_env, &test_env.conf.s3.bucket_ct64, handle, None).await;
+        .await?;
+        assert_ciphertext_uploaded(test_env, &test_env.conf.s3.bucket_ct64, handle, None, None)
+            .await?;
     }
 
     Ok(())
@@ -765,7 +779,8 @@ async fn assert_ciphertext_uploaded(
     bucket: &String,
     handle: &Vec<u8>,
     expected_ct_len: Option<i64>,
-) {
+    expected_ct_format: Option<&str>,
+) -> anyhow::Result<()> {
     s3_utils::assert_key_exists(
         test_env.s3_client.to_owned(),
         bucket,
@@ -774,6 +789,91 @@ async fn assert_ciphertext_uploaded(
         100,
     )
     .await;
+
+    let output = test_env
+        .s3_client
+        .head_object()
+        .bucket(bucket)
+        .key(hex::encode(handle))
+        .send()
+        .await
+        .expect("head ciphertext object");
+    let metadata = output.metadata().expect("ciphertext metadata");
+    let key_id = hex::encode(&test_env.key_id_gw);
+    let attestation_json = metadata
+        .get(S3_METADATA_ATTESTATION_KEY)
+        .expect("ciphertext object should include ct-attestation metadata");
+    let attestation: CiphertextAttestation = serde_json::from_str(attestation_json)?;
+    attestation.verify(B256::from_slice(handle), COPROCESSOR_CONTEXT_ID)?;
+
+    let row =
+        sqlx::query("SELECT ciphertext, ciphertext128 FROM ciphertext_digest WHERE handle = $1")
+            .bind(handle)
+            .fetch_one(&test_env.pool)
+            .await?;
+    let ciphertext_digest: Vec<u8> = row.try_get("ciphertext")?;
+    let sns_ciphertext_digest: Vec<u8> = row.try_get("ciphertext128")?;
+    let signer = PrivateKeySigner::from_str(&hex::encode(&test_env.private_key))?;
+
+    assert_eq!(
+        attestation.key_id,
+        U256::from_be_slice(&test_env.key_id_gw),
+        "attestation should include the expected key_id"
+    );
+    assert_eq!(
+        attestation.ciphertext_digest,
+        B256::from_slice(&ciphertext_digest),
+        "attestation should include the expected ct64 digest"
+    );
+    assert_eq!(
+        attestation.sns_ciphertext_digest,
+        B256::from_slice(&sns_ciphertext_digest),
+        "attestation should include the expected ct128 digest"
+    );
+    assert_eq!(
+        attestation.signer,
+        signer.address(),
+        "attestation should include the expected signer"
+    );
+    assert_eq!(
+        metadata.get("key-id"),
+        Some(&key_id),
+        "ciphertext object should include Key-Id metadata"
+    );
+    assert!(
+        metadata.contains_key("transaction-id"),
+        "ciphertext object should include Transaction-Id metadata"
+    );
+    assert!(
+        metadata.contains_key("signer"),
+        "ciphertext object should include Signer metadata"
+    );
+    if let Some(expected_ct_format) = expected_ct_format {
+        assert_eq!(
+            metadata.get("ct-format").map(String::as_str),
+            Some(expected_ct_format),
+            "ciphertext128 object should include Ct-Format metadata"
+        );
+
+        let digest_output = test_env
+            .s3_client
+            .head_object()
+            .bucket(bucket)
+            .key(hex::encode(&sns_ciphertext_digest))
+            .send()
+            .await
+            .expect("head ciphertext128 digest object");
+        let digest_metadata = digest_output
+            .metadata()
+            .expect("ciphertext128 digest object metadata");
+        assert_eq!(
+            digest_metadata.get("ct-format").map(String::as_str),
+            Some(expected_ct_format),
+            "ciphertext128 digest object should include Ct-Format metadata"
+        );
+    }
+
+    Ok(())
 }
 
 #[cfg(feature = "gpu")]
@@ -782,8 +882,10 @@ async fn assert_ciphertext_uploaded(
     _bucket: &String,
     _handle: &Vec<u8>,
     _expected_ct_len: Option<i64>,
-) {
+    _expected_ct_format: Option<&str>,
+) -> anyhow::Result<()> {
     // No-op when GPU feature is enabled
+    Ok(())
 }
 
 /// Asserts that the number of ciphertext128 objects in S3 matches the expected count

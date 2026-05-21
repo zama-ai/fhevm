@@ -2536,6 +2536,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ciphertext-attestation"
+version = "0.14.0"
+dependencies = [
+ "alloy-primitives 1.5.2",
+ "alloy-signer",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha3",
+ "thiserror 2.0.16",
+]
+
+[[package]]
 name = "clang-sys"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7227,10 +7240,12 @@ version = "0.7.0"
 dependencies = [
  "aligned-vec",
  "alloy",
+ "alloy-primitives 1.5.2",
  "anyhow",
  "aws-config",
  "aws-sdk-s3",
  "bytesize",
+ "ciphertext-attestation",
  "clap",
  "fhevm-engine-common",
  "futures",

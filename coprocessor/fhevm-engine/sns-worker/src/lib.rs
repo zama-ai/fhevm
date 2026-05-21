@@ -1,6 +1,5 @@
 mod aws_upload;
 mod executor;
-pub(crate) mod json_sidecar;
 mod keyset;
 mod squash_noise;
 
@@ -230,7 +229,7 @@ impl std::fmt::Display for Ciphertext128Format {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct HandleItem {
     pub host_chain_id: ChainId,
     pub key_id_gw: DbKeyId,
@@ -245,6 +244,9 @@ pub struct HandleItem {
 
     /// The computed 128-bit ciphertext
     pub(crate) ct128: Arc<BigCiphertext>,
+
+    pub(crate) ct64_digest: Option<Vec<u8>>,
+    pub(crate) ct128_digest: Option<Vec<u8>>,
 
     pub span: tracing::Span,
     pub transaction_id: Option<Vec<u8>>,
