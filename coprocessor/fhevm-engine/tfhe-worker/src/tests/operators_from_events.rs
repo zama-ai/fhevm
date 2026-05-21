@@ -1078,7 +1078,11 @@ async fn test_fhe_mul_div_events() -> Result<(), Box<dyn std::error::Error>> {
                     lhs: lhs_handle,
                     rhs: rhs_handle,
                     divisor: divisor_handle,
-                    scalarByte: alloy::primitives::FixedBytes([if scalar_rhs { 1u8 } else { 0u8 }]),
+                    scalarByte: alloy::primitives::FixedBytes([if scalar_rhs {
+                        0x03u8
+                    } else {
+                        0x01u8
+                    }]),
                     result: output,
                 }),
                 true,
