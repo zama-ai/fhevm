@@ -105,27 +105,27 @@ describe('Bridge', function () {
   });
 
   describe('ConfidentialBridge: destination-side governance', function () {
-    it('rejects grantFallbackPlainText from non-owner', async function () {
+    it('rejects grantFallbackPlaintext from non-owner', async function () {
       const dst = await makeDstHandle(0);
-      await expect(this.dstBridge.connect(this.signers.bob).grantFallbackPlainText(dst, 42n)).to.be.reverted;
+      await expect(this.dstBridge.connect(this.signers.bob).grantFallbackPlaintext(dst, 42n)).to.be.reverted;
     });
 
     it('reverts WrongChainIdInDstHandle when the handle encodes a different chain id', async function () {
       // Plain keccak256 has no chain-id metadata baked into bytes 22-29, so the
       // contract's chain-id check on the handle must reject it.
       const dst = ethers.keccak256(ethers.toUtf8Bytes('dst'));
-      await expect(this.dstBridge.connect(this.owner).grantFallbackPlainText(dst, 0n)).to.be.revertedWithCustomError(
+      await expect(this.dstBridge.connect(this.owner).grantFallbackPlaintext(dst, 0n)).to.be.revertedWithCustomError(
         this.dstBridge,
         'WrongChainIdInDstHandle',
       );
     });
 
-    it('emits FallbackGrantedPlainText when called by the owner', async function () {
+    it('emits FallbackGrantedPlaintext when called by the owner', async function () {
       const dst = await makeDstHandle(1);
-      const clearText = 42n;
-      await expect(this.dstBridge.connect(this.owner).grantFallbackPlainText(dst, clearText))
-        .to.emit(this.dstBridge, 'FallbackGrantedPlainText')
-        .withArgs(dst, clearText);
+      const plaintext = 42n;
+      await expect(this.dstBridge.connect(this.owner).grantFallbackPlaintext(dst, plaintext))
+        .to.emit(this.dstBridge, 'FallbackGrantedPlaintext')
+        .withArgs(dst, plaintext);
     });
   });
 
