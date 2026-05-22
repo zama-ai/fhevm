@@ -247,15 +247,42 @@ impl HandleItem {
         &self,
         db_txn: &mut Transaction<'_, Postgres>,
     ) -> Result<(), ExecutionError> {
-        sqlx::query!(
-            "INSERT INTO ciphertext_digest (tenant_id, handle, transaction_id)
-            VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
-            self.tenant_id,
-            self.handle,
-            self.transaction_id,
-        )
-        .execute(db_txn.as_mut())
-        .await?;
+        let ct128_format = self.ct128.format();
+
+        if self.ct128.is_empty() {
+            sqlx::query(
+                "INSERT INTO ciphertext_digest (tenant_id, handle, transaction_id)
+                VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+            )
+            .bind(self.tenant_id)
+            .bind(&self.handle)
+            .bind(&self.transaction_id)
+            .execute(db_txn.as_mut())
+            .await?;
+        } else if ct128_format == Ciphertext128Format::Unknown {
+            return Err(ExecutionError::InvalidCiphertext128Format(format!(
+                "non-empty ct128 has unknown format, tenant_id: {}, handle: {}",
+                self.tenant_id,
+                to_hex(&self.handle),
+            )));
+        } else {
+            let ct128_format: i16 = ct128_format.into();
+            sqlx::query(
+                "INSERT INTO ciphertext_digest (
+                    tenant_id, handle, transaction_id, ciphertext128_format
+                )
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (tenant_id, handle) DO UPDATE
+                SET ciphertext128_format = EXCLUDED.ciphertext128_format
+                WHERE ciphertext_digest.ciphertext128 IS NULL",
+            )
+            .bind(self.tenant_id)
+            .bind(&self.handle)
+            .bind(&self.transaction_id)
+            .bind(ct128_format)
+            .execute(db_txn.as_mut())
+            .await?;
+        }
 
         Ok(())
     }
@@ -358,6 +385,9 @@ pub enum ExecutionError {
 
     #[error("Deserialization error: {0}")]
     DeserializationError(String),
+
+    #[error("Invalid ciphertext128 format: {0}")]
+    InvalidCiphertext128Format(String),
 
     #[error("Bucket not found {0}")]
     BucketNotFound(String),

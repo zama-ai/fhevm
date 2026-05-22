@@ -4,7 +4,7 @@ use crate::{
     squash_noise::safe_deserialize,
     Config, DBConfig, S3Config, S3RetryPolicy, SchedulePolicy,
 };
-use anyhow::{anyhow, Ok};
+use anyhow::anyhow;
 use aws_config::BehaviorVersion;
 use fhevm_engine_common::utils::{to_hex, DatabaseURL};
 use serde::{Deserialize, Serialize};
@@ -25,8 +25,11 @@ use test_harness::{
 use tfhe::{
     prelude::FheDecrypt, ClientKey, CompressedSquashedNoiseCiphertextList, SquashedNoiseFheUint,
 };
-use tokio::{sync::mpsc, time::timeout};
-use tracing::{info, Level};
+use tokio::{
+    sync::mpsc,
+    time::{sleep, timeout},
+};
+use tracing::{info, warn, Level};
 
 const LISTEN_CHANNEL: &str = "sns_worker_chan";
 const TENANT_API_KEY: &str = "a1503fb6-d79b-4e9e-826d-44cf262f3e05";
@@ -509,19 +512,39 @@ async fn setup_localstack(
 }
 
 async fn recreate_bucket(s3_client: &aws_sdk_s3::Client, bucket_name: &str) -> anyhow::Result<()> {
-    s3_client
-        .delete_bucket()
-        .set_bucket(Some(bucket_name.to_string()))
-        .send()
-        .await
-        .ok(); // Ignore error if bucket does not exist
+    const MAX_ATTEMPTS: u8 = 30;
 
-    s3_client
-        .create_bucket()
-        .set_bucket(Some(bucket_name.to_string()))
-        .send()
-        .await
-        .expect("Failed to create bucket");
+    for attempt in 1..=MAX_ATTEMPTS {
+        s3_client
+            .delete_bucket()
+            .set_bucket(Some(bucket_name.to_string()))
+            .send()
+            .await
+            .ok(); // Ignore error if bucket does not exist or LocalStack is not ready yet.
+
+        match s3_client
+            .create_bucket()
+            .set_bucket(Some(bucket_name.to_string()))
+            .send()
+            .await
+        {
+            Ok(_) => return Ok(()),
+            Err(err) if attempt == MAX_ATTEMPTS => {
+                return Err(anyhow!(
+                    "Failed to create bucket {bucket_name} after {MAX_ATTEMPTS} attempts: {err}"
+                ));
+            }
+            Err(err) => {
+                warn!(
+                    bucket = bucket_name,
+                    attempt,
+                    error = %err,
+                    "Failed to create bucket, retrying"
+                );
+                sleep(Duration::from_secs(1)).await;
+            }
+        }
+    }
 
     Ok(())
 }
