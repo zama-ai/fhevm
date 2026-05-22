@@ -12,7 +12,7 @@ import {
   fheTypeIdFromName,
   clearTypeFromHandle,
   fheTypeIdFromHandle,
-  getBaseEnv,
+  prepareFheTestEnv,
 } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -66,7 +66,7 @@ async function delegateForUserDecryption(parameters: {
   const walletClient = createWalletClient({
     account: parameters.delegatorAccount,
     chain: parameters.publicClient.chain,
-    transport: http(getBaseEnv().rpcUrl),
+    transport: http(prepareFheTestEnv().rpcUrl),
   });
 
   const expirationDate = BigInt(Math.floor(Date.now() / 1000) + parameters.durationSeconds);

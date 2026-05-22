@@ -13,7 +13,7 @@ source "$SCRIPT_DIR/fhevm-lib.sh"
 fhevm_mnemonic_default="test test test test test test test future home engine virtual motion"
 fhevm_mnemonic_path="m/44'/60'/0'/0/0"
 chain_default="localcleartext"
-abi_v2_file="$SCRIPT_DIR/../../test/fheTest/fhe-test-addresses-v2.json"
+chain_defaults_file="$SCRIPT_DIR/../../test/fheTest/chains/chain-defaults.json"
 
 # ---- CLI parsing ----
 mnemonic_cli=""
@@ -65,17 +65,18 @@ fhevm_mnemonic="${mnemonic_cli:-${MNEMONIC:-$fhevm_mnemonic_default}}"
 chain="${chain_cli:-${CHAIN:-$chain_default}}"
 fhevm_assert_chain "$chain"
 
-# only chain="localcleartext|localstack" for the moment
+# Local-only chains. Any localstack* variant (localstack, localstack_v11,
+# localstack_v12, ...) is accepted — they share the FHETest deploy path.
 case "$chain" in
-    localcleartext|localstack) ;;
+    localcleartext|localstack|localstack_*) ;;
     *)
-        echo "❌ fhetest-deploy.sh only supports chains 'localcleartext|localstack'; got '$chain'" >&2
+        echo "❌ fhetest-deploy.sh only supports local chains 'localcleartext | localstack | localstack_*'; got '$chain'" >&2
         exit 1
         ;;
 esac
 
 # Derive RPC URL from the resolved chain via fhevm-lib.
-rpc_url="$(fhevm_rpc_url "$chain")"
+rpc_url="$(resolve_chain_rpc_url "$chain")"
 
 assert_is_anvil ${rpc_url}
 
@@ -159,10 +160,10 @@ echo "✅ FheTest:   ${fhe_test_addr}"
 
 # ==============================================================================
 #
-# ---- Validate abi-v2.ts addresses ----
+# ---- Validate chain-defaults.json fheTestAddress ----
 #
 # ==============================================================================
 
-assert_fhetest_address_in_abi_v2 "$chain" "$fhe_test_addr" "$abi_v2_file"
+assert_fhetest_address "$chain" "$fhe_test_addr" "$chain_defaults_file"
 
-echo "✅ abi-v2.ts FHETestAddresses match deployed address."
+echo "✅ chain-defaults.json fheTestAddress matches deployed address."

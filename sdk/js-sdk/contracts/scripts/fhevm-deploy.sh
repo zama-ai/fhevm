@@ -18,7 +18,7 @@ CONTRACTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "${CONTRACTS_DIR}"
 
-# load utils (fhevm_assert_chain, fhevm_rpc_url, is_anvil, ...)
+# load utils (fhevm_assert_chain, resolve_chain_rpc_url, is_anvil, ...)
 source "$SCRIPT_DIR/fhevm-lib.sh"
 
 # ==============================================================================
@@ -102,7 +102,7 @@ case "$chain" in
 esac
 
 # Derive RPC URL from the resolved chain via fhevm-lib.
-rpc_url="$(fhevm_rpc_url "$chain")"
+rpc_url="$(resolve_chain_rpc_url "$chain")"
 
 # Fail-fast: anvil must already be running at $rpc_url. is_anvil returns
 # non-zero both for "RPC unreachable" and "wrong client running" — both are

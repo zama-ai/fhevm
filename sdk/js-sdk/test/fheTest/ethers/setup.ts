@@ -1,8 +1,7 @@
 import type { FhevmChain } from '@fhevm/sdk/chains';
 import { ethers } from 'ethers';
-import { FHETestABI as FHETestABIv1 } from '../abi-v1.js';
-import { FHETestABI as FHETestABIv2 } from '../abi-v2.js';
-import { getBaseEnv, isV2, type FheTestBaseEnv, type FheTestChainName } from '../setupCommon.js';
+import { FHETestABI } from '../abi-v2.js';
+import { prepareFheTestEnv, type FheTestBaseEnv, type FheTestChainName } from '../setupCommon.js';
 
 // Re-export for convenience
 export type { FheTestChainName } from '../setupCommon.js';
@@ -35,7 +34,7 @@ export type FheTestEthersConfig = {
 // ---------------------------------------------------------------------------
 
 function buildConfig(): FheTestEthersConfig {
-  const env: FheTestBaseEnv = getBaseEnv();
+  const env: FheTestBaseEnv = prepareFheTestEnv();
 
   const provider = new ethers.JsonRpcProvider(env.rpcUrl);
   const wallet = ethers.HDNodeWallet.fromMnemonic(ethers.Mnemonic.fromPhrase(env.mnemonic));
@@ -45,9 +44,7 @@ function buildConfig(): FheTestEthersConfig {
   // Use a ethers.NonceManager to avoid nonce issues in parallel mode
   const signer = new ethers.NonceManager(wallet.connect(provider));
 
-  const fheTestContract = isV2(env.chainName)
-    ? new ethers.Contract(env.fheTestAddress, FHETestABIv2, signer)
-    : new ethers.Contract(env.fheTestAddress, FHETestABIv1, signer);
+  const fheTestContract = new ethers.Contract(env.fheTestAddress, FHETestABI, signer);
 
   // Use a ethers.NonceManager to avoid nonce issues in parallel mode
   const bobSigner = new ethers.NonceManager(bobWallet.connect(provider));

@@ -1,7 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { loadLocalstackEnv } from '../support/localstack.js';
+import { loadLocalstackChainDefaults } from '../support/chainDefaults.js';
 import { loadMatrix, selectMatrixEntries } from '../support/matrix.js';
 
 const matrix = loadMatrix();
@@ -11,8 +9,8 @@ const entries = selectMatrixEntries(matrix, {
   mode: process.env.MULTI_WASM_MODE,
   cdn: process.env.MULTI_WASM_CDN,
 });
-const localstackEnv = loadLocalstackEnv();
-const fheTestAddress = loadLocalstackFheTestAddress();
+const chainName = process.env.CHAIN ?? 'localstack';
+const { rpcUrl, mnemonic, fheTestAddress } = loadLocalstackChainDefaults(chainName);
 
 const ENTRY_PROGRESS_MILESTONES: readonly { readonly progress: number; readonly pattern: RegExp }[] = [
   { progress: 0.02, pattern: /^Matrix entry:/ },
@@ -51,7 +49,9 @@ for (const [entryIndex, entry] of entries.entries()) {
       kms: entry.versionPair.kms,
       mode: entry.wasmAssetLoadMode,
       cdn: entry.cdn,
-      rpcUrl: localstackEnv.rpcUrl,
+      chainName,
+      rpcUrl,
+      mnemonic,
       fheTestAddress,
     });
 
@@ -87,15 +87,4 @@ function createSuiteProgressPrinter(entryIndex: number, totalEntries: number): (
 
 function formatPercent(value: number): string {
   return `${value.toFixed(1).padStart(5)}%`;
-}
-
-function loadLocalstackFheTestAddress(): string {
-  const addressesPath = resolve(import.meta.dirname, '../../fheTest/fhe-test-addresses-v2.json');
-  const addresses = JSON.parse(readFileSync(addressesPath, 'utf-8')) as { readonly localstack?: string };
-
-  if (addresses.localstack === undefined || addresses.localstack === '') {
-    throw new Error(`Missing localstack FHETest address in ${addressesPath}`);
-  }
-
-  return addresses.localstack;
 }

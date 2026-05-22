@@ -1,0 +1,58 @@
+{
+  "localcleartext": {
+    "rpcUrl": "http://127.0.0.1:8544",
+    "mnemonic": "test test test test test test test future home engine virtual motion",
+    "fheTestAddress": "0x61a8e950161daCCA06b0b623Efa2b7237BaBD4a0",
+    "fheTestVersion": "v2"
+  },
+  "localstack": {
+    "rpcUrl": "http://localhost:8545",
+    "mnemonic": "test test test test test test test future home engine virtual motion",
+    "fheTestAddress": "0x61a8e950161daCCA06b0b623Efa2b7237BaBD4a0",
+    "fheTestVersion": "v2"
+  },
+  "localstack_v11": {
+    "rpcUrl": "http://localhost:8545",
+    "mnemonic": "test test test test test test test future home engine virtual motion",
+    "fheTestAddress": "0x61a8e950161daCCA06b0b623Efa2b7237BaBD4a0",
+    "fheTestVersion": "v2"
+  },
+  "localstack_v12": {
+    "rpcUrl": "http://localhost:8545",
+    "mnemonic": "test test test test test test test future home engine virtual motion",
+    "fheTestAddress": "0x61a8e950161daCCA06b0b623Efa2b7237BaBD4a0",
+    "fheTestVersion": "v2"
+  },
+  "localstack_v13": {
+    "rpcUrl": "http://localhost:8545",
+    "mnemonic": "test test test test test test test future home engine virtual motion",
+    "fheTestAddress": "0x61a8e950161daCCA06b0b623Efa2b7237BaBD4a0",
+    "fheTestVersion": "v2"
+  },
+  "localstack_v14": {
+    "rpcUrl": "http://localhost:8545",
+    "mnemonic": "test test test test test test test future home engine virtual motion",
+    "fheTestAddress": "0x61a8e950161daCCA06b0b623Efa2b7237BaBD4a0",
+    "fheTestVersion": "v2"
+  },
+  "sepolia": {
+    "rpcUrl": "https://ethereum-sepolia-rpc.publicnode.com",
+    "fheTestAddress": "0x94B9d3aF050687D1F76251aD7D09a1F216a19845",
+    "fheTestVersion": "v2"
+  },
+  "testnet": {
+    "rpcUrl": "https://ethereum-sepolia-rpc.publicnode.com",
+    "fheTestAddress": "0x94B9d3aF050687D1F76251aD7D09a1F216a19845",
+    "fheTestVersion": "v2"
+  },
+  "mainnet": {
+    "rpcUrl": "https://ethereum-rpc.publicnode.com",
+    "fheTestAddress": "0x7553CB9124f974Ee475E5cE45482F90d5B6076BC",
+    "fheTestVersion": "v1"
+  },
+  "devnet": {
+    "rpcUrl": "https://ethereum-sepolia-rpc.publicnode.com",
+    "fheTestAddress": "0xD26bB032e2F06A5382902559c4EbBB82C35C6dDF",
+    "fheTestVersion": "v2"
+  }
+}

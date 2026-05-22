@@ -2,7 +2,14 @@ import type { EncryptedValue } from '@fhevm/sdk/types';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmDecryptClient, createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
-import { clearTypeFromHandle, encryptTestCases, getBaseEnv, isBytes32Hex, isCleartext, isV2 } from '../setupCommon.js';
+import {
+  clearTypeFromHandle,
+  encryptTestCases,
+  prepareFheTestEnv,
+  isBytes32Hex,
+  isCleartext,
+  isV2,
+} from '../setupCommon.js';
 import { FHETestABI } from '../abi-v2.js';
 import { createWalletClient, http, type Hex } from 'viem';
 
@@ -77,7 +84,7 @@ describe.runIf(isV2(getViemTestConfig().chainName) && !isCleartext(getViemTestCo
       const walletClient = createWalletClient({
         account: config.account,
         chain: config.publicClient.chain,
-        transport: http(getBaseEnv().rpcUrl),
+        transport: http(prepareFheTestEnv().rpcUrl),
       });
 
       for (let i = 0; i < encryptTestCases.length; i++) {

@@ -21,6 +21,11 @@ if [[ -n "${__FHEVM_LIB_SH_LOADED:-}" ]]; then
 fi
 __FHEVM_LIB_SH_LOADED=1
 
+# Pull in the canonical source-of-truth resolver / detect helpers
+# (resolve_chain_rpc_url, detect_rpc_client, is_truthy, normalize_address, ...).
+# lib-common.sh has its own load guard so re-sourcing is safe.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../test/scripts" && pwd)/lib-common.sh"
+
 # Prints <message> inside an `=`-banner to stderr. Used as the standard error
 # format for the assert helpers in this lib.
 #
@@ -36,26 +41,31 @@ boxed_error() {
 EOF
 }
 
-# Asserts that the deployed FHETest address matches the constants committed
-# in the v2 addresses JSON file for the given chain. Exits 1 on mismatch
-# (or missing file / missing key) with a banner-formatted error.
+# Asserts that the deployed FHETest address matches the committed
+# `fheTestAddress` in chain-defaults.json for the given chain. Exits 1 on
+# mismatch (or missing file / missing key) with a banner-formatted error.
 #
 # Behavior per chain:
 #   localcleartext | localstack  → checks BOTH `localcleartext` AND `localstack`
 #                                  keys in the JSON.
+#   localstack_v11..v14 (etc.)   → checks the matching `localstack_<vNN>` key.
 #   devnet                       → checks the `devnet` key.
 #   anything else                → no-op (returns 0).
 #
-# Usage: assert_fhetest_address_in_abi_v2 <chain> <deployed_addr> <addresses_json_file>
-assert_fhetest_address_in_abi_v2() {
+# Usage: assert_fhetest_address <chain> <deployed_addr> <chain_defaults_json_file>
+# JSON shape: { "<chain>": { "fheTestAddress": "0x...", ... }, ... }
+assert_fhetest_address() {
     local chain="$1"
     local deployed_addr="$2"
-    local addresses_json_file="$3"
+    local chain_defaults_file="$3"
 
     local -a keys=()
     case "$chain" in
         localcleartext|localstack)
             keys=(localcleartext localstack)
+            ;;
+        localstack_*)
+            keys=("$chain")
             ;;
         devnet)
             keys=(devnet)
@@ -65,21 +75,21 @@ assert_fhetest_address_in_abi_v2() {
             ;;
     esac
 
-    if [[ ! -f "$addresses_json_file" ]]; then
-        boxed_error "Expected addresses JSON at $addresses_json_file, but the file does not exist."
+    if [[ ! -f "$chain_defaults_file" ]]; then
+        boxed_error "Expected chain defaults JSON at $chain_defaults_file, but the file does not exist."
         exit 1
     fi
 
     local key expected_addr
     for key in "${keys[@]}"; do
-        expected_addr="$(_extract_fhetest_address_from_json "$addresses_json_file" "$key")"
+        expected_addr="$(_extract_fhetest_address_from_json "$chain_defaults_file" "$key")"
         if [[ -z "$expected_addr" || "$expected_addr" == "null" ]]; then
-            boxed_error "Could not find key '${key}' in $addresses_json_file"
+            boxed_error "Could not find fheTestAddress for key '${key}' in $chain_defaults_file"
             exit 1
         fi
 
         if [[ "${expected_addr,,}" != "${deployed_addr,,}" ]]; then
-            boxed_error "Key '${key}' in $addresses_json_file does not match deployed FHETest.
+            boxed_error "fheTestAddress for '${key}' in $chain_defaults_file does not match deployed FHETest.
   expected from JSON: $expected_addr
   deployed:           $deployed_addr"
             exit 1
@@ -87,14 +97,14 @@ assert_fhetest_address_in_abi_v2() {
     done
 }
 
-# Private: extracts a FHETest address from a JSON file by key.
-# JSON shape: { "<key>": "0x...", ... }. Uses jq -r so the output is the
-# raw address (no quotes); returns the literal string "null" when the key
-# is absent — caller should treat that as "not found".
+# Private: extracts a FHETest address from chain-defaults.json by chain key.
+# JSON shape: { "<key>": { "fheTestAddress": "0x...", ... }, ... }. Uses jq -r
+# so the output is the raw address (no quotes); emits the empty string when the
+# key or the `fheTestAddress` field is absent — caller treats that as "not found".
 _extract_fhetest_address_from_json() {
     local file="$1"
     local key="$2"
-    jq -r --arg k "$key" '.[$k] // ""' "$file"
+    jq -r --arg k "$key" '.[$k].fheTestAddress // ""' "$file"
 }
 
 # Returns 0 if the JSON-RPC at <rpc_url> is an anvil node, non-zero otherwise.
@@ -237,114 +247,6 @@ fhevm_host_addresses_file() {
             return 1
             ;;
     esac
-}
-
-# Validates that <chain_name> is one of the supported values. On invalid
-# input, prints an error and EXITS the calling process with status 1 (this
-# is intentionally fail-fast — meant to be called at script entry, before
-# any work is done).
-#
-# Supported: mainnet | testnet | devnet | localcleartext | localstack
-#
-# Usage: fhevm_assert_chain <chain_name>
-fhevm_assert_chain() {
-    local chain="$1"
-    case "$chain" in
-        mainnet|testnet|devnet|localcleartext|localstack)
-            return 0
-            ;;
-        "")
-            echo "❌ chain name is required (expected: mainnet | testnet | devnet | localcleartext | localstack)" >&2
-            exit 1
-            ;;
-        *)
-            echo "❌ unsupported chain '$chain' (expected: mainnet | testnet | devnet | localcleartext | localstack)" >&2
-            exit 1
-            ;;
-    esac
-}
-
-# Resolves the chain TS file for a given fhevm chain name. Paths are computed
-# relative to this library's location (assuming the standard SDK layout under
-# sdk/js-sdk/).
-#
-# Public-network chains live under src/core/chains/definitions/; local /
-# fixture chains live under test/fheTest/chains/. The chain name doesn't
-# always match the filename (testnet → sepolia.ts).
-#
-# Usage: fhevm_chain_file <chain_name>
-#   <chain_name>: mainnet | testnet | devnet | localcleartext | localstack
-fhevm_chain_file() {
-    local chain="$1"
-    local sdk_root
-    sdk_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-
-    case "$chain" in
-        mainnet)
-            printf '%s/src/core/chains/definitions/mainnet.ts\n' "$sdk_root"
-            ;;
-        testnet)
-            # SDK file is named after the network (sepolia), not the role (testnet).
-            printf '%s/src/core/chains/definitions/sepolia.ts\n' "$sdk_root"
-            ;;
-        devnet|localcleartext|localstack)
-            printf '%s/test/fheTest/chains/%s.ts\n' "$sdk_root" "$chain"
-            ;;
-        *)
-            echo "fhevm_chain_file: unsupported chain '$chain' (expected: mainnet | testnet | devnet | localcleartext | localstack)" >&2
-            return 1
-            ;;
-    esac
-}
-
-# Returns the RPC URL for the given chain name, by reading $RPC_URL from
-# the chain's `.env.<chain>` file under sdk/js-sdk/test/.
-#
-# Mapping (mostly follows the chain name; testnet shares sepolia.env):
-#   mainnet         → test/.env.mainnet
-#   testnet         → test/.env.sepolia
-#   devnet          → test/.env.devnet
-#   localcleartext  → test/.env.localcleartext
-#   localstack      → test/.env.localstack
-#
-# Usage: fhevm_rpc_url <chain_name>
-#
-#   rpc_url="$(fhevm_rpc_url localcleartext)"
-fhevm_rpc_url() {
-    local chain="$1"
-    local sdk_root
-    sdk_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-
-    local env_file
-    case "$chain" in
-        mainnet|devnet|localcleartext|localstack)
-            env_file="$sdk_root/test/.env.$chain"
-            ;;
-        testnet)
-            # testnet shares the sepolia env file.
-            env_file="$sdk_root/test/.env.sepolia"
-            ;;
-        *)
-            echo "fhevm_rpc_url: unsupported chain '$chain' (expected: mainnet | testnet | devnet | localcleartext | localstack)" >&2
-            return 1
-            ;;
-    esac
-
-    if [[ ! -f "$env_file" ]]; then
-        echo "fhevm_rpc_url: env file not found: $env_file" >&2
-        return 1
-    fi
-
-    # Subshell-source the file to extract RPC_URL (env files are KEY="value" format).
-    local rpc_url
-    rpc_url="$(set -a; source "$env_file"; set +a; printf '%s' "${RPC_URL:-}")"
-
-    if [[ -z "$rpc_url" ]]; then
-        echo "fhevm_rpc_url: RPC_URL not set in $env_file" >&2
-        return 1
-    fi
-
-    printf '%s\n' "$rpc_url"
 }
 
 # Reads a single contract address from a chain TS file by key.

@@ -5,6 +5,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+LIB="ethers,viem"
+SKIP_START=false
+PROFILE=""
+CHAIN="localstack"
+VALID_CHAINS=(localstack localstack_v11 localstack_v12 localstack_v13 localstack_v14)
+
 usage() {
     cat <<EOF
 Usage: $(basename "$0") [OPTIONS]
@@ -15,13 +21,35 @@ Options:
   --ethlib ethers          Run only the ethers test suite.
   --ethlib viem            Run only the viem test suite.
   --ethlib ethers,viem     Run both suites (default).
+  --profile, -p <name>     Profile filename forwarded to localstack-restart.sh
+                           (e.g., v0.11.0-mainnet.json). If omitted, the stack
+                           starts without a profile lock file.
+  --chain, -c <name>       Chain forwarded to localstack-restart.sh and used as
+                           the CHAIN env var when invoking vitest. One of:
+                           ${VALID_CHAINS[*]}.
+                           Default: ${CHAIN}.
   --skip-start             Skip localstack-restart.sh before and localstack-stop.sh after running tests.
   --help                   Print this help message and exit.
 EOF
 }
 
-LIB="ethers,viem"
-SKIP_START=false
+is_valid_chain() {
+    local candidate="$1"
+    local c
+    for c in "${VALID_CHAINS[@]}"; do
+        if [[ "$c" == "$candidate" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+require_arg_value() {
+    if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
+        echo "Error: ${1} requires a value." >&2
+        exit 1
+    fi
+}
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -38,6 +66,16 @@ while [[ $# -gt 0 ]]; do
             LIB="${1#--ethlib=}"
             shift
             ;;
+        --profile|-p)
+            require_arg_value "$1" "${2:-}"
+            PROFILE="$2"
+            shift 2
+            ;;
+        --chain|-c)
+            require_arg_value "$1" "${2:-}"
+            CHAIN="$2"
+            shift 2
+            ;;
         --skip-start)
             SKIP_START=true
             shift
@@ -52,6 +90,11 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+if ! is_valid_chain "$CHAIN"; then
+    echo "Error: invalid --chain '$CHAIN'. Expected one of: ${VALID_CHAINS[*]}." >&2
+    exit 1
+fi
 
 RUN_ETHERS=0
 RUN_VIEM=0
@@ -69,15 +112,20 @@ esac
 cd "$ROOT_DIR"
 
 if [ "$SKIP_START" = false ]; then
-  $SCRIPT_DIR/localstack-restart.sh
+  RESTART_ARGS=(--chain "$CHAIN")
+  if [[ -n "$PROFILE" ]]; then
+    RESTART_ARGS+=(--profile "$PROFILE")
+  fi
+  RESTART_ARGS+=(--force)
+  "$SCRIPT_DIR/localstack-restart.sh" "${RESTART_ARGS[@]}"
 fi
 
-export CHAIN=localstack
+export CHAIN
 
 # First check configuration
 if ! npx vitest run --config test/fheTest/vitest.config.ts test/fheTest/viem/clientBase.chain.test.ts; then
   echo ""
-  echo "❌ ERROR: update test/fheTest/chains/localstack.ts config file ❌"
+  echo "❌ ERROR: update test/fheTest/chains/${CHAIN}.ts config file ❌"
   echo ""
   exit 1
 fi

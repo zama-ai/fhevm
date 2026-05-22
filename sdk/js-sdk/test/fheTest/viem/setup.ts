@@ -1,8 +1,8 @@
 import type { FhevmChain } from '@fhevm/sdk/chains';
 import { createPublicClient, http, type PublicClient, type Transport, type Chain } from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';
-import { sepolia as viemSepolia, mainnet as viemMainnet, anvil as viemAnvil } from 'viem/chains';
-import { getBaseEnv, type FheTestBaseEnv, type FheTestChainName } from '../setupCommon.js';
+import { mainnet as viemMainnet, sepolia as viemSepolia, anvil as viemAnvil } from 'viem/chains';
+import { prepareFheTestEnv, type FheTestBaseEnv, type FheTestChainName } from '../setupCommon.js';
 
 // Re-export for convenience
 export type { FheTestChainName } from '../setupCommon.js';
@@ -31,14 +31,14 @@ export type FheTestViemConfig = {
 // ---------------------------------------------------------------------------
 
 function buildConfig(): FheTestViemConfig {
-  const env: FheTestBaseEnv = getBaseEnv();
+  const env: FheTestBaseEnv = prepareFheTestEnv();
 
   const viemChain =
-    env.chainName === 'sepolia' || env.chainName === 'devnet'
-      ? viemSepolia
-      : env.chainName === 'mainnet'
-        ? viemMainnet
-        : env.chainName === 'localstack'
+    env.chainName === 'mainnet'
+      ? viemMainnet
+      : env.chainName === 'sepolia' || env.chainName === 'devnet' || env.chainName === 'testnet'
+        ? viemSepolia
+        : env.chainName.startsWith('localstack')
           ? { ...viemAnvil, id: env.fhevmChain.id }
           : viemAnvil;
 

@@ -1,32 +1,48 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { ViteDevServer } from 'vite';
+import { execFile } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { defineConfig } from 'vite';
-import { dirname, extname, isAbsolute, relative, resolve, sep } from 'path';
-import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const execFileAsync = promisify(execFile);
 const projectRoot = resolve(__dirname, '../..');
 const rawWasmAssetPrefix = '/__raw_wasm';
+const browserUiConfigPath = '/__browser_ui/config';
+const browserUiEnsureFundsPath = '/__browser_ui/ensure-funded';
 const localstackRelayerProxyPrefix = '/__localstack_relayer';
 const localstackMinioProxyPrefix = '/__localstack_minio';
 const localstackRelayerTarget = 'http://localhost:3000';
 const localstackMinioTarget = 'http://localhost:9000';
+const localFundingBalanceWei = '0x56BC75E2D63100000';
+
+type BrowserUiChainTarget = 'testnet' | 'localstack' | 'localcleartext';
+
+type BrowserUiConfig = {
+  readonly targets: Record<
+    BrowserUiChainTarget,
+    {
+      readonly rpcUrl: string;
+      readonly mnemonic: string;
+      readonly fheTestAddress: string;
+    }
+  >;
+};
 
 export default defineConfig({
   root: projectRoot,
-  plugins: [localstackProxyPlugin()],
-  resolve: {
-    alias: {
-      // The chain configs in test/fheTest/chains/*.ts import from this
-      // alias; the alias is normally provided by test/tsconfig.json paths,
-      // which Vite does not read. Without this entry, dynamic-importing a
-      // chain file from roundtrip.ts breaks at bundle time.
-      '@fhevm/sdk/chains': resolve(projectRoot, 'src/core/chains/index.ts'),
+  plugins: [browserUiPlugin()],
+  build: {
+    rollupOptions: {
+      input: resolve(__dirname, 'index.html'),
     },
   },
   server: {
-    port: 3334,
+    port: 3335,
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp',
@@ -34,13 +50,23 @@ export default defineConfig({
   },
 });
 
-function localstackProxyPlugin() {
+function browserUiPlugin() {
   return {
-    name: 'multi-wasm-localstack-proxy',
+    name: 'browser-ui-local-services',
     configureServer(server: ViteDevServer) {
       server.middlewares.use(async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
         try {
           const url = new URL(req.url ?? '/', 'http://localhost');
+
+          if (url.pathname === browserUiConfigPath) {
+            respondWithJson(res, loadBrowserUiConfig());
+            return;
+          }
+
+          if (url.pathname === browserUiEnsureFundsPath) {
+            await ensureSignerFunds(req, res);
+            return;
+          }
 
           if (url.pathname.startsWith(rawWasmAssetPrefix)) {
             await serveRawWasmAsset(req, res, url);
@@ -76,6 +102,133 @@ function localstackProxyPlugin() {
       });
     },
   };
+}
+
+type ChainDefaults = {
+  readonly rpcUrl: string;
+  readonly mnemonic?: string;
+  readonly fheTestAddress?: string;
+};
+
+const chainDefaultsPath = resolve(projectRoot, 'test/fheTest/chains/chain-defaults.json');
+
+function loadBrowserUiConfig(): BrowserUiConfig {
+  const testDir = resolve(projectRoot, 'test');
+  const sharedEnv = parseEnvFile(resolve(testDir, '.env'));
+  const sharedMnemonic = sharedEnv.MNEMONIC ?? process.env.MNEMONIC;
+  const defaults = JSON.parse(readFileSync(chainDefaultsPath, 'utf-8')) as Record<string, ChainDefaults>;
+
+  return {
+    targets: {
+      testnet: resolveBrowserUiTarget(testDir, 'sepolia', defaults, sharedMnemonic),
+      localstack: resolveBrowserUiTarget(testDir, 'localstack', defaults, sharedMnemonic),
+      localcleartext: resolveBrowserUiTarget(testDir, 'localcleartext', defaults, sharedMnemonic),
+    },
+  };
+}
+
+function resolveBrowserUiTarget(
+  testDir: string,
+  chainKey: string,
+  defaults: Record<string, ChainDefaults>,
+  sharedMnemonic: string | undefined,
+): { readonly rpcUrl: string; readonly mnemonic: string; readonly fheTestAddress: string } {
+  const entry = defaults[chainKey];
+  if (entry === undefined) {
+    throw new Error(`Missing "${chainKey}" entry in ${chainDefaultsPath}`);
+  }
+  const chainEnv = parseEnvFile(resolve(testDir, `.env.${chainKey}`));
+  const rpcUrl = chainEnv.RPC_URL ?? process.env.RPC_URL ?? entry.rpcUrl;
+  if (rpcUrl === undefined || rpcUrl === '') {
+    throw new Error(`Missing rpcUrl for "${chainKey}" in ${chainDefaultsPath} or test/.env.${chainKey}.`);
+  }
+  const mnemonic = sharedMnemonic ?? entry.mnemonic;
+  if (mnemonic === undefined || mnemonic === '') {
+    throw new Error(`Missing mnemonic for "${chainKey}" in ${chainDefaultsPath} or test/.env.`);
+  }
+  if (entry.fheTestAddress === undefined || entry.fheTestAddress === '') {
+    throw new Error(`Missing "${chainKey}.fheTestAddress" in ${chainDefaultsPath}`);
+  }
+  return { rpcUrl, mnemonic, fheTestAddress: entry.fheTestAddress };
+}
+
+async function ensureSignerFunds(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (req.method !== 'POST') {
+    respondWithStatus(res, 405, 'Method not allowed.');
+    return;
+  }
+
+  const request = JSON.parse((await readRequestBody(req)).toString('utf-8')) as {
+    readonly chainTarget?: string;
+    readonly address?: string;
+  };
+  const chainTarget = request.chainTarget;
+  const address = request.address;
+
+  if (!isBrowserUiChainTarget(chainTarget)) {
+    respondWithStatus(res, 400, 'Unknown chain target.');
+    return;
+  }
+  if (address === undefined || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
+    respondWithStatus(res, 400, 'Invalid signer address.');
+    return;
+  }
+  if (chainTarget === 'testnet') {
+    respondWithJson(res, { funded: false, reason: 'testnet' });
+    return;
+  }
+
+  const rpcUrl = loadBrowserUiConfig().targets[chainTarget].rpcUrl;
+  await execFileAsync('cast', ['rpc', 'anvil_setBalance', address, localFundingBalanceWei, '--rpc-url', rpcUrl], {
+    timeout: 10_000,
+  });
+  respondWithJson(res, {
+    funded: true,
+    address,
+    balanceWei: localFundingBalanceWei,
+    chainTarget,
+    rpcUrl,
+  });
+}
+
+function isBrowserUiChainTarget(value: unknown): value is BrowserUiChainTarget {
+  return value === 'testnet' || value === 'localstack' || value === 'localcleartext';
+}
+
+function parseEnvFile(filePath: string): Record<string, string> {
+  if (!existsSync(filePath)) {
+    return {};
+  }
+
+  const values: Record<string, string> = {};
+  for (const line of readFileSync(filePath, 'utf-8').split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed === '' || trimmed.startsWith('#')) {
+      continue;
+    }
+
+    const eqIndex = trimmed.indexOf('=');
+    if (eqIndex === -1) {
+      continue;
+    }
+
+    const key = trimmed.slice(0, eqIndex).trim();
+    let value = trimmed.slice(eqIndex + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    values[key] = value;
+  }
+  return values;
+}
+
+function respondWithJson(res: ServerResponse, value: unknown): void {
+  const body = JSON.stringify(value);
+  res.statusCode = 200;
+  res.setHeader('content-type', 'application/json');
+  res.setHeader('cache-control', 'no-store');
+  res.setHeader('content-length', Buffer.byteLength(body).toString());
+  res.end(body);
 }
 
 async function serveRawWasmAsset(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
@@ -185,7 +338,7 @@ async function respondWithRewrittenRelayerKeyUrl(
   }
 
   const json = (await upstream.json()) as unknown;
-  const publicOrigin = `http://${req.headers.host ?? 'localhost:3334'}`;
+  const publicOrigin = `http://${req.headers.host ?? 'localhost:3335'}`;
   const rewritten = rewriteMinioUrls(json, publicOrigin);
   const body = JSON.stringify(rewritten);
 
@@ -210,10 +363,9 @@ async function pipeFetchResponse(res: ServerResponse, upstream: Response): Promi
 function copyResponseHeaders(res: ServerResponse, headers: Headers, skip: readonly string[]): void {
   const skipSet = new Set(skip.map((header) => header.toLowerCase()));
   for (const [name, value] of headers.entries()) {
-    if (skipSet.has(name.toLowerCase())) {
-      continue;
+    if (!skipSet.has(name.toLowerCase())) {
+      res.setHeader(name, value);
     }
-    res.setHeader(name, value);
   }
 }
 
@@ -225,7 +377,6 @@ function toFetchHeaders(headers: IncomingMessage['headers']): Headers {
     if (skip.has(name.toLowerCase()) || value === undefined) {
       continue;
     }
-
     if (Array.isArray(value)) {
       for (const item of value) {
         result.append(name, item);
