@@ -820,7 +820,7 @@ describe('FHEVM manual operations', function () {
     expect(res).to.equal(42);
   });
 
-  // mulDiv: (lhs * rhs) / divisor with intermediate widening
+  // mulDiv: (factor1 * factor2) / divisor with intermediate widening
   it('mulDiv euint8 enc*enc: (200 * 200) / 200 = 200 (intermediate overflows uint8)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add8(200);
@@ -878,7 +878,7 @@ describe('FHEVM manual operations', function () {
     expect(await decrypt8(await this.contract.resEuint8())).to.equal(0);
   });
 
-  it('mulDiv euint8 enc*enc: (0 * 100) / 50 = 0 (zero lhs)', async function () {
+  it('mulDiv euint8 enc*enc: (0 * 100) / 50 = 0 (zero factor1)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add8(0);
     input.add8(100);
