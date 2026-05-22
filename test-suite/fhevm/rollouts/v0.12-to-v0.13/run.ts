@@ -219,6 +219,11 @@ export default async function run(ctx: RolloutRunContext) {
   await ctx.runHostContractTask("npx hardhat task:deployEmptyProxiesProtocolConfigKMSGeneration");
   await ctx.runHostContractTask("npx hardhat task:deployProtocolConfigFromMigration", { env: migrationEnv });
   await ctx.runHostContractTask("npx hardhat task:deployKMSGenerationFromMigration", { env: migrationEnv });
+  // Refresh discovery so the new host proxy addresses (PROTOCOL_CONFIG_CONTRACT_ADDRESS,
+  // KMS_GENERATION_CONTRACT_ADDRESS) land in the host-sc-deploy compose env. Required since
+  // v0.13.0-3 (#2511) made task:assertKmsMigrationSucceeded read PROTOCOL_CONFIG_CONTRACT_ADDRESS
+  // from env instead of resolving it internally.
+  await ctx.refreshDiscovery();
   await upgradeContract((command) => ctx.runHostContractTask(command), "task:upgradeKMSVerifier", "KMSVerifier");
   await assertKmsMigration(ctx, migrationCtx);
   await upgradeContract((command) => ctx.runHostContractTask(command), "task:upgradeHCULimit", "HCULimit");
