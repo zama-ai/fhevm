@@ -12,7 +12,7 @@ use alloy::{
 };
 use anyhow::Context;
 use aws_config::BehaviorVersion;
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
 use fhevm_engine_common::drift_revert;
 use tokio::signal::unix::{signal, SignalKind};
