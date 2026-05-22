@@ -11114,7 +11114,6 @@ dependencies = [
  "clap",
  "criterion",
  "fhevm-engine-common",
- "five8_core",
  "hex",
  "host-listener",
  "itertools 0.13.0",
