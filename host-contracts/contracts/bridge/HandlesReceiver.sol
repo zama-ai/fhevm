@@ -60,10 +60,6 @@ abstract contract HandlesReceiver is OAppReceiver, ILayerZeroComposer, BridgeEve
     /// @notice ACL contract on this (destination) chain.
     ACL private constant ACL_CONTRACT = ACL(aclAdd);
 
-    mapping(bytes32 => bool) isGrantedFallback;
-
-    error DstHandleAlreadyGrantedFallback();
-
     error WrongChainIdInDstHandle();
 
     /// @notice OApp version tuple. HandlesReceiver is receive-only: sender side is `0`.
@@ -82,16 +78,17 @@ abstract contract HandlesReceiver is OAppReceiver, ILayerZeroComposer, BridgeEve
      *         keeps that. Otherwise, it may use the ciphertext matching `ciphertextHash`.
      *         Coprocessor nodes then run consensus on `dstHandle` and settle on the
      *         majority ciphertext. Only affects this destination chain.
+     * @dev    Assumes owner would never call this method twice with same `dstHandle`,
+     *         otherwise in case of such error, coprocessor should consider only first
+     *         `FallbackGrantedPlainText` event is source of truth.
      */
-    function grantFallback(bytes32 dstHandle, uint256 clearText) external onlyOwner {
+    function grantFallbackPlainText(bytes32 dstHandle, uint256 plainText) external onlyOwner {
         uint256 extractedChainId = uint256(
             dstHandle & 0x00000000000000000000000000000000000000000000ffffffffffffffff0000
         ) >> 16;
         if (extractedChainId != block.chainid) revert WrongChainIdInDstHandle();
-        // TODO: add other checks on dstHandle and clearText, such as index byte, version, range of cleartext, fheType validity.
-        if (isGrantedFallback[dstHandle]) revert DstHandleAlreadyGrantedFallback();
-        emit FallbackGrantedClearText(dstHandle, clearText);
-        isGrantedFallback[dstHandle] = true;
+        // TODO: add other checks on dstHandle and plainText, such as index byte, version, range of cleartext, fheType validity.
+        emit FallbackGrantedPlainText(dstHandle, plainText);
     }
 
     /**

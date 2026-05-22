@@ -373,17 +373,17 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
 
     function test_GrantFallbackClearText_EmitsEvent() public {
         bytes32 dst = _makeHandle(42);
-        uint256 clearText = 42;
+        uint256 plainText = 42;
 
         vm.expectEmit(true, false, false, true, address(dstBridge));
-        emit FallbackGrantedClearText(dst, clearText);
+        emit FallbackGrantedPlainText(dst, plainText);
         vm.prank(owner);
-        dstBridge.grantFallback(dst, clearText);
+        dstBridge.grantFallbackPlainText(dst, plainText);
     }
 
     function test_GrantFallbackClearText_OnlyOwner() public {
         vm.expectRevert();
-        dstBridge.grantFallback(_makeHandle(1), 23);
+        dstBridge.grantFallbackPlainText(_makeHandle(1), 23);
     }
 
     ////////////////////////////////////////////////////////////////////////////////
