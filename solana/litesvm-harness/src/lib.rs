@@ -5,6 +5,8 @@
 //! Protocol TFHE events are collected from `emit_cpi!` inner instructions (same path as
 //! `host-listener`), not from transaction logs.
 
+#![allow(clippy::too_many_arguments, clippy::result_large_err)]
+
 mod acl;
 mod cleartext;
 mod events;

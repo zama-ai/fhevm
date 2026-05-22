@@ -1,7 +1,11 @@
 use anchor_lang::prelude::*;
 use litesvm::LiteSVM;
-use solana_sdk::{clock::Clock, hash::Hash, slot_hashes::SlotHashes};
+use solana_program::sysvar::slot_hashes;
+use solana_sdk::{account::Account, clock::Clock, hash::Hash, slot_hashes::SlotHashes};
 use zama_host as host;
+
+/// On-chain `PodSlotHashes::fetch()` reads the full sysvar buffer (see `solana-sysvar`).
+const SLOT_HASHES_SYSVAR_LEN: usize = 20_488;
 
 pub const DEFAULT_INPUT_NONCE_SEQUENCE: u64 = 0;
 
@@ -49,10 +53,23 @@ pub fn set_previous_slot_hash(svm: &mut LiteSVM, hash: [u8; 32]) {
         clock = svm.get_sysvar();
     }
     let previous_slot = clock.slot.saturating_sub(1);
-    svm.set_sysvar(&SlotHashes::new(&[(
+    let slot_hashes = SlotHashes::new(&[(
         previous_slot,
         Hash::new_from_array(hash),
-    )]));
+    )]);
+    let mut data = vec![0u8; SLOT_HASHES_SYSVAR_LEN];
+    bincode::serialize_into(&mut data[..], &slot_hashes).unwrap();
+    svm.set_account(
+        slot_hashes::id(),
+        Account {
+            lamports: 1,
+            data,
+            owner: solana_sdk::sysvar::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+    .unwrap();
 }
 
 pub fn execute_frame_log_count(meta: &litesvm::types::TransactionMetadata) -> usize {

@@ -418,7 +418,7 @@ during zama-host::execute_frame:
 
 The PoC stores the **frame step result handle** on the durable ACL record. App accounts point at that opaque handle; they never precompute it.
 
-The harness seeds a deterministic non-zero `previous_bank_hash` for every LiteSVM fixture so handle derivation matches production-shaped inputs without per-test setup.
+On-chain, `zama-host` fails closed with `PreviousBankHashUnavailable` when slot N−1 has no hash in the SlotHashes sysvar. The harness seeds a deterministic non-zero `previous_bank_hash` for every LiteSVM fixture so tests exercise the real sysvar path without per-test setup.
 
 Creating a persistent ACL record has two shapes in this PoC.
 

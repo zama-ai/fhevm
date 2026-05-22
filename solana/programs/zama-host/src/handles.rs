@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use solana_sha256_hasher::hashv;
 use solana_sysvar::slot_hashes::PodSlotHashes;
 
-use crate::FheBinaryOpCode;
+use crate::{FheBinaryOpCode, ZamaHostError};
 
 pub(crate) const COMPUTATION_DOMAIN_SEPARATOR: &[u8] = b"FHE_comp";
 pub(crate) const COMPUTED_HANDLE_MARKER: u8 = 0xff;
@@ -75,21 +75,16 @@ pub fn computed_trivial_handle(
 
 pub fn previous_bank_hash(current_slot: u64) -> Result<[u8; 32]> {
     let Some(previous_slot) = current_slot.checked_sub(1) else {
-        return Ok([0; 32]);
+        return err!(ZamaHostError::PreviousBankHashUnavailable);
     };
-    let slot_hashes = match PodSlotHashes::fetch() {
-        Ok(slot_hashes) => slot_hashes,
-        Err(_) => return Ok([0; 32]),
-    };
-    if let Some(hash) = slot_hashes
+    let slot_hashes = PodSlotHashes::fetch()
+        .map_err(|_| error!(ZamaHostError::PreviousBankHashUnavailable))?;
+    let hash = slot_hashes
         .get(&previous_slot)
         .ok()
         .flatten()
-    {
-        return Ok(hash.to_bytes());
-    }
-
-    Ok([0; 32])
+        .ok_or_else(|| error!(ZamaHostError::PreviousBankHashUnavailable))?;
+    Ok(hash.to_bytes())
 }
 
 #[cfg(test)]
@@ -145,6 +140,11 @@ mod tests {
             1_700_000_000,
         );
         assert_ne!(with_zero, with_fixture);
+    }
+
+    #[test]
+    fn previous_bank_hash_fails_at_slot_zero() {
+        assert!(previous_bank_hash(0).is_err());
     }
 
     #[test]

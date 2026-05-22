@@ -4,9 +4,7 @@ use litesvm::LiteSVM;
 use solana_sdk::{account::Account, pubkey::Pubkey, signature::Signer};
 use zama_host as host;
 
-use crate::util::{set_previous_slot_hash, DEFAULT_TEST_PREVIOUS_BANK_HASH};
-
-pub fn event_authority(program_id: Pubkey) -> Pubkey {
+use crate::util::{set_previous_slot_hash, DEFAULT_TEST_PREVIOUS_BANK_HASH};pub fn event_authority(program_id: Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[b"__event_authority"], &program_id).0
 }
 

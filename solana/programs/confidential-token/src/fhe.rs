@@ -9,7 +9,7 @@ use zama_host::{
     FheFrameStep, FheOpcode, FheOperand,
 };
 
-use crate::ConfidentialTokenAccount;
+use crate::{ConfidentialTokenAccount, ConfidentialTokenError};
 
 #[derive(Clone)]
 pub struct EncryptedValue<'info> {
@@ -83,15 +83,6 @@ impl<'a, 'info> Builder<'a, 'info> {
         })
     }
 
-    pub fn scalar_u64(&self, value: u64, fhe_type: u8) -> FheValue {
-        FheValue {
-            operand: FheOperand::Scalar {
-                value: scalar_plaintext(value),
-                fhe_type,
-            },
-        }
-    }
-
     pub fn trivial_encrypt_u64(&mut self, value: u64, fhe_type: u8) -> Result<FheValue> {
         let index = self.steps.len();
         self.steps.push(FheFrameStep::TrivialEncrypt {
@@ -154,7 +145,7 @@ impl<'a, 'info> Builder<'a, 'info> {
         let index = self.remaining_accounts.len();
         require!(
             index <= u8::MAX as usize,
-            ErrorCode::AccountDidNotDeserialize
+            ConfidentialTokenError::TooManyFrameAccounts
         );
         self.remaining_accounts.push(account);
         Ok(index as u8)

@@ -221,7 +221,7 @@ pub mod confidential_token {
             to.balance_acl_record,
             ConfidentialTokenError::CurrentAclRecordMismatch
         );
-        if from.owner == to.owner && from.mint == to.mint {
+        if from.key() == to.key() {
             return Ok(());
         }
 
@@ -576,6 +576,8 @@ pub enum ConfidentialTokenError {
     ComputeSignerMismatch,
     #[msg("current ACL record does not match token account state")]
     CurrentAclRecordMismatch,
+    #[msg("Too many accounts in execute_frame remaining_accounts (max 256)")]
+    TooManyFrameAccounts,
 }
 
 fn fhe_context<'a, 'info>(
