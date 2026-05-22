@@ -941,15 +941,9 @@ describe("Decryption", function () {
       await expect(
         decryption
           .connect(tokenFundedTxSender)
-          .userDecryptionRequest(
-            ctHandleContractPairs,
-            requestValidity,
-            contractsInfo,
-            user.address,
-            publicKey,
-            userSignature,
-            extraDataV0,
-          ),
+          [
+            "userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)"
+          ](ctHandleContractPairs, requestValidity, contractsInfo, user.address, publicKey, userSignature, extraDataV0),
       )
         .to.be.revertedWithCustomError(decryption, "HostChainDisabled")
         .withArgs(contractsInfo.chainId);
@@ -1394,15 +1388,9 @@ describe("Decryption", function () {
     it("Should revert when the response declares a contextId that differs from the one pinned at request time", async function () {
       await decryption
         .connect(tokenFundedTxSender)
-        .userDecryptionRequest(
-          ctHandleContractPairs,
-          requestValidity,
-          contractsInfo,
-          user.address,
-          publicKey,
-          userSignature,
-          extraDataV0,
-        );
+        [
+          "userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)"
+        ](ctHandleContractPairs, requestValidity, contractsInfo, user.address, publicKey, userSignature, extraDataV0);
 
       const fakeContextId = 999_999n;
       const responseExtraData = extraDataV1(fakeContextId);
