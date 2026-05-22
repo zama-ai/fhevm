@@ -84,6 +84,82 @@ fn matches_contract_and_selector_for_txn(
     }
 }
 
+/// Like `matches_contract_and_selector_for_txn`, but also decodes the matching
+/// transaction's calldata and panics if the embedded handles + address-of-interest
+/// don't match what the test passed to `on_user_decrypt_success`. Panics propagate
+/// out of the mock task as a test failure naming the offending field.
+fn matches_and_asserts_user_decrypt_txn(
+    contract: Address,
+    kind: UserDecryptKind,
+    expected_handles: Vec<B256>,
+    expected_user: Address,
+) -> impl Fn(&crate::mock_server::TxParams) -> bool + Send + Sync + 'static {
+    let selector = kind.selector();
+    move |params: &crate::mock_server::TxParams| -> bool {
+        let matches =
+            params.to == Some(contract) && params.data.len() >= 4 && params.data[0..4] == selector;
+        if matches {
+            assert_user_decrypt_calldata(kind, &expected_handles, expected_user, &params.data);
+        }
+        matches
+    }
+}
+
+fn assert_user_decrypt_calldata(
+    kind: UserDecryptKind,
+    expected_handles: &[B256],
+    expected_user: Address,
+    data: &[u8],
+) {
+    let payload = &data[4..];
+    match kind {
+        UserDecryptKind::Direct => {
+            let decoded = Decryption::userDecryptionRequest_1Call::abi_decode_raw(payload)
+                .expect("calldata: failed to decode userDecryptionRequest_1Call");
+            assert_eq!(
+                decoded.userAddress, expected_user,
+                "calldata.userAddress mismatch (direct)"
+            );
+            let got: Vec<B256> = decoded
+                .ctHandleContractPairs
+                .iter()
+                .map(|p| p.ctHandle)
+                .collect();
+            assert_eq!(
+                got, expected_handles,
+                "calldata.ctHandles mismatch (direct)"
+            );
+        }
+        UserDecryptKind::Delegated => {
+            let decoded = Decryption::delegatedUserDecryptionRequestCall::abi_decode_raw(payload)
+                .expect("calldata: failed to decode delegatedUserDecryptionRequestCall");
+            assert_eq!(
+                decoded.delegationAccounts.delegateAddress, expected_user,
+                "calldata.delegationAccounts.delegateAddress mismatch"
+            );
+            let got: Vec<B256> = decoded
+                .ctHandleContractPairs
+                .iter()
+                .map(|p| p.ctHandle)
+                .collect();
+            assert_eq!(
+                got, expected_handles,
+                "calldata.ctHandles mismatch (delegated)"
+            );
+        }
+        UserDecryptKind::Unified => {
+            let decoded = Decryption::userDecryptionRequest_0Call::abi_decode_raw(payload)
+                .expect("calldata: failed to decode userDecryptionRequest_0Call");
+            assert_eq!(
+                decoded.userAddress, expected_user,
+                "calldata.userAddress mismatch (unified)"
+            );
+            let got: Vec<B256> = decoded.handles.iter().map(|h| h.handle).collect();
+            assert_eq!(got, expected_handles, "calldata.handles mismatch (unified)");
+        }
+    }
+}
+
 /// FHEVM mock wrapper with simplified direct API
 #[derive(Clone)]
 pub struct FhevmMockWrapper {
@@ -354,7 +430,6 @@ impl FhevmMockWrapper {
         targets: Vec<mock_server::SubscriptionTarget>,
         usage_limit: UsageLimit,
     ) {
-        let selector = kind.selector();
         // Set up readiness check patterns to return true (ready)
         self.set_readiness_success();
 
@@ -373,6 +448,7 @@ impl FhevmMockWrapper {
         // signature that matches the attestation type: the relayer's
         // `on_receipt_received` scans the receipt for both
         // `UserDecryptionRequest_0` (legacy) and `_1` (unified).
+        let handles_for_assertion = handles.clone();
         let request_log = match kind {
             UserDecryptKind::Direct | UserDecryptKind::Delegated => {
                 build_legacy_user_decrypt_request(self.decryption_contract, id, user, handles)
@@ -520,9 +596,16 @@ impl FhevmMockWrapper {
         // Set up default readiness patterns (ready state)
         self.register_readiness_patterns(true);
 
-        // Register pattern that returns immediate response with scheduled transaction
+        // Register pattern that returns immediate response with scheduled transaction.
+        // Predicate also asserts that the calldata's handles and address-of-interest
+        // match what the test passed in — guards against silent forwarding bugs.
         self.json_rpc_server.on_transaction(
-            matches_contract_and_selector_for_txn(self.decryption_contract, selector),
+            matches_and_asserts_user_decrypt_txn(
+                self.decryption_contract,
+                kind,
+                handles_for_assertion,
+                user,
+            ),
             immediate_response,
             usage_limit,
         );
