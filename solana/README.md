@@ -53,10 +53,10 @@ solana/litesvm-harness
   Canonical stack: litesvm 0.11, anchor-litesvm 0.4, anchor-lang 1.0.2, solana-sdk 3.0.
   Event ingestion walks `emit_cpi!` inner instructions (same path as host-listener), not logs.
   ZamaHost CPI decoders come from the shared `zama-host-events` crate (IDL codegen).
-  `CleartextBackend` simulates add/sub/trivial locally for fast semantic checks.
+  `CleartextBackend` simulates add/sub/trivial/rand locally for fast semantic checks.
 
 solana/runtime-tests
-  Fast LiteSVM tests (33). Event helpers live in litesvm-harness, not in this crate.
+  Fast LiteSVM tests (43). Event helpers live in litesvm-harness, not in this crate.
 
 coprocessor/fhevm-engine/host-listener/src/solana_adapter.rs
   Maps typed Solana host events into the existing coprocessor DB model.
@@ -153,7 +153,7 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 
 - [x] Anchor workspace with `zama-host`, `confidential-token`, `litesvm-harness`, and LiteSVM runtime tests.
 - [x] **Host surface is `execute_frame`-only** (`allow_acl_subjects`, `allow_for_decryption`, `assert_acl_record`). Legacy per-op / test-emit instructions were removed.
-- [x] ZamaHost emits typed Anchor CPI events from real `execute_frame` operations (`FheBinaryOpEvent`, `TrivialEncryptEvent`, `AclAllowedEvent`).
+- [x] ZamaHost emits typed Anchor CPI events from real `execute_frame` operations (`FheBinaryOpEvent`, `TrivialEncryptEvent`, `FheRandEvent`, `AclAllowedEvent`).
 - [x] Host-listener decodes ZamaHost protocol events from the checked-in Anchor IDL snapshot (`host-listener/idl/zama_host.json`).
 - [x] Solana host events normalize into the existing coprocessor DB event shape.
 - [x] Worker-backed tests use real small TFHE ciphertexts for Solana-originated events (`tfhe-worker/src/tests/solana_poc.rs`, shared `litesvm-harness`).
@@ -169,6 +169,7 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 - [x] Scalar RHS: encrypted RHS requires ACL; scalar RHS does not.
 - [x] Self-transfer is a no-op (no handle rotation, no output ACL records).
 - [x] App code uses `confidential-token/src/fhe.rs` (`fhe::execute`) instead of raw host CPI assembly.
+- [x] **`fheRand`** via `FheFrameStep::Rand`: global `fhe-rand-counter` PDA, EVM-style seed/handle derivation, `FheRandEvent`, cleartext + worker paths. On-chain `fhe_type` validation matches EVM supported types (Bool + Uint8..Uint256).
 
 ### Partly Modeled
 
@@ -176,8 +177,8 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 - [ ] Input handles use `poc_authorize_transfer_amount`, which exercises the token
       `fhe::execute` wrapper (trivial_encrypt + allow). The real Solana input verifier
       or transciphering path is not implemented yet.
-- [ ] `FheRandEvent` remains in the IDL for future worker support, but rand birth is
-      not implemented in `execute_frame` yet.
+- [ ] `fhe::rand_u64()` exists on the token builder but **no token instruction calls it yet** — rand is exercised via direct `execute_frame` tests.
+- [ ] **`fheRandBounded`** (op 27): not implemented — no frame step, no event. EVM bounded rand requires a power-of-two `upperBound` and excludes Bool; see [Rand vs bounded rand](#rand-vs-bounded-rand).
 - [ ] ACL records are created already initialized through Anchor `init`; there is no stored
       `Empty -> Bound` enum in the PoC.
 - [x] `allow_for_decryption` follows EVM semantics: any subject allowed on the handle may mark the
@@ -277,8 +278,9 @@ Events still listed in the IDL but **not produced by the current host** (`execut
 
 ```text
 InputVerifiedEvent   — no input verifier instruction yet
-FheRandEvent         — Rand not implemented in execute_frame yet
 ```
+
+`FheOpcode::RandBounded` (op 27) is listed in the host enum but has no `execute_frame` step or IDL event yet.
 
 ## Vocabulary
 
@@ -644,6 +646,7 @@ inside the closure:
   fhe.encrypted(...)            // durable input handle from an ACL record
   fhe.trivial_encrypt_u64(...)  // frame-local handle
   fhe.add(...), fhe.sub(...)    // frame-local computed handle
+  fhe.rand_u64()                // frame-local rand (Uint64 / type 5); no token ix uses this yet
   fhe.allow(...)                // explicit durable ACL record creation
 ```
 
@@ -918,7 +921,36 @@ LiteSVM confidential_transfer(hX)
 test decrypt -> hA1 = 25, hB1 = 120
 ```
 
-Random ciphertext creation: **not implemented** (`FheRandEvent` / Rand step absent from `execute_frame`).
+Random ciphertext creation (`FheFrameStep::Rand`):
+
+```text
+LiteSVM execute_frame(Rand { fhe_type: 5 })
+  -> reads global fhe-rand-counter PDA, derives seed, bumps counter
+  -> emits FheRandEvent(seed, fhe_type, result)
+  -> transient allow on result handle
+
+CleartextBackend (fast):
+  decrypt(result) == cleartext_rand_value(seed, 64)
+
+Worker path (#[ignore], ~7min):
+  solana_fhe_rand_creates_ciphertext_and_decrypts
+  -> listener -> Postgres -> tfhe-worker -> decrypt matches cleartext OPRF
+```
+
+Not yet wired: token instruction calling `fhe.rand_u64()`, `fheRandBounded`, CI job for the rand worker test.
+
+## Rand vs bounded rand
+
+Both share the same global seed/counter on EVM and in this PoC (`fhe-rand-counter` PDA). They differ in **output range** and **handle op**:
+
+| | **`fheRand`** (op 26) | **`fheRandBounded`** (op 27) |
+|---|---|---|
+| **Range** | Full FHE type width (e.g. u64 → `[0, 2⁶⁴−1]`) | Uniform in `[0, upperBound)` |
+| **Extra input** | None | `upperBound` (must be power of two, ≤ type max) |
+| **Types** | Bool + Uint8 … Uint256 | Uint8 … Uint256 (**no Bool**) |
+| **PoC status** | Implemented | Not implemented |
+
+Use bounded rand when you need “random index below N” with N a power of two (lottery buckets, shuffles). Use unbounded rand for full-width encrypted randomness.
 
 ## Behavior Tests
 
@@ -951,6 +983,10 @@ User decrypt checks signed authorization plus on-chain ACL state.
 
 Solana events can enter the existing coprocessor DB path.
   Worker tests compile against the Solana event adapter and use real ciphertexts.
+
+Rand birth uses a global counter; repeated Rand steps in one frame or across
+  instructions in one transaction produce distinct seeds/handles (counter bumps).
+  Unsupported fhe_type reverts before counter bump or event emission.
 ```
 
 When adding a feature, prefer a test shaped like:

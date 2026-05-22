@@ -36,6 +36,7 @@ confidential-token
   poc_authorize_transfer_amount   — PoC-only input stand-in (see Caveats)
 
   fhe::execute(ctx, |fhe| { ... })  — single execute_frame CPI wrapper
+    Builder: encrypted, trivial_encrypt_u64, add, sub, rand_u64 (no token ix uses rand yet), allow
 ```
 
 **Safe area for OZ:** `confidential-token` behavior and tests. **Do not** add a separate ACL program unless the guild explicitly changes direction in RFC 024.
@@ -74,7 +75,11 @@ Self-transfer: **no-op** (no handle rotation, no output ACL).
 
 Listener decoders come from the shared `solana/crates/zama-host-events` crate (IDL at `host-listener/idl/zama_host.json`). Sync with `bash scripts/sync-zama-host-idl.sh` after host changes.
 
-**IDL events not emitted yet:** `InputVerifiedEvent`, `FheRandEvent` (listed for future work).
+**IDL events not emitted yet:** `InputVerifiedEvent`.
+
+**Emitted today:** `FheBinaryOpEvent`, `TrivialEncryptEvent`, `FheRandEvent`, `AclAllowedEvent`.
+
+**Not wired:** `FheOpcode::RandBounded` (op 27) — no frame step or event yet.
 
 **Host authorization:** `execute_frame` takes `authorized_app_accounts`. Every durable
 `Allow.app_account` must appear in that list. The app program declares which state slots
@@ -92,7 +97,7 @@ Event path (production-shaped):
   NOT log-based emit! / msg! parsing (logs can truncate at ~10KB/tx)
 
 Backends:
-  CleartextBackend — fast local add/sub/trivial (runtime-tests)
+  CleartextBackend — fast local add/sub/trivial/rand (runtime-tests)
   host-listener decode_anchor_cpi_event — worker E2E (solana_poc, #[ignore])
 ```
 
@@ -113,7 +118,9 @@ Subjects:
   Plain Pubkey list; MAX_ACL_SUBJECTS = 8 in PoC code (overflow TBD in RFC 024)
 
 Rand:
-  Not in execute_frame; worker rand test ignored
+  fheRand (op 26) in execute_frame — global fhe-rand-counter PDA, FheRandEvent, cleartext + #[ignore] worker test
+  fheRandBounded (op 27) not implemented
+  fhe::rand_u64() on builder; no confidential-token instruction calls it yet
 
 KMS:
   Decrypt semantics tested in litesvm-harness kms.rs, not wired to KMS connector
@@ -140,7 +147,9 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-LiteSVM runtime tests: **39** in `runtime-tests/tests/host_events.rs`. On-chain handle derivation fails closed when the previous slot hash is missing; every fixture seeds a non-zero previous bank hash by default.
+LiteSVM runtime tests: **43** in `runtime-tests/tests/host_events.rs`. On-chain handle derivation fails closed when the previous slot hash is missing; every fixture seeds a non-zero previous bank hash by default.
+
+**Worker E2E (`#[ignore]`, CI `tfhe-worker-solana-poc`):** transfer tests run in CI; `solana_fhe_rand_creates_ciphertext_and_decrypts` exists locally but is not in the CI loop yet.
 
 **CI toolchain:** GitHub Actions installs Anchor **1.0.2** via [AVM](https://www.anchor-lang.com/docs/installation) from `solana-foundation/anchor` (see `.github/workflows/solana-tests.yml`). Do not use `metadaoproject/setup-anchor` — its npm package (`@coral-xyz/anchor-cli`) only ships 0.31.x. The workflow uses a `check-changes` job (`dorny/paths-filter`) so Solana tests run only when `solana/**` (or the synced host IDL) changes; use **workflow_dispatch** to run manually.
 
