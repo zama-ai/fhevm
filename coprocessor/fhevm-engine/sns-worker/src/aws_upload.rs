@@ -139,6 +139,8 @@ async fn run_uploader_loop(
                             }
                         };
 
+                        // A non-null digest means another worker already uploaded that
+                        // ciphertext variant, so this recovery job must not retry it.
                         if row.ciphertext.is_some() {
                             item.ct64_compressed = Arc::new(Vec::new());
                         }
