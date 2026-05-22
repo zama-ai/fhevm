@@ -1,153 +1,118 @@
 # OpenZeppelin Solana PoC Guide
 
-This is the short handoff guide for OpenZeppelin work on the Solana PoC branch.
-The central technical guide is [README.md](./README.md); update it whenever the program shape,
-tests, ACL model, or event semantics change.
+Short handoff for OpenZeppelin on branch `openzeppelin-solana-track`.
 
-## Current Direction
+| Read first | Purpose |
+|------------|---------|
+| **This file** | Where to edit, what is stable, how to test |
+| [README.md](./README.md) | Full flows, ACL model, listener/worker boundaries, progress checklist |
+| [RFC 024 (draft)](https://github.com/zama-ai/tech-spec/pull/448) | **Normative ACL / host design** — update when PoC validates or rejects a design choice |
+
+**Rule:** Design decisions belong in RFC 024. README tracks what this branch implements. Do not update other RFCs from this PoC work.
+
+## Current host surface
+
+All FHE host semantics go through one CPI batch:
+
+```text
+zama-host
+  execute_frame          — FHE steps + explicit durable Allow actions
+  allow_acl_subjects     — append subjects on canonical ACL record
+  allow_for_decryption   — public decrypt flag
+  assert_acl_record      — debug / test helper
+```
+
+Legacy per-op instructions (`fhe_binary_op`, `trivial_encrypt`, `mock_input_verified_and_bind`, `test_emit_*`) were **removed**.
+
+## Current app surface
 
 ```text
 confidential-token
-  app-side PoC program
-  SPL-like cUSDC wrapper
-  safe area for token design work
+  initialize_mint / initialize_token_account
+  wrap_usdc
+  confidential_transfer
+  poc_authorize_transfer_amount   — PoC-only input stand-in (see Caveats)
 
-zama-host
-  execute_frame
-  allow_acl_subjects
-  allow_for_decryption
-  assert_acl_record
-
-runtime-tests
-  LiteSVM behavior tests
-  first place to prove or disprove a design change
+  fhe::execute(ctx, |fhe| { ... })  — single execute_frame CPI wrapper
 ```
 
-Legacy fused/bind/test-emit host instructions were removed from this branch. All host
-semantics flow through `execute_frame`.
+**Safe area for OZ:** `confidential-token` behavior and tests. **Do not** add a separate ACL program unless the guild explicitly changes direction in RFC 024.
 
-The v0 ACL direction is keyed-nonce records:
+## ACL model (RFC 024 aligned)
 
 ```text
 nonce_key = H("zama-acl-nonce-key-v1", acl_domain_key, app_account, encrypted_value_label)
 acl_record = PDA("acl-record", nonce_key, nonce_sequence)
 ```
 
-The handle is stored inside the ACL record. It is not used as a PDA seed.
+- Handle is stored **inside** the ACL record; never use handle bytes as a PDA seed.
+- Token PoC: `acl_domain_key = mint`, balance label = `"balance"`, input label = `"input"`.
+- Durable ACL only when the frame includes an explicit `Allow` action; intermediate handles are frame-local.
 
-## What Is Working
+## What works end-to-end
 
 ```text
-initialize mint/account
-  -> execute_frame creates initial balance handle + explicit durable ACL record
-
-wrap_usdc
-  -> SPL transfer_checked into vault
-  -> execute_frame:
-       trivial_encrypt amount as a frame-local handle
-       Add into current balance
-       allow only the new balance as durable ACL state
-
-confidential_transfer
-  -> execute_frame:
-       Sub for sender balance
-       Add for receiver balance
-       allow both new balances as durable ACL state
-  -> rotates balance handle + ACL record for each changed token account
-
-BalanceHandleUpdatedEvent
-  -> emitted by confidential-token for app/frontend indexing
-  -> not consumed by the generic coprocessor listener
-
-user decrypt model tests
-  -> signed authorization + handle entry + ACL record verification
-  -> current and historical handles
+initialize -> wrap_usdc -> confidential_transfer
+  -> BalanceHandleUpdatedEvent (app indexer only)
+  -> ZamaHost events -> host-listener -> tfhe-worker (ignored E2E tests)
+  -> user decrypt checks (RFC-016-shaped, test-local KMS model)
 ```
 
-Self-transfer is a no-op. It must not rotate handles or create output ACL records.
+Self-transfer: **no-op** (no handle rotation, no output ACL).
 
-## Important Boundaries
+## Boundaries (do not blur)
+
+| Layer | Responsibility |
+|-------|----------------|
+| **confidential-token** | SPL-like semantics, owner/mint checks, which ACL PDAs to pass |
+| **zama-host** | Compute ACL, handle birth inside frame, canonical PDA rules, generic events |
+| **host-listener** | ZamaHost IDL events only → coprocessor DB |
+| **App indexer** | `BalanceHandleUpdatedEvent`, historical handle discovery |
+| **KMS (future)** | Verify signed auth + ACL record account; no SPL parsing |
+
+Listener decoders come from checked-in `coprocessor/fhevm-engine/host-listener/idl/zama_host.json` (sync after `anchor build`).
+
+**IDL events not emitted yet:** `InputVerifiedEvent`, `FheRandEvent` (listed for future work).
+
+## Shared test harness
 
 ```text
-Token app checks token semantics:
-  owner signed
-  token account owner/mint match
-  output ACL account belongs to the token account being updated
-
-ZamaHost checks FHEVM semantics:
-  compute_subject is signer
-  encrypted operand ACL records are canonical
-  encrypted operands allow compute_subject
-  output ACL record PDA matches supplied nonce metadata
-
-Host listener consumes only generic ZamaHost events:
-  FheBinaryOpEvent
-  TrivialEncryptEvent
-  FheRandEvent
-  AclAllowedEvent
-  InputVerifiedEvent
-
-Those event decoders are generated at host-listener build time from the checked-in ZamaHost Anchor
-IDL snapshot. The listener must not parse confidential-token events.
-
-App indexers consume token-local events:
-  BalanceHandleUpdatedEvent
-
-KMS-style tests check decrypt semantics:
-  signature scope
-  ACL record owner
-  canonical ACL record PDA
-  handle match
-  owner subject is allowed
+solana/litesvm-harness   — shared by runtime-tests and tfhe-worker solana_poc
+Stack: litesvm 0.11, anchor-litesvm 0.4, anchor-lang 1.0.2, solana-sdk 3.0
 ```
 
-KMS does not parse token state and does not prove that a handle is the current balance. Currentness
-comes from app state. ACL authorization is durable and can also apply to historical handles.
+Add behavior tests in `runtime-tests/tests/host_events.rs` before changing token logic.
 
-## Current Caveats
+## Caveats (intentional PoC shortcuts)
 
 ```text
-Input path:
-  PoC transfer amounts use `poc_authorize_transfer_amount`, which goes through
-  `fhe::execute` (trivial_encrypt + allow). The real input verifier path is still
-  not implemented.
+Input:
+  poc_authorize_transfer_amount = trivial_encrypt + allow via fhe::execute
+  Not external ciphertext / input verifier — replace before production claims
 
 Execution frame:
-  app code uses fhe::execute(ctx, |fhe| { ... }).
-  intermediate handles are transient inside that one host instruction.
-  durable ACL records are created only when app code calls fhe.allow(...).
-
-Public decrypt:
-  allow_for_decryption mirrors EVM ACL semantics.
-  Any subject allowed on the handle may mark it as allowed for decryption.
-  Frame-local transient allow can also authorize this flow inside execute_frame.
-
-Persistent grants:
-  allow_acl_subjects mutates the existing canonical ACL record.
-  It does not create a second ACL record for the same handle.
+  Transient allow is instruction-local inside execute_frame
+  Durable allow only via explicit Allow actions in the frame
 
 Subjects:
-  subjects[] is a plain Pubkey list.
-  There is no Compute/UserDecrypt permission enum in the PoC.
-  Overflow/chunking is not designed yet.
+  Plain Pubkey list; MAX_ACL_SUBJECTS = 8 in PoC code (overflow TBD in RFC 024)
 
-Scalar RHS:
-  scalar = false means RHS is an encrypted handle and needs an ACL record.
-  scalar = true means RHS is plaintext scalar bytes and does not need a RHS ACL record.
+Rand:
+  Not in execute_frame; worker rand test ignored
+
+KMS:
+  Decrypt semantics tested in litesvm-harness kms.rs, not wired to KMS connector
 ```
 
-## How To Contribute Safely
+## How to contribute
 
 ```text
-1. Start with a LiteSVM test in solana/runtime-tests/tests/host_events.rs.
-2. Change confidential-token for app behavior.
-3. Change zama-host only when host semantics need to change.
-4. Keep README.md in sync with any behavior or API change.
-5. Preserve negative tests for authorization-sensitive paths.
+1. LiteSVM test in runtime-tests/tests/host_events.rs (happy + negative auth case)
+2. Change confidential-token for app behavior
+3. Change zama-host only for host-semantics gaps (coordinate RFC 024 update)
+4. Sync README.md; open RFC 024 PR on tech-spec if design changed
+5. Extend canonical wrap/transfer/decrypt scenario — avoid second demo flows
 ```
-
-Prefer extending the canonical wrap/transfer/decrypt scenario over adding a second disconnected
-demo flow.
 
 ## Commands
 
@@ -156,4 +121,11 @@ cd solana
 NO_DNA=1 anchor build --ignore-keys
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
+```
+
+Worker compile check (requires built programs in `solana/target/deploy/`):
+
+```bash
+cd ../coprocessor/fhevm-engine
+SQLX_OFFLINE=true cargo test -p tfhe-worker solana_user_decrypt_acl_invariants_match_evm_semantics --no-run
 ```

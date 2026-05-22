@@ -2,6 +2,16 @@
 
 This workspace is the Solana host-chain PoC for the `openzeppelin-solana-track` branch.
 
+## Normative spec and doc map
+
+| Document | Role |
+|----------|------|
+| [RFC 024: Solana ACL design](https://github.com/zama-ai/tech-spec/pull/448) | **Authoritative ACL / host design** (tech-spec). Update this when PoC proves or disproves a design choice. |
+| This README | **Implementation handoff** — current code, tests, flows, and known gaps on this branch. |
+| [OZ_GUIDE.md](./OZ_GUIDE.md) | **Short index for OpenZeppelin** — safe edit areas and contribution rules. |
+
+When design and code diverge: decide in **RFC 024**, then sync this README (and OZ_GUIDE if boundaries change). Do not back-propagate Solana PoC learnings into other RFCs from this branch.
+
 It is meant to be a readable base for:
 
 ```text
@@ -125,42 +135,24 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 
 ### Working Now
 
-- [x] Anchor workspace with `zama-host`, `confidential-token`, and LiteSVM runtime tests.
-- [x] ZamaHost emits typed Anchor CPI events for real host operations and clearly named
-      `test_emit_*` shims used by listener / worker tests.
-- [x] Host-listener decodes ZamaHost protocol events through Rust generated at build time from
-      the checked-in ZamaHost Anchor IDL snapshot.
+- [x] Anchor workspace with `zama-host`, `confidential-token`, `litesvm-harness`, and LiteSVM runtime tests.
+- [x] **Host surface is `execute_frame`-only** (`allow_acl_subjects`, `allow_for_decryption`, `assert_acl_record`). Legacy per-op / test-emit instructions were removed.
+- [x] ZamaHost emits typed Anchor CPI events from real `execute_frame` operations (`FheBinaryOpEvent`, `TrivialEncryptEvent`, `AclAllowedEvent`).
+- [x] Host-listener decodes ZamaHost protocol events from the checked-in Anchor IDL snapshot (`host-listener/idl/zama_host.json`).
 - [x] Solana host events normalize into the existing coprocessor DB event shape.
-- [x] Worker-backed tests use real small TFHE ciphertexts for Solana-originated events.
-- [x] Confidential token can initialize a mint and token accounts.
-- [x] Confidential token can wrap SPL-like USDC into a confidential balance handle.
-- [x] Confidential token can transfer by rotating Alice and Bob balance handles.
-- [x] Confidential token emits local balance-history events for app/front-end indexing. These
-      events are not consumed by the generic coprocessor listener.
-- [x] Canonical confidential token scenario covers wrap, transfer, current decrypt, historical
-      decrypt, and expected failures.
-- [x] Compute-time ACL is enforced by `zama-host::fhe_binary_op` before event emission.
-- [x] Computed output handles are verified inside `zama-host`; intermediate frame results are
-      transiently allowed and durable ACL records are created only by explicit `allow` actions.
-- [x] Generic persistent ACL grants mutate the existing canonical ACL record instead of creating a
-      second record for the same handle.
-- [x] Token account initialization creates the initial balance handle through `execute_frame` with
-      a host-owned trivial-encrypt step and explicit durable `allow`, not through caller-supplied
-      handle binding.
-- [x] Runtime tests include a cleartext FHE backend that consumes emitted ZamaHost events and checks
-      the plaintext semantics of transfer and wrap flows.
-- [x] Confidential token uses a small `fhe` helper module so app logic calls named FHE helpers
-      instead of hand-assembling raw Anchor CPI calls.
-- [x] Keyed-nonce ACL records avoid deriving Solana account addresses from opaque handles.
-- [x] User decrypt is modeled with signed authorization plus ACL record verification.
-- [x] Current and historical balance decrypt are both modeled when the relevant ACL record still
-      exists.
-- [x] Public decrypt is modeled through `allow_for_decryption`.
-- [x] Negative tests cover wrong signer, wrong ACL record, wrong handle, wrong domain key, stale
-      current ACL, wrong output ACL, reused output ACL, scalar RHS account behavior, and
-      unauthorized public decrypt.
-- [x] Scalar RHS host behavior is modeled: encrypted RHS requires an ACL record; scalar RHS does
-      not.
+- [x] Worker-backed tests use real small TFHE ciphertexts for Solana-originated events (`tfhe-worker/src/tests/solana_poc.rs`, shared `litesvm-harness`).
+- [x] Confidential token: initialize mint/account, wrap SPL USDC, confidential transfer with balance handle rotation.
+- [x] `BalanceHandleUpdatedEvent` for app/front-end indexers only (not consumed by host-listener).
+- [x] Canonical E2E: wrap → transfer → current + historical user decrypt, plus negative authorization tests.
+- [x] Compute-time ACL enforced inside `execute_frame` before FHE events are emitted.
+- [x] Frame-local transient allow for intermediate handles; **durable ACL only via explicit `Allow` actions** in the frame.
+- [x] `allow_acl_subjects` appends subjects on the canonical ACL record (no second record per handle).
+- [x] Keyed-nonce ACL PDAs (handle stored in account, not used as seed) — matches RFC 024 Option C.
+- [x] User decrypt modeled RFC-016-style (signed authorization + unsigned handle entries + ACL record verification).
+- [x] `allow_for_decryption` / public decrypt flag; transient frame allow can authorize it inside `execute_frame`.
+- [x] Scalar RHS: encrypted RHS requires ACL; scalar RHS does not.
+- [x] Self-transfer is a no-op (no handle rotation, no output ACL records).
+- [x] App code uses `confidential-token/src/fhe.rs` (`fhe::execute`) instead of raw host CPI assembly.
 
 ### Partly Modeled
 
@@ -187,7 +179,7 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 - [ ] Wire the KMS connector to verify Solana ACL records instead of using only test-local checks.
 - [ ] Extend the canonical confidential token scenario when adding new token features, instead of
       creating a second product flow.
-- [ ] Keep RFC 024 aligned when the PoC proves or disproves a design choice.
+- [ ] Keep [RFC 024](https://github.com/zama-ai/tech-spec/pull/448) aligned when the PoC proves or disproves a design choice.
 
 ## Global Flow
 
@@ -264,9 +256,12 @@ frontend / app indexer
   builds current and historical decrypt requests
 ```
 
-`test_emit_*` instructions are not protocol APIs. They emit typed events without proving or writing
-the corresponding ACL record and exist only to keep listener / worker tests fast while the real
-Solana input, trivial-encrypt, and random-handle birth paths are still being designed.
+Events still listed in the IDL but **not produced by the current host** (`execute_frame` path):
+
+```text
+InputVerifiedEvent   — no input verifier instruction yet
+FheRandEvent         — Rand not implemented in execute_frame yet
+```
 
 ## Vocabulary
 
@@ -386,7 +381,7 @@ ACL record PDA
 
 `subjects` is intentionally a plain allow-list. It does not store `Compute` or `UserDecrypt`
 permission kinds. This matches the EVM ACL model: the same `(handle, subject)` authorization is used
-by different verification paths. `zama-host::fhe_binary_op` interprets `compute_signer` membership as
+by different verification paths. `zama-host::execute_frame` interprets `compute_signer` membership as
 permission to compute, while the KMS/user-decrypt path interprets Alice membership as permission to
 decrypt. Public decrypt is the separate `public_decrypt` flag on the ACL record.
 
@@ -414,20 +409,27 @@ entropy source.
 
 Creating a persistent ACL record has two shapes in this PoC.
 
-First birth is owned by a trusted host path:
+First birth is owned by a trusted host path inside `execute_frame`:
 
 ```text
 zama-host::execute_frame(...)
-  creates a trivial-encrypt handle and its first ACL record when the frame includes
-  an explicit allow action
+  trivial_encrypt / binary op steps produce frame-local handles
+  explicit Allow actions create durable ACL records for chosen outputs
 
-zama-host::mock_input_verified_and_bind(...)
-  mock short-circuit for future InputVerifier/transciphering birth
-
-zama-host::execute_frame(...)
-  checks operand ACL records, emits compute events, and creates durable ACL records
-  only for explicit allow actions
+Future (not implemented):
+  input verification / transciphering birth for external ciphertexts
 ```
+
+PoC transfer amounts use an **app-level shortcut** until the input path exists:
+
+```text
+confidential-token::poc_authorize_transfer_amount
+  -> fhe::execute(trivial_encrypt + allow) for the amount handle
+  -> ACL domain = mint, app account = sender token account, label = "input"
+```
+
+This is **not** the production input verifier. It exercises the same `execute_frame` + durable
+`allow` shape the real path will use.
 
 Generic persistent grants extend the existing canonical ACL record. `allow_acl_subjects` requires
 the caller to already be allowed on the same handle:
@@ -556,24 +558,17 @@ confidential-token::confidential_transfer(amount = hX)
          BobTokenAccount.next_balance_nonce_sequence = 2
 ```
 
-The amount handle ACL is temporary mock glue. Today the tests use `mock_input_verified_and_bind` as an
-explicit short-circuit for the future input verifier / transciphering boundary:
+The amount handle ACL is created by `poc_authorize_transfer_amount` (see above). Tests call it
+before `confidential_transfer`:
 
 ```text
-ACL domain key = Alice
-app account    = Alice
-label          = "input"
-subjects       = [compute_signer]
-handle         = hX
+hX = poc_authorize_transfer_amount(amount = 100, nonce_sequence = 0)
+  -> output ACL at transfer_amount_nonce_key(mint, alice_token, "input")
+  -> subjects include compute_signer
 ```
 
-The mock input ACL record uses an explicit test nonce sequence. It must not derive placement from
-the handle bytes; handles are opaque even in tests.
-
-This instruction deliberately trusts the caller-supplied input handle. It is also deliberately not a
-generic allow API: the first ACL record for an input handle must come from a trusted input path. The
-real design still needs the Solana equivalent of transient input authorization from the input
-verifier path.
+The real design still needs the Solana equivalent of external input verification / transciphering
+with `InputVerifiedEvent` (or equivalent) — see RFC 024 handle birth classes.
 
 ## cUSDC Wrapper
 
@@ -613,9 +608,7 @@ The deposit amount is public in this slice because wrapping an underlying token 
 SPL amount. The wrapper does not create durable ACL state for this temporary amount handle. It is a
 frame-local result and only the new balance becomes durable through explicit `allow`.
 
-Tests that need an encrypted-input shape can use the `mock_input_verified_and_bind(...)`
-short-circuit, but app flows should eventually use the final input path and the real ZKPoK/input
-verifier or transciphering boundary.
+Production input flows must use the real verifier path once implemented — not `poc_authorize_transfer_amount`.
 
 ## App-Side FHE Helper
 
@@ -774,7 +767,7 @@ The Solana transient-allow design must preserve that behavior.
 
 ## Operator Encoding Notes
 
-`zama-host::fhe_binary_op` supports the same encrypted/scalar split as EVM-style binary operators:
+`zama-host::execute_frame` binary steps support the same encrypted/scalar split as EVM-style operators:
 
 ```text
 scalar = false:
@@ -896,39 +889,22 @@ test decrypt
   -> hB1 = 120
 ```
 
-Solana-born ciphertext transfer:
+Solana-born ciphertext transfer (same flow; initial balances born via `execute_frame` in init):
 
 ```text
-LiteSVM emits:
-  execute_frame: trivial_encrypt(125), allow -> hA0
-  execute_frame: trivial_encrypt(20),  allow -> hB0
-  mock_input_verified_and_bind(100) -> hX
+LiteSVM:
+  initialize token accounts -> execute_frame trivial_encrypt + allow -> hA0, hB0
+  poc_authorize_transfer_amount(100) -> hX
 
-tfhe-worker
-  -> creates real ciphertexts for hA0, hB0, hX
+tfhe-worker -> real ciphertexts for hA0, hB0, hX
 
 LiteSVM confidential_transfer(hX)
-  -> emits FHE.sub(hA0, hX) -> hA1
-  -> emits FHE.add(hB0, hX) -> hB1
-  -> creates output ACL records for hA1/hB1
+  -> FHE.sub / FHE.add -> hA1, hB1 + output ACL records
 
-test decrypt
-  -> hA1 = 25
-  -> hB1 = 120
+test decrypt -> hA1 = 25, hB1 = 120
 ```
 
-Random ciphertext creation:
-
-```text
-LiteSVM emits:
-  test_emit_fhe_rand(seed, Uint8) -> hRand
-
-tfhe-worker
-  -> creates a real random ciphertext for hRand
-
-test decrypt
-  -> hRand is a Uint8 plaintext
-```
+Random ciphertext creation: **not implemented** (`FheRandEvent` / Rand step absent from `execute_frame`).
 
 ## Behavior Tests
 
