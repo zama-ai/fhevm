@@ -34,9 +34,10 @@ confidential-token
   wrap_usdc
   confidential_transfer
   poc_authorize_transfer_amount   — PoC-only input stand-in (see Caveats)
+  poc_demo_confidential_rand      — E2E rand demo + ConfidentialRandCreatedEvent
 
   fhe::execute(ctx, |fhe| { ... })  — single execute_frame CPI wrapper
-    Builder: encrypted, trivial_encrypt_u64, add, sub, rand_u64 (no token ix uses rand yet), allow
+    Builder: encrypted, trivial_encrypt_u64, add, sub, rand_u64, allow
 ```
 
 **Safe area for OZ:** `confidential-token` behavior and tests. **Do not** add a separate ACL program unless the guild explicitly changes direction in RFC 024.
@@ -118,9 +119,10 @@ Subjects:
   Plain Pubkey list; MAX_ACL_SUBJECTS = 8 in PoC code (overflow TBD in RFC 024)
 
 Rand:
-  fheRand (op 26) in execute_frame — global fhe-rand-counter PDA, FheRandEvent, cleartext + #[ignore] worker test
-  fheRandBounded (op 27) not implemented
-  fhe::rand_u64() on builder; no confidential-token instruction calls it yet
+  poc_demo_confidential_rand — token ix calling fhe.rand_u64() + durable Allow
+  E2E test: confidential_token_e2e_rand_demo_encrypt_compute_and_user_decrypt_request
+  signed_confidential_rand_user_decrypt_request — frontend-shaped decrypt payload helper
+  fheRandBounded (op 27) not planned for current PoC
 
 KMS:
   Decrypt semantics tested in litesvm-harness kms.rs, not wired to KMS connector
@@ -147,7 +149,7 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-LiteSVM runtime tests: **43** in `runtime-tests/tests/host_events.rs`. On-chain handle derivation fails closed when the previous slot hash is missing; every fixture seeds a non-zero previous bank hash by default.
+LiteSVM runtime tests: **44** in `runtime-tests/tests/host_events.rs`. On-chain handle derivation fails closed when the previous slot hash is missing; every fixture seeds a non-zero previous bank hash by default.
 
 **Worker E2E (`#[ignore]`, CI `tfhe-worker-solana-poc`):** transfer tests run in CI; `solana_fhe_rand_creates_ciphertext_and_decrypts` exists locally but is not in the CI loop yet.
 

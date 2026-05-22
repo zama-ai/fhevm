@@ -56,7 +56,7 @@ solana/litesvm-harness
   `CleartextBackend` simulates add/sub/trivial/rand locally for fast semantic checks.
 
 solana/runtime-tests
-  Fast LiteSVM tests (43). Event helpers live in litesvm-harness, not in this crate.
+  Fast LiteSVM tests (44). Event helpers live in litesvm-harness, not in this crate.
 
 coprocessor/fhevm-engine/host-listener/src/solana_adapter.rs
   Maps typed Solana host events into the existing coprocessor DB model.
@@ -169,7 +169,8 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 - [x] Scalar RHS: encrypted RHS requires ACL; scalar RHS does not.
 - [x] Self-transfer is a no-op (no handle rotation, no output ACL records).
 - [x] App code uses `confidential-token/src/fhe.rs` (`fhe::execute`) instead of raw host CPI assembly.
-- [x] **`fheRand`** via `FheFrameStep::Rand`: global `fhe-rand-counter` PDA, EVM-style seed/handle derivation, `FheRandEvent`, cleartext + worker paths. On-chain `fhe_type` validation matches EVM supported types (Bool + Uint8..Uint256).
+- [x] **`fheRand`** via `FheFrameStep::Rand` + **`poc_demo_confidential_rand`** token demo with user-decrypt request roundtrip.
+- [ ] **`fheRandBounded`** (op 27): not planned for current PoC scope.
 
 ### Partly Modeled
 
@@ -177,8 +178,6 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 - [ ] Input handles use `poc_authorize_transfer_amount`, which exercises the token
       `fhe::execute` wrapper (trivial_encrypt + allow). The real Solana input verifier
       or transciphering path is not implemented yet.
-- [ ] `fhe::rand_u64()` exists on the token builder but **no token instruction calls it yet** — rand is exercised via direct `execute_frame` tests.
-- [ ] **`fheRandBounded`** (op 27): not implemented — no frame step, no event. EVM bounded rand requires a power-of-two `upperBound` and excludes Bool; see [Rand vs bounded rand](#rand-vs-bounded-rand).
 - [ ] ACL records are created already initialized through Anchor `init`; there is no stored
       `Empty -> Bound` enum in the PoC.
 - [x] `allow_for_decryption` follows EVM semantics: any subject allowed on the handle may mark the
@@ -646,7 +645,7 @@ inside the closure:
   fhe.encrypted(...)            // durable input handle from an ACL record
   fhe.trivial_encrypt_u64(...)  // frame-local handle
   fhe.add(...), fhe.sub(...)    // frame-local computed handle
-  fhe.rand_u64()                // frame-local rand (Uint64 / type 5); no token ix uses this yet
+  fhe.rand_u64()                // frame-local rand (Uint64 / type 5); see poc_demo_confidential_rand
   fhe.allow(...)                // explicit durable ACL record creation
 ```
 
@@ -921,25 +920,33 @@ LiteSVM confidential_transfer(hX)
 test decrypt -> hA1 = 25, hB1 = 120
 ```
 
-Random ciphertext creation (`FheFrameStep::Rand`):
+Random ciphertext E2E demo (`poc_demo_confidential_rand`):
 
 ```text
-LiteSVM execute_frame(Rand { fhe_type: 5 })
-  -> reads global fhe-rand-counter PDA, derives seed, bumps counter
-  -> emits FheRandEvent(seed, fhe_type, result)
-  -> transient allow on result handle
+confidential-token::poc_demo_confidential_rand
+  -> fhe::execute(rand_u64 + durable Allow for owner)
+  -> ZamaHost FheRandEvent + AclAllowedEvent
+  -> app ConfidentialRandCreatedEvent { rand_handle, acl_record, ... }
 
-CleartextBackend (fast):
-  decrypt(result) == cleartext_rand_value(seed, 64)
+CleartextBackend (fast local compute):
+  ingest tx CPI events -> decrypt(rand_handle) == cleartext_rand_value(seed, 64)
 
-Worker path (#[ignore], ~7min):
-  solana_fhe_rand_creates_ciphertext_and_decrypts
-  -> listener -> Postgres -> tfhe-worker -> decrypt matches cleartext OPRF
+User decrypt request (frontend-shaped, RFC-016 PoC model):
+  signed_confidential_rand_user_decrypt_request(fixture, owner, handle, acl_record)
+    authorization.user = owner
+    authorization.allowed_acl_domain_keys = [mint]
+    handles[0] = { handle, owner, acl_record }
+  kms_like_user_decrypt_check(svm, request)  // ACL-only gate; KMS connector TBD
+
+Canonical test:
+  confidential_token_e2e_rand_demo_encrypt_compute_and_user_decrypt_request
 ```
 
-Not yet wired: token instruction calling `fhe.rand_u64()`, `fheRandBounded`, CI job for the rand worker test.
+Worker path (#[ignore], ~7min): `solana_fhe_rand_creates_ciphertext_and_decrypts` — same rand birth through Postgres/tfhe-worker.
 
-## Rand vs bounded rand
+Not planned for this PoC: `fheRandBounded`. Rand worker test not in CI yet.
+
+## Rand vs bounded rand (EVM reference only)
 
 Both share the same global seed/counter on EVM and in this PoC (`fhe-rand-counter` PDA). They differ in **output range** and **handle op**:
 

@@ -15,20 +15,21 @@ use zama_host::{
 };
 use zama_solana_litesvm_harness::{
     acl_record_address, allow_for_decryption_ix, amount_plaintext, anchor_ix,
-    assert_balance_acl,
+    assert_acl_record, assert_balance_acl,
     authorization_payload_bytes, authorize_transfer_amount,
     balance_acl_record_address, binary_op_events, balance_handle_updated_events, CleartextBackend,
     cleartext_rand_value, created_acl_count, event_authority, execute_frame_ix, execute_frame_log_count,
     expected_trivial_handle, fhe_rand_events, FheBackend, FheBinaryOpCode, host_program_so_path, kms_like_public_decrypt_check,
     kms_like_user_decrypt_check, label, max_cpi_depth, rand_counter_address, read_acl_record,
-    read_rand_counter, record_subjects,
+    read_rand_counter, record_subjects, run_rand_demo_scenario,
     run_transfer_scenario_meta, run_wrap_scenario, seed_transfer_inputs,
     assert_transfer_cleartext, assert_transfer_output_invariants,
     assert_no_zama_host_events_on_failure, assert_wrap_output_invariants,
     previous_bank_hash_from_sysvar, set_previous_slot_hash,
     wrap_output_accounts, wrap_usdc_ix, WrapSetup,
     seed_authorizing_acl_record, self_transfer_ix, send, send_many_with_signers, send_with_meta,
-    signed_current_balance_user_decrypt_request, signed_user_decrypt_request, spl_token_amount,
+    signed_confidential_rand_user_decrypt_request, signed_current_balance_user_decrypt_request,
+    signed_user_decrypt_request, spl_token_amount,
     svm_with_program, token_account, token_fixture, transfer_amount_acl_address, transfer_ix,
     transfer_ix_with_amount_acl, transfer_ix_with_amount_nonce, transfer_ix_with_current_acl,
     transfer_ix_with_current_acl_and_amount_nonce, transfer_output_accounts, try_send,
@@ -1965,4 +1966,70 @@ fn execute_frame_rand_counter_bumps_across_instructions_in_one_transaction() {
     .unwrap();
 
     assert_eq!(read_rand_counter(&svm, program_id), Some(2));
+}
+
+#[test]
+fn confidential_token_e2e_rand_demo_encrypt_compute_and_user_decrypt_request() {
+    let mut fixture = token_fixture();
+    const RAND_NONCE_SEQUENCE: u64 = 1;
+    let scenario = run_rand_demo_scenario(&mut fixture, RAND_NONCE_SEQUENCE);
+
+    assert_eq!(
+        scenario.rand_handle,
+        read_acl_record(&fixture.svm, scenario.acl_record)
+            .expect("expected rand ACL")
+            .handle
+    );
+    assert_acl_record(
+        &fixture.svm,
+        scenario.acl_record,
+        fixture.mint.pubkey(),
+        fixture.alice_token,
+        token::rand_label(),
+        RAND_NONCE_SEQUENCE,
+        scenario.rand_handle,
+        &[fixture.alice.pubkey(), fixture.compute_signer],
+    );
+
+    let mut cleartext = CleartextBackend::default();
+    cleartext
+        .ingest_transaction(
+            &scenario.meta,
+            &scenario.account_keys,
+            fixture.host_program_id,
+        )
+        .unwrap();
+    let expected_plaintext =
+        u64::try_from(cleartext_rand_value(scenario.rand_seed, 64)).unwrap();
+    assert_eq!(
+        cleartext.decrypt_cleartext(scenario.rand_handle),
+        Some(TypedClearValue::uint64(expected_plaintext))
+    );
+
+    let decrypt_request = signed_confidential_rand_user_decrypt_request(
+        &fixture,
+        &fixture.alice,
+        scenario.rand_handle,
+        scenario.acl_record,
+    );
+    assert_eq!(decrypt_request.handles.len(), 1);
+    assert_eq!(decrypt_request.handles[0].handle, scenario.rand_handle);
+    assert_eq!(decrypt_request.handles[0].acl_record, scenario.acl_record);
+    assert_eq!(decrypt_request.authorization.user, fixture.alice.pubkey());
+    assert_eq!(
+        decrypt_request.authorization.allowed_acl_domain_keys,
+        vec![fixture.mint.pubkey()]
+    );
+    assert!(kms_like_user_decrypt_check(&fixture.svm, &decrypt_request));
+
+    let wrong_owner = signed_confidential_rand_user_decrypt_request(
+        &fixture,
+        &fixture.bob,
+        scenario.rand_handle,
+        scenario.acl_record,
+    );
+    assert!(!kms_like_user_decrypt_check(&fixture.svm, &wrong_owner));
+
+    let record = read_acl_record(&fixture.svm, scenario.acl_record).expect("expected rand ACL");
+    assert_eq!(record.encrypted_value_label, token::rand_label());
 }

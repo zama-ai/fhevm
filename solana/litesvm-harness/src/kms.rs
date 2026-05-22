@@ -96,6 +96,23 @@ pub fn signed_current_balance_user_decrypt_request(
     )
 }
 
+pub fn signed_confidential_rand_user_decrypt_request(
+    fixture: &TokenFixture,
+    signer: &Keypair,
+    rand_handle: [u8; 32],
+    acl_record: Pubkey,
+) -> UserDecryptRequest {
+    signed_user_decrypt_request(
+        fixture,
+        signer,
+        vec![UserDecryptHandleEntry {
+            handle: rand_handle,
+            owner: signer.pubkey(),
+            acl_record,
+        }],
+    )
+}
+
 pub fn authorization_payload_bytes(authorization: &UserDecryptAuthorizationPayload) -> Vec<u8> {
     let mut bytes = b"Zama Solana UserDecrypt v0".to_vec();
     bytes.extend_from_slice(authorization.user.as_ref());

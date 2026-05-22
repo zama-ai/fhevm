@@ -62,6 +62,19 @@ pub fn transfer_amount_acl_address(
     )
 }
 
+pub fn rand_acl_record_address(
+    host_program_id: Pubkey,
+    mint: Pubkey,
+    token_account: Pubkey,
+    nonce_sequence: u64,
+) -> Pubkey {
+    acl_record_address(
+        host_program_id,
+        token::rand_nonce_key(mint, token_account),
+        nonce_sequence,
+    )
+}
+
 pub fn read_rand_counter(svm: &LiteSVM, program_id: Pubkey) -> Option<u64> {
     let address = rand_counter_address(program_id);
     let account = svm.get_account(&address)?;

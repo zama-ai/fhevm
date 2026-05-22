@@ -5,11 +5,11 @@ use solana_sdk::{pubkey::Pubkey, signature::Signature};
 
 use crate::{
     acl::read_acl_record,
-    events::trivial_encrypt_events,
+    events::{fhe_rand_events, trivial_encrypt_events},
     fixture::{TokenFixture, TransferOutputAccounts, WrapOutputAccounts},
     instructions::{
-        authorize_transfer_amount, transfer_ix, transfer_output_accounts, wrap_output_accounts,
-        wrap_usdc_ix,
+        authorize_transfer_amount, poc_demo_confidential_rand_ix, transfer_ix,
+        transfer_output_accounts, wrap_output_accounts, wrap_usdc_ix,
     },
     transaction::{send_with_meta, send_with_meta_and_signature},
     util::DEFAULT_INPUT_NONCE_SEQUENCE,
@@ -47,6 +47,42 @@ pub struct TransferScenario {
     pub output: TransferOutputAccounts,
     pub new_alice_handle: [u8; 32],
     pub new_bob_handle: [u8; 32],
+}
+
+#[derive(Clone, Debug)]
+pub struct RandDemoScenario {
+    pub meta: TransactionMetadata,
+    pub account_keys: Vec<Pubkey>,
+    pub host_program_id: Pubkey,
+    pub acl_record: Pubkey,
+    pub rand_handle: [u8; 32],
+    pub rand_seed: [u8; 16],
+}
+
+/// Run `poc_demo_confidential_rand` and return tx metadata + rand output handles.
+pub fn run_rand_demo_scenario(
+    fixture: &mut TokenFixture,
+    nonce_sequence: u64,
+) -> RandDemoScenario {
+    let (ix, acl_record) = poc_demo_confidential_rand_ix(fixture, nonce_sequence);
+    let (meta, account_keys) = send_with_meta(&mut fixture.svm, &fixture.alice, ix);
+    let rand_handle = read_acl_record(&fixture.svm, acl_record)
+        .expect("expected rand ACL")
+        .handle;
+    let rand_seed = fhe_rand_events(&meta, &account_keys, fixture.host_program_id)
+        .into_iter()
+        .next()
+        .expect("expected FheRandEvent")
+        .seed;
+
+    RandDemoScenario {
+        meta,
+        account_keys,
+        host_program_id: fixture.host_program_id,
+        acl_record,
+        rand_handle,
+        rand_seed,
+    }
 }
 
 /// Authorize transfer amount, run `confidential_transfer`, return tx metadata + output handles.

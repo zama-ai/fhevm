@@ -23,9 +23,9 @@ mod util;
 
 pub use acl::{
     acl_record_address, assert_acl_record, assert_balance_acl, balance_acl_record_address,
-    created_acl_count, event_authority, rand_counter_address, read_acl_record,
-    read_rand_counter, record_subjects, seed_authorizing_acl_record, token_account_address,
-    transfer_amount_acl_address, vault_authority_address,
+    created_acl_count, event_authority, rand_acl_record_address, rand_counter_address,
+    read_acl_record, read_rand_counter, record_subjects, seed_authorizing_acl_record,
+    token_account_address, transfer_amount_acl_address, vault_authority_address,
 };
 pub use cleartext::{
     cleartext_rand_value, CleartextBackend, ClearValue, FheBackend, Handle, TypedClearValue,
@@ -48,14 +48,15 @@ pub use invariants::{
     assert_tfhe_event_count, assert_transfer_output_invariants, assert_wrap_output_invariants,
 };
 pub use instructions::{
-    authorize_transfer_amount, self_transfer_ix, transfer_ix, transfer_ix_with_amount_acl,
-    transfer_ix_with_amount_nonce, transfer_ix_with_current_acl,
-    transfer_ix_with_current_acl_and_amount_nonce, transfer_output_accounts, wrap_output_accounts,
-    wrap_usdc_ix,
+    authorize_transfer_amount, poc_demo_confidential_rand, poc_demo_confidential_rand_ix,
+    self_transfer_ix, transfer_ix, transfer_ix_with_amount_acl, transfer_ix_with_amount_nonce,
+    transfer_ix_with_current_acl, transfer_ix_with_current_acl_and_amount_nonce,
+    transfer_output_accounts, wrap_output_accounts, wrap_usdc_ix,
 };
 pub use kms::{
     authorization_payload_bytes, kms_like_public_decrypt_check, kms_like_user_decrypt_check,
-    signed_current_balance_user_decrypt_request, signed_user_decrypt_request,
+    signed_current_balance_user_decrypt_request, signed_confidential_rand_user_decrypt_request,
+    signed_user_decrypt_request,
     signed_user_decrypt_request_with_domains, PublicDecryptHandleEntry,
     UserDecryptAuthorizationPayload, UserDecryptHandleEntry, UserDecryptRequest,
 };
@@ -64,8 +65,8 @@ pub use programs::{
     token_program_so_path,
 };
 pub use scenarios::{
-    run_transfer_scenario, run_transfer_scenario_meta, run_wrap_scenario, TransferScenario,
-    TransferSetup, WrapScenario, WrapSetup, BALANCE_FHE_TYPE,
+    run_rand_demo_scenario, run_transfer_scenario, run_transfer_scenario_meta, run_wrap_scenario,
+    RandDemoScenario, TransferScenario, TransferSetup, WrapScenario, WrapSetup, BALANCE_FHE_TYPE,
 };
 pub use semantic::{
     assert_transfer_cleartext, assert_transfer_semantics, compute_backend_kind_from_env,

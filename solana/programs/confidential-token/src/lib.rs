@@ -382,6 +382,72 @@ pub mod confidential_token {
             },
         )
     }
+
+    /// PoC demo: birth an encrypted random u64 via `fheRand`, durable-allow it for the owner,
+    /// and emit an app event the frontend/indexer can consume for a user-decrypt request.
+    pub fn poc_demo_confidential_rand(
+        ctx: Context<PocDemoConfidentialRand>,
+        nonce_sequence: u64,
+    ) -> Result<()> {
+        let mint = &ctx.accounts.mint;
+        let token_account = &ctx.accounts.token_account;
+        require_keys_eq!(
+            token_account.owner,
+            ctx.accounts.owner.key(),
+            ConfidentialTokenError::OwnerMismatch
+        );
+        require_keys_eq!(
+            token_account.mint,
+            mint.key(),
+            ConfidentialTokenError::MintMismatch
+        );
+        require_keys_eq!(
+            ctx.accounts.compute_signer.key(),
+            mint.compute_signer,
+            ConfidentialTokenError::ComputeSignerMismatch
+        );
+
+        fhe::execute(
+            fhe_context(
+                &ctx.accounts.owner,
+                &ctx.accounts.zama_event_authority,
+                &ctx.accounts.zama_program,
+                &ctx.accounts.compute_signer,
+                &ctx.accounts.zama_rand_counter,
+                mint.key(),
+                ctx.bumps.compute_signer,
+                &ctx.accounts.system_program,
+            ),
+            |fhe| {
+                let rand = fhe.rand_u64()?;
+                fhe.allow(
+                    &rand,
+                    fhe::DurableAllow {
+                        acl_record: ctx.accounts.output_acl.to_account_info(),
+                        app_account: token_account.key(),
+                        nonce_key: rand_nonce_key(mint.key(), token_account.key()),
+                        nonce_sequence,
+                        encrypted_value_label: rand_label(),
+                        subjects: balance_acl_subjects(token_account.owner, mint.compute_signer),
+                        public_decrypt: false,
+                    },
+                )?;
+                Ok(())
+            },
+        )?;
+        let rand_handle = durable_acl_handle(&ctx.accounts.output_acl.to_account_info())?;
+
+        emit_cpi!(ConfidentialRandCreatedEvent {
+            version: APP_EVENT_VERSION,
+            mint: mint.key(),
+            owner: token_account.owner,
+            token_account: token_account.key(),
+            rand_handle,
+            acl_record: ctx.accounts.output_acl.key(),
+            nonce_sequence,
+        });
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -514,6 +580,37 @@ pub struct ConfidentialTransfer<'info> {
 
 #[derive(Accounts)]
 #[event_cpi]
+pub struct PocDemoConfidentialRand<'info> {
+    #[account(mut)]
+    pub owner: Signer<'info>,
+    pub mint: Box<Account<'info, ConfidentialMint>>,
+    #[account(
+        constraint = token_account.owner == owner.key() @ ConfidentialTokenError::OwnerMismatch,
+        constraint = token_account.mint == mint.key() @ ConfidentialTokenError::MintMismatch,
+    )]
+    pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
+    /// CHECK: Program-controlled compute signer PDA.
+    #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
+    pub compute_signer: UncheckedAccount<'info>,
+    /// CHECK: initialized and validated by the Zama host program CPI.
+    #[account(mut)]
+    pub output_acl: UncheckedAccount<'info>,
+    /// CHECK: global Zama host rand counter PDA.
+    #[account(
+        mut,
+        seeds = [b"fhe-rand-counter"],
+        bump,
+        seeds::program = zama_program.key()
+    )]
+    pub zama_rand_counter: UncheckedAccount<'info>,
+    /// CHECK: Anchor event CPI authority for the Zama host program.
+    pub zama_event_authority: UncheckedAccount<'info>,
+    pub zama_program: Program<'info, ZamaHost>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[event_cpi]
 pub struct PocAuthorizeTransferAmount<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
@@ -564,6 +661,17 @@ pub struct ConfidentialTokenAccount {
     pub balance_acl_record: Pubkey,
     pub next_balance_nonce_sequence: u64,
     pub bump: u8,
+}
+
+#[event]
+pub struct ConfidentialRandCreatedEvent {
+    pub version: u8,
+    pub mint: Pubkey,
+    pub owner: Pubkey,
+    pub token_account: Pubkey,
+    pub rand_handle: [u8; 32],
+    pub acl_record: Pubkey,
+    pub nonce_sequence: u64,
 }
 
 #[event]
@@ -716,6 +824,14 @@ pub fn transfer_amount_label() -> [u8; 32] {
 
 pub fn transfer_amount_nonce_key(acl_domain_key: Pubkey, app_account: Pubkey) -> [u8; 32] {
     nonce_key(acl_domain_key, app_account, transfer_amount_label())
+}
+
+pub fn rand_label() -> [u8; 32] {
+    *b"rand____________________________"
+}
+
+pub fn rand_nonce_key(acl_domain_key: Pubkey, app_account: Pubkey) -> [u8; 32] {
+    nonce_key(acl_domain_key, app_account, rand_label())
 }
 
 pub fn wrap_amount_label() -> [u8; 32] {

@@ -3,8 +3,8 @@ use solana_sdk::{instruction::Instruction, pubkey::Pubkey, signature::Signer};
 
 use crate::{
     acl::{
-        balance_acl_record_address, event_authority, rand_counter_address, read_acl_record,
-        transfer_amount_acl_address,
+        balance_acl_record_address, event_authority, rand_acl_record_address,
+        rand_counter_address, read_acl_record, transfer_amount_acl_address,
     },
     fixture::{TokenFixture, TransferOutputAccounts, WrapOutputAccounts},
     transaction::{anchor_ix, send},
@@ -43,6 +43,45 @@ pub fn authorize_transfer_amount(
     read_acl_record(&fixture.svm, output_acl)
         .expect("expected transfer amount ACL")
         .handle
+}
+
+pub fn poc_demo_confidential_rand_ix(
+    fixture: &TokenFixture,
+    nonce_sequence: u64,
+) -> (Instruction, Pubkey) {
+    let output_acl = rand_acl_record_address(
+        fixture.host_program_id,
+        fixture.mint.pubkey(),
+        fixture.alice_token,
+        nonce_sequence,
+    );
+    let ix = anchor_ix(
+        fixture.token_program_id,
+        token::accounts::PocDemoConfidentialRand {
+            owner: fixture.alice.pubkey(),
+            mint: fixture.mint.pubkey(),
+            token_account: fixture.alice_token,
+            compute_signer: fixture.compute_signer,
+            output_acl,
+            zama_rand_counter: rand_counter_address(fixture.host_program_id),
+            zama_event_authority: event_authority(fixture.host_program_id),
+            zama_program: fixture.host_program_id,
+            system_program: system_program::ID,
+            event_authority: event_authority(fixture.token_program_id),
+            program: fixture.token_program_id,
+        },
+        token::instruction::PocDemoConfidentialRand { nonce_sequence },
+    );
+    (ix, output_acl)
+}
+
+pub fn poc_demo_confidential_rand(
+    fixture: &mut TokenFixture,
+    nonce_sequence: u64,
+) -> Pubkey {
+    let (ix, output_acl) = poc_demo_confidential_rand_ix(fixture, nonce_sequence);
+    send(&mut fixture.svm, &fixture.alice, ix);
+    output_acl
 }
 
 pub fn transfer_output_accounts(
