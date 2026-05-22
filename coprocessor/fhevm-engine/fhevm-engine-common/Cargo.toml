@@ -66,3 +66,6 @@ path = "src/bin/generate_keys.rs"
 [[bin]]
 name = "resolve_database_url"
 path = "src/bin/resolve_database_url.rs"
+
+[lints]
+workspace = true

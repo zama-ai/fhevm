@@ -33,6 +33,24 @@ export const ensureGeneratedAddressFile = async (file: string, producer: string,
   }
 };
 
+/** Validates that a generated address file does NOT contain forbidden keys. */
+export const assertGeneratedAddressFileLacks = async (
+  file: string,
+  producer: string,
+  forbiddenKeys: string[],
+) => {
+  if (!(await exists(file))) {
+    return;
+  }
+  const env = await readEnvFile(file);
+  const present = forbiddenKeys.filter((key) => env[key]);
+  if (present.length) {
+    throw new PreflightError(
+      `${producer} generated ${file} with forbidden key(s) ${present.join(", ")} — these belong on the canonical host only`,
+    );
+  }
+};
+
 /** Regenerates runtime artifacts when persisted state outlives generated files. */
 export const runtimeArtifactPaths = (state: State) => {
   const topology = topologyForState(state);

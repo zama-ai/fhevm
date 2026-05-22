@@ -60,10 +60,10 @@ If the upgrade baseline predates `ProtocolConfig` and `KMSGeneration` (for examp
 `UPGRADE_FROM_TAG=v0.11.1` in CI), run:
 
 ```bash
-npx hardhat task:ensureMigrationProxyAddresses
+npx hardhat task:deployEmptyProxiesProtocolConfigKMSGeneration
 ```
 
-This compatibility task only deploys empty UUPS proxies for missing address keys and appends
+This compatibility task deploys only the empty UUPS proxies for missing address keys and appends
 the missing generated constants so prepare-upgrade tasks can compile against the current
 source tree. Keep it as a forward-compat safeguard if a manifest contract starts importing
 those generated addresses before the baseline tag catches up. `DEPLOYER_PRIVATE_KEY` is only
@@ -89,67 +89,7 @@ Notes:
 - the task runs `hardhat clean` before recompiling so the implementation is not built from stale
   artifacts compiled against another environment
 
-## Migration deployment (ProtocolConfig & KMSGeneration)
-
-Two dedicated tasks — `task:deployProtocolConfigFromMigration` and
-`task:deployKMSGenerationFromMigration` — call `initializeFromMigration` instead of
-`initializeFromEmptyProxy`.
-
-Use these when deploying new proxy instances that must inherit state from an existing
-KMSVerifier context (ProtocolConfig) or a frozen Gateway contract (KMSGeneration).
-
-> **One-shot choice.** Both initializers share the same `reinitializer(2)` slot. Once either
-> one runs on a proxy, the other is permanently locked out.
-
-### ProtocolConfig migration
-
-Uses `MIGRATION_CONTEXT_ID` (shared with KMSGeneration — see table below).
-
-```bash
-MIGRATION_CONTEXT_ID="<context_id>" \
-npx hardhat task:deployProtocolConfigFromMigration --network <network>
-```
-
-The migrated ProtocolConfig seeds its internal counter so that the first context it creates
-has exactly `MIGRATION_CONTEXT_ID`, preserving context continuity for downstream consumers.
-
-### KMSGeneration migration
-
-Requires the full active state from the frozen Gateway. All env vars below are mandatory:
-
-| Variable                                     | Format                                          |
-| -------------------------------------------- | ----------------------------------------------- |
-| `MIGRATION_PREP_KEYGEN_COUNTER`              | uint256                                         |
-| `MIGRATION_KEY_COUNTER`                      | uint256                                         |
-| `MIGRATION_CRS_COUNTER`                      | uint256                                         |
-| `MIGRATION_ACTIVE_KEY_ID`                    | uint256                                         |
-| `MIGRATION_ACTIVE_CRS_ID`                    | uint256                                         |
-| `MIGRATION_ACTIVE_PREP_KEYGEN_ID`            | uint256                                         |
-| `MIGRATION_ACTIVE_KEY_DIGESTS`               | JSON array: `[{"keyType":0,"digest":"0x…"}, …]` |
-| `MIGRATION_ACTIVE_CRS_DIGEST`                | hex bytes                                       |
-| `MIGRATION_KEY_CONSENSUS_TX_SENDERS`         | comma-separated addresses                       |
-| `MIGRATION_KEY_CONSENSUS_DIGEST`             | bytes32 hex                                     |
-| `MIGRATION_CRS_CONSENSUS_TX_SENDERS`         | comma-separated addresses                       |
-| `MIGRATION_CRS_CONSENSUS_DIGEST`             | bytes32 hex                                     |
-| `MIGRATION_PREP_KEYGEN_CONSENSUS_TX_SENDERS` | comma-separated addresses                       |
-| `MIGRATION_PREP_KEYGEN_CONSENSUS_DIGEST`     | bytes32 hex                                     |
-| `MIGRATION_CRS_MAX_BIT_LENGTH`               | uint256 (e.g. `4096`)                           |
-| `MIGRATION_PREP_KEYGEN_PARAMS_TYPE`          | `0` (Default) or `1` (Test)                     |
-| `MIGRATION_CRS_PARAMS_TYPE`                  | `0` (Default) or `1` (Test)                     |
-| `MIGRATION_CONTEXT_ID`                       | KMS context ID for the migrated state           |
-
-```bash
-MIGRATION_PREP_KEYGEN_COUNTER="…" \
-MIGRATION_KEY_COUNTER="…" \
-# … (all variables above) …
-npx hardhat task:deployKMSGenerationFromMigration --network <network>
-```
-
-`task:deployProtocolConfigFromMigration` must run before `task:deployKMSGenerationFromMigration`.
-`task:deployKMSGenerationFromMigration` validates the migrated signer / tx-sender consensus sets
-against the canonical `ProtocolConfig` state during initialization.
-
-### Breaking changes for event consumers
+## Breaking changes for event consumers
 
 `KMSVerifier` no longer emits context-lifecycle events after the migration to canonical
 `ProtocolConfig` state. Off-chain consumers should move to the `ProtocolConfig` emitter at
@@ -157,3 +97,26 @@ against the canonical `ProtocolConfig` state during initialization.
 
 - `KMSVerifier.NewContextSet(uint256,address[],uint256)` -> `ProtocolConfig.NewKmsContext(uint256,KmsNode[],KmsThresholds)`
 - `KMSVerifier.KMSContextDestroyed(uint256)` -> `ProtocolConfig.KmsContextDestroyed(uint256)`
+
+## Host Deployment Role
+
+`task:deployAllHostContracts` requires an explicit `--with-kms-generation` value:
+
+```bash
+npx hardhat task:deployAllHostContracts --with-kms-generation true   # canonical host
+npx hardhat task:deployAllHostContracts --with-kms-generation false  # non-canonical host
+```
+
+`KMSGeneration` is deployed only on the canonical host chain. Non-canonical host chains
+deploy the common host contracts only.
+
+### Non-canonical host chains
+
+`KMSGeneration` is NOT deployed on non-canonical host chains. `ProtocolConfig` on
+non-canonical chains is a replica whose state is mirrored manually (Phase 1) or via
+LayerZero / LzRead (Phase 2) from the canonical chain. Operators mirroring a canonical
+rotation to non-canonical chains call `defineNewKmsContext` directly on each non-canonical
+`ProtocolConfig`, using the same `kmsNodes` and `thresholds` as the canonical rotation.
+
+No on-chain guard prevents a non-canonical replica from drifting if a mirror transaction is
+skipped. Operators are responsible for fan-out correctness.

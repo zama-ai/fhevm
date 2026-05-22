@@ -32,7 +32,8 @@ const Configuration = {
         'test-suite',
         'charts',
         'common',
-        'relayer'
+        'relayer',
+        'listener'
       ]
     ],
   },

@@ -286,7 +286,7 @@ pub async fn query_and_save_pks(
     info!("Querying database for keys");
 
     let db_key_cache = DbKeyCache::new(100)?;
-    let key = db_key_cache.fetch_latest(pool).await?;
+    let key = db_key_cache.fetch_latest_from_pool(pool).await?;
     let crs_cache = CrsCache::load(pool).await?;
     let crs = crs_cache.get_latest().ok_or("No CRS found")?.clone();
 

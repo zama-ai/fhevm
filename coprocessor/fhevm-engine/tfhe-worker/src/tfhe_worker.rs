@@ -113,7 +113,7 @@ async fn tfhe_worker_cycle(
 
     #[cfg(feature = "bench")]
     {
-        let _ = db_key_cache.fetch_latest(&pool).await?;
+        let _ = db_key_cache.fetch_latest_from_pool(&pool).await?;
     }
     let mut immediately_poll_more_work = false;
     let mut no_progress_cycles = 0;
@@ -409,7 +409,7 @@ WHERE c.transaction_id IN (
                 let mut is_scalar_op_vec: Vec<bool> = Vec::with_capacity(w.dependencies.len());
                 for (idx, dh) in w.dependencies.iter().enumerate() {
                     let is_operand_scalar =
-                        w.is_scalar && idx == 1 || fhe_op.does_have_more_than_one_scalar();
+                        fhe_op.is_operand_scalar(w.is_scalar, idx, w.dependencies.len());
                     is_scalar_op_vec.push(is_operand_scalar);
                     this_comp_inputs.push(dh.clone());
                     if is_operand_scalar {

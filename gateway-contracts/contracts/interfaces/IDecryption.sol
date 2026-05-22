@@ -360,6 +360,15 @@ interface IDecryption {
     error DecryptionNotRequested(uint256 decryptionId);
 
     /**
+     * @notice Error indicating that a decryption response declares a KMS context ID that differs
+     * from the one pinned at the time of the corresponding request.
+     * @param decryptionId The decryption request ID.
+     * @param requestContextId The context ID pinned at request time.
+     * @param responseContextId The context ID declared in the response's extraData.
+     */
+    error DecryptionContextMismatch(uint256 decryptionId, uint256 requestContextId, uint256 responseContextId);
+
+    /**
      * @notice Requests a public decryption.
      * @param ctHandles The handles of the ciphertexts to decrypt.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
@@ -470,7 +479,8 @@ interface IDecryption {
     ) external;
 
     /**
-     * @notice Indicates if handles are ready to be decrypted publicly.
+     * @notice Indicates if ciphertext material exists for public decryption.
+     * @dev Checks only ciphertext-material availability. ACL checks happen off-chain in the KMS.
      * @param ctHandles The ciphertext handles.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
@@ -480,7 +490,8 @@ interface IDecryption {
     ) external view returns (bool);
 
     /**
-     * @notice Indicates if handles are ready to be decrypted by a user (legacy path input shape).
+     * @notice Indicates if ciphertext material exists for user decryption (legacy path input shape).
+     * @dev Checks only ciphertext-material availability. ACL checks happen off-chain in the KMS.
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      * @custom:deprecated Used only by the legacy user decryption path. Removed when the
@@ -493,7 +504,8 @@ interface IDecryption {
     ) external view returns (bool);
 
     /**
-     * @notice Indicates if handles are ready to be decrypted by a user (unified EIP-712 input shape).
+     * @notice Indicates if ciphertext material exists for user decryption (unified EIP-712 input shape).
+     * @dev Checks only ciphertext-material availability. ACL checks happen off-chain in the KMS.
      * @param handles The handle entries as submitted to the unified `userDecryptionRequest`.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
@@ -503,7 +515,8 @@ interface IDecryption {
     ) external view returns (bool);
 
     /**
-     * @notice Indicates if handles are ready to be decrypted by a user.
+     * @notice Indicates if ciphertext material exists for user decryption.
+     * @dev Checks only ciphertext-material availability. ACL checks happen off-chain in the KMS.
      * @param userAddress The user's address (unused, kept for backward compatibility).
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
@@ -516,7 +529,8 @@ interface IDecryption {
     ) external view returns (bool);
 
     /**
-     * @notice Indicates if the handles are ready to be decrypted by the delegate address in delegation accounts.
+     * @notice Indicates if ciphertext material exists for delegated user decryption.
+     * @dev Checks only ciphertext-material availability. ACL checks happen off-chain in the KMS.
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      * @custom:deprecated Used only by the legacy delegated user decryption path. Removed when the

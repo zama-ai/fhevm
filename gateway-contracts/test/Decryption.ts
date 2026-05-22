@@ -9,6 +9,7 @@ import {
   CiphertextCommits,
   Decryption,
   Decryption__factory,
+  GatewayConfig,
   IDecryption,
   ProtocolPayment,
   ZamaOFT,
@@ -106,6 +107,14 @@ describe("Decryption", function () {
   // Define extra data for version 0
   const extraDataV0 = hre.ethers.solidityPacked(["uint8"], [0]);
 
+  // Build an extraData payload of version 1 carrying an explicit contextId.
+  // Layout: 1 byte version (= 1) || 32 bytes uint256 contextId.
+  function extraDataV1(contextId: bigint): string {
+    return hre.ethers.solidityPacked(["uint8", "uint256"], [1, contextId]);
+  }
+
+  let kmsSigners: HardhatEthersSigner[];
+
   // Add ciphertext materials
   async function prepareAddCiphertextFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
@@ -159,6 +168,8 @@ describe("Decryption", function () {
   describe("Public Decryption", function () {
     let ciphertextCommits: CiphertextCommits;
     let decryption: Decryption;
+    let gatewayConfig: GatewayConfig;
+    let owner: Wallet;
     let protocolPayment: ProtocolPayment;
     let mockedZamaOFT: ZamaOFT;
     let pauser: Wallet;
@@ -211,6 +222,8 @@ describe("Decryption", function () {
       const fixtureData = await loadFixture(preparePublicDecryptEIP712Fixture);
       ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
+      gatewayConfig = fixtureData.gatewayConfig;
+      owner = fixtureData.owner;
       protocolPayment = fixtureData.protocolPayment;
       mockedZamaOFT = fixtureData.mockedZamaOFT;
       mockedFeesSenderToBurnerAddress = fixtureData.mockedFeesSenderToBurnerAddress;
@@ -296,6 +309,17 @@ describe("Decryption", function () {
       await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(newCtHandles, extraDataV0))
         .to.be.revertedWithCustomError(ciphertextCommits, "CiphertextMaterialNotFound")
         .withArgs(newCtHandles[0]);
+    });
+
+    it("Should revert because the handle's chain ID corresponds to a disabled host chain", async function () {
+      // publicDecryptionRequest has no top-level chain modifier and gates transitively through
+      // CiphertextCommits.getSnsCiphertextMaterials, which rejects handles from disabled chains.
+      const handleChainId = hostChainId;
+      await gatewayConfig.connect(owner).disableHostChain(handleChainId);
+
+      await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0))
+        .to.be.revertedWithCustomError(ciphertextCommits, "HostChainDisabled")
+        .withArgs(handleChainId);
     });
 
     it("Should revert because the message sender is not a KMS transaction sender", async function () {
@@ -502,6 +526,30 @@ describe("Decryption", function () {
         .withArgs(decryptionId, decryptedResult, kmsSignatures.slice(1, 4), extraDataV0);
     });
 
+    it("Should revert when the response declares a contextId that differs from the one pinned at request time", async function () {
+      // The KMS context for a decryption request is pinned at request time. Responses must declare
+      // the same context in their extraData; mismatches are rejected with DecryptionContextMismatch
+      // to catch misaligned shares from honest-but-misconfigured nodes or KMS connector bugs.
+      await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0);
+
+      const fakeContextId = 999_999n;
+      const responseExtraData = extraDataV1(fakeContextId);
+      const responseEip712 = createEIP712ResponsePublicDecrypt(
+        gatewayChainId,
+        decryptionAddress,
+        ctHandles,
+        decryptedResult,
+        responseExtraData,
+      );
+      const [responseSig] = await getSignaturesPublicDecrypt(responseEip712, [kmsSigners[0]]);
+
+      await expect(
+        decryption
+          .connect(kmsTxSenders[0])
+          .publicDecryptionResponse(decryptionId, decryptedResult, responseSig, responseExtraData),
+      ).to.be.revertedWithCustomError(decryption, "DecryptionContextMismatch");
+    });
+
     it("Should get all valid KMS transaction senders from public decryption consensus", async function () {
       // Request public decryption
       await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0);
@@ -678,6 +726,8 @@ describe("Decryption", function () {
   describe("User Decryption", function () {
     let ciphertextCommits: CiphertextCommits;
     let decryption: Decryption;
+    let gatewayConfig: GatewayConfig;
+    let owner: Wallet;
     let protocolPayment: ProtocolPayment;
     let mockedZamaOFT: ZamaOFT;
     let pauser: Wallet;
@@ -787,6 +837,8 @@ describe("Decryption", function () {
       const fixtureData = await loadFixture(prepareUserDecryptEIP712Fixture);
       ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
+      gatewayConfig = fixtureData.gatewayConfig;
+      owner = fixtureData.owner;
       protocolPayment = fixtureData.protocolPayment;
       mockedZamaOFT = fixtureData.mockedZamaOFT;
       mockedFeesSenderToBurnerAddress = fixtureData.mockedFeesSenderToBurnerAddress;
@@ -879,6 +931,28 @@ describe("Decryption", function () {
             "userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)"
           ](ctHandleContractPairs, requestValidity, invalidContractsInfo, user.address, publicKey, userSignature, extraDataV0),
       ).to.be.revertedWithCustomError(decryption, "HostChainNotRegistered");
+    });
+
+    it("Should revert because contract chain ID corresponds to a disabled host chain", async function () {
+      // Disabled chains revert with HostChainDisabled (distinct from HostChainNotRegistered)
+      // so callers can distinguish unknown from disabled.
+      await gatewayConfig.connect(owner).disableHostChain(contractsInfo.chainId as number);
+
+      await expect(
+        decryption
+          .connect(tokenFundedTxSender)
+          .userDecryptionRequest(
+            ctHandleContractPairs,
+            requestValidity,
+            contractsInfo,
+            user.address,
+            publicKey,
+            userSignature,
+            extraDataV0,
+          ),
+      )
+        .to.be.revertedWithCustomError(decryption, "HostChainDisabled")
+        .withArgs(contractsInfo.chainId);
     });
 
     it("Should revert because contract addresses is empty", async function () {
@@ -1317,6 +1391,42 @@ describe("Decryption", function () {
     // different and we do not do the reconstruction onchain, hence consensus only considers the
     // decryption IDs
 
+    it("Should revert when the response declares a contextId that differs from the one pinned at request time", async function () {
+      await decryption
+        .connect(tokenFundedTxSender)
+        .userDecryptionRequest(
+          ctHandleContractPairs,
+          requestValidity,
+          contractsInfo,
+          user.address,
+          publicKey,
+          userSignature,
+          extraDataV0,
+        );
+
+      const fakeContextId = 999_999n;
+      const responseExtraData = extraDataV1(fakeContextId);
+      const [responseEip712] = userDecryptedShares
+        .slice(0, 1)
+        .map((share) =>
+          createEIP712ResponseUserDecrypt(
+            gatewayChainId,
+            decryptionAddress,
+            publicKey,
+            ctHandles,
+            share,
+            responseExtraData,
+          ),
+        );
+      const [responseSig] = await getSignaturesUserDecryptResponse([responseEip712], [kmsSigners[0]]);
+
+      await expect(
+        decryption
+          .connect(kmsTxSenders[0])
+          .userDecryptionResponse(decryptionId, userDecryptedShares[0], responseSig, responseExtraData),
+      ).to.be.revertedWithCustomError(decryption, "DecryptionContextMismatch");
+    });
+
     it("Should get all KMS transaction senders from user decryption consensus", async function () {
       // Request user decryption
       await decryption
@@ -1469,11 +1579,14 @@ describe("Decryption", function () {
   describe("Delegated User Decryption", function () {
     let ciphertextCommits: CiphertextCommits;
     let decryption: Decryption;
+    let gatewayConfig: GatewayConfig;
+    let owner: Wallet;
     let protocolPayment: ProtocolPayment;
     let mockedZamaOFT: ZamaOFT;
     let pauser: Wallet;
     let snsCiphertextMaterials: SnsCiphertextMaterialStruct[];
     let kmsSignatures: string[];
+    let kmsSigners: HardhatEthersSigner[];
     let kmsTxSenders: HardhatEthersSigner[];
     let coprocessorTxSenders: HardhatEthersSigner[];
     let userDecryptionPrice: bigint;
@@ -1583,6 +1696,8 @@ describe("Decryption", function () {
       const fixtureData = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
       ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
+      gatewayConfig = fixtureData.gatewayConfig;
+      owner = fixtureData.owner;
       protocolPayment = fixtureData.protocolPayment;
       mockedZamaOFT = fixtureData.mockedZamaOFT;
       mockedFeesSenderToBurnerAddress = fixtureData.mockedFeesSenderToBurnerAddress;
@@ -1590,6 +1705,7 @@ describe("Decryption", function () {
       snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
       delegateSignature = fixtureData.delegateSignature;
       kmsSignatures = fixtureData.kmsSignatures;
+      kmsSigners = fixtureData.kmsSigners;
       kmsTxSenders = fixtureData.kmsTxSenders;
       coprocessorTxSenders = fixtureData.coprocessorTxSenders;
       eip712RequestMessage = fixtureData.eip712RequestMessage;
@@ -1713,6 +1829,28 @@ describe("Decryption", function () {
             extraDataV0,
           ),
       ).to.be.revertedWithCustomError(decryption, "HostChainNotRegistered");
+    });
+
+    it("Should revert because contract chain ID corresponds to a disabled host chain", async function () {
+      // Disabled chains revert with HostChainDisabled (distinct from HostChainNotRegistered)
+      // so callers can distinguish unknown from disabled.
+      await gatewayConfig.connect(owner).disableHostChain(contractsInfo.chainId as number);
+
+      await expect(
+        decryption
+          .connect(tokenFundedTxSender)
+          .delegatedUserDecryptionRequest(
+            ctHandleContractPairs,
+            requestValidity,
+            delegationAccounts,
+            contractsInfo,
+            publicKey,
+            delegateSignature,
+            extraDataV0,
+          ),
+      )
+        .to.be.revertedWithCustomError(decryption, "HostChainDisabled")
+        .withArgs(contractsInfo.chainId);
     });
 
     it("Should revert because contract addresses is empty", async function () {
@@ -2163,6 +2301,39 @@ describe("Decryption", function () {
       await expect(responseTx1).to.not.emit(decryption, "UserDecryptionResponseThresholdReached");
       await expect(responseTx2).to.not.emit(decryption, "UserDecryptionResponseThresholdReached");
       await expect(responseTx4).to.not.emit(decryption, "UserDecryptionResponseThresholdReached");
+    });
+
+    it("Should revert when the response declares a contextId that differs from the one pinned at request time", async function () {
+      await decryption
+        .connect(tokenFundedTxSender)
+        .delegatedUserDecryptionRequest(
+          ctHandleContractPairs,
+          requestValidity,
+          delegationAccounts,
+          contractsInfo,
+          publicKey,
+          delegateSignature,
+          extraDataV0,
+        );
+
+      const decryptionAddress = await decryption.getAddress();
+      const fakeContextId = 999_999n;
+      const responseExtraData = extraDataV1(fakeContextId);
+      const responseEip712 = createEIP712ResponseUserDecrypt(
+        gatewayChainId,
+        decryptionAddress,
+        publicKey,
+        ctHandleContractPairs.map((pair) => pair.ctHandle.toString()),
+        userDecryptedShares[0],
+        responseExtraData,
+      );
+      const [responseSig] = await getSignaturesUserDecryptResponse([responseEip712], [kmsSigners[0]]);
+
+      await expect(
+        decryption
+          .connect(kmsTxSenders[0])
+          .userDecryptionResponse(decryptionId, userDecryptedShares[0], responseSig, responseExtraData),
+      ).to.be.revertedWithCustomError(decryption, "DecryptionContextMismatch");
     });
 
     it("Should revert because the contract is paused", async function () {

@@ -136,6 +136,7 @@ pub struct RedisConsumerConfigBuilder {
     block_ms: Option<usize>,
     cb_failure_threshold: Option<u32>,
     cb_cooldown_duration: Option<Duration>,
+    cb_half_open_timeout: Option<Duration>,
 }
 
 impl RedisConsumerConfigBuilder {
@@ -213,6 +214,17 @@ impl RedisConsumerConfigBuilder {
         self
     }
 
+    /// Set the maximum time the breaker may remain in Half-Open without dispatching a probe.
+    ///
+    /// Only consulted by the Redis prefetch consumer. When the breaker enters Half-Open and the
+    /// consumer's PEL is empty for longer than this timeout (e.g. another consumer claimed the
+    /// failed message), the breaker reopens rather than auto-closing blind. Defaults to
+    /// `5 × cooldown_duration`.
+    pub fn circuit_breaker_half_open_timeout(mut self, timeout: Duration) -> Self {
+        self.cb_half_open_timeout = Some(timeout);
+        self
+    }
+
     /// Apply stream topology to configure streams automatically.
     pub fn with_topology(mut self, topology: &StreamTopology) -> Self {
         self.stream = Some(topology.main.clone());
@@ -243,13 +255,22 @@ impl RedisConsumerConfigBuilder {
             (Some(threshold), Some(cooldown)) => Some(CircuitBreakerConfig {
                 failure_threshold: threshold,
                 cooldown_duration: cooldown,
+                half_open_timeout: self
+                    .cb_half_open_timeout
+                    .unwrap_or_else(|| cooldown.saturating_mul(5)),
             }),
             (Some(threshold), None) => Some(CircuitBreakerConfig {
                 failure_threshold: threshold,
+                half_open_timeout: self
+                    .cb_half_open_timeout
+                    .unwrap_or(CircuitBreakerConfig::default().half_open_timeout),
                 ..CircuitBreakerConfig::default()
             }),
             (None, Some(cooldown)) => Some(CircuitBreakerConfig {
                 cooldown_duration: cooldown,
+                half_open_timeout: self
+                    .cb_half_open_timeout
+                    .unwrap_or_else(|| cooldown.saturating_mul(5)),
                 ..CircuitBreakerConfig::default()
             }),
             (None, None) => None,

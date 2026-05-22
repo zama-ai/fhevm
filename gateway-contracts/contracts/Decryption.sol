@@ -278,6 +278,15 @@ contract Decryption is
         /// @notice The number of user decryption requests, used to generate request IDs (`decryptionId`)
         /// @notice (including delegated user decryption requests).
         uint256 userDecryptionCounter;
+        /// @notice The KMS context ID pinned to a decryption request at request time.
+        /// @dev Pinning the context at request time prevents responses signed by KMS nodes from a
+        /// different context (e.g. across a context rotation) from being accumulated together in the
+        /// `consensusTxSenderAddresses` bucket and silently crossing the threshold with a quorum that
+        /// does not actually share a single threshold-FHE keyset.
+        /// @dev A value of 0 marks a request that was recorded before context pinning was introduced;
+        /// response handlers fall back to the context declared in the response's extraData in that
+        /// case, preserving the pre-pinning behavior for such in-flight requests.
+        mapping(uint256 decryptionId => uint256 contextId) decryptionContextId;
     }
 
     /**
@@ -358,6 +367,9 @@ contract Decryption is
         // The handles are used during response calls for the EIP712 signature validation.
         $.publicCtHandles[publicDecryptionId] = ctHandles;
 
+        // Pin the KMS context at request time. See `decryptionContextId` storage docs.
+        $.decryptionContextId[publicDecryptionId] = _extractContextId(extraData);
+
         // Collect the fee from the transaction sender for this public decryption request.
         _collectPublicDecryptionFee(msg.sender);
 
@@ -394,12 +406,20 @@ contract Decryption is
         // Compute the digest of the PublicDecryptVerification structure.
         bytes32 digest = _hashPublicDecryptVerification(publicDecryptVerification);
 
-        // Extract the context ID from the extraData for context-aware verification.
-        uint256 contextId = _extractContextId(extraData);
+        // Validate the response's context against the one pinned at request time, falling back
+        // to the response's declared context for requests recorded before context pinning.
+        // See `decryptionContextId` storage docs.
+        uint256 requestContextId = $.decryptionContextId[decryptionId];
+        uint256 responseContextId = _extractContextId(extraData);
+        if (requestContextId == 0) {
+            requestContextId = responseContextId;
+        } else if (responseContextId != requestContextId) {
+            revert DecryptionContextMismatch(decryptionId, requestContextId, responseContextId);
+        }
 
         // Recover the signer address from the signature and validate that corresponds to a
         // KMS node that has not already signed.
-        _validateDecryptionResponseEIP712Signature(contextId, decryptionId, digest, signature);
+        _validateDecryptionResponseEIP712Signature(requestContextId, decryptionId, digest, signature);
 
         // Store the signature for the public decryption response.
         // This list is then used to check the consensus. Important: the mapping considers
@@ -419,7 +439,7 @@ contract Decryption is
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.decryptionDone[decryptionId] && _isConsensusReachedPublic(contextId, verifiedSignatures.length)) {
+        if (!$.decryptionDone[decryptionId] && _isConsensusReachedPublic(requestContextId, verifiedSignatures.length)) {
             $.decryptionDone[decryptionId] = true;
 
             // A "late" valid KMS could still see its transaction sender address be added to the list
@@ -511,6 +531,9 @@ contract Decryption is
         // The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
         $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
+        // Pin the KMS context at request time. See `decryptionContextId` storage docs.
+        $.decryptionContextId[userDecryptionId] = _extractContextId(extraData);
+
         // Collect the fee from the transaction sender for this user decryption request.
         _collectUserDecryptionFee(msg.sender);
 
@@ -601,6 +624,9 @@ contract Decryption is
 
         // The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
         $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
+
+        // Pin the KMS context at request time. See `decryptionContextId` storage docs.
+        $.decryptionContextId[userDecryptionId] = _extractContextId(extraData);
 
         // Collect the fee from the transaction sender for this delegated user decryption request.
         _collectUserDecryptionFee(msg.sender);
@@ -719,12 +745,22 @@ contract Decryption is
         // Compute the digest of the UserDecryptResponseVerification structure.
         bytes32 digest = _hashUserDecryptResponseVerification(userDecryptResponseVerification);
 
-        // Extract the context ID from the extraData for context-aware verification.
-        uint256 contextId = _extractContextId(extraData);
+        // Validate the response's context against the one pinned at request time, falling back
+        // to the response's declared context for requests recorded before context pinning.
+        // See `decryptionContextId` storage docs.
+        uint256 requestContextId = $.decryptionContextId[decryptionId];
+        {
+            uint256 responseContextId = _extractContextId(extraData);
+            if (requestContextId == 0) {
+                requestContextId = responseContextId;
+            } else if (responseContextId != requestContextId) {
+                revert DecryptionContextMismatch(decryptionId, requestContextId, responseContextId);
+            }
+        }
 
         // Recover the signer address from the signature and validate that it corresponds to a
         // KMS node that has not already signed.
-        _validateDecryptionResponseEIP712Signature(contextId, decryptionId, digest, signature);
+        _validateDecryptionResponseEIP712Signature(requestContextId, decryptionId, digest, signature);
 
         // Store the KMS transaction sender address for the public decryption response
         // It is important to consider the same mapping fields used for the consensus
@@ -747,7 +783,7 @@ contract Decryption is
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.decryptionDone[decryptionId] && _isThresholdReachedUser(contextId, txSenderAddresses.length)) {
+        if (!$.decryptionDone[decryptionId] && _isThresholdReachedUser(requestContextId, txSenderAddresses.length)) {
             $.decryptionDone[decryptionId] = true;
 
             // Since we use the default value for `bytes32`, this means we do not need to store the

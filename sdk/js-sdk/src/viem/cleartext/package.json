@@ -1,0 +1,6 @@
+{
+  "type": "module",
+  "types": "../../_types/viem/cleartext/index.d.ts",
+  "module": "../../_esm/viem/cleartext/index.js",
+  "main": "../../_cjs/viem/cleartext/index.js"
+}

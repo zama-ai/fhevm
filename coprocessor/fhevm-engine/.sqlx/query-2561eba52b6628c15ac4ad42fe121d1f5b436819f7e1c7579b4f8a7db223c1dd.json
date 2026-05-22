@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE kms_key_activation_events\n        SET\n            status = CASE\n                WHEN COALESCE($2, key_content_sks_key) IS NOT NULL\n                     AND COALESCE($3, key_content_public) IS NOT NULL\n                THEN 'ready'\n                ELSE status\n            END,\n            key_content_sns_pk = COALESCE($1, key_content_sns_pk),\n            key_content_sks_key = COALESCE($2, key_content_sks_key),\n            key_content_public = COALESCE($3, key_content_public),\n            key_content_compressed_xof_keyset = CASE\n                WHEN $4 THEN $5\n                ELSE key_content_compressed_xof_keyset\n            END,\n            last_updated_at = NOW()\n        WHERE chain_id = $6 AND block_hash = $7 AND key_id = $8\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Oid",
+        "Bytea",
+        "Bytea",
+        "Bool",
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2561eba52b6628c15ac4ad42fe121d1f5b436819f7e1c7579b4f8a7db223c1dd"
+}

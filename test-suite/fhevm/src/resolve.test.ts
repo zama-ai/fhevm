@@ -45,6 +45,7 @@ describe("resolve", () => {
 
   test("resolves relayer images as repo-owned for latest-main presets", () => {
     const bundle = presetBundle("latest-main", "abcdef0", "latest-main-abcdef0.json");
+    expect(bundle.env.LISTENER_CORE_VERSION).toBe("abcdef0");
     expect(bundle.env.RELAYER_VERSION).toBe("abcdef0");
     expect(bundle.env.RELAYER_MIGRATE_VERSION).toBe("abcdef0");
     expect(bundle.env.CORE_VERSION).not.toBe("abcdef0");

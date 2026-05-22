@@ -18,6 +18,7 @@ import './tasks/generateKmsMaterials';
 import './tasks/ownership';
 import './tasks/pauseContracts';
 import './tasks/taskDeploy';
+import './tasks/taskMigrate';
 import './tasks/taskUtils';
 import './tasks/upgradeContracts';
 
@@ -82,14 +83,12 @@ task('coverage').setAction(async (taskArgs, hre, runSuper) => {
 task('test', async (taskArgs, hre, runSuper) => {
   // Run modified test task
   if (hre.network.name === 'hardhat') {
-    await hre.run('task:deployAllHostContracts');
+    await hre.run('task:deployAllHostContracts', { withKmsGeneration: true });
     // Contrary to deployment, here we consider the PauserSet address from the `addresses/` directory
     // for local testing
     await hre.run('task:addHostPausers', { useInternalProxyAddress: true });
   }
   await hre.run('compile:specific', { contract: 'examples' });
-  // Compile migration-only legacy mocks used by test/tasks/migration.ts.
-  await hre.run('compile:specific', { contract: 'test/migration-only-previous-contracts' });
   await runSuper();
 });
 

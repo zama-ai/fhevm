@@ -1,4 +1,4 @@
-use alloy::primitives::Address;
+use alloy_primitives::Address;
 
 /// Convert an optional [`Address`] to its EIP-55 checksummed string representation.
 pub fn checksum_optional_address(addr: &Option<Address>) -> Option<String> {

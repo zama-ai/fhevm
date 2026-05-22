@@ -129,7 +129,7 @@ async fn test_max_input_index() {
 
 #[tokio::test]
 #[serial(db)]
-async fn test_verify_proof_rerandomises_ciphertexts_before_storage() {
+async fn test_verify_proof_rerandomises_compact_list_before_expansion() {
     let (pool_mngr, _instance) = utils::setup().await.expect("valid setup");
     let pool = pool_mngr.pool();
 
@@ -192,6 +192,17 @@ async fn test_verify_proof_rerandomises_ciphertexts_before_storage() {
             .zip(&baseline)
             .all(|(stored_ct, baseline_ct)| stored_ct.ciphertext != *baseline_ct),
         "stored ciphertexts should differ from the pre-rerandomization compression"
+    );
+
+    let expected = utils::compress_inputs_with_compact_list_rerandomization(&pool, &zk_pok, &aux.0)
+        .await
+        .unwrap();
+    assert_eq!(
+        stored
+            .iter()
+            .map(|ct| ct.ciphertext.clone())
+            .collect::<Vec<_>>(),
+        expected
     );
 
     let decrypted = utils::decrypt_ciphertexts(&pool, &handles).await.unwrap();

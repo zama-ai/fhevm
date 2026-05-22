@@ -1,0 +1,36 @@
+name: listener
+http_port: 8080
+
+database:
+  db_url: postgres://postgres:postgres@coprocessor-and-kms-db:5432/listener
+  migration_max_attempts: 5
+  pool:
+    max_connections: 10
+    min_connections: 2
+    acquire_timeout_secs: 30
+    idle_timeout_secs: 600
+    max_lifetime_secs: 1800
+# broker:
+#  broker_type: amqp
+#  broker_url: amqp://user:pass@listener-rabbitmq:5672
+broker:
+  broker_type: redis
+  broker_url: redis://listener-redis:6379
+  ensure_publish: false
+
+blockchain:
+  type: evm
+  chain_id: 12345
+  rpc_url: http://host-node:8545
+  network: ethereum-mainnet
+  strategy:
+    automatic_startup: true
+    block_start_on_first_start: "current"
+    range_size: 100
+    loop_delay_ms: 100
+    max_parallel_requests: 50
+    block_fetcher: block_receipts
+    batch_receipts_size_range: 10
+    compute_block: false
+    compute_block_allow_skipping: true
+    max_exponential_backoff_ms: 20000

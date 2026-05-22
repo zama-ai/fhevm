@@ -185,8 +185,10 @@ pub struct Args {
 // TODO: to merge with Levent works
 pub struct InfiniteLogIter {
     url: String,
-    block_time: u64, /* A default value that is refined with real-time
-                      * events data */
+    // Chain block interval (e.g. 12s for Sepolia); combined with a fixed
+    // +5s slack as the WS subscription timeout budget. Not currently
+    // refined at runtime — see fhevm-internal#1382.
+    block_time: u64,
     contract_addresses: Vec<Address>,
     catchup_blocks: Option<(u64, Option<u64>)>, // to do catchup blocks by chunks
     // Option<(from_block, optional to_block)>
@@ -822,7 +824,7 @@ impl InfiniteLogIter {
         // by alloy if not the case, the recheck mechanism ensures it's
         // only extra latency
         match tokio::time::timeout(
-            Duration::from_secs(self.block_time + 2),
+            Duration::from_secs(self.block_time + 5),
             next_opt_event,
         )
         .await
@@ -1109,7 +1111,13 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         Some(&cancel_token),
     )
     .await?;
-    drift_revert::init(drift_revert_pool, cancel_token.clone(), None).await?;
+    drift_revert::init(
+        drift_revert_pool,
+        cancel_token.clone(),
+        None,
+        drift_revert::WatcherTimeouts::default(),
+    )
+    .await?;
 
     if args.dependent_ops_max_per_chain == 0 {
         let promoted = db.promote_all_dep_chains_to_fast_priority().await?;

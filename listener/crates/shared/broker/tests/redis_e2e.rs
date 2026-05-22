@@ -33,15 +33,246 @@ use std::{
 };
 
 // Traits and shared types come from `broker` — the backend-agnostic layer.
-use broker::traits::{Consumer, DynPublisher};
 #[allow(unused_imports)] // Publisher brings .publish() into scope.
-use broker::{AckDecision, AsyncHandlerPayloadOnly};
+use broker::traits::Publisher;
+use broker::traits::{Consumer, DynPublisher};
+
+use broker::{AckDecision, AsyncHandlerPayloadOnly, HandlerError};
 // Backend-specific construction (connection, config builder, concrete types) comes from `broker::redis`.
 use broker::redis::{
     RedisConnectionManager, RedisConsumer, RedisConsumerConfigBuilder, RedisPublisher,
     StreamManager, StreamTopology,
 };
 use test_support::shared_redis_url;
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
+struct OrderedEvent {
+    seq: u64,
+}
+
+async fn publish(publisher: &RedisPublisher, stream: &str, seq: u64) {
+    publisher
+        .publish(stream, &OrderedEvent { seq })
+        .await
+        .unwrap();
+}
+
+// ── Test 1: probe comes from PEL, not from new messages ───────────────────────
+//
+// Publish A, B, C, D. Handler returns Transient on the first call for A,
+// Success for everything else. The breaker should trip on A, cooldown, then
+// the Half-Open probe must process A (from PEL) BEFORE B/C/D are picked up
+// from the stream.
+//
+// `prefetch_count=1` is required to make the test deterministic: the consumer
+// reads one message at a time, so A trips the breaker before B/C/D are read.
+// Without the probe-from-PEL fix, the Half-Open probe would pick from
+// `XREADGROUP ">"` (i.e. msg B), close the breaker on B's success, and process
+// A only later via PEL drain — observed order [B, C, D, A]. With the fix the
+// probe is forced through the PEL drain and order is [A, B, C, D].
+#[tokio::test]
+#[ignore = "requires Docker"]
+async fn probe_comes_from_pel_not_new_messages() {
+    let url = shared_redis_url().await;
+    let stream = "cb-half-open-order.events";
+
+    let config = RedisConsumerConfigBuilder::new()
+        .stream(stream)
+        .group_name("cb-half-open-order-group")
+        .consumer_name("consumer-1")
+        .dead_stream("cb-half-open-order.events:dead")
+        .max_retries(10)
+        // ClaimSweeper neutralized for the duration of the test.
+        .claim_min_idle(Duration::from_secs(60))
+        .claim_interval(Duration::from_secs(10))
+        .circuit_breaker_threshold(1)
+        .circuit_breaker_cooldown(Duration::from_millis(300))
+        .circuit_breaker_half_open_timeout(Duration::from_secs(5))
+        .prefetch_count(1)
+        .build_prefetch()
+        .unwrap();
+
+    // Records the order in which seqs are processed (after first transient).
+    let processed: Arc<Mutex<Vec<u64>>> = Arc::new(Mutex::new(Vec::new()));
+    let a_failed_once = Arc::new(AtomicU32::new(0));
+
+    struct OrderHandler {
+        processed: Arc<Mutex<Vec<u64>>>,
+        a_failed_once: Arc<AtomicU32>,
+    }
+
+    #[async_trait::async_trait]
+    impl broker::Handler for OrderHandler {
+        async fn call(&self, msg: &broker::Message) -> Result<AckDecision, HandlerError> {
+            let event: OrderedEvent = serde_json::from_slice(&msg.payload).unwrap();
+            // Fail seq=0 (msg A) once with a transient error to trip the breaker.
+            if event.seq == 0 && self.a_failed_once.fetch_add(1, Ordering::SeqCst) == 0 {
+                return Err(HandlerError::Transient(Box::new(std::io::Error::other(
+                    "simulated transient",
+                ))));
+            }
+            self.processed.lock().unwrap().push(event.seq);
+            Ok(AckDecision::Ack)
+        }
+    }
+
+    let consumer = RedisConsumer::connect(url).await.unwrap();
+    let processed_for_handler = processed.clone();
+    let a_failed_for_handler = a_failed_once.clone();
+    let consumer_handle = tokio::spawn(async move {
+        let _ = consumer
+            .run(
+                config,
+                OrderHandler {
+                    processed: processed_for_handler,
+                    a_failed_once: a_failed_for_handler,
+                },
+            )
+            .await;
+    });
+
+    tokio::time::sleep(Duration::from_millis(400)).await;
+
+    let conn = RedisConnectionManager::new(url).await.unwrap();
+    let publisher = RedisPublisher::new(conn);
+    for seq in 0u64..4 {
+        publish(&publisher, stream, seq).await;
+    }
+
+    // Wait for all 4 entries to be processed.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    while processed.lock().unwrap().len() < 4 && tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    consumer_handle.abort();
+
+    let order = processed.lock().unwrap().clone();
+    assert_eq!(
+        order.len(),
+        4,
+        "expected all 4 messages to be processed, got {order:?}"
+    );
+    assert_eq!(
+        order[0], 0,
+        "Half-Open probe must process the failed message (seq=0) FIRST, got order: {order:?}"
+    );
+    assert_eq!(
+        order,
+        vec![0, 1, 2, 3],
+        "messages must be processed in stream order, got: {order:?}"
+    );
+}
+
+// ── Test 2: half_open_timeout reopens when PEL is emptied ─────────────────────
+//
+// Trip the breaker with one transient on msg A, then XCLAIM A to a different
+// consumer name (simulating a sweeper / operator claim). After cooldown +
+// half_open_timeout elapses, the breaker must reopen rather than auto-close
+// blind. No message must be processed during the Half-Open window.
+#[tokio::test]
+#[ignore = "requires Docker"]
+async fn half_open_timeout_reopens_when_pel_emptied() {
+    let url = shared_redis_url().await;
+    let stream = "cb-half-open-empty-pel.events";
+    let group = "cb-half-open-empty-pel-group";
+
+    let config = RedisConsumerConfigBuilder::new()
+        .stream(stream)
+        .group_name(group)
+        .consumer_name("consumer-1")
+        .dead_stream("cb-half-open-empty-pel.events:dead")
+        .max_retries(10)
+        .claim_min_idle(Duration::from_secs(60))
+        .claim_interval(Duration::from_secs(10))
+        .circuit_breaker_threshold(1)
+        .circuit_breaker_cooldown(Duration::from_millis(1000))
+        .circuit_breaker_half_open_timeout(Duration::from_millis(2000))
+        .prefetch_count(4)
+        .build_prefetch()
+        .unwrap();
+
+    let calls = Arc::new(AtomicU32::new(0));
+
+    struct AlwaysTransient(Arc<AtomicU32>);
+
+    #[async_trait::async_trait]
+    impl broker::Handler for AlwaysTransient {
+        async fn call(&self, _msg: &broker::Message) -> Result<AckDecision, HandlerError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Err(HandlerError::Transient(Box::new(std::io::Error::other(
+                "simulated transient",
+            ))))
+        }
+    }
+
+    let consumer = RedisConsumer::connect(url).await.unwrap();
+    let calls_for_handler = calls.clone();
+    let consumer_handle = tokio::spawn(async move {
+        let _ = consumer
+            .run(config, AlwaysTransient(calls_for_handler))
+            .await;
+    });
+
+    tokio::time::sleep(Duration::from_millis(400)).await;
+
+    let conn = RedisConnectionManager::new(url).await.unwrap();
+    let publisher = RedisPublisher::new(conn);
+    publish(&publisher, stream, 0).await;
+
+    // Wait for the breaker to trip (handler called once, returned Transient).
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while calls.load(Ordering::SeqCst) < 1 && tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let calls_at_trip = calls.load(Ordering::SeqCst);
+    assert!(
+        calls_at_trip >= 1,
+        "handler must have been called at least once"
+    );
+
+    // XCLAIM the failed entry to a different consumer, emptying our PEL.
+    let client = redis::Client::open(url).unwrap();
+    let mut raw_conn = client.get_multiplexed_async_connection().await.unwrap();
+    let pending: Vec<(String, String, u64, u64)> = redis::cmd("XPENDING")
+        .arg(stream)
+        .arg(group)
+        .arg("-")
+        .arg("+")
+        .arg(10u64)
+        .arg("consumer-1")
+        .query_async(&mut raw_conn)
+        .await
+        .unwrap_or_default();
+    assert!(
+        !pending.is_empty(),
+        "expected at least one entry in consumer-1's PEL"
+    );
+    let stolen_id = pending[0].0.clone();
+    let _: redis::Value = redis::cmd("XCLAIM")
+        .arg(stream)
+        .arg(group)
+        .arg("rogue-consumer")
+        .arg(0u64)
+        .arg(&stolen_id)
+        .query_async(&mut raw_conn)
+        .await
+        .unwrap();
+
+    // Wait through cooldown + half_open_timeout + slack. The breaker enters
+    // Half-Open, finds an empty PEL, then reopens via half_open_expired().
+    tokio::time::sleep(Duration::from_millis(300 + 500 + 300)).await;
+
+    // Handler must NOT have been called again — no new-message read happened
+    // during Half-Open (gated), and the empty PEL produced no probe.
+    let calls_after = calls.load(Ordering::SeqCst);
+    consumer_handle.abort();
+
+    assert_eq!(
+        calls_after, calls_at_trip,
+        "handler must not be called while breaker oscillates Open ↔ Half-Open with empty PEL \
+         (calls_at_trip={calls_at_trip}, calls_after={calls_after})"
+    );
+}
 
 // ── Step 1: shared test payload ───────────────────────────────────────────────
 

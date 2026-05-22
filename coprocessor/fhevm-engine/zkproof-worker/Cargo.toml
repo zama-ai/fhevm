@@ -42,3 +42,6 @@ test-harness = { path = "../test-harness" }
 [[bin]]
 name = "zkproof_worker"
 path = "src/bin/zkproof_worker.rs"
+
+[lints]
+workspace = true

@@ -14,13 +14,26 @@ pub struct CircuitBreakerConfig {
     pub failure_threshold: u32,
     /// How long to stay in the Open state before transitioning to Half-Open (default: 30s).
     pub cooldown_duration: Duration,
+    /// Maximum time to remain in Half-Open without dispatching a probe before reopening.
+    ///
+    /// Consulted only by the Redis prefetch consumer, where the Half-Open probe must come
+    /// from the consumer's PEL (`XREADGROUP "0"`) to preserve ordering. If the PEL was
+    /// emptied during the Open window (e.g. by `ClaimSweeper` claiming the entry to a
+    /// different consumer), the Half-Open state would otherwise sit forever waiting for a
+    /// probe that never arrives. This timeout reopens the circuit instead of closing it
+    /// blind. AMQP ignores this field — see `amqp/consumer.rs`.
+    ///
+    /// Default: `5 × cooldown_duration`.
+    pub half_open_timeout: Duration,
 }
 
 impl Default for CircuitBreakerConfig {
     fn default() -> Self {
+        let cooldown_duration = Duration::from_secs(30);
         Self {
             failure_threshold: 5,
-            cooldown_duration: Duration::from_secs(30),
+            cooldown_duration,
+            half_open_timeout: cooldown_duration * 5,
         }
     }
 }
@@ -59,6 +72,15 @@ pub struct CircuitBreaker {
     consecutive_transient_failures: u32,
     config: CircuitBreakerConfig,
     last_opened_at: Option<Instant>,
+    /// Wall-clock time of the most recent Open → HalfOpen transition. Used to enforce
+    /// `half_open_timeout` when the consumer's PEL is empty and no probe can be dispatched.
+    last_half_open_at: Option<Instant>,
+    /// True while a Half-Open probe worker is dispatched but its outcome is not yet recorded.
+    /// Enforces single-probe-in-flight semantics: prevents a second probe from being dispatched
+    /// from the same Half-Open window before the first probe's `record_success` /
+    /// `record_transient_failure` lands. Cleared by either of those methods, by
+    /// `clear_probe_in_flight` (on abnormal worker exit), or by `expire_half_open`.
+    probe_in_flight: bool,
     labels: Option<MetricLabels>,
 }
 
@@ -69,6 +91,8 @@ impl CircuitBreaker {
             consecutive_transient_failures: 0,
             config,
             last_opened_at: None,
+            last_half_open_at: None,
+            probe_in_flight: false,
             labels: None,
         }
     }
@@ -138,6 +162,8 @@ impl CircuitBreaker {
                 if let Some(opened_at) = self.last_opened_at {
                     if opened_at.elapsed() >= self.config.cooldown_duration {
                         self.state = CircuitState::HalfOpen;
+                        self.last_half_open_at = Some(Instant::now());
+                        self.probe_in_flight = false;
                         self.emit_state();
                         info!("Circuit breaker: transitioning to Half-Open (probing)");
                         true
@@ -146,6 +172,8 @@ impl CircuitBreaker {
                     }
                 } else {
                     self.state = CircuitState::HalfOpen;
+                    self.last_half_open_at = Some(Instant::now());
+                    self.probe_in_flight = false;
                     self.emit_state();
                     true
                 }
@@ -171,6 +199,8 @@ impl CircuitBreaker {
                 self.consecutive_transient_failures = 0;
                 self.state = CircuitState::Closed;
                 self.last_opened_at = None;
+                self.last_half_open_at = None;
+                self.probe_in_flight = false;
                 self.emit_state();
                 self.emit_consecutive_failures();
             }
@@ -208,6 +238,8 @@ impl CircuitBreaker {
             CircuitState::HalfOpen => {
                 self.state = CircuitState::Open;
                 self.last_opened_at = Some(Instant::now());
+                self.last_half_open_at = None;
+                self.probe_in_flight = false;
                 self.emit_state();
                 self.emit_trip();
                 warn!(
@@ -253,6 +285,60 @@ impl CircuitBreaker {
     pub fn is_closed(&self) -> bool {
         self.state == CircuitState::Closed
     }
+
+    /// True if a Half-Open probe worker has been dispatched but has not yet
+    /// reported its outcome via `record_success` / `record_transient_failure`.
+    pub fn probe_in_flight(&self) -> bool {
+        self.probe_in_flight
+    }
+
+    /// Record that a Half-Open probe has just been dispatched. Subsequent reads
+    /// from the consumer's PEL must skip until the probe outcome is recorded.
+    pub fn mark_probe_dispatched(&mut self) {
+        debug_assert_eq!(
+            self.state,
+            CircuitState::HalfOpen,
+            "mark_probe_dispatched called outside Half-Open"
+        );
+        self.probe_in_flight = true;
+    }
+
+    /// Clear `probe_in_flight` without changing state. Used when a probe worker
+    /// exits abnormally (panic / send failure) and the outcome cannot be recorded —
+    /// leaves the breaker in Half-Open so the next tick can dispatch a new probe.
+    pub fn clear_probe_in_flight(&mut self) {
+        self.probe_in_flight = false;
+    }
+
+    /// True if Half-Open has elapsed `half_open_timeout` without dispatching a probe.
+    /// Indicates the consumer's PEL was emptied (e.g., via a sweeper claim) and the
+    /// breaker should reopen rather than wait indefinitely.
+    pub fn half_open_expired(&self) -> bool {
+        self.state == CircuitState::HalfOpen
+            && !self.probe_in_flight
+            && self
+                .last_half_open_at
+                .is_some_and(|t| t.elapsed() >= self.config.half_open_timeout)
+    }
+
+    /// Reopen the breaker because Half-Open expired without dispatching a probe.
+    /// Resets the cooldown so the consumer waits another `cooldown_duration`
+    /// before the next Half-Open attempt.
+    pub fn expire_half_open(&mut self) {
+        if self.state != CircuitState::HalfOpen {
+            return;
+        }
+        self.state = CircuitState::Open;
+        self.last_opened_at = Some(Instant::now());
+        self.last_half_open_at = None;
+        self.probe_in_flight = false;
+        self.emit_state();
+        self.emit_trip();
+        warn!(
+            timeout = ?self.config.half_open_timeout,
+            "Circuit breaker: half_open_timeout elapsed without a probe — reopening"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -263,6 +349,7 @@ mod tests {
         CircuitBreakerConfig {
             failure_threshold: 3,
             cooldown_duration: Duration::from_millis(100),
+            half_open_timeout: Duration::from_millis(500),
         }
     }
 
@@ -315,6 +402,7 @@ mod tests {
         let mut cb = CircuitBreaker::new(CircuitBreakerConfig {
             failure_threshold: 1,
             cooldown_duration: Duration::from_millis(50),
+            half_open_timeout: Duration::from_millis(500),
         });
         cb.record_transient_failure();
         assert!(cb.is_open());
@@ -328,6 +416,7 @@ mod tests {
         let mut cb = CircuitBreaker::new(CircuitBreakerConfig {
             failure_threshold: 1,
             cooldown_duration: Duration::from_millis(50),
+            half_open_timeout: Duration::from_millis(500),
         });
         cb.record_transient_failure();
         tokio::time::sleep(Duration::from_millis(60)).await;
@@ -342,6 +431,7 @@ mod tests {
         let mut cb = CircuitBreaker::new(CircuitBreakerConfig {
             failure_threshold: 1,
             cooldown_duration: Duration::from_millis(50),
+            half_open_timeout: Duration::from_millis(500),
         });
         cb.record_transient_failure();
         tokio::time::sleep(Duration::from_millis(60)).await;
@@ -413,6 +503,7 @@ mod tests {
         let mut cb = CircuitBreaker::new(CircuitBreakerConfig {
             failure_threshold: 1,
             cooldown_duration: Duration::from_secs(30),
+            half_open_timeout: Duration::from_secs(150),
         });
         cb.record_transient_failure();
         assert!(cb.is_open());
@@ -426,5 +517,115 @@ mod tests {
         let config = CircuitBreakerConfig::default();
         assert_eq!(config.failure_threshold, 5);
         assert_eq!(config.cooldown_duration, Duration::from_secs(30));
+        assert_eq!(config.half_open_timeout, Duration::from_secs(150));
+    }
+
+    // --- Half-Open probe interlock & timeout tests ---
+
+    #[tokio::test]
+    async fn half_open_stamps_timestamp_on_transition() {
+        let mut cb = CircuitBreaker::new(CircuitBreakerConfig {
+            failure_threshold: 1,
+            cooldown_duration: Duration::from_millis(20),
+            half_open_timeout: Duration::from_millis(80),
+        });
+        cb.record_transient_failure();
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        assert!(cb.should_allow_request());
+        assert!(cb.is_half_open());
+        // Has not yet expired.
+        assert!(!cb.half_open_expired());
+        tokio::time::sleep(Duration::from_millis(85)).await;
+        assert!(cb.half_open_expired());
+    }
+
+    #[tokio::test]
+    async fn mark_probe_dispatched_blocks_expiry() {
+        let mut cb = CircuitBreaker::new(CircuitBreakerConfig {
+            failure_threshold: 1,
+            cooldown_duration: Duration::from_millis(20),
+            half_open_timeout: Duration::from_millis(40),
+        });
+        cb.record_transient_failure();
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        assert!(cb.should_allow_request());
+        cb.mark_probe_dispatched();
+        assert!(cb.probe_in_flight());
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        // Probe still in flight, must not be considered expired.
+        assert!(!cb.half_open_expired());
+    }
+
+    #[tokio::test]
+    async fn clear_probe_in_flight_keeps_state() {
+        let mut cb = CircuitBreaker::new(CircuitBreakerConfig {
+            failure_threshold: 1,
+            cooldown_duration: Duration::from_millis(20),
+            half_open_timeout: Duration::from_millis(500),
+        });
+        cb.record_transient_failure();
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        cb.should_allow_request();
+        cb.mark_probe_dispatched();
+        cb.clear_probe_in_flight();
+        assert!(cb.is_half_open());
+        assert!(!cb.probe_in_flight());
+    }
+
+    #[tokio::test]
+    async fn expire_half_open_reopens_with_fresh_cooldown() {
+        let mut cb = CircuitBreaker::new(CircuitBreakerConfig {
+            failure_threshold: 1,
+            cooldown_duration: Duration::from_millis(50),
+            half_open_timeout: Duration::from_millis(20),
+        });
+        cb.record_transient_failure();
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        cb.should_allow_request();
+        assert!(cb.is_half_open());
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        assert!(cb.half_open_expired());
+        cb.expire_half_open();
+        assert!(cb.is_open());
+        assert!(cb.remaining_cooldown() > Duration::ZERO);
+    }
+
+    #[tokio::test]
+    async fn expire_half_open_is_noop_outside_half_open() {
+        let mut cb = CircuitBreaker::new(default_config());
+        cb.expire_half_open();
+        assert!(cb.is_closed());
+    }
+
+    #[tokio::test]
+    async fn record_success_in_half_open_clears_probe() {
+        let mut cb = CircuitBreaker::new(CircuitBreakerConfig {
+            failure_threshold: 1,
+            cooldown_duration: Duration::from_millis(20),
+            half_open_timeout: Duration::from_millis(500),
+        });
+        cb.record_transient_failure();
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        cb.should_allow_request();
+        cb.mark_probe_dispatched();
+        cb.record_success();
+        assert!(cb.is_closed());
+        assert!(!cb.probe_in_flight());
+    }
+
+    #[tokio::test]
+    async fn record_transient_in_half_open_clears_probe_and_reopens() {
+        let mut cb = CircuitBreaker::new(CircuitBreakerConfig {
+            failure_threshold: 1,
+            cooldown_duration: Duration::from_millis(20),
+            half_open_timeout: Duration::from_millis(500),
+        });
+        cb.record_transient_failure();
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        cb.should_allow_request();
+        cb.mark_probe_dispatched();
+        cb.record_transient_failure();
+        assert!(cb.is_open());
+        assert!(!cb.probe_in_flight());
     }
 }

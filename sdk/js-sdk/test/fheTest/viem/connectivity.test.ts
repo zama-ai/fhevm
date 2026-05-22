@@ -2,6 +2,7 @@ import type { Hex } from 'viem';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
 import { FHETestABI } from '../abi-v2.js';
+import { isCleartext } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -19,7 +20,7 @@ import { FHETestABI } from '../abi-v2.js';
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-describe('Connectivity', () => {
+describe.runIf(!isCleartext(getViemTestConfig().chainName))('Connectivity', () => {
   let config: FheTestViemConfig;
 
   beforeAll(() => {

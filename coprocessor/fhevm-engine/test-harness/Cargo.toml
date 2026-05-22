@@ -17,6 +17,7 @@ rand = { workspace = true}
 reqwest = { workspace = true}
 serde_json = { workspace = true }
 sqlx = { workspace = true}
+tfhe = { workspace = true }
 testcontainers = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true}
@@ -32,3 +33,6 @@ fhevm-engine-common = { path = "../fhevm-engine-common" }
 
 [features]
 gpu = []
+
+[lints]
+workspace = true

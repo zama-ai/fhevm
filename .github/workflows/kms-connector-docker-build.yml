@@ -3,6 +3,11 @@ name: kms-connector-docker-build
 on:
   workflow_call:
     inputs:
+      path-filter-base-commit:
+        description: "Optional commit SHA used only as the docker change-detection diff base"
+        type: string
+        default: ""
+        required: false
       is_workflow_call:
         description: "Indicates if the workflow is called from another workflow"
         type: boolean
@@ -60,6 +65,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: kms-connector-build-${{ github.event_name == 'pull_request' && github.ref_name || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   ########################################################################
   #                        PRE-BUILD CHECKS                              #
@@ -80,6 +89,7 @@ jobs:
     with:
       caller-workflow-event-name: ${{ github.event_name }}
       caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
       docker-image: fhevm/kms-connector/db-migration
       filters: |
         db-migration:
@@ -94,6 +104,7 @@ jobs:
     with:
       caller-workflow-event-name: ${{ github.event_name }}
       caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
       docker-image: fhevm/kms-connector/gw-listener
       filters: |
         gw-listener:
@@ -111,6 +122,7 @@ jobs:
     with:
       caller-workflow-event-name: ${{ github.event_name }}
       caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
       docker-image: fhevm/kms-connector/kms-worker
       filters: |
         kms-worker:
@@ -129,6 +141,7 @@ jobs:
     with:
       caller-workflow-event-name: ${{ github.event_name }}
       caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
       docker-image: fhevm/kms-connector/tx-sender
       filters: |
         tx-sender:
@@ -204,11 +217,8 @@ jobs:
   ########################################################################
   build-db-migration:
     needs: build-decisions
-    concurrency:
-      group: kms-connector-build-db-migration-${{ github.ref_name }}
-      cancel-in-progress: true
     if: always() && needs.build-decisions.outputs.db_migration == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@f3ad2e177a5247777349447608ba20f0977a824f # v1.0.7
     secrets: &docker_secrets
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
@@ -249,11 +259,8 @@ jobs:
   ########################################################################
   build-gw-listener:
     needs: build-decisions
-    concurrency:
-      group: kms-connector-build-gw-listener-${{ github.ref_name }}
-      cancel-in-progress: true
     if: always() && needs.build-decisions.outputs.gw_listener == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@f3ad2e177a5247777349447608ba20f0977a824f # v1.0.7
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -279,11 +286,8 @@ jobs:
   ########################################################################
   build-kms-worker:
     needs: build-decisions
-    concurrency:
-      group: kms-connector-build-kms-worker-${{ github.ref_name }}
-      cancel-in-progress: true
     if: always() && needs.build-decisions.outputs.kms_worker == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@f3ad2e177a5247777349447608ba20f0977a824f # v1.0.7
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -309,11 +313,8 @@ jobs:
   ########################################################################
   build-tx-sender:
     needs: build-decisions
-    concurrency:
-      group: kms-connector-build-tx-sender-${{ github.ref_name }}
-      cancel-in-progress: true
     if: always() && needs.build-decisions.outputs.tx_sender == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@f3ad2e177a5247777349447608ba20f0977a824f # v1.0.7
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:

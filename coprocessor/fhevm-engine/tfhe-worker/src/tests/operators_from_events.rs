@@ -6,8 +6,8 @@ use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::Handle;
 
 use crate::tests::event_helpers::{
-    allow_handle, as_scalar_uint, insert_event, next_handle, setup_event_harness, to_ty,
-    zero_address, EventHarness,
+    allow_handle, as_scalar_uint, insert_event, insert_trivial_encrypt, next_handle,
+    next_handle_with_type, setup_event_harness, to_ty, zero_address, EventHarness,
 };
 use crate::tests::test_cases::{
     generate_binary_test_cases, generate_panic_binary_test_cases, generate_unary_test_cases,
@@ -844,6 +844,276 @@ async fn test_op_trivial_encrypt() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(
             decrypted[0].value, expected,
             "value mismatch for fhe_type={fhe_type}"
+        );
+    }
+
+    Ok(())
+}
+
+// Uint8 through Uint128 — the types FheSum supports.
+const FHE_SUM_SUPPORTED_TYPES: &[i32] = &[2, 3, 4, 5, 6];
+
+#[tokio::test]
+#[serial(db)]
+async fn test_fhe_sum_events() -> Result<(), Box<dyn std::error::Error>> {
+    let EventHarness {
+        app,
+        pool,
+        listener_db,
+    } = setup_event_harness().await?;
+
+    let enabled = supported_types();
+    let types: Vec<i32> = FHE_SUM_SUPPORTED_TYPES
+        .iter()
+        .copied()
+        .filter(|t| enabled.contains(t))
+        .collect();
+
+    let mut cases: Vec<(Handle, i32)> = vec![];
+
+    for &fhe_type in &types {
+        let tx_id = next_handle();
+        let handle_a = next_handle_with_type(fhe_type);
+        let handle_b = next_handle_with_type(fhe_type);
+        let output = next_handle();
+
+        let mut tx = listener_db.new_transaction().await?;
+        insert_trivial_encrypt(&listener_db, &mut tx, tx_id, 5, fhe_type, handle_a, true).await?;
+        allow_handle(&listener_db, &mut tx, &handle_a).await?;
+        insert_trivial_encrypt(&listener_db, &mut tx, tx_id, 7, fhe_type, handle_b, true).await?;
+        allow_handle(&listener_db, &mut tx, &handle_b).await?;
+        insert_event(
+            &listener_db,
+            &mut tx,
+            tx_id,
+            TfheContractEvents::FheSum(TfheContract::FheSum {
+                caller: zero_address(),
+                values: vec![handle_a, handle_b],
+                result: output,
+            }),
+            true,
+        )
+        .await?;
+        allow_handle(&listener_db, &mut tx, &output).await?;
+        tx.commit().await?;
+
+        cases.push((output, fhe_type));
+    }
+
+    wait_until_all_allowed_handles_computed(&app).await?;
+
+    for (output, expected_type) in cases {
+        let resp = decrypt_ciphertexts(&pool, vec![output.to_vec()]).await?;
+        assert_eq!(
+            resp[0].output_type, expected_type as i16,
+            "FheSum type mismatch for fhe_type={expected_type}"
+        );
+        assert_eq!(
+            resp[0].value, "12",
+            "FheSum value mismatch for fhe_type={expected_type}"
+        );
+    }
+
+    Ok(())
+}
+
+// Uint8 through Uint256 — the types FheIsIn supports.
+const FHE_IS_IN_SUPPORTED_TYPES: &[i32] = &[2, 3, 4, 5, 6, 7, 8];
+
+#[tokio::test]
+#[serial(db)]
+async fn test_fhe_is_in_events() -> Result<(), Box<dyn std::error::Error>> {
+    let EventHarness {
+        app,
+        pool,
+        listener_db,
+    } = setup_event_harness().await?;
+
+    let enabled = supported_types();
+    let types: Vec<i32> = FHE_IS_IN_SUPPORTED_TYPES
+        .iter()
+        .copied()
+        .filter(|t| enabled.contains(t))
+        .collect();
+
+    let set_plaintext = [10u64, 42u64, 100u64];
+    // (plaintext value, expected decrypt string when checked against the set above)
+    let test_values: &[(u64, &str)] = &[(42, "true"), (7, "false")];
+
+    let mut cases: Vec<(Handle, &str)> = vec![];
+
+    for &fhe_type in &types {
+        for &(value, expected) in test_values {
+            let tx_id = next_handle();
+            let value_handle = next_handle_with_type(fhe_type);
+            let output = next_handle();
+
+            let mut tx = listener_db.new_transaction().await?;
+            insert_trivial_encrypt(
+                &listener_db,
+                &mut tx,
+                tx_id,
+                value,
+                fhe_type,
+                value_handle,
+                true,
+            )
+            .await?;
+            allow_handle(&listener_db, &mut tx, &value_handle).await?;
+
+            let mut set_handles: Vec<Handle> = Vec::new();
+            for &v in &set_plaintext {
+                let sh = next_handle_with_type(fhe_type);
+                insert_trivial_encrypt(&listener_db, &mut tx, tx_id, v, fhe_type, sh, true).await?;
+                allow_handle(&listener_db, &mut tx, &sh).await?;
+                set_handles.push(sh);
+            }
+
+            insert_event(
+                &listener_db,
+                &mut tx,
+                tx_id,
+                TfheContractEvents::FheIsIn(TfheContract::FheIsIn {
+                    caller: zero_address(),
+                    value: value_handle,
+                    values: set_handles,
+                    result: output,
+                }),
+                true,
+            )
+            .await?;
+            allow_handle(&listener_db, &mut tx, &output).await?;
+            tx.commit().await?;
+
+            cases.push((output, expected));
+        }
+    }
+
+    wait_until_all_allowed_handles_computed(&app).await?;
+
+    for (output, expected_value) in cases {
+        let resp = decrypt_ciphertexts(&pool, vec![output.to_vec()]).await?;
+        assert_eq!(
+            resp[0].output_type, 0,
+            "FheIsIn result must be Bool (type 0)"
+        );
+        assert_eq!(
+            resp[0].value, expected_value,
+            "FheIsIn result value mismatch"
+        );
+    }
+
+    Ok(())
+}
+
+// Uint8 through Uint64 — the types FheMulDiv supports.
+const FHE_MUL_DIV_SUPPORTED_TYPES: &[i32] = &[2, 3, 4, 5];
+
+#[tokio::test]
+#[serial(db)]
+async fn test_fhe_mul_div_events() -> Result<(), Box<dyn std::error::Error>> {
+    let EventHarness {
+        app,
+        pool,
+        listener_db,
+    } = setup_event_harness().await?;
+
+    let enabled = supported_types();
+    let types: Vec<i32> = FHE_MUL_DIV_SUPPORTED_TYPES
+        .iter()
+        .copied()
+        .filter(|t| enabled.contains(t))
+        .collect();
+
+    // (factor1_value, factor2_value, divisor, is_scalar_factor2, expected_result)
+    let test_cases: &[(u64, u64, u64, bool, &str)] = &[
+        (20, 10, 2, false, "100"), // enc * enc / scalar
+        (20, 10, 2, true, "100"),  // enc * scalar / scalar
+        (10, 3, 1, false, "30"),   // enc * enc / 1
+    ];
+
+    let mut cases: Vec<(Handle, i32, &str)> = vec![];
+
+    for &fhe_type in &types {
+        for &(factor1_val, factor2_val, divisor_val, scalar_factor2, expected) in test_cases {
+            let tx_id = next_handle();
+            let factor1_handle = next_handle_with_type(fhe_type);
+            let output = next_handle_with_type(fhe_type);
+
+            let mut out = [0u8; 32];
+            out[16..].copy_from_slice(&(divisor_val as u128).to_be_bytes());
+            let divisor_handle = Handle::from(out);
+
+            let mut tx = listener_db.new_transaction().await?;
+            insert_trivial_encrypt(
+                &listener_db,
+                &mut tx,
+                tx_id,
+                factor1_val,
+                fhe_type,
+                factor1_handle,
+                true,
+            )
+            .await?;
+            allow_handle(&listener_db, &mut tx, &factor1_handle).await?;
+
+            let factor2_handle = if scalar_factor2 {
+                let mut factor2_bytes = [0u8; 32];
+                factor2_bytes[16..].copy_from_slice(&(factor2_val as u128).to_be_bytes());
+                Handle::from(factor2_bytes)
+            } else {
+                let h = next_handle_with_type(fhe_type);
+                insert_trivial_encrypt(
+                    &listener_db,
+                    &mut tx,
+                    tx_id,
+                    factor2_val,
+                    fhe_type,
+                    h,
+                    true,
+                )
+                .await?;
+                allow_handle(&listener_db, &mut tx, &h).await?;
+                h
+            };
+
+            insert_event(
+                &listener_db,
+                &mut tx,
+                tx_id,
+                TfheContractEvents::FheMulDiv(TfheContract::FheMulDiv {
+                    caller: zero_address(),
+                    factor1: factor1_handle,
+                    factor2: factor2_handle,
+                    divisor: divisor_handle,
+                    scalarByte: alloy::primitives::FixedBytes([if scalar_factor2 {
+                        0x03u8
+                    } else {
+                        0x01u8
+                    }]),
+                    result: output,
+                }),
+                true,
+            )
+            .await?;
+            allow_handle(&listener_db, &mut tx, &output).await?;
+            tx.commit().await?;
+
+            cases.push((output, fhe_type, expected));
+        }
+    }
+
+    wait_until_all_allowed_handles_computed(&app).await?;
+
+    for (output, fhe_type, expected_value) in cases {
+        let resp = decrypt_ciphertexts(&pool, vec![output.to_vec()]).await?;
+        assert_eq!(
+            resp[0].output_type, fhe_type as i16,
+            "FheMulDiv result type mismatch"
+        );
+        assert_eq!(
+            resp[0].value, expected_value,
+            "FheMulDiv result value mismatch (type={fhe_type})"
         );
     }
 

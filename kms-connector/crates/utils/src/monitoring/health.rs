@@ -24,22 +24,15 @@ pub fn default_healthcheck_timeout() -> Duration {
 
 /// Performs the database healthcheck.
 ///
-/// Stores the potential error in the `errors` vector.
+/// Returns `Ok(())` on success, or an `Err` containing a formatted error message on failure.
 pub async fn database_healthcheck(
     db_pool: &Pool<Postgres>,
     timeout: Duration,
-    errors: &mut Vec<String>,
-) -> bool {
+) -> Result<(), String> {
     match tokio::time::timeout(timeout, db_pool.acquire()).await {
-        Ok(Ok(_)) => true,
-        Ok(Err(e)) => {
-            errors.push(format!("Database connection failed: {e}"));
-            false
-        }
-        Err(e) => {
-            errors.push(format!("Database connection timed out: {e}"));
-            false
-        }
+        Ok(Ok(_)) => Ok(()),
+        Ok(Err(e)) => Err(format!("Database connection failed: {e}")),
+        Err(e) => Err(format!("Database connection timed out: {e}")),
     }
 }
 
@@ -47,23 +40,16 @@ pub async fn database_healthcheck(
 ///
 /// Uses `eth_blockNumber` for this.
 ///
-/// Stores the potential error in the `errors` vector.
+/// Returns `Ok(())` on success, or an `Err` containing a formatted error message on failure.
 pub async fn rpc_node_healthcheck<P: Provider>(
     provider: P,
     timeout: Duration,
     chain_name: &str,
-    errors: &mut Vec<String>,
-) -> bool {
+) -> Result<(), String> {
     match tokio::time::timeout(timeout, provider.get_block_number()).await {
-        Ok(Ok(_)) => true,
-        Ok(Err(e)) => {
-            errors.push(format!("{chain_name} connection failed: {e}"));
-            false
-        }
-        Err(e) => {
-            errors.push(format!("{chain_name} connection timed out: {e}"));
-            false
-        }
+        Ok(Ok(_)) => Ok(()),
+        Ok(Err(e)) => Err(format!("{chain_name} connection failed: {e}")),
+        Err(e) => Err(format!("{chain_name} connection timed out: {e}")),
     }
 }
 

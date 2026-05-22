@@ -3,9 +3,9 @@
  */
 import {
   compatPolicyForState,
-  requiresLegacyGatewayKmsGenerationAddress,
   requiresLegacyRelayerUrl,
   requiresMultichainAclAddress,
+  requiresModernHostAddressArtifacts,
 } from "../compat/compat";
 import { driftDatabaseName } from "../drift";
 import type { StackSpec } from "../stack-spec/stack-spec";
@@ -84,6 +84,9 @@ const applyHostScKmsEnv = (envs: Record<string, Record<string, string>>) => {
   }
 };
 
+const hostDeployKmsGenerationArgs = (plan: StackSpec, enabled: boolean) =>
+  requiresModernHostAddressArtifacts(plan) ? `--with-kms-generation ${enabled}` : "";
+
 /** Applies base runtime defaults before compat or discovery-specific rewrites. */
 const applyBaseRuntimeEnv = (
   envs: Record<string, Record<string, string>>,
@@ -152,9 +155,9 @@ const applyDiscoveryEnv = (
     return;
   }
   const primaryHost = state.discovery.hosts[defaultChain.key] ?? {};
-  const kmsGenerationAddress = requiresLegacyGatewayKmsGenerationAddress(plan)
-    ? state.discovery.gateway.KMS_GENERATION_ADDRESS
-    : primaryHost.KMS_GENERATION_CONTRACT_ADDRESS;
+  const kmsGenerationAddress = requiresModernHostAddressArtifacts(plan)
+    ? primaryHost.KMS_GENERATION_CONTRACT_ADDRESS
+    : state.discovery.gateway.KMS_GENERATION_ADDRESS;
 
   updateContracts(envs["gateway-sc"], state.discovery.gateway);
   updateContracts(envs["gateway-mocked-payment"], {
@@ -203,6 +206,8 @@ const applyDiscoveryEnv = (
     ACL_CONTRACT_ADDRESS: primaryHost.ACL_CONTRACT_ADDRESS,
     INPUT_VERIFIER_CONTRACT_ADDRESS: primaryHost.INPUT_VERIFIER_CONTRACT_ADDRESS,
     FHEVM_EXECUTOR_CONTRACT_ADDRESS: primaryHost.FHEVM_EXECUTOR_CONTRACT_ADDRESS,
+    PROTOCOL_CONFIG_CONTRACT_ADDRESS: primaryHost.PROTOCOL_CONFIG_CONTRACT_ADDRESS,
+    KMS_GENERATION_CONTRACT_ADDRESS: primaryHost.KMS_GENERATION_CONTRACT_ADDRESS,
   });
 };
 
@@ -281,9 +286,11 @@ export const renderEnvMaps = async (
   envs["host-node"].HOST_NODE_CHAIN_ID = defaultChain.chainId;
   envs["host-sc"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["host-sc"].HOST_ADDRESS_DIR = defaultChain.key;
+  envs["host-sc"].HOST_SC_DEPLOY_KMS_GENERATION_ARGS = hostDeployKmsGenerationArgs(plan, true);
   envs["coprocessor"].RPC_HTTP_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["coprocessor"].RPC_WS_URL = `ws://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
+  envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_CHAIN_ID = defaultChain.chainId;
   envs["test-suite"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["test-suite"].CHAIN_ID_HOST = defaultChain.chainId;
   const instanceEnvs = await buildInstanceEnvs(envs, plan, deriveWallet);
@@ -321,6 +328,7 @@ export const renderEnvMaps = async (
     hostSc.RPC_URL = hostHttp;
     hostSc.CHAIN_ID = chain.chainId;
     hostSc.HOST_ADDRESS_DIR = chain.key;
+    hostSc.HOST_SC_DEPLOY_KMS_GENERATION_ARGS = hostDeployKmsGenerationArgs(plan, false);
     hostSc.HOST_SC_DEPLOY_CONTAINER_NAME = `${chain.sc}-deploy`;
     hostSc.HOST_SC_PAUSERS_CONTAINER_NAME = `${chain.sc}-add-pausers`;
     hostSc.NUM_COPROCESSORS = String(plan.topology.count);
@@ -353,6 +361,7 @@ export const renderEnvMaps = async (
     envs["test-suite"][`HOST_CHAIN_${chainIndex}_KMS_VERIFIER_CONTRACT_ADDRESS`] = hostAddresses.KMS_VERIFIER_CONTRACT_ADDRESS ?? "";
     envs["test-suite"][`HOST_CHAIN_${chainIndex}_INPUT_VERIFIER_CONTRACT_ADDRESS`] = hostAddresses.INPUT_VERIFIER_CONTRACT_ADDRESS ?? "";
     envs["test-suite"][`HOST_CHAIN_${chainIndex}_FHEVM_EXECUTOR_CONTRACT_ADDRESS`] = hostAddresses.FHEVM_EXECUTOR_CONTRACT_ADDRESS ?? "";
+    envs["test-suite"][`HOST_CHAIN_${chainIndex}_PROTOCOL_CONFIG_CONTRACT_ADDRESS`] = hostAddresses.PROTOCOL_CONFIG_CONTRACT_ADDRESS ?? "";
   }
 
   validateEnvMaps(envs, instanceEnvs);

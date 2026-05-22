@@ -11,7 +11,7 @@ string constant FHEVM_MNEMONIC = "test test test test test test test future home
 
 interface IACL {
     // forge-lint: disable-next-line(mixed-case-function)
-    function getFHEVMExecutorAddress() external view returns (address); 
+    function getFHEVMExecutorAddress() external view returns (address);
 }
 
 contract FHETestCoprocessorConfig is Test {

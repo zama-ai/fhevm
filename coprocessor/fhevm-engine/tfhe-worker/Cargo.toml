@@ -77,3 +77,6 @@ harness = false
 name = "dex"
 path = "benches/dex.rs"
 harness = false
+
+[lints]
+workspace = true

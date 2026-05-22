@@ -50,6 +50,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned if the operation is not scalar.
     error OnlyScalarOperationsAreSupported();
 
+    /// @notice Returned if a handle is the zero handle.
+    /// @dev Handle slot zero is reserved for the transaction HCU accumulator.
+    error InvalidZeroHandle();
+
     /// @notice Emitted when the global block HCU cap is updated.
     /// @param hcuPerBlock New global block HCU cap.
     event HCUPerBlockSet(uint48 hcuPerBlock);
@@ -85,6 +89,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice FHEVMExecutor address.
     address private constant FHEVM_EXECUTOR_ADDRESS = fhevmExecutorAdd;
 
+    /// `fheMulDiv` `scalarByte` bitmask: bit 0 (divisor) is always set; bit 1 marks `factor2` as scalar.
+    bytes1 private constant FHE_MUL_DIV_FACTOR2_ENCRYPTED = 0x01;
+    bytes1 private constant FHE_MUL_DIV_FACTOR2_SCALAR = 0x03;
+
     /// @custom:storage-location erc7201:fhevm.storage.HCULimit
     /// @dev All five uint48 fields pack into a single 256-bit slot (5 × 48 = 240 bits).
     struct HCULimitStorage {
@@ -99,7 +107,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         /// @notice Maximum total HCU per transaction.
         uint48 maxHCUPerTx;
         /// @notice Whitelisted callers bypass block-level cap.
-        mapping(address => bool) blockHCUWhitelist;
+        mapping(address account => bool isWhitelisted) blockHCUWhitelist;
     }
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
@@ -1528,6 +1536,125 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
+     * @notice Check the homomorphic complexity units limit for FheIsIn.
+     * @param valueType Value type.
+     * @param value Input ciphertext handle.
+     * @param values Encrypted set ciphertext handles.
+     * @param result Result handle.
+     * @param caller Original dapp caller address from FHEVMExecutor.
+     */
+    function checkHCUForFheIsIn(
+        FheType valueType,
+        bytes32 value,
+        bytes32[] calldata values,
+        bytes32 result,
+        address caller
+    ) external virtual {
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
+        uint256 n = values.length;
+        uint256 opHCU;
+        if (valueType == FheType.Uint8) {
+            if (n <= 10) opHCU = 71300;
+            else if (n <= 30) opHCU = 148000;
+            else if (n <= 60) opHCU = 247000;
+            else opHCU = 374000;
+        } else if (valueType == FheType.Uint16) {
+            if (n <= 10) opHCU = 103000;
+            else if (n <= 30) opHCU = 218000;
+            else if (n <= 60) opHCU = 378000;
+            else opHCU = 605000;
+        } else if (valueType == FheType.Uint32) {
+            if (n <= 10) opHCU = 137000;
+            else if (n <= 30) opHCU = 300000;
+            else if (n <= 60) opHCU = 531000;
+            else opHCU = 827000;
+        } else if (valueType == FheType.Uint64) {
+            if (n <= 10) opHCU = 218000;
+            else if (n <= 30) opHCU = 492000;
+            else opHCU = 879000;
+        } else if (valueType == FheType.Uint128) {
+            if (n <= 10) opHCU = 256000;
+            else if (n <= 30) opHCU = 535000;
+            else opHCU = 921000;
+        } else if (valueType == FheType.Uint160) {
+            if (n <= 10) opHCU = 286000;
+            else if (n <= 30) opHCU = 584000;
+            else opHCU = 885000;
+        } else if (valueType == FheType.Uint256) {
+            if (n <= 10) opHCU = 321000;
+            else if (n <= 30) opHCU = 586000;
+            else opHCU = 943000;
+        } else {
+            revert UnsupportedOperation();
+        }
+        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
+
+        uint256 maxInputDepth = _getHCUForHandle(value);
+        for (uint256 i = 0; i < values.length; i++) {
+            uint256 inputDepth = _getHCUForHandle(values[i]);
+            if (inputDepth > maxInputDepth) {
+                maxInputDepth = inputDepth;
+            }
+        }
+
+        uint256 totalHCU = opHCU + maxInputDepth;
+        if (totalHCU > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
+            revert HCUTransactionDepthLimitExceeded();
+        }
+        _setHCUForHandle(result, totalHCU);
+    }
+
+    /**
+     * @notice Check the homomorphic complexity units limit for FheMulDiv.
+     * @param resultType Result type.
+     * @param scalarByte Scalar byte.
+     * @param factor1 The first multiplication factor.
+     * @param factor2 The second multiplication factor.
+     * @param result Result.
+     * @param caller Original dapp caller address from FHEVMExecutor.
+     */
+    function checkHCUForFheMulDiv(
+        FheType resultType,
+        bytes1 scalarByte,
+        bytes32 factor1,
+        bytes32 factor2,
+        bytes32 result,
+        address caller
+    ) external virtual {
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
+        uint256 opHCU;
+        if (scalarByte == FHE_MUL_DIV_FACTOR2_SCALAR) {
+            if (resultType == FheType.Uint8) {
+                opHCU = 495000;
+            } else if (resultType == FheType.Uint16) {
+                opHCU = 703000;
+            } else if (resultType == FheType.Uint32) {
+                opHCU = 1080000;
+            } else if (resultType == FheType.Uint64) {
+                opHCU = 1921000;
+            } else {
+                revert UnsupportedOperation();
+            }
+
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, factor1, result);
+        } else {
+            if (resultType == FheType.Uint8) {
+                opHCU = 524000;
+            } else if (resultType == FheType.Uint16) {
+                opHCU = 766000;
+            } else if (resultType == FheType.Uint32) {
+                opHCU = 1311000;
+            } else if (resultType == FheType.Uint64) {
+                opHCU = 2911000;
+            } else {
+                revert UnsupportedOperation();
+            }
+
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, factor1, factor2, result);
+        }
+    }
+
+    /**
      * @notice Sets the block-level HCU limit for non-whitelisted callers.
      * @param hcuPerBlock New block-level cap.
      */
@@ -1683,6 +1810,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @dev This function uses inline assembly to load the HCU from a specific storage location.
      */
     function _getHCUForHandle(bytes32 handle) internal view virtual returns (uint256 handleHCU) {
+        // Handle slot zero is reserved for _getHCUForTransaction.
+        if (handle == bytes32(0)) revert InvalidZeroHandle();
         assembly {
             handleHCU := tload(handle)
         }
@@ -1706,6 +1835,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @dev This function uses inline assembly to store the HCU in a specific transient storage slot.
      */
     function _setHCUForHandle(bytes32 handle, uint256 handleHCU) internal virtual {
+        // Handle slot zero is reserved for _setHCUForTransaction.
+        if (handle == bytes32(0)) revert InvalidZeroHandle();
         assembly {
             tstore(handle, handleHCU)
         }
@@ -1727,7 +1858,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param hcuPerBlock New cap value.
      * @dev Enforces hcuPerBlock >= maxHCUPerTx.
      */
-    function _setHCUPerBlock(uint48 hcuPerBlock) internal {
+    function _setHCUPerBlock(uint48 hcuPerBlock) private {
         HCULimitStorage storage $ = _getHCULimitStorage();
         if (hcuPerBlock < $.maxHCUPerTx) revert HCUPerBlockBelowMaxPerTx();
         $.globalHCUCapPerBlock = hcuPerBlock;
@@ -1739,7 +1870,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param maxHCUDepthPerTx New depth limit.
      * @dev Enforces maxHCUPerTx >= maxHCUDepthPerTx.
      */
-    function _setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) internal {
+    function _setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) private {
         HCULimitStorage storage $ = _getHCULimitStorage();
         if ($.maxHCUPerTx < maxHCUDepthPerTx) revert MaxHCUPerTxBelowDepth();
         $.maxHCUDepthPerTx = maxHCUDepthPerTx;
@@ -1751,7 +1882,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param maxHCUPerTx New transaction limit.
      * @dev Enforces hcuPerBlock >= maxHCUPerTx and maxHCUPerTx >= maxHCUDepthPerTx.
      */
-    function _setMaxHCUPerTx(uint48 maxHCUPerTx) internal {
+    function _setMaxHCUPerTx(uint48 maxHCUPerTx) private {
         HCULimitStorage storage $ = _getHCULimitStorage();
         if ($.globalHCUCapPerBlock < maxHCUPerTx) revert HCUPerBlockBelowMaxPerTx();
         if (maxHCUPerTx < $.maxHCUDepthPerTx) revert MaxHCUPerTxBelowDepth();
@@ -1776,7 +1907,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /**
      * @notice Getter function for the FHEVMExecutor contract address.
-     * @return FHEVM_EXECUTOR_ADDRESS Address of the FHEVMExecutor.
+     * @return fhevmExecutorAddress Address of the FHEVMExecutor.
      */
     function getFHEVMExecutorAddress() public view virtual returns (address) {
         return FHEVM_EXECUTOR_ADDRESS;

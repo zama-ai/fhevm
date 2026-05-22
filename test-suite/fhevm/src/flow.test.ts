@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
+import { assertContractTaskStackRunning } from "./flow/contracts";
+import { validateDiscovery } from "./flow/discovery";
 import {
   displayedBundle,
   multiChainCoprocessorUpgradeTargets,
@@ -8,9 +10,8 @@ import {
   runtimeArtifactPaths,
   shouldShowResumeHint,
 } from "./flow/up-flow";
-import { assertContractTaskStackRunning } from "./flow/contracts";
 import { envPath, hostChainAddressesPath, kmsCoreConfigPath } from "./layout";
-import { OVERRIDE_GROUPS, type State } from "./types";
+import { type Discovery, OVERRIDE_GROUPS, type State } from "./types";
 
 const completeState = (): State => ({
   target: "latest-main",
@@ -29,11 +30,12 @@ const completeState = (): State => ({
       COPROCESSOR_TFHE_WORKER_VERSION: "02f6cc0",
       COPROCESSOR_ZKPROOF_WORKER_VERSION: "02f6cc0",
       COPROCESSOR_SNS_WORKER_VERSION: "02f6cc0",
+      LISTENER_CORE_VERSION: "02f6cc0",
       CONNECTOR_DB_MIGRATION_VERSION: "02f6cc0",
       CONNECTOR_GW_LISTENER_VERSION: "02f6cc0",
       CONNECTOR_KMS_WORKER_VERSION: "02f6cc0",
       CONNECTOR_TX_SENDER_VERSION: "02f6cc0",
-      CORE_VERSION: "v0.13.10-rc.3",
+      CORE_VERSION: "c57f52f",
       RELAYER_VERSION: "v0.11.0-rc.2",
       RELAYER_MIGRATE_VERSION: "v0.11.0-rc.1",
       TEST_SUITE_VERSION: "02f6cc0",
@@ -59,6 +61,7 @@ const completeState = (): State => ({
     "discover",
     "regenerate",
     "validate",
+    "listener-core",
     "coprocessor",
     "kms-connector",
     "bootstrap",
@@ -66,6 +69,77 @@ const completeState = (): State => ({
     "test-suite",
   ],
   updatedAt: "2026-03-31T00:00:00.000Z",
+});
+
+const validDiscovery = (hostKeys: string[]): Discovery => ({
+  gateway: {
+    GATEWAY_CONFIG_ADDRESS: "0x1",
+    KMS_GENERATION_ADDRESS: "0x2",
+    DECRYPTION_ADDRESS: "0x3",
+    INPUT_VERIFICATION_ADDRESS: "0x4",
+    CIPHERTEXT_COMMITS_ADDRESS: "0x5",
+    MULTICHAIN_ACL_ADDRESS: "0x6",
+  },
+  hosts: Object.fromEntries(
+    hostKeys.map((key) => [
+      key,
+      {
+        ACL_CONTRACT_ADDRESS: "0x10",
+        FHEVM_EXECUTOR_CONTRACT_ADDRESS: "0x11",
+        KMS_VERIFIER_CONTRACT_ADDRESS: "0x12",
+        INPUT_VERIFIER_CONTRACT_ADDRESS: "0x13",
+        PAUSER_SET_CONTRACT_ADDRESS: "0x14",
+        PROTOCOL_CONFIG_CONTRACT_ADDRESS: "0x15",
+      },
+    ]),
+  ),
+  kmsSigner: "0x7",
+  fheKeyId: "a".repeat(64),
+  crsKeyId: "b".repeat(64),
+  endpoints: {
+    gateway: { http: "http://gateway-node:8546", ws: "ws://gateway-node:8546" },
+    hosts: Object.fromEntries(hostKeys.map((key) => [key, { http: `http://${key}:8545`, ws: `ws://${key}:8545` }])),
+    minioInternal: "http://minio:9000",
+    minioExternal: "http://localhost:9000",
+  },
+});
+
+describe("validateDiscovery", () => {
+  test("requires KMSGeneration on the canonical host", () => {
+    const state = completeState();
+    state.discovery = validDiscovery(["host"]);
+
+    expect(() => validateDiscovery(state)).toThrow(
+      'Missing host discovery value KMS_GENERATION_CONTRACT_ADDRESS for chain "host"',
+    );
+  });
+
+  test("rejects KMSGeneration on non-canonical hosts", () => {
+    const state = completeState();
+    state.scenario.hostChains = [
+      { key: "chain-a", chainId: "12345", rpcPort: 8545 },
+      { key: "chain-b", chainId: "67890", rpcPort: 8547 },
+    ];
+    state.discovery = validDiscovery(["chain-a", "chain-b"]);
+    state.discovery.hosts["chain-a"].KMS_GENERATION_CONTRACT_ADDRESS = "0x16";
+    state.discovery.hosts["chain-b"].KMS_GENERATION_CONTRACT_ADDRESS = "0x17";
+
+    expect(() => validateDiscovery(state)).toThrow(
+      'Host discovery for non-canonical chain "chain-b" contains KMS_GENERATION_CONTRACT_ADDRESS',
+    );
+  });
+
+  test("accepts KMSGeneration only on the canonical host", () => {
+    const state = completeState();
+    state.scenario.hostChains = [
+      { key: "chain-a", chainId: "12345", rpcPort: 8545 },
+      { key: "chain-b", chainId: "67890", rpcPort: 8547 },
+    ];
+    state.discovery = validDiscovery(["chain-a", "chain-b"]);
+    state.discovery.hosts["chain-a"].KMS_GENERATION_CONTRACT_ADDRESS = "0x16";
+
+    expect(() => validateDiscovery(state)).not.toThrow();
+  });
 });
 
 describe("resumeRepairStep", () => {
@@ -76,8 +150,11 @@ describe("resumeRepairStep", () => {
       "kms-core",
       "host-node",
       "gateway-node",
+      "listener-redis",
+      "listener-publisher-for-anvil",
       "coprocessor-host-listener",
       "coprocessor-host-listener-poller",
+      "coprocessor-host-listener-consumer",
       "coprocessor-gw-listener",
       "coprocessor-tfhe-worker",
       "coprocessor-zkproof-worker",
@@ -99,8 +176,11 @@ describe("resumeRepairStep", () => {
       "kms-core",
       "host-node",
       "gateway-node",
+      "listener-redis",
+      "listener-publisher-for-anvil",
       "coprocessor-host-listener",
       "coprocessor-host-listener-poller",
+      "coprocessor-host-listener-consumer",
       "coprocessor-gw-listener",
       "coprocessor-tfhe-worker",
       "coprocessor-zkproof-worker",
@@ -116,6 +196,41 @@ describe("resumeRepairStep", () => {
     expect(resumeRepairStep(completeState(), running)).toBeUndefined();
   });
 
+  test("does not expect host-listener consumer on legacy supported bundles", () => {
+    const state = completeState();
+    state.target = "latest-supported";
+    state.versions = {
+      ...state.versions,
+      target: "latest-supported",
+      lockName: "latest-supported.json",
+      env: {
+        ...state.versions.env,
+        COPROCESSOR_HOST_LISTENER_VERSION: "v0.11.0",
+      },
+    };
+    const running = [
+      "fhevm-minio",
+      "coprocessor-and-kms-db",
+      "kms-core",
+      "host-node",
+      "gateway-node",
+      "coprocessor-host-listener",
+      "coprocessor-host-listener-poller",
+      "coprocessor-gw-listener",
+      "coprocessor-tfhe-worker",
+      "coprocessor-zkproof-worker",
+      "coprocessor-sns-worker",
+      "coprocessor-transaction-sender",
+      "kms-connector-gw-listener",
+      "kms-connector-kms-worker",
+      "kms-connector-tx-sender",
+      "fhevm-relayer-db",
+      "fhevm-relayer",
+      "fhevm-test-suite-e2e-debug",
+    ];
+    expect(resumeRepairStep(state, running)).toBeUndefined();
+  });
+
   test("repairs multi-instance stacks when a secondary coprocessor service is missing", () => {
     const state = completeState();
     state.scenario.topology = { count: 2, threshold: 2 };
@@ -129,8 +244,11 @@ describe("resumeRepairStep", () => {
       "kms-core",
       "host-node",
       "gateway-node",
+      "listener-redis",
+      "listener-publisher-for-anvil",
       "coprocessor-host-listener",
       "coprocessor-host-listener-poller",
+      "coprocessor-host-listener-consumer",
       "coprocessor-gw-listener",
       "coprocessor-tfhe-worker",
       "coprocessor-zkproof-worker",
@@ -172,8 +290,11 @@ describe("resumeRepairStep", () => {
       "host-node",
       "host-node-chain-b",
       "gateway-node",
+      "listener-redis",
+      "listener-publisher-for-anvil",
       "coprocessor-host-listener",
       "coprocessor-host-listener-poller",
+      "coprocessor-host-listener-consumer",
       "coprocessor-gw-listener",
       "coprocessor-tfhe-worker",
       "coprocessor-zkproof-worker",
@@ -200,6 +321,7 @@ describe("resumeRepairStep", () => {
       ["gateway-node", { status: "running" }],
       ["coprocessor-host-listener", { status: "running" }],
       ["coprocessor-host-listener-poller", { status: "running" }],
+      ["coprocessor-host-listener-consumer", { status: "running" }],
       ["coprocessor-gw-listener", { status: "running" }],
       ["coprocessor-tfhe-worker", { status: "running", health: "unhealthy" }],
       ["coprocessor-zkproof-worker", { status: "running" }],
@@ -222,7 +344,9 @@ describe("runtime helpers", () => {
   });
 
   test("contract tasks reject stopped stacks with persisted state", () => {
-    expect(() => assertContractTaskStackRunning(true, 0)).toThrow("Stack is stopped; run `fhevm-cli up --resume` first");
+    expect(() => assertContractTaskStackRunning(true, 0)).toThrow(
+      "Stack is stopped; run `fhevm-cli up --resume` first",
+    );
   });
 
   test("preflight includes custom host rpc ports", () => {
@@ -316,8 +440,9 @@ describe("runtime helpers", () => {
     state.overrides = OVERRIDE_GROUPS.map((group) => ({ group }));
     const bundle = displayedBundle(state.versions, state.overrides);
     expect(bundle.env.GATEWAY_VERSION).toBe("LOCAL BUILD");
+    expect(bundle.env.LISTENER_CORE_VERSION).toBe("LOCAL BUILD");
     expect(bundle.env.RELAYER_VERSION).toBe("LOCAL BUILD");
     expect(bundle.env.TEST_SUITE_VERSION).toBe("LOCAL BUILD");
-    expect(bundle.env.CORE_VERSION).toBe("v0.13.10-rc.3");
+    expect(bundle.env.CORE_VERSION).toBe("c57f52f");
   });
 });

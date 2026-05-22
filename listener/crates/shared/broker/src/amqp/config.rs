@@ -156,6 +156,7 @@ pub struct ConsumerConfigBuilder {
     cron_interval: Option<Duration>,
     cb_failure_threshold: Option<u32>,
     cb_cooldown_duration: Option<Duration>,
+    cb_half_open_timeout: Option<Duration>,
 }
 
 impl ConsumerConfigBuilder {
@@ -236,6 +237,17 @@ impl ConsumerConfigBuilder {
         self
     }
 
+    /// Set the maximum time the breaker may remain in Half-Open without dispatching a probe.
+    ///
+    /// Provided for API symmetry with the Redis builder; **AMQP consumers ignore this value**
+    /// at runtime because Half-Open ordering on AMQP is not preserved (the probe consumes
+    /// whatever is at the head of the main queue, not necessarily the failed message). See
+    /// `amqp/consumer.rs` for details. Defaults to `5 × cooldown_duration`.
+    pub fn circuit_breaker_half_open_timeout(mut self, timeout: Duration) -> Self {
+        self.cb_half_open_timeout = Some(timeout);
+        self
+    }
+
     /// Apply exchange topology to configure exchanges automatically.
     pub fn with_topology(mut self, topology: &ExchangeTopology) -> Self {
         self.exchange = Some(topology.main.clone());
@@ -268,17 +280,29 @@ impl ConsumerConfigBuilder {
     fn build_retry(&self) -> Result<RetryConfig, ConsumerError> {
         let base = self.build_base()?;
 
+        // AMQP does not consult `half_open_timeout` at runtime (its breaker probes whatever is
+        // at the queue head, with no PEL-equivalent). The field is honored from the builder
+        // for API symmetry only; falling back to `5 × cooldown_duration` when unset.
         let circuit_breaker = match (self.cb_failure_threshold, self.cb_cooldown_duration) {
             (Some(threshold), Some(cooldown)) => Some(CircuitBreakerConfig {
                 failure_threshold: threshold,
                 cooldown_duration: cooldown,
+                half_open_timeout: self
+                    .cb_half_open_timeout
+                    .unwrap_or_else(|| cooldown.saturating_mul(5)),
             }),
             (Some(threshold), None) => Some(CircuitBreakerConfig {
                 failure_threshold: threshold,
+                half_open_timeout: self
+                    .cb_half_open_timeout
+                    .unwrap_or(CircuitBreakerConfig::default().half_open_timeout),
                 ..CircuitBreakerConfig::default()
             }),
             (None, Some(cooldown)) => Some(CircuitBreakerConfig {
                 cooldown_duration: cooldown,
+                half_open_timeout: self
+                    .cb_half_open_timeout
+                    .unwrap_or_else(|| cooldown.saturating_mul(5)),
                 ..CircuitBreakerConfig::default()
             }),
             (None, None) => None,

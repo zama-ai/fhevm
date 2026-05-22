@@ -41,4 +41,13 @@ contract FHEEvents {
     event FheRand(address indexed caller, FheType randType, bytes16 seed, bytes32 result);
     event FheRandBounded(address indexed caller, uint256 upperBound, FheType randType, bytes16 seed, bytes32 result);
     event FheSum(address indexed caller, bytes32[] values, bytes32 result);
+    event FheIsIn(address indexed caller, bytes32 value, bytes32[] values, bytes32 result);
+    event FheMulDiv(
+        address indexed caller,
+        bytes32 factor1,
+        bytes32 factor2,
+        bytes32 divisor,
+        bytes1 scalarByte,
+        bytes32 result
+    );
 }

@@ -3,6 +3,7 @@ export const STEP_NAMES = [
   "resolve",
   "generate",
   "base",
+  "listener-core",
   "kms-signer",
   "gateway-deploy",
   "host-deploy",

@@ -5,7 +5,7 @@ FORGE_DAPP_OUT=out
 
 # Deploy the empty proxy addresses.
 deploy-empty-proxies:
-	DOTENV_CONFIG_PATH=$(ENV_PATH) HARDHAT_NETWORK=hardhat npx hardhat task:deployEmptyUUPSProxies
+	DOTENV_CONFIG_PATH=$(ENV_PATH) HARDHAT_NETWORK=hardhat npx hardhat task:deployEmptyUUPSProxies --with-kms-generation true
 
 # Deploy the pauser set contract.
 deploy-pauser-set:

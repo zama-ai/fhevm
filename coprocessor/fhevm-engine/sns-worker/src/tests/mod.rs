@@ -531,25 +531,83 @@ struct TestFile {
     pub cleartext: i64,
 }
 
-/// Creates a test-file from handle, ciphertext64 and plaintext
-/// Can be used to update/create_new ciphertext64.json file
-#[expect(dead_code)]
+/// Regenerates `ciphertext64.json` against the current
+/// `fhevm-keys/xof-keyset` LFS fixture.
+///
+/// The on-disk fixture is bound to a specific `CompactPublicKey`, so
+/// every rotation of `xof-keyset` invalidates it: SNS converts the
+/// stored ciphertext64 under the new server key, but the decrypted
+/// value no longer matches `cleartext` because the input bytes were
+/// encrypted under the old key.
+///
+/// Re-run via:
+///   `cargo test -p sns-worker --features test_decrypt_128 \
+///       -- --ignored regenerate_ciphertext64_fixture`
+/// then commit the updated `ciphertext64.json`.
 fn write_test_file(filename: &str) {
-    let handle: [u8; 32] = hex::decode("TBD").unwrap().try_into().unwrap();
-    let ciphertext64 = hex::decode("TBD").unwrap();
-    let plaintext = 0;
+    use fhevm_engine_common::types::SupportedFheCiphertexts;
+    use fhevm_engine_common::utils::safe_deserialize_key;
+    use tfhe::prelude::CiphertextList;
+    use tfhe::xof_key_set::CompressedXofKeySet;
+
+    let keyset_bytes = std::fs::read("../fhevm-keys/xof-keyset").expect("read xof-keyset fixture");
+    let keyset: CompressedXofKeySet =
+        safe_deserialize_key(&keyset_bytes).expect("deserialize CompressedXofKeySet");
+    // Whole-keyset decompression: same XOF stream the production
+    // readers (sns-worker, tfhe-worker GPU) traverse, so the
+    // CompactPublicKey we encrypt under matches what the DB pks_key
+    // column will carry.
+    let (compact_public_key, server_key) = keyset
+        .decompress()
+        .expect("decompress xof keyset")
+        .into_raw_parts();
+
+    // CompactCiphertextList expansion and CompressedCiphertextList
+    // build both consult the thread-local server key.
+    tfhe::set_server_key(server_key);
+
+    let mut builder = tfhe::CompactCiphertextList::builder(&compact_public_key);
+    builder.push(0_u64);
+    let compact_list = builder.build();
+    let expanded = compact_list
+        .expand()
+        .expect("expand compact ciphertext list");
+    let ct: tfhe::FheUint64 = expanded
+        .get(0)
+        .expect("get(0) from expanded list")
+        .expect("expanded list has element 0");
+
+    let ciphertext64 = SupportedFheCiphertexts::FheUint64(ct)
+        .compress()
+        .expect("compress FheUint64 to CompressedCiphertextList");
+
+    // Handle preserved verbatim: byte 30 = 5 is the FheUint64 type
+    // tag consumed by get_ct_type, and bytes 0-1 are overwritten per
+    // batch entry by test_batch_execution; the rest is arbitrary
+    // padding.
+    let handle: [u8; 32] = [
+        82, 179, 54, 227, 20, 74, 138, 57, 192, 160, 141, 228, 185, 10, 90, 70, 138, 165, 113, 249,
+        28, 54, 93, 45, 102, 136, 242, 216, 124, 6, 5, 3,
+    ];
 
     let v = TestFile {
         handle,
         ciphertext64,
-        cleartext: plaintext,
+        cleartext: 0,
     };
 
-    // Write bytes to a file
     File::create(filename)
         .expect("Failed to create file")
         .write_all(&serde_json::to_vec(&v).unwrap())
         .expect("Failed to write to file");
+}
+
+/// Run only when intentionally regenerating the LFS-bound fixture.
+/// See [`write_test_file`] for the workflow.
+#[test]
+#[ignore = "regenerates ciphertext64.json against the current xof-keyset fixture"]
+fn regenerate_ciphertext64_fixture() {
+    write_test_file("ciphertext64.json");
 }
 
 fn read_test_file(filename: &str) -> TestFile {

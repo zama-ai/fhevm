@@ -815,12 +815,18 @@ async fn test_broker_classified_handler_roundtrip() {
 // ── Test 9: Classified handler — transient errors trip circuit breaker ───────
 
 /// `AsyncHandlerPayloadClassified` preserves `HandlerError::Transient`, which
-/// trips the circuit breaker. After cooldown the consumer recovers and
-/// processes a signal message.
+/// trips the circuit breaker. After cooldown the Half-Open probe redelivers
+/// the failed PEL message; once it succeeds the breaker closes and a fresh
+/// signal message published on the stream is consumed.
 ///
 /// This is the key difference from `AsyncHandlerPayloadOnly` — that wrapper
 /// maps all closure errors to `HandlerError::Execution`, which does NOT trip
 /// the circuit breaker.
+///
+/// Under the ordered Half-Open contract, the probe MUST come from the PEL
+/// drain (the failed message), not from the new-message stream. This test
+/// uses a single trip message that flips to `Ok` after the CB threshold has
+/// been reached, so the same message drives both trip and recovery.
 #[tokio::test]
 #[ignore = "requires Docker"]
 async fn test_broker_classified_transient_trips_circuit_breaker() {
@@ -830,6 +836,10 @@ async fn test_broker_classified_transient_trips_circuit_breaker() {
     let publisher = broker.publisher("bf-cls-cb").await.unwrap();
     let topic = Topic::namespaced("bf-cls-cb", "events");
 
+    // One trip message (block_number == 0) returns Transient until the CB
+    // threshold is reached; on the next delivery (the Half-Open probe) it
+    // returns Ok, closing the breaker.
+    const CB_THRESHOLD: u32 = 3;
     let transient_count = Arc::new(AtomicU32::new(0));
     let signal_received = Arc::new(AtomicBool::new(false));
 
@@ -839,16 +849,21 @@ async fn test_broker_classified_transient_trips_circuit_breaker() {
         let tc = tc.clone();
         let sr = sr.clone();
         async move {
-            // Signal message — proves the CB recovered
+            // Signal message — proves the ">" branch reopened after the CB closed.
             if event.block_number == 99 {
                 sr.store(true, Ordering::SeqCst);
                 return Ok(());
             }
-            // Trip messages — return Transient to open the circuit
-            tc.fetch_add(1, Ordering::SeqCst);
-            Err(HandlerError::transient(std::io::Error::other(
-                "simulated infra failure",
-            )))
+            // Trip message — fail Transient until threshold reached, then succeed
+            // on the Half-Open probe so the breaker closes.
+            let n = tc.fetch_add(1, Ordering::SeqCst) + 1;
+            if n <= CB_THRESHOLD {
+                Err(HandlerError::transient(std::io::Error::other(
+                    "simulated infra failure",
+                )))
+            } else {
+                Ok(())
+            }
         }
     });
 
@@ -858,9 +873,9 @@ async fn test_broker_classified_transient_trips_circuit_breaker() {
             .consumer(&topic)
             .group("bf-cls-cb-group")
             .consumer_name("consumer-1")
-            .prefetch(10)
+            .prefetch(1)
             .max_retries(10)
-            .circuit_breaker(3, Duration::from_millis(2000))
+            .circuit_breaker(CB_THRESHOLD, Duration::from_millis(2000))
             .redis_claim_min_idle(60)
             .redis_claim_interval(10)
             .run(handler)
@@ -869,25 +884,25 @@ async fn test_broker_classified_transient_trips_circuit_breaker() {
 
     tokio::time::sleep(Duration::from_millis(400)).await;
 
-    // Publish 3 trip messages to open the circuit
-    for i in 0..3u64 {
-        publisher
-            .publish("events", &BlockEvent { block_number: i })
-            .await
-            .unwrap();
-    }
+    // Publish a single trip message — repeated PEL redeliveries will trip the CB.
+    publisher
+        .publish("events", &BlockEvent { block_number: 0 })
+        .await
+        .unwrap();
 
-    // Wait until at least 3 transient failures recorded
+    // Wait until the CB has tripped at least `CB_THRESHOLD` times.
     let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-    while transient_count.load(Ordering::SeqCst) < 3 && tokio::time::Instant::now() < deadline {
+    while transient_count.load(Ordering::SeqCst) < CB_THRESHOLD
+        && tokio::time::Instant::now() < deadline
+    {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     assert!(
-        transient_count.load(Ordering::SeqCst) >= 3,
-        "expected at least 3 transient failures to trip the circuit"
+        transient_count.load(Ordering::SeqCst) >= CB_THRESHOLD,
+        "expected at least {CB_THRESHOLD} transient failures to trip the circuit"
     );
 
-    // Circuit is Open — signal must NOT be consumed during cooldown
+    // Circuit is Open — signal must NOT be consumed during cooldown.
     publisher
         .publish("events", &BlockEvent { block_number: 99 })
         .await
@@ -899,7 +914,8 @@ async fn test_broker_classified_transient_trips_circuit_breaker() {
         "signal message must not be consumed while the circuit is Open"
     );
 
-    // After cooldown: Half-Open → signal consumed
+    // After cooldown: Half-Open probe redelivers msg 0 from PEL → succeeds → CB
+    // closes → ">" branch unblocks → signal consumed.
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
     while !signal_received.load(Ordering::SeqCst) && tokio::time::Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(200)).await;
@@ -910,7 +926,8 @@ async fn test_broker_classified_transient_trips_circuit_breaker() {
     assert!(
         signal_received.load(Ordering::SeqCst),
         "signal message must be consumed after the CB cooldown expires — \
-         proves Transient errors from AsyncHandlerPayloadClassified trip the CB"
+         proves Transient errors from AsyncHandlerPayloadClassified trip the CB \
+         and the Half-Open probe drained the PEL before reading new messages"
     );
 }
 

@@ -153,6 +153,8 @@ const abi = [
   'event FheRand(address indexed caller, uint8 randType, bytes16 seed, bytes32 result)',
   'event FheRandBounded(address indexed caller, uint256 upperBound, uint8 randType, bytes16 seed, bytes32 result)',
   'event FheSum(address indexed caller, bytes32[] values, bytes32 result)',
+  'event FheIsIn(address indexed caller, bytes32 value, bytes32[] values, bytes32 result)',
+  'event FheMulDiv(address indexed caller, bytes32 factor1, bytes32 factor2, bytes32 divisor, bytes1 scalarByte, bytes32 result)',
 ];
 
 async function processAllPastFHEVMExecutorEvents() {
@@ -610,6 +612,35 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       clearText = 0n;
       for (const valueHandle of event.args[1] as string[]) {
         clearText = clearText + BigInt(await getClearText(ethers.toBeHex(valueHandle, 32)));
+      }
+      clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
+      insertSQL(handle, clearText);
+      break;
+    }
+
+    case 'FheIsIn': {
+      handle = ethers.toBeHex(event.args[3], 32);
+      const valueText = BigInt(await getClearText(ethers.toBeHex(event.args[1], 32)));
+      const setHandles = event.args[2] as string[];
+      const setClearTexts = await Promise.all(
+        setHandles.map((h) => getClearText(ethers.toBeHex(h, 32)).then(BigInt)),
+      );
+      clearText = setClearTexts.some((s) => s === valueText) ? 1n : 0n;
+      insertSQL(handle, clearText);
+      break;
+    }
+
+    case 'FheMulDiv': {
+      handle = ethers.toBeHex(event.args[5], 32);
+      resultType = parseInt(handle.slice(-4, -2), 16);
+      const clearFactor1 = await getClearText(event.args[1]);
+      const divisor = BigInt(event.args[3]);
+      const factor2IsScalar = (BigInt(event.args[4]) & 0x02n) !== 0n;
+      if (factor2IsScalar) {
+        clearText = (BigInt(clearFactor1) * BigInt(event.args[2])) / divisor;
+      } else {
+        const clearFactor2 = await getClearText(event.args[2]);
+        clearText = (BigInt(clearFactor1) * BigInt(clearFactor2)) / divisor;
       }
       clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       insertSQL(handle, clearText);
@@ -1343,6 +1374,66 @@ export function getTxHCUFromTxReceipt(
             ? Math.max(...inputValues.map((v) => readFromHCUMap(ethers.toBeHex(v, 32))))
             : 0;
         hcuMap[handleResult] = hcuConsumed + maxInputHCU;
+        handleSet.add(handleResult);
+        totalHCUConsumed += hcuConsumed;
+        break;
+      }
+
+      case 'FheIsIn': {
+        handleResult = ethers.toBeHex(event.args[3], 32);
+        const isInInputHandle = ethers.toBeHex(event.args[1], 32);
+        typeIndex = parseInt(isInInputHandle.slice(-4, -2), 16);
+        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
+        if (!type) {
+          throw new Error(`Invalid FheType index: ${typeIndex}`);
+        }
+        const nBucketedIsInPrices = (
+          ALL_OPERATORS_PRICES['fheIsIn'].nBucketed as Record<
+            string,
+            { le10: number; le30?: number; le60?: number; le100?: number }
+          >
+        )[type];
+        const setHandles = event.args[2] as string[];
+        const setSize = setHandles.length;
+        if (setSize <= 10) hcuConsumed = nBucketedIsInPrices.le10;
+        else if (setSize <= 30) hcuConsumed = nBucketedIsInPrices.le30 ?? nBucketedIsInPrices.le10;
+        else if (setSize <= 60)
+          hcuConsumed = nBucketedIsInPrices.le60 ?? nBucketedIsInPrices.le30 ?? nBucketedIsInPrices.le10;
+        else
+          hcuConsumed =
+            nBucketedIsInPrices.le100 ??
+            nBucketedIsInPrices.le60 ??
+            nBucketedIsInPrices.le30 ??
+            nBucketedIsInPrices.le10;
+        const valueHandle = ethers.toBeHex(event.args[1], 32);
+        const allInputHandles = [valueHandle, ...setHandles.map((h) => ethers.toBeHex(h, 32))];
+        const maxInputHCU = Math.max(...allInputHandles.map((h) => readFromHCUMap(h)));
+        hcuMap[handleResult] = hcuConsumed + maxInputHCU;
+        handleSet.add(handleResult);
+        totalHCUConsumed += hcuConsumed;
+        break;
+      }
+
+      case 'FheMulDiv': {
+        handleResult = ethers.toBeHex(event.args[5], 32);
+        typeIndex = parseInt(handleResult.slice(-4, -2), 16);
+        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
+        if (!type) {
+          throw new Error(`Invalid FheType index: ${typeIndex}`);
+        }
+        const rhsIsScalar = (BigInt(event.args[4]) & 0x02n) !== 0n;
+        if (rhsIsScalar) {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheMulDiv'].scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+        } else {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheMulDiv'].nonScalar as Record<string, number>)[type];
+          hcuMap[handleResult] =
+            hcuConsumed +
+            Math.max(
+              readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
+              readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
+            );
+        }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;

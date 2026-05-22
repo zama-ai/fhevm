@@ -23,7 +23,7 @@ use host_listener::database::tfhe_event_propagate::Database;
 use host_listener::kms_generation::aws_s3::AwsS3Interface;
 use host_listener::kms_generation::{
     key_id_to_aws_key, key_id_to_database_bytes,
-    process_kms_generation_activations, to_key_prefix, KeyType,
+    process_kms_generation_activations, KeyType,
 };
 use serial_test::serial;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres, Row};
@@ -148,7 +148,7 @@ impl TestEnvironment {
 
         let anvil = Anvil::new().block_time(1).chain_id(TEST_CHAIN_ID).spawn();
         let signer: PrivateKeySigner = anvil.keys()[0].clone().into();
-        let wallet = signer.clone().into();
+        let wallet = signer.into();
 
         Ok(Self {
             wallet,
@@ -352,11 +352,16 @@ impl AwsS3ClientMocked {
                 if bad_key && index < 3 {
                     continue;
                 }
-                let full_key = format!(
-                    "PUB-p1{}/{}",
-                    to_key_prefix(*key_type),
-                    key_id_to_aws_key(key_id)
-                );
+                // Mirror the prefixes kms-core writes under: PublicKey
+                // lives at /PublicKey/<id>, server-key payloads (now
+                // produced as CompressedXofKeySet) live at
+                // /CompressedXofKeySet/<id>.
+                let prefix = match key_type {
+                    KeyType::PublicKey => "/PublicKey",
+                    KeyType::ServerKey => "/CompressedXofKeySet",
+                };
+                let full_key =
+                    format!("PUB-p1{}/{}", prefix, key_id_to_aws_key(key_id));
                 bucket_objects_for_bucket.insert(full_key, key_bytes.clone());
             }
 

@@ -1,7 +1,6 @@
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { WithEncrypt } from '../../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
-import type { TypedValueLike } from '../../types/primitives.js';
 import type { ZkProof } from '../../types/zkProof-p.js';
 import { createTypedValue } from '../../base/typedValue.js';
 import { createZkProofBuilder } from '../../coprocessor/ZkProofBuilder-p.js';
@@ -11,7 +10,7 @@ import { createZkProofBuilder } from '../../coprocessor/ZkProofBuilder-p.js';
 export type GenerateZkProofParameters = {
   readonly contractAddress: string;
   readonly userAddress: string;
-  readonly values: readonly TypedValueLike[];
+  readonly values: ReadonlyArray<{ readonly type: string; readonly value: boolean | bigint | number | string }>;
 };
 
 export type GenerateZkProofReturnType = ZkProof;

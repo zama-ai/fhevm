@@ -140,16 +140,14 @@ pub struct DatabaseURL(String);
 
 impl From<&str> for DatabaseURL {
     fn from(s: &str) -> Self {
-        let url = s.to_owned();
         let app_name = Self::default_app_name();
-        Self::new_with_app_name(&url, &app_name)
+        Self::new_with_app_name(s, &app_name)
     }
 }
 impl From<String> for DatabaseURL {
     fn from(s: String) -> Self {
-        let url = s.to_owned();
         let app_name = Self::default_app_name();
-        Self::new_with_app_name(&url, &app_name)
+        Self::new_with_app_name(&s, &app_name)
     }
 }
 

@@ -4,8 +4,8 @@ import type { WithAll } from '../../core/types/coreFhevmRuntime.js';
 import type { FhevmOptions } from '../../core/types/coreFhevmClient.js';
 import type { FhevmClient } from '../../core/types/fhevmClient.js';
 import { createFhevmBaseClient } from './createFhevmBaseClient.js';
-import { encryptActions } from '../decorators/encrypt.js';
-import { decryptActions } from '../decorators/decrypt.js';
+import { encryptActions } from './decorators/encrypt.js';
+import { decryptActions } from './decorators/decrypt.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 

@@ -69,3 +69,6 @@ path = "src/bin/stress_generator.rs"
 [profile.release]
 opt-level = 3
 lto = "fat"
+
+[lints]
+workspace = true

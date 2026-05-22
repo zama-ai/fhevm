@@ -14,6 +14,11 @@ on:
         description: "The github.event.before sha of the caller workflow"
         type: string
         required: true
+      path-filter-base-commit:
+        description: "Optional commit SHA used only as the dorny/paths-filter base"
+        type: string
+        default: ""
+        required: false
       docker-image:
         description: "The name of the docker image of the service"
         type: string
@@ -60,11 +65,14 @@ jobs:
 
       - name: Login to GitHub Container Registry (push only)
         if: inputs.caller-workflow-event-name == 'push'
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        uses: zama-ai/ci-templates/.github/actions/retry@f3b6046d0ce6f2eab83353e0fb788bd781be9f2e # v1.0.6
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_PASSWORD: ${{ secrets.GHCR_READ_TOKEN }}
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_READ_TOKEN }}
+          command: |
+            echo "Logging into ghcr.io..."
+            echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
 
       - name: Find latest commit with existing image (push only)
         id: find-latest-image-commit
@@ -72,9 +80,11 @@ jobs:
         shell: bash
         env:
           BASE_BRANCH_COMMIT: ${{ inputs.caller-workflow-event-before }}
+          CURRENT_COMMIT: ${{ github.sha }}
           IMAGE: ghcr.io/zama-ai/${{ inputs.docker-image }}
           MAX_COMMIT_COUNT: ${{ inputs.max-commit-count }}
         run: |
+          [[ "$BASE_BRANCH_COMMIT" != "0000000000000000000000000000000000000000" ]] || BASE_BRANCH_COMMIT="$CURRENT_COMMIT"
           mapfile -t CANDIDATES < <(git rev-list "${BASE_BRANCH_COMMIT}" --max-count="${MAX_COMMIT_COUNT}")
 
           LATEST_IMAGE_COMMIT=""
@@ -100,13 +110,15 @@ jobs:
         env:
           LATEST_IMAGE_COMMIT: ${{ steps.find-latest-image-commit.outputs.latest-image-commit }}
           BASE_BRANCH_COMMIT: ${{ inputs.caller-workflow-event-before }}
+          CURRENT_COMMIT: ${{ github.sha }}
         run: |
+          [[ "$BASE_BRANCH_COMMIT" != "0000000000000000000000000000000000000000" ]] || BASE_BRANCH_COMMIT="$CURRENT_COMMIT"
           echo "base-commit=${LATEST_IMAGE_COMMIT:-$BASE_BRANCH_COMMIT}" >> "$GITHUB_OUTPUT"
 
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         id: filter
         with:
-          base: ${{ steps.set-base-commit.outputs.base-commit }}
+          base: ${{ inputs.path-filter-base-commit || steps.set-base-commit.outputs.base-commit }}
           filters: ${{ inputs.filters }}
 
       - id: set-changes-output

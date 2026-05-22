@@ -59,6 +59,7 @@ type ServerKey = tfhe::ServerKey;
 #[derive(Clone)]
 pub struct KeySet {
     pub key_id_gw: DbKeyId,
+    pub sequence_number: i64,
     /// Optional ClientKey for decrypting on testing
     pub client_key: Option<tfhe::ClientKey>,
     pub server_key: ServerKey,
@@ -502,10 +503,7 @@ pub async fn run_all(
             interval_secs = interval_secs,
             "Starting gauge update routine"
         );
-        spawn_gauge_update_routine(
-            Duration::from_secs(interval_secs.into()),
-            pg_mngr.pool().clone(),
-        );
+        spawn_gauge_update_routine(Duration::from_secs(interval_secs.into()), pg_mngr.pool());
     }
 
     // Build the service.
@@ -542,7 +540,13 @@ pub async fn run_all(
 
     // Drift-revert: must run before any DB-using task so the uploader and
     // service loop don't read or write rows the revert SQL is about to delete.
-    drift_revert::init(pool_mngr.pool().clone(), token.clone(), None).await?;
+    drift_revert::init(
+        pool_mngr.pool().clone(),
+        token.clone(),
+        None,
+        drift_revert::WatcherTimeouts::default(),
+    )
+    .await?;
 
     // Spawns a task to handle S3 uploads
     spawn(async move {

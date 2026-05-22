@@ -64,6 +64,28 @@ services:
       coprocessor-db-migration:
         condition: service_completed_successfully
 
+  coprocessor-host-listener-consumer:
+    container_name: coprocessor-host-listener-consumer
+    # build:
+    #   context: ../../..
+    #   dockerfile: coprocessor/fhevm-engine/host-listener/Dockerfile
+    image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}
+    env_file:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
+    command:
+      - host_listener_consumer
+      - --database-url=${DATABASE_URL}
+      - --acl-contract-address=${ACL_CONTRACT_ADDRESS}
+      - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
+      - --kms-generation-address=${KMS_GENERATION_ADDRESS}
+      - --url=redis://listener-redis:6379
+      #- --url=amqp://user:pass@listener-rabbitmq:5672
+      - --chain-id=${CHAIN_ID}
+      # --service-name is injected by scenario if needed, see two-of-two.yaml for example
+    depends_on:
+      coprocessor-db-migration:
+        condition: service_completed_successfully
+
   coprocessor-gw-listener:
     container_name: coprocessor-gw-listener
     image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:${COPROCESSOR_GW_LISTENER_VERSION}
