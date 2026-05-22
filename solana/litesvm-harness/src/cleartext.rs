@@ -1,8 +1,12 @@
+//! Cleartext semantic backend: ingest `emit_cpi!` TFHE events and simulate add/sub/trivial locally.
+
 use std::collections::HashMap;
 
-use anchor_lang::{prelude::Pubkey, AnchorDeserialize, Discriminator};
 use litesvm::types::TransactionMetadata;
-use zama_host::{FheBinaryOpCode, FheBinaryOpEvent, TrivialEncryptEvent};
+use solana_sdk::pubkey::Pubkey;
+use zama_host::{FheBinaryOpCode, FheBinaryOpEvent};
+
+use crate::events::{collect_zama_host_events, ZamaHostEvent};
 
 pub type Handle = [u8; 32];
 
@@ -26,14 +30,9 @@ impl TypedClearValue {
     }
 }
 
-pub enum SolanaFheEvent {
-    BinaryOp(FheBinaryOpEvent),
-    TrivialEncrypt(TrivialEncryptEvent),
-}
-
 pub trait FheBackend {
     fn seed_cleartext(&mut self, handle: Handle, value: TypedClearValue);
-    fn ingest_event(&mut self, event: &SolanaFheEvent) -> Result<(), String>;
+    fn ingest_zama_host_event(&mut self, event: &ZamaHostEvent) -> Result<(), String>;
     fn decrypt_cleartext(&self, handle: Handle) -> Option<TypedClearValue>;
 }
 
@@ -43,14 +42,15 @@ pub struct CleartextBackend {
 }
 
 impl CleartextBackend {
+    /// Ingest all ZamaHost `emit_cpi!` events from one transaction (production-shaped path).
     pub fn ingest_transaction(
         &mut self,
         meta: &TransactionMetadata,
         account_keys: &[Pubkey],
         program_id: Pubkey,
     ) -> Result<(), String> {
-        for event in solana_fhe_events(meta, account_keys, program_id) {
-            self.ingest_event(&event)?;
+        for event in collect_zama_host_events(meta, account_keys, program_id) {
+            self.ingest_zama_host_event(&event)?;
         }
         Ok(())
     }
@@ -61,15 +61,18 @@ impl FheBackend for CleartextBackend {
         self.values.insert(handle, value);
     }
 
-    fn ingest_event(&mut self, event: &SolanaFheEvent) -> Result<(), String> {
+    fn ingest_zama_host_event(&mut self, event: &ZamaHostEvent) -> Result<(), String> {
         match event {
-            SolanaFheEvent::BinaryOp(event) => self.ingest_binary_op(event),
-            SolanaFheEvent::TrivialEncrypt(event) => {
+            ZamaHostEvent::FheBinaryOp(event) => self.ingest_binary_op(event),
+            ZamaHostEvent::TrivialEncrypt(event) => {
                 let value = TypedClearValue {
                     fhe_type: event.fhe_type,
                     value: ClearValue::Uint(bytes_to_u128(event.plaintext)),
                 };
                 self.values.insert(event.result, value);
+                Ok(())
+            }
+            ZamaHostEvent::FheRand(_) | ZamaHostEvent::AclAllowed(_) | ZamaHostEvent::InputVerified(_) => {
                 Ok(())
             }
         }
@@ -123,45 +126,6 @@ impl CleartextBackend {
         );
         Ok(())
     }
-}
-
-pub fn solana_fhe_events(
-    meta: &TransactionMetadata,
-    account_keys: &[Pubkey],
-    program_id: Pubkey,
-) -> Vec<SolanaFheEvent> {
-    meta.inner_instructions
-        .iter()
-        .flatten()
-        .filter(|ix| *ix.instruction.program_id(account_keys) == program_id)
-        .filter_map(|ix| decode_fhe_event(&ix.instruction.data))
-        .collect()
-}
-
-fn decode_fhe_event(data: &[u8]) -> Option<SolanaFheEvent> {
-    decode_binary_op_event(data)
-        .map(SolanaFheEvent::BinaryOp)
-        .or_else(|| decode_trivial_encrypt_event(data).map(SolanaFheEvent::TrivialEncrypt))
-}
-
-fn decode_binary_op_event(data: &[u8]) -> Option<FheBinaryOpEvent> {
-    let event_prefix = anchor_event_prefix(FheBinaryOpEvent::DISCRIMINATOR);
-    let payload = data.strip_prefix(&event_prefix[..])?;
-    FheBinaryOpEvent::deserialize(&mut &*payload).ok()
-}
-
-fn decode_trivial_encrypt_event(data: &[u8]) -> Option<TrivialEncryptEvent> {
-    let event_prefix = anchor_event_prefix(TrivialEncryptEvent::DISCRIMINATOR);
-    let payload = data.strip_prefix(&event_prefix[..])?;
-    TrivialEncryptEvent::deserialize(&mut &*payload).ok()
-}
-
-fn anchor_event_prefix(discriminator: &[u8]) -> Vec<u8> {
-    anchor_lang::event::EVENT_IX_TAG_LE
-        .iter()
-        .copied()
-        .chain(discriminator.iter().copied())
-        .collect()
 }
 
 fn bytes_to_u128(bytes: [u8; 32]) -> u128 {

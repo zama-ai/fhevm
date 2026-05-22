@@ -12,9 +12,10 @@ use solana_sdk::signature::{Signature, Signer};
 use tfhe::prelude::FheTryEncrypt;
 use time::{Date, Month, PrimitiveDateTime, Time};
 use zama_solana_litesvm_harness::{
-    authorize_transfer_amount, kms_like_user_decrypt_check, read_acl_record, send_with_meta,
-    send_with_meta_and_signature, signed_user_decrypt_request_with_domains, token_fixture,
-    transfer_ix, transfer_output_accounts, UserDecryptHandleEntry, DEFAULT_INPUT_NONCE_SEQUENCE,
+    authorize_transfer_amount, collect_cpi_events, kms_like_user_decrypt_check, read_acl_record,
+    send_with_meta, send_with_meta_and_signature, signed_user_decrypt_request_with_domains,
+    token_fixture, transfer_ix, transfer_output_accounts, UserDecryptHandleEntry,
+    DEFAULT_INPUT_NONCE_SEQUENCE,
 };
 
 use crate::tests::{
@@ -55,7 +56,7 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
     let new_bob_handle = read_acl_record(&fixture.svm, output.bob)
         .expect("expected Bob output ACL")
         .handle;
-    let host_events = host_events(&meta, &account_keys, fixture.host_program_id);
+    let host_events = collect_listener_host_events(&meta, &account_keys, fixture.host_program_id);
     assert_eq!(count_tfhe_events(&host_events), 2);
     assert_eq!(count_acl_events(&host_events), 4);
 
@@ -150,7 +151,8 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
     let new_bob_handle = read_acl_record(&fixture.svm, output.bob)
         .expect("expected Bob output ACL")
         .handle;
-    let transfer_events = host_events(&meta, &account_keys, fixture.host_program_id);
+    let transfer_events =
+        collect_listener_host_events(&meta, &account_keys, fixture.host_program_id);
     assert_eq!(count_tfhe_events(&transfer_events), 2);
     assert_eq!(count_acl_events(&transfer_events), 4);
 
@@ -335,17 +337,12 @@ async fn insert_host_events(
     Ok(())
 }
 
-fn host_events(
+fn collect_listener_host_events(
     meta: &TransactionMetadata,
     account_keys: &[solana_sdk::pubkey::Pubkey],
     program_id: solana_sdk::pubkey::Pubkey,
 ) -> Vec<SolanaHostEvent> {
-    meta.inner_instructions
-        .iter()
-        .flatten()
-        .filter(|ix| *ix.instruction.program_id(account_keys) == program_id)
-        .filter_map(|ix| decode_anchor_cpi_event(&ix.instruction.data))
-        .collect()
+    collect_cpi_events(meta, account_keys, program_id, decode_anchor_cpi_event)
 }
 
 fn count_tfhe_events(events: &[SolanaHostEvent]) -> usize {

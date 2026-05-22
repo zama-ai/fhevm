@@ -1,9 +1,15 @@
 //! Shared LiteSVM harness for Solana PoC tests.
 //!
 //! Stack: `litesvm 0.11`, `anchor-litesvm 0.4`, `anchor-lang 1.0.2`, `solana-sdk 3.0`.
+//!
+//! Protocol TFHE events are collected from `emit_cpi!` inner instructions (same path as
+//! `host-listener`), not from transaction logs.
 
 mod acl;
+mod cleartext;
+mod events;
 mod fixture;
+mod host_ix;
 mod instructions;
 mod kms;
 mod programs;
@@ -11,13 +17,23 @@ mod transaction;
 mod util;
 
 pub use acl::{
-    acl_record_address, balance_acl_record_address, event_authority, read_acl_record,
-    record_subjects, token_account_address, transfer_amount_acl_address, vault_authority_address,
+    acl_record_address, assert_acl_record, assert_balance_acl, balance_acl_record_address,
+    created_acl_count, event_authority, read_acl_record, record_subjects,
+    seed_authorizing_acl_record, token_account_address, transfer_amount_acl_address,
+    vault_authority_address,
+};
+pub use cleartext::{CleartextBackend, ClearValue, FheBackend, Handle, TypedClearValue};
+pub use events::{
+    acl_allowed_events, balance_handle_updated_events, binary_op_events, collect_cpi_events,
+    collect_zama_host_events, count_acl_allowed_events, count_tfhe_host_events,
+    decode_token_cpi_event, decode_zama_host_cpi_event, max_cpi_depth, trivial_encrypt_events,
+    ANCHOR_EVENT_IX_TAG_LE, ZamaHostEvent,
 };
 pub use fixture::{
     create_spl_token_account, spl_token_amount, token_account, token_fixture, TokenFixture,
     TransferOutputAccounts, WrapOutputAccounts,
 };
+pub use host_ix::{allow_for_decryption_ix, execute_frame_ix, label};
 pub use instructions::{
     authorize_transfer_amount, self_transfer_ix, transfer_ix, transfer_ix_with_amount_acl,
     transfer_ix_with_amount_nonce, transfer_ix_with_current_acl,
@@ -25,10 +41,10 @@ pub use instructions::{
     wrap_usdc_ix,
 };
 pub use kms::{
-    authorization_payload_bytes, kms_like_user_decrypt_check,
+    authorization_payload_bytes, kms_like_public_decrypt_check, kms_like_user_decrypt_check,
     signed_current_balance_user_decrypt_request, signed_user_decrypt_request,
-    signed_user_decrypt_request_with_domains, UserDecryptAuthorizationPayload,
-    UserDecryptHandleEntry, UserDecryptRequest,
+    signed_user_decrypt_request_with_domains, PublicDecryptHandleEntry,
+    UserDecryptAuthorizationPayload, UserDecryptHandleEntry, UserDecryptRequest,
 };
 pub use programs::{
     assert_program_built, host_program_so_path, svm_with_program, svm_with_programs,

@@ -1,40 +1,33 @@
 // Test builders mirror Anchor instruction surfaces and LiteSVM result types.
 #![allow(clippy::result_large_err, clippy::too_many_arguments)]
 
-mod support;
-
-use anchor_lang::{
-    prelude::system_program, AccountDeserialize, AccountSerialize, AnchorDeserialize, Discriminator,
-};
+use anchor_lang::{prelude::system_program, AccountSerialize};
 use anchor_litesvm::TestHelpers;
-use confidential_token::{self as token, BalanceHandleUpdateReason, BalanceHandleUpdatedEvent};
-use litesvm::{types::TransactionMetadata, LiteSVM};
+use confidential_token::{self as token, BalanceHandleUpdateReason};
 use solana_sdk::{
     account::Account,
-    instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
     signature::{Keypair, Signer},
 };
 use zama_host as host;
 use zama_host::{
-    AclRecord, AclSubjectEntry, FheBinaryOpCode, FheBinaryOpEvent, FheFrameAction, FheFrameStep,
-    FheOpcode, FheOperand, TrivialEncryptEvent,
+    AclRecord, AclSubjectEntry, FheBinaryOpCode, FheFrameAction, FheFrameStep, FheOpcode, FheOperand,
 };
 use zama_solana_litesvm_harness::{
-    acl_record_address, amount_plaintext, anchor_ix, authorization_payload_bytes,
-    authorize_transfer_amount, balance_acl_record_address, event_authority,
-    execute_frame_log_count, expected_trivial_handle, host_program_so_path,
-    kms_like_user_decrypt_check, read_acl_record, record_subjects, self_transfer_ix, send,
-    send_many_with_signers, send_with_meta, signed_current_balance_user_decrypt_request,
-    signed_user_decrypt_request, spl_token_amount, svm_with_program, token_account, token_fixture,
-    transfer_amount_acl_address, transfer_ix, transfer_ix_with_amount_acl,
-    transfer_ix_with_amount_nonce, transfer_ix_with_current_acl,
+    acl_record_address, allow_for_decryption_ix, amount_plaintext, anchor_ix,
+    assert_balance_acl, authorization_payload_bytes, authorize_transfer_amount,
+    balance_acl_record_address, binary_op_events, balance_handle_updated_events, CleartextBackend,
+    created_acl_count, event_authority, execute_frame_ix, execute_frame_log_count,
+    expected_trivial_handle, FheBackend, host_program_so_path, kms_like_public_decrypt_check,
+    kms_like_user_decrypt_check, label, max_cpi_depth, read_acl_record, record_subjects,
+    seed_authorizing_acl_record, self_transfer_ix, send, send_many_with_signers, send_with_meta,
+    signed_current_balance_user_decrypt_request, signed_user_decrypt_request, spl_token_amount,
+    svm_with_program, token_account, token_fixture, transfer_amount_acl_address, transfer_ix,
+    transfer_ix_with_amount_acl, transfer_ix_with_amount_nonce, transfer_ix_with_current_acl,
     transfer_ix_with_current_acl_and_amount_nonce, transfer_output_accounts, try_send,
-    wrap_output_accounts, wrap_usdc_ix, TransferOutputAccounts, UserDecryptHandleEntry,
-    DEFAULT_INPUT_NONCE_SEQUENCE,
+    trivial_encrypt_events, wrap_output_accounts, wrap_usdc_ix, PublicDecryptHandleEntry,
+    TransferOutputAccounts, TypedClearValue, UserDecryptHandleEntry, DEFAULT_INPUT_NONCE_SEQUENCE,
 };
-
-use support::fhe_runtime::{CleartextBackend, FheBackend, TypedClearValue};
 
 #[test]
 fn execute_frame_emits_trivial_encrypt_via_cpi() {
@@ -212,22 +205,27 @@ fn assert_acl_record_rejects_noncanonical_acl_record_address() {
     let mut subjects = [Pubkey::default(); host::MAX_ACL_SUBJECTS];
     subjects[0] = subject;
 
+    let mut acl_data = Vec::new();
+    AclRecord {
+        handle,
+        nonce_key,
+        nonce_sequence,
+        acl_domain_key,
+        app_account,
+        encrypted_value_label,
+        subjects,
+        subject_count: 1,
+        public_decrypt: false,
+        bump: 0,
+    }
+    .try_serialize(&mut acl_data)
+    .unwrap();
+
     svm.set_account(
         noncanonical_acl_record,
         Account {
             lamports: 1_000_000_000,
-            data: serialized_acl_record(AclRecord {
-                handle,
-                nonce_key,
-                nonce_sequence,
-                acl_domain_key,
-                app_account,
-                encrypted_value_label,
-                subjects,
-                subject_count: 1,
-                public_decrypt: false,
-                bump: 0,
-            }),
+            data: acl_data,
             owner: program_id,
             executable: false,
             rent_epoch: 0,
@@ -1307,7 +1305,7 @@ fn confidential_transfer_budget_snapshot() {
     assert_eq!(signer_metas, 1);
     assert_eq!(host_events, 2);
     assert_eq!(app_events, 2);
-    assert_eq!(created_acl_count(&fixture.svm, output), 2);
+    assert_eq!(created_acl_count(&fixture.svm, &[output.alice, output.bob]), 2);
     assert!(
         inner_instructions <= 14,
         "inner instructions: {inner_instructions}"
@@ -1378,7 +1376,7 @@ fn confidential_transfer_rejects_wrong_amount_acl() {
         token_account(&fixture.svm, fixture.bob_token).balance_handle,
         fixture.bob_initial
     );
-    assert_eq!(created_acl_count(&fixture.svm, output), 0);
+    assert_eq!(created_acl_count(&fixture.svm, &[output.alice, output.bob]), 0);
 }
 
 #[test]
@@ -1402,7 +1400,10 @@ fn confidential_transfer_rejects_output_acl_for_wrong_token_account() {
         token_account(&fixture.svm, fixture.bob_token).balance_handle,
         fixture.bob_initial
     );
-    assert_eq!(created_acl_count(&fixture.svm, correct_output), 0);
+    assert_eq!(
+        created_acl_count(&fixture.svm, &[correct_output.alice, correct_output.bob]),
+        0
+    );
 }
 
 #[test]
@@ -1431,277 +1432,4 @@ fn confidential_transfer_rejects_reused_output_acl_record() {
         fixture.bob_initial
     );
     assert!(read_acl_record(&fixture.svm, output.bob).is_none());
-}
-
-#[derive(Clone, Copy)]
-struct PublicDecryptHandleEntry {
-    handle: [u8; 32],
-    acl_record: Pubkey,
-}
-
-fn allow_for_decryption_ix(
-    program_id: Pubkey,
-    authority: Pubkey,
-    acl_record: Pubkey,
-    handle: [u8; 32],
-) -> Instruction {
-    anchor_ix(
-        program_id,
-        host::accounts::AllowForDecryption {
-            authority,
-            acl_record,
-            event_authority: event_authority(program_id),
-            program: program_id,
-        },
-        host::instruction::AllowForDecryption { handle },
-    )
-}
-
-fn assert_balance_acl(
-    svm: &LiteSVM,
-    address: Pubkey,
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    nonce_sequence: u64,
-    handle: [u8; 32],
-    subjects: &[Pubkey],
-) {
-    assert_acl_record(
-        svm,
-        address,
-        acl_domain_key,
-        app_account,
-        token::balance_label(),
-        nonce_sequence,
-        handle,
-        subjects,
-    );
-}
-
-fn assert_acl_record(
-    svm: &LiteSVM,
-    address: Pubkey,
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-    nonce_sequence: u64,
-    handle: [u8; 32],
-    subjects: &[Pubkey],
-) {
-    let record = read_acl_record(svm, address).expect("expected ACL account");
-    assert_eq!(record.handle, handle);
-    assert_eq!(
-        record.nonce_key,
-        token::nonce_key(acl_domain_key, app_account, encrypted_value_label)
-    );
-    assert_eq!(record.nonce_sequence, nonce_sequence);
-    assert_eq!(record.acl_domain_key, acl_domain_key);
-    assert_eq!(record.app_account, app_account);
-    assert_eq!(record.encrypted_value_label, encrypted_value_label);
-    assert_eq!(record_subjects(&record), subjects);
-}
-
-fn kms_like_public_decrypt_check(svm: &LiteSVM, entries: &[PublicDecryptHandleEntry]) -> bool {
-    if entries.is_empty() {
-        return false;
-    }
-
-    entries.iter().all(|entry| {
-        let Some(raw_account) = svm.get_account(&entry.acl_record) else {
-            return false;
-        };
-        if raw_account.owner != host::id() {
-            return false;
-        }
-
-        let mut data = raw_account.data.as_slice();
-        let Ok(record) = AclRecord::try_deserialize(&mut data) else {
-            return false;
-        };
-        let expected_nonce_key = token::nonce_key(
-            record.acl_domain_key,
-            record.app_account,
-            record.encrypted_value_label,
-        );
-        let expected_acl_record =
-            acl_record_address(host::id(), expected_nonce_key, record.nonce_sequence);
-
-        record.handle == entry.handle
-            && record.nonce_key == expected_nonce_key
-            && entry.acl_record == expected_acl_record
-            && record.public_decrypt
-    })
-}
-
-fn serialized_acl_record(record: AclRecord) -> Vec<u8> {
-    let mut data = Vec::new();
-    record.try_serialize(&mut data).unwrap();
-    data
-}
-
-fn seed_authorizing_acl_record(
-    svm: &mut LiteSVM,
-    program_id: Pubkey,
-    nonce_key: [u8; 32],
-    nonce_sequence: u64,
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-    handle: [u8; 32],
-    authority: Pubkey,
-) -> Pubkey {
-    let (address, bump) = Pubkey::find_program_address(
-        &[
-            b"acl-record",
-            nonce_key.as_ref(),
-            &nonce_sequence.to_le_bytes(),
-        ],
-        &program_id,
-    );
-    let mut subjects = [Pubkey::default(); host::MAX_ACL_SUBJECTS];
-    subjects[0] = authority;
-    svm.set_account(
-        address,
-        Account {
-            lamports: 1_000_000_000,
-            data: serialized_acl_record(AclRecord {
-                handle,
-                nonce_key,
-                nonce_sequence,
-                acl_domain_key,
-                app_account,
-                encrypted_value_label,
-                subjects,
-                subject_count: 1,
-                public_decrypt: false,
-                bump,
-            }),
-            owner: program_id,
-            executable: false,
-            rent_epoch: 0,
-        },
-    )
-    .unwrap();
-    address
-}
-
-fn created_acl_count(svm: &LiteSVM, output: TransferOutputAccounts) -> usize {
-    [output.alice, output.bob]
-        .into_iter()
-        .filter(|address| svm.get_account(address).is_some())
-        .count()
-}
-
-fn binary_op_events(
-    meta: &TransactionMetadata,
-    account_keys: &[Pubkey],
-    program_id: Pubkey,
-) -> Vec<FheBinaryOpEvent> {
-    meta.inner_instructions
-        .iter()
-        .flatten()
-        .filter(|ix| *ix.instruction.program_id(account_keys) == program_id)
-        .filter_map(|ix| decode_binary_op_event(&ix.instruction.data))
-        .collect()
-}
-
-fn trivial_encrypt_events(
-    meta: &TransactionMetadata,
-    account_keys: &[Pubkey],
-    program_id: Pubkey,
-) -> Vec<TrivialEncryptEvent> {
-    meta.inner_instructions
-        .iter()
-        .flatten()
-        .filter(|ix| *ix.instruction.program_id(account_keys) == program_id)
-        .filter_map(|ix| decode_trivial_encrypt_event(&ix.instruction.data))
-        .collect()
-}
-
-fn balance_handle_updated_events(
-    meta: &TransactionMetadata,
-    account_keys: &[Pubkey],
-    program_id: Pubkey,
-) -> Vec<BalanceHandleUpdatedEvent> {
-    meta.inner_instructions
-        .iter()
-        .flatten()
-        .filter(|ix| *ix.instruction.program_id(account_keys) == program_id)
-        .filter_map(|ix| decode_balance_handle_updated_event(&ix.instruction.data))
-        .collect()
-}
-
-fn max_cpi_depth(meta: &TransactionMetadata) -> u64 {
-    meta.logs
-        .iter()
-        .filter_map(|log| {
-            log.strip_suffix(']')?
-                .rsplit_once(" invoke [")?
-                .1
-                .parse::<u64>()
-                .ok()
-        })
-        .max()
-        .unwrap_or(1)
-}
-
-fn decode_binary_op_event(data: &[u8]) -> Option<FheBinaryOpEvent> {
-    let event_prefix = anchor_event_prefix(FheBinaryOpEvent::DISCRIMINATOR);
-    let payload = data.strip_prefix(&event_prefix[..])?;
-    FheBinaryOpEvent::deserialize(&mut &*payload).ok()
-}
-
-fn decode_trivial_encrypt_event(data: &[u8]) -> Option<TrivialEncryptEvent> {
-    let event_prefix = anchor_event_prefix(TrivialEncryptEvent::DISCRIMINATOR);
-    let payload = data.strip_prefix(&event_prefix[..])?;
-    TrivialEncryptEvent::deserialize(&mut &*payload).ok()
-}
-
-fn decode_balance_handle_updated_event(data: &[u8]) -> Option<BalanceHandleUpdatedEvent> {
-    let event_prefix = anchor_event_prefix(BalanceHandleUpdatedEvent::DISCRIMINATOR);
-    let payload = data.strip_prefix(&event_prefix[..])?;
-    BalanceHandleUpdatedEvent::deserialize(&mut &*payload).ok()
-}
-
-fn anchor_event_prefix(discriminator: &[u8]) -> Vec<u8> {
-    anchor_lang::event::EVENT_IX_TAG_LE
-        .iter()
-        .copied()
-        .chain(discriminator.iter().copied())
-        .collect()
-}
-
-fn label(name: &str) -> [u8; 32] {
-    let mut out = [0_u8; 32];
-    let bytes = name.as_bytes();
-    assert!(bytes.len() <= out.len());
-    out[..bytes.len()].copy_from_slice(bytes);
-    out
-}
-
-fn execute_frame_ix(
-    program_id: Pubkey,
-    payer: Pubkey,
-    steps: Vec<FheFrameStep>,
-    actions: Vec<FheFrameAction>,
-    remaining_accounts: Vec<Pubkey>,
-) -> Instruction {
-    let mut ix = anchor_ix(
-        program_id,
-        host::accounts::ExecuteFrame {
-            payer,
-            compute_subject: payer,
-            app_account_authority: payer,
-            system_program: system_program::ID,
-            event_authority: event_authority(program_id),
-            program: program_id,
-        },
-        host::instruction::ExecuteFrame { steps, actions },
-    );
-    ix.accounts.extend(
-        remaining_accounts
-            .into_iter()
-            .map(|pubkey| AccountMeta::new(pubkey, false)),
-    );
-    ix
 }

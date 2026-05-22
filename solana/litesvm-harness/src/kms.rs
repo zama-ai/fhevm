@@ -159,3 +159,44 @@ pub fn kms_like_user_decrypt_check(svm: &litesvm::LiteSVM, request: &UserDecrypt
             && record_subjects(&record).contains(&authorization.user)
     })
 }
+
+#[derive(Clone, Copy)]
+pub struct PublicDecryptHandleEntry {
+    pub handle: [u8; 32],
+    pub acl_record: Pubkey,
+}
+
+pub fn kms_like_public_decrypt_check(
+    svm: &litesvm::LiteSVM,
+    entries: &[PublicDecryptHandleEntry],
+) -> bool {
+    if entries.is_empty() {
+        return false;
+    }
+
+    entries.iter().all(|entry| {
+        let Some(raw_account) = svm.get_account(&entry.acl_record) else {
+            return false;
+        };
+        if raw_account.owner != host::id() {
+            return false;
+        }
+
+        let mut data = raw_account.data.as_slice();
+        let Ok(record) = host::AclRecord::try_deserialize(&mut data) else {
+            return false;
+        };
+        let expected_nonce_key = token::nonce_key(
+            record.acl_domain_key,
+            record.app_account,
+            record.encrypted_value_label,
+        );
+        let expected_acl_record =
+            acl_record_address(host::id(), expected_nonce_key, record.nonce_sequence);
+
+        record.handle == entry.handle
+            && record.nonce_key == expected_nonce_key
+            && entry.acl_record == expected_acl_record
+            && record.public_decrypt
+    })
+}

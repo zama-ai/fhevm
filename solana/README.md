@@ -51,10 +51,11 @@ solana/programs/confidential-token
 solana/litesvm-harness
   Shared LiteSVM harness used by runtime-tests and tfhe-worker solana_poc tests.
   Canonical stack: litesvm 0.11, anchor-litesvm 0.4, anchor-lang 1.0.2, solana-sdk 3.0.
+  Event ingestion walks `emit_cpi!` inner instructions (same path as host-listener), not logs.
+  `CleartextBackend` simulates add/sub/trivial locally for fast semantic checks.
 
 solana/runtime-tests
-  Fast LiteSVM tests for Solana accounts, PDAs, CPI, events, and ACL behavior.
-  tests/support/fhe_runtime.rs adds a cleartext backend that consumes real ZamaHost events.
+  Fast LiteSVM tests (29). Event helpers live in litesvm-harness, not in this crate.
 
 coprocessor/fhevm-engine/host-listener/src/solana_adapter.rs
   Maps typed Solana host events into the existing coprocessor DB model.

@@ -81,6 +81,14 @@ Listener decoders come from checked-in `coprocessor/fhevm-engine/host-listener/i
 ```text
 solana/litesvm-harness   — shared by runtime-tests and tfhe-worker solana_poc
 Stack: litesvm 0.11, anchor-litesvm 0.4, anchor-lang 1.0.2, solana-sdk 3.0
+
+Event path (production-shaped):
+  emit_cpi! → meta.innerInstructions → collect_zama_host_events / collect_cpi_events
+  NOT log-based emit! / msg! parsing (logs can truncate at ~10KB/tx)
+
+Backends:
+  CleartextBackend — fast local add/sub/trivial (runtime-tests)
+  host-listener decode_anchor_cpi_event — worker E2E (solana_poc, #[ignore])
 ```
 
 Add behavior tests in `runtime-tests/tests/host_events.rs` before changing token logic.
