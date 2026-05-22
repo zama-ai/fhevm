@@ -1,4 +1,4 @@
-import type { Provider } from 'ethers';
+import type { ethers as EthersT } from 'ethers';
 import type { FhevmChain } from '../../core/types/fhevmChain.js';
 import type { WithEncrypt } from '../../core/types/coreFhevmRuntime.js';
 import type { FhevmOptions } from '../../core/types/coreFhevmClient.js';
@@ -8,7 +8,10 @@ import { encryptActions } from './decorators/encrypt.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function createFhevmCleartextEncryptClient<chain extends FhevmChain, provider extends Provider>(parameters: {
+export function createFhevmCleartextEncryptClient<
+  chain extends FhevmChain,
+  provider extends EthersT.ContractRunner,
+>(parameters: {
   readonly provider: provider;
   readonly chain: chain;
   readonly options?: FhevmOptions | undefined;
