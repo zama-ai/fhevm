@@ -76,7 +76,10 @@ Listener decoders come from the shared `solana/crates/zama-host-events` crate (I
 
 **IDL events not emitted yet:** `InputVerifiedEvent`, `FheRandEvent` (listed for future work).
 
-**PoC deferred:** `ExecuteFrame.app_account_authority` is required on CPI and used for token PDA signer seeds; the host does not yet validate it against frame metadata. Compute-time ACL is enforced via `compute_subject` only.
+**Host authorization:** `execute_frame` takes `authorized_app_accounts`. Every durable
+`Allow.app_account` must appear in that list. The app program declares which state slots
+it updates; the host enforces the declaration. Compute-time ACL is enforced via
+`compute_subject` membership on operand ACL records.
 
 ## Shared test harness
 
@@ -137,7 +140,7 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-LiteSVM runtime tests: **34** in `runtime-tests/tests/host_events.rs`. On-chain handle derivation fails closed when the previous slot hash is missing; every fixture seeds a non-zero previous bank hash by default.
+LiteSVM runtime tests: **35** in `runtime-tests/tests/host_events.rs`. On-chain handle derivation fails closed when the previous slot hash is missing; every fixture seeds a non-zero previous bank hash by default.
 
 **CI toolchain:** GitHub Actions installs Anchor **1.0.2** via [AVM](https://www.anchor-lang.com/docs/installation) from `solana-foundation/anchor` (see `.github/workflows/solana-tests.yml`). Do not use `metadaoproject/setup-anchor` — its npm package (`@coral-xyz/anchor-cli`) only ships 0.31.x. The workflow uses a `check-changes` job (`dorny/paths-filter`) so Solana tests run only when `solana/**` (or the synced host IDL) changes; use **workflow_dispatch** to run manually.
 

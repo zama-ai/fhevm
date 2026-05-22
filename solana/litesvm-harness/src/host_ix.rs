@@ -18,6 +18,7 @@ pub fn execute_frame_ix(
     payer: Pubkey,
     steps: Vec<FheFrameStep>,
     actions: Vec<FheFrameAction>,
+    authorized_app_accounts: Vec<Pubkey>,
     remaining_accounts: Vec<Pubkey>,
 ) -> Instruction {
     let mut ix = anchor_ix(
@@ -25,12 +26,15 @@ pub fn execute_frame_ix(
         host::accounts::ExecuteFrame {
             payer,
             compute_subject: payer,
-            app_account_authority: payer,
             system_program: system_program::ID,
             event_authority: event_authority(program_id),
             program: program_id,
         },
-        host::instruction::ExecuteFrame { steps, actions },
+        host::instruction::ExecuteFrame {
+            authorized_app_accounts,
+            steps,
+            actions,
+        },
     );
     ix.accounts.extend(
         remaining_accounts

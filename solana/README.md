@@ -195,7 +195,8 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 - [ ] Wire the KMS connector to verify Solana ACL records instead of using only test-local checks.
 - [ ] Extend the canonical confidential token scenario when adding new token features, instead of
       creating a second product flow.
-- [ ] Keep [RFC 024](https://github.com/zama-ai/tech-spec/pull/448) aligned when the PoC proves or disproves a design choice.
+- [x] **`authorized_app_accounts`** on `execute_frame`; **`app_account_authority` removed** (see [rfc-024-poc-sync.md](./rfc-024-poc-sync.md)).
+- [ ] Keep [RFC 024](https://github.com/zama-ai/tech-spec/pull/448) aligned when the PoC proves or disproves a design choice (paste from `rfc-024-poc-sync.md` to PR #448 branch).
 
 ## Global Flow
 

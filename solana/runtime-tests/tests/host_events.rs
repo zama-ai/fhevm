@@ -68,6 +68,7 @@ fn execute_frame_emits_trivial_encrypt_via_cpi() {
         payer.pubkey(),
         steps,
         actions,
+        vec![app_account],
         vec![output_acl_record],
     );
 
@@ -77,6 +78,47 @@ fn execute_frame_emits_trivial_encrypt_via_cpi() {
     assert_eq!(events[0].plaintext, amount_plaintext(7));
     assert_eq!(events[0].fhe_type, 5);
     assert_eq!(events[0].subject, payer.pubkey().to_bytes());
+}
+
+#[test]
+fn execute_frame_rejects_allow_for_unauthorized_app_account() {
+    let program_id = host::id();
+    let mut svm = svm_with_program(program_id, host_program_so_path());
+    let payer = svm.create_funded_account(1_000_000_000).unwrap();
+
+    let acl_domain_key = Pubkey::new_unique();
+    let app_account = payer.pubkey();
+    let other_app_account = Pubkey::new_unique();
+    let encrypted_value_label = label("balance");
+    let nonce_key = token::nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let output_acl_record = acl_record_address(program_id, nonce_key, 1);
+    let steps = vec![FheFrameStep::TrivialEncrypt {
+        plaintext: amount_plaintext(7),
+        fhe_type: 5,
+    }];
+    let actions = vec![FheFrameAction::Allow {
+        source: FheOperand::PreviousResult { index: 0 },
+        output_acl_record_index: 0,
+        nonce_key,
+        nonce_sequence: 1,
+        acl_domain_key,
+        app_account,
+        encrypted_value_label,
+        subjects: vec![AclSubjectEntry {
+            pubkey: payer.pubkey(),
+        }],
+        public_decrypt: false,
+    }];
+    let ix = execute_frame_ix(
+        program_id,
+        payer.pubkey(),
+        steps,
+        actions,
+        vec![other_app_account],
+        vec![output_acl_record],
+    );
+
+    assert!(try_send(&mut svm, &payer, ix).is_err());
 }
 
 #[test]
@@ -319,6 +361,7 @@ fn execute_frame_scalar_rhs_skips_rhs_acl_but_encrypted_rhs_requires_it() {
         payer.pubkey(),
         steps,
         actions,
+        vec![app_account],
         vec![lhs_acl_record, output_acl_record],
     );
     let (meta, account_keys) = send_with_meta(&mut svm, &payer, ix);
@@ -354,6 +397,7 @@ fn execute_frame_scalar_rhs_skips_rhs_acl_but_encrypted_rhs_requires_it() {
         program_id,
         payer.pubkey(),
         encrypted_rhs_steps,
+        vec![],
         vec![],
         vec![lhs_acl_record, dummy_rhs_account.pubkey()],
     );
@@ -419,6 +463,7 @@ fn execute_frame_does_not_create_durable_acl_without_allow_step() {
                 }],
                 public_decrypt: false,
             }],
+            vec![app_account],
             vec![lhs_acl_record, setup_output],
         ),
     );
@@ -441,6 +486,7 @@ fn execute_frame_does_not_create_durable_acl_without_allow_step() {
             scalar_byte: 0,
             output_fhe_type: 5,
         }],
+        vec![],
         vec![],
         vec![lhs_acl_record, dummy_rhs_account.pubkey()],
     );
@@ -498,6 +544,7 @@ fn execute_frame_allows_previous_result_to_feed_later_steps() {
         payer.pubkey(),
         steps,
         actions,
+        vec![app_account],
         vec![output_acl_record],
     );
 
@@ -555,6 +602,7 @@ fn execute_frame_transient_result_can_authorize_allow_for_decryption() {
         payer.pubkey(),
         steps,
         actions,
+        vec![app_account],
         vec![output_acl_record],
     );
 
@@ -576,7 +624,7 @@ fn execute_frame_rejects_unsupported_opcode_without_side_effects() {
         scalar_byte: 0,
         output_fhe_type: 5,
     }];
-    let ix = execute_frame_ix(program_id, payer.pubkey(), steps, vec![], vec![]);
+    let ix = execute_frame_ix(program_id, payer.pubkey(), steps, vec![], vec![], vec![]);
 
     assert!(try_send(&mut svm, &payer, ix).is_err());
 }
@@ -640,6 +688,7 @@ fn execute_frame_allow_creates_distinct_acl_records_per_nonce_sequence() {
             payer.pubkey(),
             steps,
             actions,
+            vec![app_account],
             vec![lhs_acl_record, output_acl_record],
         )
     };
@@ -1601,6 +1650,7 @@ fn execute_frame_fails_when_previous_bank_hash_unavailable() {
         payer.pubkey(),
         steps,
         actions,
+        vec![app_account],
         vec![output_acl_record],
     );
 

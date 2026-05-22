@@ -9,7 +9,7 @@ use zama_host::{
     FheFrameStep, FheOpcode, FheOperand,
 };
 
-use crate::{ConfidentialTokenAccount, ConfidentialTokenError};
+use crate::ConfidentialTokenError;
 
 #[derive(Clone)]
 pub struct EncryptedValue<'info> {
@@ -28,7 +28,6 @@ pub struct Context<'a, 'info> {
     pub event_authority: &'a UncheckedAccount<'info>,
     pub zama_program: &'a Program<'info, ZamaHost>,
     pub compute_signer: &'a UncheckedAccount<'info>,
-    pub app_account_authority: &'a Account<'info, ConfidentialTokenAccount>,
     pub acl_domain_key: Pubkey,
     pub compute_signer_bump: u8,
     pub system_program: &'a Program<'info, System>,
@@ -48,7 +47,7 @@ pub fn execute<'info, R>(
     ctx: Context<'_, 'info>,
     f: impl FnOnce(&mut Builder<'_, 'info>) -> Result<R>,
 ) -> Result<R> {
-    let mut builder = Builder::new(&ctx);
+    let mut builder = Builder::new(ctx.acl_domain_key);
     let output = f(&mut builder)?;
     builder.submit(ctx)?;
     Ok(output)
@@ -58,17 +57,19 @@ pub struct Builder<'a, 'info> {
     steps: Vec<FheFrameStep>,
     actions: Vec<FheFrameAction>,
     remaining_accounts: Vec<AccountInfo<'info>>,
+    authorized_app_accounts: Vec<Pubkey>,
     acl_domain_key: Pubkey,
     _marker: std::marker::PhantomData<&'a ()>,
 }
 
 impl<'a, 'info> Builder<'a, 'info> {
-    fn new(ctx: &Context<'_, 'info>) -> Self {
+    fn new(acl_domain_key: Pubkey) -> Self {
         Self {
             steps: Vec::new(),
             actions: Vec::new(),
             remaining_accounts: Vec::new(),
-            acl_domain_key: ctx.acl_domain_key,
+            authorized_app_accounts: Vec::new(),
+            acl_domain_key,
             _marker: std::marker::PhantomData,
         }
     }
@@ -103,6 +104,7 @@ impl<'a, 'info> Builder<'a, 'info> {
     }
 
     pub fn allow(&mut self, value: &FheValue, allow: DurableAllow<'info>) -> Result<()> {
+        self.authorize_app_account(allow.app_account);
         let output_acl_record_index = self.push_account(allow.acl_record)?;
         self.actions.push(FheFrameAction::Allow {
             source: value.operand.clone(),
@@ -116,6 +118,12 @@ impl<'a, 'info> Builder<'a, 'info> {
             public_decrypt: allow.public_decrypt,
         });
         Ok(())
+    }
+
+    fn authorize_app_account(&mut self, app_account: Pubkey) {
+        if !self.authorized_app_accounts.contains(&app_account) {
+            self.authorized_app_accounts.push(app_account);
+        }
     }
 
     fn binary_op(
@@ -153,16 +161,9 @@ impl<'a, 'info> Builder<'a, 'info> {
 
     fn submit(self, ctx: Context<'_, 'info>) -> Result<()> {
         let compute_bump = [ctx.compute_signer_bump];
-        let app_account_bump = [ctx.app_account_authority.bump];
         let compute_signer_seeds: &[&[u8]] =
             &[b"fhe-compute", ctx.acl_domain_key.as_ref(), &compute_bump];
-        let app_account_seeds: &[&[u8]] = &[
-            b"token-account",
-            ctx.app_account_authority.mint.as_ref(),
-            ctx.app_account_authority.owner.as_ref(),
-            &app_account_bump,
-        ];
-        let signer_seeds: &[&[&[u8]]] = &[compute_signer_seeds, app_account_seeds];
+        let signer_seeds: &[&[&[u8]]] = &[compute_signer_seeds];
 
         cpi::execute_frame(
             CpiContext::new_with_signer(
@@ -170,7 +171,6 @@ impl<'a, 'info> Builder<'a, 'info> {
                 ExecuteFrame {
                     payer: ctx.payer.to_account_info(),
                     compute_subject: ctx.compute_signer.to_account_info(),
-                    app_account_authority: ctx.app_account_authority.to_account_info(),
                     system_program: ctx.system_program.to_account_info(),
                     event_authority: ctx.event_authority.to_account_info(),
                     program: ctx.zama_program.to_account_info(),
@@ -178,6 +178,7 @@ impl<'a, 'info> Builder<'a, 'info> {
                 signer_seeds,
             )
             .with_remaining_accounts(self.remaining_accounts),
+            self.authorized_app_accounts,
             self.steps,
             self.actions,
         )

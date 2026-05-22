@@ -75,6 +75,7 @@ impl ExecutionFrame {
 
 pub fn execute<'info>(
     subject: Pubkey,
+    authorized_app_accounts: &[Pubkey],
     remaining_accounts: &[AccountInfo<'info>],
     payer: AccountInfo<'info>,
     system_program: AccountInfo<'info>,
@@ -98,6 +99,7 @@ pub fn execute<'info>(
     for action in actions {
         apply_frame_action(
             &mut frame,
+            authorized_app_accounts,
             payer.clone(),
             system_program.clone(),
             remaining_accounts,
@@ -203,6 +205,7 @@ fn execute_operation_step<'info>(
 
 fn apply_frame_action<'info>(
     frame: &mut ExecutionFrame,
+    authorized_app_accounts: &[Pubkey],
     payer: AccountInfo<'info>,
     system_program: AccountInfo<'info>,
     remaining_accounts: &[AccountInfo<'info>],
@@ -220,6 +223,7 @@ fn apply_frame_action<'info>(
             subjects,
             public_decrypt,
         } => {
+            assert_app_account_authorized(app_account, authorized_app_accounts)?;
             let source = resolve_operand(frame, remaining_accounts, &source)?;
             require!(!source.is_scalar, ZamaHostError::InvalidFrameOperands);
             assert_output_acl_metadata(
@@ -330,4 +334,12 @@ fn account_at<'info>(
         .get(index as usize)
         .cloned()
         .ok_or_else(|| error!(ZamaHostError::FrameAccountIndexOutOfRange))
+}
+
+fn assert_app_account_authorized(app_account: Pubkey, authorized: &[Pubkey]) -> Result<()> {
+    require!(
+        authorized.contains(&app_account),
+        ZamaHostError::UnauthorizedAppAccount
+    );
+    Ok(())
 }

@@ -93,11 +93,16 @@ pub mod zama_host {
 
     pub fn execute_frame<'info>(
         ctx: Context<'info, ExecuteFrame<'info>>,
+        authorized_app_accounts: Vec<Pubkey>,
         steps: Vec<FheFrameStep>,
         actions: Vec<FheFrameAction>,
     ) -> Result<()> {
         require!(
             steps.len() <= MAX_FRAME_STEPS && actions.len() <= MAX_FRAME_ACTIONS,
+            ZamaHostError::FrameLimitExceeded
+        );
+        require!(
+            authorized_app_accounts.len() <= MAX_FRAME_ACTIONS,
             ZamaHostError::FrameLimitExceeded
         );
 
@@ -106,6 +111,7 @@ pub mod zama_host {
         let previous_bank_hash = handles::previous_bank_hash(clock.slot)?;
         let events = frame::execute(
             subject,
+            &authorized_app_accounts,
             ctx.remaining_accounts,
             ctx.accounts.payer.to_account_info(),
             ctx.accounts.system_program.to_account_info(),
@@ -154,7 +160,6 @@ pub struct ExecuteFrame<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     pub compute_subject: Signer<'info>,
-    pub app_account_authority: Signer<'info>,
     pub system_program: Program<'info, System>,
 }
 
@@ -368,8 +373,8 @@ pub enum FheFrameAction {
 
 #[error_code]
 pub enum ZamaHostError {
-    #[msg("ACL app account authority does not match app account")]
-    AppAccountAuthorityMismatch,
+    #[msg("Allow app account is not in authorized_app_accounts")]
+    UnauthorizedAppAccount,
     #[msg("ACL record nonce key does not match")]
     AclNonceKeyMismatch,
     #[msg("ACL record address is not the canonical PDA for its nonce key")]

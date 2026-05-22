@@ -183,10 +183,6 @@
           "signer": true
         },
         {
-          "name": "app_account_authority",
-          "signer": true
-        },
-        {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
         },
@@ -198,6 +194,12 @@
         }
       ],
       "args": [
+        {
+          "name": "authorized_app_accounts",
+          "type": {
+            "vec": "pubkey"
+          }
+        },
         {
           "name": "steps",
           "type": {
@@ -306,8 +308,8 @@
   "errors": [
     {
       "code": 6000,
-      "name": "AppAccountAuthorityMismatch",
-      "msg": "ACL app account authority does not match app account"
+      "name": "UnauthorizedAppAccount",
+      "msg": "Allow app account is not in authorized_app_accounts"
     },
     {
       "code": 6001,
