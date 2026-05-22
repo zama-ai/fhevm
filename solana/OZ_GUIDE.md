@@ -13,15 +13,18 @@ confidential-token
   safe area for token design work
 
 zama-host
-  protocol-side host program
-  owns ACL records
-  checks operand ACL before emitting FHE events
-  creates durable output ACL records through explicit allow/bind calls
+  execute_frame
+  allow_acl_subjects
+  allow_for_decryption
+  assert_acl_record
 
 runtime-tests
   LiteSVM behavior tests
   first place to prove or disprove a design change
 ```
+
+Legacy fused/bind/test-emit host instructions were removed from this branch. All host
+semantics flow through `execute_frame`.
 
 The v0 ACL direction is keyed-nonce records:
 
@@ -105,9 +108,9 @@ comes from app state. ACL authorization is durable and can also apply to histori
 
 ```text
 Input path:
-  mock_input_verified_and_bind is a test short-circuit.
-  It deliberately trusts the caller-supplied input handle.
-  Its nonce sequence is explicit in tests and must not come from handle bytes.
+  PoC transfer amounts use `poc_authorize_transfer_amount`, which goes through
+  `fhe::execute` (trivial_encrypt + allow). The real input verifier path is still
+  not implemented.
 
 Execution frame:
   app code uses fhe::execute(ctx, |fhe| { ... }).

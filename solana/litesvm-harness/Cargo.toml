@@ -1,6 +1,7 @@
 [package]
-name = "zama-solana-runtime-tests"
+name = "zama-solana-litesvm-harness"
 version = "0.1.0"
+description = "Shared LiteSVM harness for Solana PoC integration tests"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,4 +15,3 @@ litesvm = "0.11.0"
 solana-program = "3.0.0"
 solana-sdk = "3.0.0"
 zama-host = { path = "../programs/zama-host" }
-zama-solana-litesvm-harness = { path = "../litesvm-harness" }

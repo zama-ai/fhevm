@@ -24,6 +24,10 @@ solana/programs/confidential-token
   Models a minimal confidential token / cUSDC wrapper.
   Its local fhe.rs module is the current dev-facing wrapper around raw ZamaHost CPI calls.
 
+solana/litesvm-harness
+  Shared LiteSVM harness used by runtime-tests and tfhe-worker solana_poc tests.
+  Canonical stack: litesvm 0.11, anchor-litesvm 0.4, anchor-lang 1.0.2, solana-sdk 3.0.
+
 solana/runtime-tests
   Fast LiteSVM tests for Solana accounts, PDAs, CPI, events, and ACL behavior.
   tests/support/fhe_runtime.rs adds a cleartext backend that consumes real ZamaHost events.
@@ -33,6 +37,7 @@ coprocessor/fhevm-engine/host-listener/src/solana_adapter.rs
 
 coprocessor/fhevm-engine/tfhe-worker/src/tests/solana_poc.rs
   Worker-backed end-to-end tests with real small TFHE ciphertexts.
+  Imports the shared solana/litesvm-harness crate instead of duplicating setup helpers.
 ```
 
 ## Handoff Path
@@ -160,10 +165,11 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 ### Partly Modeled
 
 - [ ] KMS verification is modeled in Rust tests, not wired into the real KMS connector.
-- [ ] Input handles use an explicit `mock_input_verified_and_bind` mock short-circuit instead of a
-      real Solana input verifier or transciphering path.
-- [ ] `test_emit_fhe_rand` exists for worker-backed tests, but the final random-handle birth API is
-      not designed yet.
+- [ ] Input handles use `poc_authorize_transfer_amount`, which exercises the token
+      `fhe::execute` wrapper (trivial_encrypt + allow). The real Solana input verifier
+      or transciphering path is not implemented yet.
+- [ ] `FheRandEvent` remains in the IDL for future worker support, but rand birth is
+      not implemented in `execute_frame` yet.
 - [ ] ACL records are created already initialized through Anchor `init`; there is no stored
       `Empty -> Bound` enum in the PoC.
 - [x] `allow_for_decryption` follows EVM semantics: any subject allowed on the handle may mark the
@@ -1004,10 +1010,11 @@ NO_DNA=1 anchor build --ignore-keys
 cargo test --workspace
 ```
 
-Worker test compile check:
+Worker test compile check (requires built Solana programs in `solana/target/deploy/`):
 
 ```bash
-cd coprocessor/fhevm-engine
+cd solana && NO_DNA=1 anchor build --ignore-keys
+cd ../coprocessor/fhevm-engine
 SQLX_OFFLINE=true cargo test -p tfhe-worker solana_user_decrypt_acl_invariants_match_evm_semantics --no-run
 ```
 

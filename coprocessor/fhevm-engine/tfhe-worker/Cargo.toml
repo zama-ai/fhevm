@@ -48,18 +48,19 @@ latency = ["fhevm-engine-common/latency"]
 throughput = ["fhevm-engine-common/throughput"]
 
 [dev-dependencies]
-anchor-lang = "0.31.1"
-anchor-spl = { version = "0.31.1", default-features = false, features = ["token", "token_2022"] }
-confidential-token = { path = "../../../solana/programs/confidential-token" }
+anchor-lang = "1.0.2"
+anchor-litesvm = "0.4.0"
 criterion = { version = "0.5.1", features = ["async_futures"] }
+five8_core = "1.0.0"
 host-listener = { path = "../host-listener" }
-litesvm = "=0.5.0"
-solana-sdk = "=2.1.10"
+litesvm = "0.11.0"
+solana-program = "3.0.0"
+solana-sdk = "3.0.0"
 testcontainers = { workspace = true }
 test-harness = { path = "../test-harness" }
 serde = { workspace = true }
 serial_test = { workspace = true }
-zama-host = { path = "../../../solana/programs/zama-host" }
+zama-solana-litesvm-harness = { path = "../../../solana/litesvm-harness" }
 
 [[bin]]
 name = "tfhe_worker"

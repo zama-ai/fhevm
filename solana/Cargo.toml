@@ -1,6 +1,11 @@
 [workspace]
 resolver = "2"
-members = ["programs/confidential-token", "programs/zama-host", "runtime-tests"]
+members = [
+    "litesvm-harness",
+    "programs/confidential-token",
+    "programs/zama-host",
+    "runtime-tests",
+]
 
 [workspace.package]
 authors = ["Zama"]

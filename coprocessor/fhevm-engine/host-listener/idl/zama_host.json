@@ -161,608 +161,16 @@
       ]
     },
     {
-      "name": "fhe_binary_op",
+      "name": "execute_frame",
       "discriminator": [
-        159,
-        109,
-        195,
-        103,
-        136,
-        153,
-        47,
-        225
-      ],
-      "accounts": [
-        {
-          "name": "compute_subject",
-          "signer": true
-        },
-        {
-          "name": "lhs_acl_record"
-        },
-        {
-          "name": "rhs_acl_record",
-          "docs": [
-            "instruction body; scalar RHS operands deliberately skip this account."
-          ]
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
-        {
-          "name": "op",
-          "type": {
-            "defined": {
-              "name": "FheBinaryOpCode"
-            }
-          }
-        },
-        {
-          "name": "lhs",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "rhs",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "scalar",
-          "type": "bool"
-        },
-        {
-          "name": "output_fhe_type",
-          "type": "u8"
-        },
-        {
-          "name": "result",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "fhe_binary_op_and_bind_output",
-      "discriminator": [
-        61,
-        248,
-        239,
-        28,
-        74,
-        79,
-        31,
-        205
-      ],
-      "accounts": [
-        {
-          "name": "payer",
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "compute_subject",
-          "signer": true
-        },
-        {
-          "name": "app_account_authority",
-          "signer": true
-        },
-        {
-          "name": "lhs_acl_record"
-        },
-        {
-          "name": "rhs_acl_record",
-          "docs": [
-            "instruction body; scalar RHS operands deliberately skip this account."
-          ]
-        },
-        {
-          "name": "output_acl_record",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  97,
-                  99,
-                  108,
-                  45,
-                  114,
-                  101,
-                  99,
-                  111,
-                  114,
-                  100
-                ]
-              },
-              {
-                "kind": "arg",
-                "path": "output_nonce_key"
-              },
-              {
-                "kind": "arg",
-                "path": "output_nonce_sequence"
-              }
-            ]
-          }
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
-        {
-          "name": "op",
-          "type": {
-            "defined": {
-              "name": "FheBinaryOpCode"
-            }
-          }
-        },
-        {
-          "name": "lhs",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "rhs",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "scalar",
-          "type": "bool"
-        },
-        {
-          "name": "output_fhe_type",
-          "type": "u8"
-        },
-        {
-          "name": "result",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "output_nonce_key",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "output_nonce_sequence",
-          "type": "u64"
-        },
-        {
-          "name": "output_acl_domain_key",
-          "type": "pubkey"
-        },
-        {
-          "name": "output_app_account",
-          "type": "pubkey"
-        },
-        {
-          "name": "output_encrypted_value_label",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "output_subjects",
-          "type": {
-            "vec": {
-              "defined": {
-                "name": "AclSubjectEntry"
-              }
-            }
-          }
-        },
-        {
-          "name": "output_public_decrypt",
-          "type": "bool"
-        }
-      ]
-    },
-    {
-      "name": "mock_input_verified_and_bind",
-      "docs": [
-        "Mock input-verification short-circuit for Solana input birth.",
-        "",
-        "This creates an ACL record for a caller-supplied input handle and emits",
-        "the same event shape the worker currently consumes. It does not verify a",
-        "ZKPoK, ciphertext preimage, or transciphering proof. The final input path",
-        "must replace this with a real verifier authority before it is treated as",
-        "protocol logic."
-      ],
-      "discriminator": [
-        159,
-        75,
-        83,
-        64,
-        210,
-        90,
-        135,
-        69
-      ],
-      "accounts": [
-        {
-          "name": "payer",
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "app_account_authority",
-          "signer": true
-        },
-        {
-          "name": "output_acl_record",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  97,
-                  99,
-                  108,
-                  45,
-                  114,
-                  101,
-                  99,
-                  111,
-                  114,
-                  100
-                ]
-              },
-              {
-                "kind": "arg",
-                "path": "output_nonce_key"
-              },
-              {
-                "kind": "arg",
-                "path": "output_nonce_sequence"
-              }
-            ]
-          }
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
-        {
-          "name": "input_handle",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "user",
-          "type": "pubkey"
-        },
-        {
-          "name": "output_nonce_key",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "output_nonce_sequence",
-          "type": "u64"
-        },
-        {
-          "name": "output_acl_domain_key",
-          "type": "pubkey"
-        },
-        {
-          "name": "output_app_account",
-          "type": "pubkey"
-        },
-        {
-          "name": "output_encrypted_value_label",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "output_subjects",
-          "type": {
-            "vec": {
-              "defined": {
-                "name": "AclSubjectEntry"
-              }
-            }
-          }
-        },
-        {
-          "name": "output_public_decrypt",
-          "type": "bool"
-        }
-      ]
-    },
-    {
-      "name": "test_emit_acl_allowed",
-      "docs": [
-        "Test-only event shim.",
-        "",
-        "This bypasses ACL record verification and exists only to feed listener /",
-        "worker tests. Protocol flows should create ACL state through authenticated",
-        "handle-producing instructions such as `trivial_encrypt_and_bind` or an",
-        "input verifier.",
-        "Input flows may use `mock_input_verified_and_bind` only as a temporary mock",
-        "short-circuit until the verifier/transciphering boundary exists."
-      ],
-      "discriminator": [
-        237,
-        181,
-        130,
-        44,
-        163,
-        232,
-        8,
-        159
-      ],
-      "accounts": [
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
-        {
-          "name": "handle",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "subject",
-          "type": "pubkey"
-        }
-      ]
-    },
-    {
-      "name": "test_emit_fhe_rand",
-      "docs": [
-        "Test-only event shim.",
-        "",
-        "This emits a caller-chosen random result handle. It is useful for worker",
-        "tests and should not be treated as the final random-handle birth API."
-      ],
-      "discriminator": [
-        247,
-        2,
-        212,
-        142,
-        60,
-        157,
-        95,
-        255
-      ],
-      "accounts": [
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
-        {
-          "name": "subject",
-          "type": "pubkey"
-        },
-        {
-          "name": "seed",
-          "type": {
-            "array": [
-              "u8",
-              16
-            ]
-          }
-        },
-        {
-          "name": "fhe_type",
-          "type": "u8"
-        },
-        {
-          "name": "result",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "test_emit_input_verified",
-      "docs": [
-        "Test-only event shim.",
-        "",
-        "This only emits an input-verification event. The PoC ACL-bearing stand-in",
-        "is `mock_input_verified_and_bind`; the final version should require the real",
-        "InputVerifier/transciphering boundary."
-      ],
-      "discriminator": [
-        211,
-        57,
-        148,
+        20,
+        42,
+        199,
+        0,
         111,
-        134,
-        198,
-        59,
-        109
-      ],
-      "accounts": [
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
-        {
-          "name": "input_handle",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "result_handle",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "user",
-          "type": "pubkey"
-        },
-        {
-          "name": "acl_domain_key",
-          "type": "pubkey"
-        }
-      ]
-    },
-    {
-      "name": "test_emit_trivial_encrypt",
-      "docs": [
-        "Test-only event shim.",
-        "",
-        "This emits a caller-chosen trivial-encrypt result handle without creating",
-        "an ACL record. App flows should use `trivial_encrypt_and_bind` when they",
-        "need a host-born trivial encryption handle with durable ACL state."
-      ],
-      "discriminator": [
-        200,
-        234,
-        216,
-        251,
-        244,
-        1,
-        101,
-        144
-      ],
-      "accounts": [
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
-        {
-          "name": "subject",
-          "type": "pubkey"
-        },
-        {
-          "name": "plaintext",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "fhe_type",
-          "type": "u8"
-        },
-        {
-          "name": "result",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "trivial_encrypt_and_bind",
-      "discriminator": [
-        191,
-        69,
-        231,
-        188,
-        237,
-        58,
-        40,
-        161
+        192,
+        250,
+        104
       ],
       "accounts": [
         {
@@ -779,37 +187,6 @@
           "signer": true
         },
         {
-          "name": "output_acl_record",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  97,
-                  99,
-                  108,
-                  45,
-                  114,
-                  101,
-                  99,
-                  111,
-                  114,
-                  100
-                ]
-              },
-              {
-                "kind": "arg",
-                "path": "output_nonce_key"
-              },
-              {
-                "kind": "arg",
-                "path": "output_nonce_sequence"
-              }
-            ]
-          }
-        },
-        {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
         },
@@ -822,61 +199,24 @@
       ],
       "args": [
         {
-          "name": "plaintext",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "fhe_type",
-          "type": "u8"
-        },
-        {
-          "name": "output_nonce_key",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "output_nonce_sequence",
-          "type": "u64"
-        },
-        {
-          "name": "output_acl_domain_key",
-          "type": "pubkey"
-        },
-        {
-          "name": "output_app_account",
-          "type": "pubkey"
-        },
-        {
-          "name": "output_encrypted_value_label",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "output_subjects",
+          "name": "steps",
           "type": {
             "vec": {
               "defined": {
-                "name": "AclSubjectEntry"
+                "name": "FheFrameStep"
               }
             }
           }
         },
         {
-          "name": "output_public_decrypt",
-          "type": "bool"
+          "name": "actions",
+          "type": {
+            "vec": {
+              "defined": {
+                "name": "FheFrameAction"
+              }
+            }
+          }
         }
       ]
     }
@@ -1023,6 +363,36 @@
       "code": 6011,
       "name": "ComputedHandleMismatch",
       "msg": "computed handle does not match host formula"
+    },
+    {
+      "code": 6012,
+      "name": "FrameLimitExceeded",
+      "msg": "frame exceeds configured limit"
+    },
+    {
+      "code": 6013,
+      "name": "FrameAccountIndexOutOfRange",
+      "msg": "frame account index is out of range"
+    },
+    {
+      "code": 6014,
+      "name": "FrameResultIndexOutOfRange",
+      "msg": "frame result index is out of range"
+    },
+    {
+      "code": 6015,
+      "name": "UnsupportedFrameOpcode",
+      "msg": "frame opcode is not supported by this PoC"
+    },
+    {
+      "code": 6016,
+      "name": "InvalidFrameOperands",
+      "msg": "frame step has invalid operands"
+    },
+    {
+      "code": 6017,
+      "name": "FrameOutputAccountAlreadyInitialized",
+      "msg": "frame action targets an initialized account"
     }
   ],
   "types": [
@@ -1206,6 +576,303 @@
                 32
               ]
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "FheFrameAction",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Allow",
+            "fields": [
+              {
+                "name": "source",
+                "type": {
+                  "defined": {
+                    "name": "FheOperand"
+                  }
+                }
+              },
+              {
+                "name": "output_acl_record_index",
+                "type": "u8"
+              },
+              {
+                "name": "nonce_key",
+                "type": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              },
+              {
+                "name": "nonce_sequence",
+                "type": "u64"
+              },
+              {
+                "name": "acl_domain_key",
+                "type": "pubkey"
+              },
+              {
+                "name": "app_account",
+                "type": "pubkey"
+              },
+              {
+                "name": "encrypted_value_label",
+                "type": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              },
+              {
+                "name": "subjects",
+                "type": {
+                  "vec": {
+                    "defined": {
+                      "name": "AclSubjectEntry"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "public_decrypt",
+                "type": "bool"
+              }
+            ]
+          },
+          {
+            "name": "AllowForDecryption",
+            "fields": [
+              {
+                "name": "source",
+                "type": {
+                  "defined": {
+                    "name": "FheOperand"
+                  }
+                }
+              },
+              {
+                "name": "acl_record_index",
+                "type": "u8"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "FheFrameStep",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Operation",
+            "fields": [
+              {
+                "name": "opcode",
+                "type": {
+                  "defined": {
+                    "name": "FheOpcode"
+                  }
+                }
+              },
+              {
+                "name": "operands",
+                "type": {
+                  "vec": {
+                    "defined": {
+                      "name": "FheOperand"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "scalar_byte",
+                "type": "u8"
+              },
+              {
+                "name": "output_fhe_type",
+                "type": "u8"
+              }
+            ]
+          },
+          {
+            "name": "TrivialEncrypt",
+            "fields": [
+              {
+                "name": "plaintext",
+                "type": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              },
+              {
+                "name": "fhe_type",
+                "type": "u8"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "FheOpcode",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Add"
+          },
+          {
+            "name": "Sub"
+          },
+          {
+            "name": "Mul"
+          },
+          {
+            "name": "Div"
+          },
+          {
+            "name": "Rem"
+          },
+          {
+            "name": "BitAnd"
+          },
+          {
+            "name": "BitOr"
+          },
+          {
+            "name": "BitXor"
+          },
+          {
+            "name": "Shl"
+          },
+          {
+            "name": "Shr"
+          },
+          {
+            "name": "Rotl"
+          },
+          {
+            "name": "Rotr"
+          },
+          {
+            "name": "Eq"
+          },
+          {
+            "name": "Ne"
+          },
+          {
+            "name": "Ge"
+          },
+          {
+            "name": "Gt"
+          },
+          {
+            "name": "Le"
+          },
+          {
+            "name": "Lt"
+          },
+          {
+            "name": "Min"
+          },
+          {
+            "name": "Max"
+          },
+          {
+            "name": "Neg"
+          },
+          {
+            "name": "Not"
+          },
+          {
+            "name": "VerifyInput"
+          },
+          {
+            "name": "Cast"
+          },
+          {
+            "name": "TrivialEncrypt"
+          },
+          {
+            "name": "IfThenElse"
+          },
+          {
+            "name": "Rand"
+          },
+          {
+            "name": "RandBounded"
+          },
+          {
+            "name": "Sum"
+          },
+          {
+            "name": "IsIn"
+          },
+          {
+            "name": "MulDiv"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FheOperand",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "AclRecord",
+            "fields": [
+              {
+                "name": "handle",
+                "type": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              },
+              {
+                "name": "account_index",
+                "type": "u8"
+              }
+            ]
+          },
+          {
+            "name": "PreviousResult",
+            "fields": [
+              {
+                "name": "index",
+                "type": "u8"
+              }
+            ]
+          },
+          {
+            "name": "Scalar",
+            "fields": [
+              {
+                "name": "value",
+                "type": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              },
+              {
+                "name": "fhe_type",
+                "type": "u8"
+              }
+            ]
           }
         ]
       }
