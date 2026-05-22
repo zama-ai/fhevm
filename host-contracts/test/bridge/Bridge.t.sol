@@ -31,10 +31,10 @@ import {MockDstApp} from "./mocks/MockDstApp.sol";
  *         are wired bidirectionally. Both share the same ACL because forge runs all
  *         contracts on a single fork — sufficient to test the bridge plumbing.
  */
-contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils {
+contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEvents {
     uint32 internal constant SRC_EID = 1;
     uint32 internal constant DST_EID = 2;
-    uint256 internal constant DST_CHAIN_ID = 4242;
+    uint64 internal constant DST_CHAIN_ID = 4242;
 
     address internal owner = makeAddr("owner");
     address internal srcApp = makeAddr("srcApp");
@@ -45,14 +45,6 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils {
     ConfidentialBridge internal dstBridge;
     MockDstApp internal dstApp;
     address internal fhevmExecutor;
-
-    /// @dev Mirrors the BridgeEvents declarations so we can use `expectEmit` against
-    ///      the events the bridge contracts emit (they are inherited types but forge
-    ///      `expectEmit` needs a declaration visible in this scope).
-    event BridgeHandle(bytes32 srcHandle, uint256 dstChainId, bytes32 guid);
-    event HandleBridged(bytes32 srcHandle, bytes32 dstHandle, bytes32 guid);
-    event FallbackGranted(bytes32 indexed dstHandle, bytes32 ciphertextHash);
-    event DstChainIdSet(uint32 indexed dstEid, uint256 oldDstChainId, uint256 newDstChainId);
 
     function setUp() public virtual override {
         super.setUp();
@@ -123,7 +115,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils {
 
     function test_SetDstChainId_EmitsEventAndUpdates() public {
         vm.expectEmit(true, false, false, true, address(srcBridge));
-        emit DstChainIdSet(DST_EID, DST_CHAIN_ID, 99);
+        emit DstChainIdSet(DST_EID, 99);
         vm.prank(owner);
         srcBridge.setDstChainId(DST_EID, 99);
         assertEq(srcBridge.getDstChainId(DST_EID), 99);
@@ -205,16 +197,17 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils {
         );
 
         // Inspect logs: BridgeHandle is emitted once per handle, with the receipt's GUID.
-        // The event is now fully non-indexed: all fields live in `data`.
+        // Topic1 is the indexed senderDapp address; the remaining fields live in `data`.
         Vm.Log[] memory logs = vm.getRecordedLogs();
         uint256 nBridgeEvents;
-        bytes32 bridgeHandleSig = keccak256("BridgeHandle(bytes32,uint256,bytes32)");
+        bytes32 bridgeHandleSig = keccak256("BridgeHandle(address,bytes32,uint64,bytes32)");
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics[0] == bridgeHandleSig && logs[i].emitter == address(srcBridge)) {
                 nBridgeEvents++;
-                (, uint256 emittedDstChainId, bytes32 emittedGuid) = abi.decode(
+                assertEq(address(uint160(uint256(logs[i].topics[1]))), srcApp);
+                (, uint64 emittedDstChainId, bytes32 emittedGuid) = abi.decode(
                     logs[i].data,
-                    (bytes32, uint256, bytes32)
+                    (bytes32, uint64, bytes32)
                 );
                 assertEq(emittedDstChainId, DST_CHAIN_ID);
                 assertEq(emittedGuid, receipt.guid);
@@ -241,11 +234,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils {
         bytes memory message = abi.encode(srcApp, address(dstApp), bytes("payload"), handleList);
 
         // Build an Origin matching our peer config.
-        Origin memory origin = Origin({
-            srcEid: SRC_EID,
-            sender: _addressToBytes32(address(srcBridge)),
-            nonce: 1
-        });
+        Origin memory origin = Origin({srcEid: SRC_EID, sender: _addressToBytes32(address(srcBridge)), nonce: 1});
 
         // Predict the derivation locally and assert the emitted HandleBridged events
         // carry the exact dstHandle the contract computed.
@@ -253,11 +242,11 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils {
         bytes32 expectedDst0 = _expectedDstHandle(h0, prevHash, guid);
         bytes32 expectedDst1 = _expectedDstHandle(h1, prevHash, guid);
 
-        // No indexed fields anymore; check the data payload (checkData=true).
-        vm.expectEmit(false, false, false, true, address(dstBridge));
-        emit HandleBridged(h0, expectedDst0, guid);
-        vm.expectEmit(false, false, false, true, address(dstBridge));
-        emit HandleBridged(h1, expectedDst1, guid);
+        // Check the indexed receiverDapp (topic1) and the data payload.
+        vm.expectEmit(true, false, false, true, address(dstBridge));
+        emit HandleBridged(address(dstApp), h0, expectedDst0, guid);
+        vm.expectEmit(true, false, false, true, address(dstBridge));
+        emit HandleBridged(address(dstApp), h1, expectedDst1, guid);
 
         // Impersonate the endpoint to call lzReceive directly. The OAppReceiver checks
         // `address(endpoint) == msg.sender`, so we prank as the endpoint contract.
@@ -268,14 +257,12 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils {
     /// @dev Re-implements HandlesReceiver's `_deriveDstHandle` for assertions. Must
     ///      match exactly — domain sep + ordering matters and is part of the spec
     ///      contract with the coprocessor.
-    function _expectedDstHandle(bytes32 srcHandle, bytes32 prevBlockHash, bytes32 guid)
-        internal
-        view
-        returns (bytes32 result)
-    {
-        result = keccak256(
-            abi.encodePacked(bytes8("FHE_brdg"), srcHandle, block.chainid, prevBlockHash, guid)
-        );
+    function _expectedDstHandle(
+        bytes32 srcHandle,
+        bytes32 prevBlockHash,
+        bytes32 guid
+    ) internal view returns (bytes32 result) {
+        result = keccak256(abi.encodePacked(bytes8("FHE_brdg"), srcHandle, block.chainid, prevBlockHash, guid));
         result = result & 0xffffffffffffffffffffffffffffffffffffffffff0000000000000000000000;
         result = result | (bytes32(uint256(0xff)) << 80);
         result = result | (bytes32(uint256(uint64(block.chainid))) << 16);
@@ -344,14 +331,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils {
         dstHandleList[1] = dstH1;
         bytes memory payload = abi.encode("payload-body");
 
-        bytes memory composeMsg = abi.encode(
-            SRC_EID,
-            srcApp,
-            address(dstApp),
-            payload,
-            srcHandleList,
-            dstHandleList
-        );
+        bytes memory composeMsg = abi.encode(SRC_EID, srcApp, address(dstApp), payload, srcHandleList, dstHandleList);
 
         // In a real deployment the ACL bypasses sender checks for the canonical
         // ConfidentialBridge address. In this forge fixture the ACL's compile-time
@@ -391,25 +371,19 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils {
     // grantFallback
     ////////////////////////////////////////////////////////////////////////////////
 
-    function test_GrantFallback_EmitsEvent() public {
+    function test_GrantFallbackClearText_EmitsEvent() public {
         bytes32 dst = _makeHandle(42);
-        bytes32 cthash = keccak256("ciphertext");
+        uint256 clearText = 42;
 
         vm.expectEmit(true, false, false, true, address(dstBridge));
-        emit FallbackGranted(dst, cthash);
+        emit FallbackGrantedClearText(dst, clearText);
         vm.prank(owner);
-        dstBridge.grantFallback(dst, cthash);
+        dstBridge.grantFallback(dst, clearText);
     }
 
-    function test_GrantFallback_OnlyOwner() public {
+    function test_GrantFallbackClearText_OnlyOwner() public {
         vm.expectRevert();
-        dstBridge.grantFallback(_makeHandle(1), keccak256("x"));
-    }
-
-    function test_GrantFallback_RevertsOnZeroHash() public {
-        vm.prank(owner);
-        vm.expectRevert(HandlesReceiver.InvalidCiphertextHash.selector);
-        dstBridge.grantFallback(_makeHandle(1), bytes32(0));
+        dstBridge.grantFallback(_makeHandle(1), 23);
     }
 
     ////////////////////////////////////////////////////////////////////////////////

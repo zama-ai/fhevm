@@ -48,18 +48,23 @@ abstract contract HandlesReceiver is OAppReceiver, ILayerZeroComposer, BridgeEve
     /// @notice Returned when `lzCompose` is invoked by an unauthorized caller.
     error NotLzEndpoint(address caller);
 
+    error WrongChainId();
+
     /// @notice Returned when the compose message claims a `from` address other than this contract.
     /// @dev    Defense in depth: only HandlesReceiver itself dispatches compose messages.
     error UnexpectedComposeOrigin(address from);
-
-    /// @notice Returned when `grantFallback` is invoked with a zero ciphertext hash.
-    error InvalidCiphertextHash();
 
     /// @notice Domain separator for destination handle derivation.
     bytes8 private constant BRIDGE_DERIVATION_DOMAIN_SEPARATOR = "FHE_brdg";
 
     /// @notice ACL contract on this (destination) chain.
     ACL private constant ACL_CONTRACT = ACL(aclAdd);
+
+    mapping(bytes32 => bool) isGrantedFallback;
+
+    error DstHandleAlreadyGrantedFallback();
+
+    error WrongChainIdInDstHandle();
 
     /// @notice OApp version tuple. HandlesReceiver is receive-only: sender side is `0`.
     /// @dev    Virtual so the combined {ConfidentialBridge} can return `(1, 2)`.
@@ -78,9 +83,15 @@ abstract contract HandlesReceiver is OAppReceiver, ILayerZeroComposer, BridgeEve
      *         Coprocessor nodes then run consensus on `dstHandle` and settle on the
      *         majority ciphertext. Only affects this destination chain.
      */
-    function grantFallback(bytes32 dstHandle, bytes32 ciphertextHash) external onlyOwner {
-        if (ciphertextHash == bytes32(0)) revert InvalidCiphertextHash();
-        emit FallbackGranted(dstHandle, ciphertextHash);
+    function grantFallback(bytes32 dstHandle, uint256 clearText) external onlyOwner {
+        uint256 extractedChainId = uint256(
+            dstHandle & 0x00000000000000000000000000000000000000000000ffffffffffffffff0000
+        ) >> 16;
+        if (extractedChainId != block.chainid) revert WrongChainIdInDstHandle();
+        // TODO: add other checks on dstHandle and clearText, such as index byte, version, range of cleartext, fheType validity.
+        if (isGrantedFallback[dstHandle]) revert DstHandleAlreadyGrantedFallback();
+        emit FallbackGrantedClearText(dstHandle, clearText);
+        isGrantedFallback[dstHandle] = true;
     }
 
     /**
@@ -149,7 +160,7 @@ abstract contract HandlesReceiver is OAppReceiver, ILayerZeroComposer, BridgeEve
             (address, address, bytes, bytes32[])
         );
 
-        bytes32[] memory dstHandleList = _deriveAndEmit(srcHandleList, guid);
+        bytes32[] memory dstHandleList = _deriveAndEmit(dstApp, srcHandleList, guid);
 
         // Dispatch a compose message back to self. The HandlesReceiver is also the
         // compose target, configured via LayerZero options on the source side.
@@ -167,6 +178,7 @@ abstract contract HandlesReceiver is OAppReceiver, ILayerZeroComposer, BridgeEve
      *      build trips stack-too-deep when this is inlined).
      */
     function _deriveAndEmit(
+        address dstApp,
         bytes32[] memory srcHandleList,
         bytes32 guid
     ) private returns (bytes32[] memory dstHandleList) {
@@ -177,7 +189,7 @@ abstract contract HandlesReceiver is OAppReceiver, ILayerZeroComposer, BridgeEve
             bytes32 srcHandle = srcHandleList[i];
             bytes32 dstHandle = _deriveDstHandle(srcHandle, prevBlockHash, guid);
             dstHandleList[i] = dstHandle;
-            emit HandleBridged(srcHandle, dstHandle, guid);
+            emit HandleBridged(dstApp, srcHandle, dstHandle, guid);
         }
     }
 
@@ -198,13 +210,7 @@ abstract contract HandlesReceiver is OAppReceiver, ILayerZeroComposer, BridgeEve
         bytes32 guid
     ) internal view returns (bytes32 result) {
         result = keccak256(
-            abi.encodePacked(
-                BRIDGE_DERIVATION_DOMAIN_SEPARATOR,
-                srcHandle,
-                block.chainid,
-                prevBlockHash,
-                guid
-            )
+            abi.encodePacked(BRIDGE_DERIVATION_DOMAIN_SEPARATOR, srcHandle, block.chainid, prevBlockHash, guid)
         );
 
         // Clear bytes 21-31 in preparation for metadata embedding.
