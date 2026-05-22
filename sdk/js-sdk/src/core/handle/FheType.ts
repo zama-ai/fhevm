@@ -316,8 +316,6 @@ export function assertIsEncryptionBitsArray(
 
 /**
  * Converts an encryption bit width to its corresponding FheTypeId.
- * Accepts loose `number` input; validates internally via `isEncryptionBits`.
- * @throws A {@link FheTypeError} If bitwidth is not a valid encryption bit width.
  * @example fheTypeIdFromEncryptionBits(8) // 2 (euint8)
  */
 export function fheTypeIdFromEncryptionBits(bitwidth: EncryptionBits): FheTypeId {
@@ -326,8 +324,6 @@ export function fheTypeIdFromEncryptionBits(bitwidth: EncryptionBits): FheTypeId
 
 /**
  * Converts an FheType to its corresponding FheTypeId.
- * Accepts loose `string` input; validates internally via `isFheType`.
- * @throws A {@link FheTypeError} If name is not a valid FheType.
  * @example fheTypeIdFromName('euint8') // 2
  */
 export function fheTypeIdFromName(name: FheType): FheTypeId {
@@ -336,7 +332,6 @@ export function fheTypeIdFromName(name: FheType): FheTypeId {
 
 /**
  * Converts an FheTypeId to its corresponding FheType.
- * @throws A {@link FheTypeError} If id is not a valid FheTypeId.
  * @example fheTypeNameFromId(2) // 'euint8'
  */
 export function fheTypeNameFromId(typeId: FheTypeId): FheType {
@@ -353,7 +348,7 @@ export function fheTypeNameFromTypeName(typeName: ValueTypeName): FheType {
 
 /**
  * Converts a FheType to its corresponding TypeName.
- * @example fheTypeNameFromTypeName('euint8') // 'uint8'
+ * @example typeNameFromFheTypeName('euint8') // 'uint8'
  */
 export function typeNameFromFheTypeName(fheType: FheType): ValueTypeName {
   return fheType.substring(1) as ValueTypeName;
@@ -365,7 +360,6 @@ export function typeNameFromFheTypeName(fheType: FheType): ValueTypeName {
 
 /**
  * Returns the Solidity primitive type name for an FheTypeId.
- * Accepts loose `number` input; validates internally via `isFheTypeId`.
  * @example solidityPrimitiveTypeNameFromFheTypeId(0) // 'bool'
  * @example solidityPrimitiveTypeNameFromFheTypeId(7) // 'address'
  * @example solidityPrimitiveTypeNameFromFheTypeId(2) // 'uint256'
@@ -398,9 +392,9 @@ export function encryptionBitsFromFheTypeId(typeId: FheTypeId): EncryptionBits {
  * Returns the encryption bit width for an FheType name.
  * @param name - The FHE type name (e.g., 'ebool', 'euint32', 'eaddress')
  * @returns The encryption bit width (always \>= 2)
- * @example encryptionBitsFromFheTypeName('ebool') // 2
- * @example encryptionBitsFromFheTypeName('euint32') // 32
- * @example encryptionBitsFromFheTypeName('eaddress') // 160
+ * @example encryptionBitsFromFheType('ebool') // 2
+ * @example encryptionBitsFromFheType('euint32') // 32
+ * @example encryptionBitsFromFheType('eaddress') // 160
  */
 export function encryptionBitsFromFheType(name: FheType): EncryptionBits {
   const bw = FheTypeIdToEncryptionBits[FheTypeNameToId[name]];
@@ -418,8 +412,7 @@ function _assertMinimumEncryptionBitWidth(bw: number): void {
   );
 }
 
-export function bytesToClearValueType<etype extends FheType>(fheType: etype, bytes: Bytes): ClearValueType<etype> {
-  const bn = bytesToBigInt(bytes);
+export function bigintToClearValueType<etype extends FheType>(fheType: etype, bn: bigint): ClearValueType<etype> {
   // needed to type narrowing
   const ft: FheType = fheType;
 
@@ -455,16 +448,20 @@ export function bytesToClearValueType<etype extends FheType>(fheType: etype, byt
   }
 }
 
+export function bytesToClearValueType<etype extends FheType>(fheType: etype, bytes: Bytes): ClearValueType<etype> {
+  return bigintToClearValueType(fheType, bytesToBigInt(bytes));
+}
+
 /**
  * Asserts that `value` is already the correct JS type for the given `fheTypeName`
  * and returns it narrowed. No conversion is performed.
  *
  * - `ebool` → `boolean`
- * - `eaddress` → `string` (checksummed address)
+ * - `eaddress` → `string` (validated address)
  * - `euint8/16/32` → `number`
  * - `euint64/128/256` → `bigint`
  *
- * @throws If `value` is not the expected JS type or exceeds the type's range.
+ * @throws If `value` is not the expected JS type.
  */
 export function asClearValueType<etype extends FheType>(
   fheTypeName: etype,
@@ -501,14 +498,13 @@ export function asClearValueType<etype extends FheType>(
 
 /**
  * Converts `value` to the correct JS type for the given `fheTypeName`.
- * Accepts any uint-like input (number, bigint, string) and coerces it.
  *
- * - `ebool` → `boolean`
+ * - `ebool` → `boolean` (value must already be a `boolean`; no coercion)
  * - `eaddress` → `string` (validated address)
- * - `euint8/16/32` → coerced to `number` via `Number()`
- * - `euint64/128/256` → coerced to `bigint` via `BigInt()`
+ * - `euint8/16/32` → coerced to `number` via `Number()` (accepts `number` or `bigint`)
+ * - `euint64/128/256` → coerced to `bigint` via `BigInt()` (accepts `number` or `bigint`)
  *
- * @throws If `value` cannot be converted or exceeds the type's range.
+ * @throws If `value` is not the expected JS type or cannot be coerced.
  */
 export function toClearValueType<etype extends FheType>(
   fheTypeName: etype,

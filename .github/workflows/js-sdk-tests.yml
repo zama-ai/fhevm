@@ -1,0 +1,123 @@
+name: js-sdk-tests
+
+on:
+  pull_request:
+    branches:
+      - devex/js-sdk # triggers on PRs targeting devex/js-sdk branch
+      - main # triggers on PRs targeting main branch
+  push:
+    branches:
+      - devex/js-sdk # triggers on every push to devex/js-sdk branch
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Set to true for release tagging'
+        required: false
+        default: false
+
+# No permissions at the workflow level — each job declares only what it needs.
+permissions: {}
+
+jobs:
+  run-tests:
+    name: js-sdk-tests/test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./sdk/js-sdk
+    permissions:
+      contents: 'read' # Required to checkout repository code
+      id-token: 'write' # Required for OIDC / npm provenance attestation
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout
+      #    Pinned to a full commit SHA (not a mutable tag) to prevent supply
+      #    chain attacks. persist-credentials: false removes the Git token from
+      #    the local config so subsequent steps can't accidentally leak it.
+      # -----------------------------------------------------------------------
+      - name: Check out repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: 'false'
+
+      # -----------------------------------------------------------------------
+      # 2. Node.js setup
+      #    The SDK requires Node >=22.0 (declared in package.json "engines").
+      #    registry-url configures the npm config so NODE_AUTH_TOKEN is
+      #    automatically picked up as the Bearer token for registry auth.
+      # -----------------------------------------------------------------------
+      - name: Set up Node.js
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 22.x
+
+      # -----------------------------------------------------------------------
+      # 3. Foundry setup
+      #    The SDK Test suite requires Foundry.
+      # -----------------------------------------------------------------------
+      - name: Set up Foundry
+        uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
+        with:
+          version: stable
+
+      # -----------------------------------------------------------------------
+      # 4. Upgrade npm
+      #    The bundled npm in Node 22 may not support provenance publishing.
+      #    Pin to the same version used in the sibling library-solidity workflow
+      #    for consistency. The .npmrc already sets provenance=true.
+      # -----------------------------------------------------------------------
+      - name: Update npm
+        run: npm install -g npm@11.7.0
+
+      # -----------------------------------------------------------------------
+      # 5. Install dependencies
+      #    npm ci is strict and deterministic: it installs exactly what is in
+      #    package-lock.json, fails if the lockfile is out of sync, and never
+      #    modifies it. This is preferred over npm install in CI environments.
+      #    auto-install-peers=false and strict-peer-dependencies=false are
+      #    already set in the project's .npmrc, so no extra flags are needed.
+      # -----------------------------------------------------------------------
+      - name: Install dependencies
+        run: npm ci
+
+      # -----------------------------------------------------------------------
+      # 6. Build
+      #    The top-level "build" script does more than transpilation:
+      #      - clean           → remove prior tsbuildinfo and generated outputs
+      #      - prettier:check  → formatting validation
+      #      - prettier:ext    → repo-specific style/import checks
+      #      - lint            → eslint + full TypeScript noEmit check
+      #      - build:cjs       → CommonJS output under src/_cjs
+      #      - build:esm       → ES module output under src/_esm
+      #      - build:types     → declaration output under src/_types
+      #      - build:tests     → compile-check the test TypeScript project
+      #    The CJS/ESM builds each invoke their corresponding WASM copy step, so
+      #    running "build" prepares the package contents under src/ before pack.
+      # -----------------------------------------------------------------------
+      - name: Build package (CJS + ESM + types)
+        run: npm run build
+
+      # -----------------------------------------------------------------------
+      # 7. Unit tests
+      #    Runs fast, isolated unit tests (src/**/*.test.ts) with type-checking.
+      #    No network or chain required.
+      # -----------------------------------------------------------------------
+      - name: Run unit tests
+        run: npm run test:unit
+
+      # -----------------------------------------------------------------------
+      # 8. Locahost cleartext chain Test
+      #    package.json maps "test" to the local cleartext integration runner,
+      #    which starts Anvil, deploys the FHEVM stack, runs only
+      #    test/fheTest/viem-cleartext, and then tears the local chain down.
+      # -----------------------------------------------------------------------
+      - name: Setup Forge Soldeer
+        run: cd contracts && forge soldeer install
+
+      - name: Set .env
+        run: |
+          echo 'MNEMONIC="test test test test test test test test test test test junk"' > test/.env
+          echo 'ZAMA_FHEVM_API_KEY="zmr_mainnet_blahblah"' >> test/.env
+
+      - name: Run forge tests
+        run: npm run test:localhost

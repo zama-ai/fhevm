@@ -22,7 +22,7 @@ export const localhostFhevm = /*#__PURE__*/ defineFhevmChain({
           address: '0xF0bFB159C7381F7CB332586004d8247252C5b816',
         },
         inputVerification: {
-          address: '0x3b12Fc766Eb598b285998877e8E90F3e43a1F8d2',
+          address: '0x35760912360E875DA50D40a74305575c23D55783',
         },
       },
     },

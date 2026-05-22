@@ -427,7 +427,7 @@ contract ACL is
 
     /**
      * @notice Getter function for the FHEVMExecutor contract address.
-     * @return FHEVM_EXECUTOR_ADDRESS Address of the FHEVMExecutor.
+     * @return fhevmExecutorAddress Address of the FHEVMExecutor.
      */
     function getFHEVMExecutorAddress() public view virtual returns (address) {
         return FHEVM_EXECUTOR_ADDRESS;
@@ -597,7 +597,7 @@ contract ACL is
         address delegate,
         address contractAddress
     ) private view returns (bool) {
-        return $.userDecryptionDelegations[delegator][delegate][contractAddress].expirationDate >= block.timestamp;
+        return $.userDecryptionDelegations[delegator][delegate][contractAddress].expirationDate > block.timestamp;
     }
 
     /**

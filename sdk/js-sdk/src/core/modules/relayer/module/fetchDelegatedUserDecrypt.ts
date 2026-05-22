@@ -3,7 +3,7 @@ import type { FetchDelegatedUserDecryptResult } from '../../../types/relayer.js'
 import type {
   FetchDelegatedUserDecryptParameters,
   FetchDelegatedUserDecryptReturnType,
-  RelayerClient,
+  RelayerClientWithRuntime,
 } from '../types.js';
 import type { KmsSigncryptedShare } from '../../../types/kms-p.js';
 import { remove0x, removeSuffix } from '../../../base/string.js';
@@ -14,7 +14,7 @@ import { RelayerAsyncRequest } from './RelayerAsyncRequest.js';
 //////////////////////////////////////////////////////////////////////////////
 
 export async function fetchDelegatedUserDecrypt(
-  relayerClient: RelayerClient,
+  relayerClient: RelayerClientWithRuntime,
   parameters: FetchDelegatedUserDecryptParameters,
 ): Promise<FetchDelegatedUserDecryptReturnType> {
   const { options, payload } = parameters;
@@ -47,7 +47,7 @@ export async function fetchDelegatedUserDecrypt(
 
   const request = new RelayerAsyncRequest({
     relayerOperation: 'DELEGATED_USER_DECRYPT',
-    url: `${removeSuffix(relayerClient.relayerUrl, '/')}/v2/delegated-user-decrypt`,
+    url: `${removeSuffix(relayerClient.chain.fhevm.relayerUrl, '/')}/v2/delegated-user-decrypt`,
     payload: relayerPayload,
     options,
   });

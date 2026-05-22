@@ -1,32 +1,36 @@
 import type { Fhevm } from '../../types/coreFhevmClient.js';
-import type { ChecksummedAddress, Uint64BigInt } from '../../types/primitives.js';
-import { isUint64 } from '../../base/uint.js';
-import { getUserDecryptionDelegationExpirationDateAbi } from '../../host-contracts/abi-fragments/fragments.js';
-import { getTrustedClient } from '../../runtime/CoreFhevm-p.js';
+import type { Uint64BigInt } from '../../types/primitives.js';
+import { addressToChecksummedAddress, assertIsAddress } from '../../base/address.js';
+import { getUserDecryptionDelegationExpirationDate as getUserDecryptionDelegationExpirationDate_ } from '../../host-contracts/getUserDecryptionDelegationExpirationDate.js';
+
+////////////////////////////////////////////////////////////////////////////////
 
 export type GetUserDecryptionDelegationExpirationDateParameters = {
-  readonly address: ChecksummedAddress;
+  readonly address: string;
+  readonly delegator: string;
+  readonly delegate: string;
+  readonly contractAddress: string;
 };
 
 export type GetUserDecryptionDelegationExpirationDateReturnType = Uint64BigInt;
+
+////////////////////////////////////////////////////////////////////////////////
 
 export async function getUserDecryptionDelegationExpirationDate(
   fhevm: Fhevm,
   parameters: GetUserDecryptionDelegationExpirationDateParameters,
 ): Promise<GetUserDecryptionDelegationExpirationDateReturnType> {
-  const trustedClient = getTrustedClient(fhevm);
-  const address = parameters.address;
+  const { address, delegate, delegator, contractAddress } = parameters;
 
-  const res = await fhevm.runtime.ethereum.readContract(trustedClient, {
-    address: address,
-    abi: getUserDecryptionDelegationExpirationDateAbi,
-    args: [],
-    functionName: getUserDecryptionDelegationExpirationDateAbi[0].name,
+  assertIsAddress(address, {});
+  assertIsAddress(delegate, {});
+  assertIsAddress(delegator, {});
+  assertIsAddress(contractAddress, {});
+
+  return getUserDecryptionDelegationExpirationDate_(fhevm, {
+    address: addressToChecksummedAddress(address),
+    delegate: addressToChecksummedAddress(delegate),
+    delegator: addressToChecksummedAddress(delegator),
+    contractAddress: addressToChecksummedAddress(contractAddress),
   });
-
-  if (!isUint64(res)) {
-    throw new Error(`Invalid expiration date.`);
-  }
-
-  return BigInt(res) as Uint64BigInt;
 }

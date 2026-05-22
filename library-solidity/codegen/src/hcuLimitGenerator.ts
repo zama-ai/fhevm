@@ -96,6 +96,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice FHEVMExecutor address.
     address private constant FHEVM_EXECUTOR_ADDRESS = fhevmExecutorAdd;
 
+    /// \`fheMulDiv\` \`scalarByte\` bitmask: bit 0 (divisor) is always set; bit 1 marks \`factor2\` as scalar.
+    bytes1 private constant FHE_MUL_DIV_FACTOR2_ENCRYPTED = 0x01;
+    bytes1 private constant FHE_MUL_DIV_FACTOR2_SCALAR = 0x03;
+
     /// @custom:storage-location erc7201:fhevm.storage.HCULimit
     /// @dev All five uint48 fields pack into a single 256-bit slot (5 × 48 = 240 bits).
     struct HCULimitStorage {
@@ -110,7 +114,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         /// @notice Maximum total HCU per transaction.
         uint48 maxHCUPerTx;
         /// @notice Whitelisted callers bypass block-level cap.
-        mapping(address => bool) blockHCUWhitelist;
+        mapping(address account => bool isWhitelisted) blockHCUWhitelist;
     }
 
     /// Constant used for making sure the version number used in the \`reinitializer\` modifier is
@@ -156,6 +160,12 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
   for (const [operation, data] of Object.entries(priceData)) {
     const functionName = `checkHCUFor${operation.charAt(0).toUpperCase() + operation.slice(1)}`;
+    const lhsName = operation === 'fheMulDiv' ? 'factor1' : 'lhs';
+    const rhsName = operation === 'fheMulDiv' ? 'factor2' : 'rhs';
+    const lhsDoc =
+      operation === 'fheMulDiv' ? 'The first multiplication factor.' : 'The left-hand side operand.';
+    const rhsDoc =
+      operation === 'fheMulDiv' ? 'The second multiplication factor.' : 'The right-hand side operand.';
 
     if (data.supportScalar && data.scalar && data.nonScalar) {
       switch (data.numberInputs) {
@@ -180,12 +190,12 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
          * @notice Check the homomorphic complexity units limit for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
          * @param resultType Result type.
          * @param scalarByte Scalar byte.
-         * @param lhs The left-hand side operand.
-         * @param rhs The right-hand side operand.
+         * @param ${lhsName} ${lhsDoc}
+         * @param ${rhsName} ${rhsDoc}
          * @param result Result.
          * @param caller Original dapp caller address from FHEVMExecutor.
          */
-         function ${functionName}(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external virtual {
+         function ${functionName}(FheType resultType, bytes1 scalarByte, bytes32 ${lhsName}, bytes32 ${rhsName}, bytes32 result, address caller) external virtual {
         if(msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
     `;
@@ -307,29 +317,30 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     if (data.scalar && data.nonScalar) {
-      output += `if (scalarByte == 0x01) {
+      const scalarVariantByte = operation === 'fheMulDiv' ? 'FHE_MUL_DIV_FACTOR2_SCALAR' : '0x01';
+      output += `if (scalarByte == ${scalarVariantByte}) {
           ${generatePriceChecks(data.scalar)}
 
-          ${generateCheckTransactionLimit(data.numberInputs, true)}
+          ${generateCheckTransactionLimit(data.numberInputs, true, lhsName, rhsName)}
         } else {
           ${generatePriceChecks(data.nonScalar)}
 
-        ${generateCheckTransactionLimit(data.numberInputs, false)}
+        ${generateCheckTransactionLimit(data.numberInputs, false, lhsName, rhsName)}
     }`;
     } else if (data.scalar) {
       output += `if(scalarByte != 0x01) revert OnlyScalarOperationsAreSupported();`;
       output += `${generatePriceChecks(data.scalar)}
 
-                ${generateCheckTransactionLimit(data.numberInputs, true)} `;
+                ${generateCheckTransactionLimit(data.numberInputs, true, lhsName, rhsName)} `;
     } else if (data.nonScalar) {
       output += `        if(scalarByte != 0x00) revert OnlyNonScalarOperationsAreSupported();`;
       output += `${generatePriceChecks(data.nonScalar)}
       `;
-      output += `${generateCheckTransactionLimit(data.numberInputs, false)}`;
+      output += `${generateCheckTransactionLimit(data.numberInputs, false, lhsName, rhsName)}`;
     } else if (data.types) {
       output += `${generatePriceChecks(data.types)}
       `;
-      output += `${generateCheckTransactionLimit(data.numberInputs, false)}`;
+      output += `${generateCheckTransactionLimit(data.numberInputs, false, lhsName, rhsName)}`;
     } else if (data.nBucketed) {
       output += generateNBucketedPriceChecks(data.nBucketed, data.numberInputs === -2 ? 'valueType' : 'resultType');
       output += data.numberInputs === -2 ? generateIsInTransactionLimit() : generateVariadicTransactionLimit();
@@ -549,7 +560,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param hcuPerBlock New cap value.
      * @dev Enforces hcuPerBlock >= maxHCUPerTx.
      */
-    function _setHCUPerBlock(uint48 hcuPerBlock) internal {
+    function _setHCUPerBlock(uint48 hcuPerBlock) private {
         HCULimitStorage storage $ = _getHCULimitStorage();
         if (hcuPerBlock < $.maxHCUPerTx) revert HCUPerBlockBelowMaxPerTx();
         $.globalHCUCapPerBlock = hcuPerBlock;
@@ -561,7 +572,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param maxHCUDepthPerTx New depth limit.
      * @dev Enforces maxHCUPerTx >= maxHCUDepthPerTx.
      */
-    function _setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) internal {
+    function _setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) private {
         HCULimitStorage storage $ = _getHCULimitStorage();
         if ($.maxHCUPerTx < maxHCUDepthPerTx) revert MaxHCUPerTxBelowDepth();
         $.maxHCUDepthPerTx = maxHCUDepthPerTx;
@@ -573,7 +584,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param maxHCUPerTx New transaction limit.
      * @dev Enforces hcuPerBlock >= maxHCUPerTx and maxHCUPerTx >= maxHCUDepthPerTx.
      */
-    function _setMaxHCUPerTx(uint48 maxHCUPerTx) internal {
+    function _setMaxHCUPerTx(uint48 maxHCUPerTx) private {
         HCULimitStorage storage $ = _getHCULimitStorage();
         if ($.globalHCUCapPerBlock < maxHCUPerTx) revert HCUPerBlockBelowMaxPerTx();
         if (maxHCUPerTx < $.maxHCUDepthPerTx) revert MaxHCUPerTxBelowDepth();
@@ -598,7 +609,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /**
      * @notice Getter function for the FHEVMExecutor contract address.
-     * @return FHEVM_EXECUTOR_ADDRESS Address of the FHEVMExecutor.
+     * @return fhevmExecutorAddress Address of the FHEVMExecutor.
      */
     function getFHEVMExecutorAddress() public view virtual returns (address) {
         return FHEVM_EXECUTOR_ADDRESS;
@@ -751,7 +762,12 @@ function generateIsInTransactionLimit(): string {
   `;
 }
 
-function generateCheckTransactionLimit(numberInputs: number, isScalar: boolean): string {
+function generateCheckTransactionLimit(
+  numberInputs: number,
+  isScalar: boolean,
+  lhsName: string = 'lhs',
+  rhsName: string = 'rhs',
+): string {
   if (!isScalar) {
     switch (numberInputs) {
       case 0:
@@ -760,9 +776,9 @@ function generateCheckTransactionLimit(numberInputs: number, isScalar: boolean):
       case 1:
         return `_adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, ct, result);`;
       case 2:
-        return `_adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, lhs, rhs, result);`;
+        return `_adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, ${lhsName}, ${rhsName}, result);`;
       case 3:
-        return `_adjustAndCheckFheTransactionLimitThreeOps(opHCU, caller, lhs, middle, rhs, result);`;
+        return `_adjustAndCheckFheTransactionLimitThreeOps(opHCU, caller, ${lhsName}, middle, ${rhsName}, result);`;
       default:
         throw new Error('Number of inputs for non-scalar must be less than 4');
     }
@@ -774,7 +790,7 @@ function generateCheckTransactionLimit(numberInputs: number, isScalar: boolean):
         return `_updateAndVerifyHCUTransactionLimit(opHCU, caller);
                 _setHCUForHandle(result, opHCU);`;
       case 2:
-        return `_adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);`;
+        return `_adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, ${lhsName}, result);`;
       default:
         throw new Error('Number of inputs for scalar must be less than 3');
     }

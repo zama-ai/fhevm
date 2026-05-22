@@ -179,21 +179,6 @@ async function deployImplementationForPreparedUpgrade(
   console.log(`${reinitializeFunction.name} calldata:`, reinitializeCalldata);
   console.log("upgradeToAndCall(address,bytes) calldata:", outerCalldata);
   console.log(
-    "Prepared upgrade artifact:",
-    JSON.stringify(
-      {
-        proxyAddress,
-        newImplementationAddress: implementationAddress,
-        innerFunctionSignature: reinitializeFunctionSignature,
-        decodedArgs: reinitializeArgs,
-        innerCalldata: reinitializeCalldata,
-        outerCalldata,
-      },
-      (_, value: unknown) => (typeof value === "bigint" ? value.toString() : value),
-      2,
-    ),
-  );
-  console.log(
     `To double check, run: cast calldata ${shellQuote(reinitializeFunctionSignature)} ${reinitializeArgs
       .map((arg) => shellQuote(formatCastArg(arg)))
       .join(" ")}`.trim(),

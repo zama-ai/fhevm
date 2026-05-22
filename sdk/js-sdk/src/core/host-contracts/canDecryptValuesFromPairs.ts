@@ -1,6 +1,6 @@
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { SignedDelegatedDecryptionPermit, SignedSelfDecryptionPermit } from '../types/signedDecryptionPermit.js';
-import type { TransportKeypair } from '../kms/TransportKeypair-p.js';
+import type { TransportKeyPair } from '../kms/TransportKeyPair-p.js';
 import type { ChecksummedAddress, Uint64BigInt } from '../types/primitives.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { Handle } from '../types/encryptedTypes-p.js';
@@ -10,7 +10,7 @@ import {
   assertIsSignedDecryptionPermit,
   assertPermitIncludesContractAddresses,
 } from '../kms/SignedDecryptionPermit-p.js';
-import { assertPermitMatchesKeypair } from '../utils-p/decrypt/assertPermitMatchesKeypair.js';
+import { assertPermitMatchesKeyPair } from '../utils-p/decrypt/assertPermitMatchesKeyPair.js';
 import { isUserDecryptable } from '../host-contracts/isUserDecryptable.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -30,7 +30,7 @@ type Parameters =
   | {
       readonly pairs: ReadonlyArray<{ readonly handle: Handle; readonly contractAddress: ChecksummedAddress }>;
       readonly signedPermit: SignedSelfDecryptionPermit | SignedDelegatedDecryptionPermit;
-      readonly transportKeypair?: TransportKeypair | undefined;
+      readonly transportKeyPair?: TransportKeyPair | undefined;
     };
 
 type ReturnType = {
@@ -66,8 +66,8 @@ export async function canDecryptValuesFromPairs(context: Context, parameters: Pa
     signedPermit.assertNotExpired();
     assertPermitIncludesContractAddresses(signedPermit, contractAddresses);
 
-    if (parameters.transportKeypair !== undefined) {
-      assertPermitMatchesKeypair(signedPermit, parameters.transportKeypair);
+    if (parameters.transportKeyPair !== undefined) {
+      assertPermitMatchesKeyPair(signedPermit, parameters.transportKeyPair);
     }
 
     userAddress = signedPermit.encryptedDataOwnerAddress;

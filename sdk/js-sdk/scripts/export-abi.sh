@@ -46,15 +46,27 @@ fi
 
 echo "  FHETest verified at: ${FHETEST_ADDRESS}"
 
-# Extract ABI, write to abi-v2.ts
+# Extract ABI, write to abi-v2.ts. Addresses live in a sibling JSON file
+# (fhe-test-addresses-v2.json) so the shell deploy scripts can also read
+# them; this script only refreshes the ABI block.
 node -e "
 const fs = require('fs');
 const artifact = JSON.parse(fs.readFileSync('${ARTIFACT}', 'utf8'));
 const abi = JSON.stringify(artifact.abi, null, 2);
 
-const ts = \`export const FHETestAddresses = {
-  localhostFhevm: '${FHETEST_ADDRESS}',
-};
+const ts = \`import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+// Single source of truth for FHETest addresses lives in the sibling JSON
+// file so the shell deploy scripts (\\\`assert_fhetest_address_in_abi_v2\\\` in
+// fhevm-lib.sh) can also read/validate them.
+export const FHETestAddresses = JSON.parse(
+  readFileSync(join(import.meta.dirname, 'fhe-test-addresses-v2.json'), 'utf-8'),
+) as Readonly<{
+  localhost: string;
+  localhostFhevm: string;
+  devnet: string;
+}>;
 
 export const FHETestABI = \${abi} as const;
 \`;

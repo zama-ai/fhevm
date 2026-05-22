@@ -6,7 +6,7 @@ import type {
   Bytes32,
   Uint64,
   Bytes21Hex,
-  Uint8Number,
+  BytesHex,
 } from '../types/primitives.js';
 import type { ZkProofLike, ZkProof } from '../types/zkProof-p.js';
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
@@ -22,7 +22,7 @@ import {
 import { bytes32ToHex, bytesToHexLarge, concatBytes, hexToBytes32, toBytes } from '../base/bytes.js';
 import { assertIsUint64, assertIsUint8, asUint64BigInt, uint64ToBytes32 } from '../base/uint.js';
 import { ZkProofError } from '../errors/ZkProofError.js';
-import { assertIsEncryptionBitsArray, fheTypeIdFromEncryptionBits } from '../handle/FheType.js';
+import { asEncryptionBits, assertIsEncryptionBitsArray, fheTypeIdFromEncryptionBits } from '../handle/FheType.js';
 import { buildHandle } from '../handle/FhevmHandle.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
@@ -49,27 +49,32 @@ class ZkProofImpl implements ZkProof {
   readonly #fheTypeIds: readonly FheTypeId[]; // Can be empty
   #inputHandles: InputHandle[] | undefined;
 
+  // In theory, 'extraData' is not part of the ZkProof
+  readonly #extraData: BytesHex;
+
   constructor(
     privateToken: symbol,
-    params: {
+    parameters: {
       readonly chainId: Uint64BigInt;
       readonly aclContractAddress: ChecksummedAddress;
       readonly contractAddress: ChecksummedAddress;
       readonly userAddress: ChecksummedAddress;
       readonly ciphertextWithZkProof: Bytes;
       readonly encryptionBits: readonly EncryptionBits[];
+      readonly extraData: BytesHex;
     },
   ) {
     if (privateToken !== PRIVATE_TOKEN) {
       throw new Error('Unauthorized');
     }
-    this.#chainId = params.chainId;
-    this.#aclContractAddress = params.aclContractAddress;
-    this.#contractAddress = params.contractAddress;
-    this.#userAddress = params.userAddress;
-    this.#ciphertextWithZkProof = params.ciphertextWithZkProof;
-    this.#encryptionBits = Object.freeze([...params.encryptionBits]);
-    this.#fheTypeIds = Object.freeze(this.#encryptionBits.map(fheTypeIdFromEncryptionBits));
+    this.#chainId = parameters.chainId;
+    this.#aclContractAddress = parameters.aclContractAddress;
+    this.#contractAddress = parameters.contractAddress;
+    this.#userAddress = parameters.userAddress;
+    this.#ciphertextWithZkProof = parameters.ciphertextWithZkProof;
+    this.#encryptionBits = Object.freeze([...parameters.encryptionBits]);
+    this.#fheTypeIds = Object.freeze(this.#encryptionBits.map((w) => fheTypeIdFromEncryptionBits(asEncryptionBits(w))));
+    this.#extraData = parameters.extraData;
     Object.freeze(this);
   }
 
@@ -99,7 +104,7 @@ class ZkProofImpl implements ZkProof {
 
   /** The ciphertext with Zk proof (guaranteed non-empty). Returns a copy. */
   public get ciphertextWithZkProof(): Bytes {
-    return new Uint8Array(this.#ciphertextWithZkProof) as Bytes;
+    return new Uint8Array(this.#ciphertextWithZkProof);
   }
 
   /** The encryption bit sizes for each encrypted value in the proof. */
@@ -145,6 +150,10 @@ class ZkProofImpl implements ZkProof {
     return this.#inputHandles;
   }
 
+  public getExtraData(): BytesHex {
+    return this.#extraData;
+  }
+
   //////////////////////////////////////////////////////////////////////////////
   // JSON
   //////////////////////////////////////////////////////////////////////////////
@@ -187,7 +196,7 @@ export function isZkProof(value: unknown): value is ZkProof {
 
 export function assertIsZkProof(
   value: unknown,
-  options: { subject?: string } & ErrorMetadataParams,
+  options: { readonly subject?: string; readonly metaMessages?: string[] | undefined } & ErrorMetadataParams,
 ): asserts value is ZkProof {
   if (!isZkProof(value)) {
     throw new InvalidTypeError(
@@ -195,6 +204,7 @@ export function assertIsZkProof(
         subject: options.subject,
         type: typeof value,
         expectedType: 'ZkProof',
+        metaMessages: options.metaMessages,
       },
       options,
     );
@@ -218,6 +228,7 @@ export function assertIsZkProof(
  */
 export async function toZkProof(
   zkProofLike: ZkProofLike,
+  extraData: BytesHex,
   options?: {
     readonly zkProofParser?: ParseTFHEProvenCompactCiphertextListModuleFunction;
     readonly copy?: boolean;
@@ -265,8 +276,9 @@ export async function toZkProof(
     aclContractAddress,
     contractAddress,
     userAddress,
-    ciphertextWithZkProof: ciphertextWithZkProof,
+    ciphertextWithZkProof,
     encryptionBits,
+    extraData,
   });
 }
 
@@ -367,7 +379,7 @@ function _zkProofToInputHandles(
         chainId: args.chainId,
         fheTypeId,
         ...(options?.version !== undefined ? { version: options.version } : {}),
-        index: i as Uint8Number,
+        index: i,
       }),
     );
   }
@@ -440,7 +452,7 @@ async function _getOrParseEncryptionBits(
  * assert_eq!(handle.len(), 32);
  * ```
  *
- * @see https://github.com/zama-ai/fhevm/blob/8ffbd5906ab3d57af178e049930e3fc065c9d4b3/coprocessor/fhevm-engine/zkproof-worker/src/verifier.rs#L431
+ * @see https://github.com/zama-ai/fhevm/blob/322748569f0b5eb100b8cc1a58f691cfe88d17c4/coprocessor/fhevm-engine/zkproof-worker/src/verifier.rs#L538
  * @internal
  */
 function _computeInputHash21(
