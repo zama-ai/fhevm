@@ -111,33 +111,60 @@ async fn run_uploader_loop(
                 let mut trx = pool.begin().await?;
 
                 let item = match job {
-                    UploadJob::Normal(item) =>
-                    {
+                    UploadJob::Normal(item) => {
                         item.enqueue_upload_task(&mut trx).await?;
                         item
-                    },
-                    UploadJob::DatabaseLock(item) => {
-                        if let Err(err) = sqlx::query!(
-                            "SELECT * FROM ciphertext_digest
-                                    WHERE handle = $1 AND
-                                    (ciphertext128 IS NULL OR ciphertext IS NULL)
-                                    FOR UPDATE SKIP LOCKED",
-                                    item.handle
+                    }
+                    UploadJob::DatabaseLock(mut item) => {
+                        let row = match sqlx::query!(
+                            "SELECT ciphertext, ciphertext128, ciphertext128_format
+                             FROM ciphertext_digest
+                             WHERE handle = $1 AND
+                             (ciphertext128 IS NULL OR ciphertext IS NULL)
+                             FOR UPDATE SKIP LOCKED",
+                            item.handle,
                         )
                         .fetch_one(trx.as_mut())
                         .await
                         {
-                            warn!(
-                                error = %err,
-                                handle = to_hex(&item.handle),
-                                "Failed to lock pending uploads",
-                            );
-                            trx.rollback().await?;
-                            continue;
+                            Ok(row) => row,
+                            Err(err) => {
+                                warn!(
+                                    error = %err,
+                                    handle = to_hex(&item.handle),
+                                    "Failed to lock pending uploads",
+                                );
+                                trx.rollback().await?;
+                                continue;
+                            }
+                        };
+
+                        if row.ciphertext.is_some() {
+                            item.ct64_compressed = Arc::new(Vec::new());
                         }
+
+                        if row.ciphertext128.is_some() {
+                            item.ct128 = Arc::new(BigCiphertext::default());
+                        } else if !item.ct128.is_empty() {
+                            item.ct128 = Arc::new(
+                                BigCiphertext::new_with_format_id(
+                                    item.ct128.bytes().to_vec(),
+                                    row.ciphertext128_format,
+                                )
+                                .ok_or_else(|| {
+                                    ExecutionError::InvalidCiphertext128Format(format!(
+                                        "pending ct128 has invalid format id, host_chain_id: {}, handle: {}, format_id: {}",
+                                        item.host_chain_id.as_i64(),
+                                        to_hex(&item.handle),
+                                        row.ciphertext128_format,
+                                    ))
+                                })?,
+                            );
+                        }
+
                         item
-                    },
-                 };
+                    }
+                };
 
 
                 debug!(handle = hex::encode(&item.handle), "Received task, handle");
