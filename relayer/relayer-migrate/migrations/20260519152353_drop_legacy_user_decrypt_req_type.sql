@@ -1,31 +1,41 @@
--- Drop the obsolete `legacy` value from the `user_decrypt_req_type` enum.
+-- Rewrite the `user_decrypt_req_type` enum in one swap:
+--   - drop `legacy` (defunct column-add default from 20260204120000;
+--     pre-existing rows are cleared by the 7-day expiry cron, per
+--     that migration's note),
+--   - add `unified` (new unified EIP-712 attestation type),
+--   - keep `user_decrypt` and `delegated_user_decrypt` so already-
+--     persisted v2 rows remain readable while the legacy variants
+--     are deprecated.
 --
--- `legacy` was the default seeded into pre-existing rows when the
--- `req_type` column was first added (see
--- `20260204120000_add_user_decrypt_req_type.sql`). The original migration
--- noted those rows would be cleared by the 7-day expiry cron, after which
--- the value could be removed. Postgres has no `ALTER TYPE ... DROP VALUE`,
--- so we recreate the enum without it and swap the column over.
---
--- Refuses to run if any rows still carry `req_type = 'legacy'`. If that
--- happens in a non-prod environment, delete the stale rows explicitly
--- before rerunning.
+-- Postgres has no `ALTER TYPE ... DROP VALUE`; the recipe is to
+-- recreate the enum and swap the column type, casting through text
+-- so existing values land unchanged. sqlx runs each migration in a
+-- transaction by default, so a mid-step failure rolls back cleanly.
 
+-- Safety: refuse to run if any rows still carry the `legacy` value.
+-- Cast through text so the comparison works regardless of which
+-- variants the current enum has (e.g. if a previous attempt got
+-- partway through and the enum was already partially rewritten).
 DO $$
 DECLARE
     leftover_count integer;
 BEGIN
     SELECT count(*) INTO leftover_count
     FROM user_decrypt_req
-    WHERE req_type = 'legacy';
+    WHERE req_type::text = 'legacy';
 
     IF leftover_count > 0 THEN
         RAISE EXCEPTION
-            'Cannot drop ''legacy'' enum value: % rows in user_decrypt_req still use it',
+            'Cannot drop ''legacy'' enum value: % rows in user_decrypt_req still use it. Clear them before re-running.',
             leftover_count;
     END IF;
 END
 $$;
+
+-- Defensive cleanup: if an earlier run failed after the rename but
+-- before the drop (would only happen with autocommit forced on),
+-- remove the dangling type so the rename below succeeds.
+DROP TYPE IF EXISTS user_decrypt_req_type_old;
 
 ALTER TYPE user_decrypt_req_type RENAME TO user_decrypt_req_type_old;
 
@@ -35,6 +45,9 @@ CREATE TYPE user_decrypt_req_type AS ENUM (
     'unified'
 );
 
+-- Drop the column default first (Postgres won't change a column's
+-- type while a default of the old type is set), then cast through
+-- text so the surviving values map straight across.
 ALTER TABLE user_decrypt_req
     ALTER COLUMN req_type DROP DEFAULT,
     ALTER COLUMN req_type TYPE user_decrypt_req_type
@@ -43,11 +56,11 @@ ALTER TABLE user_decrypt_req
 DROP TYPE user_decrypt_req_type_old;
 
 COMMENT ON TYPE user_decrypt_req_type IS
-  '`user_decrypt` and `delegated_user_decrypt` are deprecated: kept only '
-  'so already-persisted v2 rows remain readable until the legacy EIP-712 '
-  'formats are removed. New writes use `unified`.';
+    '`user_decrypt` and `delegated_user_decrypt` are deprecated: kept '
+    'only so already-persisted v2 rows remain readable until the '
+    'legacy EIP-712 formats are removed. New writes use `unified`.';
 
 COMMENT ON COLUMN user_decrypt_req.req_type IS
-  'Attestation type of the persisted request. `user_decrypt` and '
-  '`delegated_user_decrypt` are deprecated; `unified` is the current '
-  'value. Column can be dropped once the legacy values are removed.';
+    'Attestation type of the persisted request. `user_decrypt` and '
+    '`delegated_user_decrypt` are deprecated; `unified` is the current '
+    'value. Column can be dropped once the legacy values are removed.';
