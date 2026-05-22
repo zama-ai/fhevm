@@ -173,7 +173,10 @@ jobs:
         run: |
           if ! command -v sqlx &> /dev/null; then
             echo "Installing sqlx-cli..."
-            cargo install sqlx-cli --no-default-features --features postgres
+            # Pin to the same series as the relayer's `sqlx` dependency
+            # (currently 0.8.6 in relayer/Cargo.toml). `sqlx-cli` 0.9.0
+            # requires rustc >= 1.94, which the CI toolchain doesn't ship.
+            cargo install sqlx-cli --version 0.8.6 --no-default-features --features postgres --locked
           else
             echo "sqlx-cli found in cache."
           fi

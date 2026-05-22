@@ -450,7 +450,7 @@ async fn v3_e2e_succeeds_against_mocked_gateway() {
     let handles = helpers::extract_handles_from_v3_envelope(&payload);
     let user_address = helpers::extract_user_address_from_v3_envelope(&payload);
 
-    // Wire the mock to recognise the unified `userDecryptionRequest_0`
+    // Wire the mock to recognize the unified `userDecryptionRequest_0`
     // selector, emit a `UserDecryptionRequest_1` event with the decryption
     // id, and follow up with the standard 9 shares + 1 threshold-reached
     // event.
