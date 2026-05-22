@@ -10,6 +10,8 @@ Short handoff for OpenZeppelin on branch `openzeppelin-solana-track`.
 
 **Rule:** Design decisions belong in RFC 024. README tracks what this branch implements. Do not update other RFCs from this PoC work.
 
+**RFC workflow:** Push RFC changes to tech-spec branch `elias/rfc-024-solana-acl-design` ([PR #448](https://github.com/zama-ai/tech-spec/pull/448)), not to tech-spec `main`. After an RFC push, sync README/OZ_GUIDE if the host surface or boundaries changed.
+
 ## Current host surface
 
 All FHE host semantics go through one CPI batch:

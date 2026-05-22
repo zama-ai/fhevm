@@ -12,6 +12,20 @@ This workspace is the Solana host-chain PoC for the `openzeppelin-solana-track` 
 
 When design and code diverge: decide in **RFC 024**, then sync this README (and OZ_GUIDE if boundaries change). Do not back-propagate Solana PoC learnings into other RFCs from this branch.
 
+### Updating RFC 024 (iterate on the PR branch)
+
+RFC 024 lives in **tech-spec PR #448**, branch `elias/rfc-024-solana-acl-design`. **Do not merge to tech-spec `main`** while the PoC is still moving — push RFC edits to the PR branch instead.
+
+```text
+1. Land PoC + tests on openzeppelin-solana-track (this repo)
+2. Clone tech-spec, checkout elias/rfc-024-solana-acl-design
+3. Edit rfcs/024-solana-acl-design.md (PoC validation, open questions, spec fixes)
+4. Commit and push to origin/elias/rfc-024-solana-acl-design
+5. Sync this README and OZ_GUIDE.md if boundaries or host surface changed
+```
+
+Link the RFC commit in fhevm PR descriptions when a design choice is promoted or rejected.
+
 It is meant to be a readable base for:
 
 ```text
