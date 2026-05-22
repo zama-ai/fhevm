@@ -7,7 +7,7 @@
 //!
 //! ```ignore
 //! let attestation: CiphertextAttestation =
-//!     CiphertextAttestationPayload::new(version, handle, key_id, ctx, ct, sns)
+//!     CiphertextAttestationPayload::new(version, handle, key_id, ctx, ct, sns, format)
 //!         .sign(&signer)
 //!         .await?;
 //! s3_push(url, serde_json::to_string(&attestation)?);
@@ -63,6 +63,20 @@ impl From<Version> for u8 {
     }
 }
 
+/// Ciphertext storage format.
+///
+/// The JSON representation is the snake_case variant name; unknown strings are rejected at
+/// deserialization. The canonical bytes encode the discriminant as `uint8`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[repr(u8)]
+pub enum CiphertextFormat {
+    UncompressedOnCpu = 10,
+    CompressedOnCpu = 11,
+    UncompressedOnGpu = 20,
+    CompressedOnGpu = 21,
+}
+
 /// The full set of fields bound by an attestation signature. Construct, optionally
 /// inspect via [`Self::canonical_bytes`] / [`Self::canonical_digest`], then call
 /// [`Self::sign`] to produce a [`CiphertextAttestation`] for the wire.
@@ -78,6 +92,7 @@ pub struct CiphertextAttestationPayload {
     pub coprocessor_context_id: U256,
     pub ciphertext_digest: B256,
     pub sns_ciphertext_digest: B256,
+    pub format: CiphertextFormat,
 }
 
 impl CiphertextAttestationPayload {
@@ -88,6 +103,7 @@ impl CiphertextAttestationPayload {
         coprocessor_context_id: U256,
         ciphertext_digest: B256,
         sns_ciphertext_digest: B256,
+        format: CiphertextFormat,
     ) -> Self {
         Self {
             version,
@@ -96,6 +112,7 @@ impl CiphertextAttestationPayload {
             coprocessor_context_id,
             ciphertext_digest,
             sns_ciphertext_digest,
+            format,
         }
     }
 }
@@ -113,6 +130,7 @@ pub struct CiphertextAttestation {
     pub key_id: U256,
     pub ciphertext_digest: B256,
     pub sns_ciphertext_digest: B256,
+    pub format: CiphertextFormat,
     pub signer: Address,
     #[serde(with = "hex_bytes")]
     pub signature: Vec<u8>,
@@ -166,6 +184,7 @@ mod tests {
             sns_ciphertext_digest: b256!(
                 "2222222222222222222222222222222222222222222222222222222222222222"
             ),
+            format: CiphertextFormat::UncompressedOnCpu,
             signer: address!("00112233445566778899aabbccddeeff00112233"),
             signature: vec![0xab; 65],
         }
@@ -185,5 +204,23 @@ mod tests {
         value["version"] = serde_json::Value::from(99u8);
         let err = serde_json::from_value::<CiphertextAttestation>(value).unwrap_err();
         assert!(err.to_string().contains("unsupported attestation version"));
+    }
+
+    #[test]
+    fn json_rejects_unknown_format() {
+        let mut value = serde_json::to_value(sample_attestation()).unwrap();
+        value["format"] = serde_json::Value::from("uncompressed_on_quantum");
+        let err = serde_json::from_value::<CiphertextAttestation>(value).unwrap_err();
+        assert!(err.to_string().contains("unknown variant"));
+    }
+
+    #[test]
+    fn json_serializes_format_as_snake_case() {
+        let att = sample_attestation();
+        let json = serde_json::to_value(&att).unwrap();
+        assert_eq!(
+            json["format"],
+            serde_json::Value::from("uncompressed_on_cpu")
+        );
     }
 }
