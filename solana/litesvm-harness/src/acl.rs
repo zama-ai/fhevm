@@ -4,8 +4,14 @@ use litesvm::LiteSVM;
 use solana_sdk::{account::Account, pubkey::Pubkey, signature::Signer};
 use zama_host as host;
 
-use crate::util::{set_previous_slot_hash, DEFAULT_TEST_PREVIOUS_BANK_HASH};pub fn event_authority(program_id: Pubkey) -> Pubkey {
+use crate::util::{set_previous_slot_hash, DEFAULT_TEST_PREVIOUS_BANK_HASH};
+
+pub fn event_authority(program_id: Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[b"__event_authority"], &program_id).0
+}
+
+pub fn rand_counter_address(_program_id: Pubkey) -> Pubkey {
+    host::rand_counter_address().0
 }
 
 pub fn token_account_address(program_id: Pubkey, mint: Pubkey, owner: Pubkey) -> Pubkey {
@@ -54,6 +60,15 @@ pub fn transfer_amount_acl_address(
         token::transfer_amount_nonce_key(fixture.mint.pubkey(), fixture.alice_token),
         nonce_sequence,
     )
+}
+
+pub fn read_rand_counter(svm: &LiteSVM, program_id: Pubkey) -> Option<u64> {
+    let address = rand_counter_address(program_id);
+    let account = svm.get_account(&address)?;
+    let mut data = account.data.as_slice();
+    host::RandCounter::try_deserialize(&mut data)
+        .ok()
+        .map(|record| record.counter)
 }
 
 pub fn read_acl_record(svm: &litesvm::LiteSVM, address: Pubkey) -> Option<host::AclRecord> {

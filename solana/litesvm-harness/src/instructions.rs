@@ -3,7 +3,8 @@ use solana_sdk::{instruction::Instruction, pubkey::Pubkey, signature::Signer};
 
 use crate::{
     acl::{
-        balance_acl_record_address, event_authority, read_acl_record, transfer_amount_acl_address,
+        balance_acl_record_address, event_authority, rand_counter_address, read_acl_record,
+        transfer_amount_acl_address,
     },
     fixture::{TokenFixture, TransferOutputAccounts, WrapOutputAccounts},
     transaction::{anchor_ix, send},
@@ -26,6 +27,7 @@ pub fn authorize_transfer_amount(
             token_account: fixture.alice_token,
             compute_signer: fixture.compute_signer,
             output_acl,
+            zama_rand_counter: rand_counter_address(fixture.host_program_id),
             zama_event_authority: event_authority(fixture.host_program_id),
             zama_program: fixture.host_program_id,
             system_program: system_program::ID,
@@ -116,6 +118,7 @@ pub fn self_transfer_ix(
             amount_compute_acl: transfer_amount_acl_address(fixture, DEFAULT_INPUT_NONCE_SEQUENCE),
             from_output_acl: output.alice,
             to_output_acl: output.bob,
+            zama_rand_counter: rand_counter_address(fixture.host_program_id),
             zama_event_authority: event_authority(fixture.host_program_id),
             zama_program: fixture.host_program_id,
             system_program: system_program::ID,
@@ -182,6 +185,7 @@ pub fn transfer_ix_with_amount_acl(
             amount_compute_acl,
             from_output_acl: output.alice,
             to_output_acl: output.bob,
+            zama_rand_counter: rand_counter_address(fixture.host_program_id),
             zama_event_authority: event_authority(fixture.host_program_id),
             zama_program: fixture.host_program_id,
             system_program: system_program::ID,
@@ -215,6 +219,7 @@ pub fn wrap_usdc_ix(
             compute_signer: fixture.compute_signer,
             current_compute_acl: fixture.alice_current_compute_acl,
             output_acl: output.balance,
+            zama_rand_counter: rand_counter_address(fixture.host_program_id),
             zama_event_authority: event_authority(fixture.host_program_id),
             zama_program: fixture.host_program_id,
             token_program: anchor_spl::token::spl_token::id(),

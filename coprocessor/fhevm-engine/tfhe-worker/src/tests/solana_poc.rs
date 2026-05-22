@@ -8,15 +8,20 @@ use host_listener::{
 };
 use litesvm::types::TransactionMetadata;
 use serial_test::serial;
-use solana_sdk::signature::{Signature, Signer};
+use solana_sdk::{
+    pubkey::Pubkey,
+    signature::{Signature, Signer},
+};
 use tfhe::prelude::FheTryEncrypt;
 use time::{Date, Month, PrimitiveDateTime, Time};
+use zama_host::{AclSubjectEntry, FheFrameAction, FheFrameStep, FheOperand};
 use zama_solana_litesvm_harness::{
-    authorize_transfer_amount, collect_cpi_events, kms_like_user_decrypt_check, read_acl_record,
-    run_transfer_scenario, send_with_meta, send_with_meta_and_signature,
+    acl_record_address, authorize_transfer_amount, cleartext_rand_value, collect_cpi_events,
+    execute_frame_ix, fhe_rand_events, kms_like_user_decrypt_check, label, read_acl_record,
+    run_transfer_scenario, send_with_meta, send_with_meta_and_signature, set_previous_slot_hash,
     signed_user_decrypt_request_with_domains, token_fixture, transfer_ix, transfer_output_accounts,
     TransferExpect, TransferSetup, UserDecryptHandleEntry, BALANCE_FHE_TYPE,
-    DEFAULT_INPUT_NONCE_SEQUENCE,
+    DEFAULT_INPUT_NONCE_SEQUENCE, DEFAULT_TEST_PREVIOUS_BANK_HASH,
 };
 
 use crate::tests::{
@@ -165,11 +170,82 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
 
 #[tokio::test]
 #[serial(db)]
-#[ignore = "rand birth is not implemented in execute_frame yet"]
+#[ignore = "slow TFHE+Postgres integration (~7min); CI tfhe-worker-solana-poc job or cargo test -- --ignored"]
 async fn solana_fhe_rand_creates_ciphertext_and_decrypts() -> Result<(), Box<dyn std::error::Error>>
 {
-    let _harness = setup_event_harness().await?;
-    Err("execute_frame does not implement Rand yet".into())
+    use anchor_litesvm::TestHelpers;
+    use zama_host as host;
+    use zama_solana_litesvm_harness::{host_program_so_path, svm_with_program};
+
+    let harness = setup_event_harness().await?;
+    let program_id = host::id();
+    let mut svm = svm_with_program(program_id, host_program_so_path());
+    let payer = svm.create_funded_account(1_000_000_000).unwrap();
+    set_previous_slot_hash(&mut svm, DEFAULT_TEST_PREVIOUS_BANK_HASH);
+
+    let acl_domain_key = Pubkey::new_unique();
+    let app_account = payer.pubkey();
+    let encrypted_value_label = label("rand-output");
+    let nonce_key =
+        confidential_token::nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let output_acl_record = acl_record_address(program_id, nonce_key, 1);
+    let steps = vec![FheFrameStep::Rand {
+        fhe_type: BALANCE_FHE_TYPE,
+    }];
+    let actions = vec![FheFrameAction::Allow {
+        source: FheOperand::PreviousResult { index: 0 },
+        output_acl_record,
+        nonce_key,
+        nonce_sequence: 1,
+        acl_domain_key,
+        app_account,
+        encrypted_value_label,
+        subjects: vec![AclSubjectEntry {
+            pubkey: payer.pubkey(),
+        }],
+        public_decrypt: false,
+    }];
+    let ix = execute_frame_ix(
+        program_id,
+        payer.pubkey(),
+        steps,
+        actions,
+        vec![app_account],
+        vec![output_acl_record],
+    );
+    let (meta, account_keys, signature) = send_with_meta_and_signature(&mut svm, &payer, ix);
+    let rand_events = fhe_rand_events(&meta, &account_keys, program_id);
+    assert_eq!(rand_events.len(), 1);
+    let rand_handle = rand_events[0].result;
+
+    let host_events = collect_listener_host_events(&meta, &account_keys, program_id);
+    assert_eq!(count_tfhe_events(&host_events), 1);
+    assert_eq!(count_acl_events(&host_events), 1);
+
+    insert_host_events(&harness.listener_db, host_events, signature, 1).await?;
+    wait_until_computed(&harness.app).await?;
+
+    let output_record = read_acl_record(&svm, output_acl_record).expect("expected rand ACL");
+    assert_eq!(output_record.handle, rand_handle);
+    assert!(kms_like_user_decrypt_check(
+        &svm,
+        &signed_user_decrypt_request_with_domains(
+            &payer,
+            vec![acl_domain_key],
+            vec![UserDecryptHandleEntry {
+                handle: rand_handle,
+                owner: payer.pubkey(),
+                acl_record: output_acl_record,
+            }],
+        ),
+    ));
+
+    let decrypted = decrypt_handles(&harness.pool, &[Handle::from(rand_handle)]).await?;
+    assert_eq!(decrypted[0].output_type, BALANCE_FHE_TYPE as i16);
+    let expected_rand = u64::try_from(cleartext_rand_value(rand_events[0].seed, 64)).unwrap();
+    assert_eq!(decrypted[0].value, expected_rand.to_string());
+
+    Ok(())
 }
 
 #[test]

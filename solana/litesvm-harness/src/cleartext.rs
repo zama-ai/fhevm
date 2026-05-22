@@ -3,9 +3,10 @@
 use std::collections::HashMap;
 
 use litesvm::types::TransactionMetadata;
+use solana_keccak_hasher::hashv;
 use solana_sdk::pubkey::Pubkey;
 use crate::events::collect_zama_host_events;
-use zama_host_events::{FheBinaryOpCode, FheBinaryOpEvent, ZamaHostEvent};
+use zama_host_events::{FheBinaryOpCode, FheBinaryOpEvent, FheRandEvent, ZamaHostEvent};
 use crate::semantic::{BackendError, SemanticBackend};
 
 pub type Handle = [u8; 32];
@@ -72,9 +73,8 @@ impl FheBackend for CleartextBackend {
                 self.values.insert(event.result, value);
                 Ok(())
             }
-            ZamaHostEvent::FheRand(_) | ZamaHostEvent::AclAllowed(_) | ZamaHostEvent::InputVerified(_) => {
-                Ok(())
-            }
+            ZamaHostEvent::FheRand(event) => self.ingest_rand(event),
+            ZamaHostEvent::AclAllowed(_) | ZamaHostEvent::InputVerified(_) => Ok(()),
         }
     }
 
@@ -84,6 +84,20 @@ impl FheBackend for CleartextBackend {
 }
 
 impl CleartextBackend {
+    fn ingest_rand(&mut self, event: &FheRandEvent) -> Result<(), String> {
+        let bit_width = fhe_type_bit_width(event.fhe_type)
+            .ok_or_else(|| format!("unsupported rand fhe_type {}", event.fhe_type))?;
+        let value = cleartext_rand_value(event.seed, bit_width);
+        self.values.insert(
+            event.result,
+            TypedClearValue {
+                fhe_type: event.fhe_type,
+                value: ClearValue::Uint(value),
+            },
+        );
+        Ok(())
+    }
+
     fn ingest_binary_op(&mut self, event: &FheBinaryOpEvent) -> Result<(), String> {
         let lhs = self
             .values
@@ -130,6 +144,32 @@ impl CleartextBackend {
 
 fn bytes_to_u128(bytes: [u8; 32]) -> u128 {
     u128::from_be_bytes(bytes[16..].try_into().expect("slice has length 16"))
+}
+
+/// Matches `CleartextArithmetic.rand(seed, bitWidth)`.
+pub fn cleartext_rand_value(seed: [u8; 16], bit_width: u32) -> u128 {
+    let hash = hashv(&[seed.as_ref(), b"randValue"]).to_bytes();
+    let raw = u128::from_be_bytes(hash[16..32].try_into().expect("slice has length 16"));
+    if bit_width >= 128 {
+        raw
+    } else {
+        raw & ((1u128 << bit_width) - 1)
+    }
+}
+
+fn fhe_type_bit_width(fhe_type: u8) -> Option<u32> {
+    match fhe_type {
+        0 => Some(1),
+        1 => Some(4),
+        2 => Some(8),
+        3 => Some(16),
+        4 => Some(32),
+        5 => Some(64),
+        6 => Some(128),
+        7 => Some(160),
+        8 => Some(256),
+        _ => None,
+    }
 }
 
 impl SemanticBackend for CleartextBackend {

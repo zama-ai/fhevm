@@ -187,6 +187,35 @@
           "address": "11111111111111111111111111111111"
         },
         {
+          "name": "rand_counter",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  104,
+                  101,
+                  45,
+                  114,
+                  97,
+                  110,
+                  100,
+                  45,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116,
+                  101,
+                  114
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -235,6 +264,19 @@
         252,
         71,
         125
+      ]
+    },
+    {
+      "name": "RandCounter",
+      "discriminator": [
+        136,
+        121,
+        12,
+        48,
+        0,
+        125,
+        58,
+        1
       ]
     }
   ],
@@ -388,6 +430,11 @@
     },
     {
       "code": 6016,
+      "name": "RandCounterOverflow",
+      "msg": "global rand counter overflow"
+    },
+    {
+      "code": 6017,
       "name": "FrameOutputAccountAlreadyInitialized",
       "msg": "frame action targets an initialized account"
     }
@@ -716,6 +763,15 @@
                 "type": "u8"
               }
             ]
+          },
+          {
+            "name": "Rand",
+            "fields": [
+              {
+                "name": "fhe_type",
+                "type": "u8"
+              }
+            ]
           }
         ]
       }
@@ -961,6 +1017,18 @@
                 32
               ]
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "RandCounter",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "counter",
+            "type": "u64"
           }
         ]
       }

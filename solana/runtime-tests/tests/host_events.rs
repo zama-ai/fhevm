@@ -18,9 +18,10 @@ use zama_solana_litesvm_harness::{
     assert_balance_acl,
     authorization_payload_bytes, authorize_transfer_amount,
     balance_acl_record_address, binary_op_events, balance_handle_updated_events, CleartextBackend,
-    created_acl_count, event_authority, execute_frame_ix, execute_frame_log_count,
-    expected_trivial_handle, FheBackend, FheBinaryOpCode, host_program_so_path, kms_like_public_decrypt_check,
-    kms_like_user_decrypt_check, label, max_cpi_depth, read_acl_record, record_subjects,
+    cleartext_rand_value, created_acl_count, event_authority, execute_frame_ix, execute_frame_log_count,
+    expected_trivial_handle, fhe_rand_events, FheBackend, FheBinaryOpCode, host_program_so_path, kms_like_public_decrypt_check,
+    kms_like_user_decrypt_check, label, max_cpi_depth, rand_counter_address, read_acl_record,
+    read_rand_counter, record_subjects,
     run_transfer_scenario_meta, run_wrap_scenario, seed_transfer_inputs,
     assert_transfer_cleartext, assert_transfer_output_invariants,
     assert_no_zama_host_events_on_failure, assert_wrap_output_invariants,
@@ -35,6 +36,7 @@ use zama_solana_litesvm_harness::{
     trivial_encrypt_events, PublicDecryptHandleEntry,
     TransferExpect, TransferOutputAccounts, TransferSetup, TypedClearValue,
     SemanticBackend, UserDecryptHandleEntry, DEFAULT_INPUT_NONCE_SEQUENCE,
+    DEFAULT_TEST_PREVIOUS_BANK_HASH,
 };
 
 #[test]
@@ -1327,6 +1329,7 @@ fn poc_authorize_transfer_amount_uses_fhe_execute_wrapper() {
                 token_account: fixture.alice_token,
                 compute_signer: fixture.compute_signer,
                 output_acl,
+                zama_rand_counter: rand_counter_address(fixture.host_program_id),
                 zama_event_authority: event_authority(fixture.host_program_id),
                 zama_program: fixture.host_program_id,
                 system_program: system_program::ID,
@@ -1604,8 +1607,8 @@ fn confidential_transfer_budget_snapshot() {
         balance_handle_updated_events(&meta, &account_keys, fixture.token_program_id).len();
     let max_cpi_depth = max_cpi_depth(&meta);
 
-    assert_eq!(top_level_metas, 15);
-    assert_eq!(writable_metas, 5);
+    assert_eq!(top_level_metas, 16);
+    assert_eq!(writable_metas, 6);
     assert_eq!(signer_metas, 1);
     assert_eq!(host_events, 2);
     assert_eq!(app_events, 2);
@@ -1854,4 +1857,112 @@ fn execute_frame_fails_when_previous_bank_hash_unavailable() {
     );
 
     assert!(try_send(&mut svm, &payer, ix).is_err());
+}
+
+#[test]
+fn execute_frame_rand_emits_event_and_distinct_handle() {
+    use solana_sdk::clock::Clock;
+
+    let program_id = host::id();
+    let mut svm = svm_with_program(program_id, host_program_so_path());
+    let payer = svm.create_funded_account(1_000_000_000).unwrap();
+    set_previous_slot_hash(&mut svm, DEFAULT_TEST_PREVIOUS_BANK_HASH);
+
+    let steps = vec![FheFrameStep::Rand { fhe_type: 5 }];
+    let ix = execute_frame_ix(program_id, payer.pubkey(), steps, vec![], vec![], vec![]);
+    let (meta, account_keys) = send_with_meta(&mut svm, &payer, ix);
+
+    let events = fhe_rand_events(&meta, &account_keys, program_id);
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].fhe_type, 5);
+    assert_eq!(events[0].subject, payer.pubkey().to_bytes());
+
+    let clock: Clock = svm.get_sysvar();
+    let bank_hash = previous_bank_hash_from_sysvar(&svm, clock.slot);
+    let expected_seed = host::computed_rand_seed(
+        0,
+        bank_hash,
+        host::SOLANA_POC_CHAIN_ID,
+        clock.unix_timestamp,
+    );
+    let expected_handle =
+        host::computed_rand_handle(5, expected_seed, host::SOLANA_POC_CHAIN_ID);
+    assert_eq!(events[0].seed, expected_seed);
+    assert_eq!(events[0].result, expected_handle);
+
+    let mut cleartext = CleartextBackend::default();
+    cleartext
+        .ingest_transaction(&meta, &account_keys, program_id)
+        .unwrap();
+    assert_eq!(
+        cleartext.decrypt_cleartext(expected_handle),
+        Some(TypedClearValue::uint64(
+            u64::try_from(cleartext_rand_value(expected_seed, 64)).unwrap()
+        ))
+    );
+    assert_eq!(read_rand_counter(&svm, program_id), Some(1));
+}
+
+#[test]
+fn execute_frame_rejects_unsupported_rand_fhe_type_without_side_effects() {
+    let program_id = host::id();
+    let mut svm = svm_with_program(program_id, host_program_so_path());
+    let payer = svm.create_funded_account(1_000_000_000).unwrap();
+    set_previous_slot_hash(&mut svm, DEFAULT_TEST_PREVIOUS_BANK_HASH);
+
+    let steps = vec![FheFrameStep::Rand { fhe_type: 99 }];
+    let ix = execute_frame_ix(program_id, payer.pubkey(), steps, vec![], vec![], vec![]);
+
+    assert!(try_send(&mut svm, &payer, ix).is_err());
+    assert_eq!(read_rand_counter(&svm, program_id), None);
+}
+
+#[test]
+fn execute_frame_two_rand_steps_in_one_frame_use_different_handles() {
+    let program_id = host::id();
+    let mut svm = svm_with_program(program_id, host_program_so_path());
+    let payer = svm.create_funded_account(1_000_000_000).unwrap();
+    set_previous_slot_hash(&mut svm, DEFAULT_TEST_PREVIOUS_BANK_HASH);
+
+    let steps = vec![
+        FheFrameStep::Rand { fhe_type: 5 },
+        FheFrameStep::Rand { fhe_type: 5 },
+    ];
+    let ix = execute_frame_ix(program_id, payer.pubkey(), steps, vec![], vec![], vec![]);
+    let (meta, account_keys) = send_with_meta(&mut svm, &payer, ix);
+
+    let events = fhe_rand_events(&meta, &account_keys, program_id);
+    assert_eq!(events.len(), 2);
+    assert_ne!(events[0].seed, events[1].seed);
+    assert_ne!(events[0].result, events[1].result);
+    assert_eq!(read_rand_counter(&svm, program_id), Some(2));
+}
+
+#[test]
+fn execute_frame_rand_counter_bumps_across_instructions_in_one_transaction() {
+    let program_id = host::id();
+    let mut svm = svm_with_program(program_id, host_program_so_path());
+    let payer = svm.create_funded_account(1_000_000_000).unwrap();
+    set_previous_slot_hash(&mut svm, DEFAULT_TEST_PREVIOUS_BANK_HASH);
+
+    let build_ix = || {
+        execute_frame_ix(
+            program_id,
+            payer.pubkey(),
+            vec![FheFrameStep::Rand { fhe_type: 5 }],
+            vec![],
+            vec![],
+            vec![],
+        )
+    };
+
+    send_many_with_signers(
+        &mut svm,
+        &payer.pubkey(),
+        vec![build_ix(), build_ix()],
+        &[&payer],
+    )
+    .unwrap();
+
+    assert_eq!(read_rand_counter(&svm, program_id), Some(2));
 }

@@ -7,7 +7,7 @@ use anchor_lang::{AnchorDeserialize, Discriminator, Event};
 use litesvm::types::TransactionMetadata;
 use solana_sdk::pubkey::Pubkey;
 pub use zama_host_events::{
-    decode_anchor_cpi_event, AclAllowedEvent, FheBinaryOpEvent, TrivialEncryptEvent,
+    decode_anchor_cpi_event, AclAllowedEvent, FheBinaryOpEvent, FheRandEvent, TrivialEncryptEvent,
     ZamaHostEvent, ANCHOR_EVENT_IX_TAG_LE,
 };
 
@@ -76,6 +76,20 @@ pub fn trivial_encrypt_events(
         .into_iter()
         .filter_map(|event| match event {
             ZamaHostEvent::TrivialEncrypt(event) => Some(event),
+            _ => None,
+        })
+        .collect()
+}
+
+pub fn fhe_rand_events(
+    meta: &TransactionMetadata,
+    account_keys: &[Pubkey],
+    program_id: Pubkey,
+) -> Vec<FheRandEvent> {
+    collect_zama_host_events(meta, account_keys, program_id)
+        .into_iter()
+        .filter_map(|event| match event {
+            ZamaHostEvent::FheRand(event) => Some(event),
             _ => None,
         })
         .collect()

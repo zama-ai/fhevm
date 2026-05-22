@@ -11113,6 +11113,7 @@ dependencies = [
  "bigdecimal",
  "chrono",
  "clap",
+ "confidential-token",
  "criterion",
  "fhevm-engine-common",
  "hex",
@@ -11144,6 +11145,7 @@ dependencies = [
  "tracing-opentelemetry",
  "tracing-subscriber",
  "uuid",
+ "zama-host",
  "zama-solana-litesvm-harness",
 ]
 
@@ -12757,6 +12759,7 @@ dependencies = [
  "bincode",
  "confidential-token",
  "litesvm",
+ "solana-keccak-hasher",
  "solana-program",
  "solana-sdk",
  "thiserror 2.0.18",

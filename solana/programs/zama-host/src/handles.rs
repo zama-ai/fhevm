@@ -5,6 +5,9 @@ use solana_sysvar::slot_hashes::PodSlotHashes;
 use crate::{FheBinaryOpCode, ZamaHostError};
 
 pub(crate) const COMPUTATION_DOMAIN_SEPARATOR: &[u8] = b"FHE_comp";
+pub(crate) const SEED_DOMAIN_SEPARATOR: &[u8] = b"FHE_seed";
+/// `FHEVMExecutor.Operators.fheRand` enum discriminant on EVM.
+pub(crate) const FHE_RAND_OP: u8 = 26;
 pub(crate) const COMPUTED_HANDLE_MARKER: u8 = 0xff;
 pub(crate) const HANDLE_VERSION: u8 = 0;
 
@@ -38,6 +41,67 @@ pub fn computed_binary_handle(
     result[21..32].fill(0);
     result[21] = COMPUTED_HANDLE_MARKER;
     result[22..30].copy_from_slice(&chain_id_bytes);
+    result[30] = fhe_type;
+    result[31] = HANDLE_VERSION;
+    result
+}
+
+fn u256_be(value: u64) -> [u8; 32] {
+    let mut out = [0_u8; 32];
+    out[24..].copy_from_slice(&value.to_be_bytes());
+    out
+}
+
+/// Matches EVM `_generateSeed` packing: counter, host program id, chain id, bank hash, timestamp.
+pub fn computed_rand_seed(
+    counter: u64,
+    previous_bank_hash: [u8; 32],
+    chain_id: u64,
+    unix_timestamp: i64,
+) -> [u8; 16] {
+    let hash = hashv(&[
+        SEED_DOMAIN_SEPARATOR,
+        &u256_be(counter),
+        crate::ID.as_ref(),
+        &u256_be(chain_id),
+        &previous_bank_hash,
+        &u256_be(unix_timestamp as u64),
+    ])
+    .to_bytes();
+    let mut seed = [0_u8; 16];
+    seed.copy_from_slice(&hash[..16]);
+    seed
+}
+
+/// Supported rand types mirror EVM `_generateRand` in `FHEVMExecutor`.
+const RAND_SUPPORTED_FHE_TYPE_MASK: u16 = (1 << 0)  // Bool
+    | (1 << 2)  // Uint8
+    | (1 << 3)  // Uint16
+    | (1 << 4)  // Uint32
+    | (1 << 5)  // Uint64
+    | (1 << 6)  // Uint128
+    | (1 << 8); // Uint256
+
+pub(crate) fn ensure_supported_rand_fhe_type(fhe_type: u8) -> Result<()> {
+    if fhe_type >= 16 || (RAND_SUPPORTED_FHE_TYPE_MASK & (1 << fhe_type)) == 0 {
+        return err!(ZamaHostError::UnsupportedFheType);
+    }
+    Ok(())
+}
+
+pub fn computed_rand_handle(fhe_type: u8, seed: [u8; 16], chain_id: u64) -> [u8; 32] {
+    let fhe_type_byte = [fhe_type];
+    let mut result = hashv(&[
+        COMPUTATION_DOMAIN_SEPARATOR,
+        &[FHE_RAND_OP],
+        &fhe_type_byte,
+        &seed,
+    ])
+    .to_bytes();
+
+    result[21..32].fill(0);
+    result[21] = COMPUTED_HANDLE_MARKER;
+    result[22..30].copy_from_slice(&chain_id.to_be_bytes());
     result[30] = fhe_type;
     result[31] = HANDLE_VERSION;
     result
@@ -145,6 +209,27 @@ mod tests {
     #[test]
     fn previous_bank_hash_fails_at_slot_zero() {
         assert!(previous_bank_hash(0).is_err());
+    }
+
+    #[test]
+    fn rand_seed_and_handle_change_with_counter() {
+        let bank_hash = [0xAB_u8; 32];
+        let seed0 = computed_rand_seed(0, bank_hash, 12345, 1_700_000_000);
+        let seed1 = computed_rand_seed(1, bank_hash, 12345, 1_700_000_000);
+        assert_ne!(seed0, seed1);
+        let h0 = computed_rand_handle(5, seed0, 12345);
+        let h1 = computed_rand_handle(5, seed1, 12345);
+        assert_ne!(h0, h1);
+        assert_eq!(h0[30], 5);
+        assert_eq!(h0[21], COMPUTED_HANDLE_MARKER);
+    }
+
+    #[test]
+    fn rand_rejects_unsupported_fhe_types() {
+        assert!(ensure_supported_rand_fhe_type(5).is_ok());
+        assert!(ensure_supported_rand_fhe_type(0).is_ok());
+        assert!(ensure_supported_rand_fhe_type(99).is_err());
+        assert!(ensure_supported_rand_fhe_type(1).is_err());
     }
 
     #[test]

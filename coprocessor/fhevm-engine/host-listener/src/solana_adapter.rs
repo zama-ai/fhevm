@@ -581,6 +581,50 @@ mod tests {
     }
 
     #[test]
+    fn decodes_anchor_cpi_rand_event() {
+        let encoded = anchor_cpi_event(
+            "FheRandEvent",
+            rand_event_payload([9; 32], [0xAB; 16], 5, [8; 32]),
+        );
+
+        let decoded =
+            decode_anchor_cpi_event(&encoded).expect("expected rand event");
+        let SolanaHostEvent::FheRand(event) = decoded else {
+            panic!("expected rand event");
+        };
+
+        assert_eq!(event.version, EVENT_VERSION);
+        assert_eq!(event.subject, [9; 32]);
+        assert_eq!(event.seed, [0xAB; 16]);
+        assert_eq!(event.fhe_type, 5);
+        assert_eq!(event.result, [8; 32]);
+    }
+
+    #[test]
+    fn maps_rand_to_existing_tfhe_event() {
+        let seed = [0xCD; 16];
+        let mapped = to_fhe_rand_event(FheRandEvent {
+            version: EVENT_VERSION,
+            subject: [0; 32],
+            seed,
+            fhe_type: 5,
+            result: [4; 32],
+        });
+
+        assert!(matches!(
+            mapped.data,
+            TfheContractEvents::FheRand(TfheContract::FheRand {
+                randType,
+                seed: mapped_seed,
+                result,
+                ..
+            }) if randType == 5
+                && mapped_seed == FixedBytes::<16>::from(seed)
+                && result == handle(4)
+        ));
+    }
+
+    #[test]
     fn decodes_transfer_sub_cpi_golden_fixture() {
         let bytes = include_bytes!("../tests/fixtures/transfer_sub_cpi.bin");
         let decoded = decode_anchor_cpi_event(bytes).expect("golden CPI bytes");
@@ -612,6 +656,20 @@ mod tests {
         payload.extend_from_slice(&lhs);
         payload.extend_from_slice(&rhs);
         payload.push(u8::from(scalar));
+        payload.extend_from_slice(&result);
+        payload
+    }
+
+    fn rand_event_payload(
+        subject: [u8; 32],
+        seed: [u8; 16],
+        fhe_type: u8,
+        result: [u8; 32],
+    ) -> Vec<u8> {
+        let mut payload = vec![EVENT_VERSION];
+        payload.extend_from_slice(&subject);
+        payload.extend_from_slice(&seed);
+        payload.push(fhe_type);
         payload.extend_from_slice(&result);
         payload
     }

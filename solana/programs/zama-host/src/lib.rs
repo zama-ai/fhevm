@@ -9,7 +9,7 @@ mod frame;
 mod handles;
 
 pub use acl::{acl_nonce_key, record_allows};
-pub use handles::{computed_binary_handle, computed_trivial_handle};
+pub use handles::{computed_binary_handle, computed_rand_handle, computed_rand_seed, computed_trivial_handle};
 
 declare_id!("EMhXFu68v61bQV4GrF6ZhZhWNVbH6bHPnTdLtXK8meqn");
 
@@ -115,6 +115,7 @@ pub mod zama_host {
             ctx.remaining_accounts,
             ctx.accounts.payer.to_account_info(),
             ctx.accounts.system_program.to_account_info(),
+            &mut ctx.accounts.rand_counter,
             steps,
             actions,
             previous_bank_hash,
@@ -125,6 +126,7 @@ pub mod zama_host {
             match event {
                 frame::FrameEvent::BinaryOp(event) => emit_cpi!(event),
                 frame::FrameEvent::TrivialEncrypt(event) => emit_cpi!(event),
+                frame::FrameEvent::Rand(event) => emit_cpi!(event),
                 frame::FrameEvent::AclAllowed(event) => emit_cpi!(event),
             }
         }
@@ -161,6 +163,24 @@ pub struct ExecuteFrame<'info> {
     pub payer: Signer<'info>,
     pub compute_subject: Signer<'info>,
     pub system_program: Program<'info, System>,
+    #[account(
+        init_if_needed,
+        payer = payer,
+        space = 8 + RandCounter::INIT_SPACE,
+        seeds = [b"fhe-rand-counter"],
+        bump
+    )]
+    pub rand_counter: Account<'info, RandCounter>,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct RandCounter {
+    pub counter: u64,
+}
+
+pub fn rand_counter_address() -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[b"fhe-rand-counter"], &crate::ID)
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -353,6 +373,9 @@ pub enum FheFrameStep {
         plaintext: [u8; 32],
         fhe_type: u8,
     },
+    Rand {
+        fhe_type: u8,
+    },
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
@@ -408,6 +431,10 @@ pub enum ZamaHostError {
     UnsupportedFrameOpcode,
     #[msg("frame step has invalid operands")]
     InvalidFrameOperands,
+    #[msg("global rand counter overflow")]
+    RandCounterOverflow,
+    #[msg("FHE type is not supported for rand")]
+    UnsupportedFheType,
     #[msg("frame action targets an initialized account")]
     FrameOutputAccountAlreadyInitialized,
 }

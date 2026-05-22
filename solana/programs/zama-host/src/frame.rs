@@ -8,8 +8,8 @@ use crate::acl::{
 use crate::handles;
 use crate::{
     AclAllowedEvent, FheBinaryOpCode, FheBinaryOpEvent, FheFrameAction, FheFrameStep, FheOperand,
-    FheOpcode, TrivialEncryptEvent, EVENT_VERSION, MAX_FRAME_RESULTS, MAX_FRAME_TRANSIENT_ALLOWS,
-    SOLANA_POC_CHAIN_ID, ZamaHostError,
+    FheOpcode, FheRandEvent, RandCounter, TrivialEncryptEvent, EVENT_VERSION, MAX_FRAME_RESULTS,
+    MAX_FRAME_TRANSIENT_ALLOWS, SOLANA_POC_CHAIN_ID, ZamaHostError,
 };
 
 #[derive(Clone, Copy)]
@@ -27,6 +27,7 @@ struct ExecutionFrame {
 pub enum FrameEvent {
     BinaryOp(FheBinaryOpEvent),
     TrivialEncrypt(TrivialEncryptEvent),
+    Rand(FheRandEvent),
     AclAllowed(AclAllowedEvent),
 }
 
@@ -79,6 +80,7 @@ pub fn execute<'info>(
     remaining_accounts: &[AccountInfo<'info>],
     payer: AccountInfo<'info>,
     system_program: AccountInfo<'info>,
+    rand_counter: &mut RandCounter,
     steps: Vec<FheFrameStep>,
     actions: Vec<FheFrameAction>,
     previous_bank_hash: [u8; 32],
@@ -90,6 +92,7 @@ pub fn execute<'info>(
         execute_frame_step(
             &mut frame,
             remaining_accounts,
+            rand_counter,
             step,
             previous_bank_hash,
             unix_timestamp,
@@ -113,6 +116,7 @@ pub fn execute<'info>(
 fn execute_frame_step<'info>(
     frame: &mut ExecutionFrame,
     remaining_accounts: &[AccountInfo<'info>],
+    rand_counter: &mut RandCounter,
     step: FheFrameStep,
     previous_bank_hash: [u8; 32],
     unix_timestamp: i64,
@@ -154,6 +158,30 @@ fn execute_frame_step<'info>(
                     fhe_type,
                     result,
                 }));
+            Ok(())
+        }
+        FheFrameStep::Rand { fhe_type } => {
+            handles::ensure_supported_rand_fhe_type(fhe_type)?;
+            let seed = handles::computed_rand_seed(
+                rand_counter.counter,
+                previous_bank_hash,
+                SOLANA_POC_CHAIN_ID,
+                unix_timestamp,
+            );
+            rand_counter.counter = rand_counter
+                .counter
+                .checked_add(1)
+                .ok_or(ZamaHostError::RandCounterOverflow)?;
+            let result =
+                handles::computed_rand_handle(fhe_type, seed, SOLANA_POC_CHAIN_ID);
+            frame.push_result(FrameResult { handle: result })?;
+            frame.events.push(FrameEvent::Rand(FheRandEvent {
+                version: EVENT_VERSION,
+                subject: frame.subject.to_bytes(),
+                seed,
+                fhe_type,
+                result,
+            }));
             Ok(())
         }
     }

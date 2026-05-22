@@ -10,6 +10,7 @@ use zama_host::{FheFrameAction, FheFrameStep};
 
 use crate::{
     acl::event_authority,
+    acl::rand_counter_address,
     transaction::anchor_ix,
 };
 
@@ -27,6 +28,7 @@ pub fn execute_frame_ix(
             payer,
             compute_subject: payer,
             system_program: system_program::ID,
+            rand_counter: rand_counter_address(program_id),
             event_authority: event_authority(program_id),
             program: program_id,
         },

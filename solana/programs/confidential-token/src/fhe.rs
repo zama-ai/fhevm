@@ -28,6 +28,7 @@ pub struct Context<'a, 'info> {
     pub event_authority: &'a UncheckedAccount<'info>,
     pub zama_program: &'a Program<'info, ZamaHost>,
     pub compute_signer: &'a UncheckedAccount<'info>,
+    pub rand_counter: &'a UncheckedAccount<'info>,
     pub acl_domain_key: Pubkey,
     pub compute_signer_bump: u8,
     pub system_program: &'a Program<'info, System>,
@@ -89,6 +90,17 @@ impl<'a, 'info> Builder<'a, 'info> {
         self.steps.push(FheFrameStep::TrivialEncrypt {
             plaintext: scalar_plaintext(value),
             fhe_type,
+        });
+        Ok(FheValue {
+            operand: FheOperand::PreviousResult { index: index as u8 },
+        })
+    }
+
+    pub fn rand_u64(&mut self) -> Result<FheValue> {
+        const BALANCE_FHE_TYPE: u8 = 5;
+        let index = self.steps.len();
+        self.steps.push(FheFrameStep::Rand {
+            fhe_type: BALANCE_FHE_TYPE,
         });
         Ok(FheValue {
             operand: FheOperand::PreviousResult { index: index as u8 },
@@ -178,6 +190,7 @@ impl<'a, 'info> Builder<'a, 'info> {
                     payer: ctx.payer.to_account_info(),
                     compute_subject: ctx.compute_signer.to_account_info(),
                     system_program: ctx.system_program.to_account_info(),
+                    rand_counter: ctx.rand_counter.to_account_info(),
                     event_authority: ctx.event_authority.to_account_info(),
                     program: ctx.zama_program.to_account_info(),
                 },

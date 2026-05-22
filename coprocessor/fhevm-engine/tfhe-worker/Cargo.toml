@@ -59,6 +59,8 @@ testcontainers = { workspace = true }
 test-harness = { path = "../test-harness" }
 serde = { workspace = true }
 serial_test = { workspace = true }
+zama-host = { path = "../../../solana/programs/zama-host" }
+confidential-token = { path = "../../../solana/programs/confidential-token" }
 zama-solana-litesvm-harness = { path = "../../../solana/litesvm-harness" }
 
 [[bin]]

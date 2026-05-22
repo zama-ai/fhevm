@@ -19,6 +19,6 @@ no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build"]
 
 [dependencies]
-anchor-lang = { version = "1.0.2", features = ["event-cpi"] }
+anchor-lang = { version = "1.0.2", features = ["event-cpi", "init-if-needed"] }
 solana-sha256-hasher = "3.1.0"
 solana-sysvar = { version = "3.1.1", features = ["bytemuck"] }

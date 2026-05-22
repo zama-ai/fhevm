@@ -58,6 +58,7 @@ pub mod confidential_token {
             ctx.accounts.acl_record.to_account_info(),
             &ctx.accounts.zama_event_authority,
             &ctx.accounts.zama_program,
+            &ctx.accounts.zama_rand_counter,
             &ctx.accounts.system_program,
             ctx.bumps.compute_signer,
             0,
@@ -134,6 +135,7 @@ pub mod confidential_token {
                 &ctx.accounts.zama_event_authority,
                 &ctx.accounts.zama_program,
                 &ctx.accounts.compute_signer,
+                &ctx.accounts.zama_rand_counter,
                 mint.key(),
                 ctx.bumps.compute_signer,
                 &ctx.accounts.system_program,
@@ -231,6 +233,7 @@ pub mod confidential_token {
                     &ctx.accounts.zama_event_authority,
                     &ctx.accounts.zama_program,
                     &ctx.accounts.compute_signer,
+                    &ctx.accounts.zama_rand_counter,
                     mint.key(),
                     ctx.bumps.compute_signer,
                     &ctx.accounts.system_program,
@@ -354,6 +357,7 @@ pub mod confidential_token {
                 &ctx.accounts.zama_event_authority,
                 &ctx.accounts.zama_program,
                 &ctx.accounts.compute_signer,
+                &ctx.accounts.zama_rand_counter,
                 mint.key(),
                 ctx.bumps.compute_signer,
                 &ctx.accounts.system_program,
@@ -410,6 +414,14 @@ pub struct InitializeTokenAccount<'info> {
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
     pub acl_record: UncheckedAccount<'info>,
+    /// CHECK: global Zama host rand counter PDA.
+    #[account(
+        mut,
+        seeds = [b"fhe-rand-counter"],
+        bump,
+        seeds::program = zama_program.key()
+    )]
+    pub zama_rand_counter: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     pub zama_program: Program<'info, ZamaHost>,
@@ -447,6 +459,14 @@ pub struct WrapUsdc<'info> {
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
     pub output_acl: UncheckedAccount<'info>,
+    /// CHECK: global Zama host rand counter PDA.
+    #[account(
+        mut,
+        seeds = [b"fhe-rand-counter"],
+        bump,
+        seeds::program = zama_program.key()
+    )]
+    pub zama_rand_counter: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     pub zama_program: Program<'info, ZamaHost>,
@@ -478,6 +498,14 @@ pub struct ConfidentialTransfer<'info> {
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
     pub to_output_acl: UncheckedAccount<'info>,
+    /// CHECK: global Zama host rand counter PDA.
+    #[account(
+        mut,
+        seeds = [b"fhe-rand-counter"],
+        bump,
+        seeds::program = zama_program.key()
+    )]
+    pub zama_rand_counter: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     pub zama_program: Program<'info, ZamaHost>,
@@ -501,6 +529,14 @@ pub struct PocAuthorizeTransferAmount<'info> {
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
     pub output_acl: UncheckedAccount<'info>,
+    /// CHECK: global Zama host rand counter PDA.
+    #[account(
+        mut,
+        seeds = [b"fhe-rand-counter"],
+        bump,
+        seeds::program = zama_program.key()
+    )]
+    pub zama_rand_counter: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     pub zama_program: Program<'info, ZamaHost>,
@@ -582,6 +618,7 @@ fn fhe_context<'a, 'info>(
     zama_event_authority: &'a UncheckedAccount<'info>,
     zama_program: &'a Program<'info, ZamaHost>,
     compute_signer: &'a UncheckedAccount<'info>,
+    zama_rand_counter: &'a UncheckedAccount<'info>,
     acl_domain_key: Pubkey,
     compute_signer_bump: u8,
     system_program: &'a Program<'info, System>,
@@ -591,6 +628,7 @@ fn fhe_context<'a, 'info>(
         event_authority: zama_event_authority,
         zama_program,
         compute_signer,
+        rand_counter: zama_rand_counter,
         acl_domain_key,
         compute_signer_bump,
         system_program,
@@ -613,6 +651,7 @@ fn trivial_encrypt_balance_acl<'info>(
     acl_record: AccountInfo<'info>,
     zama_event_authority: &UncheckedAccount<'info>,
     zama_program: &Program<'info, ZamaHost>,
+    zama_rand_counter: &UncheckedAccount<'info>,
     system_program: &Program<'info, System>,
     compute_signer_bump: u8,
     nonce_sequence: u64,
@@ -625,6 +664,7 @@ fn trivial_encrypt_balance_acl<'info>(
             zama_event_authority,
             zama_program,
             compute_signer,
+            zama_rand_counter,
             mint.key(),
             compute_signer_bump,
             system_program,

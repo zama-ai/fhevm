@@ -13,6 +13,7 @@ anchor-spl = { version = "1.0.2", default-features = false, features = ["token",
 confidential-token = { path = "../programs/confidential-token" }
 litesvm = "0.11.0"
 bincode = "1.3.3"
+solana-keccak-hasher = "3.1.0"
 solana-program = "3.0.0"
 solana-sdk = "3.0.0"
 thiserror = "2.0.12"

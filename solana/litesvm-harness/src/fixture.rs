@@ -12,8 +12,8 @@ use solana_sdk::{
 
 use crate::{
     acl::{
-        balance_acl_record_address, event_authority, read_acl_record, token_account_address,
-        vault_authority_address,
+        balance_acl_record_address, event_authority, rand_counter_address, read_acl_record,
+        token_account_address, vault_authority_address,
     },
     programs::{host_program_so_path, svm_with_programs, token_program_so_path},
     transaction::{anchor_ix, send, send_many_with_signers, send_with_signers},
@@ -181,6 +181,7 @@ fn initialize_confidential_token_account(
                 compute_signer,
                 token_account,
                 acl_record,
+                zama_rand_counter: rand_counter_address(host_program_id),
                 zama_event_authority: event_authority(host_program_id),
                 zama_program: host_program_id,
                 system_program: system_program::ID,
