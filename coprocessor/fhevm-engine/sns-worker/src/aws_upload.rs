@@ -11,7 +11,8 @@ use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::Client;
 use bytesize::ByteSize;
 use ciphertext_attestation::{
-    CiphertextAttestation, CiphertextAttestationPayload, Version, S3_METADATA_ATTESTATION_KEY,
+    CiphertextAttestation, CiphertextAttestationPayload, CiphertextFormat, Version,
+    S3_METADATA_ATTESTATION_KEY,
 };
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::pg_pool::{is_fatal_connection_error, PostgresPoolManager, ServiceError};
@@ -363,6 +364,18 @@ fn u256_from_bytes(field: &str, bytes: &[u8]) -> anyhow::Result<U256> {
     Ok(U256::from_be_slice(bytes))
 }
 
+fn attestation_format(format: Ciphertext128Format) -> anyhow::Result<CiphertextFormat> {
+    match format {
+        Ciphertext128Format::UncompressedOnCpu => Ok(CiphertextFormat::UncompressedOnCpu),
+        Ciphertext128Format::CompressedOnCpu => Ok(CiphertextFormat::CompressedOnCpu),
+        Ciphertext128Format::UncompressedOnGpu => Ok(CiphertextFormat::UncompressedOnGpu),
+        Ciphertext128Format::CompressedOnGpu => Ok(CiphertextFormat::CompressedOnGpu),
+        Ciphertext128Format::Unknown => {
+            anyhow::bail!("Cannot build ciphertext attestation with unknown ct128 format")
+        }
+    }
+}
+
 fn upload_material(task: &HandleItem) -> anyhow::Result<UploadMaterial> {
     if task.ct64_compressed.is_empty() && task.ct128.is_empty() {
         let err = anyhow::anyhow!("Invalid upload task without ciphertext bytes: {:?}", task);
@@ -403,6 +416,7 @@ async fn build_attestation(
     task: &HandleItem,
     ct64_digest: &[u8],
     ct128_digest: &[u8],
+    format: CiphertextFormat,
     signer: &CoproSigner,
 ) -> anyhow::Result<CiphertextAttestation> {
     let payload = CiphertextAttestationPayload::new(
@@ -412,6 +426,7 @@ async fn build_attestation(
         COPROCESSOR_CONTEXT_ID,
         b256_from_bytes("ciphertext digest", ct64_digest)?,
         b256_from_bytes("sns ciphertext digest", ct128_digest)?,
+        format,
     );
     let signature = signer.sign_hash(&payload.canonical_digest()).await?;
 
@@ -420,6 +435,7 @@ async fn build_attestation(
         key_id: payload.key_id,
         ciphertext_digest: payload.ciphertext_digest,
         sns_ciphertext_digest: payload.sns_ciphertext_digest,
+        format: payload.format,
         signer: signer.address(),
         signature: signature.as_bytes().to_vec(),
     })
@@ -447,8 +463,15 @@ async fn upload_ciphertexts(
 
     let upload_material = upload_material(&task)?;
     let ct128_digest = &upload_material.ct128_digest;
-    let attestation =
-        build_attestation(&task, &upload_material.ct64_digest, ct128_digest, &signer).await?;
+    let attestation_format = attestation_format(task.ct128.format())?;
+    let attestation = build_attestation(
+        &task,
+        &upload_material.ct64_digest,
+        ct128_digest,
+        attestation_format,
+        &signer,
+    )
+    .await?;
     let attestation_json = serde_json::to_string(&attestation)?;
 
     let s3_metadata = S3ObjectMetadata {
@@ -975,32 +998,6 @@ async fn check_ct128_objects_exist(
     Ok(key_exists && digest_key_exists)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ct64_only_upload_material_uses_zero_sns_ciphertext_digest() {
-        let ct64 = vec![1, 2, 3];
-        let task = HandleItem {
-            host_chain_id: ChainId::try_from(1_i64).unwrap(),
-            key_id_gw: vec![1],
-            handle: vec![2; 32],
-            ct64_compressed: Arc::new(ct64.clone()),
-            ct128: Arc::new(BigCiphertext::default()),
-            ct64_digest: None,
-            ct128_digest: None,
-            span: Span::none(),
-            transaction_id: None,
-        };
-
-        let material = upload_material(&task).unwrap();
-
-        assert_eq!(material.ct64_digest, compute_digest(&ct64));
-        assert_eq!(material.ct128_digest, NO_SNS_CIPHERTEXT_DIGEST.to_vec());
-    }
-}
-
 async fn check_bucket_exists(
     client: &Client,
     bucket: &str,
@@ -1035,5 +1032,31 @@ async fn check_bucket_exists(
             );
             (false, false)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ct64_only_upload_material_uses_zero_sns_ciphertext_digest() {
+        let ct64 = vec![1, 2, 3];
+        let task = HandleItem {
+            host_chain_id: ChainId::try_from(1_i64).unwrap(),
+            key_id_gw: vec![1],
+            handle: vec![2; 32],
+            ct64_compressed: Arc::new(ct64.clone()),
+            ct128: Arc::new(BigCiphertext::default()),
+            ct64_digest: None,
+            ct128_digest: None,
+            span: Span::none(),
+            transaction_id: None,
+        };
+
+        let material = upload_material(&task).unwrap();
+
+        assert_eq!(material.ct64_digest, compute_digest(&ct64));
+        assert_eq!(material.ct128_digest, NO_SNS_CIPHERTEXT_DIGEST.to_vec());
     }
 }

@@ -4,12 +4,13 @@ use crate::{
     squash_noise::safe_deserialize,
     Config, DBConfig, S3Config, S3RetryPolicy, SchedulePolicy,
 };
-use alloy::node_bindings::Anvil;
 use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::{B256, U256};
 use anyhow::{anyhow, Ok};
 use aws_config::BehaviorVersion;
-use ciphertext_attestation::{CiphertextAttestation, S3_METADATA_ATTESTATION_KEY};
+use ciphertext_attestation::{
+    CiphertextAttestation, CiphertextFormat, S3_METADATA_ATTESTATION_KEY,
+};
 use fhevm_engine_common::db_keys::DbKeyId;
 use fhevm_engine_common::utils::{to_hex, DatabaseURL};
 use serde::{Deserialize, Serialize};
@@ -449,8 +450,7 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
 
     let token = db_instance.parent_token.child_token();
     let mut config: Config = conf.clone();
-    let anvil = Anvil::new().block_time(1).try_spawn()?;
-    let signer = PrivateKeySigner::from_signing_key(anvil.keys()[0].clone().into());
+    let signer = PrivateKeySigner::random();
     let private_key = signer.to_bytes().to_vec();
     config.private_key = Some(hex::encode(&private_key));
 
@@ -754,15 +754,20 @@ async fn assert_ciphertext128(
             crate::Ciphertext128Format::CompressedOnCpu
         } else {
             crate::Ciphertext128Format::UncompressedOnCpu
-        }
-        .to_string();
+        };
+        let expected_attestation_format = if with_compression {
+            CiphertextFormat::CompressedOnCpu
+        } else {
+            CiphertextFormat::UncompressedOnCpu
+        };
+        let expected_ct_format = expected_ct_format.to_string();
 
         assert_ciphertext_uploaded(
             test_env,
             &test_env.conf.s3.bucket_ct128,
             handle,
             Some(ct.len() as i64),
-            Some(&expected_ct_format),
+            Some((&expected_ct_format, expected_attestation_format)),
         )
         .await?;
         assert_ciphertext_uploaded(test_env, &test_env.conf.s3.bucket_ct64, handle, None, None)
@@ -779,7 +784,7 @@ async fn assert_ciphertext_uploaded(
     bucket: &String,
     handle: &Vec<u8>,
     expected_ct_len: Option<i64>,
-    expected_ct_format: Option<&str>,
+    expected_ct_format: Option<(&str, CiphertextFormat)>,
 ) -> anyhow::Result<()> {
     s3_utils::assert_key_exists(
         test_env.s3_client.to_owned(),
@@ -848,7 +853,11 @@ async fn assert_ciphertext_uploaded(
         metadata.contains_key("signer"),
         "ciphertext object should include Signer metadata"
     );
-    if let Some(expected_ct_format) = expected_ct_format {
+    if let Some((expected_ct_format, expected_attestation_format)) = expected_ct_format {
+        assert_eq!(
+            attestation.format, expected_attestation_format,
+            "ciphertext128 attestation should include the expected ct format"
+        );
         assert_eq!(
             metadata.get("ct-format").map(String::as_str),
             Some(expected_ct_format),
@@ -882,7 +891,7 @@ async fn assert_ciphertext_uploaded(
     _bucket: &String,
     _handle: &Vec<u8>,
     _expected_ct_len: Option<i64>,
-    _expected_ct_format: Option<&str>,
+    _expected_ct_format: Option<(&str, CiphertextFormat)>,
 ) -> anyhow::Result<()> {
     // No-op when GPU feature is enabled
     Ok(())
