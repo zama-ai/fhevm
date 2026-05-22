@@ -4727,6 +4727,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "zama-host-events"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "sha2 0.10.9",
+]
+
+[[package]]
 name = "zama-solana-litesvm-harness"
 version = "0.1.0"
 dependencies = [
@@ -4739,6 +4747,7 @@ dependencies = [
  "solana-sdk",
  "thiserror 2.0.18",
  "zama-host",
+ "zama-host-events",
 ]
 
 [[package]]

@@ -580,6 +580,17 @@ mod tests {
         assert!(!tfhe_logs[0].is_allowed);
     }
 
+    #[test]
+    fn decodes_transfer_sub_cpi_golden_fixture() {
+        let bytes = include_bytes!("../tests/fixtures/transfer_sub_cpi.bin");
+        let decoded = decode_anchor_cpi_event(bytes).expect("golden CPI bytes");
+        let SolanaHostEvent::FheBinaryOp(event) = decoded else {
+            panic!("expected binary op event");
+        };
+        assert_eq!(event.op, FheBinaryOpCode::Sub);
+        assert!(!event.scalar);
+    }
+
     fn anchor_cpi_event(name: &str, payload: Vec<u8>) -> Vec<u8> {
         let mut encoded = Vec::new();
         encoded.extend_from_slice(&ANCHOR_EVENT_IX_TAG_LE);

@@ -11,7 +11,7 @@ use solana_sdk::{
 };
 use zama_host as host;
 use zama_host::{
-    AclRecord, AclSubjectEntry, FheBinaryOpCode, FheFrameAction, FheFrameStep, FheOpcode, FheOperand,
+    AclRecord, AclSubjectEntry, FheFrameAction, FheFrameStep, FheOpcode, FheOperand,
 };
 use zama_solana_litesvm_harness::{
     acl_record_address, allow_for_decryption_ix, amount_plaintext, anchor_ix,
@@ -19,7 +19,7 @@ use zama_solana_litesvm_harness::{
     authorization_payload_bytes, authorize_transfer_amount,
     balance_acl_record_address, binary_op_events, balance_handle_updated_events, CleartextBackend,
     created_acl_count, event_authority, execute_frame_ix, execute_frame_log_count,
-    expected_trivial_handle, FheBackend, host_program_so_path, kms_like_public_decrypt_check,
+    expected_trivial_handle, FheBackend, FheBinaryOpCode, host_program_so_path, kms_like_public_decrypt_check,
     kms_like_user_decrypt_check, label, max_cpi_depth, read_acl_record, record_subjects,
     run_transfer_scenario_meta, seed_transfer_inputs,
     assert_transfer_cleartext, assert_transfer_output_invariants,

@@ -4,9 +4,8 @@ use std::collections::HashMap;
 
 use litesvm::types::TransactionMetadata;
 use solana_sdk::pubkey::Pubkey;
-use zama_host::{FheBinaryOpCode, FheBinaryOpEvent};
-
-use crate::events::{collect_zama_host_events, ZamaHostEvent};
+use crate::events::collect_zama_host_events;
+use zama_host_events::{FheBinaryOpCode, FheBinaryOpEvent, ZamaHostEvent};
 use crate::semantic::{BackendError, SemanticBackend};
 
 pub type Handle = [u8; 32];

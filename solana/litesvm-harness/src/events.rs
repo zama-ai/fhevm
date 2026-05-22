@@ -1,35 +1,15 @@
 //! Collect typed protocol events from `emit_cpi!` inner instructions.
 //!
-//! This matches the ingestion path used by `host-listener` (inner CPI bytes with
-//! `ANCHOR_EVENT_IX_TAG_LE`), not log-based `emit!` / `msg!` parsing.
+//! Decoders are generated from the checked-in ZamaHost Anchor IDL in the shared
+//! `zama-host-events` crate (same path as `host-listener`).
 
 use anchor_lang::{AnchorDeserialize, Discriminator, Event};
 use litesvm::types::TransactionMetadata;
 use solana_sdk::pubkey::Pubkey;
-use zama_host as host;
-
-/// Anchor self-CPI event instruction tag (LE). Same constant as `host-listener` codegen.
-pub const ANCHOR_EVENT_IX_TAG_LE: [u8; 8] = 0x1d9acb512ea545e4_u64.to_le_bytes();
-
-/// Typed ZamaHost events decoded from inner instruction data.
-pub enum ZamaHostEvent {
-    FheBinaryOp(host::FheBinaryOpEvent),
-    TrivialEncrypt(host::TrivialEncryptEvent),
-    FheRand(host::FheRandEvent),
-    AclAllowed(host::AclAllowedEvent),
-    InputVerified(host::InputVerifiedEvent),
-}
-
-/// Decode one Anchor `emit_cpi!` payload for a ZamaHost event.
-pub fn decode_zama_host_cpi_event(data: &[u8]) -> Option<ZamaHostEvent> {
-    decode_cpi_event::<host::FheBinaryOpEvent>(data).map(ZamaHostEvent::FheBinaryOp)
-        .or_else(|| decode_cpi_event::<host::TrivialEncryptEvent>(data).map(ZamaHostEvent::TrivialEncrypt))
-        .or_else(|| decode_cpi_event::<host::FheRandEvent>(data).map(ZamaHostEvent::FheRand))
-        .or_else(|| decode_cpi_event::<host::AclAllowedEvent>(data).map(ZamaHostEvent::AclAllowed))
-        .or_else(|| {
-            decode_cpi_event::<host::InputVerifiedEvent>(data).map(ZamaHostEvent::InputVerified)
-        })
-}
+pub use zama_host_events::{
+    decode_anchor_cpi_event, AclAllowedEvent, FheBinaryOpEvent, TrivialEncryptEvent,
+    ZamaHostEvent, ANCHOR_EVENT_IX_TAG_LE,
+};
 
 /// Walk inner instructions and decode CPI event payloads with `decode`.
 pub fn collect_cpi_events<T>(
@@ -46,20 +26,38 @@ pub fn collect_cpi_events<T>(
         .collect()
 }
 
+/// Collect raw CPI instruction payloads for the ZamaHost program.
+pub fn collect_zama_host_cpi_payloads(
+    meta: &TransactionMetadata,
+    account_keys: &[Pubkey],
+    program_id: Pubkey,
+) -> Vec<Vec<u8>> {
+    meta.inner_instructions
+        .iter()
+        .flatten()
+        .filter(|ix| *ix.instruction.program_id(account_keys) == program_id)
+        .map(|ix| ix.instruction.data.clone())
+        .collect()
+}
+
 /// Walk `meta.inner_instructions` and return all ZamaHost CPI events for `program_id`.
 pub fn collect_zama_host_events(
     meta: &TransactionMetadata,
     account_keys: &[Pubkey],
     program_id: Pubkey,
 ) -> Vec<ZamaHostEvent> {
-    collect_cpi_events(meta, account_keys, program_id, decode_zama_host_cpi_event)
+    collect_cpi_events(meta, account_keys, program_id, decode_anchor_cpi_event)
+}
+
+pub fn decode_zama_host_cpi_event(data: &[u8]) -> Option<ZamaHostEvent> {
+    decode_anchor_cpi_event(data)
 }
 
 pub fn binary_op_events(
     meta: &TransactionMetadata,
     account_keys: &[Pubkey],
     program_id: Pubkey,
-) -> Vec<host::FheBinaryOpEvent> {
+) -> Vec<FheBinaryOpEvent> {
     collect_zama_host_events(meta, account_keys, program_id)
         .into_iter()
         .filter_map(|event| match event {
@@ -73,7 +71,7 @@ pub fn trivial_encrypt_events(
     meta: &TransactionMetadata,
     account_keys: &[Pubkey],
     program_id: Pubkey,
-) -> Vec<host::TrivialEncryptEvent> {
+) -> Vec<TrivialEncryptEvent> {
     collect_zama_host_events(meta, account_keys, program_id)
         .into_iter()
         .filter_map(|event| match event {
@@ -87,7 +85,7 @@ pub fn acl_allowed_events(
     meta: &TransactionMetadata,
     account_keys: &[Pubkey],
     program_id: Pubkey,
-) -> Vec<host::AclAllowedEvent> {
+) -> Vec<AclAllowedEvent> {
     collect_zama_host_events(meta, account_keys, program_id)
         .into_iter()
         .filter_map(|event| match event {

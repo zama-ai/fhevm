@@ -30,10 +30,12 @@ pub use cleartext::{
 };
 pub use events::{
     acl_allowed_events, balance_handle_updated_events, binary_op_events, collect_cpi_events,
-    collect_zama_host_events, count_acl_allowed_events, count_tfhe_host_events,
-    decode_token_cpi_event, decode_zama_host_cpi_event, max_cpi_depth, trivial_encrypt_events,
+    collect_zama_host_cpi_payloads, collect_zama_host_events, count_acl_allowed_events,
+    count_tfhe_host_events, decode_token_cpi_event, decode_zama_host_cpi_event, max_cpi_depth,
+    trivial_encrypt_events, AclAllowedEvent, FheBinaryOpEvent, TrivialEncryptEvent,
     ANCHOR_EVENT_IX_TAG_LE, ZamaHostEvent,
 };
+pub use zama_host_events::FheBinaryOpCode;
 pub use fixture::{
     create_spl_token_account, spl_token_amount, token_account, token_fixture, TokenFixture,
     TransferOutputAccounts, WrapOutputAccounts,

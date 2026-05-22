@@ -52,6 +52,7 @@ solana/litesvm-harness
   Shared LiteSVM harness used by runtime-tests and tfhe-worker solana_poc tests.
   Canonical stack: litesvm 0.11, anchor-litesvm 0.4, anchor-lang 1.0.2, solana-sdk 3.0.
   Event ingestion walks `emit_cpi!` inner instructions (same path as host-listener), not logs.
+  ZamaHost CPI decoders come from the shared `zama-host-events` crate (IDL codegen).
   `CleartextBackend` simulates add/sub/trivial locally for fast semantic checks.
 
 solana/runtime-tests

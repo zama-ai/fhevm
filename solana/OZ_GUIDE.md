@@ -72,7 +72,7 @@ Self-transfer: **no-op** (no handle rotation, no output ACL).
 | **App indexer** | `BalanceHandleUpdatedEvent`, historical handle discovery |
 | **KMS (future)** | Verify signed auth + ACL record account; no SPL parsing |
 
-Listener decoders come from checked-in `coprocessor/fhevm-engine/host-listener/idl/zama_host.json` (sync after `anchor build`).
+Listener decoders come from the shared `solana/crates/zama-host-events` crate (IDL at `host-listener/idl/zama_host.json`). Sync with `bash scripts/sync-zama-host-idl.sh` after host changes.
 
 **IDL events not emitted yet:** `InputVerifiedEvent`, `FheRandEvent` (listed for future work).
 

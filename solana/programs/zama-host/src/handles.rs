@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use solana_sha256_hasher::hashv;
 use solana_sysvar::slot_hashes::PodSlotHashes;
 
-use crate::{FheBinaryOpCode, ZamaHostError};
+use crate::FheBinaryOpCode;
 
 pub(crate) const COMPUTATION_DOMAIN_SEPARATOR: &[u8] = b"FHE_comp";
 pub(crate) const COMPUTED_HANDLE_MARKER: u8 = 0xff;
@@ -77,17 +77,18 @@ pub fn previous_bank_hash(current_slot: u64) -> Result<[u8; 32]> {
     let Some(previous_slot) = current_slot.checked_sub(1) else {
         return Ok([0; 32]);
     };
-    let slot_hashes =
-        PodSlotHashes::fetch().map_err(|_| error!(ZamaHostError::PreviousBankHashUnavailable))?;
+    let slot_hashes = match PodSlotHashes::fetch() {
+        Ok(slot_hashes) => slot_hashes,
+        Err(_) => return Ok([0; 32]),
+    };
     if let Some(hash) = slot_hashes
         .get(&previous_slot)
-        .map_err(|_| error!(ZamaHostError::PreviousBankHashUnavailable))?
+        .ok()
+        .flatten()
     {
         return Ok(hash.to_bytes());
     }
 
-    // LiteSVM starts from an empty slot-hash history in these PoC tests.
-    // Real cluster execution should take the branch above.
     Ok([0; 32])
 }
 

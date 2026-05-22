@@ -58,6 +58,7 @@ url = "2.5.7"
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
+zama-host-events = { path = "../../../solana/crates/zama-host-events" }
 # TODO: integrate github or better path when available
 consumer = { path = "../../../listener/crates/consumer" }
 
