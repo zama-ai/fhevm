@@ -431,19 +431,19 @@ pub fn extract_ct_list(
     Ok(res)
 }
 
-// returns the byte width of an FHE type code as accepted by `fheMulDiv`'s lhs.
-fn mul_div_lhs_width_bytes(
-    lhs_type: i16,
+// returns the byte width of an FHE type code as accepted by `fheMulDiv`'s factor1.
+fn mul_div_factor1_width_bytes(
+    factor1_type: i16,
     fhe_op: &SupportedFheOperations,
 ) -> Result<usize, FhevmError> {
-    match lhs_type {
+    match factor1_type {
         2 => Ok(1), // Uint8
         3 => Ok(2), // Uint16
         4 => Ok(4), // Uint32
         5 => Ok(8), // Uint64
         _ => Err(FhevmError::UnsupportedFheTypes {
             fhe_operation: format!(
-                "{:?}: type {lhs_type} is not supported for FheMulDiv",
+                "{:?}: type {factor1_type} is not supported for FheMulDiv",
                 fhe_op
             ),
             input_types: vec![],
@@ -840,15 +840,15 @@ pub fn check_fhe_operand_types(
                             only_allowed_scalar_input_index: 1,
                         });
                     }
-                    let lhs_type = get_ct_type(&input_handles[0])?;
-                    let lhs_width_bytes = mul_div_lhs_width_bytes(lhs_type, &fhe_op)?;
+                    let factor1_type = get_ct_type(&input_handles[0])?;
+                    let factor1_width_bytes = mul_div_factor1_width_bytes(factor1_type, &fhe_op)?;
                     if !is_input_handle_scalar[1] {
-                        let rhs_type = get_ct_type(&input_handles[1])?;
-                        if rhs_type != lhs_type {
+                        let factor2_type = get_ct_type(&input_handles[1])?;
+                        if factor2_type != factor1_type {
                             return Err(FhevmError::FheOperationDoesntHaveUniformTypesAsInput {
                                 fhe_operation,
                                 fhe_operation_name: format!("{:?}", fhe_op),
-                                operand_types: vec![lhs_type, rhs_type],
+                                operand_types: vec![factor1_type, factor2_type],
                             });
                         }
                     }
@@ -861,7 +861,7 @@ pub fn check_fhe_operand_types(
                             input_types: vec![],
                         });
                     }
-                    let ignored_hsb = input_handles[2].len() - lhs_width_bytes;
+                    let ignored_hsb = input_handles[2].len() - factor1_width_bytes;
                     let divisor_low = &input_handles[2][ignored_hsb..];
                     if divisor_low.iter().all(|b| *b == 0) {
                         return Err(FhevmError::FheOperationScalarDivisionByZero {
@@ -3372,7 +3372,7 @@ pub fn perform_fhe_operation_impl(
             }
         }
         SupportedFheOperations::FheMulDiv => {
-            // operands: [lhs(encrypted), rhs(encrypted or Scalar), divisor(Scalar)]
+            // operands: [factor1(encrypted), factor2(encrypted or Scalar), divisor(Scalar)]
             const EXPECTED_OPERANDS: usize = 3;
             if input_operands.len() != EXPECTED_OPERANDS {
                 return Err(FhevmError::UnexpectedOperandCountForFheOperation {
@@ -4122,10 +4122,10 @@ mod fhe_mul_div_tests {
     fn enc_enc_uint8_through_uint64_accepted() {
         for ty in 2u8..=5 {
             let width = 1usize << (ty - 2);
-            let lhs = handle_with_type(ty);
-            let rhs = handle_with_type(ty);
+            let factor1 = handle_with_type(ty);
+            let factor2 = handle_with_type(ty);
             let d = divisor(1, width);
-            let res = check_fhe_operand_types(OP, &[lhs, rhs, d], &[false, false, true]);
+            let res = check_fhe_operand_types(OP, &[factor1, factor2, d], &[false, false, true]);
             assert!(res.is_ok(), "type {ty} enc×enc should pass, got {res:?}");
         }
     }
@@ -4134,22 +4134,22 @@ mod fhe_mul_div_tests {
     fn enc_scalar_uint8_through_uint64_accepted() {
         for ty in 2u8..=5 {
             let width = 1usize << (ty - 2);
-            let lhs = handle_with_type(ty);
-            let rhs = divisor(7, width);
+            let factor1 = handle_with_type(ty);
+            let factor2 = divisor(7, width);
             let d = divisor(1, width);
-            let res = check_fhe_operand_types(OP, &[lhs, rhs, d], &[false, true, true]);
+            let res = check_fhe_operand_types(OP, &[factor1, factor2, d], &[false, true, true]);
             assert!(res.is_ok(), "type {ty} enc×scalar should pass, got {res:?}");
         }
     }
 
     #[test]
-    fn rejects_unsupported_lhs_type() {
+    fn rejects_unsupported_factor1_type() {
         for ty in [0u8, 1, 6, 7, 8] {
-            let lhs = handle_with_type(ty);
-            let rhs = handle_with_type(ty);
+            let factor1 = handle_with_type(ty);
+            let factor2 = handle_with_type(ty);
             let d = divisor(1, 1);
             assert!(
-                check_fhe_operand_types(OP, &[lhs, rhs, d], &[false, false, true]).is_err(),
+                check_fhe_operand_types(OP, &[factor1, factor2, d], &[false, false, true]).is_err(),
                 "type {ty} must be rejected"
             );
         }
@@ -4157,44 +4157,52 @@ mod fhe_mul_div_tests {
 
     #[test]
     fn rejects_mismatched_encrypted_types() {
-        let lhs = handle_with_type(4); // Uint32
-        let rhs = handle_with_type(5); // Uint64
+        let factor1 = handle_with_type(4); // Uint32
+        let factor2 = handle_with_type(5); // Uint64
         let d = divisor(1, 4);
-        assert!(check_fhe_operand_types(OP, &[lhs, rhs, d], &[false, false, true]).is_err());
+        assert!(
+            check_fhe_operand_types(OP, &[factor1, factor2, d], &[false, false, true]).is_err()
+        );
     }
 
     #[test]
     fn rejects_divisor_truncating_to_zero_per_operand_width() {
         // `0x...0100` has non-zero bytes32 but zero u8 → Uint8 must reject.
-        let lhs = handle_with_type(2); // Uint8
-        let rhs = handle_with_type(2);
+        let factor1 = handle_with_type(2); // Uint8
+        let factor2 = handle_with_type(2);
         let mut d = vec![0u8; 32];
         d[30] = 1; // byte 31 stays 0 → low u8 byte is zero
-        assert!(check_fhe_operand_types(OP, &[lhs, rhs, d], &[false, false, true]).is_err());
+        assert!(
+            check_fhe_operand_types(OP, &[factor1, factor2, d], &[false, false, true]).is_err()
+        );
     }
 
     #[test]
     fn rejects_divisor_all_zero_bytes() {
-        let lhs = handle_with_type(5); // Uint64
-        let rhs = handle_with_type(5);
+        let factor1 = handle_with_type(5); // Uint64
+        let factor2 = handle_with_type(5);
         let d = vec![0u8; 32];
-        assert!(check_fhe_operand_types(OP, &[lhs, rhs, d], &[false, false, true]).is_err());
+        assert!(
+            check_fhe_operand_types(OP, &[factor1, factor2, d], &[false, false, true]).is_err()
+        );
     }
 
     #[test]
-    fn rejects_lhs_marked_scalar() {
-        let lhs = handle_with_type(2);
-        let rhs = handle_with_type(2);
+    fn rejects_factor1_marked_scalar() {
+        let factor1 = handle_with_type(2);
+        let factor2 = handle_with_type(2);
         let d = divisor(1, 1);
-        assert!(check_fhe_operand_types(OP, &[lhs, rhs, d], &[true, false, true]).is_err());
+        assert!(check_fhe_operand_types(OP, &[factor1, factor2, d], &[true, false, true]).is_err());
     }
 
     #[test]
     fn rejects_non_scalar_divisor() {
-        let lhs = handle_with_type(2);
-        let rhs = handle_with_type(2);
+        let factor1 = handle_with_type(2);
+        let factor2 = handle_with_type(2);
         let d = handle_with_type(2);
-        assert!(check_fhe_operand_types(OP, &[lhs, rhs, d], &[false, false, false]).is_err());
+        assert!(
+            check_fhe_operand_types(OP, &[factor1, factor2, d], &[false, false, false]).is_err()
+        );
     }
 
     #[test]
