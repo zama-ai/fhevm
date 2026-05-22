@@ -1282,7 +1282,7 @@ contract Decryption is
 
         uint256 chainId = HandleOps.extractChainId(handles[0].handle);
         if (!GATEWAY_CONFIG.isHostChainRegistered(chainId)) {
-            revert HostChainNotRegistered(chainId);
+            revert IGatewayConfig.HostChainNotRegistered(chainId);
         }
 
         uint256 totalBitSize = 0;
