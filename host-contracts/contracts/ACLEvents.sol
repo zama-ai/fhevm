@@ -14,6 +14,11 @@ contract ACLEvents {
     /// @param handlesList  List of handles allowed for decryption.
     event AllowedForDecryption(address indexed caller, bytes32[] handlesList);
 
+    /// @notice                 Emitted when an account invalidates older decryption signatures.
+    /// @param account          The account invalidating its signatures.
+    /// @param beforeTimestamp  The oldest timestamp that remains valid.
+    event DecryptionSignaturesInvalidated(address indexed account, uint256 beforeTimestamp);
+
     /// @notice                     Emitted when an account is delegated for user decryption.
     /// @param delegator            The address of the account that delegates access to its handles.
     /// @param delegate             The address of the account that receives the delegation.

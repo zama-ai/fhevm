@@ -4,7 +4,7 @@ use alloy::{
 };
 use connector_utils::tests::rand::rand_address;
 use fhevm_gateway_bindings::decryption::Decryption::{
-    CtHandleContractPair, userDecryptionRequestCall,
+    CtHandleContractPair, userDecryptionRequest_1Call as userDecryptionRequestCall,
 };
 use fhevm_host_bindings::acl::ACL::ACLInstance;
 use kms_worker::core::{
