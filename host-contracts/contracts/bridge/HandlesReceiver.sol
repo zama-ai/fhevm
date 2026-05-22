@@ -80,15 +80,15 @@ abstract contract HandlesReceiver is OAppReceiver, ILayerZeroComposer, BridgeEve
      *         majority ciphertext. Only affects this destination chain.
      * @dev    Assumes owner would never call this method twice with same `dstHandle`,
      *         otherwise in case of such error, coprocessor should consider only first
-     *         `FallbackGrantedPlainText` event is source of truth.
+     *         `FallbackGrantedPlaintext` event is source of truth.
      */
-    function grantFallbackPlainText(bytes32 dstHandle, uint256 plainText) external onlyOwner {
+    function grantFallbackPlaintext(bytes32 dstHandle, uint256 plaintext) external onlyOwner {
         uint256 extractedChainId = uint256(
             dstHandle & 0x00000000000000000000000000000000000000000000ffffffffffffffff0000
         ) >> 16;
         if (extractedChainId != block.chainid) revert WrongChainIdInDstHandle();
-        // TODO: add other checks on dstHandle and plainText, such as index byte, version, range of cleartext, fheType validity.
-        emit FallbackGrantedPlainText(dstHandle, plainText);
+        // TODO: add other checks on dstHandle and plaintext, such as index byte, version, range of cleartext, fheType validity.
+        emit FallbackGrantedPlaintext(dstHandle, plaintext);
     }
 
     /**
