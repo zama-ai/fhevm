@@ -89,6 +89,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice FHEVMExecutor address.
     address private constant FHEVM_EXECUTOR_ADDRESS = fhevmExecutorAdd;
 
+    /// `fheMulDiv` `scalarByte` bitmask: bit 0 (divisor) is always set; bit 1 marks `factor2` as scalar.
+    bytes1 private constant FHE_MUL_DIV_FACTOR2_ENCRYPTED = 0x01;
+    bytes1 private constant FHE_MUL_DIV_FACTOR2_SCALAR = 0x03;
+
     /// @custom:storage-location erc7201:fhevm.storage.HCULimit
     /// @dev All five uint48 fields pack into a single 256-bit slot (5 × 48 = 240 bits).
     struct HCULimitStorage {
@@ -1604,22 +1608,22 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @notice Check the homomorphic complexity units limit for FheMulDiv.
      * @param resultType Result type.
      * @param scalarByte Scalar byte.
-     * @param lhs The left-hand side operand.
-     * @param rhs The right-hand side operand.
+     * @param factor1 The first multiplication factor.
+     * @param factor2 The second multiplication factor.
      * @param result Result.
      * @param caller Original dapp caller address from FHEVMExecutor.
      */
     function checkHCUForFheMulDiv(
         FheType resultType,
         bytes1 scalarByte,
-        bytes32 lhs,
-        bytes32 rhs,
+        bytes32 factor1,
+        bytes32 factor2,
         bytes32 result,
         address caller
     ) external virtual {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
-        if (scalarByte == 0x01) {
+        if (scalarByte == FHE_MUL_DIV_FACTOR2_SCALAR) {
             if (resultType == FheType.Uint8) {
                 opHCU = 495000;
             } else if (resultType == FheType.Uint16) {
@@ -1632,7 +1636,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
+            _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, factor1, result);
         } else {
             if (resultType == FheType.Uint8) {
                 opHCU = 524000;
@@ -1646,7 +1650,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
                 revert UnsupportedOperation();
             }
 
-            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, lhs, rhs, result);
+            _adjustAndCheckFheTransactionLimitTwoOps(opHCU, caller, factor1, factor2, result);
         }
     }
 
@@ -1903,7 +1907,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /**
      * @notice Getter function for the FHEVMExecutor contract address.
-     * @return FHEVM_EXECUTOR_ADDRESS Address of the FHEVMExecutor.
+     * @return fhevmExecutorAddress Address of the FHEVMExecutor.
      */
     function getFHEVMExecutorAddress() public view virtual returns (address) {
         return FHEVM_EXECUTOR_ADDRESS;
