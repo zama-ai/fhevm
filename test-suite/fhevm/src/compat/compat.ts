@@ -159,11 +159,8 @@ const parseCompatVersion = (version: string) => {
   };
 };
 
-const usesModernRelayerRepository = (label: string, version: string) => {
-  if (!version) {
-    throw new PreflightError(`${label} is unset; cannot select relayer image repository`);
-  }
-  // Non-semver tags (e.g. SHA-style tags built from main) belong to the modern registry.
+// Non-semver tags (e.g. SHA-style tags built from main) belong to the modern registry.
+const usesModernRelayerRepository = (version: string) => {
   const parsed = parseCompatVersion(version);
   return !parsed || parsed.parts[0] > 0 || parsed.parts[1] >= 13;
 };
@@ -174,14 +171,10 @@ const sameCompatBase = (version: string, target: CompatSemver) => {
 };
 
 export const relayerImageRepository = (version: string) =>
-  usesModernRelayerRepository("RELAYER_VERSION", version)
-    ? MODERN_RELAYER_IMAGE_REPOSITORY
-    : LEGACY_RELAYER_IMAGE_REPOSITORY;
+  usesModernRelayerRepository(version) ? MODERN_RELAYER_IMAGE_REPOSITORY : LEGACY_RELAYER_IMAGE_REPOSITORY;
 
 export const relayerMigrateImageRepository = (version: string) =>
-  usesModernRelayerRepository("RELAYER_MIGRATE_VERSION", version)
-    ? MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY
-    : LEGACY_RELAYER_MIGRATE_IMAGE_REPOSITORY;
+  usesModernRelayerRepository(version) ? MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY : LEGACY_RELAYER_MIGRATE_IMAGE_REPOSITORY;
 
 /** Compares a version string against a compatibility floor. */
 const versionLt = (version: string, target: CompatSemver, options?: { unparsed?: "modern" | "legacy" }) => {
@@ -301,6 +294,11 @@ export const validateBundleCompatibility = (state: Pick<CompatState, "versions">
   for (const rule of COMPAT_MATRIX.incompatibilities) {
     const leftVersion = state.versions.env[rule.left.key] ?? "";
     const rightVersion = state.versions.env[rule.right.key] ?? "";
+    // Incompatibility rules deliberately use raw `versionLt` (not
+    // `versionBeforeReleaseFamily`): a prerelease must count as below its own
+    // final tag here, so `v0.10.0-rc1` paired with `test-suite v0.11.0` still
+    // fires the rule. The "prerelease counts as older" behavior at the bottom
+    // of `versionLt` is pinned by the prerelease test in compat.test.ts.
     if (versionLt(leftVersion, rule.left.below) && !versionLt(rightVersion, rule.right.atOrAbove)) {
       issues.push({
         severity: "error",

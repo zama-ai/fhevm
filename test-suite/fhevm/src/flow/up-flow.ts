@@ -1235,38 +1235,8 @@ export const removeRuntimeUpgradeOverrides = (overrides: LocalOverride[], group:
   return overrides.filter((override) => !upgraded.has(override.group));
 };
 
-const applyRuntimeUpgradeLock = async (
-  state: State,
-  group: UpgradeGroup,
-  allowedVersionKeys: readonly string[],
-  lockFile: string,
-) => {
-  const lockPath = path.resolve(lockFile);
-  const next = await readJson<VersionBundle>(lockPath);
-  if (!next.env || typeof next.env !== "object") {
-    throw new PreflightError(`Invalid upgrade lock ${lockFile}: missing env map`);
-  }
-  const changedKeys = changedVersionKeys(state.versions, next);
-  assertVersionLockChanges(`upgrade ${group}`, allowedVersionKeys, changedKeys);
-  const nextState = {
-    ...state,
-    target: next.target,
-    lockPath,
-    requiresGitHub: targetNeedsGitHub({ target: next.target, lockFile }),
-    overrides: removeRuntimeUpgradeOverrides(state.overrides, group),
-    versions: next,
-    updatedAt: new Date().toISOString(),
-  } satisfies State;
-  assertSupportedTargetScenario(nextState.target, nextState.scenario);
-  assertSupportedBundleScenario({ versions: nextState.versions, overrides: nextState.overrides, scenario: nextState.scenario });
-  const incompatibilities = validateBundleCompatibility(nextState);
-  if (incompatibilities.length) {
-    throw new IncompatibleVersions(incompatibilities.map((item) => item.message));
-  }
-  return { changedKeys, state: nextState };
-};
-
 const mergeLocalOverrides = (current: LocalOverride[], additions: LocalOverride[] = []) => {
+  // JSON-encoded identity dedupes structurally equal overrides regardless of key order.
   const seen = new Set(current.map((override) => JSON.stringify(override)));
   const next = [...current];
   for (const override of additions) {
@@ -1278,6 +1248,56 @@ const mergeLocalOverrides = (current: LocalOverride[], additions: LocalOverride[
   }
   return next;
 };
+
+const buildLockedState = async (
+  label: string,
+  state: State,
+  lockFile: string,
+  allowedVersionKeys: readonly string[],
+  nextOverrides: LocalOverride[],
+) => {
+  const lockPath = path.resolve(lockFile);
+  const next = await readJson<VersionBundle>(lockPath);
+  if (!next.env || typeof next.env !== "object") {
+    throw new PreflightError(`Invalid ${label} lock ${lockFile}: missing env map`);
+  }
+  const changedKeys = changedVersionKeys(state.versions, next);
+  assertVersionLockChanges(label, allowedVersionKeys, changedKeys);
+  const nextState = {
+    ...state,
+    target: next.target,
+    lockPath,
+    requiresGitHub: targetNeedsGitHub({ target: next.target, lockFile }),
+    overrides: nextOverrides,
+    versions: next,
+    updatedAt: new Date().toISOString(),
+  } satisfies State;
+  assertSupportedTargetScenario(nextState.target, nextState.scenario);
+  assertSupportedBundleScenario({
+    versions: nextState.versions,
+    overrides: nextState.overrides,
+    scenario: nextState.scenario,
+  });
+  const incompatibilities = validateBundleCompatibility(nextState);
+  if (incompatibilities.length) {
+    throw new IncompatibleVersions(incompatibilities.map((item) => item.message));
+  }
+  return { changedKeys, state: nextState };
+};
+
+const applyRuntimeUpgradeLock = (
+  state: State,
+  group: UpgradeGroup,
+  allowedVersionKeys: readonly string[],
+  lockFile: string,
+) =>
+  buildLockedState(
+    `upgrade ${group}`,
+    state,
+    lockFile,
+    allowedVersionKeys,
+    removeRuntimeUpgradeOverrides(state.overrides, group),
+  );
 
 /** Applies an ordered rollout version lock without restarting runtime services. */
 export const applyVersionLock = async (
@@ -1291,28 +1311,13 @@ export const applyVersionLock = async (
     throw new PreflightError("Stack is not running; start one with `fhevm-cli up` first");
   }
   await ensureRuntimeArtifacts(state, "rollout version lock");
-  const lockPath = path.resolve(lockFile);
-  const next = await readJson<VersionBundle>(lockPath);
-  if (!next.env || typeof next.env !== "object") {
-    throw new PreflightError(`Invalid rollout lock ${lockFile}: missing env map`);
-  }
-  const changedKeys = changedVersionKeys(state.versions, next);
-  assertVersionLockChanges(label, allowedVersionKeys, changedKeys);
-  const nextState = {
-    ...state,
-    target: next.target,
-    lockPath,
-    requiresGitHub: targetNeedsGitHub({ target: next.target, lockFile }),
-    overrides: mergeLocalOverrides(state.overrides, options.overrides),
-    versions: next,
-    updatedAt: new Date().toISOString(),
-  } satisfies State;
-  assertSupportedTargetScenario(nextState.target, nextState.scenario);
-  assertSupportedBundleScenario({ versions: nextState.versions, overrides: nextState.overrides, scenario: nextState.scenario });
-  const incompatibilities = validateBundleCompatibility(nextState);
-  if (incompatibilities.length) {
-    throw new IncompatibleVersions(incompatibilities.map((item) => item.message));
-  }
+  const { changedKeys, state: nextState } = await buildLockedState(
+    label,
+    state,
+    lockFile,
+    allowedVersionKeys,
+    mergeLocalOverrides(state.overrides, options.overrides),
+  );
   await assertSchemaCompatibility(nextState.versions, nextState.overrides, nextState.scenario, false);
   await saveState(nextState);
   await generateRuntime(nextState, stackSpecForState(nextState));
