@@ -368,8 +368,8 @@
     },
     {
       "code": 6012,
-      "name": "FrameAccountIndexOutOfRange",
-      "msg": "frame account index is out of range"
+      "name": "FrameAccountMissing",
+      "msg": "frame references an account that was not passed to execute_frame"
     },
     {
       "code": 6013,
@@ -594,8 +594,8 @@
                 }
               },
               {
-                "name": "output_acl_record_index",
-                "type": "u8"
+                "name": "output_acl_record",
+                "type": "pubkey"
               },
               {
                 "name": "nonce_key",
@@ -655,8 +655,8 @@
                 }
               },
               {
-                "name": "acl_record_index",
-                "type": "u8"
+                "name": "acl_record",
+                "type": "pubkey"
               }
             ]
           }
@@ -839,8 +839,8 @@
                 }
               },
               {
-                "name": "account_index",
-                "type": "u8"
+                "name": "acl_record",
+                "type": "pubkey"
               }
             ]
           },

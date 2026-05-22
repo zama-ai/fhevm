@@ -52,7 +52,7 @@ fn execute_frame_emits_trivial_encrypt_via_cpi() {
     }];
     let actions = vec![FheFrameAction::Allow {
         source: FheOperand::PreviousResult { index: 0 },
-        output_acl_record_index: 0,
+        output_acl_record,
         nonce_key,
         nonce_sequence: 1,
         acl_domain_key,
@@ -98,7 +98,7 @@ fn execute_frame_rejects_allow_for_unauthorized_app_account() {
     }];
     let actions = vec![FheFrameAction::Allow {
         source: FheOperand::PreviousResult { index: 0 },
-        output_acl_record_index: 0,
+        output_acl_record,
         nonce_key,
         nonce_sequence: 1,
         acl_domain_key,
@@ -330,7 +330,7 @@ fn execute_frame_scalar_rhs_skips_rhs_acl_but_encrypted_rhs_requires_it() {
         operands: vec![
             FheOperand::AclRecord {
                 handle: lhs,
-                account_index: 0,
+                acl_record: lhs_acl_record,
             },
             FheOperand::Scalar {
                 value: rhs_scalar,
@@ -342,7 +342,7 @@ fn execute_frame_scalar_rhs_skips_rhs_acl_but_encrypted_rhs_requires_it() {
     }];
     let actions = vec![FheFrameAction::Allow {
         source: FheOperand::PreviousResult { index: 0 },
-        output_acl_record_index: 1,
+        output_acl_record,
         nonce_key,
         nonce_sequence: 1,
         acl_domain_key,
@@ -383,11 +383,11 @@ fn execute_frame_scalar_rhs_skips_rhs_acl_but_encrypted_rhs_requires_it() {
         operands: vec![
             FheOperand::AclRecord {
                 handle: lhs,
-                account_index: 0,
+                acl_record: lhs_acl_record,
             },
             FheOperand::AclRecord {
                 handle: [9; 32],
-                account_index: 1,
+                acl_record: dummy_rhs_account.pubkey(),
             },
         ],
         scalar_byte: 0,
@@ -440,7 +440,7 @@ fn execute_frame_does_not_create_durable_acl_without_allow_step() {
                 operands: vec![
                     FheOperand::AclRecord {
                         handle: lhs,
-                        account_index: 0,
+                        acl_record: lhs_acl_record,
                     },
                     FheOperand::Scalar {
                         value: amount_plaintext(5),
@@ -452,7 +452,7 @@ fn execute_frame_does_not_create_durable_acl_without_allow_step() {
             }],
             vec![FheFrameAction::Allow {
                 source: FheOperand::PreviousResult { index: 0 },
-                output_acl_record_index: 1,
+                output_acl_record: setup_output,
                 nonce_key,
                 nonce_sequence: 1,
                 acl_domain_key,
@@ -476,11 +476,11 @@ fn execute_frame_does_not_create_durable_acl_without_allow_step() {
             operands: vec![
                 FheOperand::AclRecord {
                     handle: lhs,
-                    account_index: 0,
+                    acl_record: lhs_acl_record,
                 },
                 FheOperand::AclRecord {
                     handle: [9; 32],
-                    account_index: 1,
+                    acl_record: dummy_rhs_account.pubkey(),
                 },
             ],
             scalar_byte: 0,
@@ -528,7 +528,7 @@ fn execute_frame_allows_previous_result_to_feed_later_steps() {
     ];
     let actions = vec![FheFrameAction::Allow {
         source: FheOperand::PreviousResult { index: 1 },
-        output_acl_record_index: 0,
+        output_acl_record,
         nonce_key,
         nonce_sequence: 1,
         acl_domain_key,
@@ -581,7 +581,7 @@ fn execute_frame_transient_result_can_authorize_allow_for_decryption() {
     let actions = vec![
         FheFrameAction::Allow {
             source: FheOperand::PreviousResult { index: 0 },
-            output_acl_record_index: 0,
+            output_acl_record,
             nonce_key,
             nonce_sequence: 1,
             acl_domain_key,
@@ -594,7 +594,7 @@ fn execute_frame_transient_result_can_authorize_allow_for_decryption() {
         },
         FheFrameAction::AllowForDecryption {
             source: FheOperand::PreviousResult { index: 0 },
-            acl_record_index: 0,
+            acl_record: output_acl_record,
         },
     ];
     let ix = execute_frame_ix(
@@ -660,7 +660,7 @@ fn execute_frame_allow_creates_distinct_acl_records_per_nonce_sequence() {
             operands: vec![
                 FheOperand::AclRecord {
                     handle: lhs,
-                    account_index: 0,
+                    acl_record: lhs_acl_record,
                 },
                 FheOperand::Scalar {
                     value: rhs_scalar,
@@ -672,7 +672,7 @@ fn execute_frame_allow_creates_distinct_acl_records_per_nonce_sequence() {
         }];
         let actions = vec![FheFrameAction::Allow {
             source: FheOperand::PreviousResult { index: 0 },
-            output_acl_record_index: 1,
+            output_acl_record,
             nonce_key,
             nonce_sequence: output_nonce_sequence,
             acl_domain_key,
@@ -1634,7 +1634,7 @@ fn execute_frame_fails_when_previous_bank_hash_unavailable() {
     }];
     let actions = vec![FheFrameAction::Allow {
         source: FheOperand::PreviousResult { index: 0 },
-        output_acl_record_index: 0,
+        output_acl_record,
         nonce_key,
         nonce_sequence: 1,
         acl_domain_key,

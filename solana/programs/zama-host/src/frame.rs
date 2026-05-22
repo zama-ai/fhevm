@@ -214,7 +214,7 @@ fn apply_frame_action<'info>(
     match action {
         FheFrameAction::Allow {
             source,
-            output_acl_record_index,
+            output_acl_record,
             nonce_key,
             nonce_sequence,
             acl_domain_key,
@@ -233,7 +233,7 @@ fn apply_frame_action<'info>(
                 encrypted_value_label,
                 &subjects,
             )?;
-            let output_acl_record = account_at(remaining_accounts, output_acl_record_index)?;
+            let output_acl_record = account_by_pubkey(remaining_accounts, output_acl_record)?;
             create_acl_record_account(
                 &payer,
                 &output_acl_record,
@@ -263,11 +263,11 @@ fn apply_frame_action<'info>(
         }
         FheFrameAction::AllowForDecryption {
             source,
-            acl_record_index,
+            acl_record,
         } => {
             let source = resolve_operand(frame, remaining_accounts, &source)?;
             require!(!source.is_scalar, ZamaHostError::InvalidFrameOperands);
-            let acl_record_info = account_at(remaining_accounts, acl_record_index)?;
+            let acl_record_info = account_by_pubkey(remaining_accounts, acl_record)?;
             let mut record = deserialize_acl_record(&acl_record_info)?;
             assert_canonical_acl_record_data(acl_record_info.key(), &record)?;
             require!(
@@ -294,9 +294,9 @@ fn resolve_operand<'info>(
     match operand {
         FheOperand::AclRecord {
             handle,
-            account_index,
+            acl_record,
         } => {
-            let record_info = account_at(remaining_accounts, *account_index)?;
+            let record_info = account_by_pubkey(remaining_accounts, *acl_record)?;
             let record = deserialize_acl_record(&record_info)?;
             assert_canonical_acl_record_data(record_info.key(), &record)?;
             assert_record_allows_handle(&record, *handle, frame.subject)?;
@@ -326,14 +326,15 @@ fn resolve_operand<'info>(
     }
 }
 
-fn account_at<'info>(
+fn account_by_pubkey<'info>(
     remaining_accounts: &[AccountInfo<'info>],
-    index: u8,
+    pubkey: Pubkey,
 ) -> Result<AccountInfo<'info>> {
     remaining_accounts
-        .get(index as usize)
+        .iter()
+        .find(|account| account.key() == pubkey)
         .cloned()
-        .ok_or_else(|| error!(ZamaHostError::FrameAccountIndexOutOfRange))
+        .ok_or_else(|| error!(ZamaHostError::FrameAccountMissing))
 }
 
 fn assert_app_account_authorized(app_account: Pubkey, authorized: &[Pubkey]) -> Result<()> {

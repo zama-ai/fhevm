@@ -36,7 +36,7 @@ The listener ingests events only; it does not reconcile against ACL account snap
 
 ### Frame account indices are builder-internal
 
-`remaining_accounts` + `account_index` operands are host CPI plumbing. App code uses typed Anchor accounts and `fhe::execute`; only the builder maps accounts to indices.
+`remaining_accounts` + `Pubkey` operands in frame IR are host CPI plumbing. App code uses typed Anchor accounts and `fhe::execute`; only the builder maps accounts to pubkeys.
 
 ### Handle domain inputs (EVM parity)
 
@@ -67,7 +67,7 @@ zama-host::execute_frame(
 | `payer` | Pays rent for new ACL PDAs created by `Allow` actions |
 | `compute_subject` | Signer — mint-level compute PDA (`fhe-compute` seeds on the app program). Must already be allowed on every encrypted operand ACL record used in the frame |
 | `system_program` | Creates output ACL accounts |
-| `remaining_accounts` | Operand ACL records, output ACL PDAs, etc. Referenced by `account_index` in frame IR |
+| `remaining_accounts` | Operand ACL records, output ACL PDAs, etc. Referenced by `Pubkey` in frame IR |
 
 **PoC limits:** `MAX_FRAME_STEPS = 16`, `MAX_FRAME_ACTIONS = 16`, `MAX_FRAME_RESULTS = 16`, `MAX_FRAME_TRANSIENT_ALLOWS = 32`.
 
@@ -85,10 +85,10 @@ Supported binary ops in PoC: `Add`, `Sub`. Scalar RHS skips RHS ACL check (EVM `
 **Actions** (durable side effects on ACL accounts):
 
 ```text
-FheFrameAction::Allow { source, output_acl_record_index, nonce_key, nonce_sequence,
+FheFrameAction::Allow { source, output_acl_record, nonce_key, nonce_sequence,
                          acl_domain_key, app_account, encrypted_value_label,
                          subjects, public_decrypt }
-FheFrameAction::AllowForDecryption { source, acl_record_index }
+FheFrameAction::AllowForDecryption { source, acl_record }
 ```
 
 Execution order: **all steps first**, then **all actions**. Step results are referenced as `FheOperand::PreviousResult { index }`.
@@ -134,7 +134,7 @@ On FheOperand::PreviousResult { index }:
   Require (result.handle, compute_subject) ∈ frame.transient_allows
   Else → AclSubjectMismatch
 
-On FheOperand::AclRecord { handle, account_index }:
+On `FheOperand::AclRecord { handle, acl_record }`:
   Require compute_subject ∈ record.subjects for that handle
   (durable ACL — same as EVM isAllowed on operands)
 ```

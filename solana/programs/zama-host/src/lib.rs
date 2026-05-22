@@ -333,7 +333,10 @@ impl TryFrom<FheOpcode> for FheBinaryOpCode {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub enum FheOperand {
-    AclRecord { handle: [u8; 32], account_index: u8 },
+    AclRecord {
+        handle: [u8; 32],
+        acl_record: Pubkey,
+    },
     PreviousResult { index: u8 },
     Scalar { value: [u8; 32], fhe_type: u8 },
 }
@@ -356,7 +359,7 @@ pub enum FheFrameStep {
 pub enum FheFrameAction {
     Allow {
         source: FheOperand,
-        output_acl_record_index: u8,
+        output_acl_record: Pubkey,
         nonce_key: [u8; 32],
         nonce_sequence: u64,
         acl_domain_key: Pubkey,
@@ -367,7 +370,7 @@ pub enum FheFrameAction {
     },
     AllowForDecryption {
         source: FheOperand,
-        acl_record_index: u8,
+        acl_record: Pubkey,
     },
 }
 
@@ -397,8 +400,8 @@ pub enum ZamaHostError {
     PreviousBankHashUnavailable,
     #[msg("frame exceeds configured limit")]
     FrameLimitExceeded,
-    #[msg("frame account index is out of range")]
-    FrameAccountIndexOutOfRange,
+    #[msg("frame references an account that was not passed to execute_frame")]
+    FrameAccountMissing,
     #[msg("frame result index is out of range")]
     FrameResultIndexOutOfRange,
     #[msg("frame opcode is not supported by this PoC")]

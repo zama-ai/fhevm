@@ -75,11 +75,11 @@ impl<'a, 'info> Builder<'a, 'info> {
     }
 
     pub fn encrypted(&mut self, value: EncryptedValue<'info>) -> Result<FheValue> {
-        let account_index = self.push_account(value.acl_record)?;
+        let acl_record = self.push_account(value.acl_record)?;
         Ok(FheValue {
             operand: FheOperand::AclRecord {
                 handle: value.handle,
-                account_index,
+                acl_record,
             },
         })
     }
@@ -105,10 +105,10 @@ impl<'a, 'info> Builder<'a, 'info> {
 
     pub fn allow(&mut self, value: &FheValue, allow: DurableAllow<'info>) -> Result<()> {
         self.authorize_app_account(allow.app_account);
-        let output_acl_record_index = self.push_account(allow.acl_record)?;
+        let output_acl_record = self.push_account(allow.acl_record)?;
         self.actions.push(FheFrameAction::Allow {
             source: value.operand.clone(),
-            output_acl_record_index,
+            output_acl_record,
             nonce_key: allow.nonce_key,
             nonce_sequence: allow.nonce_sequence,
             acl_domain_key: self.acl_domain_key,
@@ -149,14 +149,20 @@ impl<'a, 'info> Builder<'a, 'info> {
         })
     }
 
-    fn push_account(&mut self, account: AccountInfo<'info>) -> Result<u8> {
-        let index = self.remaining_accounts.len();
-        require!(
-            index <= u8::MAX as usize,
-            ConfidentialTokenError::TooManyFrameAccounts
-        );
-        self.remaining_accounts.push(account);
-        Ok(index as u8)
+    fn push_account(&mut self, account: AccountInfo<'info>) -> Result<Pubkey> {
+        let key = account.key();
+        if !self
+            .remaining_accounts
+            .iter()
+            .any(|existing| existing.key() == key)
+        {
+            require!(
+                self.remaining_accounts.len() < 256,
+                ConfidentialTokenError::TooManyFrameAccounts
+            );
+            self.remaining_accounts.push(account);
+        }
+        Ok(key)
     }
 
     fn submit(self, ctx: Context<'_, 'info>) -> Result<()> {
