@@ -36,16 +36,20 @@ The handle is stored inside the ACL record. It is not used as a PDA seed.
 
 ```text
 initialize mint/account
-  -> trivial_encrypt_and_bind creates initial balance handle + ACL record
+  -> execute_frame creates initial balance handle + explicit durable ACL record
 
 wrap_usdc
   -> SPL transfer_checked into vault
-  -> trivial_encrypt_and_bind amount
-  -> fhe_binary_op_and_bind_output Add into current balance
+  -> execute_frame:
+       trivial_encrypt amount as a frame-local handle
+       Add into current balance
+       allow only the new balance as durable ACL state
 
 confidential_transfer
-  -> fhe_binary_op_and_bind_output Sub for sender balance
-  -> fhe_binary_op_and_bind_output Add for receiver balance
+  -> execute_frame:
+       Sub for sender balance
+       Add for receiver balance
+       allow both new balances as durable ACL state
   -> rotates balance handle + ACL record for each changed token account
 
 BalanceHandleUpdatedEvent
@@ -105,9 +109,15 @@ Input path:
   It deliberately trusts the caller-supplied input handle.
   Its nonce sequence is explicit in tests and must not come from handle bytes.
 
+Execution frame:
+  app code uses fhe::execute(ctx, |fhe| { ... }).
+  intermediate handles are transient inside that one host instruction.
+  durable ACL records are created only when app code calls fhe.allow(...).
+
 Public decrypt:
-  allow_for_decryption is modeled, but the production authority rule is not final.
-  A compute_signer should not automatically be able to flip public_decrypt.
+  allow_for_decryption mirrors EVM ACL semantics.
+  Any subject allowed on the handle may mark it as allowed for decryption.
+  Frame-local transient allow can also authorize this flow inside execute_frame.
 
 Persistent grants:
   allow_acl_subjects mutates the existing canonical ACL record.

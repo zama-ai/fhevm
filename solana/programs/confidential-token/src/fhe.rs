@@ -1,176 +1,224 @@
-use anchor_lang::{prelude::*, AccountDeserialize};
+use anchor_lang::prelude::*;
 use zama_host::{
-    cpi,
-    cpi::accounts::{FheBinaryOpAndBindOutput, TrivialEncryptAndBind},
-    program::ZamaHost,
-    AclSubjectEntry, FheBinaryOpCode,
+    cpi, cpi::accounts::ExecuteFrame, program::ZamaHost, AclSubjectEntry, FheFrameAction,
+    FheFrameStep, FheOpcode, FheOperand,
 };
 
 use crate::ConfidentialTokenAccount;
 
-pub struct BinaryOp<'a, 'info> {
+#[derive(Clone)]
+pub struct EncryptedValue<'info> {
+    pub handle: [u8; 32],
+    pub acl_record: AccountInfo<'info>,
+}
+
+#[derive(Clone)]
+pub struct FheValue {
+    handle: [u8; 32],
+    operand: FheOperand,
+}
+
+impl FheValue {
+    pub fn handle(&self) -> [u8; 32] {
+        self.handle
+    }
+}
+
+pub struct Context<'a, 'info> {
     pub payer: &'a Signer<'info>,
     pub event_authority: &'a UncheckedAccount<'info>,
     pub zama_program: &'a Program<'info, ZamaHost>,
     pub compute_signer: &'a UncheckedAccount<'info>,
     pub app_account_authority: &'a Account<'info, ConfidentialTokenAccount>,
-    pub lhs_acl_record: AccountInfo<'info>,
-    pub lhs: [u8; 32],
-    pub rhs_acl_record: AccountInfo<'info>,
-    pub rhs: [u8; 32],
-    pub scalar: bool,
-    pub output_acl_record: AccountInfo<'info>,
-    pub output_fhe_type: u8,
     pub acl_domain_key: Pubkey,
     pub compute_signer_bump: u8,
     pub system_program: &'a Program<'info, System>,
-    pub output_nonce_key: [u8; 32],
-    pub output_nonce_sequence: u64,
-    pub output_encrypted_value_label: [u8; 32],
-    pub output_subjects: Vec<AclSubjectEntry>,
-    pub output_public_decrypt: bool,
 }
 
-pub fn add<'info>(request: BinaryOp<'_, 'info>) -> Result<[u8; 32]> {
-    binary_op(FheBinaryOpCode::Add, request)
+pub struct DurableAllow<'info> {
+    pub acl_record: AccountInfo<'info>,
+    pub app_account: Pubkey,
+    pub nonce_key: [u8; 32],
+    pub nonce_sequence: u64,
+    pub encrypted_value_label: [u8; 32],
+    pub subjects: Vec<AclSubjectEntry>,
+    pub public_decrypt: bool,
 }
 
-pub fn sub<'info>(request: BinaryOp<'_, 'info>) -> Result<[u8; 32]> {
-    binary_op(FheBinaryOpCode::Sub, request)
+pub fn execute<'info, R>(
+    ctx: Context<'_, 'info>,
+    f: impl FnOnce(&mut Builder<'_, 'info>) -> Result<R>,
+) -> Result<R> {
+    let mut builder = Builder::new(&ctx);
+    let output = f(&mut builder)?;
+    builder.submit(ctx)?;
+    Ok(output)
 }
 
-fn binary_op<'info>(op: FheBinaryOpCode, request: BinaryOp<'_, 'info>) -> Result<[u8; 32]> {
-    let compute_bump = [request.compute_signer_bump];
-    let app_account_bump = [request.app_account_authority.bump];
-    let compute_signer_seeds: &[&[u8]] = &[
-        b"fhe-compute",
-        request.acl_domain_key.as_ref(),
-        &compute_bump,
-    ];
-    let app_account_seeds: &[&[u8]] = &[
-        b"token-account",
-        request.app_account_authority.mint.as_ref(),
-        request.app_account_authority.owner.as_ref(),
-        &app_account_bump,
-    ];
-    let signer_seeds: &[&[&[u8]]] = &[compute_signer_seeds, app_account_seeds];
-    let result = zama_host::computed_bound_binary_handle_for_current_slot(
-        op,
-        request.lhs,
-        request.rhs,
-        request.scalar,
-        request.output_fhe_type,
-        request.output_nonce_key,
-        request.output_nonce_sequence,
-    )?;
+pub struct Builder<'a, 'info> {
+    steps: Vec<FheFrameStep>,
+    actions: Vec<FheFrameAction>,
+    remaining_accounts: Vec<AccountInfo<'info>>,
+    acl_domain_key: Pubkey,
+    _marker: std::marker::PhantomData<&'a ()>,
+}
 
-    cpi::fhe_binary_op_and_bind_output(
-        CpiContext::new_with_signer(
-            request.zama_program.key(),
-            FheBinaryOpAndBindOutput {
-                payer: request.payer.to_account_info(),
-                compute_subject: request.compute_signer.to_account_info(),
-                app_account_authority: request.app_account_authority.to_account_info(),
-                lhs_acl_record: request.lhs_acl_record,
-                rhs_acl_record: request.rhs_acl_record,
-                output_acl_record: request.output_acl_record,
-                system_program: request.system_program.to_account_info(),
-                event_authority: request.event_authority.to_account_info(),
-                program: request.zama_program.to_account_info(),
+impl<'a, 'info> Builder<'a, 'info> {
+    fn new(ctx: &Context<'_, 'info>) -> Self {
+        Self {
+            steps: Vec::new(),
+            actions: Vec::new(),
+            remaining_accounts: Vec::new(),
+            acl_domain_key: ctx.acl_domain_key,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    pub fn encrypted(&mut self, value: EncryptedValue<'info>) -> Result<FheValue> {
+        let account_index = self.push_account(value.acl_record)?;
+        Ok(FheValue {
+            handle: value.handle,
+            operand: FheOperand::AclRecord {
+                handle: value.handle,
+                account_index,
             },
-            signer_seeds,
-        ),
-        op,
-        request.lhs,
-        request.rhs,
-        request.scalar,
-        request.output_fhe_type,
-        result,
-        request.output_nonce_key,
-        request.output_nonce_sequence,
-        request.acl_domain_key,
-        request.app_account_authority.key(),
-        request.output_encrypted_value_label,
-        request.output_subjects,
-        request.output_public_decrypt,
-    )?;
+        })
+    }
 
-    Ok(result)
-}
-
-pub struct TrivialEncryptU64<'a, 'info> {
-    pub payer: &'a Signer<'info>,
-    pub event_authority: &'a UncheckedAccount<'info>,
-    pub zama_program: &'a Program<'info, ZamaHost>,
-    pub compute_signer: &'a UncheckedAccount<'info>,
-    pub app_account_authority: &'a Account<'info, ConfidentialTokenAccount>,
-    pub output_acl_record: AccountInfo<'info>,
-    pub acl_domain_key: Pubkey,
-    pub compute_signer_bump: u8,
-    pub system_program: &'a Program<'info, System>,
-    pub output_nonce_key: [u8; 32],
-    pub output_nonce_sequence: u64,
-    pub output_encrypted_value_label: [u8; 32],
-    pub plaintext: u64,
-    pub fhe_type: u8,
-    pub output_subjects: Vec<AclSubjectEntry>,
-    pub output_public_decrypt: bool,
-}
-
-pub fn trivial_encrypt_u64<'info>(request: TrivialEncryptU64<'_, 'info>) -> Result<[u8; 32]> {
-    let compute_bump = [request.compute_signer_bump];
-    let app_account_bump = [request.app_account_authority.bump];
-    let compute_signer_seeds: &[&[u8]] = &[
-        b"fhe-compute",
-        request.acl_domain_key.as_ref(),
-        &compute_bump,
-    ];
-    let app_account_seeds: &[&[u8]] = &[
-        b"token-account",
-        request.app_account_authority.mint.as_ref(),
-        request.app_account_authority.owner.as_ref(),
-        &app_account_bump,
-    ];
-    let signer_seeds: &[&[&[u8]]] = &[compute_signer_seeds, app_account_seeds];
-    let output_acl_record_for_read = request.output_acl_record.clone();
-
-    cpi::trivial_encrypt_and_bind(
-        CpiContext::new_with_signer(
-            request.zama_program.key(),
-            TrivialEncryptAndBind {
-                payer: request.payer.to_account_info(),
-                compute_subject: request.compute_signer.to_account_info(),
-                app_account_authority: request.app_account_authority.to_account_info(),
-                output_acl_record: request.output_acl_record,
-                system_program: request.system_program.to_account_info(),
-                event_authority: request.event_authority.to_account_info(),
-                program: request.zama_program.to_account_info(),
+    pub fn scalar_u64(&self, value: u64, fhe_type: u8) -> FheValue {
+        let mut plaintext = [0_u8; 32];
+        plaintext[24..].copy_from_slice(&value.to_be_bytes());
+        FheValue {
+            handle: plaintext,
+            operand: FheOperand::Scalar {
+                value: plaintext,
+                fhe_type,
             },
-            signer_seeds,
-        ),
-        u64_plaintext(request.plaintext),
-        request.fhe_type,
-        request.output_nonce_key,
-        request.output_nonce_sequence,
-        request.acl_domain_key,
-        request.app_account_authority.key(),
-        request.output_encrypted_value_label,
-        request.output_subjects,
-        request.output_public_decrypt,
-    )?;
+        }
+    }
 
-    output_handle(output_acl_record_for_read)
-}
+    pub fn trivial_encrypt_u64(&mut self, value: u64, fhe_type: u8) -> Result<FheValue> {
+        let plaintext = self.scalar_u64(value, fhe_type).handle;
+        let result = zama_host::computed_trivial_handle_for_current_slot(plaintext, fhe_type)?;
+        let index = self.steps.len();
+        self.steps.push(FheFrameStep::TrivialEncrypt {
+            plaintext,
+            fhe_type,
+        });
+        Ok(FheValue {
+            handle: result,
+            operand: FheOperand::PreviousResult { index: index as u8 },
+        })
+    }
 
-fn output_handle(output_acl_record: AccountInfo<'_>) -> Result<[u8; 32]> {
-    let data = output_acl_record.try_borrow_data()?;
-    let mut data_slice: &[u8] = &data;
-    let record = zama_host::AclRecord::try_deserialize(&mut data_slice)?;
-    Ok(record.handle)
-}
+    pub fn add(&mut self, lhs: FheValue, rhs: FheValue, output_fhe_type: u8) -> Result<FheValue> {
+        self.binary_op(FheOpcode::Add, lhs, rhs, output_fhe_type)
+    }
 
-fn u64_plaintext(value: u64) -> [u8; 32] {
-    let mut plaintext = [0_u8; 32];
-    plaintext[24..].copy_from_slice(&value.to_be_bytes());
-    plaintext
+    pub fn sub(&mut self, lhs: FheValue, rhs: FheValue, output_fhe_type: u8) -> Result<FheValue> {
+        self.binary_op(FheOpcode::Sub, lhs, rhs, output_fhe_type)
+    }
+
+    pub fn allow(&mut self, value: &FheValue, allow: DurableAllow<'info>) -> Result<()> {
+        let output_acl_record_index = self.push_account(allow.acl_record)?;
+        self.actions.push(FheFrameAction::Allow {
+            source: value.operand.clone(),
+            output_acl_record_index,
+            nonce_key: allow.nonce_key,
+            nonce_sequence: allow.nonce_sequence,
+            acl_domain_key: self.acl_domain_key,
+            app_account: allow.app_account,
+            encrypted_value_label: allow.encrypted_value_label,
+            subjects: allow.subjects,
+            public_decrypt: allow.public_decrypt,
+        });
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub fn allow_for_decryption(
+        &mut self,
+        value: &FheValue,
+        acl_record: AccountInfo<'info>,
+    ) -> Result<()> {
+        let acl_record_index = self.push_account(acl_record)?;
+        self.actions.push(FheFrameAction::AllowForDecryption {
+            source: value.operand.clone(),
+            acl_record_index,
+        });
+        Ok(())
+    }
+
+    fn binary_op(
+        &mut self,
+        opcode: FheOpcode,
+        lhs: FheValue,
+        rhs: FheValue,
+        output_fhe_type: u8,
+    ) -> Result<FheValue> {
+        let scalar_byte = match rhs.operand {
+            FheOperand::Scalar { .. } => 1,
+            _ => 0,
+        };
+        let result = zama_host::computed_binary_handle_for_current_slot(
+            opcode.try_into()?,
+            lhs.handle,
+            rhs.handle,
+            scalar_byte == 1,
+            output_fhe_type,
+        )?;
+        let index = self.steps.len();
+        self.steps.push(FheFrameStep::Operation {
+            opcode,
+            operands: vec![lhs.operand, rhs.operand],
+            scalar_byte,
+            output_fhe_type,
+        });
+        Ok(FheValue {
+            handle: result,
+            operand: FheOperand::PreviousResult { index: index as u8 },
+        })
+    }
+
+    fn push_account(&mut self, account: AccountInfo<'info>) -> Result<u8> {
+        let index = self.remaining_accounts.len();
+        require!(
+            index <= u8::MAX as usize,
+            ErrorCode::AccountDidNotDeserialize
+        );
+        self.remaining_accounts.push(account);
+        Ok(index as u8)
+    }
+
+    fn submit(self, ctx: Context<'_, 'info>) -> Result<()> {
+        let compute_bump = [ctx.compute_signer_bump];
+        let app_account_bump = [ctx.app_account_authority.bump];
+        let compute_signer_seeds: &[&[u8]] =
+            &[b"fhe-compute", ctx.acl_domain_key.as_ref(), &compute_bump];
+        let app_account_seeds: &[&[u8]] = &[
+            b"token-account",
+            ctx.app_account_authority.mint.as_ref(),
+            ctx.app_account_authority.owner.as_ref(),
+            &app_account_bump,
+        ];
+        let signer_seeds: &[&[&[u8]]] = &[compute_signer_seeds, app_account_seeds];
+
+        cpi::execute_frame(
+            CpiContext::new_with_signer(
+                ctx.zama_program.key(),
+                ExecuteFrame {
+                    payer: ctx.payer.to_account_info(),
+                    compute_subject: ctx.compute_signer.to_account_info(),
+                    app_account_authority: ctx.app_account_authority.to_account_info(),
+                    system_program: ctx.system_program.to_account_info(),
+                    event_authority: ctx.event_authority.to_account_info(),
+                    program: ctx.zama_program.to_account_info(),
+                },
+                signer_seeds,
+            )
+            .with_remaining_accounts(self.remaining_accounts),
+            self.steps,
+            self.actions,
+        )
+    }
 }

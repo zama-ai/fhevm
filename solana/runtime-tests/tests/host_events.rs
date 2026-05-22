@@ -20,7 +20,7 @@ use litesvm::{
 use solana_sdk::{
     account::Account,
     clock::Clock,
-    instruction::Instruction,
+    instruction::{AccountMeta, Instruction},
     message::{Message, VersionedMessage},
     program_pack::Pack,
     pubkey::Pubkey,
@@ -30,7 +30,8 @@ use solana_sdk::{
 };
 use zama_host as host;
 use zama_host::{
-    AclRecord, AclSubjectEntry, FheBinaryOpCode, FheBinaryOpEvent, TrivialEncryptEvent,
+    AclRecord, AclSubjectEntry, FheBinaryOpCode, FheBinaryOpEvent, FheFrameAction, FheFrameStep,
+    FheOpcode, FheOperand, TrivialEncryptEvent,
 };
 
 use support::fhe_runtime::{CleartextBackend, FheBackend, TypedClearValue};
@@ -412,6 +413,139 @@ fn fhe_binary_op_does_not_create_durable_acl_without_allow_step() {
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].result, result);
     assert!(read_acl_record(&svm, output_acl_record).is_none());
+}
+
+#[test]
+fn execute_frame_allows_previous_result_to_feed_later_steps() {
+    let program_id = host::id();
+    let mut svm = svm_with_program(program_id, host_program_so_path());
+    let payer = svm.create_funded_account(1_000_000_000).unwrap();
+
+    let acl_domain_key = Pubkey::new_unique();
+    let app_account = payer.pubkey();
+    let encrypted_value_label = label("frame-balance");
+    let nonce_key = token::nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let output_acl_record = acl_record_address(program_id, nonce_key, 1);
+
+    let amount = amount_plaintext(5);
+    let delta = amount_plaintext(7);
+    let steps = vec![
+        FheFrameStep::TrivialEncrypt {
+            plaintext: amount,
+            fhe_type: 5,
+        },
+        FheFrameStep::Operation {
+            opcode: FheOpcode::Add,
+            operands: vec![
+                FheOperand::PreviousResult { index: 0 },
+                FheOperand::Scalar {
+                    value: delta,
+                    fhe_type: 5,
+                },
+            ],
+            scalar_byte: 1,
+            output_fhe_type: 5,
+        },
+    ];
+    let actions = vec![FheFrameAction::Allow {
+        source: FheOperand::PreviousResult { index: 1 },
+        output_acl_record_index: 0,
+        nonce_key,
+        nonce_sequence: 1,
+        acl_domain_key,
+        app_account,
+        encrypted_value_label,
+        subjects: vec![AclSubjectEntry {
+            pubkey: payer.pubkey(),
+        }],
+        public_decrypt: false,
+    }];
+    let ix = execute_frame_ix(
+        program_id,
+        payer.pubkey(),
+        steps,
+        actions,
+        vec![output_acl_record],
+    );
+
+    let mut cleartext = CleartextBackend::default();
+    let (meta, account_keys) = send_with_meta(&mut svm, &payer, ix);
+    cleartext
+        .ingest_transaction(&meta, &account_keys, program_id)
+        .unwrap();
+
+    let output_record = read_acl_record(&svm, output_acl_record).expect("expected output ACL");
+    assert_eq!(record_subjects(&output_record), vec![payer.pubkey()]);
+    assert_eq!(
+        cleartext.decrypt_cleartext(output_record.handle),
+        Some(TypedClearValue::uint64(12))
+    );
+}
+
+#[test]
+fn execute_frame_transient_result_can_authorize_allow_for_decryption() {
+    let program_id = host::id();
+    let mut svm = svm_with_program(program_id, host_program_so_path());
+    let payer = svm.create_funded_account(1_000_000_000).unwrap();
+
+    let acl_domain_key = Pubkey::new_unique();
+    let app_account = payer.pubkey();
+    let encrypted_value_label = label("frame-public");
+    let nonce_key = token::nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let output_acl_record = acl_record_address(program_id, nonce_key, 1);
+
+    let steps = vec![FheFrameStep::TrivialEncrypt {
+        plaintext: amount_plaintext(99),
+        fhe_type: 5,
+    }];
+    let actions = vec![
+        FheFrameAction::Allow {
+            source: FheOperand::PreviousResult { index: 0 },
+            output_acl_record_index: 0,
+            nonce_key,
+            nonce_sequence: 1,
+            acl_domain_key,
+            app_account,
+            encrypted_value_label,
+            subjects: vec![AclSubjectEntry {
+                pubkey: payer.pubkey(),
+            }],
+            public_decrypt: false,
+        },
+        FheFrameAction::AllowForDecryption {
+            source: FheOperand::PreviousResult { index: 0 },
+            acl_record_index: 0,
+        },
+    ];
+    let ix = execute_frame_ix(
+        program_id,
+        payer.pubkey(),
+        steps,
+        actions,
+        vec![output_acl_record],
+    );
+
+    send(&mut svm, &payer, ix);
+
+    let output_record = read_acl_record(&svm, output_acl_record).expect("expected output ACL");
+    assert!(output_record.public_decrypt);
+}
+
+#[test]
+fn execute_frame_rejects_unsupported_opcode_without_side_effects() {
+    let program_id = host::id();
+    let mut svm = svm_with_program(program_id, host_program_so_path());
+    let payer = svm.create_funded_account(1_000_000_000).unwrap();
+
+    let steps = vec![FheFrameStep::Operation {
+        opcode: FheOpcode::Mul,
+        operands: vec![],
+        scalar_byte: 0,
+        output_fhe_type: 5,
+    }];
+    let ix = execute_frame_ix(program_id, payer.pubkey(), steps, vec![], vec![]);
+
+    assert!(try_send(&mut svm, &payer, ix).is_err());
 }
 
 #[test]
@@ -955,8 +1089,7 @@ fn wrap_usdc_escrows_spl_tokens_and_rotates_confidential_balance() {
     assert_eq!(trivial_events[0].subject, fixture.compute_signer.to_bytes());
     assert_eq!(trivial_events[0].plaintext, amount_plaintext(amount));
 
-    let amount_record = read_acl_record(&fixture.svm, output.amount).expect("expected amount ACL");
-    let amount_handle = amount_record.handle;
+    let amount_handle = trivial_events[0].result;
     assert_eq!(trivial_events[0].result, amount_handle);
     assert_eq!(
         cleartext.decrypt_cleartext(amount_handle),
@@ -986,17 +1119,6 @@ fn wrap_usdc_escrows_spl_tokens_and_rotates_confidential_balance() {
     assert_eq!(
         cleartext.decrypt_cleartext(new_alice),
         Some(TypedClearValue::uint64(100_000_125))
-    );
-
-    assert_acl_record(
-        &fixture.svm,
-        output.amount,
-        fixture.mint.pubkey(),
-        fixture.alice_token,
-        token::wrap_amount_label(),
-        1,
-        amount_handle,
-        &[fixture.compute_signer],
     );
 
     let alice_account = token_account(&fixture.svm, fixture.alice_token);
@@ -1356,7 +1478,6 @@ struct TransferOutputAccounts {
 
 #[derive(Clone, Copy)]
 struct WrapOutputAccounts {
-    amount: Pubkey,
     balance: Pubkey,
 }
 
@@ -1671,15 +1792,6 @@ fn authorize_input_compute_acl(fixture: &mut TokenFixture, handle: [u8; 32], non
 
 fn wrap_output_accounts(fixture: &TokenFixture, nonce_sequence: u64) -> WrapOutputAccounts {
     WrapOutputAccounts {
-        amount: acl_record_address(
-            fixture.host_program_id,
-            token::nonce_key(
-                fixture.mint.pubkey(),
-                fixture.alice_token,
-                token::wrap_amount_label(),
-            ),
-            nonce_sequence,
-        ),
         balance: balance_acl_record_address(
             fixture.host_program_id,
             fixture.mint.pubkey(),
@@ -1885,7 +1997,6 @@ fn wrap_usdc_ix(fixture: &TokenFixture, output: WrapOutputAccounts, amount: u64)
             ),
             compute_signer: fixture.compute_signer,
             current_compute_acl: fixture.alice_current_compute_acl,
-            amount_compute_acl: output.amount,
             output_acl: output.balance,
             zama_event_authority: event_authority(fixture.host_program_id),
             zama_program: fixture.host_program_id,
@@ -2316,6 +2427,33 @@ where
         .args(args)
         .instruction()
         .unwrap()
+}
+
+fn execute_frame_ix(
+    program_id: Pubkey,
+    payer: Pubkey,
+    steps: Vec<FheFrameStep>,
+    actions: Vec<FheFrameAction>,
+    remaining_accounts: Vec<Pubkey>,
+) -> Instruction {
+    let mut ix = anchor_ix(
+        program_id,
+        host::accounts::ExecuteFrame {
+            payer,
+            compute_subject: payer,
+            app_account_authority: payer,
+            system_program: system_program::ID,
+            event_authority: event_authority(program_id),
+            program: program_id,
+        },
+        host::instruction::ExecuteFrame { steps, actions },
+    );
+    ix.accounts.extend(
+        remaining_accounts
+            .into_iter()
+            .map(|pubkey| AccountMeta::new(pubkey, false)),
+    );
+    ix
 }
 
 fn send(svm: &mut LiteSVM, payer: &Keypair, ix: Instruction) {

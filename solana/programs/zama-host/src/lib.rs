@@ -3,6 +3,7 @@
 #![allow(clippy::diverging_sub_expression, clippy::too_many_arguments)]
 
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::{program::invoke_signed, system_instruction};
 use solana_sha256_hasher::hashv;
 use solana_sysvar::slot_hashes::PodSlotHashes;
 
@@ -10,6 +11,10 @@ declare_id!("EMhXFu68v61bQV4GrF6ZhZhWNVbH6bHPnTdLtXK8meqn");
 
 pub const EVENT_VERSION: u8 = 0;
 pub const MAX_ACL_SUBJECTS: usize = 8;
+pub const MAX_FRAME_STEPS: usize = 16;
+pub const MAX_FRAME_ACTIONS: usize = 16;
+pub const MAX_FRAME_RESULTS: usize = 16;
+pub const MAX_FRAME_TRANSIENT_ALLOWS: usize = 32;
 pub const SOLANA_POC_CHAIN_ID: u64 = 12345;
 
 const COMPUTATION_DOMAIN_SEPARATOR: &[u8] = b"FHE_comp";
@@ -95,16 +100,63 @@ pub mod zama_host {
             &ctx.accounts.acl_record,
         )?;
         assert_record_allows_handle(&ctx.accounts.acl_record, handle, subject)?;
-        // Design note: this PoC uses one ACL subject list for compute and
-        // decryption. A production Solana host must define which subjects may
-        // make a handle publicly decryptable; a compute signer should not gain
-        // that authority just because it may compute on the handle.
+        // EVM parity: any subject allowed on the handle may mark it as allowed
+        // for decryption. `allowTransient` can satisfy this check on EVM, so
+        // the Solana transient-allow design must preserve that same behavior.
         ctx.accounts.acl_record.public_decrypt = true;
         emit_cpi!(AclAllowedEvent {
             version: EVENT_VERSION,
             handle,
             subject: subject.to_bytes(),
         });
+        Ok(())
+    }
+
+    pub fn execute_frame<'info>(
+        ctx: Context<'info, ExecuteFrame<'info>>,
+        steps: Vec<FheFrameStep>,
+        actions: Vec<FheFrameAction>,
+    ) -> Result<()> {
+        require!(
+            steps.len() <= MAX_FRAME_STEPS && actions.len() <= MAX_FRAME_ACTIONS,
+            ZamaHostError::FrameLimitExceeded
+        );
+
+        let subject = ctx.accounts.compute_subject.key();
+        let clock = Clock::get()?;
+        let previous_bank_hash = previous_bank_hash(clock.slot)?;
+        let mut frame = ExecutionFrame::new(subject);
+
+        for step in steps {
+            execute_frame_step(
+                &mut frame,
+                ctx.remaining_accounts,
+                step,
+                previous_bank_hash,
+                clock.unix_timestamp,
+            )?;
+        }
+
+        let payer = ctx.accounts.payer.to_account_info();
+        let system_program = ctx.accounts.system_program.to_account_info();
+        for action in actions {
+            apply_frame_action(
+                &mut frame,
+                payer.clone(),
+                system_program.clone(),
+                ctx.remaining_accounts,
+                action,
+            )?;
+        }
+
+        for event in frame.events {
+            match event {
+                FrameEvent::BinaryOp(event) => emit_cpi!(event),
+                FrameEvent::TrivialEncrypt(event) => emit_cpi!(event),
+                FrameEvent::AclAllowed(event) => emit_cpi!(event),
+            }
+        }
+
         Ok(())
     }
 
@@ -122,7 +174,6 @@ pub mod zama_host {
     ) -> Result<()> {
         let subject = ctx.accounts.compute_subject.key();
         assert_output_acl_metadata(
-            ctx.accounts.app_account_authority.key(),
             output_nonce_key,
             output_acl_domain_key,
             output_app_account,
@@ -190,7 +241,6 @@ pub mod zama_host {
         output_public_decrypt: bool,
     ) -> Result<()> {
         assert_output_acl_metadata(
-            ctx.accounts.app_account_authority.key(),
             output_nonce_key,
             output_acl_domain_key,
             output_app_account,
@@ -306,7 +356,6 @@ pub mod zama_host {
     ) -> Result<()> {
         let subject = ctx.accounts.compute_subject.key();
         assert_output_acl_metadata(
-            ctx.accounts.app_account_authority.key(),
             output_nonce_key,
             output_acl_domain_key,
             output_app_account,
@@ -523,6 +572,16 @@ pub struct AllowForDecryption<'info> {
 }
 
 #[derive(Accounts)]
+#[event_cpi]
+pub struct ExecuteFrame<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub compute_subject: Signer<'info>,
+    pub app_account_authority: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 #[instruction(
     op: FheBinaryOpCode,
     lhs: [u8; 32],
@@ -654,6 +713,131 @@ impl FheBinaryOpCode {
     }
 }
 
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FheOpcode {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
+    BitAnd,
+    BitOr,
+    BitXor,
+    Shl,
+    Shr,
+    Rotl,
+    Rotr,
+    Eq,
+    Ne,
+    Ge,
+    Gt,
+    Le,
+    Lt,
+    Min,
+    Max,
+    Neg,
+    Not,
+    VerifyInput,
+    Cast,
+    TrivialEncrypt,
+    IfThenElse,
+    Rand,
+    RandBounded,
+    Sum,
+    IsIn,
+    MulDiv,
+}
+
+impl FheOpcode {
+    pub fn as_u8(self) -> u8 {
+        match self {
+            Self::Add => 0,
+            Self::Sub => 1,
+            Self::Mul => 2,
+            Self::Div => 3,
+            Self::Rem => 4,
+            Self::BitAnd => 5,
+            Self::BitOr => 6,
+            Self::BitXor => 7,
+            Self::Shl => 8,
+            Self::Shr => 9,
+            Self::Rotl => 10,
+            Self::Rotr => 11,
+            Self::Eq => 12,
+            Self::Ne => 13,
+            Self::Ge => 14,
+            Self::Gt => 15,
+            Self::Le => 16,
+            Self::Lt => 17,
+            Self::Min => 18,
+            Self::Max => 19,
+            Self::Neg => 20,
+            Self::Not => 21,
+            Self::VerifyInput => 22,
+            Self::Cast => 23,
+            Self::TrivialEncrypt => 24,
+            Self::IfThenElse => 25,
+            Self::Rand => 26,
+            Self::RandBounded => 27,
+            Self::Sum => 28,
+            Self::IsIn => 29,
+            Self::MulDiv => 30,
+        }
+    }
+}
+
+impl TryFrom<FheOpcode> for FheBinaryOpCode {
+    type Error = Error;
+
+    fn try_from(value: FheOpcode) -> Result<Self> {
+        match value {
+            FheOpcode::Add => Ok(Self::Add),
+            FheOpcode::Sub => Ok(Self::Sub),
+            _ => err!(ZamaHostError::UnsupportedFrameOpcode),
+        }
+    }
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
+pub enum FheOperand {
+    AclRecord { handle: [u8; 32], account_index: u8 },
+    PreviousResult { index: u8 },
+    Scalar { value: [u8; 32], fhe_type: u8 },
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
+pub enum FheFrameStep {
+    Operation {
+        opcode: FheOpcode,
+        operands: Vec<FheOperand>,
+        scalar_byte: u8,
+        output_fhe_type: u8,
+    },
+    TrivialEncrypt {
+        plaintext: [u8; 32],
+        fhe_type: u8,
+    },
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
+pub enum FheFrameAction {
+    Allow {
+        source: FheOperand,
+        output_acl_record_index: u8,
+        nonce_key: [u8; 32],
+        nonce_sequence: u64,
+        acl_domain_key: Pubkey,
+        app_account: Pubkey,
+        encrypted_value_label: [u8; 32],
+        subjects: Vec<AclSubjectEntry>,
+        public_decrypt: bool,
+    },
+    AllowForDecryption {
+        source: FheOperand,
+        acl_record_index: u8,
+    },
+}
+
 #[error_code]
 pub enum ZamaHostError {
     #[msg("ACL app account authority does not match app account")]
@@ -680,6 +864,449 @@ pub enum ZamaHostError {
     PreviousBankHashUnavailable,
     #[msg("computed handle does not match host formula")]
     ComputedHandleMismatch,
+    #[msg("frame exceeds configured limit")]
+    FrameLimitExceeded,
+    #[msg("frame account index is out of range")]
+    FrameAccountIndexOutOfRange,
+    #[msg("frame result index is out of range")]
+    FrameResultIndexOutOfRange,
+    #[msg("frame opcode is not supported by this PoC")]
+    UnsupportedFrameOpcode,
+    #[msg("frame step has invalid operands")]
+    InvalidFrameOperands,
+    #[msg("frame action targets an initialized account")]
+    FrameOutputAccountAlreadyInitialized,
+}
+
+#[derive(Clone, Copy)]
+struct FrameResult {
+    handle: [u8; 32],
+}
+
+struct ExecutionFrame {
+    subject: Pubkey,
+    results: Vec<FrameResult>,
+    transient_allows: Vec<([u8; 32], Pubkey)>,
+    events: Vec<FrameEvent>,
+}
+
+enum FrameEvent {
+    BinaryOp(FheBinaryOpEvent),
+    TrivialEncrypt(TrivialEncryptEvent),
+    AclAllowed(AclAllowedEvent),
+}
+
+#[derive(Clone, Copy)]
+struct ResolvedOperand {
+    value: [u8; 32],
+    is_scalar: bool,
+}
+
+impl ExecutionFrame {
+    fn new(subject: Pubkey) -> Self {
+        Self {
+            subject,
+            results: Vec::new(),
+            transient_allows: Vec::new(),
+            events: Vec::new(),
+        }
+    }
+
+    fn push_result(&mut self, result: FrameResult) -> Result<()> {
+        require!(
+            self.results.len() < MAX_FRAME_RESULTS,
+            ZamaHostError::FrameLimitExceeded
+        );
+        self.results.push(result);
+        self.allow_transient(result.handle)
+    }
+
+    fn allow_transient(&mut self, handle: [u8; 32]) -> Result<()> {
+        require!(
+            self.transient_allows.len() < MAX_FRAME_TRANSIENT_ALLOWS,
+            ZamaHostError::FrameLimitExceeded
+        );
+        self.transient_allows.push((handle, self.subject));
+        Ok(())
+    }
+
+    fn transient_allows(&self, handle: [u8; 32], subject: Pubkey) -> bool {
+        self.transient_allows
+            .iter()
+            .any(|(allowed_handle, allowed_subject)| {
+                *allowed_handle == handle && *allowed_subject == subject
+            })
+    }
+}
+
+fn execute_frame_step<'info>(
+    frame: &mut ExecutionFrame,
+    remaining_accounts: &[AccountInfo<'info>],
+    step: FheFrameStep,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+) -> Result<()> {
+    match step {
+        FheFrameStep::Operation {
+            opcode,
+            operands,
+            scalar_byte,
+            output_fhe_type,
+        } => execute_operation_step(
+            frame,
+            remaining_accounts,
+            opcode,
+            operands,
+            scalar_byte,
+            output_fhe_type,
+            previous_bank_hash,
+            unix_timestamp,
+        ),
+        FheFrameStep::TrivialEncrypt {
+            plaintext,
+            fhe_type,
+        } => {
+            let result = computed_trivial_handle(
+                plaintext,
+                fhe_type,
+                SOLANA_POC_CHAIN_ID,
+                previous_bank_hash,
+                unix_timestamp,
+            );
+            frame.push_result(FrameResult { handle: result })?;
+            frame
+                .events
+                .push(FrameEvent::TrivialEncrypt(TrivialEncryptEvent {
+                    version: EVENT_VERSION,
+                    subject: frame.subject.to_bytes(),
+                    plaintext,
+                    fhe_type,
+                    result,
+                }));
+            Ok(())
+        }
+    }
+}
+
+fn execute_operation_step<'info>(
+    frame: &mut ExecutionFrame,
+    remaining_accounts: &[AccountInfo<'info>],
+    opcode: FheOpcode,
+    operands: Vec<FheOperand>,
+    scalar_byte: u8,
+    output_fhe_type: u8,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+) -> Result<()> {
+    let binary_op = FheBinaryOpCode::try_from(opcode)?;
+    require!(operands.len() == 2, ZamaHostError::InvalidFrameOperands);
+    let lhs = resolve_operand(frame, remaining_accounts, &operands[0])?;
+    let rhs = resolve_operand(frame, remaining_accounts, &operands[1])?;
+    require!(!lhs.is_scalar, ZamaHostError::InvalidFrameOperands);
+    let scalar = rhs.is_scalar;
+    require!(
+        scalar_byte == u8::from(scalar),
+        ZamaHostError::InvalidFrameOperands
+    );
+
+    let result = computed_binary_handle(
+        binary_op,
+        lhs.value,
+        rhs.value,
+        scalar,
+        output_fhe_type,
+        SOLANA_POC_CHAIN_ID,
+        previous_bank_hash,
+        unix_timestamp,
+    );
+    frame.push_result(FrameResult { handle: result })?;
+    frame.events.push(FrameEvent::BinaryOp(FheBinaryOpEvent {
+        version: EVENT_VERSION,
+        op: binary_op,
+        subject: frame.subject.to_bytes(),
+        lhs: lhs.value,
+        rhs: rhs.value,
+        scalar,
+        result,
+    }));
+    Ok(())
+}
+
+fn apply_frame_action<'info>(
+    frame: &mut ExecutionFrame,
+    payer: AccountInfo<'info>,
+    system_program: AccountInfo<'info>,
+    remaining_accounts: &[AccountInfo<'info>],
+    action: FheFrameAction,
+) -> Result<()> {
+    match action {
+        FheFrameAction::Allow {
+            source,
+            output_acl_record_index,
+            nonce_key,
+            nonce_sequence,
+            acl_domain_key,
+            app_account,
+            encrypted_value_label,
+            subjects,
+            public_decrypt,
+        } => {
+            let source = resolve_operand(frame, remaining_accounts, &source)?;
+            require!(!source.is_scalar, ZamaHostError::InvalidFrameOperands);
+            require!(
+                is_allowed(frame, remaining_accounts, source.value, frame.subject)?,
+                ZamaHostError::AclSubjectMismatch
+            );
+            assert_output_acl_metadata(
+                nonce_key,
+                acl_domain_key,
+                app_account,
+                encrypted_value_label,
+                &subjects,
+            )?;
+            let output_acl_record = account_at(remaining_accounts, output_acl_record_index)?;
+            create_acl_record_account(
+                &payer,
+                &output_acl_record,
+                &system_program,
+                nonce_key,
+                nonce_sequence,
+            )?;
+            write_acl_record_data(
+                &output_acl_record,
+                nonce_key,
+                nonce_sequence,
+                acl_domain_key,
+                app_account,
+                encrypted_value_label,
+                source.value,
+                &subjects,
+                public_decrypt,
+            )?;
+            for subject in subjects {
+                frame.events.push(FrameEvent::AclAllowed(AclAllowedEvent {
+                    version: EVENT_VERSION,
+                    handle: source.value,
+                    subject: subject.pubkey.to_bytes(),
+                }));
+            }
+            Ok(())
+        }
+        FheFrameAction::AllowForDecryption {
+            source,
+            acl_record_index,
+        } => {
+            let source = resolve_operand(frame, remaining_accounts, &source)?;
+            require!(!source.is_scalar, ZamaHostError::InvalidFrameOperands);
+            require!(
+                is_allowed(frame, remaining_accounts, source.value, frame.subject)?,
+                ZamaHostError::AclSubjectMismatch
+            );
+            let acl_record_info = account_at(remaining_accounts, acl_record_index)?;
+            let mut record = deserialize_acl_record(&acl_record_info)?;
+            assert_canonical_acl_record_data(acl_record_info.key(), &record)?;
+            require!(
+                record.handle == source.value,
+                ZamaHostError::AclHandleMismatch
+            );
+            record.public_decrypt = true;
+            serialize_acl_record(&acl_record_info, &record)?;
+            frame.events.push(FrameEvent::AclAllowed(AclAllowedEvent {
+                version: EVENT_VERSION,
+                handle: source.value,
+                subject: frame.subject.to_bytes(),
+            }));
+            Ok(())
+        }
+    }
+}
+
+fn resolve_operand<'info>(
+    frame: &ExecutionFrame,
+    remaining_accounts: &[AccountInfo<'info>],
+    operand: &FheOperand,
+) -> Result<ResolvedOperand> {
+    match operand {
+        FheOperand::AclRecord {
+            handle,
+            account_index,
+        } => {
+            let record_info = account_at(remaining_accounts, *account_index)?;
+            let record = deserialize_acl_record(&record_info)?;
+            assert_canonical_acl_record_data(record_info.key(), &record)?;
+            assert_record_allows_handle(&record, *handle, frame.subject)?;
+            Ok(ResolvedOperand {
+                value: *handle,
+                is_scalar: false,
+            })
+        }
+        FheOperand::PreviousResult { index } => {
+            let result = frame
+                .results
+                .get(*index as usize)
+                .ok_or_else(|| error!(ZamaHostError::FrameResultIndexOutOfRange))?;
+            require!(
+                frame.transient_allows(result.handle, frame.subject),
+                ZamaHostError::AclSubjectMismatch
+            );
+            Ok(ResolvedOperand {
+                value: result.handle,
+                is_scalar: false,
+            })
+        }
+        FheOperand::Scalar { value, .. } => Ok(ResolvedOperand {
+            value: *value,
+            is_scalar: true,
+        }),
+    }
+}
+
+fn is_allowed<'info>(
+    frame: &ExecutionFrame,
+    remaining_accounts: &[AccountInfo<'info>],
+    handle: [u8; 32],
+    subject: Pubkey,
+) -> Result<bool> {
+    if frame.transient_allows(handle, subject) {
+        return Ok(true);
+    }
+    for account in remaining_accounts {
+        if *account.owner != crate::ID || account.data_is_empty() {
+            continue;
+        }
+        let record = deserialize_acl_record(account)?;
+        if assert_canonical_acl_record_data(account.key(), &record).is_ok()
+            && record.handle == handle
+            && record_allows(&record, subject)
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn account_at<'info>(
+    remaining_accounts: &[AccountInfo<'info>],
+    index: u8,
+) -> Result<AccountInfo<'info>> {
+    remaining_accounts
+        .get(index as usize)
+        .cloned()
+        .ok_or_else(|| error!(ZamaHostError::FrameAccountIndexOutOfRange))
+}
+
+fn create_acl_record_account<'info>(
+    payer: &AccountInfo<'info>,
+    output_acl_record: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    nonce_key: [u8; 32],
+    nonce_sequence: u64,
+) -> Result<()> {
+    require!(
+        output_acl_record.data_is_empty() && output_acl_record.lamports() == 0,
+        ZamaHostError::FrameOutputAccountAlreadyInitialized
+    );
+    let (expected, bump) = Pubkey::find_program_address(
+        &[
+            b"acl-record",
+            nonce_key.as_ref(),
+            &nonce_sequence.to_le_bytes(),
+        ],
+        &crate::ID,
+    );
+    require_keys_eq!(
+        output_acl_record.key(),
+        expected,
+        ZamaHostError::AclRecordPdaMismatch
+    );
+    let space = 8 + AclRecord::SPACE;
+    let lamports = Rent::get()?.minimum_balance(space);
+    let nonce_sequence_bytes = nonce_sequence.to_le_bytes();
+    let seeds: &[&[u8]] = &[
+        b"acl-record",
+        nonce_key.as_ref(),
+        &nonce_sequence_bytes,
+        &[bump],
+    ];
+    invoke_signed(
+        &system_instruction::create_account(
+            payer.key,
+            output_acl_record.key,
+            lamports,
+            space as u64,
+            &crate::ID,
+        ),
+        &[
+            payer.clone(),
+            output_acl_record.clone(),
+            system_program.clone(),
+        ],
+        &[seeds],
+    )?;
+    Ok(())
+}
+
+fn write_acl_record_data<'info>(
+    record_info: &AccountInfo<'info>,
+    nonce_key: [u8; 32],
+    nonce_sequence: u64,
+    acl_domain_key: Pubkey,
+    app_account: Pubkey,
+    encrypted_value_label: [u8; 32],
+    handle: [u8; 32],
+    subjects: &[AclSubjectEntry],
+    public_decrypt: bool,
+) -> Result<()> {
+    let (_, bump) = Pubkey::find_program_address(
+        &[
+            b"acl-record",
+            nonce_key.as_ref(),
+            &nonce_sequence.to_le_bytes(),
+        ],
+        &crate::ID,
+    );
+    let mut record = AclRecord {
+        handle: [0; 32],
+        nonce_key: [0; 32],
+        nonce_sequence: 0,
+        acl_domain_key: Pubkey::default(),
+        app_account: Pubkey::default(),
+        encrypted_value_label: [0; 32],
+        subjects: [Pubkey::default(); MAX_ACL_SUBJECTS],
+        subject_count: 0,
+        public_decrypt: false,
+        bump,
+    };
+    write_acl_record_fields(
+        &mut record,
+        nonce_key,
+        nonce_sequence,
+        acl_domain_key,
+        app_account,
+        encrypted_value_label,
+        handle,
+        subjects,
+        public_decrypt,
+    );
+    serialize_acl_record(record_info, &record)
+}
+
+fn deserialize_acl_record<'info>(record_info: &AccountInfo<'info>) -> Result<AclRecord> {
+    require_keys_eq!(
+        *record_info.owner,
+        crate::ID,
+        ZamaHostError::AclRecordPdaMismatch
+    );
+    let data = record_info.try_borrow_data()?;
+    let mut data_slice: &[u8] = &data;
+    AclRecord::try_deserialize(&mut data_slice)
+}
+
+fn serialize_acl_record<'info>(record_info: &AccountInfo<'info>, record: &AclRecord) -> Result<()> {
+    let mut data = record_info.try_borrow_mut_data()?;
+    let mut data_slice: &mut [u8] = &mut data;
+    record.try_serialize(&mut data_slice)?;
+    Ok(())
 }
 
 fn write_acl_record(
@@ -694,6 +1321,31 @@ fn write_acl_record(
     public_decrypt: bool,
     bump: u8,
 ) {
+    record.bump = bump;
+    write_acl_record_fields(
+        record,
+        nonce_key,
+        nonce_sequence,
+        acl_domain_key,
+        app_account,
+        encrypted_value_label,
+        handle,
+        subjects,
+        public_decrypt,
+    );
+}
+
+fn write_acl_record_fields(
+    record: &mut AclRecord,
+    nonce_key: [u8; 32],
+    nonce_sequence: u64,
+    acl_domain_key: Pubkey,
+    app_account: Pubkey,
+    encrypted_value_label: [u8; 32],
+    handle: [u8; 32],
+    subjects: &[AclSubjectEntry],
+    public_decrypt: bool,
+) {
     record.handle = handle;
     record.nonce_key = nonce_key;
     record.nonce_sequence = nonce_sequence;
@@ -703,7 +1355,6 @@ fn write_acl_record(
     record.subjects = [Pubkey::default(); MAX_ACL_SUBJECTS];
     record.subject_count = subjects.len() as u8;
     record.public_decrypt = public_decrypt;
-    record.bump = bump;
 
     for (index, subject) in subjects.iter().enumerate() {
         record.subjects[index] = subject.pubkey;
@@ -736,18 +1387,12 @@ fn extend_acl_subjects(
 }
 
 fn assert_output_acl_metadata(
-    app_account_authority: Pubkey,
     nonce_key: [u8; 32],
     acl_domain_key: Pubkey,
     app_account: Pubkey,
     encrypted_value_label: [u8; 32],
     subjects: &[AclSubjectEntry],
 ) -> Result<()> {
-    require_keys_eq!(
-        app_account_authority,
-        app_account,
-        ZamaHostError::AppAccountAuthorityMismatch
-    );
     assert_nonce_key_matches_fields(
         nonce_key,
         acl_domain_key,
@@ -922,6 +1567,21 @@ pub fn computed_bound_binary_handle_for_current_slot(
         clock.unix_timestamp,
         output_nonce_key,
         output_nonce_sequence,
+    ))
+}
+
+pub fn computed_trivial_handle_for_current_slot(
+    plaintext: [u8; 32],
+    fhe_type: u8,
+) -> Result<[u8; 32]> {
+    let clock = Clock::get()?;
+    let previous_bank_hash = previous_bank_hash(clock.slot)?;
+    Ok(computed_trivial_handle(
+        plaintext,
+        fhe_type,
+        SOLANA_POC_CHAIN_ID,
+        previous_bank_hash,
+        clock.unix_timestamp,
     ))
 }
 

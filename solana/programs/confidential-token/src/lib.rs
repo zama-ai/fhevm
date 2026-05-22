@@ -128,40 +128,38 @@ pub mod confidential_token {
             mint.decimals,
         )?;
 
-        let amount_handle = fhe::trivial_encrypt_u64(fhe::TrivialEncryptU64 {
-            payer: &ctx.accounts.owner,
-            event_authority: &ctx.accounts.zama_event_authority,
-            zama_program: &ctx.accounts.zama_program,
-            compute_signer: &ctx.accounts.compute_signer,
-            app_account_authority: token_account,
-            output_acl_record: ctx.accounts.amount_compute_acl.to_account_info(),
-            acl_domain_key: mint.key(),
-            compute_signer_bump: ctx.bumps.compute_signer,
-            system_program: &ctx.accounts.system_program,
-            output_nonce_key: nonce_key(mint.key(), token_account.key(), wrap_amount_label()),
-            output_nonce_sequence: nonce_sequence,
-            output_encrypted_value_label: wrap_amount_label(),
-            plaintext: amount,
-            fhe_type: BALANCE_FHE_TYPE,
-            output_subjects: compute_acl_subject(compute_signer),
-            output_public_decrypt: false,
-        })?;
-
-        let new_balance_handle = add_balance(
-            &ctx.accounts.owner,
-            &ctx.accounts.zama_event_authority,
-            &ctx.accounts.zama_program,
-            &ctx.accounts.compute_signer,
-            &ctx.accounts.token_account,
-            ctx.accounts.current_compute_acl.to_account_info(),
-            token_account.balance_handle,
-            ctx.accounts.amount_compute_acl.to_account_info(),
-            amount_handle,
-            ctx.accounts.output_acl.to_account_info(),
-            mint.key(),
-            ctx.bumps.compute_signer,
-            &ctx.accounts.system_program,
-            nonce_sequence,
+        let new_balance_handle = fhe::execute(
+            fhe_context(
+                &ctx.accounts.owner,
+                &ctx.accounts.zama_event_authority,
+                &ctx.accounts.zama_program,
+                &ctx.accounts.compute_signer,
+                token_account,
+                mint.key(),
+                ctx.bumps.compute_signer,
+                &ctx.accounts.system_program,
+            ),
+            |fhe| {
+                let current_balance = fhe.encrypted(fhe::EncryptedValue {
+                    handle: token_account.balance_handle,
+                    acl_record: ctx.accounts.current_compute_acl.to_account_info(),
+                })?;
+                let amount = fhe.trivial_encrypt_u64(amount, BALANCE_FHE_TYPE)?;
+                let new_balance = fhe.add(current_balance, amount, BALANCE_FHE_TYPE)?;
+                fhe.allow(
+                    &new_balance,
+                    fhe::DurableAllow {
+                        acl_record: ctx.accounts.output_acl.to_account_info(),
+                        app_account: token_account.key(),
+                        nonce_key: balance_nonce_key(mint.key(), token_account.key()),
+                        nonce_sequence,
+                        encrypted_value_label: balance_label(),
+                        subjects: balance_acl_subjects(token_account.owner, compute_signer),
+                        public_decrypt: false,
+                    },
+                )?;
+                Ok(new_balance.handle())
+            },
         )?;
 
         let token_account = &mut ctx.accounts.token_account;
@@ -225,37 +223,58 @@ pub mod confidential_token {
             return Ok(());
         }
 
-        let new_from_handle = sub_balance(
-            &ctx.accounts.owner,
-            &ctx.accounts.zama_event_authority,
-            &ctx.accounts.zama_program,
-            &ctx.accounts.compute_signer,
-            &ctx.accounts.from_account,
-            ctx.accounts.from_current_compute_acl.to_account_info(),
-            from.balance_handle,
-            ctx.accounts.amount_compute_acl.to_account_info(),
-            amount_handle,
-            ctx.accounts.from_output_acl.to_account_info(),
-            mint.key(),
-            ctx.bumps.compute_signer,
-            &ctx.accounts.system_program,
-            from_nonce_sequence,
-        )?;
-        let new_to_handle = add_balance(
-            &ctx.accounts.owner,
-            &ctx.accounts.zama_event_authority,
-            &ctx.accounts.zama_program,
-            &ctx.accounts.compute_signer,
-            &ctx.accounts.to_account,
-            ctx.accounts.to_current_compute_acl.to_account_info(),
-            to.balance_handle,
-            ctx.accounts.amount_compute_acl.to_account_info(),
-            amount_handle,
-            ctx.accounts.to_output_acl.to_account_info(),
-            mint.key(),
-            ctx.bumps.compute_signer,
-            &ctx.accounts.system_program,
-            to_nonce_sequence,
+        let (new_from_handle, new_to_handle) = fhe::execute(
+            fhe_context(
+                &ctx.accounts.owner,
+                &ctx.accounts.zama_event_authority,
+                &ctx.accounts.zama_program,
+                &ctx.accounts.compute_signer,
+                &ctx.accounts.from_account,
+                mint.key(),
+                ctx.bumps.compute_signer,
+                &ctx.accounts.system_program,
+            ),
+            |fhe| {
+                let from_balance = fhe.encrypted(fhe::EncryptedValue {
+                    handle: from.balance_handle,
+                    acl_record: ctx.accounts.from_current_compute_acl.to_account_info(),
+                })?;
+                let to_balance = fhe.encrypted(fhe::EncryptedValue {
+                    handle: to.balance_handle,
+                    acl_record: ctx.accounts.to_current_compute_acl.to_account_info(),
+                })?;
+                let amount = fhe.encrypted(fhe::EncryptedValue {
+                    handle: amount_handle,
+                    acl_record: ctx.accounts.amount_compute_acl.to_account_info(),
+                })?;
+                let new_from = fhe.sub(from_balance, amount.clone(), BALANCE_FHE_TYPE)?;
+                fhe.allow(
+                    &new_from,
+                    fhe::DurableAllow {
+                        acl_record: ctx.accounts.from_output_acl.to_account_info(),
+                        app_account: from.key(),
+                        nonce_key: balance_nonce_key(mint.key(), from.key()),
+                        nonce_sequence: from_nonce_sequence,
+                        encrypted_value_label: balance_label(),
+                        subjects: balance_acl_subjects(from.owner, compute_signer),
+                        public_decrypt: false,
+                    },
+                )?;
+                let new_to = fhe.add(to_balance, amount, BALANCE_FHE_TYPE)?;
+                fhe.allow(
+                    &new_to,
+                    fhe::DurableAllow {
+                        acl_record: ctx.accounts.to_output_acl.to_account_info(),
+                        app_account: to.key(),
+                        nonce_key: balance_nonce_key(mint.key(), to.key()),
+                        nonce_sequence: to_nonce_sequence,
+                        encrypted_value_label: balance_label(),
+                        subjects: balance_acl_subjects(to.owner, compute_signer),
+                        public_decrypt: false,
+                    },
+                )?;
+                Ok((new_from.handle(), new_to.handle()))
+            },
         )?;
 
         let from = &mut ctx.accounts.from_account;
@@ -361,9 +380,6 @@ pub struct WrapUsdc<'info> {
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
     pub current_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
-    /// CHECK: initialized and validated by the Zama host program CPI.
-    #[account(mut)]
-    pub amount_compute_acl: UncheckedAccount<'info>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
     pub output_acl: UncheckedAccount<'info>,
@@ -472,127 +488,26 @@ pub enum ConfidentialTokenError {
     CurrentAclRecordMismatch,
 }
 
-fn add_balance<'info>(
-    payer: &Signer<'info>,
-    zama_event_authority: &UncheckedAccount<'info>,
-    zama_program: &Program<'info, ZamaHost>,
-    compute_signer: &UncheckedAccount<'info>,
-    token_account: &Account<'info, ConfidentialTokenAccount>,
-    lhs_acl_record: AccountInfo<'info>,
-    lhs: [u8; 32],
-    rhs_acl_record: AccountInfo<'info>,
-    rhs: [u8; 32],
-    output_acl_record: AccountInfo<'info>,
-    mint: Pubkey,
-    compute_signer_bump: u8,
-    system_program: &Program<'info, System>,
-    output_nonce_sequence: u64,
-) -> Result<[u8; 32]> {
-    compute_balance_with(
-        fhe::add,
-        BalanceCompute {
-            payer,
-            zama_event_authority,
-            zama_program,
-            compute_signer,
-            token_account,
-            lhs_acl_record,
-            lhs,
-            rhs_acl_record,
-            rhs,
-            output_acl_record,
-            mint,
-            compute_signer_bump,
-            system_program,
-            output_nonce_sequence,
-        },
-    )
-}
-
-fn sub_balance<'info>(
-    payer: &Signer<'info>,
-    zama_event_authority: &UncheckedAccount<'info>,
-    zama_program: &Program<'info, ZamaHost>,
-    compute_signer: &UncheckedAccount<'info>,
-    token_account: &Account<'info, ConfidentialTokenAccount>,
-    lhs_acl_record: AccountInfo<'info>,
-    lhs: [u8; 32],
-    rhs_acl_record: AccountInfo<'info>,
-    rhs: [u8; 32],
-    output_acl_record: AccountInfo<'info>,
-    mint: Pubkey,
-    compute_signer_bump: u8,
-    system_program: &Program<'info, System>,
-    output_nonce_sequence: u64,
-) -> Result<[u8; 32]> {
-    compute_balance_with(
-        fhe::sub,
-        BalanceCompute {
-            payer,
-            zama_event_authority,
-            zama_program,
-            compute_signer,
-            token_account,
-            lhs_acl_record,
-            lhs,
-            rhs_acl_record,
-            rhs,
-            output_acl_record,
-            mint,
-            compute_signer_bump,
-            system_program,
-            output_nonce_sequence,
-        },
-    )
-}
-
-struct BalanceCompute<'a, 'info> {
+fn fhe_context<'a, 'info>(
     payer: &'a Signer<'info>,
     zama_event_authority: &'a UncheckedAccount<'info>,
     zama_program: &'a Program<'info, ZamaHost>,
     compute_signer: &'a UncheckedAccount<'info>,
     token_account: &'a Account<'info, ConfidentialTokenAccount>,
-    lhs_acl_record: AccountInfo<'info>,
-    lhs: [u8; 32],
-    rhs_acl_record: AccountInfo<'info>,
-    rhs: [u8; 32],
-    output_acl_record: AccountInfo<'info>,
     mint: Pubkey,
     compute_signer_bump: u8,
     system_program: &'a Program<'info, System>,
-    output_nonce_sequence: u64,
-}
-
-fn compute_balance_with<'info>(
-    op: for<'a> fn(fhe::BinaryOp<'a, 'info>) -> Result<[u8; 32]>,
-    request: BalanceCompute<'_, 'info>,
-) -> Result<[u8; 32]> {
-    let token_account_key = request.token_account.key();
-    op(fhe::BinaryOp {
-        payer: request.payer,
-        event_authority: request.zama_event_authority,
-        zama_program: request.zama_program,
-        compute_signer: request.compute_signer,
-        app_account_authority: request.token_account,
-        lhs_acl_record: request.lhs_acl_record,
-        lhs: request.lhs,
-        rhs_acl_record: request.rhs_acl_record,
-        rhs: request.rhs,
-        scalar: false,
-        output_acl_record: request.output_acl_record,
-        output_fhe_type: BALANCE_FHE_TYPE,
-        acl_domain_key: request.mint,
-        compute_signer_bump: request.compute_signer_bump,
-        system_program: request.system_program,
-        output_nonce_key: balance_nonce_key(request.mint, token_account_key),
-        output_nonce_sequence: request.output_nonce_sequence,
-        output_encrypted_value_label: balance_label(),
-        output_subjects: balance_acl_subjects(
-            request.token_account.owner,
-            request.compute_signer.key(),
-        ),
-        output_public_decrypt: false,
-    })
+) -> fhe::Context<'a, 'info> {
+    fhe::Context {
+        payer,
+        event_authority: zama_event_authority,
+        zama_program,
+        compute_signer,
+        app_account_authority: token_account,
+        acl_domain_key: mint,
+        compute_signer_bump,
+        system_program,
+    }
 }
 
 fn trivial_encrypt_balance_acl<'info>(
@@ -608,24 +523,34 @@ fn trivial_encrypt_balance_acl<'info>(
     nonce_sequence: u64,
     plaintext: u64,
 ) -> Result<[u8; 32]> {
-    fhe::trivial_encrypt_u64(fhe::TrivialEncryptU64 {
-        payer,
-        event_authority: zama_event_authority,
-        zama_program,
-        compute_signer,
-        app_account_authority: token_account,
-        output_acl_record: acl_record,
-        acl_domain_key: mint.key(),
-        compute_signer_bump,
-        system_program,
-        output_nonce_key: balance_nonce_key(mint.key(), token_account.key()),
-        output_nonce_sequence: nonce_sequence,
-        output_encrypted_value_label: balance_label(),
-        plaintext,
-        fhe_type: BALANCE_FHE_TYPE,
-        output_subjects: balance_acl_subjects(token_account.owner, compute_signer.key()),
-        output_public_decrypt: false,
-    })
+    fhe::execute(
+        fhe_context(
+            payer,
+            zama_event_authority,
+            zama_program,
+            compute_signer,
+            token_account,
+            mint.key(),
+            compute_signer_bump,
+            system_program,
+        ),
+        |fhe| {
+            let balance = fhe.trivial_encrypt_u64(plaintext, BALANCE_FHE_TYPE)?;
+            fhe.allow(
+                &balance,
+                fhe::DurableAllow {
+                    acl_record,
+                    app_account: token_account.key(),
+                    nonce_key: balance_nonce_key(mint.key(), token_account.key()),
+                    nonce_sequence,
+                    encrypted_value_label: balance_label(),
+                    subjects: balance_acl_subjects(token_account.owner, compute_signer.key()),
+                    public_decrypt: false,
+                },
+            )?;
+            Ok(balance.handle())
+        },
+    )
 }
 
 fn balance_acl_subjects(owner: Pubkey, compute_signer: Pubkey) -> Vec<AclSubjectEntry> {
@@ -635,12 +560,6 @@ fn balance_acl_subjects(owner: Pubkey, compute_signer: Pubkey) -> Vec<AclSubject
             pubkey: compute_signer,
         },
     ]
-}
-
-fn compute_acl_subject(compute_signer: Pubkey) -> Vec<AclSubjectEntry> {
-    vec![AclSubjectEntry {
-        pubkey: compute_signer,
-    }]
 }
 
 pub fn compute_signer_address(mint: Pubkey) -> (Pubkey, u8) {

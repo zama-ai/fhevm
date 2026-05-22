@@ -135,12 +135,13 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 - [x] Canonical confidential token scenario covers wrap, transfer, current decrypt, historical
       decrypt, and expected failures.
 - [x] Compute-time ACL is enforced by `zama-host::fhe_binary_op` before event emission.
-- [x] Computed output handles are verified inside `zama-host`; durable ACL records are created by
-      the fused `fhe_binary_op_and_bind_output` path that also emits the compute event.
+- [x] Computed output handles are verified inside `zama-host`; intermediate frame results are
+      transiently allowed and durable ACL records are created only by explicit `allow` actions.
 - [x] Generic persistent ACL grants mutate the existing canonical ACL record instead of creating a
       second record for the same handle.
-- [x] Token account initialization creates the initial balance handle through a host-owned
-      `trivial_encrypt_and_bind` path, not through caller-supplied handle binding.
+- [x] Token account initialization creates the initial balance handle through `execute_frame` with
+      a host-owned trivial-encrypt step and explicit durable `allow`, not through caller-supplied
+      handle binding.
 - [x] Runtime tests include a cleartext FHE backend that consumes emitted ZamaHost events and checks
       the plaintext semantics of transfer and wrap flows.
 - [x] Confidential token uses a small `fhe` helper module so app logic calls named FHE helpers
@@ -165,15 +166,16 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
       not designed yet.
 - [ ] ACL records are created already initialized through Anchor `init`; there is no stored
       `Empty -> Bound` enum in the PoC.
-- [ ] Public decrypt authority is intentionally incomplete: the PoC uses the same subject list for
-      compute and user-decrypt, but production must decide who may flip `public_decrypt`.
+- [x] `allow_for_decryption` follows EVM semantics: any subject allowed on the handle may mark the
+      handle as allowed for decryption.
 - [ ] The subject list has a PoC capacity. Overflow/chunking is not designed yet.
 - [ ] Historical handle lookup is assumed to be app/indexer responsibility for now.
 
 ### Missing Next
 
 - [ ] Define and implement the real Solana input path for external encrypted inputs.
-- [ ] Model transient allow semantics for same-transaction intermediate handles.
+- [x] Model transient allow semantics for same-instruction intermediate handles, including the EVM
+      rule that transient allowance can authorize `allow_for_decryption`.
 - [ ] Decide how subject overflow works without imposing a small protocol-level subject limit.
 - [ ] Decide account cleanup, rent refund, compaction, and archival rules.
 - [ ] Wire the KMS connector to verify Solana ACL records instead of using only test-local checks.
@@ -344,19 +346,18 @@ In this Solana PoC:
 
 ```text
 confidential-token
-  -> CPI zama-host::fhe_binary_op_and_bind_output(...)
+  -> CPI zama-host::execute_frame(...)
        checks operand ACL records
-       verifies the output handle against the host formula
+       computes and transiently allows intermediate output handles
        emits typed Anchor event
-       initializes the output ACL record
+       initializes durable output ACL records only for explicit allow actions
 ```
 
 The app program does not perform a separate pre-check for normal compute. It passes operand ACL
-accounts to `zama-host`. `zama-host::fhe_binary_op_and_bind_output` rejects the operation before
-emitting the FHE event if either encrypted operand is not allowed for the compute signer. If checks
-pass, `zama-host` verifies the result handle, emits the compute event, and creates the first
-canonical ACL record for the output handle in the same instruction. `zama-host::fhe_binary_op`
-still exists for transient/intermediate compute when no durable ACL record should be created.
+accounts to `zama-host`. `zama-host::execute_frame` rejects the operation before emitting FHE events
+if any encrypted operand is not allowed for the compute signer. If checks pass, `zama-host` computes
+frame-local result handles, emits the compute events, and creates canonical ACL records only for
+results that the app explicitly allowed.
 
 ## ACL Account Model
 
@@ -390,7 +391,7 @@ before tx:
   A7 address = PDA("acl-record", nonce_key, 7)
   h7 is unknown
 
-during zama-host::fhe_binary_op_and_bind_output:
+during zama-host::execute_frame:
   base = H("FHE_comp", op, lhs, rhs, scalar, zama_host, chain_id, previous_bank_hash, timestamp)
   h7   = H("FHE_bound_output", base, nonce_key, 7)
   A7.handle = h7
@@ -410,15 +411,16 @@ Creating a persistent ACL record has two shapes in this PoC.
 First birth is owned by a trusted host path:
 
 ```text
-zama-host::trivial_encrypt_and_bind(...)
-  creates a trivial-encrypt handle and its first ACL record
+zama-host::execute_frame(...)
+  creates a trivial-encrypt handle and its first ACL record when the frame includes
+  an explicit allow action
 
 zama-host::mock_input_verified_and_bind(...)
   mock short-circuit for future InputVerifier/transciphering birth
 
-zama-host::fhe_binary_op_and_bind_output(...)
-  checks operand ACL records, emits a compute event for the verified output handle,
-  and creates the durable output ACL record
+zama-host::execute_frame(...)
+  checks operand ACL records, emits compute events, and creates durable ACL records
+  only for explicit allow actions
 ```
 
 Generic persistent grants extend the existing canonical ACL record. `allow_acl_subjects` requires
@@ -471,11 +473,12 @@ The token program does not accept a caller-provided initial balance handle anymo
 ```text
 confidential-token::initialize_token_account(initial_balance = 125)
   |
-  +--> CPI zama-host::trivial_encrypt_and_bind(125)
+  +--> CPI zama-host::execute_frame
+  |      step: trivial_encrypt(125) -> hA0
+  |      action: allow hA0 into A0
   |      app_account = AliceTokenAccount
   |      output ACL = A0
   |      subjects = [Alice, compute_signer]
-  |      creates hA0 inside zama-host
   |
   +--> stores:
          AliceTokenAccount.balance_handle = hA0
@@ -522,23 +525,21 @@ Alice signs tx
   v
 confidential-token::confidential_transfer(amount = hX)
   |
-  +--> CPI zama-host::fhe_binary_op_and_bind_output(Sub)
-  |      compute_subject = compute_signer
+  +--> one CPI zama-host::execute_frame
+  |      steps:
+  |        hA1 = FHE.sub(hA0, hX)
+  |        hB1 = FHE.add(hB0, hX)
   |      checks:
   |        A0 stores hA0 and subjects includes compute_signer
-  |        X  stores hX  and subjects includes compute_signer
-  |      verifies hA1 = FHE.sub(hA0, hX)
-  |      emits FHE.sub(hA0, hX) -> hA1
-  |      creates A1 for hA1 with subjects = [Alice, compute_signer]
-  |
-  +--> CPI zama-host::fhe_binary_op_and_bind_output(Add)
-  |      compute_subject = compute_signer
-  |      checks:
   |        B0 stores hB0 and subjects includes compute_signer
   |        X  stores hX  and subjects includes compute_signer
-  |      verifies hB1 = FHE.add(hB0, hX)
-  |      emits FHE.add(hB0, hX) -> hB1
-  |      creates B1 for hB1 with subjects = [Bob, compute_signer]
+  |      transiently allows compute_signer on hA1 and hB1 inside this frame
+  |      explicit durable allows:
+  |        creates A1 for hA1 with subjects = [Alice, compute_signer]
+  |        creates B1 for hB1 with subjects = [Bob, compute_signer]
+  |      emits:
+  |        FHE.sub(hA0, hX) -> hA1
+  |        FHE.add(hB0, hX) -> hB1
   |
   +--> stores:
          AliceTokenAccount.balance_handle = hA1
@@ -587,24 +588,28 @@ Then the confidential balance is updated:
 ```text
 wrap_usdc(amount)
   |
-  +--> CPI zama-host::trivial_encrypt_and_bind(amount)
-  |      creates amount ACL record and emits hDeposit
-  |
-  +--> CPI zama-host::fhe_binary_op_and_bind_output(Add)
+  +--> one CPI zama-host::execute_frame
+  |      steps:
+  |        hDeposit = trivial_encrypt(amount)
+  |        hA1 = FHE.add(hA0, hDeposit)
   |      checks:
   |        current balance ACL stores hA0 and allows compute_signer
-  |        amount ACL stores hDeposit and allows compute_signer
-  |      verifies hA1 = FHE.add(hA0, hDeposit)
-  |      emits FHE.add(hA0, hDeposit) -> hA1
-  |      creates one output ACL record for hA1
-  |      subjects = [Alice, compute_signer]
+  |      transiently allows compute_signer on hDeposit and hA1 inside this frame
+  |      explicit durable allow:
+  |        creates one output ACL record for hA1
+  |        subjects = [Alice, compute_signer]
+  |      emits:
+  |        trivial_encrypt(amount) -> hDeposit
+  |        FHE.add(hA0, hDeposit) -> hA1
 ```
 
 The deposit amount is public in this slice because wrapping an underlying token starts from a known
-SPL amount. The wrapper now uses the host `trivial_encrypt_and_bind(...)` path so the amount handle
-has durable ACL state before it is used by `fhe_binary_op`. Tests that need an encrypted-input shape
-can use the `mock_input_verified_and_bind(...)` short-circuit, but app flows should eventually use
-the final input path and the real ZKPoK/input verifier or transciphering boundary.
+SPL amount. The wrapper does not create durable ACL state for this temporary amount handle. It is a
+frame-local result and only the new balance becomes durable through explicit `allow`.
+
+Tests that need an encrypted-input shape can use the `mock_input_verified_and_bind(...)`
+short-circuit, but app flows should eventually use the final input path and the real ZKPoK/input
+verifier or transciphering boundary.
 
 ## App-Side FHE Helper
 
@@ -618,20 +623,22 @@ solana/programs/confidential-token/src/fhe.rs
 Current helper surface:
 
 ```text
-fhe::trivial_encrypt_u64(...)
-  -> CPI zama-host::trivial_encrypt_and_bind(...)
-  -> returns the host-born output handle stored in the output ACL record
+fhe::execute(ctx, |fhe| { ... })
+  -> collects a linear execution frame
+  -> makes one CPI to zama-host::execute_frame
 
-fhe::add(...)
-fhe::sub(...)
-  -> CPI zama-host::fhe_binary_op_and_bind_output(...)
-  -> checks operand ACL records inside ZamaHost
-  -> emits the compute event
-  -> creates durable ACL state for the output handle
-  -> returns the verified output handle
+inside the closure:
+  fhe.encrypted(...)            // durable input handle from an ACL record
+  fhe.trivial_encrypt_u64(...)  // frame-local handle
+  fhe.add(...), fhe.sub(...)    // frame-local computed handle
+  fhe.allow(...)                // explicit durable ACL record creation
 ```
 
-The helper module keeps `FheBinaryOpCode` and raw CPI account assembly out of token business logic.
+Intermediate handles are ordinary bytes32 handles. They are not durable by default. `execute_frame`
+transiently allows the frame's compute subject to use each step result, and `fhe.allow(...)` is the
+point where an output ACL record is created.
+
+The helper module keeps frame IR details and raw CPI account assembly out of token business logic.
 
 This helper is still token-local. If the shape survives the PoC, it can become the seed for a shared
 Solana FHE app SDK.
@@ -750,13 +757,13 @@ allow_for_decryption on handle
 Design warning:
 
 ```text
-The PoC currently authorizes allow_for_decryption with the same subjects[] list
-used for compute and private user decrypt.
+This mirrors EVM ACL semantics.
 
-That is not a final authority rule.
-Production must decide who may flip public_decrypt.
-A compute_signer should not automatically gain that power just because it can
-compute on a handle.
+Any subject that satisfies is_allowed(handle, subject) may call
+allow_for_decryption for that handle.
+
+On EVM, isAllowed includes both persistent allow and transient allow.
+The Solana transient-allow design must preserve that behavior.
 ```
 
 ## Operator Encoding Notes
@@ -887,9 +894,9 @@ Solana-born ciphertext transfer:
 
 ```text
 LiteSVM emits:
-  trivial_encrypt_and_bind(125) -> hA0
-  trivial_encrypt_and_bind(20)  -> hB0
-  trivial_encrypt_and_bind(100) -> hX
+  execute_frame: trivial_encrypt(125), allow -> hA0
+  execute_frame: trivial_encrypt(20),  allow -> hB0
+  mock_input_verified_and_bind(100) -> hX
 
 tfhe-worker
   -> creates real ciphertexts for hA0, hB0, hX
