@@ -87,16 +87,18 @@ Listener decoders come from the shared `solana/crates/zama-host-events` crate (I
 it updates; the host enforces the declaration. Compute-time ACL is enforced via
 `compute_subject` membership on operand ACL records.
 
-## Shared test crate
+## Layout and justification
+
+Full rationale for every folder, module, and intentional shortcut:
+**[README.md § Software justification](./README.md#software-justification)**.
+
+Quick map:
 
 ```text
-solana/tests  (package: zama-solana-tests)
-  src/            — fixtures, scenarios, event decoders, CleartextBackend, KMS helpers
-  src/host_events.rs — integration tests (same crate, flat layout)
-
-Event path (production-shaped):
-  emit_cpi! → meta.innerInstructions → collect_zama_host_events / collect_cpi_events
-  NOT log-based emit! / msg! parsing (logs can truncate at ~10KB/tx)
+solana/programs/zama-host       — protocol host (execute_frame, ACL, protocol events)
+solana/programs/confidential-token — app PoC (wrap, transfer, rand demo)
+solana/tests                    — zama-solana-tests: fixtures + 44 tests in src/host_events.rs
+solana/crates/zama-host-events  — IDL decoders shared with host-listener
 ```
 
 Add behavior tests in `tests/src/host_events.rs` before changing token logic.
