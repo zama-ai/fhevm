@@ -12754,6 +12754,7 @@ dependencies = [
  "anchor-lang",
  "anchor-litesvm",
  "anchor-spl",
+ "bincode",
  "confidential-token",
  "litesvm",
  "solana-program",

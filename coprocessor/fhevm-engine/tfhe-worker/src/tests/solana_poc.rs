@@ -29,7 +29,7 @@ type SeededCiphertext = ([u8; 32], i16, Vec<u8>);
 
 #[tokio::test]
 #[serial(db)]
-#[ignore = "runs LiteSVM plus the real TFHE worker against a disposable Postgres DB"]
+#[ignore = "slow TFHE+Postgres integration (~7min); CI tfhe-worker-solana-poc job or cargo test -- --ignored"]
 async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypts(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut fixture = token_fixture();
@@ -90,7 +90,7 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
 
 #[tokio::test]
 #[serial(db)]
-#[ignore = "runs LiteSVM plus the real TFHE worker against a disposable Postgres DB"]
+#[ignore = "slow TFHE+Postgres integration (~7min); CI tfhe-worker-solana-poc job or cargo test -- --ignored"]
 async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
