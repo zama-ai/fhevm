@@ -63,6 +63,18 @@ pub fn try_send(
     send_with_signers(svm, &payer.pubkey(), ix, &[payer])
 }
 
+pub fn try_send_with_meta(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    ix: Instruction,
+) -> (litesvm::types::TransactionResult, Vec<Pubkey>) {
+    let message =
+        Message::new_with_blockhash(&[ix], Some(&payer.pubkey()), &svm.latest_blockhash());
+    let account_keys = message.account_keys.clone();
+    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(message), &[payer]).unwrap();
+    (svm.send_transaction(tx), account_keys)
+}
+
 pub fn send_with_signers(
     svm: &mut LiteSVM,
     payer: &Pubkey,

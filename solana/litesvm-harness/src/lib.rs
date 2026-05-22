@@ -43,7 +43,10 @@ pub use fixture::{
     TransferOutputAccounts, WrapOutputAccounts,
 };
 pub use host_ix::{allow_for_decryption_ix, execute_frame_ix, label};
-pub use invariants::{assert_transfer_output_invariants, assert_wrap_output_invariants};
+pub use invariants::{
+    assert_balance_acl_subjects, assert_no_zama_host_events_on_failure,
+    assert_tfhe_event_count, assert_transfer_output_invariants, assert_wrap_output_invariants,
+};
 pub use instructions::{
     authorize_transfer_amount, self_transfer_ix, transfer_ix, transfer_ix_with_amount_acl,
     transfer_ix_with_amount_nonce, transfer_ix_with_current_acl,
@@ -71,7 +74,7 @@ pub use semantic::{
 };
 pub use transaction::{
     anchor_ix, send, send_many_with_signers, send_with_meta, send_with_meta_and_signature,
-    send_with_signers, try_send,
+    send_with_signers, try_send, try_send_with_meta,
 };
 pub use util::{
     amount_plaintext, execute_frame_log_count, expected_trivial_handle,

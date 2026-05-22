@@ -930,11 +930,18 @@ Current tested invariants:
 ACL records are not derived from handles.
   A computed handle can be stored after the transaction starts.
 
-The app account must sign ACL writes.
-  A caller cannot create ACL for someone else's token account.
+The app declares which slots receive durable Allow output.
+  authorized_app_accounts must contain every Allow.app_account (E4).
 
 The host op enforces compute ACL before event emission.
   Wrong current ACL or wrong amount ACL rejects the transfer.
+  Failed frames emit no TFHE or ACL events (A4).
+
+Transient frame results do not carry to a later execute_frame (B3).
+
+Balance ACL subjects are owner + compute_signer (I4).
+
+Subject extension respects MAX_ACL_SUBJECTS (E4).
 
 User decrypt checks signed authorization plus on-chain ACL state.
   Changing allowed_acl_domain_keys fails.

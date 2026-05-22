@@ -140,7 +140,7 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-LiteSVM runtime tests: **35** in `runtime-tests/tests/host_events.rs`. On-chain handle derivation fails closed when the previous slot hash is missing; every fixture seeds a non-zero previous bank hash by default.
+LiteSVM runtime tests: **39** in `runtime-tests/tests/host_events.rs`. On-chain handle derivation fails closed when the previous slot hash is missing; every fixture seeds a non-zero previous bank hash by default.
 
 **CI toolchain:** GitHub Actions installs Anchor **1.0.2** via [AVM](https://www.anchor-lang.com/docs/installation) from `solana-foundation/anchor` (see `.github/workflows/solana-tests.yml`). Do not use `metadaoproject/setup-anchor` — its npm package (`@coral-xyz/anchor-cli`) only ships 0.31.x. The workflow uses a `check-changes` job (`dorny/paths-filter`) so Solana tests run only when `solana/**` (or the synced host IDL) changes; use **workflow_dispatch** to run manually.
 

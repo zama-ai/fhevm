@@ -23,13 +23,15 @@ use zama_solana_litesvm_harness::{
     kms_like_user_decrypt_check, label, max_cpi_depth, read_acl_record, record_subjects,
     run_transfer_scenario_meta, run_wrap_scenario, seed_transfer_inputs,
     assert_transfer_cleartext, assert_transfer_output_invariants,
-    assert_wrap_output_invariants, previous_bank_hash_from_sysvar, set_previous_slot_hash,
+    assert_no_zama_host_events_on_failure, assert_wrap_output_invariants,
+    previous_bank_hash_from_sysvar, set_previous_slot_hash,
     wrap_output_accounts, wrap_usdc_ix, WrapSetup,
     seed_authorizing_acl_record, self_transfer_ix, send, send_many_with_signers, send_with_meta,
     signed_current_balance_user_decrypt_request, signed_user_decrypt_request, spl_token_amount,
     svm_with_program, token_account, token_fixture, transfer_amount_acl_address, transfer_ix,
     transfer_ix_with_amount_acl, transfer_ix_with_amount_nonce, transfer_ix_with_current_acl,
     transfer_ix_with_current_acl_and_amount_nonce, transfer_output_accounts, try_send,
+    try_send_with_meta,
     trivial_encrypt_events, PublicDecryptHandleEntry,
     TransferExpect, TransferOutputAccounts, TransferSetup, TypedClearValue,
     SemanticBackend, UserDecryptHandleEntry, DEFAULT_INPUT_NONCE_SEQUENCE,
@@ -789,6 +791,203 @@ fn allow_acl_subjects_rejects_unallowed_authority() {
     assert!(try_send(&mut svm, &mallory, ix).is_err());
     let record = read_acl_record(&svm, acl_record).expect("expected ACL record");
     assert_eq!(record_subjects(&record), vec![alice.pubkey()]);
+}
+
+#[test]
+fn allow_acl_subjects_rejects_when_subject_capacity_exceeded() {
+    let program_id = host::id();
+    let mut svm = svm_with_program(program_id, host_program_so_path());
+    let payer = svm.create_funded_account(1_000_000_000).unwrap();
+
+    let acl_domain_key = Pubkey::new_unique();
+    let app_account = payer.pubkey();
+    let encrypted_value_label = label("balance");
+    let nonce_key = token::nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let handle = [9; 32];
+    let acl_record = seed_authorizing_acl_record(
+        &mut svm,
+        program_id,
+        nonce_key,
+        0,
+        acl_domain_key,
+        app_account,
+        encrypted_value_label,
+        handle,
+        payer.pubkey(),
+    );
+
+    for _ in 1..host::MAX_ACL_SUBJECTS {
+        let new_subject = Pubkey::new_unique();
+        send(
+            &mut svm,
+            &payer,
+            anchor_ix(
+                program_id,
+                host::accounts::AllowAclSubjects {
+                    authority: payer.pubkey(),
+                    acl_record,
+                    event_authority: event_authority(program_id),
+                    program: program_id,
+                },
+                host::instruction::AllowAclSubjects {
+                    handle,
+                    subjects: vec![AclSubjectEntry {
+                        pubkey: new_subject,
+                    }],
+                },
+            ),
+        );
+    }
+
+    let record = read_acl_record(&svm, acl_record).expect("expected ACL record");
+    assert_eq!(record_subjects(&record).len(), host::MAX_ACL_SUBJECTS);
+
+    let overflow_ix = anchor_ix(
+        program_id,
+        host::accounts::AllowAclSubjects {
+            authority: payer.pubkey(),
+            acl_record,
+            event_authority: event_authority(program_id),
+            program: program_id,
+        },
+        host::instruction::AllowAclSubjects {
+            handle,
+            subjects: vec![AclSubjectEntry {
+                pubkey: Pubkey::new_unique(),
+            }],
+        },
+    );
+    assert!(try_send(&mut svm, &payer, overflow_ix).is_err());
+    let record = read_acl_record(&svm, acl_record).expect("expected ACL record");
+    assert_eq!(record_subjects(&record).len(), host::MAX_ACL_SUBJECTS);
+}
+
+#[test]
+fn execute_frame_rejects_missing_remaining_account() {
+    let program_id = host::id();
+    let mut svm = svm_with_program(program_id, host_program_so_path());
+    let payer = svm.create_funded_account(1_000_000_000).unwrap();
+
+    let missing_acl = Pubkey::new_unique();
+    let steps = vec![FheFrameStep::Operation {
+        opcode: FheOpcode::Add,
+        operands: vec![
+            FheOperand::AclRecord {
+                handle: [7; 32],
+                acl_record: missing_acl,
+            },
+            FheOperand::Scalar {
+                value: amount_plaintext(1),
+                fhe_type: 5,
+            },
+        ],
+        scalar_byte: 1,
+        output_fhe_type: 5,
+    }];
+    let (result, account_keys) = try_send_with_meta(
+        &mut svm,
+        &payer,
+        execute_frame_ix(program_id, payer.pubkey(), steps, vec![], vec![], vec![]),
+    );
+    assert_no_zama_host_events_on_failure(result, &account_keys, program_id);
+}
+
+#[test]
+fn execute_frame_emits_no_events_when_operand_acl_rejects() {
+    let program_id = host::id();
+    let mut svm = svm_with_program(program_id, host_program_so_path());
+    let payer = svm.create_funded_account(1_000_000_000).unwrap();
+    let dummy_rhs_account = svm.create_funded_account(1_000_000).unwrap();
+
+    let acl_domain_key = Pubkey::new_unique();
+    let app_account = payer.pubkey();
+    let encrypted_value_label = label("balance");
+    let nonce_key = token::nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let lhs = [7; 32];
+    let lhs_acl_record = seed_authorizing_acl_record(
+        &mut svm,
+        program_id,
+        nonce_key,
+        0,
+        acl_domain_key,
+        app_account,
+        encrypted_value_label,
+        lhs,
+        payer.pubkey(),
+    );
+    let steps = vec![FheFrameStep::Operation {
+        opcode: FheOpcode::Add,
+        operands: vec![
+            FheOperand::AclRecord {
+                handle: lhs,
+                acl_record: lhs_acl_record,
+            },
+            FheOperand::AclRecord {
+                handle: [9; 32],
+                acl_record: dummy_rhs_account.pubkey(),
+            },
+        ],
+        scalar_byte: 0,
+        output_fhe_type: 5,
+    }];
+    let (result, account_keys) = try_send_with_meta(
+        &mut svm,
+        &payer,
+        execute_frame_ix(
+            program_id,
+            payer.pubkey(),
+            steps,
+            vec![],
+            vec![],
+            vec![lhs_acl_record],
+        ),
+    );
+    assert_no_zama_host_events_on_failure(result, &account_keys, program_id);
+}
+
+#[test]
+fn execute_frame_transient_result_not_available_on_subsequent_instruction() {
+    let program_id = host::id();
+    let mut svm = svm_with_program(program_id, host_program_so_path());
+    let payer = svm.create_funded_account(1_000_000_000).unwrap();
+
+    send(
+        &mut svm,
+        &payer,
+        execute_frame_ix(
+            program_id,
+            payer.pubkey(),
+            vec![FheFrameStep::TrivialEncrypt {
+                plaintext: amount_plaintext(3),
+                fhe_type: 5,
+            }],
+            vec![],
+            vec![],
+            vec![],
+        ),
+    );
+
+    let follow_up = execute_frame_ix(
+        program_id,
+        payer.pubkey(),
+        vec![FheFrameStep::Operation {
+            opcode: FheOpcode::Add,
+            operands: vec![
+                FheOperand::PreviousResult { index: 0 },
+                FheOperand::Scalar {
+                    value: amount_plaintext(1),
+                    fhe_type: 5,
+                },
+            ],
+            scalar_byte: 1,
+            output_fhe_type: 5,
+        }],
+        vec![],
+        vec![],
+        vec![],
+    );
+    let (result, account_keys) = try_send_with_meta(&mut svm, &payer, follow_up);
+    assert_no_zama_host_events_on_failure(result, &account_keys, program_id);
 }
 
 #[test]
