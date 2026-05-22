@@ -55,7 +55,7 @@ solana/litesvm-harness
   `CleartextBackend` simulates add/sub/trivial locally for fast semantic checks.
 
 solana/runtime-tests
-  Fast LiteSVM tests (29). Event helpers live in litesvm-harness, not in this crate.
+  Fast LiteSVM tests (32). Event helpers live in litesvm-harness, not in this crate.
 
 coprocessor/fhevm-engine/host-listener/src/solana_adapter.rs
   Maps typed Solana host events into the existing coprocessor DB model.
@@ -408,19 +408,16 @@ before tx:
   h7 is unknown
 
 during zama-host::execute_frame:
-  base = H("FHE_comp", op, lhs, rhs, scalar, zama_host, chain_id, previous_bank_hash, timestamp)
-  h7   = H("FHE_bound_output", base, nonce_key, 7)
-  A7.handle = h7
+  h = H("FHE_comp", op, lhs, rhs, scalar, zama_host, chain_id, previous_bank_hash, timestamp)
+  append handle metadata (marker, chain_id, fhe_type, version)
+  Allow action writes that step result handle into the output ACL record
+  A7.handle = h
   A7.subjects = [Alice, compute_signer]
 ```
 
-The durable output nonce is part of the bound output handle. This prevents two different ACL record
-addresses for the same app account from intentionally binding the exact same computed handle. If an
-app wants two durable outputs for the same operation, it gets two distinct opaque handles.
+The PoC stores the **frame step result handle** on the durable ACL record. App accounts point at that opaque handle; they never precompute it.
 
-The PoC uses the previous slot hash when LiteSVM or the cluster exposes it. Local bootstrap tests can
-fall back to zero when no prior slot hash exists; this is test glue, not the intended production
-entropy source.
+The harness seeds a deterministic non-zero `previous_bank_hash` for every LiteSVM fixture so handle derivation matches production-shaped inputs without per-test setup.
 
 Creating a persistent ACL record has two shapes in this PoC.
 

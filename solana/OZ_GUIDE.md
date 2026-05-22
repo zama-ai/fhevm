@@ -129,9 +129,13 @@ KMS:
 ```bash
 cd solana
 NO_DNA=1 anchor build --ignore-keys
+bash scripts/check-zama-host-idl.sh   # fail if IDL drift
+bash scripts/sync-zama-host-idl.sh  # copy target/idl → host-listener after host changes
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
+
+LiteSVM runtime tests: **32** in `runtime-tests/tests/host_events.rs`. Every fixture seeds a non-zero previous bank hash by default.
 
 Worker compile check (requires built programs in `solana/target/deploy/`):
 
