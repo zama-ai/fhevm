@@ -1,11 +1,12 @@
-//! Shared LiteSVM harness for Solana PoC tests.
+//! Solana FHEVM PoC tests and shared fixtures.
 //!
-//! Stack: `litesvm 0.11`, `anchor-litesvm 0.4`, `anchor-lang 1.0.2`, `solana-sdk 3.0`.
-//!
-//! Protocol TFHE events are collected from `emit_cpi!` inner instructions (same path as
-//! `host-listener`), not from transaction logs.
+//! Integration tests live in `host_events.rs` (same crate, no separate `tests/` tree).
+//! tfhe-worker slow-path tests import the public helpers from this crate.
 
 #![allow(clippy::too_many_arguments, clippy::result_large_err)]
+
+#[cfg(test)]
+mod host_events;
 
 mod acl;
 mod cleartext;
@@ -32,7 +33,7 @@ pub use cleartext::{
 };
 pub use events::{
     acl_allowed_events, balance_handle_updated_events, binary_op_events, collect_cpi_events,
-    collect_zama_host_cpi_payloads, collect_zama_host_events, count_acl_allowed_events,
+    collect_zama_host_events, count_acl_allowed_events,
     count_tfhe_host_events, decode_token_cpi_event, decode_zama_host_cpi_event, fhe_rand_events,
     max_cpi_depth, trivial_encrypt_events, AclAllowedEvent, FheBinaryOpEvent, FheRandEvent,
     TrivialEncryptEvent, ANCHOR_EVENT_IX_TAG_LE, ZamaHostEvent,
@@ -61,7 +62,7 @@ pub use kms::{
     UserDecryptAuthorizationPayload, UserDecryptHandleEntry, UserDecryptRequest,
 };
 pub use programs::{
-    assert_program_built, host_program_so_path, svm_with_program, svm_with_programs,
+    host_program_so_path, svm_with_program, svm_with_programs,
     token_program_so_path,
 };
 pub use scenarios::{

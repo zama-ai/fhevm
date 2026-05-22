@@ -26,20 +26,6 @@ pub fn collect_cpi_events<T>(
         .collect()
 }
 
-/// Collect raw CPI instruction payloads for the ZamaHost program.
-pub fn collect_zama_host_cpi_payloads(
-    meta: &TransactionMetadata,
-    account_keys: &[Pubkey],
-    program_id: Pubkey,
-) -> Vec<Vec<u8>> {
-    meta.inner_instructions
-        .iter()
-        .flatten()
-        .filter(|ix| *ix.instruction.program_id(account_keys) == program_id)
-        .map(|ix| ix.instruction.data.clone())
-        .collect()
-}
-
 /// Walk `meta.inner_instructions` and return all ZamaHost CPI events for `program_id`.
 pub fn collect_zama_host_events(
     meta: &TransactionMetadata,

@@ -13,7 +13,7 @@ use zama_host as host;
 use zama_host::{
     AclRecord, AclSubjectEntry, FheFrameAction, FheFrameStep, FheOpcode, FheOperand,
 };
-use zama_solana_litesvm_harness::{
+use crate::{
     acl_record_address, allow_for_decryption_ix, amount_plaintext, anchor_ix,
     assert_acl_record, assert_balance_acl,
     authorization_payload_bytes, authorize_transfer_amount,

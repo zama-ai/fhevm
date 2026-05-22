@@ -11146,7 +11146,7 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "zama-host",
- "zama-solana-litesvm-harness",
+ "zama-solana-tests",
 ]
 
 [[package]]
@@ -12750,7 +12750,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "zama-solana-litesvm-harness"
+name = "zama-solana-tests"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",

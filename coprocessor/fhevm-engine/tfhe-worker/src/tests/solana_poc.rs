@@ -15,7 +15,7 @@ use solana_sdk::{
 use tfhe::prelude::FheTryEncrypt;
 use time::{Date, Month, PrimitiveDateTime, Time};
 use zama_host::{AclSubjectEntry, FheFrameAction, FheFrameStep, FheOperand};
-use zama_solana_litesvm_harness::{
+use zama_solana_tests::{
     acl_record_address, authorize_transfer_amount, cleartext_rand_value, collect_cpi_events,
     execute_frame_ix, fhe_rand_events, kms_like_user_decrypt_check, label, read_acl_record,
     run_transfer_scenario, send_with_meta, send_with_meta_and_signature, set_previous_slot_hash,
@@ -175,7 +175,7 @@ async fn solana_fhe_rand_creates_ciphertext_and_decrypts() -> Result<(), Box<dyn
 {
     use anchor_litesvm::TestHelpers;
     use zama_host as host;
-    use zama_solana_litesvm_harness::{host_program_so_path, svm_with_program};
+    use zama_solana_tests::{host_program_so_path, svm_with_program};
 
     let harness = setup_event_harness().await?;
     let program_id = host::id();

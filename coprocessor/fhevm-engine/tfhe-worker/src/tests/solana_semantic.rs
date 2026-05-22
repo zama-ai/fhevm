@@ -11,7 +11,7 @@ use host_listener::{
 use litesvm::types::TransactionMetadata;
 use tfhe::prelude::FheTryEncrypt;
 use time::{Date, Month, PrimitiveDateTime, Time};
-use zama_solana_litesvm_harness::{collect_cpi_events, TransferScenario, BALANCE_FHE_TYPE};
+use zama_solana_tests::{collect_cpi_events, TransferScenario, BALANCE_FHE_TYPE};
 
 use crate::tests::{
     event_helpers::{decrypt_handles, setup_event_harness, wait_until_computed, EventHarness},
@@ -90,9 +90,9 @@ pub async fn assert_transfer_worker(
     alice_initial: u64,
     bob_initial: u64,
     amount: u64,
-    expect: zama_solana_litesvm_harness::TransferExpect,
+    expect: zama_solana_tests::TransferExpect,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use zama_solana_litesvm_harness::assert_transfer_semantics;
+    use zama_solana_tests::assert_transfer_semantics;
 
     let mut backend = WorkerSemanticBackend::new().await?;
     backend

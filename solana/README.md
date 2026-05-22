@@ -24,7 +24,7 @@ RFC 024 lives in **tech-spec PR #448**, branch `elias/rfc-024-solana-acl-design`
 5. Sync this README and OZ_GUIDE.md if boundaries or host surface changed
 ```
 
-Link the RFC commit in fhevm PR descriptions when a design choice is promoted or rejected. See [rfc-024-poc-sync.md](./rfc-024-poc-sync.md) for PoC-validated text to push to PR #448.
+Link the RFC commit in fhevm PR descriptions when a design choice is promoted or rejected. Push validated text directly to [RFC 024 PR #448](https://github.com/zama-ai/tech-spec/pull/448).
 
 It is meant to be a readable base for:
 
@@ -36,34 +36,30 @@ It is meant to be a readable base for:
 
 The PoC does not settle the final Solana product shape. It makes one path real enough that ACL, event listening, worker compute, and user decrypt can be discussed from code and tests.
 
-## Where To Start
+## Workspace layout (why these folders exist)
 
 ```text
 solana/programs/zama-host
-  Protocol-side host program.
-  Owns FHE event emission and ACL enforcement.
+  Protocol-side host program. Owns FHE event emission and ACL enforcement.
 
 solana/programs/confidential-token
-  App-side PoC program.
-  Models a minimal confidential token / cUSDC wrapper.
-  Its local fhe.rs module is the current dev-facing wrapper around raw ZamaHost CPI calls.
+  App-side PoC program (minimal confidential token / cUSDC wrapper).
+  `src/fhe.rs` is the dev-facing wrapper around raw ZamaHost CPI calls.
 
-solana/litesvm-harness
-  Shared LiteSVM harness used by runtime-tests and tfhe-worker solana_poc tests.
-  Canonical stack: litesvm 0.11, anchor-litesvm 0.4, anchor-lang 1.0.2, solana-sdk 3.0.
-  Event ingestion walks `emit_cpi!` inner instructions (same path as host-listener), not logs.
-  ZamaHost CPI decoders come from the shared `zama-host-events` crate (IDL codegen).
-  `CleartextBackend` simulates add/sub/trivial/rand locally for fast semantic checks.
+solana/tests
+  PoC test crate (`zama-solana-tests`). Helpers and scenarios in `src/`; integration
+  tests in `src/host_events.rs` (same crate — no nested `tests/` directory).
+  tfhe-worker slow-path tests import the public helpers from this crate.
 
-solana/runtime-tests
-  Fast LiteSVM tests (44). Event helpers live in litesvm-harness, not in this crate.
+solana/crates/zama-host-events
+  IDL codegen shared with host-listener (decode_anchor_cpi_event, event types).
 
 coprocessor/fhevm-engine/host-listener/src/solana_adapter.rs
   Maps typed Solana host events into the existing coprocessor DB model.
 
 coprocessor/fhevm-engine/tfhe-worker/src/tests/solana_poc.rs
   Worker-backed end-to-end tests with real small TFHE ciphertexts.
-  Imports the shared solana/litesvm-harness crate instead of duplicating setup helpers.
+  Imports zama-solana-tests instead of duplicating setup helpers.
 ```
 
 ## Handoff Path
@@ -110,10 +106,10 @@ update this guide and the affected tests in the same PR.
 
 ```text
 Change ACL storage/checking?
-  update zama-host + solana/runtime-tests
+  update zama-host + solana/tests/src/host_events.rs
 
 Change token behavior?
-  update confidential-token + solana/runtime-tests
+  update confidential-token + solana/tests/src/host_events.rs
 
 Change emitted host events?
   update zama-host + host-listener solana_adapter + worker tests
@@ -128,7 +124,7 @@ For OpenZeppelin follow-up work, the safe area is:
 solana/programs/confidential-token
   Improve the confidential token flow against the current ZamaHost CPI surface.
 
-solana/runtime-tests/tests/host_events.rs
+solana/tests/src/host_events.rs
   Add behavior tests here first.
 ```
 
@@ -151,12 +147,12 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 
 ### Working Now
 
-- [x] Anchor workspace with `zama-host`, `confidential-token`, `litesvm-harness`, and LiteSVM runtime tests.
+- [x] Anchor workspace with `zama-host`, `confidential-token`, `tests`, and LiteSVM integration tests.
 - [x] **Host surface is `execute_frame`-only** (`allow_acl_subjects`, `allow_for_decryption`, `assert_acl_record`). Legacy per-op / test-emit instructions were removed.
 - [x] ZamaHost emits typed Anchor CPI events from real `execute_frame` operations (`FheBinaryOpEvent`, `TrivialEncryptEvent`, `FheRandEvent`, `AclAllowedEvent`).
 - [x] Host-listener decodes ZamaHost protocol events from the checked-in Anchor IDL snapshot (`host-listener/idl/zama_host.json`).
 - [x] Solana host events normalize into the existing coprocessor DB event shape.
-- [x] Worker-backed tests use real small TFHE ciphertexts for Solana-originated events (`tfhe-worker/src/tests/solana_poc.rs`, shared `litesvm-harness`).
+- [x] Worker-backed tests use real small TFHE ciphertexts for Solana-originated events (`tfhe-worker/src/tests/solana_poc.rs`, shared `tests` crate).
 - [x] Confidential token: initialize mint/account, wrap SPL USDC, confidential transfer with balance handle rotation.
 - [x] `BalanceHandleUpdatedEvent` for app/front-end indexers only (not consumed by host-listener).
 - [x] Canonical E2E: wrap → transfer → current + historical user decrypt, plus negative authorization tests.
@@ -195,8 +191,8 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 - [ ] Wire the KMS connector to verify Solana ACL records instead of using only test-local checks.
 - [ ] Extend the canonical confidential token scenario when adding new token features, instead of
       creating a second product flow.
-- [x] **`authorized_app_accounts`** on `execute_frame`; **`app_account_authority` removed** (see [rfc-024-poc-sync.md](./rfc-024-poc-sync.md)).
-- [ ] Keep [RFC 024](https://github.com/zama-ai/tech-spec/pull/448) aligned when the PoC proves or disproves a design choice (paste from `rfc-024-poc-sync.md` to PR #448 branch).
+- [x] **`authorized_app_accounts`** on `execute_frame`; **`app_account_authority` removed** (see [RFC 024 PR #448](https://github.com/zama-ai/tech-spec/pull/448)).
+- [ ] Keep [RFC 024](https://github.com/zama-ai/tech-spec/pull/448) aligned when the PoC proves or disproves a design choice (push updates to PR #448 branch).
 
 ## Global Flow
 
@@ -1014,7 +1010,7 @@ Negative case:
 Current `confidential_transfer` LiteSVM snapshot is tracked in:
 
 ```text
-solana/runtime-tests/tests/host_events.rs
+solana/tests/src/host_events.rs
   confidential_transfer_budget_snapshot
 ```
 

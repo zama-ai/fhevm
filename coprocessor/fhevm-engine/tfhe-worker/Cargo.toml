@@ -61,7 +61,7 @@ serde = { workspace = true }
 serial_test = { workspace = true }
 zama-host = { path = "../../../solana/programs/zama-host" }
 confidential-token = { path = "../../../solana/programs/confidential-token" }
-zama-solana-litesvm-harness = { path = "../../../solana/litesvm-harness" }
+zama-solana-tests = { path = "../../../solana/tests" }
 
 [[bin]]
 name = "tfhe_worker"

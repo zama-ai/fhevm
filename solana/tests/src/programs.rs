@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anchor_litesvm::AnchorLiteSVM;
 use litesvm::LiteSVM;
@@ -39,12 +39,4 @@ pub fn svm_with_programs(programs: &[(Pubkey, PathBuf)]) -> LiteSVM {
     let mut svm = AnchorLiteSVM::build_with_programs(&programs).svm;
     set_previous_slot_hash(&mut svm, DEFAULT_TEST_PREVIOUS_BANK_HASH);
     svm
-}
-
-pub fn assert_program_built(path: &Path) {
-    assert!(
-        path.exists(),
-        "missing {}; run `cd solana && NO_DNA=1 anchor build --ignore-keys` before this test",
-        path.display()
-    );
 }

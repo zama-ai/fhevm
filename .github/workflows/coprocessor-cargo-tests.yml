@@ -31,7 +31,7 @@ jobs:
               - .github/workflows/coprocessor-cargo-tests.yml
               - coprocessor/fhevm-engine/**
               - coprocessor/proto/**
-              - solana/litesvm-harness/**
+              - solana/tests/**
               - solana/programs/**
               - solana/crates/zama-host-events/**
   cargo-tests:

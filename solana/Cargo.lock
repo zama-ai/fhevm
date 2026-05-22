@@ -4735,7 +4735,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "zama-solana-litesvm-harness"
+name = "zama-solana-tests"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
@@ -4750,21 +4750,6 @@ dependencies = [
  "thiserror 2.0.18",
  "zama-host",
  "zama-host-events",
-]
-
-[[package]]
-name = "zama-solana-runtime-tests"
-version = "0.1.0"
-dependencies = [
- "anchor-lang",
- "anchor-litesvm",
- "anchor-spl",
- "confidential-token",
- "litesvm",
- "solana-program",
- "solana-sdk",
- "zama-host",
- "zama-solana-litesvm-harness",
 ]
 
 [[package]]

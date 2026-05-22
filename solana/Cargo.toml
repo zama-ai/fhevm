@@ -2,10 +2,9 @@
 resolver = "2"
 members = [
     "crates/zama-host-events",
-    "litesvm-harness",
+    "tests",
     "programs/confidential-token",
     "programs/zama-host",
-    "runtime-tests",
 ]
 
 [workspace.package]

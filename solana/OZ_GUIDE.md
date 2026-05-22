@@ -87,22 +87,19 @@ Listener decoders come from the shared `solana/crates/zama-host-events` crate (I
 it updates; the host enforces the declaration. Compute-time ACL is enforced via
 `compute_subject` membership on operand ACL records.
 
-## Shared test harness
+## Shared test crate
 
 ```text
-solana/litesvm-harness   — shared by runtime-tests and tfhe-worker solana_poc
-Stack: litesvm 0.11, anchor-litesvm 0.4, anchor-lang 1.0.2, solana-sdk 3.0
+solana/tests  (package: zama-solana-tests)
+  src/            — fixtures, scenarios, event decoders, CleartextBackend, KMS helpers
+  src/host_events.rs — integration tests (same crate, flat layout)
 
 Event path (production-shaped):
   emit_cpi! → meta.innerInstructions → collect_zama_host_events / collect_cpi_events
   NOT log-based emit! / msg! parsing (logs can truncate at ~10KB/tx)
-
-Backends:
-  CleartextBackend — fast local add/sub/trivial/rand (runtime-tests)
-  host-listener decode_anchor_cpi_event — worker E2E (solana_poc, #[ignore])
 ```
 
-Add behavior tests in `runtime-tests/tests/host_events.rs` before changing token logic.
+Add behavior tests in `tests/src/host_events.rs` before changing token logic.
 
 ## Caveats (intentional PoC shortcuts)
 
@@ -125,13 +122,13 @@ Rand:
   fheRandBounded (op 27) not planned for current PoC
 
 KMS:
-  Decrypt semantics tested in litesvm-harness kms.rs, not wired to KMS connector
+  Decrypt semantics tested in tests/src/kms.rs, not wired to KMS connector
 ```
 
 ## How to contribute
 
 ```text
-1. LiteSVM test in runtime-tests/tests/host_events.rs (happy + negative auth case)
+1. LiteSVM test in tests/src/host_events.rs (happy + negative auth case)
 2. Change confidential-token for app behavior
 3. Change zama-host only for host-semantics gaps (coordinate RFC 024 update)
 4. Sync README.md; open RFC 024 PR on tech-spec if design changed
@@ -149,7 +146,7 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-LiteSVM runtime tests: **44** in `runtime-tests/tests/host_events.rs`. On-chain handle derivation fails closed when the previous slot hash is missing; every fixture seeds a non-zero previous bank hash by default.
+LiteSVM integration tests live in `tests/src/host_events.rs`. On-chain handle derivation fails closed when the previous slot hash is missing; every fixture seeds a non-zero previous bank hash by default.
 
 **Worker E2E (`#[ignore]`, CI `tfhe-worker-solana-poc`):** transfer tests run in CI; `solana_fhe_rand_creates_ciphertext_and_decrypts` exists locally but is not in the CI loop yet.
 
