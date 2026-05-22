@@ -3,7 +3,7 @@ type Env = Record<string, string>;
 export const scenario = "two-of-three";
 
 const fromTag = "v0.12.4";
-const targetTag = "v0.13.0-2";
+const targetTag = "v0.13.0-5";
 const relayerSdkVersion = "0.4.2";
 
 export const from = {
