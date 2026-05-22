@@ -67,7 +67,7 @@ abstract contract HandlesSender is OAppSender, BridgeEvents {
     /// @notice LayerZero endpoint id → destination chain id used in handle derivation.
     ///         Configured by the owner. A value of 0 means the endpoint id is not
     ///         registered and `send` will revert for it.
-    mapping(uint32 dstEid => uint256 dstChainId) private _dstChainIdForEid;
+    mapping(uint32 dstEid => uint64 dstChainId) private _dstChainIdForEid;
 
     /// @notice OApp version tuple. HandlesSender is send-only: receiver side is `0`.
     /// @dev    Virtual so the combined {ConfidentialBridge} can return `(1, 2)`.
@@ -108,7 +108,7 @@ abstract contract HandlesSender is OAppSender, BridgeEvents {
         uint256 nHandles = handleList.length;
         if (nHandles > MAX_HANDLES) revert TooManyHandles(nHandles, MAX_HANDLES);
 
-        uint256 dstChainId = _dstChainIdForEid[dstEid];
+        uint64 dstChainId = _dstChainIdForEid[dstEid];
         if (dstChainId == 0) revert UnknownDstEid(dstEid);
 
         // Check ACL allowance for every handle up-front so we revert before paying the
@@ -154,10 +154,10 @@ abstract contract HandlesSender is OAppSender, BridgeEvents {
 
     /// @dev Event-emission loop, extracted from `send` for the same stack-pressure
     ///      reason as `_checkAllAllowed`.
-    function _emitBridgeHandle(bytes32[] calldata handleList, uint256 dstChainId, bytes32 guid) private {
+    function _emitBridgeHandle(bytes32[] calldata handleList, uint64 dstChainId, bytes32 guid) private {
         uint256 n = handleList.length;
         for (uint256 i = 0; i < n; i++) {
-            emit BridgeHandle(handleList[i], dstChainId, guid);
+            emit BridgeHandle(msg.sender, handleList[i], dstChainId, guid);
         }
     }
 
@@ -182,16 +182,14 @@ abstract contract HandlesSender is OAppSender, BridgeEvents {
     }
 
     /**
-     * @notice Set the destination chain id used in handle derivation for `dstEid`.
-     *         Pass `dstChainId = 0` to clear the mapping.
+     * @notice Set the destination chain id corresponding to a `dstEid`.
      * @dev    Keeping this on the HandlesSender (instead of the coprocessor) keeps the
      *         coprocessor bridge-agnostic: it consumes `dstChainId` from emitted events
      *         and does not need to know about LayerZero endpoint ids.
      */
-    function setDstChainId(uint32 dstEid, uint256 dstChainId) external onlyOwner {
-        uint256 oldDstChainId = _dstChainIdForEid[dstEid];
+    function setDstChainId(uint32 dstEid, uint64 dstChainId) external onlyOwner {
         _dstChainIdForEid[dstEid] = dstChainId;
-        emit DstChainIdSet(dstEid, oldDstChainId, dstChainId);
+        emit DstChainIdSet(dstEid, dstChainId);
     }
 
     /// @notice Returns the destination chain id registered for `dstEid`, or 0 if unset.

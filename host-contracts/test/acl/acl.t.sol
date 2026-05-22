@@ -11,6 +11,7 @@ import {ACLEvents} from "../../contracts/ACLEvents.sol";
 import {EmptyUUPSProxyACL} from "../../contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
 import {HostContractsDeployerTestUtils} from "../../fhevm-foundry/HostContractsDeployerTestUtils.sol";
 import {fhevmExecutorAdd, pauserSetAdd, aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {confidentialBridgeAdd} from "../../addresses/BridgeAddresses.sol";
 
 contract ACLTest is HostContractsDeployerTestUtils {
     using stdStorage for StdStorage;
@@ -243,7 +244,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
         bytes32 handle,
         address account
     ) public {
-        vm.assume(sender != fhevmExecutorAdd); // fhevmExecutor is privileged for transientAllow
+        vm.assume(sender != fhevmExecutorAdd && sender != confidentialBridgeAdd); // fhevmExecutor and confidentialBridge are privileged for transientAllow
         vm.prank(sender);
         vm.expectRevert(abi.encodeWithSelector(ACL.SenderNotAllowed.selector, sender));
         acl.allowTransient(handle, account);

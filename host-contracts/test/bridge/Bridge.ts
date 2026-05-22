@@ -32,7 +32,7 @@ describe('Bridge', function () {
     it('emits DstChainIdSet and updates the mapping on owner update', async function () {
       await expect(this.srcBridge.connect(this.owner).setDstChainId(DST_EID, 99n))
         .to.emit(this.srcBridge, 'DstChainIdSet')
-        .withArgs(DST_EID, DST_CHAIN_ID, 99n);
+        .withArgs(DST_EID, 99n);
       expect(await this.srcBridge.getDstChainId(DST_EID)).to.equal(99n);
     });
 
@@ -110,24 +110,33 @@ describe('Bridge', function () {
 
   describe('ConfidentialBridge: destination-side governance', function () {
     it('rejects grantFallback from non-owner', async function () {
-      const dst = ethers.keccak256(ethers.toUtf8Bytes('dst'));
-      const cthash = ethers.keccak256(ethers.toUtf8Bytes('ct'));
-      await expect(this.dstBridge.connect(this.signers.bob).grantFallback(dst, cthash)).to.be.reverted;
+      const dst = await makeDstHandle(0);
+      await expect(this.dstBridge.connect(this.signers.bob).grantFallback(dst, 42n)).to.be.reverted;
     });
 
-    it('reverts InvalidCiphertextHash on zero hash', async function () {
+    it('reverts WrongChainIdInDstHandle when the handle encodes a different chain id', async function () {
+      // Plain keccak256 has no chain-id metadata baked into bytes 22-29, so the
+      // contract's chain-id check on the handle must reject it.
       const dst = ethers.keccak256(ethers.toUtf8Bytes('dst'));
       await expect(
-        this.dstBridge.connect(this.owner).grantFallback(dst, ethers.ZeroHash),
-      ).to.be.revertedWithCustomError(this.dstBridge, 'InvalidCiphertextHash');
+        this.dstBridge.connect(this.owner).grantFallback(dst, 0n),
+      ).to.be.revertedWithCustomError(this.dstBridge, 'WrongChainIdInDstHandle');
     });
 
-    it('emits FallbackGranted when called by the owner', async function () {
-      const dst = ethers.keccak256(ethers.toUtf8Bytes('dst'));
-      const cthash = ethers.keccak256(ethers.toUtf8Bytes('ct'));
-      await expect(this.dstBridge.connect(this.owner).grantFallback(dst, cthash))
-        .to.emit(this.dstBridge, 'FallbackGranted')
-        .withArgs(dst, cthash);
+    it('emits FallbackGrantedClearText when called by the owner', async function () {
+      const dst = await makeDstHandle(1);
+      const clearText = 42n;
+      await expect(this.dstBridge.connect(this.owner).grantFallback(dst, clearText))
+        .to.emit(this.dstBridge, 'FallbackGrantedClearText')
+        .withArgs(dst, clearText);
+    });
+
+    it('reverts DstHandleAlreadyGrantedFallback on a second grant for the same handle', async function () {
+      const dst = await makeDstHandle(2);
+      await (await this.dstBridge.connect(this.owner).grantFallback(dst, 1n)).wait();
+      await expect(
+        this.dstBridge.connect(this.owner).grantFallback(dst, 2n),
+      ).to.be.revertedWithCustomError(this.dstBridge, 'DstHandleAlreadyGrantedFallback');
     });
   });
 
@@ -164,6 +173,22 @@ describe('Bridge', function () {
     });
   });
 });
+
+/**
+ * Build a bytes32 handle whose metadata bytes match this chain — required by the
+ * destination-side checks (bytes 22-29 = uint64(block.chainid)).
+ *   - byte 21:    0xff (computation/bridged marker)
+ *   - bytes 22-29: uint64 chain id (this chain) in big-endian
+ *   - byte 30:    0x05 (FheType.Uint64)
+ *   - byte 31:    HANDLE_VERSION 0
+ */
+async function makeDstHandle(seed: number): Promise<string> {
+  const raw = ethers.keccak256(ethers.toUtf8Bytes(`dst-handle-${seed}`));
+  const top21 = raw.slice(2, 2 + 21 * 2); // 21 random bytes (hex)
+  const { chainId } = await ethers.provider.getNetwork();
+  const chainIdHex = chainId.toString(16).padStart(16, '0'); // 8 bytes (uint64) big-endian
+  return '0x' + top21 + 'ff' + chainIdHex + '05' + '00';
+}
 
 async function getAclAddress(): Promise<string> {
   const dotenv = await import('dotenv');

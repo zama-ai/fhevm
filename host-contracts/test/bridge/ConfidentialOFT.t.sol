@@ -28,7 +28,7 @@ import {aclAdd, fhevmExecutorAdd} from "../../addresses/FHEVMHostAddresses.sol";
 contract ConfidentialOFTTest is TestHelperOz5, HostContractsDeployerTestUtils {
     uint32 internal constant SRC_EID = 1;
     uint32 internal constant DST_EID = 2;
-    uint256 internal constant DST_CHAIN_ID = 4242;
+    uint64 internal constant DST_CHAIN_ID = 4242;
 
     address internal owner = makeAddr("owner");
     address internal alice = makeAddr("alice");
@@ -100,18 +100,14 @@ contract ConfidentialOFTTest is TestHelperOz5, HostContractsDeployerTestUtils {
 
     function test_OnReceive_RevertsIfCallerNotBridge() public {
         bytes32[] memory empty = new bytes32[](0);
-        vm.expectRevert(
-            abi.encodeWithSelector(ConfidentialOFT.OnlyConfidentialBridge.selector, address(this))
-        );
+        vm.expectRevert(abi.encodeWithSelector(ConfidentialOFT.OnlyConfidentialBridge.selector, address(this)));
         oft.onReceive(SRC_EID, address(0xBEEF), abi.encode(bob, bytes32(0)), empty, empty);
     }
 
     function test_OnReceive_RevertsIfPeerUntrusted() public {
         bytes32[] memory empty = new bytes32[](0);
         vm.prank(address(dstBridge));
-        vm.expectRevert(
-            abi.encodeWithSelector(ConfidentialOFT.UntrustedPeer.selector, SRC_EID, address(0xBEEF))
-        );
+        vm.expectRevert(abi.encodeWithSelector(ConfidentialOFT.UntrustedPeer.selector, SRC_EID, address(0xBEEF)));
         oft.onReceive(SRC_EID, address(0xBEEF), abi.encode(bob, bytes32(0)), empty, empty);
     }
 
@@ -139,8 +135,7 @@ contract ConfidentialOFTTest is TestHelperOz5, HostContractsDeployerTestUtils {
             // If we hit one of our auth errors, the test fails.
             bytes4 sel = bytes4(reason);
             assertTrue(
-                sel != ConfidentialOFT.OnlyConfidentialBridge.selector &&
-                    sel != ConfidentialOFT.UntrustedPeer.selector,
+                sel != ConfidentialOFT.OnlyConfidentialBridge.selector && sel != ConfidentialOFT.UntrustedPeer.selector,
                 "authentication should have passed"
             );
         }
