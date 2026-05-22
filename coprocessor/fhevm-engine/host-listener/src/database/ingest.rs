@@ -227,7 +227,7 @@ pub async fn ingest_block_logs(
 
         let is_kms_gen_address =
             &current_address == kms_generation_contract_address;
-        if kms_generation_contract_address.is_none() || is_kms_gen_address {
+        if is_kms_gen_address {
             if let Ok(event) =
                 KMSGeneration::KMSGenerationEvents::decode_log(&log.inner)
             {
@@ -243,6 +243,7 @@ pub async fn ingest_block_logs(
                 event_address = ?log.inner.address,
                 acl_contract_address = ?acl_contract_address,
                 tfhe_contract_address = ?tfhe_contract_address,
+                kms_generation_contract_address = ?kms_generation_contract_address,
                 log = ?log,
                 "Cannot decode event",
             );
