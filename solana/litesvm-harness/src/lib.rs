@@ -59,8 +59,8 @@ pub use programs::{
     token_program_so_path,
 };
 pub use scenarios::{
-    run_transfer_scenario, run_transfer_scenario_meta, TransferScenario, TransferSetup,
-    BALANCE_FHE_TYPE,
+    run_transfer_scenario, run_transfer_scenario_meta, run_wrap_scenario, TransferScenario,
+    TransferSetup, WrapScenario, WrapSetup, BALANCE_FHE_TYPE,
 };
 pub use semantic::{
     assert_transfer_cleartext, assert_transfer_semantics, compute_backend_kind_from_env,

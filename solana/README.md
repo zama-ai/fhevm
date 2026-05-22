@@ -24,7 +24,7 @@ RFC 024 lives in **tech-spec PR #448**, branch `elias/rfc-024-solana-acl-design`
 5. Sync this README and OZ_GUIDE.md if boundaries or host surface changed
 ```
 
-Link the RFC commit in fhevm PR descriptions when a design choice is promoted or rejected.
+Link the RFC commit in fhevm PR descriptions when a design choice is promoted or rejected. See [rfc-024-poc-sync.md](./rfc-024-poc-sync.md) for PoC-validated text to push to PR #448.
 
 It is meant to be a readable base for:
 
@@ -56,7 +56,7 @@ solana/litesvm-harness
   `CleartextBackend` simulates add/sub/trivial locally for fast semantic checks.
 
 solana/runtime-tests
-  Fast LiteSVM tests (32). Event helpers live in litesvm-harness, not in this crate.
+  Fast LiteSVM tests (33). Event helpers live in litesvm-harness, not in this crate.
 
 coprocessor/fhevm-engine/host-listener/src/solana_adapter.rs
   Maps typed Solana host events into the existing coprocessor DB model.

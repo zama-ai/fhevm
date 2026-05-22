@@ -127,20 +127,6 @@ impl<'a, 'info> Builder<'a, 'info> {
         Ok(())
     }
 
-    #[allow(dead_code)]
-    pub fn allow_for_decryption(
-        &mut self,
-        value: &FheValue,
-        acl_record: AccountInfo<'info>,
-    ) -> Result<()> {
-        let acl_record_index = self.push_account(acl_record)?;
-        self.actions.push(FheFrameAction::AllowForDecryption {
-            source: value.operand.clone(),
-            acl_record_index,
-        });
-        Ok(())
-    }
-
     fn binary_op(
         &mut self,
         opcode: FheOpcode,

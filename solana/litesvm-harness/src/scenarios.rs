@@ -5,8 +5,12 @@ use solana_sdk::{pubkey::Pubkey, signature::Signature};
 
 use crate::{
     acl::read_acl_record,
-    fixture::{TokenFixture, TransferOutputAccounts},
-    instructions::{authorize_transfer_amount, transfer_ix, transfer_output_accounts},
+    events::trivial_encrypt_events,
+    fixture::{TokenFixture, TransferOutputAccounts, WrapOutputAccounts},
+    instructions::{
+        authorize_transfer_amount, transfer_ix, transfer_output_accounts, wrap_output_accounts,
+        wrap_usdc_ix,
+    },
     transaction::{send_with_meta, send_with_meta_and_signature},
     util::DEFAULT_INPUT_NONCE_SEQUENCE,
 };
@@ -116,4 +120,55 @@ pub fn run_transfer_scenario_meta(
         },
         false,
     )
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct WrapSetup {
+    pub amount: u64,
+    pub output_nonce_sequence: u64,
+}
+
+impl Default for WrapSetup {
+    fn default() -> Self {
+        Self {
+            amount: 50_000_000,
+            output_nonce_sequence: 1,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct WrapScenario {
+    pub meta: TransactionMetadata,
+    pub account_keys: Vec<Pubkey>,
+    pub host_program_id: Pubkey,
+    pub alice_before: [u8; 32],
+    pub output: WrapOutputAccounts,
+    pub amount_handle: [u8; 32],
+    pub new_alice_handle: [u8; 32],
+}
+
+pub fn run_wrap_scenario(fixture: &mut TokenFixture, setup: WrapSetup) -> WrapScenario {
+    let alice_before = fixture.alice_initial;
+    let output = wrap_output_accounts(fixture, setup.output_nonce_sequence);
+    let ix = wrap_usdc_ix(fixture, output, setup.amount);
+    let (meta, account_keys) = send_with_meta(&mut fixture.svm, &fixture.alice, ix);
+    let new_alice_handle = read_acl_record(&fixture.svm, output.balance)
+        .expect("expected wrap output ACL")
+        .handle;
+    let amount_handle = trivial_encrypt_events(&meta, &account_keys, fixture.host_program_id)
+        .into_iter()
+        .next()
+        .expect("expected wrap trivial encrypt event")
+        .result;
+
+    WrapScenario {
+        meta,
+        account_keys,
+        host_program_id: fixture.host_program_id,
+        alice_before,
+        output,
+        amount_handle,
+        new_alice_handle,
+    }
 }

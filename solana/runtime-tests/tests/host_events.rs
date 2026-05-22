@@ -21,15 +21,16 @@ use zama_solana_litesvm_harness::{
     created_acl_count, event_authority, execute_frame_ix, execute_frame_log_count,
     expected_trivial_handle, FheBackend, FheBinaryOpCode, host_program_so_path, kms_like_public_decrypt_check,
     kms_like_user_decrypt_check, label, max_cpi_depth, read_acl_record, record_subjects,
-    run_transfer_scenario_meta, seed_transfer_inputs,
+    run_transfer_scenario_meta, run_wrap_scenario, seed_transfer_inputs,
     assert_transfer_cleartext, assert_transfer_output_invariants,
-    assert_wrap_output_invariants, set_previous_slot_hash,
+    assert_wrap_output_invariants, previous_bank_hash_from_sysvar, set_previous_slot_hash,
+    wrap_output_accounts, wrap_usdc_ix, WrapSetup,
     seed_authorizing_acl_record, self_transfer_ix, send, send_many_with_signers, send_with_meta,
     signed_current_balance_user_decrypt_request, signed_user_decrypt_request, spl_token_amount,
     svm_with_program, token_account, token_fixture, transfer_amount_acl_address, transfer_ix,
     transfer_ix_with_amount_acl, transfer_ix_with_amount_nonce, transfer_ix_with_current_acl,
     transfer_ix_with_current_acl_and_amount_nonce, transfer_output_accounts, try_send,
-    trivial_encrypt_events, wrap_output_accounts, wrap_usdc_ix, PublicDecryptHandleEntry,
+    trivial_encrypt_events, PublicDecryptHandleEntry,
     TransferExpect, TransferOutputAccounts, TransferSetup, TypedClearValue,
     SemanticBackend, UserDecryptHandleEntry, DEFAULT_INPUT_NONCE_SEQUENCE,
 };
@@ -1458,10 +1459,38 @@ fn confidential_transfer_rejects_reused_output_acl_record() {
 #[test]
 fn wrap_output_invariants_hold_across_event_acl_and_token_account() {
     let mut fixture = token_fixture();
-    let output = wrap_output_accounts(&fixture, 1);
-    let ix = wrap_usdc_ix(&fixture, output, 50_000_000);
-    let (meta, account_keys) = send_with_meta(&mut fixture.svm, &fixture.alice, ix);
-    assert_wrap_output_invariants(&fixture, &meta, &account_keys, output.balance);
+    let scenario = run_wrap_scenario(&mut fixture, WrapSetup::default());
+    assert_wrap_output_invariants(
+        &fixture,
+        &scenario.meta,
+        &scenario.account_keys,
+        scenario.output.balance,
+    );
+}
+
+#[test]
+fn host_handle_derivation_matches_fixture_bank_hash_for_trivial_encrypt() {
+    use solana_sdk::clock::Clock;
+    use zama_host as host;
+
+    let fixture = token_fixture();
+    let clock: Clock = fixture.svm.get_sysvar();
+    let bank_hash = previous_bank_hash_from_sysvar(&fixture.svm, clock.slot);
+    assert_ne!(bank_hash, [0; 32], "fixture must seed non-zero bank hash");
+
+    let amount = 42_u64;
+    let expected = host::computed_trivial_handle(
+        amount_plaintext(amount),
+        5,
+        host::SOLANA_POC_CHAIN_ID,
+        bank_hash,
+        clock.unix_timestamp,
+    );
+
+    let mut fixture = token_fixture();
+    let amount_handle =
+        authorize_transfer_amount(&mut fixture, amount, DEFAULT_INPUT_NONCE_SEQUENCE);
+    assert_eq!(amount_handle, expected);
 }
 
 #[test]

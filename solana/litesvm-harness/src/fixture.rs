@@ -47,7 +47,7 @@ pub struct TransferOutputAccounts {
     pub bob: Pubkey,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct WrapOutputAccounts {
     pub balance: Pubkey,
 }

@@ -128,6 +128,26 @@ mod tests {
     }
 
     #[test]
+    fn computed_handles_differ_for_zero_and_fixture_bank_hash() {
+        const FIXTURE_BANK_HASH: [u8; 32] = [
+            0x5f, 0x2a, 0x1f, 0x93, 0x75, 0x45, 0x32, 0x21, 0xc6, 0x88, 0x8d, 0x6d, 0x9b, 0x3b,
+            0x15, 0xfc, 0xeb, 0x69, 0xee, 0x0b, 0xfb, 0x09, 0x98, 0xba, 0x81, 0x59, 0x85, 0x2b,
+            0x9a, 0x15, 0x9e, 0x2b,
+        ];
+        let plaintext = [9_u8; 32];
+        let with_zero =
+            computed_trivial_handle(plaintext, 5, 12345, [0; 32], 1_700_000_000);
+        let with_fixture = computed_trivial_handle(
+            plaintext,
+            5,
+            12345,
+            FIXTURE_BANK_HASH,
+            1_700_000_000,
+        );
+        assert_ne!(with_zero, with_fixture);
+    }
+
+    #[test]
     fn different_bank_hash_changes_handle() {
         let plaintext = [9_u8; 32];
         let with_zero = computed_trivial_handle(plaintext, 5, 12345, [0; 32], 42);

@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 
 use crate::acl::{
     assert_canonical_acl_record_data, assert_output_acl_metadata, assert_record_allows_handle,
-    create_acl_record_account, deserialize_acl_record, record_allows, serialize_acl_record,
+    create_acl_record_account, deserialize_acl_record, serialize_acl_record,
     write_acl_record_data,
 };
 use crate::handles;
@@ -222,10 +222,6 @@ fn apply_frame_action<'info>(
         } => {
             let source = resolve_operand(frame, remaining_accounts, &source)?;
             require!(!source.is_scalar, ZamaHostError::InvalidFrameOperands);
-            require!(
-                is_allowed(frame, remaining_accounts, source.value, frame.subject)?,
-                ZamaHostError::AclSubjectMismatch
-            );
             assert_output_acl_metadata(
                 nonce_key,
                 acl_domain_key,
@@ -267,10 +263,6 @@ fn apply_frame_action<'info>(
         } => {
             let source = resolve_operand(frame, remaining_accounts, &source)?;
             require!(!source.is_scalar, ZamaHostError::InvalidFrameOperands);
-            require!(
-                is_allowed(frame, remaining_accounts, source.value, frame.subject)?,
-                ZamaHostError::AclSubjectMismatch
-            );
             let acl_record_info = account_at(remaining_accounts, acl_record_index)?;
             let mut record = deserialize_acl_record(&acl_record_info)?;
             assert_canonical_acl_record_data(acl_record_info.key(), &record)?;
@@ -328,30 +320,6 @@ fn resolve_operand<'info>(
             is_scalar: true,
         }),
     }
-}
-
-fn is_allowed<'info>(
-    frame: &ExecutionFrame,
-    remaining_accounts: &[AccountInfo<'info>],
-    handle: [u8; 32],
-    subject: Pubkey,
-) -> Result<bool> {
-    if frame.transient_allows(handle, subject) {
-        return Ok(true);
-    }
-    for account in remaining_accounts {
-        if *account.owner != crate::ID || account.data_is_empty() {
-            continue;
-        }
-        let record = deserialize_acl_record(account)?;
-        if assert_canonical_acl_record_data(account.key(), &record).is_ok()
-            && record.handle == handle
-            && record_allows(&record, subject)
-        {
-            return Ok(true);
-        }
-    }
-    Ok(false)
 }
 
 fn account_at<'info>(
