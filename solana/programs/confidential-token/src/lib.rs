@@ -128,7 +128,7 @@ pub mod confidential_token {
             mint.decimals,
         )?;
 
-        let new_balance_handle = fhe::execute(
+        fhe::execute(
             fhe_context(
                 &ctx.accounts.owner,
                 &ctx.accounts.zama_event_authority,
@@ -158,9 +158,11 @@ pub mod confidential_token {
                         public_decrypt: false,
                     },
                 )?;
-                Ok(new_balance.handle())
+                Ok(())
             },
         )?;
+        let new_balance_handle =
+            durable_acl_handle(&ctx.accounts.output_acl.to_account_info())?;
 
         let token_account = &mut ctx.accounts.token_account;
         token_account.balance_handle = new_balance_handle;
@@ -223,59 +225,65 @@ pub mod confidential_token {
             return Ok(());
         }
 
-        let (new_from_handle, new_to_handle) = fhe::execute(
-            fhe_context(
-                &ctx.accounts.owner,
-                &ctx.accounts.zama_event_authority,
-                &ctx.accounts.zama_program,
-                &ctx.accounts.compute_signer,
-                &ctx.accounts.from_account,
-                mint.key(),
-                ctx.bumps.compute_signer,
-                &ctx.accounts.system_program,
-            ),
-            |fhe| {
-                let from_balance = fhe.encrypted(fhe::EncryptedValue {
-                    handle: from.balance_handle,
-                    acl_record: ctx.accounts.from_current_compute_acl.to_account_info(),
-                })?;
-                let to_balance = fhe.encrypted(fhe::EncryptedValue {
-                    handle: to.balance_handle,
-                    acl_record: ctx.accounts.to_current_compute_acl.to_account_info(),
-                })?;
-                let amount = fhe.encrypted(fhe::EncryptedValue {
-                    handle: amount_handle,
-                    acl_record: ctx.accounts.amount_compute_acl.to_account_info(),
-                })?;
-                let new_from = fhe.sub(from_balance, amount.clone(), BALANCE_FHE_TYPE)?;
-                fhe.allow(
-                    &new_from,
-                    fhe::DurableAllow {
-                        acl_record: ctx.accounts.from_output_acl.to_account_info(),
-                        app_account: from.key(),
-                        nonce_key: balance_nonce_key(mint.key(), from.key()),
-                        nonce_sequence: from_nonce_sequence,
-                        encrypted_value_label: balance_label(),
-                        subjects: balance_acl_subjects(from.owner, compute_signer),
-                        public_decrypt: false,
-                    },
-                )?;
-                let new_to = fhe.add(to_balance, amount, BALANCE_FHE_TYPE)?;
-                fhe.allow(
-                    &new_to,
-                    fhe::DurableAllow {
-                        acl_record: ctx.accounts.to_output_acl.to_account_info(),
-                        app_account: to.key(),
-                        nonce_key: balance_nonce_key(mint.key(), to.key()),
-                        nonce_sequence: to_nonce_sequence,
-                        encrypted_value_label: balance_label(),
-                        subjects: balance_acl_subjects(to.owner, compute_signer),
-                        public_decrypt: false,
-                    },
-                )?;
-                Ok((new_from.handle(), new_to.handle()))
-            },
-        )?;
+        let (new_from_handle, new_to_handle) = {
+            fhe::execute(
+                fhe_context(
+                    &ctx.accounts.owner,
+                    &ctx.accounts.zama_event_authority,
+                    &ctx.accounts.zama_program,
+                    &ctx.accounts.compute_signer,
+                    &ctx.accounts.from_account,
+                    mint.key(),
+                    ctx.bumps.compute_signer,
+                    &ctx.accounts.system_program,
+                ),
+                |fhe| {
+                    let from_balance = fhe.encrypted(fhe::EncryptedValue {
+                        handle: from.balance_handle,
+                        acl_record: ctx.accounts.from_current_compute_acl.to_account_info(),
+                    })?;
+                    let to_balance = fhe.encrypted(fhe::EncryptedValue {
+                        handle: to.balance_handle,
+                        acl_record: ctx.accounts.to_current_compute_acl.to_account_info(),
+                    })?;
+                    let amount = fhe.encrypted(fhe::EncryptedValue {
+                        handle: amount_handle,
+                        acl_record: ctx.accounts.amount_compute_acl.to_account_info(),
+                    })?;
+                    let new_from = fhe.sub(from_balance, amount.clone(), BALANCE_FHE_TYPE)?;
+                    fhe.allow(
+                        &new_from,
+                        fhe::DurableAllow {
+                            acl_record: ctx.accounts.from_output_acl.to_account_info(),
+                            app_account: from.key(),
+                            nonce_key: balance_nonce_key(mint.key(), from.key()),
+                            nonce_sequence: from_nonce_sequence,
+                            encrypted_value_label: balance_label(),
+                            subjects: balance_acl_subjects(from.owner, compute_signer),
+                            public_decrypt: false,
+                        },
+                    )?;
+                    let new_to = fhe.add(to_balance, amount, BALANCE_FHE_TYPE)?;
+                    fhe.allow(
+                        &new_to,
+                        fhe::DurableAllow {
+                            acl_record: ctx.accounts.to_output_acl.to_account_info(),
+                            app_account: to.key(),
+                            nonce_key: balance_nonce_key(mint.key(), to.key()),
+                            nonce_sequence: to_nonce_sequence,
+                            encrypted_value_label: balance_label(),
+                            subjects: balance_acl_subjects(to.owner, compute_signer),
+                            public_decrypt: false,
+                        },
+                    )?;
+                    Ok(())
+                },
+            )?;
+            (
+                durable_acl_handle(&ctx.accounts.from_output_acl.to_account_info())?,
+                durable_acl_handle(&ctx.accounts.to_output_acl.to_account_info())?,
+            )
+        };
 
         let from = &mut ctx.accounts.from_account;
         from.balance_handle = new_from_handle;
@@ -592,6 +600,14 @@ fn fhe_context<'a, 'info>(
     }
 }
 
+/// Read the opaque handle the host wrote into a durable output ACL during `execute_frame`.
+fn durable_acl_handle(acl_record: &AccountInfo<'_>) -> Result<[u8; 32]> {
+    let data = acl_record.try_borrow_data()?;
+    let mut slice: &[u8] = &data;
+    let record = zama_host::AclRecord::try_deserialize(&mut slice)?;
+    Ok(record.handle)
+}
+
 fn trivial_encrypt_balance_acl<'info>(
     payer: &Signer<'info>,
     mint: &Account<'info, ConfidentialMint>,
@@ -605,6 +621,7 @@ fn trivial_encrypt_balance_acl<'info>(
     nonce_sequence: u64,
     plaintext: u64,
 ) -> Result<[u8; 32]> {
+    let acl_record_info = acl_record.clone();
     fhe::execute(
         fhe_context(
             payer,
@@ -621,7 +638,7 @@ fn trivial_encrypt_balance_acl<'info>(
             fhe.allow(
                 &balance,
                 fhe::DurableAllow {
-                    acl_record,
+                    acl_record: acl_record_info.clone(),
                     app_account: token_account.key(),
                     nonce_key: balance_nonce_key(mint.key(), token_account.key()),
                     nonce_sequence,
@@ -630,9 +647,10 @@ fn trivial_encrypt_balance_acl<'info>(
                     public_decrypt: false,
                 },
             )?;
-            Ok(balance.handle())
+            Ok(())
         },
-    )
+    )?;
+    durable_acl_handle(&acl_record_info)
 }
 
 fn balance_acl_subjects(owner: Pubkey, compute_signer: Pubkey) -> Vec<AclSubjectEntry> {

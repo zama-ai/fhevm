@@ -15,18 +15,23 @@ use zama_host::{
 };
 use zama_solana_litesvm_harness::{
     acl_record_address, allow_for_decryption_ix, amount_plaintext, anchor_ix,
-    assert_balance_acl, authorization_payload_bytes, authorize_transfer_amount,
+    assert_balance_acl,
+    authorization_payload_bytes, authorize_transfer_amount,
     balance_acl_record_address, binary_op_events, balance_handle_updated_events, CleartextBackend,
     created_acl_count, event_authority, execute_frame_ix, execute_frame_log_count,
     expected_trivial_handle, FheBackend, host_program_so_path, kms_like_public_decrypt_check,
     kms_like_user_decrypt_check, label, max_cpi_depth, read_acl_record, record_subjects,
+    run_transfer_scenario_meta, seed_transfer_inputs,
+    assert_transfer_cleartext, assert_transfer_output_invariants,
+    assert_wrap_output_invariants, set_previous_slot_hash,
     seed_authorizing_acl_record, self_transfer_ix, send, send_many_with_signers, send_with_meta,
     signed_current_balance_user_decrypt_request, signed_user_decrypt_request, spl_token_amount,
     svm_with_program, token_account, token_fixture, transfer_amount_acl_address, transfer_ix,
     transfer_ix_with_amount_acl, transfer_ix_with_amount_nonce, transfer_ix_with_current_acl,
     transfer_ix_with_current_acl_and_amount_nonce, transfer_output_accounts, try_send,
     trivial_encrypt_events, wrap_output_accounts, wrap_usdc_ix, PublicDecryptHandleEntry,
-    TransferOutputAccounts, TypedClearValue, UserDecryptHandleEntry, DEFAULT_INPUT_NONCE_SEQUENCE,
+    TransferExpect, TransferOutputAccounts, TransferSetup, TypedClearValue,
+    SemanticBackend, UserDecryptHandleEntry, DEFAULT_INPUT_NONCE_SEQUENCE,
 };
 
 #[test]
@@ -703,41 +708,57 @@ fn allow_acl_subjects_rejects_unallowed_authority() {
 }
 
 #[test]
+fn transfer_scenario_cleartext_backend() {
+    let mut fixture = token_fixture();
+    let scenario = assert_transfer_cleartext(
+        &mut fixture,
+        TransferSetup::default(),
+        125,
+        20,
+        TransferExpect { alice: 116, bob: 29 },
+    );
+    assert_transfer_output_invariants(&fixture, &scenario);
+}
+
+#[test]
 fn confidential_transfer_rotates_balance_handles_and_binds_output_acl() {
     let mut fixture = token_fixture();
-    let amount_handle = authorize_transfer_amount(&mut fixture, 9, DEFAULT_INPUT_NONCE_SEQUENCE);
+    let setup = TransferSetup::default();
+    let (scenario, _) = run_transfer_scenario_meta(&mut fixture, setup);
     let mut cleartext = CleartextBackend::default();
-    cleartext.seed_cleartext(fixture.alice_initial, TypedClearValue::uint64(125));
-    cleartext.seed_cleartext(fixture.bob_initial, TypedClearValue::uint64(20));
-    cleartext.seed_cleartext(amount_handle, TypedClearValue::uint64(9));
-    let output = transfer_output_accounts(&fixture, 1);
-    let transfer_ix = transfer_ix(&fixture, output, amount_handle);
-    let (meta, account_keys) = send_with_meta(&mut fixture.svm, &fixture.alice, transfer_ix);
+    seed_transfer_inputs(&mut cleartext, &scenario, 125, 20, setup.amount);
     cleartext
-        .ingest_transaction(&meta, &account_keys, fixture.host_program_id)
+        .ingest_host_transaction(
+            &scenario.meta,
+            &scenario.account_keys,
+            scenario.host_program_id,
+        )
         .unwrap();
-    let alice_record = read_acl_record(&fixture.svm, output.alice).expect("expected Alice ACL");
-    let bob_record = read_acl_record(&fixture.svm, output.bob).expect("expected Bob ACL");
-    let new_alice = alice_record.handle;
-    let new_bob = bob_record.handle;
-    let events = binary_op_events(&meta, &account_keys, fixture.host_program_id);
+    let new_alice = scenario.new_alice_handle;
+    let new_bob = scenario.new_bob_handle;
+    let output = scenario.output;
+    let events = binary_op_events(
+        &scenario.meta,
+        &scenario.account_keys,
+        scenario.host_program_id,
+    );
     assert_eq!(events.len(), 2);
     assert_eq!(events[0].version, 0);
     assert_eq!(events[0].op, FheBinaryOpCode::Sub);
     assert_eq!(events[0].subject, fixture.compute_signer.to_bytes());
     assert_eq!(events[0].lhs, fixture.alice_initial);
-    assert_eq!(events[0].rhs, amount_handle);
+    assert_eq!(events[0].rhs, scenario.amount_handle);
     assert!(!events[0].scalar);
     assert_eq!(events[0].result, new_alice);
     assert_eq!(events[1].version, 0);
     assert_eq!(events[1].op, FheBinaryOpCode::Add);
     assert_eq!(events[1].subject, fixture.compute_signer.to_bytes());
     assert_eq!(events[1].lhs, fixture.bob_initial);
-    assert_eq!(events[1].rhs, amount_handle);
+    assert_eq!(events[1].rhs, scenario.amount_handle);
     assert!(!events[1].scalar);
     assert_eq!(events[1].result, new_bob);
     let balance_events =
-        balance_handle_updated_events(&meta, &account_keys, fixture.token_program_id);
+        balance_handle_updated_events(&scenario.meta, &scenario.account_keys, fixture.token_program_id);
     assert_eq!(balance_events.len(), 2);
     assert_eq!(
         balance_events[0].reason,
@@ -1432,4 +1453,51 @@ fn confidential_transfer_rejects_reused_output_acl_record() {
         fixture.bob_initial
     );
     assert!(read_acl_record(&fixture.svm, output.bob).is_none());
+}
+
+#[test]
+fn wrap_output_invariants_hold_across_event_acl_and_token_account() {
+    let mut fixture = token_fixture();
+    let output = wrap_output_accounts(&fixture, 1);
+    let ix = wrap_usdc_ix(&fixture, output, 50_000_000);
+    let (meta, account_keys) = send_with_meta(&mut fixture.svm, &fixture.alice, ix);
+    assert_wrap_output_invariants(&fixture, &meta, &account_keys, output.balance);
+}
+
+#[test]
+fn trivial_encrypt_uses_slot_hashes_sysvar_when_present() {
+    use solana_sdk::clock::Clock;
+    use zama_host as host;
+
+    let mut fixture = token_fixture();
+    let bank_hash = [0xAB_u8; 32];
+    set_previous_slot_hash(&mut fixture.svm, bank_hash);
+
+    let amount_handle =
+        authorize_transfer_amount(&mut fixture, 42, DEFAULT_INPUT_NONCE_SEQUENCE);
+    let acl = read_acl_record(
+        &fixture.svm,
+        transfer_amount_acl_address(&fixture, DEFAULT_INPUT_NONCE_SEQUENCE),
+    )
+    .expect("amount ACL");
+    assert_eq!(amount_handle, acl.handle);
+
+    let clock: Clock = fixture.svm.get_sysvar();
+    let expected = host::computed_trivial_handle(
+        amount_plaintext(42),
+        5,
+        host::SOLANA_POC_CHAIN_ID,
+        bank_hash,
+        clock.unix_timestamp,
+    );
+    assert_eq!(amount_handle, expected);
+
+    let fallback = host::computed_trivial_handle(
+        amount_plaintext(42),
+        5,
+        host::SOLANA_POC_CHAIN_ID,
+        [0; 32],
+        clock.unix_timestamp,
+    );
+    assert_ne!(amount_handle, fallback);
 }

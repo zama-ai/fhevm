@@ -361,36 +361,31 @@
     },
     {
       "code": 6011,
-      "name": "ComputedHandleMismatch",
-      "msg": "computed handle does not match host formula"
-    },
-    {
-      "code": 6012,
       "name": "FrameLimitExceeded",
       "msg": "frame exceeds configured limit"
     },
     {
-      "code": 6013,
+      "code": 6012,
       "name": "FrameAccountIndexOutOfRange",
       "msg": "frame account index is out of range"
     },
     {
-      "code": 6014,
+      "code": 6013,
       "name": "FrameResultIndexOutOfRange",
       "msg": "frame result index is out of range"
     },
     {
-      "code": 6015,
+      "code": 6014,
       "name": "UnsupportedFrameOpcode",
       "msg": "frame opcode is not supported by this PoC"
     },
     {
-      "code": 6016,
+      "code": 6015,
       "name": "InvalidFrameOperands",
       "msg": "frame step has invalid operands"
     },
     {
-      "code": 6017,
+      "code": 6016,
       "name": "FrameOutputAccountAlreadyInitialized",
       "msg": "frame action targets an initialized account"
     }

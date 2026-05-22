@@ -7,6 +7,7 @@ use solana_sdk::pubkey::Pubkey;
 use zama_host::{FheBinaryOpCode, FheBinaryOpEvent};
 
 use crate::events::{collect_zama_host_events, ZamaHostEvent};
+use crate::semantic::{BackendError, SemanticBackend};
 
 pub type Handle = [u8; 32];
 
@@ -130,4 +131,28 @@ impl CleartextBackend {
 
 fn bytes_to_u128(bytes: [u8; 32]) -> u128 {
     u128::from_be_bytes(bytes[16..].try_into().expect("slice has length 16"))
+}
+
+impl SemanticBackend for CleartextBackend {
+    fn seed_u64(&mut self, handle: Handle, value: u64) {
+        self.seed_cleartext(handle, TypedClearValue::uint64(value));
+    }
+
+    fn ingest_host_transaction(
+        &mut self,
+        meta: &TransactionMetadata,
+        account_keys: &[Pubkey],
+        program_id: Pubkey,
+    ) -> Result<(), BackendError> {
+        self.ingest_transaction(meta, account_keys, program_id)
+            .map_err(BackendError::Cleartext)
+    }
+
+    fn decrypt_u64(&self, handle: Handle) -> Result<u64, BackendError> {
+        let Some(value) = self.decrypt_cleartext(handle) else {
+            return Err(BackendError::MissingHandle { handle });
+        };
+        let ClearValue::Uint(raw) = value.value;
+        u64::try_from(raw).map_err(|_| BackendError::UnexpectedType { handle })
+    }
 }

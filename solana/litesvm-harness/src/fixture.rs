@@ -41,7 +41,7 @@ pub struct TokenFixture {
     pub bob_current_compute_acl: Pubkey,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct TransferOutputAccounts {
     pub alice: Pubkey,
     pub bob: Pubkey,

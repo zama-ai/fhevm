@@ -12749,6 +12749,7 @@ dependencies = [
  "litesvm",
  "solana-program",
  "solana-sdk",
+ "thiserror 2.0.18",
  "zama-host",
 ]
 

@@ -11,6 +11,7 @@ mod random;
 mod revert_coprocessor_db_state;
 mod scheduling_bench;
 mod solana_poc;
+mod solana_semantic;
 mod test_cases;
 mod utils;
 

@@ -1,3 +1,8 @@
+//! Build symbolic `execute_frame` programs for the host.
+//!
+//! Computed handles are opaque and assigned only inside `zama-host::execute_frame`.
+//! This module records operands and step indices — never precomputes result handles.
+
 use anchor_lang::prelude::*;
 use zama_host::{
     cpi, cpi::accounts::ExecuteFrame, program::ZamaHost, AclSubjectEntry, FheFrameAction,
@@ -12,16 +17,10 @@ pub struct EncryptedValue<'info> {
     pub acl_record: AccountInfo<'info>,
 }
 
+/// Symbolic frame value: operand reference only. Frame results have no handle until the host runs.
 #[derive(Clone)]
 pub struct FheValue {
-    handle: [u8; 32],
     operand: FheOperand,
-}
-
-impl FheValue {
-    pub fn handle(&self) -> [u8; 32] {
-        self.handle
-    }
 }
 
 pub struct Context<'a, 'info> {
@@ -77,7 +76,6 @@ impl<'a, 'info> Builder<'a, 'info> {
     pub fn encrypted(&mut self, value: EncryptedValue<'info>) -> Result<FheValue> {
         let account_index = self.push_account(value.acl_record)?;
         Ok(FheValue {
-            handle: value.handle,
             operand: FheOperand::AclRecord {
                 handle: value.handle,
                 account_index,
@@ -86,27 +84,21 @@ impl<'a, 'info> Builder<'a, 'info> {
     }
 
     pub fn scalar_u64(&self, value: u64, fhe_type: u8) -> FheValue {
-        let mut plaintext = [0_u8; 32];
-        plaintext[24..].copy_from_slice(&value.to_be_bytes());
         FheValue {
-            handle: plaintext,
             operand: FheOperand::Scalar {
-                value: plaintext,
+                value: scalar_plaintext(value),
                 fhe_type,
             },
         }
     }
 
     pub fn trivial_encrypt_u64(&mut self, value: u64, fhe_type: u8) -> Result<FheValue> {
-        let plaintext = self.scalar_u64(value, fhe_type).handle;
-        let result = zama_host::computed_trivial_handle_for_current_slot(plaintext, fhe_type)?;
         let index = self.steps.len();
         self.steps.push(FheFrameStep::TrivialEncrypt {
-            plaintext,
+            plaintext: scalar_plaintext(value),
             fhe_type,
         });
         Ok(FheValue {
-            handle: result,
             operand: FheOperand::PreviousResult { index: index as u8 },
         })
     }
@@ -160,13 +152,6 @@ impl<'a, 'info> Builder<'a, 'info> {
             FheOperand::Scalar { .. } => 1,
             _ => 0,
         };
-        let result = zama_host::computed_binary_handle_for_current_slot(
-            opcode.try_into()?,
-            lhs.handle,
-            rhs.handle,
-            scalar_byte == 1,
-            output_fhe_type,
-        )?;
         let index = self.steps.len();
         self.steps.push(FheFrameStep::Operation {
             opcode,
@@ -175,7 +160,6 @@ impl<'a, 'info> Builder<'a, 'info> {
             output_fhe_type,
         });
         Ok(FheValue {
-            handle: result,
             operand: FheOperand::PreviousResult { index: index as u8 },
         })
     }
@@ -221,4 +205,10 @@ impl<'a, 'info> Builder<'a, 'info> {
             self.actions,
         )
     }
+}
+
+fn scalar_plaintext(value: u64) -> [u8; 32] {
+    let mut plaintext = [0_u8; 32];
+    plaintext[24..].copy_from_slice(&value.to_be_bytes());
+    plaintext
 }

@@ -5,7 +5,10 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{program::invoke_signed, system_instruction};
 use solana_sha256_hasher::hashv;
-use solana_sysvar::slot_hashes::PodSlotHashes;
+
+mod handles;
+
+pub use handles::{computed_binary_handle, computed_trivial_handle};
 
 declare_id!("EMhXFu68v61bQV4GrF6ZhZhWNVbH6bHPnTdLtXK8meqn");
 
@@ -16,10 +19,6 @@ pub const MAX_FRAME_ACTIONS: usize = 16;
 pub const MAX_FRAME_RESULTS: usize = 16;
 pub const MAX_FRAME_TRANSIENT_ALLOWS: usize = 32;
 pub const SOLANA_POC_CHAIN_ID: u64 = 12345;
-
-const COMPUTATION_DOMAIN_SEPARATOR: &[u8] = b"FHE_comp";
-const COMPUTED_HANDLE_MARKER: u8 = 0xff;
-const HANDLE_VERSION: u8 = 0;
 
 #[program]
 pub mod zama_host {
@@ -103,7 +102,7 @@ pub mod zama_host {
 
         let subject = ctx.accounts.compute_subject.key();
         let clock = Clock::get()?;
-        let previous_bank_hash = previous_bank_hash(clock.slot)?;
+        let previous_bank_hash = handles::previous_bank_hash(clock.slot)?;
         let mut frame = ExecutionFrame::new(subject);
 
         for step in steps {
@@ -403,8 +402,6 @@ pub enum ZamaHostError {
     AclSubjectCapacityExceeded,
     #[msg("previous bank hash is not available")]
     PreviousBankHashUnavailable,
-    #[msg("computed handle does not match host formula")]
-    ComputedHandleMismatch,
     #[msg("frame exceeds configured limit")]
     FrameLimitExceeded,
     #[msg("frame account index is out of range")]
@@ -507,7 +504,7 @@ fn execute_frame_step<'info>(
             plaintext,
             fhe_type,
         } => {
-            let result = computed_trivial_handle(
+            let result = handles::computed_trivial_handle(
                 plaintext,
                 fhe_type,
                 SOLANA_POC_CHAIN_ID,
@@ -550,7 +547,7 @@ fn execute_operation_step<'info>(
         ZamaHostError::InvalidFrameOperands
     );
 
-    let result = computed_binary_handle(
+    let result = handles::computed_binary_handle(
         binary_op,
         lhs.value,
         rhs.value,
@@ -1022,125 +1019,6 @@ pub fn acl_nonce_key(
     .to_bytes()
 }
 
-pub fn computed_binary_handle_for_current_slot(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-) -> Result<[u8; 32]> {
-    let clock = Clock::get()?;
-    let previous_bank_hash = previous_bank_hash(clock.slot)?;
-    Ok(computed_binary_handle(
-        op,
-        lhs,
-        rhs,
-        scalar,
-        fhe_type,
-        SOLANA_POC_CHAIN_ID,
-        previous_bank_hash,
-        clock.unix_timestamp,
-    ))
-}
-
-pub fn computed_trivial_handle_for_current_slot(
-    plaintext: [u8; 32],
-    fhe_type: u8,
-) -> Result<[u8; 32]> {
-    let clock = Clock::get()?;
-    let previous_bank_hash = previous_bank_hash(clock.slot)?;
-    Ok(computed_trivial_handle(
-        plaintext,
-        fhe_type,
-        SOLANA_POC_CHAIN_ID,
-        previous_bank_hash,
-        clock.unix_timestamp,
-    ))
-}
-
-pub fn computed_binary_handle(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-) -> [u8; 32] {
-    let op_byte = [op.as_u8()];
-    let scalar_byte = [u8::from(scalar)];
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let mut result = hashv(&[
-        COMPUTATION_DOMAIN_SEPARATOR,
-        &op_byte,
-        &lhs,
-        &rhs,
-        &scalar_byte,
-        crate::ID.as_ref(),
-        &chain_id_bytes,
-        &previous_bank_hash,
-        &timestamp_bytes,
-    ])
-    .to_bytes();
-
-    result[21..32].fill(0);
-    result[21] = COMPUTED_HANDLE_MARKER;
-    result[22..30].copy_from_slice(&chain_id_bytes);
-    result[30] = fhe_type;
-    result[31] = HANDLE_VERSION;
-    result
-}
-
-pub fn computed_trivial_handle(
-    plaintext: [u8; 32],
-    fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-) -> [u8; 32] {
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let fhe_type_bytes = [fhe_type];
-    let mut result = hashv(&[
-        COMPUTATION_DOMAIN_SEPARATOR,
-        &[2],
-        &plaintext,
-        &fhe_type_bytes,
-        crate::ID.as_ref(),
-        &chain_id_bytes,
-        &previous_bank_hash,
-        &timestamp_bytes,
-    ])
-    .to_bytes();
-
-    result[21..32].fill(0);
-    result[21] = COMPUTED_HANDLE_MARKER;
-    result[22..30].copy_from_slice(&chain_id_bytes);
-    result[30] = fhe_type;
-    result[31] = HANDLE_VERSION;
-    result
-}
-
-fn previous_bank_hash(current_slot: u64) -> Result<[u8; 32]> {
-    let Some(previous_slot) = current_slot.checked_sub(1) else {
-        return Ok([0; 32]);
-    };
-    let slot_hashes =
-        PodSlotHashes::fetch().map_err(|_| error!(ZamaHostError::PreviousBankHashUnavailable))?;
-    if let Some(hash) = slot_hashes
-        .get(&previous_slot)
-        .map_err(|_| error!(ZamaHostError::PreviousBankHashUnavailable))?
-    {
-        return Ok(hash.to_bytes());
-    }
-
-    // LiteSVM starts from an empty slot-hash history in these PoC tests.
-    // Real cluster execution should take the branch above.
-    Ok([0; 32])
-}
-
 fn assert_record_allows_handle(
     record: &AclRecord,
     handle: [u8; 32],
@@ -1156,4 +1034,40 @@ fn assert_record_allows_handle(
 
 pub fn record_allows(record: &AclRecord, subject: Pubkey) -> bool {
     record.subjects[..record.subject_count as usize].contains(&subject)
+}
+
+#[cfg(test)]
+mod acl_tests {
+    use super::*;
+
+    #[test]
+    fn acl_nonce_key_is_stable() {
+        let domain = Pubkey::new_unique();
+        let app = Pubkey::new_unique();
+        let label = [7_u8; 32];
+        let first = acl_nonce_key(domain, app, label);
+        let second = acl_nonce_key(domain, app, label);
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn record_allows_respects_subject_count() {
+        let owner = Pubkey::new_unique();
+        let compute = Pubkey::new_unique();
+        let record = AclRecord {
+            handle: [0; 32],
+            nonce_key: [0; 32],
+            nonce_sequence: 0,
+            acl_domain_key: Pubkey::default(),
+            app_account: Pubkey::default(),
+            encrypted_value_label: [0; 32],
+            subjects: [owner, compute, Pubkey::default(), Pubkey::default(), Pubkey::default(), Pubkey::default(), Pubkey::default(), Pubkey::default()],
+            subject_count: 2,
+            public_decrypt: false,
+            bump: 0,
+        };
+        assert!(record_allows(&record, owner));
+        assert!(record_allows(&record, compute));
+        assert!(!record_allows(&record, Pubkey::new_unique()));
+    }
 }
