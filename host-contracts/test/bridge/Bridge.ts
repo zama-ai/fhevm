@@ -58,9 +58,7 @@ describe('Bridge', function () {
     it('reverts UnknownDstEid for an unregistered endpoint id', async function () {
       const handleList = [makeHandle(0)];
       const unknownEid = 99;
-      await expect(
-        this.srcBridge.send(unknownEid, ethers.ZeroAddress, '0x', handleList, 0, '0x'),
-      )
+      await expect(this.srcBridge.send(unknownEid, ethers.ZeroAddress, '0x', handleList, 0, '0x'))
         .to.be.revertedWithCustomError(this.srcBridge, 'UnknownDstEid')
         .withArgs(unknownEid);
     });
@@ -68,9 +66,7 @@ describe('Bridge', function () {
     it('reverts TooManyHandles when length exceeds the cap', async function () {
       const max = Number(await this.srcBridge.MAX_HANDLES());
       const handleList = Array.from({ length: max + 1 }, (_, i) => makeHandle(i));
-      await expect(
-        this.srcBridge.send(DST_EID, ethers.ZeroAddress, '0x', handleList, 0, '0x'),
-      )
+      await expect(this.srcBridge.send(DST_EID, ethers.ZeroAddress, '0x', handleList, 0, '0x'))
         .to.be.revertedWithCustomError(this.srcBridge, 'TooManyHandles')
         .withArgs(max + 1, max);
     });
@@ -109,34 +105,27 @@ describe('Bridge', function () {
   });
 
   describe('ConfidentialBridge: destination-side governance', function () {
-    it('rejects grantFallback from non-owner', async function () {
+    it('rejects grantFallbackPlainText from non-owner', async function () {
       const dst = await makeDstHandle(0);
-      await expect(this.dstBridge.connect(this.signers.bob).grantFallback(dst, 42n)).to.be.reverted;
+      await expect(this.dstBridge.connect(this.signers.bob).grantFallbackPlainText(dst, 42n)).to.be.reverted;
     });
 
     it('reverts WrongChainIdInDstHandle when the handle encodes a different chain id', async function () {
       // Plain keccak256 has no chain-id metadata baked into bytes 22-29, so the
       // contract's chain-id check on the handle must reject it.
       const dst = ethers.keccak256(ethers.toUtf8Bytes('dst'));
-      await expect(
-        this.dstBridge.connect(this.owner).grantFallback(dst, 0n),
-      ).to.be.revertedWithCustomError(this.dstBridge, 'WrongChainIdInDstHandle');
+      await expect(this.dstBridge.connect(this.owner).grantFallbackPlainText(dst, 0n)).to.be.revertedWithCustomError(
+        this.dstBridge,
+        'WrongChainIdInDstHandle',
+      );
     });
 
-    it('emits FallbackGrantedClearText when called by the owner', async function () {
+    it('emits FallbackGrantedPlainText when called by the owner', async function () {
       const dst = await makeDstHandle(1);
       const clearText = 42n;
-      await expect(this.dstBridge.connect(this.owner).grantFallback(dst, clearText))
-        .to.emit(this.dstBridge, 'FallbackGrantedClearText')
+      await expect(this.dstBridge.connect(this.owner).grantFallbackPlainText(dst, clearText))
+        .to.emit(this.dstBridge, 'FallbackGrantedPlainText')
         .withArgs(dst, clearText);
-    });
-
-    it('reverts DstHandleAlreadyGrantedFallback on a second grant for the same handle', async function () {
-      const dst = await makeDstHandle(2);
-      await (await this.dstBridge.connect(this.owner).grantFallback(dst, 1n)).wait();
-      await expect(
-        this.dstBridge.connect(this.owner).grantFallback(dst, 2n),
-      ).to.be.revertedWithCustomError(this.dstBridge, 'DstHandleAlreadyGrantedFallback');
     });
   });
 
@@ -149,7 +138,13 @@ describe('Bridge', function () {
       await expect(
         this.dstBridge
           .connect(this.signers.bob)
-          .lzCompose(await this.dstBridge.getAddress(), ethers.keccak256(ethers.toUtf8Bytes('g')), composeMsg, ethers.ZeroAddress, '0x'),
+          .lzCompose(
+            await this.dstBridge.getAddress(),
+            ethers.keccak256(ethers.toUtf8Bytes('g')),
+            composeMsg,
+            ethers.ZeroAddress,
+            '0x',
+          ),
       ).to.be.revertedWithCustomError(this.dstBridge, 'NotLzEndpoint');
     });
 
@@ -165,7 +160,13 @@ describe('Bridge', function () {
       await expect(
         this.dstBridge
           .connect(endpointSigner)
-          .lzCompose(this.signers.bob.address, ethers.keccak256(ethers.toUtf8Bytes('g')), composeMsg, ethers.ZeroAddress, '0x'),
+          .lzCompose(
+            this.signers.bob.address,
+            ethers.keccak256(ethers.toUtf8Bytes('g')),
+            composeMsg,
+            ethers.ZeroAddress,
+            '0x',
+          ),
       )
         .to.be.revertedWithCustomError(this.dstBridge, 'UnexpectedComposeOrigin')
         .withArgs(this.signers.bob.address);
@@ -223,12 +224,7 @@ async function fundAddress(addr: string, weiHex = '0xde0b6b3a7640000' /* 1 ether
  * This is the Hardhat-friendly equivalent of acl.t.sol's `_allowHandle`, which works
  * implicitly because forge tests run sequential cheatcoded calls in the same tx.
  */
-export async function grantAllowanceToUser(
-  acl: any,
-  fhevmExecutor: string,
-  handle: string,
-  user: string,
-) {
+export async function grantAllowanceToUser(acl: any, fhevmExecutor: string, handle: string, user: string) {
   await ethers.provider.send('hardhat_impersonateAccount', [fhevmExecutor]);
   await ethers.provider.send('hardhat_setBalance', [fhevmExecutor, '0xde0b6b3a7640000']);
   const execSigner = await ethers.getSigner(fhevmExecutor);

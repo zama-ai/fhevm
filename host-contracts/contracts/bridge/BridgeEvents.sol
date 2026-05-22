@@ -25,8 +25,8 @@ contract BridgeEvents {
     ///         when the source ciphertext is missing. This is a permission, not an assertion:
     ///         if a node already has a real association it prefers that.
     /// @param dstHandle  The destination handle to associate a fallback ciphertext with.
-    /// @param clearText  value corresponding to the dstHandle, trivially encrypted by coprocessor.
-    event FallbackGrantedClearText(bytes32 indexed dstHandle, uint256 clearText);
+    /// @param plainText  value corresponding to the dstHandle, trivially encrypted by coprocessor.
+    event FallbackGrantedPlainText(bytes32 indexed dstHandle, uint256 plainText);
 
     /// @notice Emitted by the HandlesSender when governance updates the dstEid → dstChainId map.
     /// @param dstEid        The LayerZero endpoint id.
