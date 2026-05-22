@@ -33,7 +33,7 @@ pub struct ConsumerConfig {
     pub url: String,
     pub acl_address: Address,
     pub tfhe_address: Address,
-    pub kms_generation_address: Address,
+    pub kms_generation_address: Option<Address>,
     pub database_url: DatabaseURL,
     pub database_retry_interval: Duration,
     pub service_name: String,
@@ -191,11 +191,10 @@ pub async fn promote_once_all_chains_to_fast(
 
 pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     info!("Starting consumer with config: {:?}", config);
-    let contracts = vec![
-        config.acl_address,
-        config.tfhe_address,
-        config.kms_generation_address,
-    ];
+    let mut contracts = vec![config.acl_address, config.tfhe_address];
+    if let Some(kms_generation_address) = config.kms_generation_address {
+        contracts.push(kms_generation_address);
+    }
     let chain_id: u64 = config.chain_id.parse()?;
     let chain_id = ChainId::try_from(chain_id)?;
 
@@ -366,14 +365,13 @@ async fn ingest_with_retry(
     block_logs: &BlockLogs<Log>,
     acl_address: Address,
     tfhe_address: Address,
-    kms_generation_address: Address,
+    kms_generation_address: Option<Address>,
     retry_interval: Duration,
     options: IngestOptions,
 ) -> Result<u64, (sqlx::Error, u64)> {
     let mut errors = 0;
     let acl = Some(acl_address);
     let tfhe = Some(tfhe_address);
-    let kms_generation = Some(kms_generation_address);
     loop {
         match ingest_block_logs(
             chain_id,
@@ -381,7 +379,7 @@ async fn ingest_with_retry(
             block_logs,
             &acl,
             &tfhe,
-            &kms_generation,
+            &kms_generation_address,
             options,
         )
         .await
