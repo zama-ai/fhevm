@@ -16,19 +16,19 @@ import { asEncryptedValue } from '@fhevm/sdk/types';
 //
 // Sepolia Testnet:
 // ----------------
-// npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.readPublicValue.test.ts
+// npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.decryptPublicValue.test.ts
 //
 // Devnet:
 // -------
-// CHAIN=devnet npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.readPublicValue.test.ts
+// CHAIN=devnet npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.decryptPublicValue.test.ts
 //
 // localstack:
 // ----------------
-// CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.readPublicValue.test.ts
+// CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.decryptPublicValue.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-describe.runIf(!isCleartext(getEthersTestConfig().chainName))('Base client — readPublicValue', () => {
+describe.runIf(!isCleartext(getEthersTestConfig().chainName))('Base client — decryptPublicValue', () => {
   let config: FheTestEthersConfig;
 
   beforeAll(() => {
@@ -46,12 +46,12 @@ describe.runIf(!isCleartext(getEthersTestConfig().chainName))('Base client — r
   // │  For each FHE type:                                                 │
   // │  1. Read the handle from FHETest.getHandleOf(deployer, fheType)     │
   // │  2. Read the expected clear value from FHETest.getClearText(handle) │
-  // │  3. Public decrypt via client.readPublicValue                       │
+  // │  3. Public decrypt via client.decryptPublicValue                    │
   // │  4. Compare decrypted value with expected                           │
   // └─────────────────────────────────────────────────────────────────────┘
 
   for (const fheType of decryptTestCases) {
-    it(`should readPublicValue ${fheType} and match on-chain clear text`, async () => {
+    it(`should decryptPublicValue ${fheType} and match on-chain clear text`, async () => {
       const fheTypeId = fheTypeIdFromName(fheType);
       const fheTest = config.fheTestContract.connect(config.signer) as ethers.Contract;
 
@@ -72,7 +72,7 @@ describe.runIf(!isCleartext(getEthersTestConfig().chainName))('Base client — r
         provider: config.provider,
       });
 
-      const typedValue: TypedValue = await client.readPublicValue({
+      const typedValue: TypedValue = await client.decryptPublicValue({
         encryptedValue,
       });
 
@@ -96,7 +96,7 @@ describe.runIf(!isCleartext(getEthersTestConfig().chainName))('Base client — r
   // │  Read all handles, decrypt in a single call, compare each result    │
   // └─────────────────────────────────────────────────────────────────────┘
 
-  it('should readPublicValue all types in a single call', async () => {
+  it('should decryptPublicValue all types in a single call', async () => {
     const fheTest = config.fheTestContract.connect(config.signer) as ethers.Contract;
 
     // Read all handles and their expected clear values
@@ -124,7 +124,7 @@ describe.runIf(!isCleartext(getEthersTestConfig().chainName))('Base client — r
     });
 
     const allEncryptedValues = entries.map((e) => asEncryptedValue(e.encryptedValue));
-    const typedValues = await client.readPublicValues({
+    const typedValues = await client.decryptPublicValues({
       encryptedValues: allEncryptedValues,
     });
 

@@ -17,11 +17,11 @@ import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
 //
 // localcleartext:
 // ----------
-// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts cleartext-viem/clientBase.readPublicValue.test.ts
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts cleartext-viem/clientBase.decryptPublicValue.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-describe.runIf(isCleartext(getViemTestConfig().chainName))('Base client — readPublicValue', () => {
+describe.runIf(isCleartext(getViemTestConfig().chainName))('Base client — decryptPublicValue', () => {
   let config: FheTestViemConfig;
 
   beforeAll(() => {
@@ -39,12 +39,12 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))('Base client — read
   // │  For each FHE type:                                                 │
   // │  1. Read the handle from FHETest.getHandleOf(deployer, fheType)     │
   // │  2. Read the expected clear value from FHETest.getClearText(handle) │
-  // │  3. Public decrypt via client.readPublicValue                       │
+  // │  3. Public decrypt via client.decryptPublicValue                    │
   // │  4. Compare decrypted value with expected                           │
   // └─────────────────────────────────────────────────────────────────────┘
 
   for (const fheType of decryptTestCases) {
-    it(`should readPublicValue ${fheType} and match on-chain clear text`, async () => {
+    it(`should decryptPublicValue ${fheType} and match on-chain clear text`, async () => {
       const fheTypeId = fheTypeIdFromName(fheType);
 
       // Read handle from FHETest contract
@@ -74,7 +74,7 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))('Base client — read
         publicClient: config.publicClient,
       });
 
-      const typedValue = await client.readPublicValue({
+      const typedValue = await client.decryptPublicValue({
         encryptedValue,
       });
 
@@ -98,7 +98,7 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))('Base client — read
   // │  Read all handles, decrypt in a single call, compare each result    │
   // └─────────────────────────────────────────────────────────────────────┘
 
-  it('should readPublicValue all types in a single call', async () => {
+  it('should decryptPublicValue all types in a single call', async () => {
     // Read all handles and their expected clear values
     const entries: {
       encryptedValue: EncryptedValue;
@@ -134,7 +134,7 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))('Base client — read
     });
 
     const allEncryptedValues = entries.map((e) => asEncryptedValue(e.encryptedValue));
-    const typedValues = await client.readPublicValues({
+    const typedValues = await client.decryptPublicValues({
       encryptedValues: allEncryptedValues,
     });
 
