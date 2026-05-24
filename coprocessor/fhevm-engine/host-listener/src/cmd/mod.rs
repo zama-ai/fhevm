@@ -66,6 +66,9 @@ pub struct Args {
     #[arg(long)]
     pub kms_generation_address: String,
 
+    #[arg(long)]
+    pub protocol_config_address: String,
+
     #[arg(
         long,
         default_value = "postgresql://postgres:postgres@localhost:5432/coprocessor"
@@ -253,6 +256,11 @@ impl InfiniteLogIter {
         if !args.kms_generation_address.is_empty() {
             contract_addresses
                 .push(Address::from_str(&args.kms_generation_address).unwrap());
+        };
+        if !args.protocol_config_address.is_empty() {
+            contract_addresses.push(
+                Address::from_str(&args.protocol_config_address).unwrap(),
+            );
         };
         Self {
             url: args.url.clone(),
@@ -959,6 +967,7 @@ async fn db_insert_block(
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
     kms_generation_address: &Option<Address>,
+    protocol_config_address: &Option<Address>,
     args: &Args,
 ) -> anyhow::Result<()> {
     info!(
@@ -976,6 +985,7 @@ async fn db_insert_block(
             acl_contract_address,
             tfhe_contract_address,
             kms_generation_address,
+            protocol_config_address,
             IngestOptions {
                 dependence_by_connexity: args.dependence_by_connexity,
                 dependence_cross_block: args.dependence_cross_block,
@@ -1064,6 +1074,16 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             |err| {
                 error!(error = %err, "Invalid KMSGeneration contract address");
                 anyhow!("Invalid KMSGeneration contract address: {err}")
+            },
+        )?)
+    };
+    let protocol_config_address = if args.protocol_config_address.is_empty() {
+        None
+    } else {
+        Some(Address::from_str(&args.protocol_config_address).map_err(
+            |err| {
+                error!(error = %err, "Invalid ProtocolConfig contract address");
+                anyhow!("Invalid ProtocolConfig contract address: {err}")
             },
         )?)
     };
@@ -1193,6 +1213,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                 &acl_contract_address,
                 &tfhe_contract_address,
                 &kms_generation_address,
+                &protocol_config_address,
                 &args,
             )
             .await;

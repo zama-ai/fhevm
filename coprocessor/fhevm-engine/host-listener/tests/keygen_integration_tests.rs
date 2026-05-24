@@ -451,6 +451,7 @@ where
         &None,
         &None,
         &Some(kms_address),
+        &None,
         options,
     )
     .await?;

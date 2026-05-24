@@ -173,6 +173,7 @@ async fn poller_catches_up_to_safe_tip(
         acl_address: *acl_contract.address(),
         tfhe_address: *tfhe_contract.address(),
         kms_generation_address: *kms_generation_contract.address(),
+        protocol_config_address: alloy::primitives::Address::ZERO,
         database_url: db_url.clone(),
         finality_lag,
         batch_size: 2,

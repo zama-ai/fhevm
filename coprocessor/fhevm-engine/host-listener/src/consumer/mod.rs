@@ -35,6 +35,7 @@ pub struct ConsumerConfig {
     pub acl_address: Address,
     pub tfhe_address: Address,
     pub kms_generation_address: Address,
+    pub protocol_config_address: Address,
     pub database_url: DatabaseURL,
     pub database_retry_interval: Duration,
     pub service_name: String,
@@ -197,6 +198,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         config.acl_address,
         config.tfhe_address,
         config.kms_generation_address,
+        config.protocol_config_address,
     ];
     let chain_id: u64 = config.chain_id.parse()?;
     let chain_id = ChainId::try_from(chain_id)?;
@@ -332,6 +334,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 config.acl_address,
                 config.tfhe_address,
                 config.kms_generation_address,
+                config.protocol_config_address,
                 config.database_retry_interval,
                 ingest_options.clone(),
             )
@@ -393,6 +396,7 @@ async fn ingest_with_retry(
     acl_address: Address,
     tfhe_address: Address,
     kms_generation_address: Address,
+    protocol_config_address: Address,
     retry_interval: Duration,
     options: IngestOptions,
 ) -> Result<u64, (sqlx::Error, u64)> {
@@ -400,6 +404,7 @@ async fn ingest_with_retry(
     let acl = Some(acl_address);
     let tfhe = Some(tfhe_address);
     let kms_generation = Some(kms_generation_address);
+    let protocol_config = Some(protocol_config_address);
     loop {
         match ingest_block_logs(
             chain_id,
@@ -408,6 +413,7 @@ async fn ingest_with_retry(
             &acl,
             &tfhe,
             &kms_generation,
+            &protocol_config,
             options.clone(),
         )
         .await

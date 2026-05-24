@@ -11,13 +11,16 @@ use tracing::{error, info};
 
 use crate::cmd::block_history::{BlockHash, BlockSummary};
 use crate::cmd::InfiniteLogIter;
-use crate::contracts::{AclContract, KMSGeneration, TfheContract};
+use crate::contracts::{
+    AclContract, KMSGeneration, ProtocolConfig, TfheContract,
+};
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
     acl_result_handles, tfhe_result_handle, Chain, ChainHash, Database, LogTfhe,
 };
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
+use crate::protocol_config::metrics::PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER;
 
 pub struct BlockLogs<T> {
     pub logs: Vec<T>,
@@ -148,6 +151,7 @@ fn classify_slow_by_split_dependency_closure(
 /// per the channel-name convention.
 const NEW_BLOCK_CHANNEL: &str = "event_new_block";
 
+#[allow(clippy::too_many_arguments)]
 pub async fn ingest_block_logs(
     chain_id: ChainId,
     db: &mut Database,
@@ -155,6 +159,7 @@ pub async fn ingest_block_logs(
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
     kms_generation_contract_address: &Option<Address>,
+    protocol_config_contract_address: &Option<Address>,
     options: IngestOptions,
 ) -> Result<(), sqlx::Error> {
     let mut tx = db.new_transaction().await?;
@@ -279,7 +284,36 @@ pub async fn ingest_block_logs(
             }
         }
 
-        if is_acl_address || is_tfhe_address || is_kms_gen_address {
+        let is_protocol_config_address =
+            &current_address == protocol_config_contract_address;
+        if protocol_config_contract_address.is_none()
+            || is_protocol_config_address
+        {
+            if let Ok(event) =
+                ProtocolConfig::ProtocolConfigEvents::decode_log(&log.inner)
+            {
+                if let ProtocolConfig::ProtocolConfigEvents::NewCoprocessorContext(
+                    new_ctx,
+                ) = &event.data
+                {
+                    notify_new_coprocessor_context(
+                        &mut tx,
+                        chain_id,
+                        new_ctx,
+                    )
+                    .await?;
+                }
+                continue;
+            } else {
+                PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER.inc()
+            }
+        }
+
+        if is_acl_address
+            || is_tfhe_address
+            || is_kms_gen_address
+            || is_protocol_config_address
+        {
             error!(
                 event_address = ?log.inner.address,
                 acl_contract_address = ?acl_contract_address,
@@ -397,6 +431,63 @@ pub async fn ingest_block_logs(
         .await?;
     }
     tx.commit().await
+}
+
+/// Channel name the upgrade-controller LISTENs on for `NewCoprocessorContext` events.
+const UPGRADE_ACTIVATED_CHANNEL: &str = "event_upgrade_activated";
+
+/// Emits `pg_notify('event_upgrade_activated', payload)` for a decoded
+/// `NewCoprocessorContext` event when one of its `chainUpgradeWindows` matches
+/// this listener's `chain_id`. The notification rides on the existing block-
+/// ingestion transaction — if the block is later rolled back, the notify is
+/// rolled back too.
+async fn notify_new_coprocessor_context(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    chain_id: ChainId,
+    event: &ProtocolConfig::NewCoprocessorContext,
+) -> Result<(), sqlx::Error> {
+    let listener_chain_id = chain_id.as_u64();
+    let Some(window) = event
+        .chainUpgradeWindows
+        .iter()
+        .find(|w| w.chainId == listener_chain_id)
+    else {
+        info!(
+            listener_chain_id,
+            "NewCoprocessorContext does not include this chain — skipping pg_notify"
+        );
+        return Ok(());
+    };
+
+    let context_id_bytes = event.coprocessorContextId.to_be_bytes::<32>();
+    let context_id_hex =
+        format!("0x{}", alloy_primitives::hex::encode(context_id_bytes));
+
+    info!(
+        coprocessor_context_id = %context_id_hex,
+        software_version = %event.softwareVersion,
+        chain_id = listener_chain_id,
+        start_block = window.startBlock,
+        end_block = window.endBlock,
+        gw_start_block = event.gwStartBlock,
+        "Decoded NewCoprocessorContext, emitting pg_notify('event_upgrade_activated')"
+    );
+
+    let payload = serde_json::json!({
+        "proposal_id":    &context_id_hex,
+        "chain_id":       listener_chain_id as i64,
+        "start_block":    window.startBlock as i64,
+        "end_block":      window.endBlock as i64,
+        "gw_start_block": event.gwStartBlock as i64,
+        "version":        &event.softwareVersion,
+    });
+
+    sqlx::query("SELECT pg_notify($1, $2)")
+        .bind(UPGRADE_ACTIVATED_CHANNEL)
+        .bind(payload.to_string())
+        .execute(&mut **tx)
+        .await
+        .map(|_| ())
 }
 
 pub async fn update_finalized_blocks(
