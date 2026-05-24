@@ -4,6 +4,8 @@ import { describe, expect, test } from "bun:test";
 import { DEFAULT_GATEWAY_RPC_PORT, DEFAULT_HOST_RPC_PORT, MINIO_PORT, STANDARD_TEST_PROFILES, TEST_SUITE_CONTAINER } from "./layout";
 import {
   buildTestContainerArgs,
+  ciphertextMaterialReadyForRecovery,
+  ciphertextMaterialRecoveryProgress,
   dbRevertDeleteExpectations,
   dbRevertTargetBlock,
   keyBootstrapLogArgs,
@@ -289,6 +291,47 @@ describe("cli", () => {
       expect(result.code).toBe(1);
       expect(result.stderr).not.toContain("not allowed on devnet");
     });
+  });
+
+  test("drift auto-recovery waits for gateway consensus, not just peer divergence", () => {
+    const honest = {
+      ciphertextDigest: `0x${"11".repeat(32)}`,
+      snsCiphertextDigest: `0x${"aa".repeat(32)}`,
+      sender: "0x0000000000000000000000000000000000000001",
+    };
+    const faulty = {
+      ciphertextDigest: `0x${"22".repeat(32)}`,
+      snsCiphertextDigest: honest.snsCiphertextDigest,
+      sender: "0x0000000000000000000000000000000000000002",
+    };
+    const secondHonest = {
+      ...honest,
+      sender: "0x0000000000000000000000000000000000000003",
+    };
+
+    expect(ciphertextMaterialReadyForRecovery([honest, faulty], [], 2, 3)).toBe(false);
+    expect(
+      ciphertextMaterialReadyForRecovery(
+        [honest, faulty, secondHonest],
+        [{ ciphertextDigest: honest.ciphertextDigest, snsCiphertextDigest: honest.snsCiphertextDigest, senderCount: 2 }],
+        2,
+        3,
+      ),
+    ).toBe(true);
+  });
+
+  test("drift auto-recovery reports when gateway consensus is impossible", () => {
+    const submissions = [1, 2, 3].map((index) => ({
+      ciphertextDigest: `0x${String(index).repeat(64)}`,
+      snsCiphertextDigest: `0x${"aa".repeat(32)}`,
+      sender: `0x${String(index).padStart(40, "0")}`,
+    }));
+    const progress = ciphertextMaterialRecoveryProgress(submissions, [], 2, 3);
+
+    expect(progress.hasDivergence).toBe(true);
+    expect(progress.possibleConsensus).toBe(false);
+    expect(progress.summary).toContain("3/3 sender(s)");
+    expect(progress.summary).toContain("max variant 1/2");
   });
 
   test("grep-backed named profiles accept targeted grep narrowing", () => {

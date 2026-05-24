@@ -253,12 +253,72 @@ const waitForDriftWarning = async (
 
 /** Topic hash for AddCiphertextMaterial(bytes32 indexed ctHandle, uint256 keyId, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest, address coprocessorTxSender). */
 const ADD_CIPHERTEXT_MATERIAL_TOPIC = "0x7249a80e5b91709d2170511b960e8a92e1d5849d200f320524dfffd8b50308f7";
+/** Topic hash for AddCiphertextMaterialConsensus(bytes32 indexed ctHandle, uint256 keyId, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest, address[] coprocessorTxSenders). */
+const ADD_CIPHERTEXT_MATERIAL_CONSENSUS_TOPIC =
+  "0xedd8a0ba83078240a72e9fbf5f706a6c87ff583bf7d6186ff2733fbe3bd99347";
 
-/** Queries on-chain AddCiphertextMaterial events and asserts the two submissions have divergent digests. */
-const assertOnChainDivergence = async (
+type EthLog = {
+  blockNumber?: string;
+  transactionHash?: string;
+  logIndex?: string;
+  data: string;
+};
+
+export type CiphertextMaterialSubmission = {
+  ciphertextDigest: string;
+  snsCiphertextDigest: string;
+  sender: string;
+};
+
+export type CiphertextMaterialConsensus = {
+  ciphertextDigest: string;
+  snsCiphertextDigest: string;
+  senderCount: number | undefined;
+};
+
+type CiphertextMaterialVariant = {
+  key: string;
+  ciphertextDigest: string;
+  snsCiphertextDigest: string;
+  count: number;
+  senders: string[];
+};
+
+const materialDigestKey = (value: Pick<CiphertextMaterialSubmission, "ciphertextDigest" | "snsCiphertextDigest">) =>
+  `${value.ciphertextDigest.toLowerCase()}:${value.snsCiphertextDigest.toLowerCase()}`;
+
+const hexWord = (data: string, wordIndex: number, context: string) => {
+  const start = 2 + wordIndex * 64;
+  const end = start + 64;
+  if (!/^0x[0-9a-f]*$/i.test(data) || data.length < end) {
+    throw new PreflightError(`malformed ${context} log data`);
+  }
+  return `0x${data.slice(start, end)}`;
+};
+
+const parseAddCiphertextMaterialLog = (log: EthLog): CiphertextMaterialSubmission => {
+  const ciphertextDigest = hexWord(log.data, 1, "AddCiphertextMaterial");
+  const snsCiphertextDigest = hexWord(log.data, 2, "AddCiphertextMaterial");
+  const sender = `0x${hexWord(log.data, 3, "AddCiphertextMaterial").slice(-40)}`;
+  return { ciphertextDigest, snsCiphertextDigest, sender };
+};
+
+const parseAddCiphertextMaterialConsensusLog = (log: EthLog): CiphertextMaterialConsensus => {
+  const ciphertextDigest = hexWord(log.data, 1, "AddCiphertextMaterialConsensus");
+  const snsCiphertextDigest = hexWord(log.data, 2, "AddCiphertextMaterialConsensus");
+  const arrayOffsetBytes = Number(BigInt(hexWord(log.data, 3, "AddCiphertextMaterialConsensus")));
+  const senderCount =
+    log.data.length >= 2 + (arrayOffsetBytes + 32) * 2
+      ? Number(BigInt(`0x${log.data.slice(2 + arrayOffsetBytes * 2, 2 + (arrayOffsetBytes + 32) * 2)}`))
+      : undefined;
+  return { ciphertextDigest, snsCiphertextDigest, senderCount };
+};
+
+const fetchGatewayLogs = async (
   gatewayRpcUrl: string,
   contractAddress: string,
   handleHex: string,
+  topic: string,
 ) => {
   const paddedHandle = `0x${handleHex.toLowerCase().padStart(64, "0")}`;
   const response = await fetch(gatewayRpcUrl, {
@@ -268,25 +328,171 @@ const assertOnChainDivergence = async (
       jsonrpc: "2.0",
       id: 1,
       method: "eth_getLogs",
-      params: [{ fromBlock: "0x0", toBlock: "latest", address: contractAddress, topics: [ADD_CIPHERTEXT_MATERIAL_TOPIC, paddedHandle] }],
+      params: [{ fromBlock: "0x0", toBlock: "latest", address: contractAddress, topics: [topic, paddedHandle] }],
     }),
   });
   if (!response.ok) {
     throw new PreflightError(`eth_getLogs failed: ${response.status} ${response.statusText}`);
   }
-  const payload = (await response.json()) as { result?: { data: string }[] };
-  const logs = payload.result ?? [];
+  const payload = (await response.json()) as { error?: { message?: string }; result?: EthLog[] };
+  if (payload.error) {
+    throw new PreflightError(`eth_getLogs failed: ${payload.error.message ?? "unknown JSON-RPC error"}`);
+  }
+  return payload.result ?? [];
+};
+
+const fetchCiphertextMaterialEvents = async (
+  gatewayRpcUrl: string,
+  contractAddress: string,
+  handleHex: string,
+) => {
+  const [submissionLogs, consensusLogs] = await Promise.all([
+    fetchGatewayLogs(gatewayRpcUrl, contractAddress, handleHex, ADD_CIPHERTEXT_MATERIAL_TOPIC),
+    fetchGatewayLogs(gatewayRpcUrl, contractAddress, handleHex, ADD_CIPHERTEXT_MATERIAL_CONSENSUS_TOPIC),
+  ]);
+  return {
+    submissions: submissionLogs.map(parseAddCiphertextMaterialLog),
+    consensuses: consensusLogs.map(parseAddCiphertextMaterialConsensusLog),
+  };
+};
+
+const summarizeCiphertextMaterialVariants = (
+  submissions: CiphertextMaterialSubmission[],
+): CiphertextMaterialVariant[] => {
+  const byDigest = new Map<string, CiphertextMaterialVariant>();
+  for (const submission of submissions) {
+    const key = materialDigestKey(submission);
+    const existing = byDigest.get(key);
+    if (existing) {
+      existing.count += 1;
+      existing.senders.push(submission.sender);
+      continue;
+    }
+    byDigest.set(key, {
+      key,
+      ciphertextDigest: submission.ciphertextDigest,
+      snsCiphertextDigest: submission.snsCiphertextDigest,
+      count: 1,
+      senders: [submission.sender],
+    });
+  }
+  return [...byDigest.values()].sort((left, right) => right.count - left.count || left.key.localeCompare(right.key));
+};
+
+export const ciphertextMaterialRecoveryProgress = (
+  submissions: CiphertextMaterialSubmission[],
+  consensuses: CiphertextMaterialConsensus[],
+  threshold: number,
+  expectedSubmissions: number,
+) => {
+  const variants = summarizeCiphertextMaterialVariants(submissions);
+  const senderCount = new Set(submissions.map((submission) => submission.sender.toLowerCase())).size;
+  const maxVariantCount = variants[0]?.count ?? 0;
+  const consensusKeys = new Set(consensuses.map(materialDigestKey));
+  const consensusAtThreshold = variants.find((variant) => consensusKeys.has(variant.key) && variant.count >= threshold);
+  const possibleConsensus = consensusAtThreshold
+    ? true
+    : maxVariantCount + Math.max(0, expectedSubmissions - senderCount) >= threshold;
+  const variantText = variants.length
+    ? variants
+        .map(
+          (variant) =>
+            `${variant.count}x ct=${variant.ciphertextDigest} sns=${variant.snsCiphertextDigest} senders=[${variant.senders.join(",")}]`,
+        )
+        .join("; ")
+    : "none";
+  const consensusText = consensuses.length
+    ? consensuses
+        .map(
+          (consensus) =>
+            `ct=${consensus.ciphertextDigest} sns=${consensus.snsCiphertextDigest} senders=${consensus.senderCount ?? "unknown"}`,
+        )
+        .join("; ")
+    : "none";
+  return {
+    variants,
+    senderCount,
+    maxVariantCount,
+    hasDivergence: variants.length >= 2,
+    hasConsensusAtThreshold: Boolean(consensusAtThreshold),
+    possibleConsensus,
+    summary: `${senderCount}/${expectedSubmissions} sender(s), ${submissions.length} submission event(s), ${variants.length} digest variant(s), max variant ${maxVariantCount}/${threshold}, consensus event(s): ${consensusText}, variants: ${variantText}`,
+  };
+};
+
+export const ciphertextMaterialReadyForRecovery = (
+  submissions: CiphertextMaterialSubmission[],
+  consensuses: CiphertextMaterialConsensus[],
+  threshold: number,
+  expectedSubmissions: number,
+) => {
+  const progress = ciphertextMaterialRecoveryProgress(submissions, consensuses, threshold, expectedSubmissions);
+  return progress.hasDivergence && progress.hasConsensusAtThreshold;
+};
+
+/** Queries on-chain AddCiphertextMaterial events and asserts the two submissions have divergent digests. */
+const assertOnChainDivergence = async (
+  gatewayRpcUrl: string,
+  contractAddress: string,
+  handleHex: string,
+) => {
+  const logs = await fetchGatewayLogs(gatewayRpcUrl, contractAddress, handleHex, ADD_CIPHERTEXT_MATERIAL_TOPIC);
   if (logs.length < 2) {
     throw new PreflightError(`expected 2+ AddCiphertextMaterial events for handle 0x${handleHex}, got ${logs.length}`);
   }
-  // data layout: keyId (32B) | ciphertextDigest (32B) | snsCiphertextDigest (32B) | coprocessorTxSender (32B)
-  // ciphertextDigest starts at byte offset 32 (chars 66..130 in the 0x-prefixed hex)
-  const digests = logs.map((log) => log.data.slice(66, 130));
-  const unique = new Set(digests);
-  if (unique.size < 2) {
+  const progress = ciphertextMaterialRecoveryProgress(logs.map(parseAddCiphertextMaterialLog), [], 1, logs.length);
+  if (!progress.hasDivergence) {
     throw new PreflightError(`on-chain AddCiphertextMaterial events show identical digests — drift not visible on chain`);
   }
-  console.log(`[drift] on-chain divergence confirmed: ${logs.length} submissions with ${unique.size} distinct digest(s)`);
+  console.log(`[drift] on-chain divergence confirmed: ${progress.summary}`);
+};
+
+/** Waits for the gateway to emit ciphertext consensus for a divergent handle. */
+const waitForOnChainDivergenceConsensus = async (
+  gatewayRpcUrl: string,
+  contractAddress: string,
+  handleHex: string,
+  options: {
+    threshold: number;
+    expectedSubmissions: number;
+    timeoutSeconds: number;
+    pollIntervalSeconds: number;
+  },
+) => {
+  const attempts = Math.max(0, Math.ceil(options.timeoutSeconds / options.pollIntervalSeconds));
+  let lastSummary = "no AddCiphertextMaterial events observed";
+  for (let attempt = 0; attempt <= attempts; attempt += 1) {
+    const { submissions, consensuses } = await fetchCiphertextMaterialEvents(
+      gatewayRpcUrl,
+      contractAddress,
+      handleHex,
+    );
+    const progress = ciphertextMaterialRecoveryProgress(
+      submissions,
+      consensuses,
+      options.threshold,
+      options.expectedSubmissions,
+    );
+    lastSummary = progress.summary;
+    if (progress.hasDivergence && progress.hasConsensusAtThreshold) {
+      console.log(`[drift] on-chain consensus confirmed for divergent handle 0x${handleHex}: ${progress.summary}`);
+      return;
+    }
+    if (!progress.possibleConsensus) {
+      throw new PreflightError(
+        `gateway consensus cannot be reached for drift handle 0x${handleHex}: ${progress.summary}`,
+      );
+    }
+    if (attempt === attempts) {
+      const missing = !progress.hasDivergence
+        ? "drift was not visible on chain"
+        : "no threshold consensus event was observed";
+      throw new PreflightError(
+        `timed out waiting for gateway ciphertext consensus for drift handle 0x${handleHex}: ${missing}; ${lastSummary}`,
+      );
+    }
+    await Bun.sleep(options.pollIntervalSeconds * 1000);
+  }
 };
 
 type DriftRevertDbOptions = {
@@ -893,6 +1099,14 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           process.env.DRIFT_ALERT_POLL_INTERVAL_SECONDS ?? "2",
           "DRIFT_ALERT_POLL_INTERVAL_SECONDS",
         );
+        const driftConsensusTimeoutSeconds = parsePositiveInteger(
+          process.env.DRIFT_CONSENSUS_TIMEOUT_SECONDS ?? String(driftAlertTimeoutSeconds),
+          "DRIFT_CONSENSUS_TIMEOUT_SECONDS",
+        );
+        const driftConsensusPollIntervalSeconds = parsePositiveInteger(
+          process.env.DRIFT_CONSENSUS_POLL_INTERVAL_SECONDS ?? String(driftAlertPollIntervalSeconds),
+          "DRIFT_CONSENSUS_POLL_INTERVAL_SECONDS",
+        );
         const driftRecoveryTimeoutSeconds = parsePositiveInteger(
           process.env.DRIFT_RECOVERY_TIMEOUT_SECONDS ?? "300",
           "DRIFT_RECOVERY_TIMEOUT_SECONDS",
@@ -940,14 +1154,20 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           `[drift-auto-recovery] drift detected in ${warning.container} for handle 0x${injectedHandleHex}`,
         );
 
-        // Cross-check that drift was visible on chain (≥2 distinct digests
-        // across the AddCiphertextMaterial submissions). Folded in from the
-        // former `ciphertext-drift` profile so this single test covers both
-        // detection and recovery.
+        // Cross-check that drift is visible on chain and the gateway has
+        // reached ciphertext consensus before waiting on the local revert
+        // signal. Peer divergence alone is not enough in threshold<count
+        // topologies: the majority submission may still be missing.
         const ciphertextCommitsAddress = state.discovery!.gateway.CIPHERTEXT_COMMITS_ADDRESS;
         if (ciphertextCommitsAddress) {
           const gatewayRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.gateway.http);
-          await assertOnChainDivergence(gatewayRpcUrl, ciphertextCommitsAddress, injectedHandleHex);
+          const topology = topologyForState(state);
+          await waitForOnChainDivergenceConsensus(gatewayRpcUrl, ciphertextCommitsAddress, injectedHandleHex, {
+            threshold: topology.threshold,
+            expectedSubmissions: topology.count,
+            timeoutSeconds: driftConsensusTimeoutSeconds,
+            pollIntervalSeconds: driftConsensusPollIntervalSeconds,
+          });
         }
 
         const dbOptions = {
