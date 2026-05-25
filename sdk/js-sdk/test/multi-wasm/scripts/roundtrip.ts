@@ -231,7 +231,7 @@ async function run() {
 
     if (roundTrip.makePublic) {
       log('Public decrypting value...');
-      const publicValues = await client.readPublicValues({ encryptedValues: [encryptedValue] });
+      const publicValues = await client.decryptPublicValues({ encryptedValues: [encryptedValue] });
       assertEqualValue('public decrypt', publicValues[0]?.value, value);
       log(`  public decrypt -> ${String(publicValues[0]?.value)}`);
     }

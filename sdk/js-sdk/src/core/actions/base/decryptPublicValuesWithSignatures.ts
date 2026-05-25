@@ -11,12 +11,12 @@ import { clearValueToTypedValue } from '../../handle/ClearValue.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type ReadPublicValuesWithSignaturesParameters = {
+export type DecryptPublicValuesWithSignaturesParameters = {
   readonly encryptedValues: readonly EncryptedValueLike[];
   readonly options?: RelayerPublicDecryptOptions | undefined;
 };
 
-export type ReadPublicValuesWithSignaturesReturnType = {
+export type DecryptPublicValuesWithSignaturesReturnType = {
   readonly clearValues: NonEmptyReadonlyArray<TypedValue>;
   readonly checkSignaturesArgs: {
     readonly handlesList: NonEmptyReadonlyArray<HandleBytes32Hex>;
@@ -27,13 +27,13 @@ export type ReadPublicValuesWithSignaturesReturnType = {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export async function readPublicValuesWithSignatures(
+export async function decryptPublicValuesWithSignatures(
   fhevm: Fhevm<FhevmChain>,
-  parameters: ReadPublicValuesWithSignaturesParameters,
-): Promise<ReadPublicValuesWithSignaturesReturnType> {
+  parameters: DecryptPublicValuesWithSignaturesParameters,
+): Promise<DecryptPublicValuesWithSignaturesReturnType> {
   const handles = parameters.encryptedValues.map(toFhevmHandle);
 
-  const originToken = Symbol('readPublicValues');
+  const originToken = Symbol('decryptPublicValues');
   const res = await publicDecrypt_(fhevm, { ...parameters, handles, originToken });
 
   const typedValues = res.orderedClearValues.map((cv) =>

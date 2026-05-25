@@ -39,7 +39,7 @@ export interface TfheLibApi {
   ZkComputeLoad: typeof import('./v1.5.3/tfhe.js').ZkComputeLoad;
 }
 
-export type TfheVersion = '1.5.3' | '1.6.1' | '1.6.0-dev';
+export type TfheVersion = '1.5.3' | '1.6.1';
 
 export type TfheWasmBase64 = {
   readonly tfheWasmBase64: string;

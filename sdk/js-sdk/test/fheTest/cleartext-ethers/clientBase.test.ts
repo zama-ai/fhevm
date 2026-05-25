@@ -49,9 +49,9 @@ describe.runIf(isCleartext(getEthersTestConfig().chainName))('createFhevmBaseCli
       chain: config.fhevmChain,
       provider: config.provider,
     });
-    expect(typeof client.readPublicValue).toBe('function');
-    expect(typeof client.readPublicValues).toBe('function');
-    expect(typeof client.readPublicValuesWithSignatures).toBe('function');
+    expect(typeof client.decryptPublicValue).toBe('function');
+    expect(typeof client.decryptPublicValues).toBe('function');
+    expect(typeof client.decryptPublicValuesWithSignatures).toBe('function');
     expect(typeof client.signDecryptionPermit).toBe('function');
     expect(typeof client.parseTransportKeyPair).toBe('function');
     expect(typeof client.fetchFheEncryptionKeyBytes).toBe('function');

@@ -7,18 +7,18 @@ import { toFhevmHandle } from '../../handle/FhevmHandle.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type CanReadPublicValuesParameters = {
+export type CanDecryptPublicValuesParameters = {
   readonly encryptedValues: readonly EncryptedValueLike[];
 };
 
-export type CanReadPublicValuesReturnType = readonly boolean[];
+export type CanDecryptPublicValuesReturnType = readonly boolean[];
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export async function canReadPublicValues(
+export async function canDecryptPublicValues(
   fhevm: Fhevm<FhevmChain>,
-  parameters: CanReadPublicValuesParameters,
-): Promise<CanReadPublicValuesReturnType> {
+  parameters: CanDecryptPublicValuesParameters,
+): Promise<CanDecryptPublicValuesReturnType> {
   const handles = parameters.encryptedValues.map(toFhevmHandle);
 
   return isAllowedForDecryption(fhevm, {
