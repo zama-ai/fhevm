@@ -43,12 +43,12 @@ function decryptValue({ encryptedValue: EncryptedValue }): TypedValue;
 function decryptValues({ encryptedValues: EncryptedValue[] }): TypedValue[];
 function decryptValuesFromPairs({ pairs }): TypedValue[];
 
-function canReadPublicValue({ encryptedValue: EncryptedValue }): boolean;
-function canReadPublicValues({ encryptedValues: EncryptedValue[] }): boolean[];
+function canDecryptPublicValue({ encryptedValue: EncryptedValue }): boolean;
+function canDecryptPublicValues({ encryptedValues: EncryptedValue[] }): boolean[];
 
-function readPublicValue({ encryptedValue: EncryptedValue }): TypedValue;
-function readPublicValues({ encryptedValues: EncryptedValue[] }): TypedValue[];
-function readPublicValuesWithSignatures({ encryptedValues: EncryptedValue[] }): { clearValues: TypedValue[], checkSignaturesArgs: ... };
+function decryptPublicValue({ encryptedValue: EncryptedValue }): TypedValue;
+function decryptPublicValues({ encryptedValues: EncryptedValue[] }): TypedValue[];
+function decryptPublicValuesWithSignatures({ encryptedValues: EncryptedValue[] }): { clearValues: TypedValue[], checkSignaturesArgs: ... };
 ```
 
 ```ts

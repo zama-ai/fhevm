@@ -32,9 +32,9 @@
 - verifyKmsPublicDecryptEIP712 should use createKmsPublicDecryptEIP712
 - handle = Bytes32Hex (0x....)
 - object { } FhevmHandleImpl implement
-- isAllowedForDecryption => canReadPublicValue(h), readPublicValue(h) -> TypedValue | TypedValue[]
+- isAllowedForDecryption => canDecryptPublicValue(h), decryptPublicValue(h) -> TypedValue | TypedValue[]
 - new handle format: https://github.com/zama-ai/fhevm/pull/2014
-- fix: const originToken = Symbol('readPublicValues');
+- fix: const originToken = Symbol('decryptPublicValues');
 - Missing export RelayerPublicDecryptOptionsType etc...
 - Missing export Fhevm<> types
 - authorize multiple calls (no-op) to setFhevmRuntime (React)
@@ -126,22 +126,22 @@ async function _getOrResolveTfheModuleConfig(runtime: FhevmRuntime): Promise<Res
 ```ts
 
 -- 4 functions --
-const res: boolean = await client.canReadPublicValue({ handles });
-const res: boolean[] = await client.canReadPublicValues({ handles });
+const res: boolean = await client.canDecryptPublicValue({ handles });
+const res: boolean[] = await client.canDecryptPublicValues({ handles });
 
-const res: TypedValue = await client.readPublicValue({ handle });
-const res: TypedValue[] = await client.readPublicValues({ handles });
+const res: TypedValue = await client.decryptPublicValue({ handle });
+const res: TypedValue[] = await client.decryptPublicValues({ handles });
 
 -- or 2 functions --
-const res: boolean = await client.canReadPublicValue({ handles });
-const res: boolean[] = await client.canReadPublicValue({ handles });
+const res: boolean = await client.canDecryptPublicValue({ handles });
+const res: boolean[] = await client.canDecryptPublicValue({ handles });
 
-const res: TypedValue = await client.readPublicValue({ handle });
-const res: TypedValue[] = await client.readPublicValue({ handles });
+const res: TypedValue = await client.decryptPublicValue({ handle });
+const res: TypedValue[] = await client.decryptPublicValue({ handles });
 
 
 
-const res = await client.readPublicValuesWithSignatures({ handles });
+const res = await client.decryptPublicValuesWithSignatures({ handles });
 res.clearValues
 res.checkSignaturesArgs {
   handleList,

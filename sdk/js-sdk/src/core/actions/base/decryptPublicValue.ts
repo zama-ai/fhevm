@@ -9,22 +9,22 @@ import { clearValueToTypedValue } from '../../handle/ClearValue.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type ReadPublicValueParameters = {
+export type DecryptPublicValueParameters = {
   readonly encryptedValue: EncryptedValueLike;
   readonly options?: RelayerPublicDecryptOptions | undefined;
 };
 
-export type ReadPublicValueReturnType = TypedValue;
+export type DecryptPublicValueReturnType = TypedValue;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export async function readPublicValue(
+export async function decryptPublicValue(
   fhevm: Fhevm<FhevmChain>,
-  parameters: ReadPublicValueParameters,
-): Promise<ReadPublicValueReturnType> {
+  parameters: DecryptPublicValueParameters,
+): Promise<DecryptPublicValueReturnType> {
   const handle = toFhevmHandle(parameters.encryptedValue);
 
-  const originToken = Symbol('readPublicValues');
+  const originToken = Symbol('decryptPublicValues');
   const res = await publicDecrypt_(fhevm, { ...parameters, handles: [handle], originToken });
 
   return clearValueToTypedValue(res.orderedClearValues[0], originToken);
