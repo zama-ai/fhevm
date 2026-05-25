@@ -17,20 +17,20 @@ import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
 //
 // Sepolia Testnet:
 // ----------------
-// npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.readPublicValue.test.ts
+// npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.decryptPublicValue.test.ts
 //
 // Devnet:
 // -------
-// CHAIN=devnet npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.readPublicValue.test.ts
+// CHAIN=devnet npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.decryptPublicValue.test.ts
 //
 // localhost fhevm:
 // ----------------
-// CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.readPublicValue.test.ts
+// CHAIN=localhostFhevm npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.decryptPublicValue.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 
 describe.runIf(isV2(getViemTestConfig().chainName) && !isCleartext(getViemTestConfig().chainName))(
-  'Base client — readPublicValue',
+  'Base client — decryptPublicValue',
   () => {
     let config: FheTestViemConfig;
 
@@ -49,12 +49,12 @@ describe.runIf(isV2(getViemTestConfig().chainName) && !isCleartext(getViemTestCo
     // │  For each FHE type:                                                 │
     // │  1. Read the handle from FHETest.getHandleOf(deployer, fheType)     │
     // │  2. Read the expected clear value from FHETest.getClearText(handle) │
-    // │  3. Public decrypt via client.readPublicValue                       │
+    // │  3. Public decrypt via client.decryptPublicValue                       │
     // │  4. Compare decrypted value with expected                           │
     // └─────────────────────────────────────────────────────────────────────┘
 
     for (const fheType of decryptTestCases) {
-      it(`should readPublicValue ${fheType} and match on-chain clear text`, async () => {
+      it(`should decryptPublicValue ${fheType} and match on-chain clear text`, async () => {
         const fheTypeId = fheTypeIdFromName(fheType);
 
         // Read handle from FHETest contract
@@ -84,7 +84,7 @@ describe.runIf(isV2(getViemTestConfig().chainName) && !isCleartext(getViemTestCo
           publicClient: config.publicClient,
         });
 
-        const typedValue = await client.readPublicValue({
+        const typedValue = await client.decryptPublicValue({
           encryptedValue,
         });
 
@@ -108,7 +108,7 @@ describe.runIf(isV2(getViemTestConfig().chainName) && !isCleartext(getViemTestCo
     // │  Read all handles, decrypt in a single call, compare each result    │
     // └─────────────────────────────────────────────────────────────────────┘
 
-    it('should readPublicValue all types in a single call', async () => {
+    it('should decryptPublicValue all types in a single call', async () => {
       // Read all handles and their expected clear values
       const entries: {
         encryptedValue: EncryptedValue;
@@ -144,7 +144,7 @@ describe.runIf(isV2(getViemTestConfig().chainName) && !isCleartext(getViemTestCo
       });
 
       const allEncryptedValues = entries.map((e) => asEncryptedValue(e.encryptedValue));
-      const typedValues = await client.readPublicValues({
+      const typedValues = await client.decryptPublicValues({
         encryptedValues: allEncryptedValues,
       });
 

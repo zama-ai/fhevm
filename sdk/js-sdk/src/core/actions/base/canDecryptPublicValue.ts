@@ -7,18 +7,18 @@ import { toFhevmHandle } from '../../handle/FhevmHandle.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type CanReadPublicValueParameters = {
+export type CanDecryptPublicValueParameters = {
   readonly encryptedValue: EncryptedValueLike;
 };
 
-export type CanReadPublicValueReturnType = boolean;
+export type CanDecryptPublicValueReturnType = boolean;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export async function canReadPublicValue(
+export async function canDecryptPublicValue(
   fhevm: Fhevm<FhevmChain>,
-  parameters: CanReadPublicValueParameters,
-): Promise<CanReadPublicValueReturnType> {
+  parameters: CanDecryptPublicValueParameters,
+): Promise<CanDecryptPublicValueReturnType> {
   const results = await isAllowedForDecryption(fhevm, {
     address: fhevm.chain.fhevm.contracts.acl.address as ChecksummedAddress,
     handles: [toFhevmHandle(parameters.encryptedValue)],

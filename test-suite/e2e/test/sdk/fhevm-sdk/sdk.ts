@@ -216,7 +216,7 @@ export class FhevmSdk implements SdkInstance {
   async publicDecrypt(
     handles: readonly string[],
   ): Promise<{ clearValues: ClearValues; abiEncodedClearValues: `0x${string}`; decryptionProof: `0x${string}` }> {
-    const res = await this.#fullClient.readPublicValuesWithSignatures({
+    const res = await this.#fullClient.decryptPublicValuesWithSignatures({
       encryptedValues: handles,
       options: this.#auth ? { auth: this.#auth } : undefined,
     });

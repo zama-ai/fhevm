@@ -1,9 +1,9 @@
-import type { ethers } from 'ethers';
-import type { EncryptedValue, TypedValue } from '@fhevm/sdk/types';
+import type { Hex } from 'viem';
 import { describe, it, expect, beforeAll } from 'vitest';
-import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import { createFhevmCleartextBaseClient } from '@fhevm/sdk/ethers/cleartext';
-import { getEthersTestConfig, type FheTestEthersConfig } from '../ethers/setup.js';
+import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
+import { createFhevmCleartextBaseClient } from '@fhevm/sdk/viem/cleartext';
+import { getViemTestConfig, type FheTestViemConfig } from '../viem/setup.js';
+import { FHETestABI } from '../abi-v2.js';
 import {
   decryptTestCases,
   isCleartext,
@@ -11,21 +11,21 @@ import {
   clearTypeFromHandle,
   fheTypeIdFromHandle,
 } from '../setupCommon.js';
-import { asEncryptedValue } from '@fhevm/sdk/types';
+import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
 // localhost:
 // ----------
-// CHAIN=localhost npx vitest run --config test/fheTest/vitest.config.ts cleartext-ethers/clientBase.readPublicValue.test.ts
+// CHAIN=localhost npx vitest run --config test/fheTest/vitest.config.ts cleartext-viem/clientBase.decryptPublicValue.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-describe.runIf(isCleartext(getEthersTestConfig().chainName))('Base client — readPublicValue', () => {
-  let config: FheTestEthersConfig;
+describe.runIf(isCleartext(getViemTestConfig().chainName))('Base client — decryptPublicValue', () => {
+  let config: FheTestViemConfig;
 
   beforeAll(() => {
-    config = getEthersTestConfig();
+    config = getViemTestConfig();
     setFhevmRuntimeConfig({
       auth: {
         type: 'ApiKeyHeader',
@@ -39,33 +39,42 @@ describe.runIf(isCleartext(getEthersTestConfig().chainName))('Base client — re
   // │  For each FHE type:                                                 │
   // │  1. Read the handle from FHETest.getHandleOf(deployer, fheType)     │
   // │  2. Read the expected clear value from FHETest.getClearText(handle) │
-  // │  3. Public decrypt via client.readPublicValue                       │
+  // │  3. Public decrypt via client.decryptPublicValue                    │
   // │  4. Compare decrypted value with expected                           │
   // └─────────────────────────────────────────────────────────────────────┘
 
   for (const fheType of decryptTestCases) {
-    it(`should readPublicValue ${fheType} and match on-chain clear text`, async () => {
+    it(`should decryptPublicValue ${fheType} and match on-chain clear text`, async () => {
       const fheTypeId = fheTypeIdFromName(fheType);
-      const fheTest = config.fheTestContract.connect(config.signer) as ethers.Contract;
 
       // Read handle from FHETest contract
       const encryptedValue: EncryptedValue = asEncryptedValue(
-        await fheTest.getHandleOf!(config.wallet.address, fheTypeId),
+        await config.publicClient.readContract({
+          address: config.fheTestAddress as Hex,
+          abi: FHETestABI,
+          functionName: 'getHandleOf',
+          args: [config.account.address, fheTypeId],
+        }),
       );
       expect(encryptedValue).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
       expect(fheTypeIdFromHandle(encryptedValue)).toBe(fheTypeIdFromName(fheType));
 
       // Read expected clear value from FHETest._db
-      const expectedRaw: bigint = await fheTest.getClearText!(encryptedValue);
+      const expectedRaw = await config.publicClient.readContract({
+        address: config.fheTestAddress as Hex,
+        abi: FHETestABI,
+        functionName: 'getClearText',
+        args: [encryptedValue],
+      });
       console.log(`  ${fheType}: handle=${encryptedValue.slice(0, 20)}... expected=${expectedRaw}`);
 
       // Public decrypt via SDK
       const client = createFhevmCleartextBaseClient({
         chain: config.fhevmChain,
-        provider: config.provider,
+        publicClient: config.publicClient,
       });
 
-      const typedValue: TypedValue = await client.readPublicValue({
+      const typedValue = await client.decryptPublicValue({
         encryptedValue,
       });
 
@@ -89,9 +98,7 @@ describe.runIf(isCleartext(getEthersTestConfig().chainName))('Base client — re
   // │  Read all handles, decrypt in a single call, compare each result    │
   // └─────────────────────────────────────────────────────────────────────┘
 
-  it('should readPublicValue all types in a single call', async () => {
-    const fheTest = config.fheTestContract.connect(config.signer) as ethers.Contract;
-
+  it('should decryptPublicValue all types in a single call', async () => {
     // Read all handles and their expected clear values
     const entries: {
       encryptedValue: EncryptedValue;
@@ -101,12 +108,21 @@ describe.runIf(isCleartext(getEthersTestConfig().chainName))('Base client — re
     for (const fheType of decryptTestCases) {
       const fheTypeId = fheTypeIdFromName(fheType);
       const encryptedValue: EncryptedValue = asEncryptedValue(
-        await fheTest.getHandleOf!(config.wallet.address, fheTypeId),
+        await config.publicClient.readContract({
+          address: config.fheTestAddress as Hex,
+          abi: FHETestABI,
+          functionName: 'getHandleOf',
+          args: [config.account.address, fheTypeId],
+        }),
       );
       expect(encryptedValue).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
       expect(fheTypeIdFromHandle(encryptedValue)).toBe(fheTypeIdFromName(fheType));
-
-      const expectedRaw: bigint = await fheTest.getClearText!(encryptedValue);
+      const expectedRaw = await config.publicClient.readContract({
+        address: config.fheTestAddress as Hex,
+        abi: FHETestABI,
+        functionName: 'getClearText',
+        args: [encryptedValue],
+      });
       entries.push({ encryptedValue, expectedRaw });
       console.log(`  ${fheType}: handle=${encryptedValue.slice(0, 20)}... expected=${expectedRaw}`);
     }
@@ -114,11 +130,11 @@ describe.runIf(isCleartext(getEthersTestConfig().chainName))('Base client — re
     // Public decrypt all in a single call
     const client = createFhevmCleartextBaseClient({
       chain: config.fhevmChain,
-      provider: config.provider,
+      publicClient: config.publicClient,
     });
 
     const allEncryptedValues = entries.map((e) => asEncryptedValue(e.encryptedValue));
-    const typedValues = await client.readPublicValues({
+    const typedValues = await client.decryptPublicValues({
       encryptedValues: allEncryptedValues,
     });
 
@@ -131,9 +147,9 @@ describe.runIf(isCleartext(getEthersTestConfig().chainName))('Base client — re
 
       expect(typedValue.type).toBe(clearTypeFromHandle(encryptedValue));
 
-      if (clearTypeFromHandle(encryptedValue) === 'bool') {
+      if (clearTypeFromHandle(encryptedValue) === 'ebool') {
         expect(typedValue.value).toBe(expectedRaw !== 0n);
-      } else if (clearTypeFromHandle(encryptedValue) === 'address') {
+      } else if (clearTypeFromHandle(encryptedValue) === 'eaddress') {
         const expectedAddr = '0x' + expectedRaw.toString(16).padStart(40, '0');
         expect(String(typedValue.value).toLowerCase()).toBe(expectedAddr.toLowerCase());
       } else {

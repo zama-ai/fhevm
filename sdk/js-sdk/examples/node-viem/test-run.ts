@@ -164,7 +164,7 @@ async function main(): Promise<void> {
   step(`Read ${PUBLIC_ENCRYPTED_VALUES.length} public values from testnet`);
   try {
     const encryptedValues = PUBLIC_ENCRYPTED_VALUES.map((h) => h.hex);
-    const typedValues = await client.readPublicValues({ encryptedValues });
+    const typedValues = await client.decryptPublicValues({ encryptedValues });
 
     console.log('  Read public values succeeded!');
     for (let i = 0; i < typedValues.length; i++) {

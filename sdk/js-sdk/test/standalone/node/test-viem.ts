@@ -1,14 +1,13 @@
-import type { Account, Chain, Transport, WalletClient, WriteContractReturnType } from 'viem';
+import type { TypedValue } from '@fhevm/sdk/types';
+import { createTypedValue } from '@fhevm/sdk/base';
 import { createFhevmDecryptClient, createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { getBaseEnv } from './setupCommon.js';
 import { getViemTestConfig, type FheTestViemConfig } from './setup-viem.js';
 import { createWalletClient, http, type Hex } from 'viem';
 import { FHETestABI } from '../../fheTest/abi-v2.js';
-import type { EncryptedValue, FhevmDecryptClient, FhevmEncryptClient, TypedValue } from '@fhevm/sdk/types';
-import type { EncryptValueReturnType } from '@fhevm/sdk/actions/encrypt';
-import type { SignDecryptionPermitReturnType, TransportKeyPair } from '@fhevm/sdk/actions/decrypt';
 
-let config: FheTestViemConfig = getViemTestConfig();
+let config: FheTestViemConfig;
+config = getViemTestConfig();
 setFhevmRuntimeConfig({
   auth: {
     type: 'ApiKeyHeader',
@@ -16,11 +15,11 @@ setFhevmRuntimeConfig({
   },
 });
 
-const tv = { type: 'uint8', value: 123n };
+const tv: TypedValue = createTypedValue({ type: 'uint8', value: 123n });
 
 console.log(`--- createFhevmEncryptClient() with chain ${config.chainName}`);
 
-const client: FhevmEncryptClient = createFhevmEncryptClient({
+const client = createFhevmEncryptClient({
   chain: config.fhevmChain,
   publicClient: config.publicClient,
 });
@@ -28,25 +27,25 @@ await client.ready;
 
 console.log(`--- encryptValue() value 123 with client on chain ${config.chainName}...`);
 
-const result: EncryptValueReturnType = await client.encryptValue({
+const result = await client.encryptValue({
   contractAddress: config.fheTestAddress,
   userAddress: config.account.address,
   value: tv,
 });
 
-const inputHandle: EncryptedValue = result.encryptedValue;
+const inputHandle = result.encryptedValue;
 const makePublic = true;
 console.log(`--- Resulting handle: ${inputHandle}`);
 
 console.log(`--- Setting value in FheTest`);
 
-const walletClient: WalletClient<Transport, Chain, Account> = createWalletClient({
+const walletClient = createWalletClient({
   account: config.account,
   chain: config.publicClient.chain,
   transport: http(getBaseEnv().rpcUrl),
 });
 
-const hash: WriteContractReturnType = await walletClient.writeContract({
+const hash = await walletClient.writeContract({
   address: config.fheTestAddress as Hex,
   abi: FHETestABI,
   functionName: 'setEuint8',
@@ -65,7 +64,7 @@ if (receipt.status !== 'success') {
 
 console.log('--- Transaction succeeded');
 
-const decryptClient: FhevmDecryptClient = createFhevmDecryptClient({
+const decryptClient = createFhevmDecryptClient({
   chain: config.fhevmChain,
   publicClient: config.publicClient,
 });
@@ -75,15 +74,15 @@ await decryptClient.ready;
 // public decryption test
 console.log('--- decryptPublicValue()...');
 
-const actual: TypedValue = await decryptClient.decryptPublicValue({
+const actual = await decryptClient.decryptPublicValue({
   encryptedValue: result.encryptedValue,
 });
 
 console.log(`--- DecryptPublicValue ${tv.type}: ${actual.value}`);
 
-const transportKeyPair: TransportKeyPair = await decryptClient.generateTransportKeyPair();
-const signedPermit: SignDecryptionPermitReturnType = await decryptClient.signDecryptionPermit({
-  transportKeyPair: transportKeyPair,
+const transportKeypair = await decryptClient.generateTransportKeypair();
+const signedPermit = await decryptClient.signDecryptionPermit({
+  transportKeypair: transportKeypair,
   contractAddresses: [config.fheTestAddress],
   durationDays: 1,
   startTimestamp: Math.floor(Date.now() / 1000),
@@ -93,10 +92,10 @@ const signedPermit: SignDecryptionPermitReturnType = await decryptClient.signDec
 
 console.log('--- decrypt()...');
 
-const decryptedValue: TypedValue = await decryptClient.decryptValue({
+const decryptedValue = await decryptClient.decryptValue({
   encryptedValue: inputHandle,
   contractAddress: config.fheTestAddress,
-  transportKeyPair: transportKeyPair,
+  transportKeypair: transportKeypair,
   signedPermit: signedPermit,
 });
 

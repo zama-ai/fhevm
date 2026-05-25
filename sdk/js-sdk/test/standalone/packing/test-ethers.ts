@@ -61,13 +61,13 @@ const decryptClient: FhevmDecryptClient = createFhevmDecryptClient({
 await decryptClient.ready;
 
 // public decryption test
-console.log('--- readPublicValue()...');
+console.log('--- decryptPublicValue()...');
 
-const actual: TypedValue = await decryptClient.readPublicValue({
+const actual: TypedValue = await decryptClient.decryptPublicValue({
   encryptedValue: result.encryptedValue,
 });
 
-console.log(`--- ReadPublicValue ${tv.type}: ${actual.value}`);
+console.log(`--- DecryptPublicValue ${tv.type}: ${actual.value}`);
 
 const transportKeyPair: TransportKeyPair = await decryptClient.generateTransportKeyPair();
 const signedPermit: SignDecryptionPermitReturnType = await decryptClient.signDecryptionPermit({

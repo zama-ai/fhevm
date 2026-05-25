@@ -155,11 +155,11 @@ describe.runIf(isV2(getViemTestConfig().chainName) && !isCleartext(getViemTestCo
 
       // ┌─────────────────────────────────────────────────────────────────────┐
       // │  Phase 4: PUBLIC DECRYPT                                            │
-      // │  Verify the same clear values via readPublicValue (no permit)       │
+      // │  Verify the same clear values via decryptPublicValue (no permit)    │
       // └─────────────────────────────────────────────────────────────────────┘
       console.log('publicDecrypt...');
 
-      const publicTypedValues = await decryptClient.readPublicValues({
+      const publicTypedValues = await decryptClient.decryptPublicValues({
         encryptedValues: result.encryptedValues,
       });
 
@@ -168,7 +168,7 @@ describe.runIf(isV2(getViemTestConfig().chainName) && !isCleartext(getViemTestCo
       for (let i = 0; i < encryptTestCases.length; i++) {
         const expected = encryptTestCases[i]!;
         const actual = publicTypedValues[i]!;
-        console.log(`  readPublicValue ${expected.type}: ${actual.value}`);
+        console.log(`  decryptPublicValue ${expected.type}: ${actual.value}`);
         expect(actual.value).toBe(expected.value);
         expect(actual.type).toBe(expected.type);
       }
