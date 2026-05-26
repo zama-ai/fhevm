@@ -27,10 +27,13 @@ spec:
         {{- with .Values.gwListener.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- with .Values.podAnnotations }}
       annotations:
+        # See coprocessor-zkproof-worker-deployment.yaml for rationale —
+        # roll on .Values.chains change so HostChainsCache::load() refreshes.
+        checksum/host-chains: {{ .Values.chains | default list | toYaml | sha256sum | quote }}
+        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
     spec:
       imagePullSecrets:
         - name: registry-credentials
