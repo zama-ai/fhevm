@@ -164,14 +164,20 @@ dbMigration:
 
   # Component-specific configuration
   config:
-    # Host chain ID. Rendered as the CHAIN_ID env var.
-    # Leave unset/empty to inject nothing.
+    # DEPRECATED — prefer the top-level `.Values.chains` list, which is the
+    # source of truth for host_chains seeding (and for the per-chain listener
+    # Deployments). The scalar knobs below are kept for one release as a
+    # single-chain backward-compat fallback and will be removed in a future
+    # version. See `seed_host_chains` in `initialize_db.sh`.
+
+    # DEPRECATED. Host chain ID. Rendered as the CHAIN_ID env var.
+    # When .Values.chains is non-empty, this is ignored.
     chainId: ""
 
-    # Host chain ACL contract address. Rendered as the ACL_CONTRACT_ADDRESS
-    # env var. Accepts `value` (literal) or `valueFrom`
-    # (secretKeyRef/configMapKeyRef). Leave unset to inject nothing.
-    # Example:
+    # DEPRECATED. Host chain ACL contract address. Rendered as the
+    # ACL_CONTRACT_ADDRESS env var. Accepts `value` (literal) or `valueFrom`
+    # (secretKeyRef/configMapKeyRef). When .Values.chains is non-empty, this
+    # is ignored. Example:
     #   aclContractAddress:
     #     valueFrom:
     #       configMapKeyRef:
@@ -179,9 +185,10 @@ dbMigration:
     #         key: acl.address
     aclContractAddress: {}
 
-    # Host chain input verifier (a.k.a. FHEVM executor) contract address.
-    # Rendered as the INPUT_VERIFIER_ADDRESS env var. Accepts `value`
-    # or `valueFrom`. Leave unset to inject nothing.
+    # DEPRECATED. Host chain input verifier (a.k.a. FHEVM executor) contract
+    # address. Rendered as the INPUT_VERIFIER_ADDRESS env var. Not consumed
+    # by initialize_db.sh; was carried over from a prior schema. Will be
+    # removed in a future release. Leave unset.
     inputVerifierAddress: {}
 
   # Additional Environment variables
