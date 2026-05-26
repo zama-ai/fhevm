@@ -11,6 +11,7 @@ mod handles;
 pub use acl::{acl_nonce_key, record_allows};
 pub use handles::{
     computed_binary_handle, computed_rand_handle, computed_rand_seed, computed_trivial_handle,
+    poc_external_input_proof,
 };
 
 declare_id!("EMhXFu68v61bQV4GrF6ZhZhWNVbH6bHPnTdLtXK8meqn");
@@ -131,6 +132,7 @@ pub mod zama_host {
                 frame::FrameEvent::Rand(event) => emit_cpi!(event),
                 frame::FrameEvent::AclAllowed(event) => emit_cpi!(event),
                 frame::FrameEvent::AclPublicDecryptAllowed(event) => emit_cpi!(event),
+                frame::FrameEvent::InputVerified(event) => emit_cpi!(event),
             }
         }
 
@@ -259,6 +261,8 @@ pub struct InputVerifiedEvent {
     pub result_handle: [u8; 32],
     pub user: [u8; 32],
     pub acl_domain_key: [u8; 32],
+    pub app_account: [u8; 32],
+    pub fhe_type: u8,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -378,6 +382,14 @@ pub enum FheOperand {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub enum FheFrameStep {
+    Input {
+        input_handle: [u8; 32],
+        user: Pubkey,
+        app_account: Pubkey,
+        acl_domain_key: Pubkey,
+        proof: [u8; 32],
+        fhe_type: u8,
+    },
     Operation {
         opcode: FheOpcode,
         operands: Vec<FheOperand>,
@@ -452,4 +464,6 @@ pub enum ZamaHostError {
     UnsupportedFheType,
     #[msg("frame action targets an initialized account")]
     FrameOutputAccountAlreadyInitialized,
+    #[msg("input proof does not match the current input context")]
+    InvalidInputProof,
 }

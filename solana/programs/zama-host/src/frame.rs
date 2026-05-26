@@ -7,8 +7,8 @@ use crate::acl::{
 use crate::handles;
 use crate::{
     AclAllowedEvent, AclPublicDecryptAllowedEvent, FheBinaryOpCode, FheBinaryOpEvent,
-    FheFrameAction, FheFrameStep, FheOpcode, FheOperand, FheRandEvent, RandCounter,
-    TrivialEncryptEvent, ZamaHostError, EVENT_VERSION, MAX_FRAME_RESULTS,
+    FheFrameAction, FheFrameStep, FheOpcode, FheOperand, FheRandEvent, InputVerifiedEvent,
+    RandCounter, TrivialEncryptEvent, ZamaHostError, EVENT_VERSION, MAX_FRAME_RESULTS,
     MAX_FRAME_TRANSIENT_ALLOWS, SOLANA_POC_CHAIN_ID,
 };
 
@@ -30,6 +30,7 @@ pub enum FrameEvent {
     Rand(FheRandEvent),
     AclAllowed(AclAllowedEvent),
     AclPublicDecryptAllowed(AclPublicDecryptAllowedEvent),
+    InputVerified(InputVerifiedEvent),
 }
 
 #[derive(Clone, Copy)]
@@ -123,6 +124,39 @@ fn execute_frame_step<'info>(
     unix_timestamp: i64,
 ) -> Result<()> {
     match step {
+        FheFrameStep::Input {
+            input_handle,
+            user,
+            app_account,
+            acl_domain_key,
+            proof,
+            fhe_type,
+        } => {
+            let expected = handles::poc_external_input_proof(
+                input_handle,
+                user,
+                app_account,
+                acl_domain_key,
+                fhe_type,
+                SOLANA_POC_CHAIN_ID,
+            );
+            require!(proof == expected, ZamaHostError::InvalidInputProof);
+            frame.push_result(FrameResult {
+                handle: input_handle,
+            })?;
+            frame
+                .events
+                .push(FrameEvent::InputVerified(InputVerifiedEvent {
+                    version: EVENT_VERSION,
+                    input_handle,
+                    result_handle: input_handle,
+                    user: user.to_bytes(),
+                    acl_domain_key: acl_domain_key.to_bytes(),
+                    app_account: app_account.to_bytes(),
+                    fhe_type,
+                }));
+            Ok(())
+        }
         FheFrameStep::Operation {
             opcode,
             operands,

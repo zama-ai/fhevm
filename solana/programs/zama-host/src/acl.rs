@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{program::invoke_signed, system_instruction};
 use solana_sha256_hasher::hashv;
 
-use crate::{AclRecord, AclSubjectEntry, MAX_ACL_SUBJECTS, ZamaHostError};
+use crate::{AclRecord, AclSubjectEntry, ZamaHostError, MAX_ACL_SUBJECTS};
 
 pub fn acl_nonce_key(
     acl_domain_key: Pubkey,
@@ -253,9 +253,7 @@ pub(crate) fn write_acl_record_data<'info>(
     serialize_acl_record(record_info, &record)
 }
 
-pub(crate) fn deserialize_acl_record<'info>(
-    record_info: &AccountInfo<'info>,
-) -> Result<AclRecord> {
+pub(crate) fn deserialize_acl_record<'info>(record_info: &AccountInfo<'info>) -> Result<AclRecord> {
     require_keys_eq!(
         *record_info.owner,
         crate::ID,

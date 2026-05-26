@@ -87,8 +87,7 @@ pub fn assert_transfer_cleartext(
             scenario.host_program_id,
         )
         .expect("cleartext ingest");
-    let (alice, bob) =
-        decrypt_transfer_balances(&backend, &scenario).expect("cleartext decrypt");
+    let (alice, bob) = decrypt_transfer_balances(&backend, &scenario).expect("cleartext decrypt");
     assert_transfer_semantics(alice, bob, expect);
     scenario
 }

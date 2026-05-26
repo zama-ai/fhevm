@@ -117,6 +117,28 @@ impl<'a, 'info> Builder<'a, 'info> {
         })
     }
 
+    pub fn input_u64(
+        &mut self,
+        input_handle: [u8; 32],
+        user: Pubkey,
+        app_account: Pubkey,
+        proof: [u8; 32],
+    ) -> Result<FrameValue> {
+        const UINT64_FHE_TYPE: u8 = 5;
+        let index = self.steps.len();
+        self.steps.push(FheFrameStep::Input {
+            input_handle,
+            user,
+            app_account,
+            acl_domain_key: self.acl_domain_key,
+            proof,
+            fhe_type: UINT64_FHE_TYPE,
+        });
+        Ok(FrameValue {
+            operand: FheOperand::PreviousResult { index: index as u8 },
+        })
+    }
+
     pub fn add(
         &mut self,
         lhs: FrameValue,

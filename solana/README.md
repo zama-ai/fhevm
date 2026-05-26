@@ -168,15 +168,17 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 - [x] Scalar RHS: encrypted RHS requires ACL; scalar RHS does not.
 - [x] Self-transfer is a no-op (no handle rotation, no output ACL records).
 - [x] App code uses the shared `solana/crates/zama-fhe` helper (`zama_fhe::execute`) instead of assembling host CPI instructions in business logic.
+- [x] Transfer amount inputs use `fhe.input_u64(...)`, which emits `InputVerifiedEvent` and checks a local, context-bound PoC proof.
 - [x] **`fheRand`** via `FheFrameStep::Rand` + **`poc_demo_confidential_rand`** token demo with user-decrypt request roundtrip.
 - [ ] **`fheRandBounded`** (op 27): not planned for current PoC scope.
 
 ### Partly Modeled
 
 - [ ] KMS verification is modeled in Rust tests, not wired into the real KMS connector.
-- [ ] Input handles use `poc_authorize_transfer_amount`, which exercises the token
-      `fhe::execute` wrapper (trivial_encrypt + allow). The real Solana input verifier
-      or transciphering path is not implemented yet.
+- [ ] Input handles use a local harness shape: deterministic handle material plus a PoC
+      proof bound to `(handle, user, app account, ACL domain, fhe type, chain id)`.
+      The real Rust SDK encryption / ZKPoK verifier or transciphering path is not
+      implemented yet.
 - [ ] ACL records are created already initialized through Anchor `init`; there is no stored
       `Empty -> Bound` enum in the PoC.
 - [x] `allow_for_decryption` follows EVM semantics: any subject allowed on the handle may mark the
@@ -186,7 +188,10 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 
 ### Missing Next
 
-- [ ] Define and implement the real Solana input path for external encrypted inputs.
+- [x] Add an `execute_frame` input step so apps can consume external input handles without
+      pre-creating an amount ACL record.
+- [ ] Replace the local input proof helper with real Rust SDK encryption / ZKPoK verification
+      or the transciphering path.
 - [x] Model transient allow semantics for same-instruction intermediate handles, including the EVM
       rule that transient allowance can authorize `allow_for_decryption`.
 - [ ] Decide how subject overflow works without imposing a small protocol-level subject limit.
@@ -271,12 +276,6 @@ frontend / app indexer
   reads BalanceHandleUpdatedEvent
   learns "AliceTokenAccount moved from A7/h7 to A8/h8"
   builds current and historical decrypt requests
-```
-
-Events still listed in the IDL but **not produced by the current host** (`execute_frame` path):
-
-```text
-InputVerifiedEvent   — no input verifier instruction yet
 ```
 
 `FheOpcode::RandBounded` (op 27) is listed in the host enum but has no `execute_frame` step or IDL event yet.
@@ -428,23 +427,29 @@ First birth is owned by a trusted host path inside `execute_frame`:
 
 ```text
 zama-host::execute_frame(...)
+  input steps verify a context-bound external input proof and expose hX frame-locally
   trivial_encrypt / binary op steps produce frame-local handles
   explicit Allow actions create durable ACL records for chosen outputs
 
 Future (not implemented):
-  input verification / transciphering birth for external ciphertexts
+  real Rust SDK ZKPoK verification or transciphering for external ciphertexts
 ```
 
-PoC transfer amounts use an **app-level shortcut** until the input path exists:
+PoC transfer amounts use a **local input verifier shortcut** until the real input path exists:
 
 ```text
-confidential-token::poc_authorize_transfer_amount
-  -> fhe::execute(trivial_encrypt + allow) for the amount handle
-  -> ACL domain = mint, app account = sender token account, label = "input"
+test/local harness
+  -> derives/registers amount handle + ciphertext material
+  -> builds proof = H("zama-solana-poc-input-v0", handle, user, app account, ACL domain, fhe type, chain id)
+
+confidential-token::confidential_transfer
+  -> fhe::execute(...)
+  -> fhe.input_u64(amount_handle, user, sender token account, proof)
+  -> zama-host verifies the proof and emits InputVerifiedEvent
 ```
 
-This is **not** the production input verifier. It exercises the same `execute_frame` + durable
-`allow` shape the real path will use.
+This is **not** the production input verifier. It exercises the VM/API shape the real Rust SDK
+ZKPoK verifier or transciphering path should plug into.
 
 Generic persistent grants extend the existing canonical ACL record. `allow_acl_subjects` requires
 the caller to already be allowed on the same handle:
@@ -573,21 +578,24 @@ confidential-token::confidential_transfer(amount = hX)
          BobTokenAccount.next_balance_nonce_sequence = 2
 ```
 
-The amount handle ACL is created by `poc_authorize_transfer_amount` (see above). Tests call it
-before `confidential_transfer`:
+The amount handle is born outside the token account state and passed to `confidential_transfer`
+with a local proof:
 
 ```text
-hX = poc_authorize_transfer_amount(amount = 100, nonce_sequence = 0)
-  -> output ACL at transfer_amount_nonce_key(mint, alice_token, "input")
-  -> subjects include compute_signer
+hX = local_harness_input(amount = 100, nonce = 0)
+proof = H("zama-solana-poc-input-v0", hX, Alice, AliceTokenAccount, cUSDCMint, Uint64, chain_id)
+
+confidential_transfer(hX, proof)
+  -> InputVerifiedEvent(hX)
+  -> FHE.sub(hA0, hX) / FHE.add(hB0, hX)
 ```
 
-`confidential_transfer` rejects amount handles unless the supplied ACL record stores `hX` and
-matches the expected transfer input namespace: `acl_domain_key = mint`, `app_account = from token
-account`, and `encrypted_value_label = "input"`.
+`confidential_transfer` rejects the input unless the proof matches the exact handle, owner,
+sender token account, mint ACL domain, FHE type, and PoC chain id. The input handle is only
+frame-local unless a later frame action explicitly creates a durable ACL record.
 
-The real design still needs the Solana equivalent of external input verification / transciphering
-with `InputVerifiedEvent` (or equivalent) — see RFC 024 handle birth classes.
+The real design still needs real external input verification / transciphering behind this same
+`fhe.input_u64(...)` app API.
 
 ## cUSDC Wrapper
 
@@ -627,7 +635,8 @@ The deposit amount is public in this slice because wrapping an underlying token 
 SPL amount. The wrapper does not create durable ACL state for this temporary amount handle. It is a
 frame-local result and only the new balance becomes durable through explicit `allow`.
 
-Production input flows must use the real verifier path once implemented — not `poc_authorize_transfer_amount`.
+Production input flows must use real Rust SDK ZKPoK verification or transciphering, not the local
+proof hash helper.
 
 ## App-Side FHE API
 
@@ -646,6 +655,7 @@ fhe::execute(ctx, |fhe| { ... })
 
 inside the closure:
   fhe.encrypted(...)            // durable input handle from an ACL record
+  fhe.input_u64(...)            // external Uint64 input handle + local PoC proof
   fhe.trivial_encrypt_u64(...)  // frame-local handle
   fhe.add(...), fhe.sub(...)    // frame-local computed handle
   fhe.rand_u64()                // frame-local rand (Uint64 / type 5); see poc_demo_confidential_rand
@@ -926,11 +936,12 @@ Solana-born ciphertext transfer (same flow; initial balances born via `execute_f
 ```text
 LiteSVM:
   initialize token accounts -> execute_frame trivial_encrypt + allow -> hA0, hB0
-  poc_authorize_transfer_amount(100) -> hX
+  local harness derives/registers input amount 100 -> hX + proof
 
 tfhe-worker -> real ciphertexts for hA0, hB0, hX
 
-LiteSVM confidential_transfer(hX)
+LiteSVM confidential_transfer(hX, proof)
+  -> InputVerifiedEvent(hX)
   -> FHE.sub / FHE.add -> hA1, hB1 + output ACL records
 
 test decrypt -> hA1 = 25, hB1 = 120

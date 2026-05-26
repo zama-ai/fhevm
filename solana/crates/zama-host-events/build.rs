@@ -10,12 +10,10 @@ fn main() {
     let idl_path = idl_path();
     println!("cargo:rerun-if-changed={}", idl_path.display());
 
-    let idl = fs::read_to_string(&idl_path).unwrap_or_else(|err| {
-        panic!("failed to read {}: {err}", idl_path.display())
-    });
-    let idl: Value = serde_json::from_str(&idl).unwrap_or_else(|err| {
-        panic!("failed to parse {}: {err}", idl_path.display())
-    });
+    let idl = fs::read_to_string(&idl_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", idl_path.display()));
+    let idl: Value = serde_json::from_str(&idl)
+        .unwrap_or_else(|err| panic!("failed to parse {}: {err}", idl_path.display()));
 
     let types = idl["types"]
         .as_array()
@@ -200,15 +198,11 @@ impl<'a> Cursor<'a> {
 
     let out_path = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR must be set"))
         .join("zama_host_events.rs");
-    fs::write(&out_path, output).unwrap_or_else(|err| {
-        panic!("failed to write {}: {err}", out_path.display())
-    });
+    fs::write(&out_path, output)
+        .unwrap_or_else(|err| panic!("failed to write {}: {err}", out_path.display()));
 }
 
-fn fields_for_event<'a>(
-    types: &'a HashMap<&str, &'a Value>,
-    event_name: &str,
-) -> &'a Vec<Value> {
+fn fields_for_event<'a>(types: &'a HashMap<&str, &'a Value>, event_name: &str) -> &'a Vec<Value> {
     types
         .get(event_name)
         .and_then(|ty| ty["type"]["fields"].as_array())

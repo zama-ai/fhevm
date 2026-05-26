@@ -8,7 +8,7 @@ use crate::{
     events::{fhe_rand_events, trivial_encrypt_events},
     fixture::{TokenFixture, TransferOutputAccounts, WrapOutputAccounts},
     instructions::{
-        authorize_transfer_amount, poc_demo_confidential_rand_ix, transfer_ix,
+        external_input_handle, poc_demo_confidential_rand_ix, transfer_ix,
         transfer_output_accounts, wrap_output_accounts, wrap_usdc_ix,
     },
     transaction::{send_with_meta, send_with_meta_and_signature},
@@ -60,10 +60,7 @@ pub struct RandDemoScenario {
 }
 
 /// Run `poc_demo_confidential_rand` and return tx metadata + rand output handles.
-pub fn run_rand_demo_scenario(
-    fixture: &mut TokenFixture,
-    nonce_sequence: u64,
-) -> RandDemoScenario {
+pub fn run_rand_demo_scenario(fixture: &mut TokenFixture, nonce_sequence: u64) -> RandDemoScenario {
     let (ix, acl_record) = poc_demo_confidential_rand_ix(fixture, nonce_sequence);
     let (meta, account_keys) = send_with_meta(&mut fixture.svm, &fixture.alice, ix);
     let rand_handle = read_acl_record(&fixture.svm, acl_record)
@@ -89,11 +86,7 @@ pub fn run_rand_demo_scenario(
 pub fn run_transfer_scenario(fixture: &mut TokenFixture, setup: TransferSetup) -> TransferScenario {
     let alice_before = fixture.alice_initial;
     let bob_before = fixture.bob_initial;
-    let amount_handle = authorize_transfer_amount(
-        fixture,
-        setup.amount,
-        setup.amount_nonce_sequence,
-    );
+    let amount_handle = external_input_handle(fixture, setup.amount, setup.amount_nonce_sequence);
     let output = transfer_output_accounts(fixture, setup.output_nonce_sequence);
     let transfer_ix = transfer_ix(fixture, output, amount_handle);
     let (meta, account_keys, signature) =
@@ -126,11 +119,7 @@ pub fn run_transfer_scenario_meta(
 ) -> (TransferScenario, bool) {
     let alice_before = fixture.alice_initial;
     let bob_before = fixture.bob_initial;
-    let amount_handle = authorize_transfer_amount(
-        fixture,
-        setup.amount,
-        setup.amount_nonce_sequence,
-    );
+    let amount_handle = external_input_handle(fixture, setup.amount, setup.amount_nonce_sequence);
     let output = transfer_output_accounts(fixture, setup.output_nonce_sequence);
     let transfer_ix = transfer_ix(fixture, output, amount_handle);
     let (meta, account_keys) = send_with_meta(&mut fixture.svm, &fixture.alice, transfer_ix);

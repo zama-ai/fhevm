@@ -12771,6 +12771,7 @@ dependencies = [
  "solana-keccak-hasher",
  "solana-program",
  "solana-sdk",
+ "solana-sha256-hasher",
  "thiserror 2.0.18",
  "zama-host",
  "zama-host-events",

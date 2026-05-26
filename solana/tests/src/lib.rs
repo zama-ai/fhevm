@@ -35,8 +35,9 @@ pub use events::{
     acl_allowed_events, acl_public_decrypt_allowed_events, balance_handle_updated_events,
     binary_op_events, collect_cpi_events, collect_zama_host_events, count_acl_allowed_events,
     count_tfhe_host_events, decode_token_cpi_event, decode_zama_host_cpi_event, fhe_rand_events,
-    max_cpi_depth, trivial_encrypt_events, AclAllowedEvent, AclPublicDecryptAllowedEvent,
-    FheBinaryOpEvent, FheRandEvent, TrivialEncryptEvent, ZamaHostEvent, ANCHOR_EVENT_IX_TAG_LE,
+    input_verified_events, max_cpi_depth, trivial_encrypt_events, AclAllowedEvent,
+    AclPublicDecryptAllowedEvent, FheBinaryOpEvent, FheRandEvent, InputVerifiedEvent,
+    TrivialEncryptEvent, ZamaHostEvent, ANCHOR_EVENT_IX_TAG_LE,
 };
 pub use fixture::{
     create_spl_token_account, spl_token_amount, token_account, token_fixture, TokenFixture,
@@ -44,10 +45,11 @@ pub use fixture::{
 };
 pub use host_ix::{allow_for_decryption_ix, execute_frame_ix, label};
 pub use instructions::{
-    authorize_transfer_amount, poc_demo_confidential_rand, poc_demo_confidential_rand_ix,
-    self_transfer_ix, transfer_ix, transfer_ix_with_amount_acl, transfer_ix_with_amount_nonce,
-    transfer_ix_with_current_acl, transfer_ix_with_current_acl_and_amount_nonce,
-    transfer_output_accounts, wrap_output_accounts, wrap_usdc_ix,
+    authorize_transfer_amount, external_input_handle, poc_demo_confidential_rand,
+    poc_demo_confidential_rand_ix, self_transfer_ix, transfer_ix, transfer_ix_with_amount_nonce,
+    transfer_ix_with_amount_proof, transfer_ix_with_current_acl,
+    transfer_ix_with_current_acl_and_amount_nonce, transfer_output_accounts, wrap_output_accounts,
+    wrap_usdc_ix,
 };
 pub use invariants::{
     assert_balance_acl_subjects, assert_no_zama_host_events_on_failure, assert_tfhe_event_count,

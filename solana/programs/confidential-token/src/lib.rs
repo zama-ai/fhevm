@@ -186,6 +186,7 @@ pub mod confidential_token {
     pub fn confidential_transfer(
         ctx: Context<ConfidentialTransfer>,
         amount_handle: [u8; 32],
+        amount_proof: [u8; 32],
     ) -> Result<()> {
         let mint = &ctx.accounts.mint;
         let from = &ctx.accounts.from_account;
@@ -220,13 +221,6 @@ pub mod confidential_token {
             to.balance_acl_record,
             ConfidentialTokenError::CurrentAclRecordMismatch
         );
-        assert_transfer_amount_acl(
-            &ctx.accounts.amount_compute_acl.to_account_info(),
-            &ctx.accounts.amount_compute_acl,
-            amount_handle,
-            mint.key(),
-            from.key(),
-        )?;
         if from.key() == to.key() {
             return Ok(());
         }
@@ -252,10 +246,12 @@ pub mod confidential_token {
                         handle: to.balance_handle,
                         acl_record: ctx.accounts.to_current_compute_acl.to_account_info(),
                     })?;
-                    let amount = fhe.encrypted(fhe::EncryptedValue {
-                        handle: amount_handle,
-                        acl_record: ctx.accounts.amount_compute_acl.to_account_info(),
-                    })?;
+                    let amount = fhe.input_u64(
+                        amount_handle,
+                        ctx.accounts.owner.key(),
+                        from.key(),
+                        amount_proof,
+                    )?;
                     let new_from = fhe.sub(from_balance, amount.clone(), BALANCE_FHE_TYPE)?;
                     fhe.allow(
                         &new_from,
@@ -562,7 +558,6 @@ pub struct ConfidentialTransfer<'info> {
     pub compute_signer: UncheckedAccount<'info>,
     pub from_current_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
     pub to_current_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
-    pub amount_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
     pub from_output_acl: UncheckedAccount<'info>,
@@ -722,8 +717,6 @@ pub enum ConfidentialTokenError {
     ComputeSignerMismatch,
     #[msg("current ACL record does not match token account state")]
     CurrentAclRecordMismatch,
-    #[msg("transfer amount ACL record does not match expected input namespace")]
-    AmountAclRecordMismatch,
 }
 
 fn fhe_context<'a, 'info>(
@@ -754,44 +747,6 @@ fn durable_acl_handle(acl_record: &AccountInfo<'_>) -> Result<[u8; 32]> {
     let mut slice: &[u8] = &data;
     let record = zama_host::AclRecord::try_deserialize(&mut slice)?;
     Ok(record.handle)
-}
-
-fn assert_transfer_amount_acl(
-    acl_record_info: &AccountInfo<'_>,
-    acl_record: &zama_host::AclRecord,
-    handle: [u8; 32],
-    mint: Pubkey,
-    token_account: Pubkey,
-) -> Result<()> {
-    let expected_nonce_key = transfer_amount_nonce_key(mint, token_account);
-    require!(
-        acl_record.handle == handle
-            && acl_record.nonce_key == expected_nonce_key
-            && acl_record.acl_domain_key == mint
-            && acl_record.app_account == token_account
-            && acl_record.encrypted_value_label == transfer_amount_label(),
-        ConfidentialTokenError::AmountAclRecordMismatch
-    );
-
-    let nonce_sequence_bytes = acl_record.nonce_sequence.to_le_bytes();
-    let (expected_acl_record, expected_bump) = Pubkey::find_program_address(
-        &[
-            b"acl-record",
-            acl_record.nonce_key.as_ref(),
-            &nonce_sequence_bytes,
-        ],
-        &zama_host::id(),
-    );
-    require_keys_eq!(
-        acl_record_info.key(),
-        expected_acl_record,
-        ConfidentialTokenError::AmountAclRecordMismatch
-    );
-    require!(
-        acl_record.bump == expected_bump,
-        ConfidentialTokenError::AmountAclRecordMismatch
-    );
-    Ok(())
 }
 
 fn token_app_account<'info>(account: AccountInfo<'info>) -> fhe::AuthorizedAppAccount<'info> {

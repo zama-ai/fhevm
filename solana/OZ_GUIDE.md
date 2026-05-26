@@ -33,11 +33,12 @@ confidential-token
   initialize_mint / initialize_token_account
   wrap_usdc
   confidential_transfer
-  poc_authorize_transfer_amount   — PoC-only input stand-in (see Caveats)
+  poc_authorize_transfer_amount   — legacy PoC helper; transfer now uses input proof shape
   poc_demo_confidential_rand      — E2E rand demo + ConfidentialRandCreatedEvent
 
 solana/crates/zama-fhe
   fhe::execute(ctx, |fhe| { ... })  — default app API, one execute_frame CPI
+  fhe.input_u64(...)                — external Uint64 input handle + local PoC proof
   fhe::protocol                      — protocol IR types for custom wrappers
 ```
 
@@ -77,9 +78,7 @@ Self-transfer: **no-op** (no handle rotation, no output ACL).
 
 Listener decoders come from the shared `solana/crates/zama-host-events` crate (IDL at `host-listener/idl/zama_host.json`). Sync with `bash scripts/sync-zama-host-idl.sh` after host changes.
 
-**IDL events not emitted yet:** `InputVerifiedEvent`.
-
-**Emitted today:** `FheBinaryOpEvent`, `TrivialEncryptEvent`, `FheRandEvent`, `AclAllowedEvent`, `AclPublicDecryptAllowedEvent`.
+**Emitted today:** `FheBinaryOpEvent`, `TrivialEncryptEvent`, `FheRandEvent`, `InputVerifiedEvent`, `AclAllowedEvent`, `AclPublicDecryptAllowedEvent`.
 
 **Not wired:** `FheOpcode::RandBounded` (op 27) — no frame step or event yet.
 
@@ -103,8 +102,9 @@ Add behavior tests in `tests/src/host_events.rs` before changing token logic.
 
 ```text
 Input:
-  poc_authorize_transfer_amount = trivial_encrypt + allow via fhe::execute
-  Not external ciphertext / input verifier — replace before production claims
+  transfer uses fhe.input_u64(handle, user, app_account, proof)
+  proof is a local context-bound hash, not real Rust SDK ZKPoK verification
+  replace with real Rust SDK ZKPoK verification or transciphering before production claims
 
 Execution frame:
   Transient allow is instruction-local inside execute_frame

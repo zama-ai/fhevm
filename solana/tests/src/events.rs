@@ -8,7 +8,7 @@ use litesvm::types::TransactionMetadata;
 use solana_sdk::pubkey::Pubkey;
 pub use zama_host_events::{
     decode_anchor_cpi_event, AclAllowedEvent, AclPublicDecryptAllowedEvent, FheBinaryOpEvent,
-    FheRandEvent, TrivialEncryptEvent, ZamaHostEvent, ANCHOR_EVENT_IX_TAG_LE,
+    FheRandEvent, InputVerifiedEvent, TrivialEncryptEvent, ZamaHostEvent, ANCHOR_EVENT_IX_TAG_LE,
 };
 
 /// Walk inner instructions and decode CPI event payloads with `decode`.
@@ -104,6 +104,20 @@ pub fn acl_public_decrypt_allowed_events(
         .into_iter()
         .filter_map(|event| match event {
             ZamaHostEvent::AclPublicDecryptAllowed(event) => Some(event),
+            _ => None,
+        })
+        .collect()
+}
+
+pub fn input_verified_events(
+    meta: &TransactionMetadata,
+    account_keys: &[Pubkey],
+    program_id: Pubkey,
+) -> Vec<InputVerifiedEvent> {
+    collect_zama_host_events(meta, account_keys, program_id)
+        .into_iter()
+        .filter_map(|event| match event {
+            ZamaHostEvent::InputVerified(event) => Some(event),
             _ => None,
         })
         .collect()

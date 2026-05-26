@@ -9,15 +9,15 @@ use crate::{
     authorize_transfer_amount, balance_acl_record_address, balance_handle_updated_events,
     binary_op_events, cleartext_rand_value, created_acl_count, event_authority, execute_frame_ix,
     execute_frame_log_count, expected_trivial_handle, fhe_rand_events, host_program_so_path,
-    kms_like_public_decrypt_check, kms_like_user_decrypt_check, label, max_cpi_depth,
-    previous_bank_hash_from_sysvar, rand_counter_address, read_acl_record, read_rand_counter,
-    record_subjects, run_rand_demo_scenario, run_transfer_scenario_meta, run_wrap_scenario,
-    seed_authorizing_acl_record, seed_transfer_inputs, self_transfer_ix, send,
+    input_verified_events, kms_like_public_decrypt_check, kms_like_user_decrypt_check, label,
+    max_cpi_depth, previous_bank_hash_from_sysvar, rand_counter_address, read_acl_record,
+    read_rand_counter, record_subjects, run_rand_demo_scenario, run_transfer_scenario_meta,
+    run_wrap_scenario, seed_authorizing_acl_record, seed_transfer_inputs, self_transfer_ix, send,
     send_many_with_signers, send_with_meta, set_previous_slot_hash,
     signed_confidential_rand_user_decrypt_request, signed_current_balance_user_decrypt_request,
     signed_user_decrypt_request, spl_token_amount, svm_with_program, token_account, token_fixture,
-    transfer_amount_acl_address, transfer_ix, transfer_ix_with_amount_acl,
-    transfer_ix_with_amount_nonce, transfer_ix_with_current_acl,
+    transfer_amount_acl_address, transfer_ix, transfer_ix_with_amount_nonce,
+    transfer_ix_with_amount_proof, transfer_ix_with_current_acl,
     transfer_ix_with_current_acl_and_amount_nonce, transfer_output_accounts,
     trivial_encrypt_events, try_send, try_send_with_meta, wrap_output_accounts, wrap_usdc_ix,
     CleartextBackend, FheBackend, FheBinaryOpCode, PublicDecryptHandleEntry, SemanticBackend,
@@ -1659,13 +1659,15 @@ fn confidential_transfer_budget_snapshot() {
     let (meta, account_keys) = send_with_meta(&mut fixture.svm, &fixture.alice, transfer_ix);
     let inner_instructions = meta.inner_instructions.iter().flatten().count();
     let host_events = binary_op_events(&meta, &account_keys, fixture.host_program_id).len();
+    let input_events = input_verified_events(&meta, &account_keys, fixture.host_program_id).len();
     let app_events =
         balance_handle_updated_events(&meta, &account_keys, fixture.token_program_id).len();
     let max_cpi_depth = max_cpi_depth(&meta);
 
-    assert_eq!(top_level_metas, 16);
+    assert_eq!(top_level_metas, 15);
     assert_eq!(writable_metas, 6);
     assert_eq!(signer_metas, 1);
+    assert_eq!(input_events, 1);
     assert_eq!(host_events, 2);
     assert_eq!(app_events, 2);
     assert_eq!(
@@ -1717,21 +1719,14 @@ fn confidential_transfer_rejects_wrong_current_acl_record() {
 }
 
 #[test]
-fn confidential_transfer_rejects_wrong_amount_acl() {
+fn confidential_transfer_rejects_invalid_amount_proof() {
     let mut fixture = token_fixture();
-    let _wrong_amount_handle =
-        authorize_transfer_amount(&mut fixture, 8, DEFAULT_INPUT_NONCE_SEQUENCE);
     let amount_handle = expected_trivial_handle(&fixture.svm, 9, 5);
 
     let output = transfer_output_accounts(&fixture, 1);
-    let ix = transfer_ix_with_amount_acl(
-        &fixture,
-        fixture.alice_current_compute_acl,
-        fixture.bob_current_compute_acl,
-        transfer_amount_acl_address(&fixture, DEFAULT_INPUT_NONCE_SEQUENCE),
-        output,
-        amount_handle,
-    );
+    let mut invalid_proof = [0_u8; 32];
+    invalid_proof[0] = 1;
+    let ix = transfer_ix_with_amount_proof(&fixture, output, amount_handle, invalid_proof);
 
     assert!(try_send(&mut fixture.svm, &fixture.alice, ix).is_err());
     assert_eq!(
@@ -1749,17 +1744,19 @@ fn confidential_transfer_rejects_wrong_amount_acl() {
 }
 
 #[test]
-fn confidential_transfer_rejects_balance_acl_as_amount_acl() {
+fn confidential_transfer_rejects_amount_proof_bound_to_other_context() {
     let mut fixture = token_fixture();
+    let amount_handle = expected_trivial_handle(&fixture.svm, 9, 5);
     let output = transfer_output_accounts(&fixture, 1);
-    let ix = transfer_ix_with_amount_acl(
-        &fixture,
-        fixture.alice_current_compute_acl,
-        fixture.bob_current_compute_acl,
-        fixture.alice_current_compute_acl,
-        output,
-        fixture.alice_initial,
+    let invalid_proof = zama_host::poc_external_input_proof(
+        amount_handle,
+        fixture.alice.pubkey(),
+        fixture.bob_token,
+        fixture.mint.pubkey(),
+        5,
+        zama_host::SOLANA_POC_CHAIN_ID,
     );
+    let ix = transfer_ix_with_amount_proof(&fixture, output, amount_handle, invalid_proof);
 
     assert!(try_send(&mut fixture.svm, &fixture.alice, ix).is_err());
     assert_eq!(

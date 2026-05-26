@@ -455,6 +455,11 @@
       "code": 6018,
       "name": "FrameOutputAccountAlreadyInitialized",
       "msg": "frame action targets an initialized account"
+    },
+    {
+      "code": 6019,
+      "name": "InvalidInputProof",
+      "msg": "input proof does not match the current input context"
     }
   ],
   "types": [
@@ -764,6 +769,45 @@
         "kind": "enum",
         "variants": [
           {
+            "name": "Input",
+            "fields": [
+              {
+                "name": "input_handle",
+                "type": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              },
+              {
+                "name": "user",
+                "type": "pubkey"
+              },
+              {
+                "name": "app_account",
+                "type": "pubkey"
+              },
+              {
+                "name": "acl_domain_key",
+                "type": "pubkey"
+              },
+              {
+                "name": "proof",
+                "type": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              },
+              {
+                "name": "fhe_type",
+                "type": "u8"
+              }
+            ]
+          },
+          {
             "name": "Operation",
             "fields": [
               {
@@ -1065,6 +1109,19 @@
                 32
               ]
             }
+          },
+          {
+            "name": "app_account",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "fhe_type",
+            "type": "u8"
           }
         ]
       }

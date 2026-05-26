@@ -1,14 +1,14 @@
 use anchor_lang::prelude::system_program;
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey, signature::Signer};
+use solana_sha256_hasher::hashv;
 
 use crate::{
     acl::{
-        balance_acl_record_address, event_authority, rand_acl_record_address,
-        rand_counter_address, read_acl_record, transfer_amount_acl_address,
+        balance_acl_record_address, event_authority, rand_acl_record_address, rand_counter_address,
+        read_acl_record, transfer_amount_acl_address,
     },
     fixture::{TokenFixture, TransferOutputAccounts, WrapOutputAccounts},
     transaction::{anchor_ix, send},
-    util::DEFAULT_INPUT_NONCE_SEQUENCE,
 };
 
 use confidential_token as token;
@@ -75,10 +75,7 @@ pub fn poc_demo_confidential_rand_ix(
     (ix, output_acl)
 }
 
-pub fn poc_demo_confidential_rand(
-    fixture: &mut TokenFixture,
-    nonce_sequence: u64,
-) -> Pubkey {
+pub fn poc_demo_confidential_rand(fixture: &mut TokenFixture, nonce_sequence: u64) -> Pubkey {
     let (ix, output_acl) = poc_demo_confidential_rand_ix(fixture, nonce_sequence);
     send(&mut fixture.svm, &fixture.alice, ix);
     output_acl
@@ -120,22 +117,55 @@ pub fn transfer_ix(
     output: TransferOutputAccounts,
     amount_handle: [u8; 32],
 ) -> Instruction {
-    transfer_ix_with_amount_nonce(fixture, output, amount_handle, DEFAULT_INPUT_NONCE_SEQUENCE)
+    transfer_ix_with_amount_proof(
+        fixture,
+        output,
+        amount_handle,
+        input_proof(fixture, amount_handle),
+    )
+}
+
+pub fn external_input_handle(fixture: &TokenFixture, value: u64, nonce: u64) -> [u8; 32] {
+    let mut handle = hashv(&[
+        b"ZK-w_hdl",
+        &value.to_be_bytes(),
+        fixture.alice.pubkey().as_ref(),
+        fixture.alice_token.as_ref(),
+        fixture.mint.pubkey().as_ref(),
+        &nonce.to_be_bytes(),
+    ])
+    .to_bytes();
+    handle[21] = 0;
+    handle[22..30].copy_from_slice(&zama_host::SOLANA_POC_CHAIN_ID.to_be_bytes());
+    handle[30] = 5;
+    handle[31] = 0;
+    handle
+}
+
+pub fn input_proof(fixture: &TokenFixture, input_handle: [u8; 32]) -> [u8; 32] {
+    hashv(&[
+        b"zama-solana-poc-input-v0",
+        input_handle.as_ref(),
+        fixture.alice.pubkey().as_ref(),
+        fixture.alice_token.as_ref(),
+        fixture.mint.pubkey().as_ref(),
+        &[5],
+        &zama_host::SOLANA_POC_CHAIN_ID.to_be_bytes(),
+    ])
+    .to_bytes()
 }
 
 pub fn transfer_ix_with_amount_nonce(
     fixture: &TokenFixture,
     output: TransferOutputAccounts,
     amount_handle: [u8; 32],
-    amount_nonce_sequence: u64,
+    _amount_nonce_sequence: u64,
 ) -> Instruction {
-    transfer_ix_with_current_acl_and_amount_nonce(
+    transfer_ix_with_amount_proof(
         fixture,
-        fixture.alice_current_compute_acl,
-        fixture.bob_current_compute_acl,
         output,
         amount_handle,
-        amount_nonce_sequence,
+        input_proof(fixture, amount_handle),
     )
 }
 
@@ -154,7 +184,6 @@ pub fn self_transfer_ix(
             compute_signer: fixture.compute_signer,
             from_current_compute_acl: fixture.alice_current_compute_acl,
             to_current_compute_acl: fixture.alice_current_compute_acl,
-            amount_compute_acl: transfer_amount_acl_address(fixture, DEFAULT_INPUT_NONCE_SEQUENCE),
             from_output_acl: output.alice,
             to_output_acl: output.bob,
             zama_rand_counter: rand_counter_address(fixture.host_program_id),
@@ -164,7 +193,10 @@ pub fn self_transfer_ix(
             event_authority: event_authority(fixture.token_program_id),
             program: fixture.token_program_id,
         },
-        token::instruction::ConfidentialTransfer { amount_handle },
+        token::instruction::ConfidentialTransfer {
+            amount_handle,
+            amount_proof: input_proof(fixture, amount_handle),
+        },
     )
 }
 
@@ -175,13 +207,13 @@ pub fn transfer_ix_with_current_acl(
     output: TransferOutputAccounts,
     amount_handle: [u8; 32],
 ) -> Instruction {
-    transfer_ix_with_current_acl_and_amount_nonce(
+    transfer_ix_with_amount_proof_and_current_acl(
         fixture,
         from_current_compute_acl,
         to_current_compute_acl,
         output,
         amount_handle,
-        DEFAULT_INPUT_NONCE_SEQUENCE,
+        input_proof(fixture, amount_handle),
     )
 }
 
@@ -191,25 +223,41 @@ pub fn transfer_ix_with_current_acl_and_amount_nonce(
     to_current_compute_acl: Pubkey,
     output: TransferOutputAccounts,
     amount_handle: [u8; 32],
-    amount_nonce_sequence: u64,
+    _amount_nonce_sequence: u64,
 ) -> Instruction {
-    transfer_ix_with_amount_acl(
+    transfer_ix_with_amount_proof_and_current_acl(
         fixture,
         from_current_compute_acl,
         to_current_compute_acl,
-        transfer_amount_acl_address(fixture, amount_nonce_sequence),
         output,
         amount_handle,
+        input_proof(fixture, amount_handle),
     )
 }
 
-pub fn transfer_ix_with_amount_acl(
+pub fn transfer_ix_with_amount_proof(
+    fixture: &TokenFixture,
+    output: TransferOutputAccounts,
+    amount_handle: [u8; 32],
+    amount_proof: [u8; 32],
+) -> Instruction {
+    transfer_ix_with_amount_proof_and_current_acl(
+        fixture,
+        fixture.alice_current_compute_acl,
+        fixture.bob_current_compute_acl,
+        output,
+        amount_handle,
+        amount_proof,
+    )
+}
+
+pub fn transfer_ix_with_amount_proof_and_current_acl(
     fixture: &TokenFixture,
     from_current_compute_acl: Pubkey,
     to_current_compute_acl: Pubkey,
-    amount_compute_acl: Pubkey,
     output: TransferOutputAccounts,
     amount_handle: [u8; 32],
+    amount_proof: [u8; 32],
 ) -> Instruction {
     anchor_ix(
         fixture.token_program_id,
@@ -221,7 +269,6 @@ pub fn transfer_ix_with_amount_acl(
             compute_signer: fixture.compute_signer,
             from_current_compute_acl,
             to_current_compute_acl,
-            amount_compute_acl,
             from_output_acl: output.alice,
             to_output_acl: output.bob,
             zama_rand_counter: rand_counter_address(fixture.host_program_id),
@@ -231,7 +278,10 @@ pub fn transfer_ix_with_amount_acl(
             event_authority: event_authority(fixture.token_program_id),
             program: fixture.token_program_id,
         },
-        token::instruction::ConfidentialTransfer { amount_handle },
+        token::instruction::ConfidentialTransfer {
+            amount_handle,
+            amount_proof,
+        },
     )
 }
 

@@ -8,11 +8,7 @@ use solana_sdk::{
 use zama_host as host;
 use zama_host::{FheFrameAction, FheFrameStep};
 
-use crate::{
-    acl::event_authority,
-    acl::rand_counter_address,
-    transaction::anchor_ix,
-};
+use crate::{acl::event_authority, acl::rand_counter_address, transaction::anchor_ix};
 
 pub fn execute_frame_ix(
     program_id: Pubkey,

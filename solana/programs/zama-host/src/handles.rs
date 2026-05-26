@@ -10,6 +10,7 @@ pub(crate) const SEED_DOMAIN_SEPARATOR: &[u8] = b"FHE_seed";
 pub(crate) const FHE_RAND_OP: u8 = 26;
 pub(crate) const COMPUTED_HANDLE_MARKER: u8 = 0xff;
 pub(crate) const HANDLE_VERSION: u8 = 0;
+const POC_INPUT_PROOF_DOMAIN_SEPARATOR: &[u8] = b"zama-solana-poc-input-v0";
 
 pub fn computed_binary_handle(
     op: FheBinaryOpCode,
@@ -137,12 +138,32 @@ pub fn computed_trivial_handle(
     result
 }
 
+pub fn poc_external_input_proof(
+    input_handle: [u8; 32],
+    user: Pubkey,
+    app_account: Pubkey,
+    acl_domain_key: Pubkey,
+    fhe_type: u8,
+    chain_id: u64,
+) -> [u8; 32] {
+    hashv(&[
+        POC_INPUT_PROOF_DOMAIN_SEPARATOR,
+        &input_handle,
+        user.as_ref(),
+        app_account.as_ref(),
+        acl_domain_key.as_ref(),
+        &[fhe_type],
+        &chain_id.to_be_bytes(),
+    ])
+    .to_bytes()
+}
+
 pub fn previous_bank_hash(current_slot: u64) -> Result<[u8; 32]> {
     let Some(previous_slot) = current_slot.checked_sub(1) else {
         return err!(ZamaHostError::PreviousBankHashUnavailable);
     };
-    let slot_hashes = PodSlotHashes::fetch()
-        .map_err(|_| error!(ZamaHostError::PreviousBankHashUnavailable))?;
+    let slot_hashes =
+        PodSlotHashes::fetch().map_err(|_| error!(ZamaHostError::PreviousBankHashUnavailable))?;
     let hash = slot_hashes
         .get(&previous_slot)
         .ok()
@@ -194,15 +215,9 @@ mod tests {
             0x9a, 0x15, 0x9e, 0x2b,
         ];
         let plaintext = [9_u8; 32];
-        let with_zero =
-            computed_trivial_handle(plaintext, 5, 12345, [0; 32], 1_700_000_000);
-        let with_fixture = computed_trivial_handle(
-            plaintext,
-            5,
-            12345,
-            FIXTURE_BANK_HASH,
-            1_700_000_000,
-        );
+        let with_zero = computed_trivial_handle(plaintext, 5, 12345, [0; 32], 1_700_000_000);
+        let with_fixture =
+            computed_trivial_handle(plaintext, 5, 12345, FIXTURE_BANK_HASH, 1_700_000_000);
         assert_ne!(with_zero, with_fixture);
     }
 

@@ -68,10 +68,7 @@ pub fn assert_no_zama_host_events_on_failure(
 }
 
 /// Transfer: TFHE event result, output ACL handle, and token account pointer agree.
-pub fn assert_transfer_output_invariants(
-    fixture: &TokenFixture,
-    scenario: &TransferScenario,
-) {
+pub fn assert_transfer_output_invariants(fixture: &TokenFixture, scenario: &TransferScenario) {
     let events = binary_op_events(
         &scenario.meta,
         &scenario.account_keys,
@@ -85,10 +82,8 @@ pub fn assert_transfer_output_invariants(
         2,
     );
 
-    let alice_acl = read_acl_record(&fixture.svm, scenario.output.alice)
-        .expect("alice output ACL");
-    let bob_acl = read_acl_record(&fixture.svm, scenario.output.bob)
-        .expect("bob output ACL");
+    let alice_acl = read_acl_record(&fixture.svm, scenario.output.alice).expect("alice output ACL");
+    let bob_acl = read_acl_record(&fixture.svm, scenario.output.bob).expect("bob output ACL");
 
     assert_eq!(events[0].result, alice_acl.handle, "sub event vs alice ACL");
     assert_eq!(events[1].result, bob_acl.handle, "add event vs bob ACL");
@@ -114,7 +109,11 @@ pub fn assert_wrap_output_invariants(
     output_acl: Pubkey,
 ) {
     let events = binary_op_events(meta, account_keys, fixture.host_program_id);
-    assert_eq!(events.len(), 1, "wrap exposes one add over balance + amount");
+    assert_eq!(
+        events.len(),
+        1,
+        "wrap exposes one add over balance + amount"
+    );
     assert_tfhe_event_count(meta, account_keys, fixture.host_program_id, 2);
 
     let acl = read_acl_record(&fixture.svm, output_acl).expect("wrap output ACL");

@@ -1,4 +1,4 @@
-use anchor_lang::{AccountDeserialize, AccountSerialize, prelude::*};
+use anchor_lang::{prelude::*, AccountDeserialize, AccountSerialize};
 use confidential_token as token;
 use litesvm::LiteSVM;
 use solana_sdk::{account::Account, pubkey::Pubkey, signature::Signer};

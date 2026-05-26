@@ -16,8 +16,8 @@ use tfhe::prelude::FheTryEncrypt;
 use time::{Date, Month, PrimitiveDateTime, Time};
 use zama_host::{AclSubjectEntry, FheFrameAction, FheFrameStep, FheOperand};
 use zama_solana_tests::{
-    acl_record_address, authorize_transfer_amount, cleartext_rand_value, collect_cpi_events,
-    execute_frame_ix, fhe_rand_events, kms_like_user_decrypt_check, label, read_acl_record,
+    acl_record_address, cleartext_rand_value, collect_cpi_events, execute_frame_ix,
+    external_input_handle, fhe_rand_events, kms_like_user_decrypt_check, label, read_acl_record,
     run_transfer_scenario, send_with_meta, send_with_meta_and_signature, set_previous_slot_hash,
     signed_user_decrypt_request_with_domains, token_fixture, transfer_ix, transfer_output_accounts,
     TransferExpect, TransferSetup, UserDecryptHandleEntry, BALANCE_FHE_TYPE,
@@ -101,7 +101,7 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
     let harness = setup_event_harness().await?;
     let mut fixture = token_fixture();
 
-    let amount_handle = authorize_transfer_amount(&mut fixture, 100, DEFAULT_INPUT_NONCE_SEQUENCE);
+    let amount_handle = external_input_handle(&fixture, 100, DEFAULT_INPUT_NONCE_SEQUENCE);
 
     seed_real_fast_ciphertexts(
         &harness.pool,
@@ -252,7 +252,7 @@ async fn solana_fhe_rand_creates_ciphertext_and_decrypts() -> Result<(), Box<dyn
 #[ignore = "requires built Solana PoC programs; validates user-decrypt ACL semantics without running the worker"]
 fn solana_user_decrypt_acl_invariants_match_evm_semantics() {
     let mut fixture = token_fixture();
-    let amount_handle = authorize_transfer_amount(&mut fixture, 100, DEFAULT_INPUT_NONCE_SEQUENCE);
+    let amount_handle = external_input_handle(&fixture, 100, DEFAULT_INPUT_NONCE_SEQUENCE);
     let output = transfer_output_accounts(&fixture, 1);
     let transfer_ix = transfer_ix(&fixture, output, amount_handle);
     send_with_meta(&mut fixture.svm, &fixture.alice, transfer_ix);
