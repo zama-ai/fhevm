@@ -60,6 +60,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             "Starting Gateway Listener",
         );
 
+        if self.conf.gcs_mode {
+            info!("Gateway listener started in --gcs-mode (paused); not processing any events. Waiting for cancellation.");
+            self.cancel_token.cancelled().await;
+            return Ok(());
+        }
+
         let get_logs_handle = {
             let s = self.clone();
             let d = db_pool.clone();

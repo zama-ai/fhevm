@@ -565,19 +565,27 @@ impl Database {
         tx: &mut Transaction<'_>,
         block_summary: &BlockSummary,
         finalized: bool,
+        fhe_event_count: i32,
+        allow_event_count: i32,
     ) -> Result<(), SqlxError> {
         let status = if finalized { "finalized" } else { "pending" };
-        // 1. Insert if not exists (never overwrites existing row)
+        // 1. Insert if not exists (never overwrites existing row).
+        //    Event counts are written at first insert and not touched on
+        //    later finalization transitions.
         sqlx::query!(
             r#"
-            INSERT INTO host_chain_blocks_valid (chain_id, block_hash, block_number, block_status)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO host_chain_blocks_valid
+                (chain_id, block_hash, block_number, block_status,
+                 fhe_event_count, allow_event_count)
+            VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (chain_id, block_hash) DO NOTHING;
             "#,
             self.chain_id.as_i64(),
             block_summary.hash.to_vec(),
             block_summary.number as i64,
             status,
+            fhe_event_count,
+            allow_event_count,
         )
         .execute(tx.deref_mut())
         .await?;

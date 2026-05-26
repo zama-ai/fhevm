@@ -93,6 +93,7 @@ pub struct PollerConfig {
     pub dependence_by_connexity: bool,
     pub dependence_cross_block: bool,
     pub dependent_ops_max_per_chain: u32,
+    pub gcs_mode: bool,
 }
 
 pub async fn run_poller(config: PollerConfig) -> Result<()> {
@@ -320,6 +321,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 dependence_by_connexity: config.dependence_by_connexity,
                 dependence_cross_block: config.dependence_cross_block,
                 dependent_ops_max_per_chain: config.dependent_ops_max_per_chain,
+                gcs_mode: config.gcs_mode,
             };
             match ingest_with_retry(
                 chain_id,

@@ -180,6 +180,13 @@ pub struct Args {
         help = "Timeout in seconds for RPC calls over websocket"
     )]
     pub timeout_request_websocket: u64,
+
+    /// When true, the listener runs in GCS mode and starts paused: only the
+    /// ProtocolConfig `UpgradeActivated` event is acted on; all TFHE/ACL/KMS
+    /// events in incoming blocks are skipped. Used by the GCS stack during
+    /// the blue/green upgrade flow.
+    #[arg(long, default_value_t = false)]
+    pub gcs_mode: bool,
 }
 
 // TODO: to merge with Levent works
@@ -977,6 +984,7 @@ async fn db_insert_block(
                 dependence_by_connexity: args.dependence_by_connexity,
                 dependence_cross_block: args.dependence_cross_block,
                 dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
+                gcs_mode: args.gcs_mode,
             },
         )
         .await;

@@ -31,6 +31,11 @@ pub struct IngestOptions {
     pub dependence_by_connexity: bool,
     pub dependence_cross_block: bool,
     pub dependent_ops_max_per_chain: u32,
+    /// When true, the listener runs in GCS mode and starts paused: only the
+    /// `UpgradeActivated` ProtocolConfig event is acted on; all TFHE / ACL /
+    /// KMS-generation events in the block are skipped. Used by the GCS stack
+    /// during the blue/green upgrade flow before cutover.
+    pub gcs_mode: bool,
 }
 
 /// Converts a block timestamp to a UTC `PrimitiveDateTime`.
@@ -142,6 +147,12 @@ fn classify_slow_by_split_dependency_closure(
     slow_dep_chain_ids
 }
 
+/// pg_notify channel announcing a fully-ingested block.
+///
+/// Must stay in sync with `consensus_detector::NEW_BLOCK_CHANNEL`. Snake_case
+/// per the channel-name convention.
+const NEW_BLOCK_CHANNEL: &str = "event_new_block";
+
 pub async fn ingest_block_logs(
     chain_id: ChainId,
     db: &mut Database,
@@ -152,6 +163,56 @@ pub async fn ingest_block_logs(
     options: IngestOptions,
 ) -> Result<(), sqlx::Error> {
     let mut tx = db.new_transaction().await?;
+
+    // Queue `pg_notify('event_new_block', ...)` at the top of the transaction so
+    // postgres defers delivery until `tx.commit()` below succeeds. Same
+    // "after all events committed" guarantee as emitting post-commit, but
+    // atomic with the data — if the tx rolls back, the notification is
+    // discarded too. JSON shape must match consensus_detector::NewBlockPayload.
+    let new_block_payload = serde_json::json!({
+        "chain_id": chain_id.as_u64() as i64,
+        "block_height": block_logs.summary.number as i64,
+        "block_hash": format!("{:#x}", block_logs.summary.hash),
+    })
+    .to_string();
+    info!(
+        channel = NEW_BLOCK_CHANNEL,
+        payload = %new_block_payload,
+        "Queueing new_block pg_notify in ingest transaction"
+    );
+    sqlx::query("SELECT pg_notify($1, $2)")
+        .bind(NEW_BLOCK_CHANNEL)
+        .bind(&new_block_payload)
+        .execute(&mut *tx)
+        .await?;
+
+    // GCS mode: the listener starts paused — only the ProtocolConfig
+    // `UpgradeActivated` event is acted on. TFHE/ACL/KMS events are skipped.
+    // The contract binding for `UpgradeActivated` is not yet implemented —
+    // the loop below is a placeholder that the upgrade FSM work will fill in.
+    if options.gcs_mode {
+        info!(
+            block_number = block_logs.summary.number,
+            nb_logs = block_logs.logs.len(),
+            "Listener in --gcs-mode (paused) — only UpgradeActivated will be processed"
+        );
+        for log in &block_logs.logs {
+            // TODO(upgrade): decode ProtocolConfig::UpgradeActivated from
+            // `log.inner` and emit `event_upgrade_activated` via pg_notify
+            // (see RFC 021). Until the binding lands, this is a no-op.
+            let _ = log;
+        }
+        db.mark_block_as_valid(
+            &mut tx,
+            &block_logs.summary,
+            block_logs.finalized,
+            0,
+            0,
+        )
+        .await?;
+        return tx.commit().await;
+    }
+
     let mut is_allowed = HashSet::<Handle>::new();
     let mut tfhe_event_log = vec![];
     let mut kms_gen_events = vec![];
@@ -160,6 +221,10 @@ pub async fn ingest_block_logs(
     let mut catchup_insertion = 0;
     let block_timestamp = block_date_time_utc(block_logs.summary.timestamp);
     let mut at_least_one_insertion = false;
+    // Per-block tallies persisted in host_chain_blocks_valid. Counted at decode
+    // time, so an event that fails to insert (e.g. ON CONFLICT) still counts.
+    let mut allow_event_count: i32 = 0;
+    let mut fhe_event_count: i32 = 0;
 
     for log in &block_logs.logs {
         let current_address = Some(log.inner.address);
@@ -169,6 +234,7 @@ pub async fn ingest_block_logs(
             if let Ok(event) =
                 AclContract::AclContractEvents::decode_log(&log.inner)
             {
+                allow_event_count = allow_event_count.saturating_add(1);
                 let handles = acl_result_handles(&event);
                 for handle in handles {
                     is_allowed.insert(handle.to_vec());
@@ -209,6 +275,7 @@ pub async fn ingest_block_logs(
             if let Ok(event) =
                 TfheContract::TfheContractEvents::decode_log(&log.inner)
             {
+                fhe_event_count = fhe_event_count.saturating_add(1);
                 let log = LogTfhe {
                     event,
                     transaction_hash: log.transaction_hash,
@@ -337,8 +404,14 @@ pub async fn ingest_block_logs(
         block_number,
     )
     .await?;
-    db.mark_block_as_valid(&mut tx, &block_logs.summary, block_logs.finalized)
-        .await?;
+    db.mark_block_as_valid(
+        &mut tx,
+        &block_logs.summary,
+        block_logs.finalized,
+        fhe_event_count,
+        allow_event_count,
+    )
+    .await?;
     if at_least_one_insertion {
         db.update_dependence_chain(
             &mut tx,

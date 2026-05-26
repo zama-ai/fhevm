@@ -143,6 +143,13 @@ struct Conf {
     /// Time window over which `--drift-auto-revert-max-recent-attempts` is counted.
     #[arg(long, default_value = "30m", value_parser = parse_duration)]
     drift_auto_revert_recent_attempts_window: Duration,
+
+    /// When true, the gw-listener runs in GCS mode and starts paused: it
+    /// brings up health, drift-revert init and metrics, but does not poll for
+    /// or process any events. Used by the GCS stack during the blue/green
+    /// upgrade flow before cutover.
+    #[arg(long, default_value_t = false)]
+    gcs_mode: bool,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -218,6 +225,7 @@ async fn main() -> anyhow::Result<()> {
         drift_post_consensus_grace: conf.drift_post_consensus_grace,
         drift_auto_revert_grace_period: conf.drift_auto_revert_grace_period,
         drift_auto_revert_enabled: conf.drift_auto_revert_enabled,
+        gcs_mode: conf.gcs_mode,
     };
 
     let gw_listener = std::sync::Arc::new(GatewayListener::new(

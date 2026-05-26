@@ -442,6 +442,7 @@ where
         dependence_by_connexity: false,
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
+        gcs_mode: false,
     };
 
     ingest_block_logs(
@@ -456,7 +457,7 @@ where
     .await?;
 
     let mut tx = db.new_transaction().await?;
-    db.mark_block_as_valid(&mut tx, &block_logs.summary, true)
+    db.mark_block_as_valid(&mut tx, &block_logs.summary, true, 0, 0)
         .await?;
     tx.commit().await?;
 

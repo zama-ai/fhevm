@@ -2637,6 +2637,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "consensus-detector"
+version = "0.7.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "clap",
+ "dashmap",
+ "fhevm-engine-common",
+ "fhevm_gateway_bindings",
+ "humantime",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror 2.0.16",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "const-hex"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
