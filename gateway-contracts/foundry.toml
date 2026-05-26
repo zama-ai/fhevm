@@ -4,6 +4,9 @@ libs = ['node_modules']
 solc = '0.8.24'
 cbor_metadata = false
 bytecode_hash = 'none'
+# Mirror hardhat.config.ts so `forge bind` produces stack-stable bytecode without needing viaIR.
+optimizer = true
+optimizer_runs = 800
 
 remappings = [
     '@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/',

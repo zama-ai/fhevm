@@ -1,6 +1,36 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
-import "../shared/Structs.sol";
+
+// KMS-connector-only fork of `gateway-contracts/contracts/mocks/DecryptionMock.sol`. The upstream
+// mock is auto-generated and kept in sync with the production `Decryption.sol` ABI; duplicating it
+// here lets us layer test-only extensions (e.g. the RFC016 `userDecryptionRequest_0` overload) that
+// the production ABI will not carry until the relayer-sdk deprecation window closes.
+//
+// The structs below are inlined from `gateway-contracts/contracts/shared/Structs.sol` so this file
+// is self-contained and the `forge create --root` invocation does not need to reach into the
+// gateway-contracts source tree.
+//
+// Function selectors depend only on Solidity signatures, so the selectors emitted here match the
+// ones in `fhevm_gateway_bindings::decryption::Decryption` — the `DecryptionInstance` binding
+// calls dispatch to these mock bodies without any binding regeneration.
+
+struct SnsCiphertextMaterial {
+    bytes32 ctHandle;
+    uint256 keyId;
+    bytes32 snsCiphertextDigest;
+    address[] coprocessorTxSenderAddresses;
+}
+
+struct CtHandleContractPair {
+    bytes32 ctHandle;
+    address contractAddress;
+}
+
+struct HandleEntry {
+    bytes32 handle;
+    address contractAddress;
+    address ownerAddress;
+}
 
 contract DecryptionMock {
     struct ContractsInfo {
@@ -152,6 +182,34 @@ contract DecryptionMock {
         SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
 
         emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey, extraData);
+    }
+
+    // RFC016 unified EIP-712 overload. Selector matches the `userDecryptionRequest_0` binding
+    // generated from the real `Decryption.sol`, so `DecryptionInstance::userDecryptionRequest_0`
+    // dispatches here when this mock is deployed in tests.
+    function userDecryptionRequest(
+        HandleEntry[] calldata handles,
+        address userAddress,
+        bytes calldata publicKey,
+        address[] calldata allowedContracts,
+        RequestValiditySeconds calldata requestValidity,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external {
+        userDecryptionCounter++;
+        uint256 decryptionId = userDecryptionCounter;
+        SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
+
+        UserDecryptionRequestPayload memory payload = UserDecryptionRequestPayload(
+            userAddress,
+            publicKey,
+            allowedContracts,
+            requestValidity,
+            extraData,
+            signature
+        );
+
+        emit UserDecryptionRequest(decryptionId, snsCtMaterials, handles, payload);
     }
 
     function delegatedUserDecryptionRequest(
