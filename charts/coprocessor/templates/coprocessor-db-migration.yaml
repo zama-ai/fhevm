@@ -95,28 +95,6 @@ spec:
               {{- toYaml .valueFrom | nindent 14 }}
             {{- end }}
           {{- end }}
-          {{- with .Values.dbMigration.config.chainId }}
-          - name: CHAIN_ID
-            value: {{ . | quote }}
-          {{- end }}
-          {{- with .Values.dbMigration.config.aclContractAddress }}
-          - name: ACL_CONTRACT_ADDRESS
-            {{- if .value }}
-            value: {{ .value | quote }}
-            {{- else if .valueFrom }}
-            valueFrom:
-              {{- toYaml .valueFrom | nindent 14 }}
-            {{- end }}
-          {{- end }}
-          {{- with .Values.dbMigration.config.inputVerifierAddress }}
-          - name: INPUT_VERIFIER_ADDRESS
-            {{- if .value }}
-            value: {{ .value | quote }}
-            {{- else if .valueFrom }}
-            valueFrom:
-              {{- toYaml .valueFrom | nindent 14 }}
-            {{- end }}
-          {{- end }}
           {{- /*
             Declarative host-chains seeding.
             Rendered from .Values.chains so the dbMigration Job can seed the
@@ -128,9 +106,7 @@ spec:
               HOST_CHAIN_<i>_ACL   (literal aclContractAddress, or valueFrom
                                     pointing at the same ConfigMap the
                                     per-chain listener uses)
-            Empty chains[] is a no-op; the legacy
-            dbMigration.config.{chainId,aclContractAddress} scalars above
-            still seed a single chain as a backward-compat fallback.
+            Empty chains[] is a no-op (no host_chains rows seeded).
           */}}
           {{- if .Values.chains }}
           - name: HOST_CHAINS_COUNT

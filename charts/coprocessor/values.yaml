@@ -162,34 +162,12 @@ dbMigration:
   # Override the container command. Defaults to ["/initialize_db.sh"] when unset.
   command:
 
-  # Component-specific configuration
-  config:
-    # DEPRECATED — prefer the top-level `.Values.chains` list, which is the
-    # source of truth for host_chains seeding (and for the per-chain listener
-    # Deployments). The scalar knobs below are kept for one release as a
-    # single-chain backward-compat fallback and will be removed in a future
-    # version. See `seed_host_chains` in `initialize_db.sh`.
-
-    # DEPRECATED. Host chain ID. Rendered as the CHAIN_ID env var.
-    # When .Values.chains is non-empty, this is ignored.
-    chainId: ""
-
-    # DEPRECATED. Host chain ACL contract address. Rendered as the
-    # ACL_CONTRACT_ADDRESS env var. Accepts `value` (literal) or `valueFrom`
-    # (secretKeyRef/configMapKeyRef). When .Values.chains is non-empty, this
-    # is ignored. Example:
-    #   aclContractAddress:
-    #     valueFrom:
-    #       configMapKeyRef:
-    #         name: eth-sc-addresses
-    #         key: acl.address
-    aclContractAddress: {}
-
-    # DEPRECATED. Host chain input verifier (a.k.a. FHEVM executor) contract
-    # address. Rendered as the INPUT_VERIFIER_ADDRESS env var. Not consumed
-    # by initialize_db.sh; was carried over from a prior schema. Will be
-    # removed in a future release. Leave unset.
-    inputVerifierAddress: {}
+  # Host-chains seeding is now driven entirely by the top-level `.Values.chains`
+  # list (see the `chains:` block lower in this file). The dbMigration Job
+  # reads it via HOST_CHAINS_COUNT + HOST_CHAIN_<i>_{ID,NAME,ACL} env vars
+  # rendered by coprocessor-db-migration.yaml. Add or remove entries in
+  # `chains[]` to add or remove host chains.
+  config: {}
 
   # Additional Environment variables
   env: []

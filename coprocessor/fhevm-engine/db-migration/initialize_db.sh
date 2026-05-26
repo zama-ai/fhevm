@@ -94,21 +94,9 @@ seed_host_chains() {
   # literal address at pod-start from the shared contract-address ConfigMap.
   #
   # No jq dependency: keeps the runtime image (Chainguard postgres) minimal.
-  #
-  # Backwards-compat: if HOST_CHAINS_COUNT is unset but the legacy scalar
-  # CHAIN_ID + ACL_CONTRACT_ADDRESS env vars are set, treat them as a single
-  # chain so existing values files keep working through one chart minor while
-  # operators migrate to .Values.chains.
   local count="${HOST_CHAINS_COUNT:-0}"
   if [[ "$count" -eq 0 ]]; then
-    if [[ -n "${CHAIN_ID:-}" && -n "${ACL_CONTRACT_ADDRESS:-}" ]]; then
-      echo "DEPRECATED: seeding host_chains from CHAIN_ID/ACL_CONTRACT_ADDRESS scalar env vars."
-      echo "DEPRECATED: migrate to .Values.chains; the scalar fallback will be removed in a future release."
-      insert_host_chain_row "$CHAIN_ID" "${CHAIN_NAME:-ethereum}" "$ACL_CONTRACT_ADDRESS"
-      echo "host_chains seeding completed (legacy single-chain path)."
-      return 0
-    fi
-    echo "No HOST_CHAINS_COUNT and no legacy scalar env vars; skipping host_chains seeding."
+    echo "HOST_CHAINS_COUNT is 0 or unset; skipping host_chains seeding."
     return 0
   fi
 
