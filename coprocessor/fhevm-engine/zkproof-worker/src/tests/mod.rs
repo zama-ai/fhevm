@@ -220,8 +220,12 @@ async fn test_verify_proof_rerandomises_compact_list_before_expansion() {
 }
 
 /// Regression: a proof request referencing a chain_id that is not registered
-/// in `host_chains` must not poison the worker. It is marked
-/// `verified = false` and the worker keeps processing subsequent requests.
+/// in `host_chains` must not stop processing for chains that are registered.
+///
+/// The worker's SELECT pre-filters by HostChainsCache, so unknown-chain rows
+/// are never fetched. They stay `verified IS NULL` and will be picked up on
+/// the next poll if/when the chain gets registered (cache reloads on pod
+/// restart, forced by the chart's checksum/host-chains annotation).
 ///
 /// This enforces the invariant "one unknown chain on the queue must not stop
 /// processing for known chains" (Amina's invariant) — violated by the
@@ -229,7 +233,9 @@ async fn test_verify_proof_rerandomises_compact_list_before_expansion() {
 /// took Sepolia down with it.
 #[tokio::test]
 #[serial(db)]
-async fn test_unknown_chain_id_is_skipped_not_panicked() {
+async fn test_unknown_chain_id_does_not_stop_known_chain_processing() {
+    use sqlx::Row;
+
     let (pool_mngr, _instance) = utils::setup().await.expect("valid setup");
     let pool = pool_mngr.pool();
 
@@ -237,39 +243,41 @@ async fn test_unknown_chain_id_is_skipped_not_panicked() {
         utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
     let zk_pok = utils::generate_sample_zk_pok(&pool, &aux.1).await;
 
-    // Request 1: chain_id 99_999 — not in host_chains. After the fix, the
-    // worker must mark it verified=false and continue, NOT propagate an
-    // UnknownChainId error that kills the worker on a poison message.
+    // Request 1 (LOWER zk_proof_id): chain_id 99_999, not in host_chains.
+    // Before the filter, this would be the first row the worker fetched and
+    // would crash all workers on the poison message. With the filter, it is
+    // simply not selected — the worker moves on to request 2.
     let mut aux_unknown = aux.0.clone();
     aux_unknown.chain_id = ChainId::try_from(99_999_u64).expect("valid u64 -> ChainId");
     let request_id_unknown = utils::insert_proof(&pool, 301, &zk_pok, &aux_unknown)
         .await
         .unwrap();
 
-    // Request 2: chain_id 12_345 — the registered chain from setup_test_db.
-    // Inserted AFTER the unknown one, so if the worker had panicked on
-    // request 1 this request would stay `verified IS NULL` (the failure
-    // mode from the production incident).
+    // Request 2 (HIGHER zk_proof_id): chain_id 12_345, the registered chain
+    // from setup_test_db. The worker should pick this up (filter excludes
+    // request 1) and verify it successfully.
     let request_id_known = utils::insert_proof(&pool, 302, &zk_pok, &aux.0)
         .await
         .unwrap();
 
-    let max_retries = 1000;
-
-    // Unknown chain: verified resolves to `false` (skipped, not panicked).
+    // Known chain: must be processed normally.
     assert!(
-        !utils::is_valid(&pool, request_id_unknown, max_retries)
+        utils::is_valid(&pool, request_id_known, 1000)
             .await
             .unwrap(),
-        "unknown-chain request should be marked verified=false, not left at NULL",
+        "registered-chain request should be verified despite an unknown-chain row sitting at lower zk_proof_id",
     );
 
-    // Known chain: the worker survived the unknown-chain skip and verifies
-    // this one normally.
+    // Unknown chain: must remain `verified IS NULL`. It is waiting for its
+    // chain to be registered; the row is recoverable, not failed.
+    let row = sqlx::query("SELECT verified FROM verify_proofs WHERE zk_proof_id = $1")
+        .bind(request_id_unknown)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let verified: Option<bool> = row.try_get("verified").unwrap();
     assert!(
-        utils::is_valid(&pool, request_id_known, max_retries)
-            .await
-            .unwrap(),
-        "known-chain request should be processed after unknown-chain skip",
+        verified.is_none(),
+        "unregistered-chain request should stay verified=NULL (waiting), not be marked failed",
     );
 }

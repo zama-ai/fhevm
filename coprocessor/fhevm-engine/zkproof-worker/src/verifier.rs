@@ -12,6 +12,7 @@ use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::safe_deserialize_conformant;
 use sha3::Digest;
 use sha3::Keccak256;
+use sqlx::Row;
 use sqlx::{postgres::PgListener, PgPool};
 use sqlx::{Postgres, Transaction};
 use std::str::FromStr;
@@ -33,7 +34,7 @@ use tokio::time::interval;
 use tokio::{select, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 pub const MAX_CACHED_KEYS: usize = 100;
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
@@ -267,45 +268,58 @@ async fn execute_verify_proof_routine(
     host_chain_cache: &HostChainsCache,
     conf: &Config,
 ) -> Result<(), ExecutionError> {
+    // Pre-filter to known chains: workers only fetch rows whose chain_id is
+    // registered in HostChainsCache. If a proof arrives before its chain row
+    // has been seeded (race during chain-rollout — e.g., gateway add-network
+    // ran but the coproc seed Job has not yet), the row stays `verified IS NULL`
+    // and is picked up on the next worker poll once the cache reloads (forced
+    // by the chart's checksum/host-chains annotation rolling pods).
+    //
+    // Side effect we accept: a proof tagged with a chain_id that will never be
+    // registered (listener misconfiguration, manual SQL injection) stays NULL
+    // indefinitely. That state is observable (`COUNT(*) WHERE verified IS NULL`)
+    // and is rare enough to be a monitorable anomaly rather than a hot-path
+    // failure. Enforces the invariant: "one unknown chain on the queue must
+    // not stop processing for known chains" — workers simply don't see those
+    // rows.
+    let known_chain_ids: Vec<i64> = host_chain_cache
+        .all()
+        .iter()
+        .map(|c| c.chain_id.as_i64())
+        .collect();
+
     let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
-    if let Ok(row) = sqlx::query!(
+    if let Ok(row) = sqlx::query(
         "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id
             FROM verify_proofs
             WHERE verified IS NULL
+              AND chain_id = ANY($1::bigint[])
             ORDER BY zk_proof_id ASC
             LIMIT 1 FOR UPDATE SKIP LOCKED",
     )
+    .bind(&known_chain_ids)
     .fetch_one(&mut *txn)
     .await
     {
         let started_at = SystemTime::now();
-        let request_id: i64 = row.zk_proof_id;
-        let input: Vec<u8> = row
-            .input
-            .ok_or(ExecutionError::NullInput(row.zk_proof_id))?;
-        let host_chain_id_raw: i64 = row.chain_id;
+        let request_id: i64 = row.try_get("zk_proof_id")?;
+        let raw_input: Option<Vec<u8>> = row.try_get("input")?;
+        let input: Vec<u8> = raw_input.ok_or(ExecutionError::NullInput(request_id))?;
+        let host_chain_id_raw: i64 = row.try_get("chain_id")?;
 
-        // Resolve the host chain. If the chain id is not registered in the
-        // `host_chains` table (or fails to coerce into `ChainId`), do NOT
-        // bubble the error up — that kills the worker on the poison row, the
-        // row stays `verified IS NULL`, the next worker picks it up, and every
-        // chain stops. Mark this single request as `verified = false`, commit,
-        // and continue processing other chains. Enforces the invariant:
-        // "one unknown chain on the queue must not stop processing for known
-        // chains."
-        let host_chain = match ChainId::try_from(host_chain_id_raw)
-            .ok()
-            .and_then(|id| host_chain_cache.get_chain(id))
-        {
-            Some(chain) => chain,
-            None => {
-                return skip_unknown_chain(txn, request_id, host_chain_id_raw).await;
-            }
-        };
-        let host_chain_id = host_chain.chain_id;
-        let contract_address = row.contract_address;
-        let user_address = row.user_address;
-        let transaction_id: Option<Vec<u8>> = row.transaction_id;
+        // The filter above guarantees host_chain_id_raw is in HostChainsCache.
+        // Both lookups below are infallible in practice; the `?` is a sanity
+        // backstop for the (impossible-in-current-code) case where the cache
+        // diverges from the SELECT result mid-routine.
+        let host_chain_id = ChainId::try_from(host_chain_id_raw)
+            .map_err(|_| ExecutionError::UnknownChainId(host_chain_id_raw))?;
+        let host_chain = host_chain_cache
+            .get_chain(host_chain_id)
+            .ok_or(ExecutionError::UnknownChainId(host_chain_id_raw))?;
+
+        let contract_address: String = row.try_get("contract_address")?;
+        let user_address: String = row.try_get("user_address")?;
+        let transaction_id: Option<Vec<u8>> = row.try_get("transaction_id")?;
 
         info!(
             message = "Process zk-verify request",
@@ -420,41 +434,6 @@ async fn execute_verify_proof_routine(
         info!(message = "Completed", request_id);
     }
 
-    Ok(())
-}
-
-/// Mark a `verify_proofs` row as `verified = false` when the chain id is not
-/// registered in the in-memory `HostChainsCache`, commit, and return Ok so
-/// the worker continues processing the next request.
-///
-/// Without this path, an unknown-chain row would bubble `UnknownChainId` up
-/// through the worker loop, the worker would exit, `spawn_join_set_with_db_retry`
-/// would restart it, and the same row — never committed-as-failed — would be
-/// picked up again. Five workers crash-looping on one poison row stops every
-/// chain, not just the unknown one.
-async fn skip_unknown_chain(
-    mut txn: sqlx::Transaction<'_, sqlx::Postgres>,
-    request_id: i64,
-    host_chain_id_raw: i64,
-) -> Result<(), ExecutionError> {
-    warn!(
-        message = "Skipping zk-verify request: chain id not registered in host_chains",
-        request_id,
-        host_chain_id = host_chain_id_raw,
-    );
-    // Reuse the same UPDATE shape as the proof-verification path so the
-    // sqlx query cache stays a single entry.
-    let empty_handles: Vec<u8> = Vec::new();
-    sqlx::query!(
-        "UPDATE verify_proofs SET handles = $1, verified = $2, verified_at = NOW()
-                WHERE zk_proof_id = $3",
-        empty_handles,
-        false,
-        request_id
-    )
-    .execute(&mut *txn)
-    .await?;
-    txn.commit().await?;
     Ok(())
 }
 
