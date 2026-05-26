@@ -1,3 +1,4 @@
+use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use serial_test::serial;
 use test_harness::db_utils::ACL_CONTRACT_ADDR;
@@ -204,5 +205,60 @@ async fn test_verify_proof_rerandomises_ciphertexts_before_storage() {
             .iter()
             .map(|input| input.cleartext())
             .collect::<Vec<_>>()
+    );
+}
+
+/// Regression: a proof request referencing a chain_id that is not registered
+/// in `host_chains` must not poison the worker. It is marked
+/// `verified = false` and the worker keeps processing subsequent requests.
+///
+/// This enforces the invariant "one unknown chain on the queue must not stop
+/// processing for known chains" (Amina's invariant) — violated by the
+/// Polygon-on-zws-dev incident where a missing Polygon row in `host_chains`
+/// took Sepolia down with it.
+#[tokio::test]
+#[serial(db)]
+async fn test_unknown_chain_id_is_skipped_not_panicked() {
+    let (pool_mngr, _instance) = utils::setup().await.expect("valid setup");
+    let pool = pool_mngr.pool();
+
+    let aux: (crate::auxiliary::ZkData, [u8; 92]) =
+        utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
+    let zk_pok = utils::generate_sample_zk_pok(&pool, &aux.1).await;
+
+    // Request 1: chain_id 99_999 — not in host_chains. After the fix, the
+    // worker must mark it verified=false and continue, NOT propagate an
+    // UnknownChainId error that kills the worker on a poison message.
+    let mut aux_unknown = aux.0.clone();
+    aux_unknown.chain_id = ChainId::try_from(99_999_u64).expect("valid u64 -> ChainId");
+    let request_id_unknown = utils::insert_proof(&pool, 301, &zk_pok, &aux_unknown)
+        .await
+        .unwrap();
+
+    // Request 2: chain_id 12_345 — the registered chain from setup_test_db.
+    // Inserted AFTER the unknown one, so if the worker had panicked on
+    // request 1 this request would stay `verified IS NULL` (the failure
+    // mode from the production incident).
+    let request_id_known = utils::insert_proof(&pool, 302, &zk_pok, &aux.0)
+        .await
+        .unwrap();
+
+    let max_retries = 1000;
+
+    // Unknown chain: verified resolves to `false` (skipped, not panicked).
+    assert!(
+        !utils::is_valid(&pool, request_id_unknown, max_retries)
+            .await
+            .unwrap(),
+        "unknown-chain request should be marked verified=false, not left at NULL",
+    );
+
+    // Known chain: the worker survived the unknown-chain skip and verifies
+    // this one normally.
+    assert!(
+        utils::is_valid(&pool, request_id_known, max_retries)
+            .await
+            .unwrap(),
+        "known-chain request should be processed after unknown-chain skip",
     );
 }

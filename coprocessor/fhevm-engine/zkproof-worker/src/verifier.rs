@@ -32,7 +32,7 @@ use tokio::time::interval;
 use tokio::{select, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 pub const MAX_CACHED_KEYS: usize = 100;
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
@@ -283,8 +283,25 @@ async fn execute_verify_proof_routine(
             .input
             .ok_or(ExecutionError::NullInput(row.zk_proof_id))?;
         let host_chain_id_raw: i64 = row.chain_id;
-        let host_chain_id = ChainId::try_from(host_chain_id_raw)
-            .map_err(|_| ExecutionError::UnknownChainId(host_chain_id_raw))?;
+
+        // Resolve the host chain. If the chain id is not registered in the
+        // `host_chains` table (or fails to coerce into `ChainId`), do NOT
+        // bubble the error up — that kills the worker on the poison row, the
+        // row stays `verified IS NULL`, the next worker picks it up, and every
+        // chain stops. Mark this single request as `verified = false`, commit,
+        // and continue processing other chains. Enforces the invariant:
+        // "one unknown chain on the queue must not stop processing for known
+        // chains."
+        let host_chain = match ChainId::try_from(host_chain_id_raw)
+            .ok()
+            .and_then(|id| host_chain_cache.get_chain(id))
+        {
+            Some(chain) => chain,
+            None => {
+                return skip_unknown_chain(txn, request_id, host_chain_id_raw).await;
+            }
+        };
+        let host_chain_id = host_chain.chain_id;
         let contract_address = row.contract_address;
         let user_address = row.user_address;
         let transaction_id: Option<Vec<u8>> = row.transaction_id;
@@ -297,10 +314,6 @@ async fn execute_verify_proof_routine(
             contract_address,
             input_len = format!("{}", input.len()),
         );
-
-        let host_chain = host_chain_cache
-            .get_chain(host_chain_id)
-            .ok_or(ExecutionError::UnknownChainId(host_chain_id_raw))?;
 
         let acl_contract_address = host_chain.acl_contract_address.clone();
 
@@ -406,6 +419,41 @@ async fn execute_verify_proof_routine(
         info!(message = "Completed", request_id);
     }
 
+    Ok(())
+}
+
+/// Mark a `verify_proofs` row as `verified = false` when the chain id is not
+/// registered in the in-memory `HostChainsCache`, commit, and return Ok so
+/// the worker continues processing the next request.
+///
+/// Without this path, an unknown-chain row would bubble `UnknownChainId` up
+/// through the worker loop, the worker would exit, `spawn_join_set_with_db_retry`
+/// would restart it, and the same row — never committed-as-failed — would be
+/// picked up again. Five workers crash-looping on one poison row stops every
+/// chain, not just the unknown one.
+async fn skip_unknown_chain(
+    mut txn: sqlx::Transaction<'_, sqlx::Postgres>,
+    request_id: i64,
+    host_chain_id_raw: i64,
+) -> Result<(), ExecutionError> {
+    warn!(
+        message = "Skipping zk-verify request: chain id not registered in host_chains",
+        request_id,
+        host_chain_id = host_chain_id_raw,
+    );
+    // Reuse the same UPDATE shape as the proof-verification path so the
+    // sqlx query cache stays a single entry.
+    let empty_handles: Vec<u8> = Vec::new();
+    sqlx::query!(
+        "UPDATE verify_proofs SET handles = $1, verified = $2, verified_at = NOW()
+                WHERE zk_proof_id = $3",
+        empty_handles,
+        false,
+        request_id
+    )
+    .execute(&mut *txn)
+    .await?;
+    txn.commit().await?;
     Ok(())
 }
 
