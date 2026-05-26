@@ -96,8 +96,6 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
         processed_dcid_ttl_sec: 0,
         dcid_max_no_progress_cycles: 2,
         dcid_ignore_dependency_count_threshold: 100,
-        start_block_height: None,
-        end_block_height: None,
         // Heavy FHE tests can saturate a test Postgres instance for tens of seconds;
         // relax the watcher's production-tuned thresholds so fail-fast doesn't trip
         // on slow polls during the test workload.
