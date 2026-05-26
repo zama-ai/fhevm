@@ -4,6 +4,6 @@ pub mod config;
 // Re-export configuration types for easier access
 pub use config::{
     BlockFetcherStrategy, BlockStartConfig, BlockchainConfig, BrokerConfig, BrokerType,
-    ConfigError, DatabaseConfig, LogConfig, LogFormat, PoolConfig, PublishConfig, Settings,
-    StrategyConfig,
+    CatchupConfig, ConfigError, DatabaseConfig, LogConfig, LogFormat, PoolConfig, PublishConfig,
+    Settings, StrategyConfig,
 };

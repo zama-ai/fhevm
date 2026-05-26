@@ -63,7 +63,7 @@ commonConfig:
   hostChainHttpUrl: "http://ethereum-node:8545"
   aclContractAddress: {}            # required — e.g. 0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c
   fhevmExecutorContractAddress: {}  # required — e.g. 0x...
-  kmsGenerationContractAddress: {}  # required — e.g. 0x...
+  kmsGenerationContractAddress: {}  # optional — e.g. 0x...
 
   # Gateway chain configuration. Consumed by gwListener and txSender.
   # Each field accepts either a literal `value` or a `valueFrom` block
@@ -708,6 +708,11 @@ hostListenerConsumerShared:
 #     #   configMapKeyRef:
 #     #     name: eth-sc-addresses
 #     #     key: fhevm_executor.address
+#     # kmsGenerationContractAddress: "0x..."  # optional; omit when KMSGeneration is not deployed on the host chain
+#     # kmsGenerationContractAddressValueFrom:
+#     #   configMapKeyRef:
+#     #     name: eth-sc-addresses
+#     #     key: kms_generation.address
 #     hostListener:
 #       enabled: true
 #       useLegacyName: true   # set true on exactly one chain to keep the unsuffixed legacy resource names
