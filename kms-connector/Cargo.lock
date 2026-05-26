@@ -3332,6 +3332,7 @@ dependencies = [
  "tracing-opentelemetry",
  "tracing-subscriber",
  "tracing-test",
+ "url",
 ]
 
 [[package]]
@@ -4051,6 +4052,7 @@ dependencies = [
  "tracing-opentelemetry",
  "tracing-subscriber",
  "tracing-test",
+ "url",
  "user-decryption-signature",
 ]
 
@@ -7115,6 +7117,7 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-test",
+ "url",
 ]
 
 [[package]]
