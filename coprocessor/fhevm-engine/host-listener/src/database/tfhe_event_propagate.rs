@@ -845,6 +845,14 @@ impl Database {
                     "unhandled Acl::UnblockedAccount event"
                 );
             }
+            AclContractEvents::DecryptionSignaturesInvalidated(
+                decryption_signatures_invalidated,
+            ) => {
+                warn!(
+                    event = ?decryption_signatures_invalidated,
+                    "unhandled Acl::DecryptionSignaturesInvalidated event"
+                );
+            }
         }
         self.tick.update();
         Ok(inserted)
@@ -1160,7 +1168,8 @@ pub fn acl_result_handles(event: &Log<AclContractEvents>) -> Vec<Handle> {
         | AclContractEvents::Paused(_)
         | AclContractEvents::Unpaused(_)
         | AclContractEvents::BlockedAccount(_)
-        | AclContractEvents::UnblockedAccount(_) => vec![],
+        | AclContractEvents::UnblockedAccount(_)
+        | AclContractEvents::DecryptionSignaturesInvalidated(_) => vec![],
     }
 }
 
