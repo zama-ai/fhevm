@@ -74,6 +74,13 @@ pub fn decode_anchor_cpi_event(data: &[u8]) -> Option<SolanaHostEvent> {
                 event_type: AllowEvents::AllowedAccount,
             }))
         }
+        ZamaHostEvent::AclPublicDecryptAllowed(event) => {
+            Some(SolanaHostEvent::AclAllowed(SolanaAclAllowedEvent {
+                handle: Handle::from(event.handle),
+                subject: format!("0x{}", encode_hex(&event.subject)),
+                event_type: AllowEvents::AllowedForDecryption,
+            }))
+        }
         ZamaHostEvent::InputVerified(_) => None,
     }
 }
@@ -373,6 +380,41 @@ mod tests {
             decoded.event_type as i16,
             AllowEvents::AllowedAccount as i16
         );
+    }
+
+    #[test]
+    fn decodes_anchor_cpi_public_decrypt_acl_event() {
+        let encoded = anchor_cpi_event("AclPublicDecryptAllowedEvent", {
+            let mut payload = vec![EVENT_VERSION];
+            payload.extend_from_slice(&[7; 32]);
+            payload.extend_from_slice(&[8; 32]);
+            payload
+        });
+
+        let SolanaHostEvent::AclAllowed(decoded) =
+            decode_anchor_cpi_event(&encoded)
+                .expect("expected public decrypt ACL event")
+        else {
+            panic!("expected ACL event");
+        };
+
+        assert_eq!(decoded.handle, handle(7));
+        assert_eq!(
+            decoded.event_type as i16,
+            AllowEvents::AllowedForDecryption as i16
+        );
+    }
+
+    #[test]
+    fn rejects_anchor_cpi_event_with_wrong_version() {
+        let encoded = anchor_cpi_event("AclAllowedEvent", {
+            let mut payload = vec![EVENT_VERSION + 1];
+            payload.extend_from_slice(&[7; 32]);
+            payload.extend_from_slice(&[8; 32]);
+            payload
+        });
+
+        assert!(decode_anchor_cpi_event(&encoded).is_none());
     }
 
     #[test]

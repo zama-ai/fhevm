@@ -1,0 +1,15 @@
+[package]
+name = "zama-fhe"
+version = "0.1.0"
+description = "App-facing Solana FHE frame builder for the Zama host program"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+idl-build = ["anchor-lang/idl-build", "zama-host/idl-build"]
+
+[dependencies]
+anchor-lang = "1.0.2"
+zama-host = { path = "../../programs/zama-host", features = ["cpi"] }

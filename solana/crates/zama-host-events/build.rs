@@ -143,7 +143,7 @@ pub const ANCHOR_EVENT_IX_TAG_LE: [u8; 8] = 0x1d9acb512ea545e4_u64.to_le_bytes()
             output.push_str(&read_expr(&field["type"]));
             output.push_str("?,\n");
         }
-        output.push_str("    };\n    cursor.is_finished().then_some(event)\n}\n\n");
+        output.push_str("    };\n    (event.version == EVENT_VERSION && cursor.is_finished()).then_some(event)\n}\n\n");
     }
 
     output.push_str(

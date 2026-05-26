@@ -2,10 +2,9 @@
 #![allow(unexpected_cfgs)]
 #![allow(clippy::diverging_sub_expression, clippy::too_many_arguments)]
 
-mod fhe;
-
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self as spl_token, Mint as SplMint, Token, TokenAccount, TransferChecked};
+use zama_fhe as fhe;
 use zama_host::{self, program::ZamaHost, AclSubjectEntry};
 
 declare_id!("5GKzUSfqBSNjoVW83w3xPtTnAe84srZcDTBstpSoBCR4");
@@ -151,7 +150,7 @@ pub mod confidential_token {
                     &new_balance,
                     fhe::DurableAllow {
                         acl_record: ctx.accounts.output_acl.to_account_info(),
-                        app_account: token_account.key(),
+                        app_account: token_app_account(token_account.to_account_info()),
                         nonce_key: balance_nonce_key(mint.key(), token_account.key()),
                         nonce_sequence,
                         encrypted_value_label: balance_label(),
@@ -162,8 +161,7 @@ pub mod confidential_token {
                 Ok(())
             },
         )?;
-        let new_balance_handle =
-            durable_acl_handle(&ctx.accounts.output_acl.to_account_info())?;
+        let new_balance_handle = durable_acl_handle(&ctx.accounts.output_acl.to_account_info())?;
 
         let token_account = &mut ctx.accounts.token_account;
         token_account.balance_handle = new_balance_handle;
@@ -222,6 +220,13 @@ pub mod confidential_token {
             to.balance_acl_record,
             ConfidentialTokenError::CurrentAclRecordMismatch
         );
+        assert_transfer_amount_acl(
+            &ctx.accounts.amount_compute_acl.to_account_info(),
+            &ctx.accounts.amount_compute_acl,
+            amount_handle,
+            mint.key(),
+            from.key(),
+        )?;
         if from.key() == to.key() {
             return Ok(());
         }
@@ -256,7 +261,7 @@ pub mod confidential_token {
                         &new_from,
                         fhe::DurableAllow {
                             acl_record: ctx.accounts.from_output_acl.to_account_info(),
-                            app_account: from.key(),
+                            app_account: token_app_account(from.to_account_info()),
                             nonce_key: balance_nonce_key(mint.key(), from.key()),
                             nonce_sequence: from_nonce_sequence,
                             encrypted_value_label: balance_label(),
@@ -269,7 +274,7 @@ pub mod confidential_token {
                         &new_to,
                         fhe::DurableAllow {
                             acl_record: ctx.accounts.to_output_acl.to_account_info(),
-                            app_account: to.key(),
+                            app_account: token_app_account(to.to_account_info()),
                             nonce_key: balance_nonce_key(mint.key(), to.key()),
                             nonce_sequence: to_nonce_sequence,
                             encrypted_value_label: balance_label(),
@@ -368,7 +373,7 @@ pub mod confidential_token {
                     &amount,
                     fhe::DurableAllow {
                         acl_record: ctx.accounts.output_acl.to_account_info(),
-                        app_account: token_account.key(),
+                        app_account: token_app_account(token_account.to_account_info()),
                         nonce_key: transfer_amount_nonce_key(mint.key(), token_account.key()),
                         nonce_sequence,
                         encrypted_value_label: transfer_amount_label(),
@@ -424,7 +429,7 @@ pub mod confidential_token {
                     &rand,
                     fhe::DurableAllow {
                         acl_record: ctx.accounts.output_acl.to_account_info(),
-                        app_account: token_account.key(),
+                        app_account: token_app_account(token_account.to_account_info()),
                         nonce_key: rand_nonce_key(mint.key(), token_account.key()),
                         nonce_sequence,
                         encrypted_value_label: rand_label(),
@@ -717,8 +722,8 @@ pub enum ConfidentialTokenError {
     ComputeSignerMismatch,
     #[msg("current ACL record does not match token account state")]
     CurrentAclRecordMismatch,
-    #[msg("Too many accounts in execute_frame remaining_accounts (max 256)")]
-    TooManyFrameAccounts,
+    #[msg("transfer amount ACL record does not match expected input namespace")]
+    AmountAclRecordMismatch,
 }
 
 fn fhe_context<'a, 'info>(
@@ -749,6 +754,48 @@ fn durable_acl_handle(acl_record: &AccountInfo<'_>) -> Result<[u8; 32]> {
     let mut slice: &[u8] = &data;
     let record = zama_host::AclRecord::try_deserialize(&mut slice)?;
     Ok(record.handle)
+}
+
+fn assert_transfer_amount_acl(
+    acl_record_info: &AccountInfo<'_>,
+    acl_record: &zama_host::AclRecord,
+    handle: [u8; 32],
+    mint: Pubkey,
+    token_account: Pubkey,
+) -> Result<()> {
+    let expected_nonce_key = transfer_amount_nonce_key(mint, token_account);
+    require!(
+        acl_record.handle == handle
+            && acl_record.nonce_key == expected_nonce_key
+            && acl_record.acl_domain_key == mint
+            && acl_record.app_account == token_account
+            && acl_record.encrypted_value_label == transfer_amount_label(),
+        ConfidentialTokenError::AmountAclRecordMismatch
+    );
+
+    let nonce_sequence_bytes = acl_record.nonce_sequence.to_le_bytes();
+    let (expected_acl_record, expected_bump) = Pubkey::find_program_address(
+        &[
+            b"acl-record",
+            acl_record.nonce_key.as_ref(),
+            &nonce_sequence_bytes,
+        ],
+        &zama_host::id(),
+    );
+    require_keys_eq!(
+        acl_record_info.key(),
+        expected_acl_record,
+        ConfidentialTokenError::AmountAclRecordMismatch
+    );
+    require!(
+        acl_record.bump == expected_bump,
+        ConfidentialTokenError::AmountAclRecordMismatch
+    );
+    Ok(())
+}
+
+fn token_app_account<'info>(account: AccountInfo<'info>) -> fhe::AuthorizedAppAccount<'info> {
+    fhe::AuthorizedAppAccount::new(account)
 }
 
 fn trivial_encrypt_balance_acl<'info>(
@@ -783,7 +830,7 @@ fn trivial_encrypt_balance_acl<'info>(
                 &balance,
                 fhe::DurableAllow {
                     acl_record: acl_record_info.clone(),
-                    app_account: token_account.key(),
+                    app_account: token_app_account(token_account.to_account_info()),
                     nonce_key: balance_nonce_key(mint.key(), token_account.key()),
                     nonce_sequence,
                     encrypted_value_label: balance_label(),

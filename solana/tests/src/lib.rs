@@ -13,8 +13,8 @@ mod cleartext;
 mod events;
 mod fixture;
 mod host_ix;
-mod invariants;
 mod instructions;
+mod invariants;
 mod kms;
 mod programs;
 mod scenarios;
@@ -29,41 +29,39 @@ pub use acl::{
     token_account_address, transfer_amount_acl_address, vault_authority_address,
 };
 pub use cleartext::{
-    cleartext_rand_value, CleartextBackend, ClearValue, FheBackend, Handle, TypedClearValue,
+    cleartext_rand_value, ClearValue, CleartextBackend, FheBackend, Handle, TypedClearValue,
 };
 pub use events::{
-    acl_allowed_events, balance_handle_updated_events, binary_op_events, collect_cpi_events,
-    collect_zama_host_events, count_acl_allowed_events,
+    acl_allowed_events, acl_public_decrypt_allowed_events, balance_handle_updated_events,
+    binary_op_events, collect_cpi_events, collect_zama_host_events, count_acl_allowed_events,
     count_tfhe_host_events, decode_token_cpi_event, decode_zama_host_cpi_event, fhe_rand_events,
-    max_cpi_depth, trivial_encrypt_events, AclAllowedEvent, FheBinaryOpEvent, FheRandEvent,
-    TrivialEncryptEvent, ANCHOR_EVENT_IX_TAG_LE, ZamaHostEvent,
+    max_cpi_depth, trivial_encrypt_events, AclAllowedEvent, AclPublicDecryptAllowedEvent,
+    FheBinaryOpEvent, FheRandEvent, TrivialEncryptEvent, ZamaHostEvent, ANCHOR_EVENT_IX_TAG_LE,
 };
-pub use zama_host_events::FheBinaryOpCode;
 pub use fixture::{
     create_spl_token_account, spl_token_amount, token_account, token_fixture, TokenFixture,
     TransferOutputAccounts, WrapOutputAccounts,
 };
 pub use host_ix::{allow_for_decryption_ix, execute_frame_ix, label};
-pub use invariants::{
-    assert_balance_acl_subjects, assert_no_zama_host_events_on_failure,
-    assert_tfhe_event_count, assert_transfer_output_invariants, assert_wrap_output_invariants,
-};
 pub use instructions::{
     authorize_transfer_amount, poc_demo_confidential_rand, poc_demo_confidential_rand_ix,
     self_transfer_ix, transfer_ix, transfer_ix_with_amount_acl, transfer_ix_with_amount_nonce,
     transfer_ix_with_current_acl, transfer_ix_with_current_acl_and_amount_nonce,
     transfer_output_accounts, wrap_output_accounts, wrap_usdc_ix,
 };
+pub use invariants::{
+    assert_balance_acl_subjects, assert_no_zama_host_events_on_failure, assert_tfhe_event_count,
+    assert_transfer_output_invariants, assert_wrap_output_invariants,
+};
 pub use kms::{
     authorization_payload_bytes, kms_like_public_decrypt_check, kms_like_user_decrypt_check,
-    signed_current_balance_user_decrypt_request, signed_confidential_rand_user_decrypt_request,
-    signed_user_decrypt_request,
-    signed_user_decrypt_request_with_domains, PublicDecryptHandleEntry,
-    UserDecryptAuthorizationPayload, UserDecryptHandleEntry, UserDecryptRequest,
+    signed_confidential_rand_user_decrypt_request, signed_current_balance_user_decrypt_request,
+    signed_user_decrypt_request, signed_user_decrypt_request_with_domains,
+    PublicDecryptHandleEntry, UserDecryptAuthorizationPayload, UserDecryptHandleEntry,
+    UserDecryptRequest,
 };
 pub use programs::{
-    host_program_so_path, svm_with_program, svm_with_programs,
-    token_program_so_path,
+    host_program_so_path, svm_with_program, svm_with_programs, token_program_so_path,
 };
 pub use scenarios::{
     run_rand_demo_scenario, run_transfer_scenario, run_transfer_scenario_meta, run_wrap_scenario,
@@ -83,3 +81,4 @@ pub use util::{
     previous_bank_hash_from_sysvar, set_previous_slot_hash, DEFAULT_INPUT_NONCE_SEQUENCE,
     DEFAULT_TEST_PREVIOUS_BANK_HASH,
 };
+pub use zama_host_events::FheBinaryOpCode;

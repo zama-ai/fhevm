@@ -2,12 +2,12 @@
 
 use std::collections::HashMap;
 
+use crate::events::collect_zama_host_events;
+use crate::semantic::{BackendError, SemanticBackend};
 use litesvm::types::TransactionMetadata;
 use solana_keccak_hasher::hashv;
 use solana_sdk::pubkey::Pubkey;
-use crate::events::collect_zama_host_events;
 use zama_host_events::{FheBinaryOpCode, FheBinaryOpEvent, FheRandEvent, ZamaHostEvent};
-use crate::semantic::{BackendError, SemanticBackend};
 
 pub type Handle = [u8; 32];
 
@@ -74,7 +74,9 @@ impl FheBackend for CleartextBackend {
                 Ok(())
             }
             ZamaHostEvent::FheRand(event) => self.ingest_rand(event),
-            ZamaHostEvent::AclAllowed(_) | ZamaHostEvent::InputVerified(_) => Ok(()),
+            ZamaHostEvent::AclAllowed(_)
+            | ZamaHostEvent::AclPublicDecryptAllowed(_)
+            | ZamaHostEvent::InputVerified(_) => Ok(()),
         }
     }
 

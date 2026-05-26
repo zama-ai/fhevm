@@ -7,8 +7,8 @@ use anchor_lang::{AnchorDeserialize, Discriminator, Event};
 use litesvm::types::TransactionMetadata;
 use solana_sdk::pubkey::Pubkey;
 pub use zama_host_events::{
-    decode_anchor_cpi_event, AclAllowedEvent, FheBinaryOpEvent, FheRandEvent, TrivialEncryptEvent,
-    ZamaHostEvent, ANCHOR_EVENT_IX_TAG_LE,
+    decode_anchor_cpi_event, AclAllowedEvent, AclPublicDecryptAllowedEvent, FheBinaryOpEvent,
+    FheRandEvent, TrivialEncryptEvent, ZamaHostEvent, ANCHOR_EVENT_IX_TAG_LE,
 };
 
 /// Walk inner instructions and decode CPI event payloads with `decode`.
@@ -95,6 +95,20 @@ pub fn acl_allowed_events(
         .collect()
 }
 
+pub fn acl_public_decrypt_allowed_events(
+    meta: &TransactionMetadata,
+    account_keys: &[Pubkey],
+    program_id: Pubkey,
+) -> Vec<AclPublicDecryptAllowedEvent> {
+    collect_zama_host_events(meta, account_keys, program_id)
+        .into_iter()
+        .filter_map(|event| match event {
+            ZamaHostEvent::AclPublicDecryptAllowed(event) => Some(event),
+            _ => None,
+        })
+        .collect()
+}
+
 pub fn count_tfhe_host_events(events: &[ZamaHostEvent]) -> usize {
     events
         .iter()
@@ -112,12 +126,19 @@ pub fn count_tfhe_host_events(events: &[ZamaHostEvent]) -> usize {
 pub fn count_acl_allowed_events(events: &[ZamaHostEvent]) -> usize {
     events
         .iter()
-        .filter(|event| matches!(event, ZamaHostEvent::AclAllowed(_)))
+        .filter(|event| {
+            matches!(
+                event,
+                ZamaHostEvent::AclAllowed(_) | ZamaHostEvent::AclPublicDecryptAllowed(_)
+            )
+        })
         .count()
 }
 
 /// App-level token events (`confidential-token` `emit_cpi!`).
-pub fn decode_token_cpi_event(data: &[u8]) -> Option<confidential_token::BalanceHandleUpdatedEvent> {
+pub fn decode_token_cpi_event(
+    data: &[u8],
+) -> Option<confidential_token::BalanceHandleUpdatedEvent> {
     decode_cpi_event::<confidential_token::BalanceHandleUpdatedEvent>(data)
 }
 

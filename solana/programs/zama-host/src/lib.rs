@@ -9,7 +9,9 @@ mod frame;
 mod handles;
 
 pub use acl::{acl_nonce_key, record_allows};
-pub use handles::{computed_binary_handle, computed_rand_handle, computed_rand_seed, computed_trivial_handle};
+pub use handles::{
+    computed_binary_handle, computed_rand_handle, computed_rand_seed, computed_trivial_handle,
+};
 
 declare_id!("EMhXFu68v61bQV4GrF6ZhZhWNVbH6bHPnTdLtXK8meqn");
 
@@ -83,7 +85,7 @@ pub mod zama_host {
         // for decryption. `allowTransient` can satisfy this check on EVM, so
         // the Solana transient-allow design must preserve that same behavior.
         ctx.accounts.acl_record.public_decrypt = true;
-        emit_cpi!(AclAllowedEvent {
+        emit_cpi!(AclPublicDecryptAllowedEvent {
             version: EVENT_VERSION,
             handle,
             subject: subject.to_bytes(),
@@ -128,6 +130,7 @@ pub mod zama_host {
                 frame::FrameEvent::TrivialEncrypt(event) => emit_cpi!(event),
                 frame::FrameEvent::Rand(event) => emit_cpi!(event),
                 frame::FrameEvent::AclAllowed(event) => emit_cpi!(event),
+                frame::FrameEvent::AclPublicDecryptAllowed(event) => emit_cpi!(event),
             }
         }
 
@@ -237,6 +240,13 @@ pub struct FheRandEvent {
 
 #[event]
 pub struct AclAllowedEvent {
+    pub version: u8,
+    pub handle: [u8; 32],
+    pub subject: [u8; 32],
+}
+
+#[event]
+pub struct AclPublicDecryptAllowedEvent {
     pub version: u8,
     pub handle: [u8; 32],
     pub subject: [u8; 32],
@@ -357,8 +367,13 @@ pub enum FheOperand {
         handle: [u8; 32],
         acl_record: Pubkey,
     },
-    PreviousResult { index: u8 },
-    Scalar { value: [u8; 32], fhe_type: u8 },
+    PreviousResult {
+        index: u8,
+    },
+    Scalar {
+        value: [u8; 32],
+        fhe_type: u8,
+    },
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
@@ -399,7 +414,7 @@ pub enum FheFrameAction {
 
 #[error_code]
 pub enum ZamaHostError {
-    #[msg("Allow app account is not in authorized_app_accounts")]
+    #[msg("Allow app account is not authorized by signer or app compute PDA")]
     UnauthorizedAppAccount,
     #[msg("ACL record nonce key does not match")]
     AclNonceKeyMismatch,

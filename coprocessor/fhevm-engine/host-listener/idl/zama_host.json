@@ -295,6 +295,19 @@
       ]
     },
     {
+      "name": "AclPublicDecryptAllowedEvent",
+      "discriminator": [
+        30,
+        64,
+        34,
+        31,
+        41,
+        191,
+        171,
+        193
+      ]
+    },
+    {
       "name": "FheBinaryOpEvent",
       "discriminator": [
         11,
@@ -351,7 +364,7 @@
     {
       "code": 6000,
       "name": "UnauthorizedAppAccount",
-      "msg": "Allow app account is not in authorized_app_accounts"
+      "msg": "Allow app account is not authorized by signer or app compute PDA"
     },
     {
       "code": 6001,
@@ -435,6 +448,11 @@
     },
     {
       "code": 6017,
+      "name": "UnsupportedFheType",
+      "msg": "FHE type is not supported for rand"
+    },
+    {
+      "code": 6018,
       "name": "FrameOutputAccountAlreadyInitialized",
       "msg": "frame action targets an initialized account"
     }
@@ -442,6 +460,36 @@
   "types": [
     {
       "name": "AclAllowedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "handle",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "subject",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "AclPublicDecryptAllowedEvent",
       "type": {
         "kind": "struct",
         "fields": [

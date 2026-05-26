@@ -44,7 +44,10 @@ solana/programs/zama-host
 
 solana/programs/confidential-token
   App-side PoC program (minimal confidential token / cUSDC wrapper).
-  `src/fhe.rs` is the dev-facing wrapper around raw ZamaHost CPI calls.
+
+solana/crates/zama-fhe
+  App-facing FHE helper crate. Most apps should use `zama_fhe::execute`;
+  advanced callers can build their own wrapper over the protocol types.
 
 solana/tests
   PoC test crate (`zama-solana-tests`). Helpers and scenarios in `src/`; integration
@@ -149,7 +152,7 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 
 - [x] Anchor workspace with `zama-host`, `confidential-token`, `tests`, and LiteSVM integration tests.
 - [x] **Host surface is `execute_frame`-only** (`allow_acl_subjects`, `allow_for_decryption`, `assert_acl_record`). Legacy per-op / test-emit instructions were removed.
-- [x] ZamaHost emits typed Anchor CPI events from real `execute_frame` operations (`FheBinaryOpEvent`, `TrivialEncryptEvent`, `FheRandEvent`, `AclAllowedEvent`).
+- [x] ZamaHost emits typed Anchor CPI events from real `execute_frame` operations (`FheBinaryOpEvent`, `TrivialEncryptEvent`, `FheRandEvent`, `AclAllowedEvent`, `AclPublicDecryptAllowedEvent`).
 - [x] Host-listener decodes ZamaHost protocol events from the checked-in Anchor IDL snapshot (`host-listener/idl/zama_host.json`).
 - [x] Solana host events normalize into the existing coprocessor DB event shape.
 - [x] Worker-backed tests use real small TFHE ciphertexts for Solana-originated events (`tfhe-worker/src/tests/solana_poc.rs`, shared `tests` crate).
@@ -164,7 +167,7 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 - [x] `allow_for_decryption` / public decrypt flag; transient frame allow can authorize it inside `execute_frame`.
 - [x] Scalar RHS: encrypted RHS requires ACL; scalar RHS does not.
 - [x] Self-transfer is a no-op (no handle rotation, no output ACL records).
-- [x] App code uses `confidential-token/src/fhe.rs` (`fhe::execute`) instead of raw host CPI assembly.
+- [x] App code uses the shared `solana/crates/zama-fhe` helper (`zama_fhe::execute`) instead of assembling host CPI instructions in business logic.
 - [x] **`fheRand`** via `FheFrameStep::Rand` + **`poc_demo_confidential_rand`** token demo with user-decrypt request roundtrip.
 - [ ] **`fheRandBounded`** (op 27): not planned for current PoC scope.
 
@@ -218,6 +221,7 @@ zama-host program
     TrivialEncryptEvent
     FheRandEvent
     AclAllowedEvent
+    AclPublicDecryptAllowedEvent
     InputVerifiedEvent
   |
   | Anchor self-CPI event bytes
@@ -578,6 +582,10 @@ hX = poc_authorize_transfer_amount(amount = 100, nonce_sequence = 0)
   -> subjects include compute_signer
 ```
 
+`confidential_transfer` rejects amount handles unless the supplied ACL record stores `hX` and
+matches the expected transfer input namespace: `acl_domain_key = mint`, `app_account = from token
+account`, and `encrypted_value_label = "input"`.
+
 The real design still needs the Solana equivalent of external input verification / transciphering
 with `InputVerifiedEvent` (or equivalent) — see RFC 024 handle birth classes.
 
@@ -621,16 +629,15 @@ frame-local result and only the new balance becomes durable through explicit `al
 
 Production input flows must use the real verifier path once implemented — not `poc_authorize_transfer_amount`.
 
-## App-Side FHE Helper
+## App-Side FHE API
 
-The confidential token program intentionally does not call raw generated ZamaHost CPI bindings from
-business logic. It goes through:
+The app-facing API is the shared helper crate:
 
 ```text
-solana/programs/confidential-token/src/fhe.rs
+solana/crates/zama-fhe
 ```
 
-Current helper surface:
+Most app code should import it as `fhe` and use one entrypoint:
 
 ```text
 fhe::execute(ctx, |fhe| { ... })
@@ -649,10 +656,23 @@ Intermediate handles are ordinary bytes32 handles. They are not durable by defau
 transiently allows the frame's compute subject to use each step result, and `fhe.allow(...)` is the
 point where an output ACL record is created.
 
-The helper module keeps frame IR details and raw CPI account assembly out of token business logic.
+Layering:
 
-This helper is still token-local. If the shape survives the PoC, it can become the seed for a shared
-Solana FHE app SDK.
+```text
+zama_fhe::execute
+  default app API; builds one frame and submits one host CPI
+
+zama_fhe::protocol
+  re-exported protocol IR types from zama-host for advanced callers building
+  their own execute_frame wrapper
+
+zama_host::execute_frame
+  protocol entrypoint; use directly only when building a replacement for zama_fhe::execute
+```
+
+`zama-fhe` keeps frame IR details and generated CPI account assembly out of token business logic.
+The internal `zama_fhe::frame::Builder` is intentionally not a public construction API yet; expose
+it only if a second app proves that custom structured wrappers need it.
 
 ## User Decrypt Shape
 
@@ -967,6 +987,8 @@ ACL records are not derived from handles.
 
 The app declares which slots receive durable Allow output.
   authorized_app_accounts must contain every Allow.app_account (E4).
+  The app account must either sign directly, or the frame compute subject must be
+  PDA("fhe-compute", acl_domain_key) for the app account owner program.
 
 The host op enforces compute ACL before event emission.
   Wrong current ACL or wrong amount ACL rejects the transfer.

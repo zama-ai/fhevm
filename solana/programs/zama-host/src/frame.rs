@@ -2,14 +2,14 @@ use anchor_lang::prelude::*;
 
 use crate::acl::{
     assert_canonical_acl_record_data, assert_output_acl_metadata, assert_record_allows_handle,
-    create_acl_record_account, deserialize_acl_record, serialize_acl_record,
-    write_acl_record_data,
+    create_acl_record_account, deserialize_acl_record, serialize_acl_record, write_acl_record_data,
 };
 use crate::handles;
 use crate::{
-    AclAllowedEvent, FheBinaryOpCode, FheBinaryOpEvent, FheFrameAction, FheFrameStep, FheOperand,
-    FheOpcode, FheRandEvent, RandCounter, TrivialEncryptEvent, EVENT_VERSION, MAX_FRAME_RESULTS,
-    MAX_FRAME_TRANSIENT_ALLOWS, SOLANA_POC_CHAIN_ID, ZamaHostError,
+    AclAllowedEvent, AclPublicDecryptAllowedEvent, FheBinaryOpCode, FheBinaryOpEvent,
+    FheFrameAction, FheFrameStep, FheOpcode, FheOperand, FheRandEvent, RandCounter,
+    TrivialEncryptEvent, ZamaHostError, EVENT_VERSION, MAX_FRAME_RESULTS,
+    MAX_FRAME_TRANSIENT_ALLOWS, SOLANA_POC_CHAIN_ID,
 };
 
 #[derive(Clone, Copy)]
@@ -29,6 +29,7 @@ pub enum FrameEvent {
     TrivialEncrypt(TrivialEncryptEvent),
     Rand(FheRandEvent),
     AclAllowed(AclAllowedEvent),
+    AclPublicDecryptAllowed(AclPublicDecryptAllowedEvent),
 }
 
 #[derive(Clone, Copy)]
@@ -172,8 +173,7 @@ fn execute_frame_step<'info>(
                 .counter
                 .checked_add(1)
                 .ok_or(ZamaHostError::RandCounterOverflow)?;
-            let result =
-                handles::computed_rand_handle(fhe_type, seed, SOLANA_POC_CHAIN_ID);
+            let result = handles::computed_rand_handle(fhe_type, seed, SOLANA_POC_CHAIN_ID);
             frame.push_result(FrameResult { handle: result })?;
             frame.events.push(FrameEvent::Rand(FheRandEvent {
                 version: EVENT_VERSION,
@@ -251,7 +251,14 @@ fn apply_frame_action<'info>(
             subjects,
             public_decrypt,
         } => {
-            assert_app_account_authorized(app_account, authorized_app_accounts)?;
+            assert_app_account_authorized(
+                app_account,
+                authorized_app_accounts,
+                frame.subject,
+                acl_domain_key,
+                &payer,
+                remaining_accounts,
+            )?;
             let source = resolve_operand(frame, remaining_accounts, &source)?;
             require!(!source.is_scalar, ZamaHostError::InvalidFrameOperands);
             assert_output_acl_metadata(
@@ -289,10 +296,7 @@ fn apply_frame_action<'info>(
             }
             Ok(())
         }
-        FheFrameAction::AllowForDecryption {
-            source,
-            acl_record,
-        } => {
+        FheFrameAction::AllowForDecryption { source, acl_record } => {
             let source = resolve_operand(frame, remaining_accounts, &source)?;
             require!(!source.is_scalar, ZamaHostError::InvalidFrameOperands);
             let acl_record_info = account_by_pubkey(remaining_accounts, acl_record)?;
@@ -304,11 +308,13 @@ fn apply_frame_action<'info>(
             );
             record.public_decrypt = true;
             serialize_acl_record(&acl_record_info, &record)?;
-            frame.events.push(FrameEvent::AclAllowed(AclAllowedEvent {
-                version: EVENT_VERSION,
-                handle: source.value,
-                subject: frame.subject.to_bytes(),
-            }));
+            frame.events.push(FrameEvent::AclPublicDecryptAllowed(
+                AclPublicDecryptAllowedEvent {
+                    version: EVENT_VERSION,
+                    handle: source.value,
+                    subject: frame.subject.to_bytes(),
+                },
+            ));
             Ok(())
         }
     }
@@ -320,10 +326,7 @@ fn resolve_operand<'info>(
     operand: &FheOperand,
 ) -> Result<ResolvedOperand> {
     match operand {
-        FheOperand::AclRecord {
-            handle,
-            acl_record,
-        } => {
+        FheOperand::AclRecord { handle, acl_record } => {
             let record_info = account_by_pubkey(remaining_accounts, *acl_record)?;
             let record = deserialize_acl_record(&record_info)?;
             assert_canonical_acl_record_data(record_info.key(), &record)?;
@@ -365,9 +368,34 @@ fn account_by_pubkey<'info>(
         .ok_or_else(|| error!(ZamaHostError::FrameAccountMissing))
 }
 
-fn assert_app_account_authorized(app_account: Pubkey, authorized: &[Pubkey]) -> Result<()> {
+fn assert_app_account_authorized(
+    app_account: Pubkey,
+    authorized: &[Pubkey],
+    subject: Pubkey,
+    acl_domain_key: Pubkey,
+    payer: &AccountInfo<'_>,
+    remaining_accounts: &[AccountInfo<'_>],
+) -> Result<()> {
     require!(
         authorized.contains(&app_account),
+        ZamaHostError::UnauthorizedAppAccount
+    );
+
+    if payer.key() == app_account && payer.is_signer {
+        return Ok(());
+    }
+
+    let app_account_info = account_by_pubkey(remaining_accounts, app_account)?;
+    if app_account_info.is_signer {
+        return Ok(());
+    }
+
+    let (expected_subject, _) = Pubkey::find_program_address(
+        &[b"fhe-compute", acl_domain_key.as_ref()],
+        app_account_info.owner,
+    );
+    require!(
+        subject == expected_subject,
         ZamaHostError::UnauthorizedAppAccount
     );
     Ok(())

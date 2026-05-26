@@ -1,6 +1,29 @@
 // Test builders mirror Anchor instruction surfaces and LiteSVM result types.
 #![allow(clippy::result_large_err, clippy::too_many_arguments)]
 
+use crate::{
+    acl_allowed_events, acl_public_decrypt_allowed_events, acl_record_address,
+    allow_for_decryption_ix, amount_plaintext, anchor_ix, assert_acl_record, assert_balance_acl,
+    assert_no_zama_host_events_on_failure, assert_transfer_cleartext,
+    assert_transfer_output_invariants, assert_wrap_output_invariants, authorization_payload_bytes,
+    authorize_transfer_amount, balance_acl_record_address, balance_handle_updated_events,
+    binary_op_events, cleartext_rand_value, created_acl_count, event_authority, execute_frame_ix,
+    execute_frame_log_count, expected_trivial_handle, fhe_rand_events, host_program_so_path,
+    kms_like_public_decrypt_check, kms_like_user_decrypt_check, label, max_cpi_depth,
+    previous_bank_hash_from_sysvar, rand_counter_address, read_acl_record, read_rand_counter,
+    record_subjects, run_rand_demo_scenario, run_transfer_scenario_meta, run_wrap_scenario,
+    seed_authorizing_acl_record, seed_transfer_inputs, self_transfer_ix, send,
+    send_many_with_signers, send_with_meta, set_previous_slot_hash,
+    signed_confidential_rand_user_decrypt_request, signed_current_balance_user_decrypt_request,
+    signed_user_decrypt_request, spl_token_amount, svm_with_program, token_account, token_fixture,
+    transfer_amount_acl_address, transfer_ix, transfer_ix_with_amount_acl,
+    transfer_ix_with_amount_nonce, transfer_ix_with_current_acl,
+    transfer_ix_with_current_acl_and_amount_nonce, transfer_output_accounts,
+    trivial_encrypt_events, try_send, try_send_with_meta, wrap_output_accounts, wrap_usdc_ix,
+    CleartextBackend, FheBackend, FheBinaryOpCode, PublicDecryptHandleEntry, SemanticBackend,
+    TransferExpect, TransferOutputAccounts, TransferSetup, TypedClearValue, UserDecryptHandleEntry,
+    WrapSetup, DEFAULT_INPUT_NONCE_SEQUENCE, DEFAULT_TEST_PREVIOUS_BANK_HASH,
+};
 use anchor_lang::{prelude::system_program, AccountSerialize};
 use anchor_litesvm::TestHelpers;
 use confidential_token::{self as token, BalanceHandleUpdateReason};
@@ -10,35 +33,7 @@ use solana_sdk::{
     signature::{Keypair, Signer},
 };
 use zama_host as host;
-use zama_host::{
-    AclRecord, AclSubjectEntry, FheFrameAction, FheFrameStep, FheOpcode, FheOperand,
-};
-use crate::{
-    acl_record_address, allow_for_decryption_ix, amount_plaintext, anchor_ix,
-    assert_acl_record, assert_balance_acl,
-    authorization_payload_bytes, authorize_transfer_amount,
-    balance_acl_record_address, binary_op_events, balance_handle_updated_events, CleartextBackend,
-    cleartext_rand_value, created_acl_count, event_authority, execute_frame_ix, execute_frame_log_count,
-    expected_trivial_handle, fhe_rand_events, FheBackend, FheBinaryOpCode, host_program_so_path, kms_like_public_decrypt_check,
-    kms_like_user_decrypt_check, label, max_cpi_depth, rand_counter_address, read_acl_record,
-    read_rand_counter, record_subjects, run_rand_demo_scenario,
-    run_transfer_scenario_meta, run_wrap_scenario, seed_transfer_inputs,
-    assert_transfer_cleartext, assert_transfer_output_invariants,
-    assert_no_zama_host_events_on_failure, assert_wrap_output_invariants,
-    previous_bank_hash_from_sysvar, set_previous_slot_hash,
-    wrap_output_accounts, wrap_usdc_ix, WrapSetup,
-    seed_authorizing_acl_record, self_transfer_ix, send, send_many_with_signers, send_with_meta,
-    signed_confidential_rand_user_decrypt_request, signed_current_balance_user_decrypt_request,
-    signed_user_decrypt_request, spl_token_amount,
-    svm_with_program, token_account, token_fixture, transfer_amount_acl_address, transfer_ix,
-    transfer_ix_with_amount_acl, transfer_ix_with_amount_nonce, transfer_ix_with_current_acl,
-    transfer_ix_with_current_acl_and_amount_nonce, transfer_output_accounts, try_send,
-    try_send_with_meta,
-    trivial_encrypt_events, PublicDecryptHandleEntry,
-    TransferExpect, TransferOutputAccounts, TransferSetup, TypedClearValue,
-    SemanticBackend, UserDecryptHandleEntry, DEFAULT_INPUT_NONCE_SEQUENCE,
-    DEFAULT_TEST_PREVIOUS_BANK_HASH,
-};
+use zama_host::{AclRecord, AclSubjectEntry, FheFrameAction, FheFrameStep, FheOpcode, FheOperand};
 
 #[test]
 fn execute_frame_emits_trivial_encrypt_via_cpi() {
@@ -121,6 +116,46 @@ fn execute_frame_rejects_allow_for_unauthorized_app_account() {
         actions,
         vec![other_app_account],
         vec![output_acl_record],
+    );
+
+    assert!(try_send(&mut svm, &payer, ix).is_err());
+}
+
+#[test]
+fn execute_frame_rejects_allow_for_unsigned_authorized_app_account() {
+    let program_id = host::id();
+    let mut svm = svm_with_program(program_id, host_program_so_path());
+    let payer = svm.create_funded_account(1_000_000_000).unwrap();
+    let app_account = svm.create_funded_account(1_000_000).unwrap();
+
+    let acl_domain_key = Pubkey::new_unique();
+    let encrypted_value_label = label("balance");
+    let nonce_key = token::nonce_key(acl_domain_key, app_account.pubkey(), encrypted_value_label);
+    let output_acl_record = acl_record_address(program_id, nonce_key, 1);
+    let steps = vec![FheFrameStep::TrivialEncrypt {
+        plaintext: amount_plaintext(7),
+        fhe_type: 5,
+    }];
+    let actions = vec![FheFrameAction::Allow {
+        source: FheOperand::PreviousResult { index: 0 },
+        output_acl_record,
+        nonce_key,
+        nonce_sequence: 1,
+        acl_domain_key,
+        app_account: app_account.pubkey(),
+        encrypted_value_label,
+        subjects: vec![AclSubjectEntry {
+            pubkey: payer.pubkey(),
+        }],
+        public_decrypt: false,
+    }];
+    let ix = execute_frame_ix(
+        program_id,
+        payer.pubkey(),
+        steps,
+        actions,
+        vec![app_account.pubkey()],
+        vec![app_account.pubkey(), output_acl_record],
     );
 
     assert!(try_send(&mut svm, &payer, ix).is_err());
@@ -1001,7 +1036,10 @@ fn transfer_scenario_cleartext_backend() {
         TransferSetup::default(),
         125,
         20,
-        TransferExpect { alice: 116, bob: 29 },
+        TransferExpect {
+            alice: 116,
+            bob: 29,
+        },
     );
     assert_transfer_output_invariants(&fixture, &scenario);
 }
@@ -1043,8 +1081,11 @@ fn confidential_transfer_rotates_balance_handles_and_binds_output_acl() {
     assert_eq!(events[1].rhs, scenario.amount_handle);
     assert!(!events[1].scalar);
     assert_eq!(events[1].result, new_bob);
-    let balance_events =
-        balance_handle_updated_events(&scenario.meta, &scenario.account_keys, fixture.token_program_id);
+    let balance_events = balance_handle_updated_events(
+        &scenario.meta,
+        &scenario.account_keys,
+        fixture.token_program_id,
+    );
     assert_eq!(balance_events.len(), 2);
     assert_eq!(
         balance_events[0].reason,
@@ -1221,7 +1262,7 @@ fn public_decrypt_model_uses_acl_record_flag() {
     assert!(!kms_like_public_decrypt_check(&fixture.svm, &[entry]));
 
     let before = read_acl_record(&fixture.svm, output.alice).expect("expected ACL record");
-    send(
+    let (public_decrypt_meta, public_decrypt_account_keys) = send_with_meta(
         &mut fixture.svm,
         &fixture.alice,
         allow_for_decryption_ix(
@@ -1231,6 +1272,20 @@ fn public_decrypt_model_uses_acl_record_flag() {
             alice_handle,
         ),
     );
+    let public_events = acl_public_decrypt_allowed_events(
+        &public_decrypt_meta,
+        &public_decrypt_account_keys,
+        fixture.host_program_id,
+    );
+    assert_eq!(public_events.len(), 1);
+    assert_eq!(public_events[0].handle, alice_handle);
+    assert_eq!(public_events[0].subject, fixture.alice.pubkey().to_bytes());
+    assert!(acl_allowed_events(
+        &public_decrypt_meta,
+        &public_decrypt_account_keys,
+        fixture.host_program_id
+    )
+    .is_empty());
 
     let record = read_acl_record(&fixture.svm, output.alice).expect("expected ACL record");
     assert_eq!(record.handle, before.handle);
@@ -1613,7 +1668,10 @@ fn confidential_transfer_budget_snapshot() {
     assert_eq!(signer_metas, 1);
     assert_eq!(host_events, 2);
     assert_eq!(app_events, 2);
-    assert_eq!(created_acl_count(&fixture.svm, &[output.alice, output.bob]), 2);
+    assert_eq!(
+        created_acl_count(&fixture.svm, &[output.alice, output.bob]),
+        2
+    );
     assert!(
         inner_instructions <= 14,
         "inner instructions: {inner_instructions}"
@@ -1684,7 +1742,38 @@ fn confidential_transfer_rejects_wrong_amount_acl() {
         token_account(&fixture.svm, fixture.bob_token).balance_handle,
         fixture.bob_initial
     );
-    assert_eq!(created_acl_count(&fixture.svm, &[output.alice, output.bob]), 0);
+    assert_eq!(
+        created_acl_count(&fixture.svm, &[output.alice, output.bob]),
+        0
+    );
+}
+
+#[test]
+fn confidential_transfer_rejects_balance_acl_as_amount_acl() {
+    let mut fixture = token_fixture();
+    let output = transfer_output_accounts(&fixture, 1);
+    let ix = transfer_ix_with_amount_acl(
+        &fixture,
+        fixture.alice_current_compute_acl,
+        fixture.bob_current_compute_acl,
+        fixture.alice_current_compute_acl,
+        output,
+        fixture.alice_initial,
+    );
+
+    assert!(try_send(&mut fixture.svm, &fixture.alice, ix).is_err());
+    assert_eq!(
+        token_account(&fixture.svm, fixture.alice_token).balance_handle,
+        fixture.alice_initial
+    );
+    assert_eq!(
+        token_account(&fixture.svm, fixture.bob_token).balance_handle,
+        fixture.bob_initial
+    );
+    assert_eq!(
+        created_acl_count(&fixture.svm, &[output.alice, output.bob]),
+        0
+    );
 }
 
 #[test]
@@ -1788,8 +1877,7 @@ fn trivial_encrypt_uses_slot_hashes_sysvar_when_present() {
     let bank_hash = [0xAB_u8; 32];
     set_previous_slot_hash(&mut fixture.svm, bank_hash);
 
-    let amount_handle =
-        authorize_transfer_amount(&mut fixture, 42, DEFAULT_INPUT_NONCE_SEQUENCE);
+    let amount_handle = authorize_transfer_amount(&mut fixture, 42, DEFAULT_INPUT_NONCE_SEQUENCE);
     let acl = read_acl_record(
         &fixture.svm,
         transfer_amount_acl_address(&fixture, DEFAULT_INPUT_NONCE_SEQUENCE),
@@ -1886,8 +1974,7 @@ fn execute_frame_rand_emits_event_and_distinct_handle() {
         host::SOLANA_POC_CHAIN_ID,
         clock.unix_timestamp,
     );
-    let expected_handle =
-        host::computed_rand_handle(5, expected_seed, host::SOLANA_POC_CHAIN_ID);
+    let expected_handle = host::computed_rand_handle(5, expected_seed, host::SOLANA_POC_CHAIN_ID);
     assert_eq!(events[0].seed, expected_seed);
     assert_eq!(events[0].result, expected_handle);
 
@@ -1999,8 +2086,7 @@ fn confidential_token_e2e_rand_demo_encrypt_compute_and_user_decrypt_request() {
             fixture.host_program_id,
         )
         .unwrap();
-    let expected_plaintext =
-        u64::try_from(cleartext_rand_value(scenario.rand_seed, 64)).unwrap();
+    let expected_plaintext = u64::try_from(cleartext_rand_value(scenario.rand_seed, 64)).unwrap();
     assert_eq!(
         cleartext.decrypt_cleartext(scenario.rand_handle),
         Some(TypedClearValue::uint64(expected_plaintext))

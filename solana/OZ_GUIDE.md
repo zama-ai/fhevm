@@ -36,8 +36,9 @@ confidential-token
   poc_authorize_transfer_amount   — PoC-only input stand-in (see Caveats)
   poc_demo_confidential_rand      — E2E rand demo + ConfidentialRandCreatedEvent
 
-  fhe::execute(ctx, |fhe| { ... })  — single execute_frame CPI wrapper
-    Builder: encrypted, trivial_encrypt_u64, add, sub, rand_u64, allow
+solana/crates/zama-fhe
+  fhe::execute(ctx, |fhe| { ... })  — default app API, one execute_frame CPI
+  fhe::protocol                      — protocol IR types for custom wrappers
 ```
 
 **Safe area for OZ:** `confidential-token` behavior and tests. **Do not** add a separate ACL program unless the guild explicitly changes direction in RFC 024.
@@ -78,14 +79,15 @@ Listener decoders come from the shared `solana/crates/zama-host-events` crate (I
 
 **IDL events not emitted yet:** `InputVerifiedEvent`.
 
-**Emitted today:** `FheBinaryOpEvent`, `TrivialEncryptEvent`, `FheRandEvent`, `AclAllowedEvent`.
+**Emitted today:** `FheBinaryOpEvent`, `TrivialEncryptEvent`, `FheRandEvent`, `AclAllowedEvent`, `AclPublicDecryptAllowedEvent`.
 
 **Not wired:** `FheOpcode::RandBounded` (op 27) — no frame step or event yet.
 
 **Host authorization:** `execute_frame` takes `authorized_app_accounts`. Every durable
-`Allow.app_account` must appear in that list. The app program declares which state slots
-it updates; the host enforces the declaration. Compute-time ACL is enforced via
-`compute_subject` membership on operand ACL records.
+`Allow.app_account` must appear in that list. The app account must either sign directly,
+or the frame `compute_subject` must be `PDA("fhe-compute", acl_domain_key)` for the app
+account owner program. Compute-time ACL is still enforced via `compute_subject`
+membership on operand ACL records.
 
 ## Shared test crate
 

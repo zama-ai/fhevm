@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/zama-fhe",
     "crates/zama-host-events",
     "tests",
     "programs/confidential-token",

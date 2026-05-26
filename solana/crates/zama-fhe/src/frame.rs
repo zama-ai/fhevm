@@ -1,7 +1,4 @@
-//! Build symbolic `execute_frame` programs for the host.
-//!
-//! Computed handles are opaque and assigned only inside `zama-host::execute_frame`.
-//! This module records operands and step indices — never precomputes result handles.
+//! Structured frame builder for `zama-host::execute_frame`.
 
 use anchor_lang::prelude::*;
 use zama_host::{
@@ -9,17 +6,30 @@ use zama_host::{
     FheFrameStep, FheOpcode, FheOperand,
 };
 
-use crate::ConfidentialTokenError;
-
 #[derive(Clone)]
 pub struct EncryptedValue<'info> {
     pub handle: [u8; 32],
     pub acl_record: AccountInfo<'info>,
 }
 
+#[derive(Clone)]
+pub struct AuthorizedAppAccount<'info> {
+    account: AccountInfo<'info>,
+}
+
+impl<'info> AuthorizedAppAccount<'info> {
+    pub fn new(account: AccountInfo<'info>) -> Self {
+        Self { account }
+    }
+
+    fn key(&self) -> Pubkey {
+        self.account.key()
+    }
+}
+
 /// Symbolic frame value: operand reference only. Frame results have no handle until the host runs.
 #[derive(Clone)]
-pub struct FheValue {
+pub struct FrameValue {
     operand: FheOperand,
 }
 
@@ -36,7 +46,7 @@ pub struct Context<'a, 'info> {
 
 pub struct DurableAllow<'info> {
     pub acl_record: AccountInfo<'info>,
-    pub app_account: Pubkey,
+    pub app_account: AuthorizedAppAccount<'info>,
     pub nonce_key: [u8; 32],
     pub nonce_sequence: u64,
     pub encrypted_value_label: [u8; 32],
@@ -75,9 +85,9 @@ impl<'a, 'info> Builder<'a, 'info> {
         }
     }
 
-    pub fn encrypted(&mut self, value: EncryptedValue<'info>) -> Result<FheValue> {
+    pub fn encrypted(&mut self, value: EncryptedValue<'info>) -> Result<FrameValue> {
         let acl_record = self.push_account(value.acl_record)?;
-        Ok(FheValue {
+        Ok(FrameValue {
             operand: FheOperand::AclRecord {
                 handle: value.handle,
                 acl_record,
@@ -85,38 +95,49 @@ impl<'a, 'info> Builder<'a, 'info> {
         })
     }
 
-    pub fn trivial_encrypt_u64(&mut self, value: u64, fhe_type: u8) -> Result<FheValue> {
+    pub fn trivial_encrypt_u64(&mut self, value: u64, fhe_type: u8) -> Result<FrameValue> {
         let index = self.steps.len();
         self.steps.push(FheFrameStep::TrivialEncrypt {
             plaintext: scalar_plaintext(value),
             fhe_type,
         });
-        Ok(FheValue {
+        Ok(FrameValue {
             operand: FheOperand::PreviousResult { index: index as u8 },
         })
     }
 
-    pub fn rand_u64(&mut self) -> Result<FheValue> {
-        const BALANCE_FHE_TYPE: u8 = 5;
+    pub fn rand_u64(&mut self) -> Result<FrameValue> {
+        const UINT64_FHE_TYPE: u8 = 5;
         let index = self.steps.len();
         self.steps.push(FheFrameStep::Rand {
-            fhe_type: BALANCE_FHE_TYPE,
+            fhe_type: UINT64_FHE_TYPE,
         });
-        Ok(FheValue {
+        Ok(FrameValue {
             operand: FheOperand::PreviousResult { index: index as u8 },
         })
     }
 
-    pub fn add(&mut self, lhs: FheValue, rhs: FheValue, output_fhe_type: u8) -> Result<FheValue> {
+    pub fn add(
+        &mut self,
+        lhs: FrameValue,
+        rhs: FrameValue,
+        output_fhe_type: u8,
+    ) -> Result<FrameValue> {
         self.binary_op(FheOpcode::Add, lhs, rhs, output_fhe_type)
     }
 
-    pub fn sub(&mut self, lhs: FheValue, rhs: FheValue, output_fhe_type: u8) -> Result<FheValue> {
+    pub fn sub(
+        &mut self,
+        lhs: FrameValue,
+        rhs: FrameValue,
+        output_fhe_type: u8,
+    ) -> Result<FrameValue> {
         self.binary_op(FheOpcode::Sub, lhs, rhs, output_fhe_type)
     }
 
-    pub fn allow(&mut self, value: &FheValue, allow: DurableAllow<'info>) -> Result<()> {
-        self.authorize_app_account(allow.app_account);
+    pub fn allow(&mut self, value: &FrameValue, allow: DurableAllow<'info>) -> Result<()> {
+        let app_account = allow.app_account.key();
+        self.authorize_app_account(allow.app_account)?;
         let output_acl_record = self.push_account(allow.acl_record)?;
         self.actions.push(FheFrameAction::Allow {
             source: value.operand.clone(),
@@ -124,7 +145,7 @@ impl<'a, 'info> Builder<'a, 'info> {
             nonce_key: allow.nonce_key,
             nonce_sequence: allow.nonce_sequence,
             acl_domain_key: self.acl_domain_key,
-            app_account: allow.app_account,
+            app_account,
             encrypted_value_label: allow.encrypted_value_label,
             subjects: allow.subjects,
             public_decrypt: allow.public_decrypt,
@@ -132,19 +153,22 @@ impl<'a, 'info> Builder<'a, 'info> {
         Ok(())
     }
 
-    fn authorize_app_account(&mut self, app_account: Pubkey) {
-        if !self.authorized_app_accounts.contains(&app_account) {
-            self.authorized_app_accounts.push(app_account);
+    fn authorize_app_account(&mut self, app_account: AuthorizedAppAccount<'info>) -> Result<()> {
+        let key = app_account.key();
+        if !self.authorized_app_accounts.contains(&key) {
+            self.authorized_app_accounts.push(key);
         }
+        self.push_account(app_account.account)?;
+        Ok(())
     }
 
     fn binary_op(
         &mut self,
         opcode: FheOpcode,
-        lhs: FheValue,
-        rhs: FheValue,
+        lhs: FrameValue,
+        rhs: FrameValue,
         output_fhe_type: u8,
-    ) -> Result<FheValue> {
+    ) -> Result<FrameValue> {
         let scalar_byte = match rhs.operand {
             FheOperand::Scalar { .. } => 1,
             _ => 0,
@@ -156,7 +180,7 @@ impl<'a, 'info> Builder<'a, 'info> {
             scalar_byte,
             output_fhe_type,
         });
-        Ok(FheValue {
+        Ok(FrameValue {
             operand: FheOperand::PreviousResult { index: index as u8 },
         })
     }
@@ -170,7 +194,7 @@ impl<'a, 'info> Builder<'a, 'info> {
         {
             require!(
                 self.remaining_accounts.len() < 256,
-                ConfidentialTokenError::TooManyFrameAccounts
+                ZamaFheError::TooManyFrameAccounts
             );
             self.remaining_accounts.push(account);
         }
@@ -178,10 +202,19 @@ impl<'a, 'info> Builder<'a, 'info> {
     }
 
     fn submit(self, ctx: Context<'_, 'info>) -> Result<()> {
-        let compute_bump = [ctx.compute_signer_bump];
-        let compute_signer_seeds: &[&[u8]] =
-            &[b"fhe-compute", ctx.acl_domain_key.as_ref(), &compute_bump];
-        let signer_seeds: &[&[&[u8]]] = &[compute_signer_seeds];
+        let signer_seed_bytes = [vec![
+            b"fhe-compute".to_vec(),
+            ctx.acl_domain_key.to_bytes().to_vec(),
+            vec![ctx.compute_signer_bump],
+        ]];
+        let signer_seed_slices = signer_seed_bytes
+            .iter()
+            .map(|seed_set| seed_set.iter().map(Vec::as_slice).collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+        let signer_seeds = signer_seed_slices
+            .iter()
+            .map(Vec::as_slice)
+            .collect::<Vec<_>>();
 
         cpi::execute_frame(
             CpiContext::new_with_signer(
@@ -194,7 +227,7 @@ impl<'a, 'info> Builder<'a, 'info> {
                     event_authority: ctx.event_authority.to_account_info(),
                     program: ctx.zama_program.to_account_info(),
                 },
-                signer_seeds,
+                &signer_seeds,
             )
             .with_remaining_accounts(self.remaining_accounts),
             self.authorized_app_accounts,
@@ -208,4 +241,10 @@ fn scalar_plaintext(value: u64) -> [u8; 32] {
     let mut plaintext = [0_u8; 32];
     plaintext[24..].copy_from_slice(&value.to_be_bytes());
     plaintext
+}
+
+#[error_code]
+pub enum ZamaFheError {
+    #[msg("Too many accounts in execute_frame remaining_accounts (max 256)")]
+    TooManyFrameAccounts,
 }

@@ -3105,6 +3105,7 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
+ "zama-fhe",
  "zama-host",
 ]
 
@@ -12730,6 +12731,14 @@ dependencies = [
  "quote",
  "syn 2.0.117",
  "synstructure",
+]
+
+[[package]]
+name = "zama-fhe"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "zama-host",
 ]
 
 [[package]]
