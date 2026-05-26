@@ -16,8 +16,9 @@ use alloy_primitives::{B256, Signature, U256};
 use alloy_signer::Signer;
 use sha3::{Digest, Keccak256};
 
-/// V1 canonical-bytes length: `bytes8 + uint8 + bytes32*3 + uint256*2 = 169`.
-const V1_PAYLOAD_LEN: usize = 8 + 1 + 32 + 32 + 32 + 32 + 32;
+/// V1 canonical-bytes length:
+/// `bytes8 + uint8 + bytes32 + uint256*2 + bytes32*2 + uint8 = 170`.
+const V1_PAYLOAD_LEN: usize = 8 + 1 + 32 + 32 + 32 + 32 + 32 + 1;
 
 impl CiphertextAttestationPayload {
     /// Canonical `abi.encodePacked`-equivalent bytes for this payload. The
@@ -33,6 +34,7 @@ impl CiphertextAttestationPayload {
                 out.extend_from_slice(&self.coprocessor_context_id.to_be_bytes::<32>());
                 out.extend_from_slice(self.ciphertext_digest.as_slice());
                 out.extend_from_slice(self.sns_ciphertext_digest.as_slice());
+                out.push(self.format as u8);
                 out
             }
         }
@@ -56,6 +58,7 @@ impl CiphertextAttestationPayload {
             key_id: self.key_id,
             ciphertext_digest: self.ciphertext_digest,
             sns_ciphertext_digest: self.sns_ciphertext_digest,
+            format: self.format,
             signer: signer.address(),
             signature: sig.as_bytes().to_vec(),
         })
@@ -81,6 +84,7 @@ impl CiphertextAttestation {
             coprocessor_context_id,
             ciphertext_digest: self.ciphertext_digest,
             sns_ciphertext_digest: self.sns_ciphertext_digest,
+            format: self.format,
         };
         let digest = payload.canonical_digest();
 
@@ -106,6 +110,7 @@ fn keccak_b256(bytes: &[u8]) -> B256 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::CiphertextFormat;
     use alloy_primitives::{b256, uint};
     use alloy_signer_local::PrivateKeySigner;
 
@@ -117,9 +122,12 @@ mod tests {
         b256!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     const SNS_DIGEST: B256 =
         b256!("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc");
+    const FORMAT: CiphertextFormat = CiphertextFormat::UncompressedOnCpu;
 
     fn sample_payload() -> CiphertextAttestationPayload {
-        CiphertextAttestationPayload::new(VERSION, HANDLE, KEY_ID, CTX, CT_DIGEST, SNS_DIGEST)
+        CiphertextAttestationPayload::new(
+            VERSION, HANDLE, KEY_ID, CTX, CT_DIGEST, SNS_DIGEST, FORMAT,
+        )
     }
 
     #[test]
@@ -198,6 +206,15 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn rejects_replaced_format() {
+        let signer = PrivateKeySigner::random();
+        let mut att = signed(&signer).await;
+        att.format = CiphertextFormat::CompressedOnCpu;
+        let err = att.verify(HANDLE, CTX).unwrap_err();
+        assert!(matches!(err, AttestationError::SignerMismatch { .. }));
+    }
+
+    #[tokio::test]
     async fn rejects_bad_signature_length() {
         let signer = PrivateKeySigner::random();
         let mut att = signed(&signer).await;
@@ -217,14 +234,15 @@ mod tests {
             U256::ZERO,
             b256!("1111111111111111111111111111111111111111111111111111111111111111"),
             b256!("2222222222222222222222222222222222222222222222222222222222222222"),
+            CiphertextFormat::UncompressedOnCpu,
         );
         assert_eq!(
             hex::encode(payload.canonical_bytes()),
-            "464845564d43544101aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000007000000000000000000000000000000000000000000000000000000000000000011111111111111111111111111111111111111111111111111111111111111112222222222222222222222222222222222222222222222222222222222222222",
+            "464845564d43544101aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000000000000000000000000000000000000000000000000000000000000070000000000000000000000000000000000000000000000000000000000000000111111111111111111111111111111111111111111111111111111111111111122222222222222222222222222222222222222222222222222222222222222220a",
         );
         assert_eq!(
             hex::encode(payload.canonical_digest().as_slice()),
-            "c05f49d95c51e004afbf94dce1aa0e1adadaae1587f43bb56ceaf5c6baa2b78b",
+            "97f99a874a16f680d5c6b60b4cca7356877a78ce59f49872ad21030ebe6e0dd8",
         );
     }
 }
