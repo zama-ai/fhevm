@@ -13,6 +13,7 @@ use sqlx::{Pool, Postgres};
 use thiserror::Error;
 use tonic::Code;
 use tracing::{error, info};
+use user_decryption_signature::Erc1271Error;
 
 /// Interface used to process Gateway's events.
 pub trait EventProcessor: Send {
@@ -66,7 +67,9 @@ impl<GP: Provider, HP: Provider, C: ContextManager> EventProcessor for DbEventPr
             // key management operation at all cost.
             (
                 Err(ProcessingError::Recoverable(e)),
-                ProtocolEventKind::PublicDecryption(_) | ProtocolEventKind::UserDecryption(_),
+                ProtocolEventKind::PublicDecryption(_)
+                | ProtocolEventKind::UserDecryption(_)
+                | ProtocolEventKind::UserDecryptionV2(_),
             ) if event.error_counter as u16 >= self.max_decryption_attempts => {
                 error!(
                     "{}. Maximum number of decryption attempts reached: {}",
@@ -91,6 +94,23 @@ pub enum ProcessingError {
     Irrecoverable(anyhow::Error),
     #[error("Processing failed: {0}")]
     Recoverable(anyhow::Error),
+}
+
+/// ERC-1271 (RFC-012) signature errors map onto `ProcessingError` so callers can use the `?`
+/// operator. Missing code at an EOA is terminal, but smart-account validation can depend on
+/// mutable wallet state, so negative ERC-1271 results are retried through the existing attempt
+/// and validity-window limits.
+impl From<Erc1271Error> for ProcessingError {
+    fn from(err: Erc1271Error) -> Self {
+        match err {
+            Erc1271Error::EoaMismatchNoCode(_) | Erc1271Error::EmptySigOnEoa(_) => {
+                Self::Irrecoverable(anyhow::Error::new(err))
+            }
+            Erc1271Error::Transport(_)
+            | Erc1271Error::WrongMagic(..)
+            | Erc1271Error::Rejected(..) => Self::Recoverable(anyhow::Error::new(err)),
+        }
+    }
 }
 
 impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> {
@@ -156,6 +176,25 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
                         Some(UserDecryptionExtraData::new(
                             req.userAddress,
                             req.publicKey.clone(),
+                        )),
+                    )
+                    .await
+            }
+            ProtocolEventKind::UserDecryptionV2(req) => {
+                // The RFC016 event carries the full payload, so unlike the legacy path we don't
+                // need to re-fetch the transaction calldata.
+                self.decryption_processor
+                    .check_user_decryption_request_v2(req)
+                    .await?;
+                let payload = &req.payload;
+                self.decryption_processor
+                    .prepare_decryption_request(
+                        req.decryptionId,
+                        &req.snsCtMaterials,
+                        &payload.extraData,
+                        Some(UserDecryptionExtraData::new(
+                            payload.userAddress,
+                            payload.publicKey.clone(),
                         )),
                     )
                     .await

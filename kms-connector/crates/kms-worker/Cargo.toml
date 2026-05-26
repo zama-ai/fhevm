@@ -11,6 +11,7 @@ bc2wrap.workspace = true
 connector-utils.workspace = true
 fhevm_gateway_bindings.workspace = true
 fhevm_host_bindings.workspace = true
+user-decryption-signature.workspace = true
 
 actix-web.workspace = true
 alloy.workspace = true

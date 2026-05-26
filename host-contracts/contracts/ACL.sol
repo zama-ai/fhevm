@@ -83,6 +83,12 @@ contract ACL is
     /// @notice Returned if the handlesList array is empty.
     error HandlesListIsEmpty();
 
+    /// @notice Returned if the invalidation timestamp is not greater than the current one.
+    error InvalidationTimestampTooLow();
+
+    /// @notice Returned if the invalidation timestamp is in the future.
+    error InvalidationTimestampInTheFuture();
+
     /**
      * @notice Returned if the the delegate contract is not already delegate for sender & delegator addresses.
      * @param delegator The address of the account that delegates access to its handles.
@@ -141,6 +147,7 @@ contract ACL is
             mapping(address delegate => mapping(address contractAddress => UserDecryptionDelegation delegation)))
                 userDecryptionDelegations;
         mapping(address account => bool isDenied) denyList;
+        mapping(address account => uint256 invalidatedBefore) decryptionSignatureInvalidatedBefore;
     }
 
     /// @notice Name of the contract.
@@ -150,7 +157,7 @@ contract ACL is
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 4;
+    uint256 private constant MINOR_VERSION = 5;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -171,7 +178,7 @@ contract ACL is
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 5;
+    uint64 private constant REINITIALIZER_VERSION = 6;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.ACL")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant ACL_STORAGE_LOCATION = 0xa688f31953c2015baaf8c0a488ee1ee22eb0e05273cc1fd31ea4cbee42febc00;
@@ -191,11 +198,11 @@ contract ACL is
     }
 
     /**
-     * @notice Re-initializes the contract from V3.
+     * @notice Re-initializes the contract from V4.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV5() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice Allows the use of `handle` for the address `account`.
@@ -240,6 +247,24 @@ contract ACL is
             $.allowedForDecryption[handle] = true;
         }
         emit AllowedForDecryption(msg.sender, handlesList);
+    }
+
+    /**
+     * @notice Invalidates decryption signatures before a given timestamp for the caller.
+     * @param timestamp Oldest timestamp that remains valid. Passing 0 resolves to the current block timestamp.
+     */
+    function invalidateDecryptionSignaturesBefore(uint256 timestamp) external virtual whenNotPaused {
+        uint256 resolvedTimestamp = timestamp == 0 ? block.timestamp : timestamp;
+        ACLStorage storage $ = _getACLStorage();
+        if (resolvedTimestamp <= $.decryptionSignatureInvalidatedBefore[msg.sender]) {
+            revert InvalidationTimestampTooLow();
+        }
+        if (resolvedTimestamp > block.timestamp) {
+            revert InvalidationTimestampInTheFuture();
+        }
+
+        $.decryptionSignatureInvalidatedBefore[msg.sender] = resolvedTimestamp;
+        emit DecryptionSignaturesInvalidated(msg.sender, resolvedTimestamp);
     }
 
     /**
@@ -407,6 +432,16 @@ contract ACL is
             contractAddress
         ];
         return userDecryptionDelegation.expirationDate;
+    }
+
+    /**
+     * @notice Returns the timestamp before which the account's decryption signatures are invalidated.
+     * @param account The account whose invalidation timestamp is queried.
+     * @return invalidatedBefore The oldest timestamp that remains valid.
+     */
+    function decryptionSignatureInvalidatedBefore(address account) public view virtual returns (uint256) {
+        ACLStorage storage $ = _getACLStorage();
+        return $.decryptionSignatureInvalidatedBefore[account];
     }
 
     /**
