@@ -5,45 +5,12 @@ use solana_sha256_hasher::hashv;
 use crate::{
     acl::{
         balance_acl_record_address, event_authority, rand_acl_record_address, rand_counter_address,
-        read_acl_record, transfer_amount_acl_address,
     },
     fixture::{TokenFixture, TransferOutputAccounts, WrapOutputAccounts},
     transaction::{anchor_ix, send},
 };
 
 use confidential_token as token;
-
-pub fn authorize_transfer_amount(
-    fixture: &mut TokenFixture,
-    amount: u64,
-    nonce_sequence: u64,
-) -> [u8; 32] {
-    let output_acl = transfer_amount_acl_address(fixture, nonce_sequence);
-    let ix = anchor_ix(
-        fixture.token_program_id,
-        token::accounts::PocAuthorizeTransferAmount {
-            owner: fixture.alice.pubkey(),
-            mint: fixture.mint.pubkey(),
-            token_account: fixture.alice_token,
-            compute_signer: fixture.compute_signer,
-            output_acl,
-            zama_rand_counter: rand_counter_address(fixture.host_program_id),
-            zama_event_authority: event_authority(fixture.host_program_id),
-            zama_program: fixture.host_program_id,
-            system_program: system_program::ID,
-            event_authority: event_authority(fixture.token_program_id),
-            program: fixture.token_program_id,
-        },
-        token::instruction::PocAuthorizeTransferAmount {
-            amount,
-            nonce_sequence,
-        },
-    );
-    send(&mut fixture.svm, &fixture.alice, ix);
-    read_acl_record(&fixture.svm, output_acl)
-        .expect("expected transfer amount ACL")
-        .handle
-}
 
 pub fn poc_demo_confidential_rand_ix(
     fixture: &TokenFixture,
@@ -155,20 +122,6 @@ pub fn input_proof(fixture: &TokenFixture, input_handle: [u8; 32]) -> [u8; 32] {
     .to_bytes()
 }
 
-pub fn transfer_ix_with_amount_nonce(
-    fixture: &TokenFixture,
-    output: TransferOutputAccounts,
-    amount_handle: [u8; 32],
-    _amount_nonce_sequence: u64,
-) -> Instruction {
-    transfer_ix_with_amount_proof(
-        fixture,
-        output,
-        amount_handle,
-        input_proof(fixture, amount_handle),
-    )
-}
-
 pub fn self_transfer_ix(
     fixture: &TokenFixture,
     output: TransferOutputAccounts,
@@ -206,24 +159,6 @@ pub fn transfer_ix_with_current_acl(
     to_current_compute_acl: Pubkey,
     output: TransferOutputAccounts,
     amount_handle: [u8; 32],
-) -> Instruction {
-    transfer_ix_with_amount_proof_and_current_acl(
-        fixture,
-        from_current_compute_acl,
-        to_current_compute_acl,
-        output,
-        amount_handle,
-        input_proof(fixture, amount_handle),
-    )
-}
-
-pub fn transfer_ix_with_current_acl_and_amount_nonce(
-    fixture: &TokenFixture,
-    from_current_compute_acl: Pubkey,
-    to_current_compute_acl: Pubkey,
-    output: TransferOutputAccounts,
-    amount_handle: [u8; 32],
-    _amount_nonce_sequence: u64,
 ) -> Instruction {
     transfer_ix_with_amount_proof_and_current_acl(
         fixture,

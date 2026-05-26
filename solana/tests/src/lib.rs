@@ -26,7 +26,7 @@ pub use acl::{
     acl_record_address, assert_acl_record, assert_balance_acl, balance_acl_record_address,
     created_acl_count, event_authority, rand_acl_record_address, rand_counter_address,
     read_acl_record, read_rand_counter, record_subjects, seed_authorizing_acl_record,
-    token_account_address, transfer_amount_acl_address, vault_authority_address,
+    token_account_address, vault_authority_address,
 };
 pub use cleartext::{
     cleartext_rand_value, ClearValue, CleartextBackend, FheBackend, Handle, TypedClearValue,
@@ -45,11 +45,9 @@ pub use fixture::{
 };
 pub use host_ix::{allow_for_decryption_ix, execute_frame_ix, label};
 pub use instructions::{
-    authorize_transfer_amount, external_input_handle, poc_demo_confidential_rand,
-    poc_demo_confidential_rand_ix, self_transfer_ix, transfer_ix, transfer_ix_with_amount_nonce,
-    transfer_ix_with_amount_proof, transfer_ix_with_current_acl,
-    transfer_ix_with_current_acl_and_amount_nonce, transfer_output_accounts, wrap_output_accounts,
-    wrap_usdc_ix,
+    external_input_handle, poc_demo_confidential_rand, poc_demo_confidential_rand_ix,
+    self_transfer_ix, transfer_ix, transfer_ix_with_amount_proof, transfer_ix_with_current_acl,
+    transfer_output_accounts, wrap_output_accounts, wrap_usdc_ix,
 };
 pub use invariants::{
     assert_balance_acl_subjects, assert_no_zama_host_events_on_failure, assert_tfhe_event_count,

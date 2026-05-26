@@ -325,65 +325,6 @@ pub mod confidential_token {
         Ok(())
     }
 
-    /// PoC-only stand-in for the future external input path.
-    ///
-    /// Trivial-encrypts a transfer amount and creates durable compute ACL state
-    /// through the same `fhe::execute` wrapper used by wrap and transfer.
-    pub fn poc_authorize_transfer_amount(
-        ctx: Context<PocAuthorizeTransferAmount>,
-        amount: u64,
-        nonce_sequence: u64,
-    ) -> Result<()> {
-        let mint = &ctx.accounts.mint;
-        let token_account = &ctx.accounts.token_account;
-        require_keys_eq!(
-            token_account.owner,
-            ctx.accounts.owner.key(),
-            ConfidentialTokenError::OwnerMismatch
-        );
-        require_keys_eq!(
-            token_account.mint,
-            mint.key(),
-            ConfidentialTokenError::MintMismatch
-        );
-        require_keys_eq!(
-            ctx.accounts.compute_signer.key(),
-            mint.compute_signer,
-            ConfidentialTokenError::ComputeSignerMismatch
-        );
-
-        fhe::execute(
-            fhe_context(
-                &ctx.accounts.owner,
-                &ctx.accounts.zama_event_authority,
-                &ctx.accounts.zama_program,
-                &ctx.accounts.compute_signer,
-                &ctx.accounts.zama_rand_counter,
-                mint.key(),
-                ctx.bumps.compute_signer,
-                &ctx.accounts.system_program,
-            ),
-            |fhe| {
-                let amount = fhe.trivial_encrypt_u64(amount, BALANCE_FHE_TYPE)?;
-                fhe.allow(
-                    &amount,
-                    fhe::DurableAllow {
-                        acl_record: ctx.accounts.output_acl.to_account_info(),
-                        app_account: token_app_account(token_account.to_account_info()),
-                        nonce_key: transfer_amount_nonce_key(mint.key(), token_account.key()),
-                        nonce_sequence,
-                        encrypted_value_label: transfer_amount_label(),
-                        subjects: vec![AclSubjectEntry {
-                            pubkey: mint.compute_signer,
-                        }],
-                        public_decrypt: false,
-                    },
-                )?;
-                Ok(())
-            },
-        )
-    }
-
     /// PoC demo: birth an encrypted random u64 via `fheRand`, durable-allow it for the owner,
     /// and emit an app event the frontend/indexer can consume for a user-decrypt request.
     pub fn poc_demo_confidential_rand(
@@ -609,37 +550,6 @@ pub struct PocDemoConfidentialRand<'info> {
     pub system_program: Program<'info, System>,
 }
 
-#[derive(Accounts)]
-#[event_cpi]
-pub struct PocAuthorizeTransferAmount<'info> {
-    #[account(mut)]
-    pub owner: Signer<'info>,
-    pub mint: Box<Account<'info, ConfidentialMint>>,
-    #[account(
-        constraint = token_account.owner == owner.key() @ ConfidentialTokenError::OwnerMismatch,
-        constraint = token_account.mint == mint.key() @ ConfidentialTokenError::MintMismatch,
-    )]
-    pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
-    /// CHECK: Program-controlled compute signer PDA.
-    #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
-    pub compute_signer: UncheckedAccount<'info>,
-    /// CHECK: initialized and validated by the Zama host program CPI.
-    #[account(mut)]
-    pub output_acl: UncheckedAccount<'info>,
-    /// CHECK: global Zama host rand counter PDA.
-    #[account(
-        mut,
-        seeds = [b"fhe-rand-counter"],
-        bump,
-        seeds::program = zama_program.key()
-    )]
-    pub zama_rand_counter: UncheckedAccount<'info>,
-    /// CHECK: Anchor event CPI authority for the Zama host program.
-    pub zama_event_authority: UncheckedAccount<'info>,
-    pub zama_program: Program<'info, ZamaHost>,
-    pub system_program: Program<'info, System>,
-}
-
 #[account]
 pub struct ConfidentialMint {
     pub authority: Pubkey,
@@ -818,14 +728,6 @@ pub fn balance_nonce_key(acl_domain_key: Pubkey, app_account: Pubkey) -> [u8; 32
 
 pub fn balance_label() -> [u8; 32] {
     *b"balance_________________________"
-}
-
-pub fn transfer_amount_label() -> [u8; 32] {
-    *b"input___________________________"
-}
-
-pub fn transfer_amount_nonce_key(acl_domain_key: Pubkey, app_account: Pubkey) -> [u8; 32] {
-    nonce_key(acl_domain_key, app_account, transfer_amount_label())
 }
 
 pub fn rand_label() -> [u8; 32] {

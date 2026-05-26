@@ -22,7 +22,7 @@ pub const BALANCE_FHE_TYPE: u8 = 5;
 pub struct TransferSetup {
     pub amount: u64,
     pub output_nonce_sequence: u64,
-    pub amount_nonce_sequence: u64,
+    pub input_nonce_sequence: u64,
 }
 
 impl Default for TransferSetup {
@@ -30,7 +30,7 @@ impl Default for TransferSetup {
         Self {
             amount: 9,
             output_nonce_sequence: 1,
-            amount_nonce_sequence: DEFAULT_INPUT_NONCE_SEQUENCE,
+            input_nonce_sequence: DEFAULT_INPUT_NONCE_SEQUENCE,
         }
     }
 }
@@ -82,11 +82,11 @@ pub fn run_rand_demo_scenario(fixture: &mut TokenFixture, nonce_sequence: u64) -
     }
 }
 
-/// Authorize transfer amount, run `confidential_transfer`, return tx metadata + output handles.
+/// Run `confidential_transfer` with a local external input handle.
 pub fn run_transfer_scenario(fixture: &mut TokenFixture, setup: TransferSetup) -> TransferScenario {
     let alice_before = fixture.alice_initial;
     let bob_before = fixture.bob_initial;
-    let amount_handle = external_input_handle(fixture, setup.amount, setup.amount_nonce_sequence);
+    let amount_handle = external_input_handle(fixture, setup.amount, setup.input_nonce_sequence);
     let output = transfer_output_accounts(fixture, setup.output_nonce_sequence);
     let transfer_ix = transfer_ix(fixture, output, amount_handle);
     let (meta, account_keys, signature) =
@@ -119,7 +119,7 @@ pub fn run_transfer_scenario_meta(
 ) -> (TransferScenario, bool) {
     let alice_before = fixture.alice_initial;
     let bob_before = fixture.bob_initial;
-    let amount_handle = external_input_handle(fixture, setup.amount, setup.amount_nonce_sequence);
+    let amount_handle = external_input_handle(fixture, setup.amount, setup.input_nonce_sequence);
     let output = transfer_output_accounts(fixture, setup.output_nonce_sequence);
     let transfer_ix = transfer_ix(fixture, output, amount_handle);
     let (meta, account_keys) = send_with_meta(&mut fixture.svm, &fixture.alice, transfer_ix);

@@ -41,7 +41,7 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
     let setup = TransferSetup {
         amount: 100,
         output_nonce_sequence: 1,
-        amount_nonce_sequence: DEFAULT_INPUT_NONCE_SEQUENCE,
+        input_nonce_sequence: DEFAULT_INPUT_NONCE_SEQUENCE,
     };
     let scenario = run_transfer_scenario(&mut fixture, setup);
 

@@ -33,7 +33,6 @@ confidential-token
   initialize_mint / initialize_token_account
   wrap_usdc
   confidential_transfer
-  poc_authorize_transfer_amount   — legacy PoC helper; transfer now uses input proof shape
   poc_demo_confidential_rand      — E2E rand demo + ConfidentialRandCreatedEvent
 
 solana/crates/zama-fhe
@@ -52,7 +51,7 @@ acl_record = PDA("acl-record", nonce_key, nonce_sequence)
 ```
 
 - Handle is stored **inside** the ACL record; never use handle bytes as a PDA seed.
-- Token PoC: `acl_domain_key = mint`, balance label = `"balance"`, input label = `"input"`.
+- Token PoC: `acl_domain_key = mint`, balance label = `"balance"`.
 - Durable ACL only when the frame includes an explicit `Allow` action; intermediate handles are frame-local.
 
 ## What works end-to-end
@@ -72,7 +71,7 @@ Self-transfer: **no-op** (no handle rotation, no output ACL).
 |-------|----------------|
 | **confidential-token** | SPL-like semantics, owner/mint checks, which ACL PDAs to pass |
 | **zama-host** | Compute ACL, handle birth inside frame, canonical PDA rules, generic events |
-| **host-listener** | ZamaHost IDL events only → coprocessor DB |
+| **host-listener** | TFHE + ACL ZamaHost events → coprocessor DB; `InputVerifiedEvent` is decoded but not mapped |
 | **App indexer** | `BalanceHandleUpdatedEvent`, historical handle discovery |
 | **KMS (future)** | Verify signed auth + ACL record account; no SPL parsing |
 

@@ -6,25 +6,24 @@ use crate::{
     allow_for_decryption_ix, amount_plaintext, anchor_ix, assert_acl_record, assert_balance_acl,
     assert_no_zama_host_events_on_failure, assert_transfer_cleartext,
     assert_transfer_output_invariants, assert_wrap_output_invariants, authorization_payload_bytes,
-    authorize_transfer_amount, balance_acl_record_address, balance_handle_updated_events,
-    binary_op_events, cleartext_rand_value, created_acl_count, event_authority, execute_frame_ix,
-    execute_frame_log_count, expected_trivial_handle, fhe_rand_events, host_program_so_path,
-    input_verified_events, kms_like_public_decrypt_check, kms_like_user_decrypt_check, label,
-    max_cpi_depth, previous_bank_hash_from_sysvar, rand_counter_address, read_acl_record,
-    read_rand_counter, record_subjects, run_rand_demo_scenario, run_transfer_scenario_meta,
-    run_wrap_scenario, seed_authorizing_acl_record, seed_transfer_inputs, self_transfer_ix, send,
-    send_many_with_signers, send_with_meta, set_previous_slot_hash,
-    signed_confidential_rand_user_decrypt_request, signed_current_balance_user_decrypt_request,
-    signed_user_decrypt_request, spl_token_amount, svm_with_program, token_account, token_fixture,
-    transfer_amount_acl_address, transfer_ix, transfer_ix_with_amount_nonce,
-    transfer_ix_with_amount_proof, transfer_ix_with_current_acl,
-    transfer_ix_with_current_acl_and_amount_nonce, transfer_output_accounts,
-    trivial_encrypt_events, try_send, try_send_with_meta, wrap_output_accounts, wrap_usdc_ix,
-    CleartextBackend, FheBackend, FheBinaryOpCode, PublicDecryptHandleEntry, SemanticBackend,
-    TransferExpect, TransferOutputAccounts, TransferSetup, TypedClearValue, UserDecryptHandleEntry,
-    WrapSetup, DEFAULT_INPUT_NONCE_SEQUENCE, DEFAULT_TEST_PREVIOUS_BANK_HASH,
+    balance_acl_record_address, balance_handle_updated_events, binary_op_events,
+    cleartext_rand_value, created_acl_count, event_authority, execute_frame_ix,
+    execute_frame_log_count, expected_trivial_handle, external_input_handle, fhe_rand_events,
+    host_program_so_path, input_verified_events, kms_like_public_decrypt_check,
+    kms_like_user_decrypt_check, label, max_cpi_depth, previous_bank_hash_from_sysvar,
+    read_acl_record, read_rand_counter, record_subjects, run_rand_demo_scenario,
+    run_transfer_scenario_meta, run_wrap_scenario, seed_authorizing_acl_record,
+    seed_transfer_inputs, self_transfer_ix, send, send_many_with_signers, send_with_meta,
+    set_previous_slot_hash, signed_confidential_rand_user_decrypt_request,
+    signed_current_balance_user_decrypt_request, signed_user_decrypt_request, spl_token_amount,
+    svm_with_program, token_account, token_fixture, transfer_ix, transfer_ix_with_amount_proof,
+    transfer_ix_with_current_acl, transfer_output_accounts, trivial_encrypt_events, try_send,
+    try_send_with_meta, wrap_output_accounts, wrap_usdc_ix, CleartextBackend, FheBackend,
+    FheBinaryOpCode, PublicDecryptHandleEntry, SemanticBackend, TransferExpect,
+    TransferOutputAccounts, TransferSetup, TypedClearValue, UserDecryptHandleEntry, WrapSetup,
+    DEFAULT_INPUT_NONCE_SEQUENCE, DEFAULT_TEST_PREVIOUS_BANK_HASH,
 };
-use anchor_lang::{prelude::system_program, AccountSerialize};
+use anchor_lang::AccountSerialize;
 use anchor_litesvm::TestHelpers;
 use confidential_token::{self as token, BalanceHandleUpdateReason};
 use solana_sdk::{
@@ -1150,7 +1149,7 @@ fn confidential_transfer_rotates_balance_handles_and_binds_output_acl() {
 #[test]
 fn confidential_self_transfer_is_no_op() {
     let mut fixture = token_fixture();
-    let amount_handle = authorize_transfer_amount(&mut fixture, 9, DEFAULT_INPUT_NONCE_SEQUENCE);
+    let amount_handle = external_input_handle(&fixture, 9, DEFAULT_INPUT_NONCE_SEQUENCE);
     let output = transfer_output_accounts(&fixture, 2);
     let ix = self_transfer_ix(&fixture, output, amount_handle);
 
@@ -1179,7 +1178,7 @@ fn confidential_self_transfer_is_no_op() {
 #[test]
 fn user_decrypt_model_uses_acl_domain_key_and_acl_record_authentication() {
     let mut fixture = token_fixture();
-    let amount_handle = authorize_transfer_amount(&mut fixture, 9, DEFAULT_INPUT_NONCE_SEQUENCE);
+    let amount_handle = external_input_handle(&fixture, 9, DEFAULT_INPUT_NONCE_SEQUENCE);
     let first_output = transfer_output_accounts(&fixture, 1);
     let first_ix = transfer_ix(&fixture, first_output, amount_handle);
     send(&mut fixture.svm, &fixture.alice, first_ix);
@@ -1187,15 +1186,14 @@ fn user_decrypt_model_uses_acl_domain_key_and_acl_record_authentication() {
         .expect("expected first Alice ACL")
         .handle;
 
-    let second_amount_handle = authorize_transfer_amount(&mut fixture, 8, 1);
+    let second_amount_handle = external_input_handle(&fixture, 8, 1);
     let second_output = transfer_output_accounts(&fixture, 2);
-    let second_ix = transfer_ix_with_current_acl_and_amount_nonce(
+    let second_ix = transfer_ix_with_current_acl(
         &fixture,
         first_output.alice,
         first_output.bob,
         second_output,
         second_amount_handle,
-        1,
     );
     send(&mut fixture.svm, &fixture.alice, second_ix);
     let second_alice = read_acl_record(&fixture.svm, second_output.alice)
@@ -1247,7 +1245,7 @@ fn user_decrypt_model_uses_acl_domain_key_and_acl_record_authentication() {
 #[test]
 fn public_decrypt_model_uses_acl_record_flag() {
     let mut fixture = token_fixture();
-    let amount_handle = authorize_transfer_amount(&mut fixture, 9, DEFAULT_INPUT_NONCE_SEQUENCE);
+    let amount_handle = external_input_handle(&fixture, 9, DEFAULT_INPUT_NONCE_SEQUENCE);
     let output = transfer_output_accounts(&fixture, 1);
     let transfer_ix = transfer_ix(&fixture, output, amount_handle);
     send(&mut fixture.svm, &fixture.alice, transfer_ix);
@@ -1317,7 +1315,7 @@ fn public_decrypt_model_uses_acl_record_flag() {
 #[test]
 fn allow_for_decryption_rejects_unallowed_signer() {
     let mut fixture = token_fixture();
-    let amount_handle = authorize_transfer_amount(&mut fixture, 9, DEFAULT_INPUT_NONCE_SEQUENCE);
+    let amount_handle = external_input_handle(&fixture, 9, DEFAULT_INPUT_NONCE_SEQUENCE);
     let output = transfer_output_accounts(&fixture, 1);
     let transfer_ix = transfer_ix(&fixture, output, amount_handle);
     send(&mut fixture.svm, &fixture.alice, transfer_ix);
@@ -1363,45 +1361,11 @@ fn fhe_execute_wrapper_wrap_uses_single_execute_frame_cpi() {
 #[test]
 fn fhe_execute_wrapper_transfer_uses_single_execute_frame_cpi() {
     let mut fixture = token_fixture();
-    let amount_handle = authorize_transfer_amount(&mut fixture, 9, DEFAULT_INPUT_NONCE_SEQUENCE);
+    let amount_handle = external_input_handle(&fixture, 9, DEFAULT_INPUT_NONCE_SEQUENCE);
     let output = transfer_output_accounts(&fixture, 1);
     let ix = transfer_ix(&fixture, output, amount_handle);
     let (meta, _) = send_with_meta(&mut fixture.svm, &fixture.alice, ix);
     assert_eq!(execute_frame_log_count(&meta), 1);
-}
-
-#[test]
-fn poc_authorize_transfer_amount_uses_fhe_execute_wrapper() {
-    let mut fixture = token_fixture();
-    let output_acl = transfer_amount_acl_address(&fixture, DEFAULT_INPUT_NONCE_SEQUENCE);
-    let (meta, account_keys) = send_with_meta(
-        &mut fixture.svm,
-        &fixture.alice,
-        anchor_ix(
-            fixture.token_program_id,
-            token::accounts::PocAuthorizeTransferAmount {
-                owner: fixture.alice.pubkey(),
-                mint: fixture.mint.pubkey(),
-                token_account: fixture.alice_token,
-                compute_signer: fixture.compute_signer,
-                output_acl,
-                zama_rand_counter: rand_counter_address(fixture.host_program_id),
-                zama_event_authority: event_authority(fixture.host_program_id),
-                zama_program: fixture.host_program_id,
-                system_program: system_program::ID,
-                event_authority: event_authority(fixture.token_program_id),
-                program: fixture.token_program_id,
-            },
-            token::instruction::PocAuthorizeTransferAmount {
-                amount: 42,
-                nonce_sequence: DEFAULT_INPUT_NONCE_SEQUENCE,
-            },
-        ),
-    );
-    assert_eq!(execute_frame_log_count(&meta), 1);
-    let events = trivial_encrypt_events(&meta, &account_keys, fixture.host_program_id);
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].plaintext, amount_plaintext(42));
 }
 
 #[test]
@@ -1516,7 +1480,7 @@ fn confidential_token_e2e_wrap_transfer_and_decrypts_current_and_historical_bala
     // 2. Alice transfers a confidential amount to Bob.
     let transfer_amount = 100_000_000_u64;
     let transfer_amount_handle =
-        authorize_transfer_amount(&mut fixture, transfer_amount, DEFAULT_INPUT_NONCE_SEQUENCE);
+        external_input_handle(&fixture, transfer_amount, DEFAULT_INPUT_NONCE_SEQUENCE);
     let transfer_output = TransferOutputAccounts {
         alice: balance_acl_record_address(
             fixture.host_program_id,
@@ -1641,7 +1605,7 @@ fn confidential_token_e2e_wrap_transfer_and_decrypts_current_and_historical_bala
 #[test]
 fn confidential_transfer_budget_snapshot() {
     let mut fixture = token_fixture();
-    let amount_handle = authorize_transfer_amount(&mut fixture, 9, DEFAULT_INPUT_NONCE_SEQUENCE);
+    let amount_handle = external_input_handle(&fixture, 9, DEFAULT_INPUT_NONCE_SEQUENCE);
     let output = transfer_output_accounts(&fixture, 1);
     let transfer_ix = transfer_ix(&fixture, output, amount_handle);
     let top_level_metas = transfer_ix.accounts.len();
@@ -1689,17 +1653,16 @@ fn confidential_transfer_budget_snapshot() {
 #[test]
 fn confidential_transfer_rejects_stale_current_acl() {
     let mut fixture = token_fixture();
-    let first_amount = authorize_transfer_amount(&mut fixture, 9, DEFAULT_INPUT_NONCE_SEQUENCE);
+    let first_amount = external_input_handle(&fixture, 9, DEFAULT_INPUT_NONCE_SEQUENCE);
     let first_output = transfer_output_accounts(&fixture, 1);
     let first_ix = transfer_ix(&fixture, first_output, first_amount);
     send(&mut fixture.svm, &fixture.alice, first_ix);
 
-    let stale_amount = authorize_transfer_amount(&mut fixture, 8, 1);
-    let stale_ix = transfer_ix_with_amount_nonce(
+    let stale_amount = external_input_handle(&fixture, 8, 1);
+    let stale_ix = transfer_ix(
         &fixture,
         transfer_output_accounts(&fixture, 2),
         stale_amount,
-        1,
     );
     assert!(try_send(&mut fixture.svm, &fixture.alice, stale_ix).is_err());
 }
@@ -1707,7 +1670,7 @@ fn confidential_transfer_rejects_stale_current_acl() {
 #[test]
 fn confidential_transfer_rejects_wrong_current_acl_record() {
     let mut fixture = token_fixture();
-    let amount_handle = authorize_transfer_amount(&mut fixture, 9, DEFAULT_INPUT_NONCE_SEQUENCE);
+    let amount_handle = external_input_handle(&fixture, 9, DEFAULT_INPUT_NONCE_SEQUENCE);
     let ix = transfer_ix_with_current_acl(
         &fixture,
         fixture.bob_current_compute_acl,
@@ -1776,7 +1739,7 @@ fn confidential_transfer_rejects_amount_proof_bound_to_other_context() {
 #[test]
 fn confidential_transfer_rejects_output_acl_for_wrong_token_account() {
     let mut fixture = token_fixture();
-    let amount_handle = authorize_transfer_amount(&mut fixture, 9, DEFAULT_INPUT_NONCE_SEQUENCE);
+    let amount_handle = external_input_handle(&fixture, 9, DEFAULT_INPUT_NONCE_SEQUENCE);
     let correct_output = transfer_output_accounts(&fixture, 1);
     let swapped_output = TransferOutputAccounts {
         alice: correct_output.bob,
@@ -1803,7 +1766,7 @@ fn confidential_transfer_rejects_output_acl_for_wrong_token_account() {
 #[test]
 fn confidential_transfer_rejects_reused_output_acl_record() {
     let mut fixture = token_fixture();
-    let amount_handle = authorize_transfer_amount(&mut fixture, 9, DEFAULT_INPUT_NONCE_SEQUENCE);
+    let amount_handle = external_input_handle(&fixture, 9, DEFAULT_INPUT_NONCE_SEQUENCE);
     let output = TransferOutputAccounts {
         alice: fixture.alice_current_compute_acl,
         bob: balance_acl_record_address(
@@ -1838,68 +1801,6 @@ fn wrap_output_invariants_hold_across_event_acl_and_token_account() {
         &scenario.account_keys,
         scenario.output.balance,
     );
-}
-
-#[test]
-fn host_handle_derivation_matches_fixture_bank_hash_for_trivial_encrypt() {
-    use solana_sdk::clock::Clock;
-    use zama_host as host;
-
-    let fixture = token_fixture();
-    let clock: Clock = fixture.svm.get_sysvar();
-    let bank_hash = previous_bank_hash_from_sysvar(&fixture.svm, clock.slot);
-    assert_ne!(bank_hash, [0; 32], "fixture must seed non-zero bank hash");
-
-    let amount = 42_u64;
-    let expected = host::computed_trivial_handle(
-        amount_plaintext(amount),
-        5,
-        host::SOLANA_POC_CHAIN_ID,
-        bank_hash,
-        clock.unix_timestamp,
-    );
-
-    let mut fixture = token_fixture();
-    let amount_handle =
-        authorize_transfer_amount(&mut fixture, amount, DEFAULT_INPUT_NONCE_SEQUENCE);
-    assert_eq!(amount_handle, expected);
-}
-
-#[test]
-fn trivial_encrypt_uses_slot_hashes_sysvar_when_present() {
-    use solana_sdk::clock::Clock;
-    use zama_host as host;
-
-    let mut fixture = token_fixture();
-    let bank_hash = [0xAB_u8; 32];
-    set_previous_slot_hash(&mut fixture.svm, bank_hash);
-
-    let amount_handle = authorize_transfer_amount(&mut fixture, 42, DEFAULT_INPUT_NONCE_SEQUENCE);
-    let acl = read_acl_record(
-        &fixture.svm,
-        transfer_amount_acl_address(&fixture, DEFAULT_INPUT_NONCE_SEQUENCE),
-    )
-    .expect("amount ACL");
-    assert_eq!(amount_handle, acl.handle);
-
-    let clock: Clock = fixture.svm.get_sysvar();
-    let expected = host::computed_trivial_handle(
-        amount_plaintext(42),
-        5,
-        host::SOLANA_POC_CHAIN_ID,
-        bank_hash,
-        clock.unix_timestamp,
-    );
-    assert_eq!(amount_handle, expected);
-
-    let fallback = host::computed_trivial_handle(
-        amount_plaintext(42),
-        5,
-        host::SOLANA_POC_CHAIN_ID,
-        [0; 32],
-        clock.unix_timestamp,
-    );
-    assert_ne!(amount_handle, fallback);
 }
 
 #[test]

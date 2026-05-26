@@ -1,7 +1,7 @@
 use anchor_lang::{prelude::*, AccountDeserialize, AccountSerialize};
 use confidential_token as token;
 use litesvm::LiteSVM;
-use solana_sdk::{account::Account, pubkey::Pubkey, signature::Signer};
+use solana_sdk::{account::Account, pubkey::Pubkey};
 use zama_host as host;
 
 use crate::util::{set_previous_slot_hash, DEFAULT_TEST_PREVIOUS_BANK_HASH};
@@ -47,17 +47,6 @@ pub fn balance_acl_record_address(
     acl_record_address(
         program_id,
         token::balance_nonce_key(acl_domain_key, app_account),
-        nonce_sequence,
-    )
-}
-
-pub fn transfer_amount_acl_address(
-    fixture: &crate::fixture::TokenFixture,
-    nonce_sequence: u64,
-) -> Pubkey {
-    acl_record_address(
-        fixture.host_program_id,
-        token::transfer_amount_nonce_key(fixture.mint.pubkey(), fixture.alice_token),
         nonce_sequence,
     )
 }

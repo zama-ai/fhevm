@@ -261,9 +261,11 @@ The listener boundary is intentionally generic:
 
 ```text
 host-listener consumes:
-  ZamaHost protocol events decoded from the ZamaHost Anchor IDL shape
+  FheBinaryOpEvent / TrivialEncryptEvent / FheRandEvent
+  AclAllowedEvent / AclPublicDecryptAllowedEvent
 
 host-listener does not consume:
+  InputVerifiedEvent (local harness registers input ciphertext material)
   confidential-token BalanceHandleUpdatedEvent
   token account state
   cUSDC-specific labels or nonce conventions
@@ -1002,7 +1004,7 @@ The app declares which slots receive durable Allow output.
   PDA("fhe-compute", acl_domain_key) for the app account owner program.
 
 The host op enforces compute ACL before event emission.
-  Wrong current ACL or wrong amount ACL rejects the transfer.
+  Wrong current ACL or wrong input proof rejects the transfer.
   Failed frames emit no TFHE or ACL events (A4).
 
 Transient frame results do not carry to a later execute_frame (B3).
