@@ -12,7 +12,6 @@ use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::safe_deserialize_conformant;
 use sha3::Digest;
 use sha3::Keccak256;
-use sqlx::Row;
 use sqlx::{postgres::PgListener, PgPool};
 use sqlx::{Postgres, Transaction};
 use std::str::FromStr;
@@ -221,6 +220,16 @@ async fn execute_worker(
             .ok_or_else(|| ExecutionError::DbError(sqlx::Error::RowNotFound))?,
     );
 
+    // Snapshot the registered chain ids once for the worker's lifetime.
+    // HostChainsCache is loaded one-shot at startup and doesn't change while
+    // the worker runs; the chart's `checksum/host-chains` annotation rolls
+    // pods (and thus rebuilds this slice) when .Values.chains changes.
+    let known_chain_ids: Vec<i64> = host_chain_cache
+        .all()
+        .iter()
+        .map(|c| c.chain_id.as_i64())
+        .collect();
+
     loop {
         update_last_active(last_active_at.clone()).await;
 
@@ -229,10 +238,11 @@ async fn execute_worker(
             latest_key.clone(),
             latest_crs.clone(),
             host_chain_cache.as_ref(),
+            &known_chain_ids,
             &conf,
         )
         .await?;
-        let count = get_remaining_tasks(&pool).await?;
+        let count = get_remaining_tasks(&pool, &known_chain_ids).await?;
         if count > 0 {
             info!({ count }, "zkproof requests available");
             continue;
@@ -266,6 +276,7 @@ async fn execute_verify_proof_routine(
     db_key: Arc<DbKey>,
     crs: Arc<Crs>,
     host_chain_cache: &HostChainsCache,
+    known_chain_ids: &[i64],
     conf: &Config,
 ) -> Result<(), ExecutionError> {
     // Pre-filter to known chains: workers only fetch rows whose chain_id is
@@ -282,30 +293,25 @@ async fn execute_verify_proof_routine(
     // failure. Enforces the invariant: "one unknown chain on the queue must
     // not stop processing for known chains" — workers simply don't see those
     // rows.
-    let known_chain_ids: Vec<i64> = host_chain_cache
-        .all()
-        .iter()
-        .map(|c| c.chain_id.as_i64())
-        .collect();
-
     let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
-    if let Ok(row) = sqlx::query(
+    if let Ok(row) = sqlx::query!(
         "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id
             FROM verify_proofs
             WHERE verified IS NULL
               AND chain_id = ANY($1::bigint[])
             ORDER BY zk_proof_id ASC
             LIMIT 1 FOR UPDATE SKIP LOCKED",
+        known_chain_ids,
     )
-    .bind(&known_chain_ids)
     .fetch_one(&mut *txn)
     .await
     {
         let started_at = SystemTime::now();
-        let request_id: i64 = row.try_get("zk_proof_id")?;
-        let raw_input: Option<Vec<u8>> = row.try_get("input")?;
-        let input: Vec<u8> = raw_input.ok_or(ExecutionError::NullInput(request_id))?;
-        let host_chain_id_raw: i64 = row.try_get("chain_id")?;
+        let request_id: i64 = row.zk_proof_id;
+        let input: Vec<u8> = row
+            .input
+            .ok_or(ExecutionError::NullInput(row.zk_proof_id))?;
+        let host_chain_id_raw: i64 = row.chain_id;
 
         // The filter above guarantees host_chain_id_raw is in HostChainsCache.
         // Both lookups below are infallible in practice; the `?` is a sanity
@@ -317,9 +323,9 @@ async fn execute_verify_proof_routine(
             .get_chain(host_chain_id)
             .ok_or(ExecutionError::UnknownChainId(host_chain_id_raw))?;
 
-        let contract_address: String = row.try_get("contract_address")?;
-        let user_address: String = row.try_get("user_address")?;
-        let transaction_id: Option<Vec<u8>> = row.try_get("transaction_id")?;
+        let contract_address = row.contract_address;
+        let user_address = row.user_address;
+        let transaction_id: Option<Vec<u8>> = row.transaction_id;
 
         info!(
             message = "Process zk-verify request",
@@ -649,8 +655,14 @@ fn finalize_ciphertext(
     })
 }
 
-/// Returns the number of remaining tasks in the database.
-async fn get_remaining_tasks(pool: &PgPool) -> Result<i64, ExecutionError> {
+/// Returns the number of remaining tasks for chains this worker can handle.
+/// Mirrors the filter in `execute_verify_proof_routine`'s SELECT so the
+/// reported count matches what workers will actually pick up — proofs for
+/// unregistered chains are excluded.
+async fn get_remaining_tasks(
+    pool: &PgPool,
+    known_chain_ids: &[i64],
+) -> Result<i64, ExecutionError> {
     Ok(sqlx::query_scalar!(
         "
         SELECT COUNT(*)
@@ -658,10 +670,12 @@ async fn get_remaining_tasks(pool: &PgPool) -> Result<i64, ExecutionError> {
             SELECT 1
             FROM verify_proofs
             WHERE verified IS NULL
+              AND chain_id = ANY($1::bigint[])
             ORDER BY zk_proof_id ASC
             FOR UPDATE SKIP LOCKED
         ) AS unlocked_rows;
         ",
+        known_chain_ids,
     )
     .fetch_one(pool)
     .await
