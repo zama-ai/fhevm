@@ -168,6 +168,7 @@ const assertKmsMigration = async (
     "npx hardhat task:assertKmsMigrationSucceeded",
     `--gateway-config-proxy ${gatewayConfigProxy}`,
     `--gateway-kms-generation-proxy ${kmsGenerationProxy}`,
+    "--use-internal-proxy-address true",
   ].join(" ");
 
   if (!mpcThresholdNormalized) {
@@ -219,10 +220,8 @@ export default async function run(ctx: RolloutRunContext) {
   await ctx.runHostContractTask("npx hardhat task:deployEmptyProxiesProtocolConfigKMSGeneration");
   await ctx.runHostContractTask("npx hardhat task:deployProtocolConfigFromMigration", { env: migrationEnv });
   await ctx.runHostContractTask("npx hardhat task:deployKMSGenerationFromMigration", { env: migrationEnv });
-  // Refresh discovery so the new host proxy addresses (PROTOCOL_CONFIG_CONTRACT_ADDRESS,
-  // KMS_GENERATION_CONTRACT_ADDRESS) land in the host-sc-deploy compose env. Required since
-  // v0.13.0-3 (#2511) made task:assertKmsMigrationSucceeded read PROTOCOL_CONFIG_CONTRACT_ADDRESS
-  // from env instead of resolving it internally.
+  // Refresh discovery so downstream runtime env (test-suite, listener-core, etc.) picks up
+  // the new host proxy addresses written by the migration deploy tasks.
   await ctx.refreshDiscovery();
   await upgradeContract((command) => ctx.runHostContractTask(command), "task:upgradeKMSVerifier", "KMSVerifier");
   await assertKmsMigration(ctx, migrationCtx);
