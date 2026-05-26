@@ -550,6 +550,17 @@ describe("Decryption", function () {
       ).to.be.revertedWithCustomError(decryption, "DecryptionContextMismatch");
     });
 
+    it("Should revert when extraData with a non-zero version pins a null contextId", async function () {
+      // contextId 0 is reserved as the pre-pinning legacy sentinel. Any non-zero version of
+      // extraData carries a caller-supplied contextId payload (today only v1 is supported);
+      // a zero payload would re-engage that legacy fallback in the response handler, so the
+      // request path must reject it before the fee is collected.
+      const nullContextExtraData = extraDataV1(0n);
+      await expect(
+        decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, nullContextExtraData),
+      ).to.be.revertedWithCustomError(decryption, "InvalidNullContextId");
+    });
+
     it("Should get all valid KMS transaction senders from public decryption consensus", async function () {
       // Request public decryption
       await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0);
@@ -1571,6 +1582,40 @@ describe("Decryption", function () {
       ).to.be.revertedWithCustomError(decryption, "DecryptionContextMismatch");
     });
 
+    it("Should revert when extraData with a non-zero version pins a null contextId", async function () {
+      // contextId 0 is the pre-pinning legacy sentinel. Any non-zero version of extraData
+      // carries a caller-supplied contextId payload (today only v1 is supported); a zero
+      // payload would re-engage that legacy fallback in the response handler, so
+      // userDecryptionRequest must reject it. The user signature commits to extraData, so we
+      // need a fresh signature over the null-context payload to exercise the contextId check
+      // (otherwise we would revert at the signature-validation step first).
+      const nullContextExtraData = extraDataV1(0n);
+      const nullContextRequestMessage = createEIP712RequestUserDecrypt(
+        await decryption.getAddress(),
+        publicKey,
+        contractsInfo.addresses as string[],
+        contractsInfo.chainId as number,
+        requestValidity.startTimestamp.toString(),
+        requestValidity.durationDays.toString(),
+        nullContextExtraData,
+      );
+      const [nullContextUserSignature] = await getSignaturesUserDecryptRequest(nullContextRequestMessage, [user]);
+
+      await expect(
+        decryption
+          .connect(tokenFundedTxSender)
+          .userDecryptionRequest(
+            ctHandleContractPairs,
+            requestValidity,
+            contractsInfo,
+            user.address,
+            publicKey,
+            nullContextUserSignature,
+            nullContextExtraData,
+          ),
+      ).to.be.revertedWithCustomError(decryption, "InvalidNullContextId");
+    });
+
     it("Should get all KMS transaction senders from user decryption consensus", async function () {
       // Request user decryption
       await decryption
@@ -2506,6 +2551,44 @@ describe("Decryption", function () {
           .connect(kmsTxSenders[0])
           .userDecryptionResponse(decryptionId, userDecryptedShares[0], responseSig, responseExtraData),
       ).to.be.revertedWithCustomError(decryption, "DecryptionContextMismatch");
+    });
+
+    it("Should revert when extraData with a non-zero version pins a null contextId", async function () {
+      // contextId 0 is the pre-pinning legacy sentinel. Any non-zero version of extraData
+      // carries a caller-supplied contextId payload (today only v1 is supported); a zero
+      // payload would re-engage that legacy fallback in the response handler. The delegate
+      // signature commits to extraData, so we need a fresh signature over the null-context
+      // payload to exercise the contextId check (otherwise we would revert at the
+      // signature-validation step first).
+      const nullContextExtraData = extraDataV1(0n);
+      const nullContextRequestMessage = createEIP712RequestDelegatedUserDecrypt(
+        await decryption.getAddress(),
+        publicKey,
+        contractsInfo.addresses as string[],
+        delegatorAddress,
+        contractsInfo.chainId as number,
+        startTimestamp.toString(),
+        durationDays.toString(),
+        nullContextExtraData,
+      );
+      const [nullContextDelegateSignature] = await getSignaturesDelegatedUserDecryptRequest(
+        nullContextRequestMessage,
+        [delegateAccount],
+      );
+
+      await expect(
+        decryption
+          .connect(tokenFundedTxSender)
+          .delegatedUserDecryptionRequest(
+            ctHandleContractPairs,
+            requestValidity,
+            delegationAccounts,
+            contractsInfo,
+            publicKey,
+            nullContextDelegateSignature,
+            nullContextExtraData,
+          ),
+      ).to.be.revertedWithCustomError(decryption, "InvalidNullContextId");
     });
 
     it("Should revert because the contract is paused", async function () {
