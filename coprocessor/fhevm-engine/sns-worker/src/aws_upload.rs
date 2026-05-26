@@ -1,4 +1,3 @@
-use crate::json_sidecar::CiphertextSideCar;
 use crate::metrics::{AWS_UPLOAD_FAILURE_COUNTER, AWS_UPLOAD_SUCCESS_COUNTER};
 use crate::{
     BigCiphertext, Ciphertext128Format, Config, ExecutionError, HandleItem, S3Config, UploadJob,
@@ -220,7 +219,10 @@ async fn run_uploader_loop(
                             Ok(())
                         }
                         Err(err) => {
-                            if let ExecutionError::S3TransientError(_) = err {
+                            if err
+                                .downcast_ref::<ExecutionError>()
+                                .is_some_and(|err| matches!(err, ExecutionError::S3TransientError(_)))
+                            {
                                 ready_flag.store(false, Ordering::Release);
                                 info!(error = %err, "S3 setup is not ready, due to transient error");
                             } else {
@@ -294,16 +296,16 @@ async fn upload_ct(
     client: Client,
     bucket: String,
     key: String,
-    ct_format: Option<String>,
+    ct_format: String,
     metadata: S3ObjectMetadata,
     ct_bytes: Vec<u8>,
     extra_digest_key: Option<String>,
     result: UploadResult,
 ) -> anyhow::Result<UploadResult> {
-    let mut upload = client
+    let upload = client
         .put_object()
         .bucket(bucket.clone())
-        .metadata("Ct-Format", &sidecar.format)
+        .metadata("Ct-Format", ct_format)
         .metadata("Uploaded-By", "sns-worker")
         .metadata(S3_METADATA_ATTESTATION_KEY, &metadata.attestation_json)
         .metadata("Key-Id", metadata.key_id)
@@ -311,9 +313,6 @@ async fn upload_ct(
         .metadata("Signer", metadata.signer)
         .key(&key)
         .body(ByteStream::from(ct_bytes));
-    if let Some(format) = ct_format {
-        upload = upload.metadata("Ct-Format", format);
-    }
     let upload = upload.send().await;
     if let Err(err) = upload {
         error!(error = %err, bucket, key, metadata.attestation_json, "Failed to upload ct");
@@ -482,6 +481,7 @@ async fn upload_ciphertexts(
     };
 
     if !task.ct128.is_empty() {
+        let ct128_format = task.ct128.format();
         let ct128_bytes = task.ct128.bytes();
         info!(
             handle = handle_as_hex,
@@ -517,7 +517,7 @@ async fn upload_ciphertexts(
 
         if !exists {
             let bucket = &conf.bucket_ct128;
-            let ct_format = task.ct128.format().to_string();
+            let ct_format = ct128_format.to_string();
             let ct128_upload_span = tracing::info_span!(
                 "ct128_upload_s3",
                 ct_type = "ct128",
@@ -530,7 +530,7 @@ async fn upload_ciphertexts(
                 client.clone(),
                 bucket.clone(),
                 key,
-                Some(ct_format),
+                ct_format,
                 s3_metadata.clone(),
                 ct128_bytes.to_vec(),
                 Some(digest_key),
@@ -603,7 +603,7 @@ async fn upload_ciphertexts(
                 client.clone(),
                 bucket.clone(),
                 key,
-                None,
+                "ct64_compressed".to_string(),
                 s3_metadata.clone(),
                 ct64_compressed.clone(),
                 None,
