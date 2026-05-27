@@ -82,7 +82,7 @@ contract InputVerification is
     string private constant CONTRACT_NAME = "InputVerification";
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 4;
-    uint256 private constant PATCH_VERSION = 0;
+    uint256 private constant PATCH_VERSION = 1;
 
     /**
      * @dev Constant used for making sure the version number using in the `reinitializer` modifier is
@@ -90,7 +90,7 @@ contract InputVerification is
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 5;
+    uint64 private constant REINITIALIZER_VERSION = 6;
 
     /**
      * @notice The contract's variable storage struct (@dev see ERC-7201)
@@ -136,6 +136,10 @@ contract InputVerification is
         // ----------------------------------------------------------------------------------------------
         /// @notice The coprocessor context ID associated to the input verification request
         mapping(uint256 zkProofId => uint256 contextId) inputVerificationContextId;
+        /// @notice The priority coprocessor transaction sender that finalized proof verification.
+        mapping(uint256 zkProofId => address coprocessorTxSenderAddress) priorityVerifyProofConsensusTxSender;
+        /// @notice The priority coprocessor transaction sender that finalized proof rejection.
+        mapping(uint256 zkProofId => address coprocessorTxSenderAddress) priorityRejectProofConsensusTxSender;
     }
 
     /**
@@ -167,7 +171,7 @@ contract InputVerification is
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV5() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IInputVerification-verifyProofRequest}.
@@ -269,7 +273,7 @@ contract InputVerification is
         if (
             !$.verifiedZKProofs[zkProofId] &&
             !$.rejectedZKProofs[zkProofId] &&
-            _isConsensusReached(currentSignatures.length)
+            _canFinalizeCoprocessorConsensus(msg.sender, currentSignatures.length)
         ) {
             $.verifiedZKProofs[zkProofId] = true;
 
@@ -278,8 +282,15 @@ contract InputVerification is
             // later by only knowing the zkProofId, since a consensus can only happen once per proof
             // verification request.
             $.verifyProofConsensusDigest[zkProofId] = digest;
+            if (_isPriorityCoprocessorTxSender(msg.sender)) {
+                $.priorityVerifyProofConsensusTxSender[zkProofId] = msg.sender;
 
-            emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
+                bytes[] memory prioritySignatures = new bytes[](1);
+                prioritySignatures[0] = signature;
+                emit VerifyProofResponse(zkProofId, ctHandles, prioritySignatures);
+            } else {
+                emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
+            }
         }
     }
 
@@ -324,9 +335,12 @@ contract InputVerification is
         if (
             !$.verifiedZKProofs[zkProofId] &&
             !$.rejectedZKProofs[zkProofId] &&
-            _isConsensusReached($.rejectedProofResponseCounter[zkProofId])
+            _canFinalizeCoprocessorConsensus(msg.sender, $.rejectedProofResponseCounter[zkProofId])
         ) {
             $.rejectedZKProofs[zkProofId] = true;
+            if (_isPriorityCoprocessorTxSender(msg.sender)) {
+                $.priorityRejectProofConsensusTxSender[zkProofId] = msg.sender;
+            }
 
             emit RejectProofResponse(zkProofId);
         }
@@ -355,10 +369,11 @@ contract InputVerification is
     function getVerifyProofConsensusTxSenders(uint256 zkProofId) external view virtual returns (address[] memory) {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
-        // Get the unique digest associated to the ZK Proof verification request in order to retrieve the
-        // list of coprocessor transaction sender address that were involved in the consensus for a
-        // proof verification.
-        // This digest remains the default value (0x0) until the consensus is reached.
+        address priorityConsensusTxSender = $.priorityVerifyProofConsensusTxSender[zkProofId];
+        if (priorityConsensusTxSender != address(0)) {
+            return _asSingletonAddressArray(priorityConsensusTxSender);
+        }
+
         bytes32 consensusDigest = $.verifyProofConsensusDigest[zkProofId];
 
         return $.verifyProofConsensusTxSenders[zkProofId][consensusDigest];
@@ -369,6 +384,11 @@ contract InputVerification is
      */
     function getRejectProofConsensusTxSenders(uint256 zkProofId) external view virtual returns (address[] memory) {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
+
+        address priorityConsensusTxSender = $.priorityRejectProofConsensusTxSender[zkProofId];
+        if (priorityConsensusTxSender != address(0)) {
+            return _asSingletonAddressArray(priorityConsensusTxSender);
+        }
 
         return $.rejectProofConsensusTxSenders[zkProofId];
     }
@@ -445,6 +465,36 @@ contract InputVerification is
     function _isConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
         uint256 consensusThreshold = GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
         return coprocessorCounter >= consensusThreshold;
+    }
+
+    /**
+     * @notice Returns whether a coprocessor response can finalize consensus.
+     */
+    function _canFinalizeCoprocessorConsensus(
+        address coprocessorTxSender,
+        uint256 coprocessorCounter
+    ) internal view virtual returns (bool) {
+        address priorityCoprocessorTxSender = GATEWAY_CONFIG.getPriorityCoprocessorTxSender();
+        if (priorityCoprocessorTxSender != address(0)) {
+            return coprocessorTxSender == priorityCoprocessorTxSender;
+        }
+        return _isConsensusReached(coprocessorCounter);
+    }
+
+    /**
+     * @notice Returns whether a coprocessor transaction sender is the active priority sender.
+     */
+    function _isPriorityCoprocessorTxSender(address coprocessorTxSender) internal view virtual returns (bool) {
+        address priorityCoprocessorTxSender = GATEWAY_CONFIG.getPriorityCoprocessorTxSender();
+        return priorityCoprocessorTxSender != address(0) && coprocessorTxSender == priorityCoprocessorTxSender;
+    }
+
+    /**
+     * @notice Returns a one-element address array.
+     */
+    function _asSingletonAddressArray(address value) internal pure virtual returns (address[] memory result) {
+        result = new address[](1);
+        result[0] = value;
     }
 
     /**

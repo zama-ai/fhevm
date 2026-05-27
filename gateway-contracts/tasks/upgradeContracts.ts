@@ -1,10 +1,11 @@
-import { Interface, Wallet } from "ethers";
+import { Interface, Wallet, ZeroAddress } from "ethers";
 import { task, types } from "hardhat/config";
 import { HardhatRuntimeEnvironment, TaskArguments } from "hardhat/types";
 
 import { getRequiredEnvVar, loadGatewayAddresses } from "./utils";
 
 const REINITIALIZE_FUNCTION_PREFIX = "reinitializeV"; // Prefix for reinitialize functions
+const NO_PRIORITY_COPROCESSOR_TX_SENDER = ZeroAddress;
 
 // This file defines generic tasks that can be used to upgrade the implementation of already deployed contracts.
 
@@ -39,6 +40,19 @@ function formatCastArg(arg: unknown): string {
 
 function shellQuote(arg: string): string {
   return `'${arg.replace(/'/g, `'\\''`)}'`;
+}
+
+function getGatewayConfigReinitializeArgs(taskArgs: TaskArguments): unknown[] {
+  return [taskArgs.priorityCoprocessorTxSender ?? NO_PRIORITY_COPROCESSOR_TX_SENDER];
+}
+
+async function getGatewayConfigContract(taskArgs: TaskArguments, hre: HardhatRuntimeEnvironment) {
+  if (taskArgs.useInternalProxyAddress) {
+    loadGatewayAddresses();
+  }
+  const proxyAddress = getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS");
+  const deployer = new Wallet(getRequiredEnvVar("DEPLOYER_PRIVATE_KEY")).connect(hre.ethers.provider);
+  return hre.ethers.getContractAt("GatewayConfig", proxyAddress, deployer);
 }
 
 // Upgrades the implementation of the proxy
@@ -365,8 +379,20 @@ task("task:upgradeGatewayConfig")
     true,
     types.boolean,
   )
+  .addOptionalParam(
+    "priorityCoprocessorTxSender",
+    "Priority coprocessor transaction sender to set during reinitialization; zero leaves priority mode disabled",
+    NO_PRIORITY_COPROCESSOR_TX_SENDER,
+    types.string,
+  )
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    await upgradeContract("GatewayConfig", "GATEWAY_CONFIG_ADDRESS", taskArgs, hre);
+    await upgradeContract(
+      "GatewayConfig",
+      "GATEWAY_CONFIG_ADDRESS",
+      taskArgs,
+      hre,
+      getGatewayConfigReinitializeArgs(taskArgs),
+    );
   });
 
 task("task:prepareUpgradeGatewayConfig")
@@ -390,8 +416,50 @@ task("task:prepareUpgradeGatewayConfig")
     true,
     types.boolean,
   )
+  .addOptionalParam(
+    "priorityCoprocessorTxSender",
+    "Priority coprocessor transaction sender to set during reinitialization; zero leaves priority mode disabled",
+    NO_PRIORITY_COPROCESSOR_TX_SENDER,
+    types.string,
+  )
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    await prepareUpgradeContract("GatewayConfig", "GATEWAY_CONFIG_ADDRESS", taskArgs, hre);
+    await prepareUpgradeContract(
+      "GatewayConfig",
+      "GATEWAY_CONFIG_ADDRESS",
+      taskArgs,
+      hre,
+      getGatewayConfigReinitializeArgs(taskArgs),
+    );
+  });
+
+task("task:setPriorityCoprocessorTxSender")
+  .addParam("priorityCoprocessorTxSender", "Registered coprocessor transaction sender to prioritize")
+  .addOptionalParam(
+    "useInternalProxyAddress",
+    "If proxy address from the /addresses directory should be used",
+    false,
+    types.boolean,
+  )
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    const gatewayConfig = await getGatewayConfigContract(taskArgs, hre);
+    const priorityCoprocessorTxSender = hre.ethers.getAddress(taskArgs.priorityCoprocessorTxSender);
+    const tx = await gatewayConfig.setPriorityCoprocessorTxSender(priorityCoprocessorTxSender);
+    console.log("Setting priority coprocessor transaction sender with tx:", tx.hash);
+    await tx.wait();
+  });
+
+task("task:removePriorityCoprocessorTxSender")
+  .addOptionalParam(
+    "useInternalProxyAddress",
+    "If proxy address from the /addresses directory should be used",
+    false,
+    types.boolean,
+  )
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    const gatewayConfig = await getGatewayConfigContract(taskArgs, hre);
+    const tx = await gatewayConfig.removePriorityCoprocessorTxSender();
+    console.log("Removing priority coprocessor transaction sender with tx:", tx.hash);
+    await tx.wait();
   });
 
 task("task:upgradeKMSGeneration")

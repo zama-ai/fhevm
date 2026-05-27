@@ -456,6 +456,33 @@ describe("InputVerification", function () {
       expect(proofVerificationConsensusTxSenders).to.deep.equal(expectedCoprocessorTxSenders);
     });
 
+    it("Should let only the priority coprocessor transaction sender finalize proof verification", async function () {
+      const priorityTxSender = coprocessorTxSenders[2];
+      await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(priorityTxSender.address);
+
+      await inputVerification
+        .connect(coprocessorTxSenders[0])
+        .verifyProofResponse(zkProofId, ctHandles, signatures[0], extraDataV0);
+
+      const nonPriorityThresholdTx = await inputVerification
+        .connect(coprocessorTxSenders[1])
+        .verifyProofResponse(zkProofId, ctHandles, signatures[1], extraDataV0);
+
+      await expect(nonPriorityThresholdTx).to.not.emit(inputVerification, "VerifyProofResponse");
+      expect(await inputVerification.getVerifyProofConsensusTxSenders(zkProofId)).to.deep.equal([]);
+
+      const priorityTx = await inputVerification
+        .connect(priorityTxSender)
+        .verifyProofResponse(zkProofId, ctHandles, signatures[2], extraDataV0);
+
+      await expect(priorityTx)
+        .to.emit(inputVerification, "VerifyProofResponse")
+        .withArgs(zkProofId, ctHandles, [signatures[2]]);
+      expect(await inputVerification.getVerifyProofConsensusTxSenders(zkProofId)).to.deep.equal([
+        priorityTxSender.address,
+      ]);
+    });
+
     it("Should revert in case of invalid zkProofId in verify proof response", async function () {
       // Check that a verify proof response with null (invalid) zkProofId reverts
       await expect(
@@ -757,6 +784,25 @@ describe("InputVerification", function () {
       // are the first 2 coprocessor transaction senders (the third one is ignored because it verified the proof)
       const proofRejectionConsensusTxSenders = await inputVerification.getRejectProofConsensusTxSenders(zkProofId);
       expect(proofRejectionConsensusTxSenders).to.deep.equal(expectedCoprocessorTxSenders);
+    });
+
+    it("Should let only the priority coprocessor transaction sender finalize proof rejection", async function () {
+      const priorityTxSender = coprocessorTxSenders[2];
+      await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(priorityTxSender.address);
+
+      await inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId, extraDataV0);
+      const nonPriorityThresholdTx = await inputVerification
+        .connect(coprocessorTxSenders[1])
+        .rejectProofResponse(zkProofId, extraDataV0);
+
+      await expect(nonPriorityThresholdTx).to.not.emit(inputVerification, "RejectProofResponse");
+
+      const priorityTx = await inputVerification.connect(priorityTxSender).rejectProofResponse(zkProofId, extraDataV0);
+
+      await expect(priorityTx).to.emit(inputVerification, "RejectProofResponse").withArgs(zkProofId);
+      expect(await inputVerification.getRejectProofConsensusTxSenders(zkProofId)).to.deep.equal([
+        priorityTxSender.address,
+      ]);
     });
 
     it("Should revert in case of invalid zkProofId in reject proof response", async function () {

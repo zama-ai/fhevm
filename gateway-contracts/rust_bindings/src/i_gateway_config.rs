@@ -73,6 +73,7 @@ interface IGatewayConfig {
     error KmsSignerSetExceedsProofFormatLimit(uint256 signerCount, uint256 maxAllowed);
     error KmsTxSenderAlreadyRegistered(address kmsTxSenderAddress);
     error NotPauser(address account);
+    error PriorityCoprocessorTxSenderNotRegistered(address coprocessorTxSenderAddress);
     error ThresholdExceedsProofFormatLimit(string thresholdName, uint256 threshold, uint256 maxAllowed);
 
     event AddHostChain(HostChain hostChain);
@@ -89,6 +90,7 @@ interface IGatewayConfig {
     event UpdateKmsContext(uint256 indexed newContextId, KmsNode[] newKmsNodes, uint256 newMpcThreshold, uint256 newPublicDecryptionThreshold, uint256 newUserDecryptionThreshold, uint256 newKmsGenThreshold);
     event UpdateKmsGenThresholdForContext(uint256 indexed contextId, uint256 newKmsGenThreshold);
     event UpdateMpcThresholdForContext(uint256 indexed contextId, uint256 newMpcThreshold);
+    event UpdatePriorityCoprocessorTxSender(address indexed coprocessorTxSenderAddress);
     event UpdatePublicDecryptionThresholdForContext(uint256 indexed contextId, uint256 newPublicDecryptionThreshold);
     event UpdateUserDecryptionThresholdForContext(uint256 indexed contextId, uint256 newUserDecryptionThreshold);
 
@@ -114,6 +116,7 @@ interface IGatewayConfig {
     function getKmsTxSenders() external view returns (address[] memory);
     function getKmsTxSendersForContext(uint256 contextId) external view returns (address[] memory);
     function getMpcThreshold() external view returns (uint256);
+    function getPriorityCoprocessorTxSender() external view returns (address);
     function getProtocolMetadata() external view returns (ProtocolMetadata memory);
     function getPublicDecryptionThresholdForContext(uint256 contextId) external view returns (uint256);
     function getUserDecryptionThresholdForContext(uint256 contextId) external view returns (uint256);
@@ -132,6 +135,8 @@ interface IGatewayConfig {
     function isValidKmsContext(uint256 contextId) external view returns (bool);
     function pauseAllGatewayContracts() external;
     function removeHostChain(uint256 chainId) external;
+    function removePriorityCoprocessorTxSender() external;
+    function setPriorityCoprocessorTxSender(address coprocessorTxSenderAddress) external;
     function unpauseAllGatewayContracts() external;
     function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external;
     function updateCoprocessors(Coprocessor[] memory newCoprocessors, uint256 newCoprocessorThreshold) external;
@@ -641,6 +646,19 @@ interface IGatewayConfig {
   },
   {
     "type": "function",
+    "name": "getPriorityCoprocessorTxSender",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getProtocolMetadata",
     "inputs": [],
     "outputs": [
@@ -968,6 +986,26 @@ interface IGatewayConfig {
         "name": "chainId",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "removePriorityCoprocessorTxSender",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setPriorityCoprocessorTxSender",
+    "inputs": [
+      {
+        "name": "coprocessorTxSenderAddress",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -1616,6 +1654,19 @@ interface IGatewayConfig {
   },
   {
     "type": "event",
+    "name": "UpdatePriorityCoprocessorTxSender",
+    "inputs": [
+      {
+        "name": "coprocessorTxSenderAddress",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "UpdatePublicDecryptionThresholdForContext",
     "inputs": [
       {
@@ -1989,6 +2040,17 @@ interface IGatewayConfig {
     "inputs": [
       {
         "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "PriorityCoprocessorTxSenderNotRegistered",
+    "inputs": [
+      {
+        "name": "coprocessorTxSenderAddress",
         "type": "address",
         "internalType": "address"
       }
@@ -6495,6 +6557,90 @@ error NotPauser(address account);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `PriorityCoprocessorTxSenderNotRegistered(address)` and selector `0x76dd5933`.
+```solidity
+error PriorityCoprocessorTxSenderNotRegistered(address coprocessorTxSenderAddress);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct PriorityCoprocessorTxSenderNotRegistered {
+        #[allow(missing_docs)]
+        pub coprocessorTxSenderAddress: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<PriorityCoprocessorTxSenderNotRegistered>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: PriorityCoprocessorTxSenderNotRegistered) -> Self {
+                (value.coprocessorTxSenderAddress,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for PriorityCoprocessorTxSenderNotRegistered {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    coprocessorTxSenderAddress: tuple.0,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for PriorityCoprocessorTxSenderNotRegistered {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "PriorityCoprocessorTxSenderNotRegistered(address)";
+            const SELECTOR: [u8; 4] = [118u8, 221u8, 89u8, 51u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.coprocessorTxSenderAddress,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ThresholdExceedsProofFormatLimit(string,uint256,uint256)` and selector `0x22ba52db`.
 ```solidity
 error ThresholdExceedsProofFormatLimit(string thresholdName, uint256 threshold, uint256 maxAllowed);
@@ -8201,6 +8347,120 @@ event UpdateMpcThresholdForContext(uint256 indexed contextId, uint256 newMpcThre
             #[inline]
             fn from(
                 this: &UpdateMpcThresholdForContext,
+            ) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `UpdatePriorityCoprocessorTxSender(address)` and selector `0x5203450ae17d684bb414e5b86b21c1791567a8c0c68cc98c8a95d336b684ba73`.
+```solidity
+event UpdatePriorityCoprocessorTxSender(address indexed coprocessorTxSenderAddress);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct UpdatePriorityCoprocessorTxSender {
+        #[allow(missing_docs)]
+        pub coprocessorTxSenderAddress: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for UpdatePriorityCoprocessorTxSender {
+            type DataTuple<'a> = ();
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Address,
+            );
+            const SIGNATURE: &'static str = "UpdatePriorityCoprocessorTxSender(address)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                82u8, 3u8, 69u8, 10u8, 225u8, 125u8, 104u8, 75u8, 180u8, 20u8, 229u8,
+                184u8, 107u8, 33u8, 193u8, 121u8, 21u8, 103u8, 168u8, 192u8, 198u8,
+                140u8, 201u8, 140u8, 138u8, 149u8, 211u8, 54u8, 182u8, 132u8, 186u8,
+                115u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    coprocessorTxSenderAddress: topics.1,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                ()
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(), self.coprocessorTxSenderAddress.clone())
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
+                    &self.coprocessorTxSenderAddress,
+                );
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData
+        for UpdatePriorityCoprocessorTxSender {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&UpdatePriorityCoprocessorTxSender>
+        for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(
+                this: &UpdatePriorityCoprocessorTxSender,
             ) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
@@ -11802,6 +12062,153 @@ function getMpcThreshold() external view returns (uint256);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getPriorityCoprocessorTxSender()` and selector `0xbf50df95`.
+```solidity
+function getPriorityCoprocessorTxSender() external view returns (address);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getPriorityCoprocessorTxSenderCall;
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getPriorityCoprocessorTxSender()`](getPriorityCoprocessorTxSenderCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getPriorityCoprocessorTxSenderReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getPriorityCoprocessorTxSenderCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getPriorityCoprocessorTxSenderCall) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getPriorityCoprocessorTxSenderCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getPriorityCoprocessorTxSenderReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getPriorityCoprocessorTxSenderReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getPriorityCoprocessorTxSenderReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getPriorityCoprocessorTxSenderCall {
+            type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = alloy::sol_types::private::Address;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Address,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getPriorityCoprocessorTxSender()";
+            const SELECTOR: [u8; 4] = [191u8, 80u8, 223u8, 149u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getPriorityCoprocessorTxSenderReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getPriorityCoprocessorTxSenderReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getProtocolMetadata()` and selector `0x48144c61`.
 ```solidity
 function getProtocolMetadata() external view returns (ProtocolMetadata memory);
@@ -14573,6 +14980,297 @@ function removeHostChain(uint256 chainId) external;
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `removePriorityCoprocessorTxSender()` and selector `0x7806e79b`.
+```solidity
+function removePriorityCoprocessorTxSender() external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct removePriorityCoprocessorTxSenderCall;
+    ///Container type for the return parameters of the [`removePriorityCoprocessorTxSender()`](removePriorityCoprocessorTxSenderCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct removePriorityCoprocessorTxSenderReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<removePriorityCoprocessorTxSenderCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: removePriorityCoprocessorTxSenderCall) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for removePriorityCoprocessorTxSenderCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<removePriorityCoprocessorTxSenderReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: removePriorityCoprocessorTxSenderReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for removePriorityCoprocessorTxSenderReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        impl removePriorityCoprocessorTxSenderReturn {
+            fn _tokenize(
+                &self,
+            ) -> <removePriorityCoprocessorTxSenderCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for removePriorityCoprocessorTxSenderCall {
+            type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = removePriorityCoprocessorTxSenderReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "removePriorityCoprocessorTxSender()";
+            const SELECTOR: [u8; 4] = [120u8, 6u8, 231u8, 155u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                removePriorityCoprocessorTxSenderReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `setPriorityCoprocessorTxSender(address)` and selector `0x84a04fd2`.
+```solidity
+function setPriorityCoprocessorTxSender(address coprocessorTxSenderAddress) external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct setPriorityCoprocessorTxSenderCall {
+        #[allow(missing_docs)]
+        pub coprocessorTxSenderAddress: alloy::sol_types::private::Address,
+    }
+    ///Container type for the return parameters of the [`setPriorityCoprocessorTxSender(address)`](setPriorityCoprocessorTxSenderCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct setPriorityCoprocessorTxSenderReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<setPriorityCoprocessorTxSenderCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: setPriorityCoprocessorTxSenderCall) -> Self {
+                    (value.coprocessorTxSenderAddress,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for setPriorityCoprocessorTxSenderCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        coprocessorTxSenderAddress: tuple.0,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<setPriorityCoprocessorTxSenderReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: setPriorityCoprocessorTxSenderReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for setPriorityCoprocessorTxSenderReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        impl setPriorityCoprocessorTxSenderReturn {
+            fn _tokenize(
+                &self,
+            ) -> <setPriorityCoprocessorTxSenderCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for setPriorityCoprocessorTxSenderCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = setPriorityCoprocessorTxSenderReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "setPriorityCoprocessorTxSender(address)";
+            const SELECTOR: [u8; 4] = [132u8, 160u8, 79u8, 210u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.coprocessorTxSenderAddress,
+                    ),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                setPriorityCoprocessorTxSenderReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `unpauseAllGatewayContracts()` and selector `0x798b58a6`.
 ```solidity
 function unpauseAllGatewayContracts() external;
@@ -16116,6 +16814,8 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
         #[allow(missing_docs)]
         getMpcThreshold(getMpcThresholdCall),
         #[allow(missing_docs)]
+        getPriorityCoprocessorTxSender(getPriorityCoprocessorTxSenderCall),
+        #[allow(missing_docs)]
         getProtocolMetadata(getProtocolMetadataCall),
         #[allow(missing_docs)]
         getPublicDecryptionThresholdForContext(
@@ -16153,6 +16853,10 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
         pauseAllGatewayContracts(pauseAllGatewayContractsCall),
         #[allow(missing_docs)]
         removeHostChain(removeHostChainCall),
+        #[allow(missing_docs)]
+        removePriorityCoprocessorTxSender(removePriorityCoprocessorTxSenderCall),
+        #[allow(missing_docs)]
+        setPriorityCoprocessorTxSender(setPriorityCoprocessorTxSenderCall),
         #[allow(missing_docs)]
         unpauseAllGatewayContracts(unpauseAllGatewayContractsCall),
         #[allow(missing_docs)]
@@ -16206,10 +16910,12 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
             [103u8, 153u8, 239u8, 82u8],
             [116u8, 32u8, 243u8, 212u8],
             [119u8, 211u8, 142u8, 36u8],
+            [120u8, 6u8, 231u8, 155u8],
             [121u8, 139u8, 88u8, 166u8],
             [124u8, 121u8, 126u8, 116u8],
             [126u8, 170u8, 200u8, 242u8],
             [131u8, 187u8, 46u8, 87u8],
+            [132u8, 160u8, 79u8, 210u8],
             [136u8, 45u8, 125u8, 211u8],
             [145u8, 100u8, 208u8, 174u8],
             [148u8, 71u8, 207u8, 212u8],
@@ -16220,6 +16926,7 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
             [177u8, 129u8, 205u8, 167u8],
             [180u8, 114u8, 43u8, 196u8],
             [186u8, 31u8, 49u8, 210u8],
+            [191u8, 80u8, 223u8, 149u8],
             [191u8, 155u8, 22u8, 200u8],
             [191u8, 243u8, 170u8, 186u8],
             [192u8, 174u8, 100u8, 247u8],
@@ -16240,7 +16947,7 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
     impl alloy_sol_types::SolInterface for IGatewayConfigCalls {
         const NAME: &'static str = "IGatewayConfigCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 49usize;
+        const COUNT: usize = 52usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -16310,6 +17017,9 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 Self::getMpcThreshold(_) => {
                     <getMpcThresholdCall as alloy_sol_types::SolCall>::SELECTOR
                 }
+                Self::getPriorityCoprocessorTxSender(_) => {
+                    <getPriorityCoprocessorTxSenderCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::getProtocolMetadata(_) => {
                     <getProtocolMetadataCall as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -16361,6 +17071,12 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 }
                 Self::removeHostChain(_) => {
                     <removeHostChainCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::removePriorityCoprocessorTxSender(_) => {
+                    <removePriorityCoprocessorTxSenderCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::setPriorityCoprocessorTxSender(_) => {
+                    <setPriorityCoprocessorTxSenderCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::unpauseAllGatewayContracts(_) => {
                     <unpauseAllGatewayContractsCall as alloy_sol_types::SolCall>::SELECTOR
@@ -16642,6 +17358,17 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                     updateMpcThresholdForContext
                 },
                 {
+                    fn removePriorityCoprocessorTxSender(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <removePriorityCoprocessorTxSenderCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::removePriorityCoprocessorTxSender)
+                    }
+                    removePriorityCoprocessorTxSender
+                },
+                {
                     fn unpauseAllGatewayContracts(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
@@ -16684,6 +17411,17 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                             .map(IGatewayConfigCalls::updateCoprocessors)
                     }
                     updateCoprocessors
+                },
+                {
+                    fn setPriorityCoprocessorTxSender(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <setPriorityCoprocessorTxSenderCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::setPriorityCoprocessorTxSender)
+                    }
+                    setPriorityCoprocessorTxSender
                 },
                 {
                     fn isCustodianSigner(
@@ -16796,6 +17534,17 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                             .map(IGatewayConfigCalls::getCustodianSigners)
                     }
                     getCustodianSigners
+                },
+                {
+                    fn getPriorityCoprocessorTxSender(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <getPriorityCoprocessorTxSenderCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::getPriorityCoprocessorTxSender)
+                    }
+                    getPriorityCoprocessorTxSender
                 },
                 {
                     fn isValidKmsContext(
@@ -17209,6 +17958,17 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                     updateMpcThresholdForContext
                 },
                 {
+                    fn removePriorityCoprocessorTxSender(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <removePriorityCoprocessorTxSenderCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::removePriorityCoprocessorTxSender)
+                    }
+                    removePriorityCoprocessorTxSender
+                },
+                {
                     fn unpauseAllGatewayContracts(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
@@ -17251,6 +18011,17 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                             .map(IGatewayConfigCalls::updateCoprocessors)
                     }
                     updateCoprocessors
+                },
+                {
+                    fn setPriorityCoprocessorTxSender(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <setPriorityCoprocessorTxSenderCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::setPriorityCoprocessorTxSender)
+                    }
+                    setPriorityCoprocessorTxSender
                 },
                 {
                     fn isCustodianSigner(
@@ -17363,6 +18134,17 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                             .map(IGatewayConfigCalls::getCustodianSigners)
                     }
                     getCustodianSigners
+                },
+                {
+                    fn getPriorityCoprocessorTxSender(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <getPriorityCoprocessorTxSenderCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::getPriorityCoprocessorTxSender)
+                    }
+                    getPriorityCoprocessorTxSender
                 },
                 {
                     fn isValidKmsContext(
@@ -17642,6 +18424,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                         inner,
                     )
                 }
+                Self::getPriorityCoprocessorTxSender(inner) => {
+                    <getPriorityCoprocessorTxSenderCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::getProtocolMetadata(inner) => {
                     <getProtocolMetadataCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
@@ -17725,6 +18512,16 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 }
                 Self::removeHostChain(inner) => {
                     <removeHostChainCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::removePriorityCoprocessorTxSender(inner) => {
+                    <removePriorityCoprocessorTxSenderCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::setPriorityCoprocessorTxSender(inner) => {
+                    <setPriorityCoprocessorTxSenderCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -17910,6 +18707,12 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                         out,
                     )
                 }
+                Self::getPriorityCoprocessorTxSender(inner) => {
+                    <getPriorityCoprocessorTxSenderCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::getProtocolMetadata(inner) => {
                     <getProtocolMetadataCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
@@ -18014,6 +18817,18 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 }
                 Self::removeHostChain(inner) => {
                     <removeHostChainCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::removePriorityCoprocessorTxSender(inner) => {
+                    <removePriorityCoprocessorTxSenderCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::setPriorityCoprocessorTxSender(inner) => {
+                    <setPriorityCoprocessorTxSenderCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -18150,6 +18965,10 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
         #[allow(missing_docs)]
         NotPauser(NotPauser),
         #[allow(missing_docs)]
+        PriorityCoprocessorTxSenderNotRegistered(
+            PriorityCoprocessorTxSenderNotRegistered,
+        ),
+        #[allow(missing_docs)]
         ThresholdExceedsProofFormatLimit(ThresholdExceedsProofFormatLimit),
     }
     #[automatically_derived]
@@ -18177,6 +18996,7 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
             [84u8, 123u8, 142u8, 75u8],
             [90u8, 115u8, 227u8, 131u8],
             [109u8, 165u8, 127u8, 153u8],
+            [118u8, 221u8, 89u8, 51u8],
             [119u8, 221u8, 190u8, 129u8],
             [122u8, 162u8, 109u8, 16u8],
             [132u8, 32u8, 143u8, 35u8],
@@ -18203,7 +19023,7 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
     impl alloy_sol_types::SolInterface for IGatewayConfigErrors {
         const NAME: &'static str = "IGatewayConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 36usize;
+        const COUNT: usize = 37usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -18310,6 +19130,9 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                     <KmsTxSenderAlreadyRegistered as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::NotPauser(_) => <NotPauser as alloy_sol_types::SolError>::SELECTOR,
+                Self::PriorityCoprocessorTxSenderNotRegistered(_) => {
+                    <PriorityCoprocessorTxSenderNotRegistered as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::ThresholdExceedsProofFormatLimit(_) => {
                     <ThresholdExceedsProofFormatLimit as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -18513,6 +19336,19 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                             )
                     }
                     CustodianTxSenderAlreadyRegistered
+                },
+                {
+                    fn PriorityCoprocessorTxSenderNotRegistered(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <PriorityCoprocessorTxSenderNotRegistered as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                IGatewayConfigErrors::PriorityCoprocessorTxSenderNotRegistered,
+                            )
+                    }
+                    PriorityCoprocessorTxSenderNotRegistered
                 },
                 {
                     fn InvalidKmsContext(
@@ -18951,6 +19787,19 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                     CustodianTxSenderAlreadyRegistered
                 },
                 {
+                    fn PriorityCoprocessorTxSenderNotRegistered(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <PriorityCoprocessorTxSenderNotRegistered as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                IGatewayConfigErrors::PriorityCoprocessorTxSenderNotRegistered,
+                            )
+                    }
+                    PriorityCoprocessorTxSenderNotRegistered
+                },
+                {
                     fn InvalidKmsContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
@@ -19367,6 +20216,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 Self::NotPauser(inner) => {
                     <NotPauser as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
+                Self::PriorityCoprocessorTxSenderNotRegistered(inner) => {
+                    <PriorityCoprocessorTxSenderNotRegistered as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::ThresholdExceedsProofFormatLimit(inner) => {
                     <ThresholdExceedsProofFormatLimit as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -19584,6 +20438,12 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 Self::NotPauser(inner) => {
                     <NotPauser as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
+                Self::PriorityCoprocessorTxSenderNotRegistered(inner) => {
+                    <PriorityCoprocessorTxSenderNotRegistered as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::ThresholdExceedsProofFormatLimit(inner) => {
                     <ThresholdExceedsProofFormatLimit as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -19626,6 +20486,8 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
         #[allow(missing_docs)]
         UpdateMpcThresholdForContext(UpdateMpcThresholdForContext),
         #[allow(missing_docs)]
+        UpdatePriorityCoprocessorTxSender(UpdatePriorityCoprocessorTxSender),
+        #[allow(missing_docs)]
         UpdatePublicDecryptionThresholdForContext(
             UpdatePublicDecryptionThresholdForContext,
         ),
@@ -19656,6 +20518,12 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 70u8, 96u8, 64u8, 64u8, 172u8, 47u8, 169u8, 11u8, 112u8, 151u8, 4u8,
                 179u8, 158u8, 80u8, 221u8, 201u8, 250u8, 145u8, 12u8, 213u8, 104u8,
                 240u8, 18u8, 77u8, 237u8, 73u8, 110u8, 173u8, 215u8, 200u8, 64u8, 224u8,
+            ],
+            [
+                82u8, 3u8, 69u8, 10u8, 225u8, 125u8, 104u8, 75u8, 180u8, 20u8, 229u8,
+                184u8, 107u8, 33u8, 193u8, 121u8, 21u8, 103u8, 168u8, 192u8, 198u8,
+                140u8, 201u8, 140u8, 138u8, 149u8, 211u8, 54u8, 182u8, 132u8, 186u8,
+                115u8,
             ],
             [
                 87u8, 244u8, 103u8, 52u8, 4u8, 69u8, 75u8, 148u8, 3u8, 197u8, 129u8,
@@ -19727,7 +20595,7 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for IGatewayConfigEvents {
         const NAME: &'static str = "IGatewayConfigEvents";
-        const COUNT: usize = 16usize;
+        const COUNT: usize = 17usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
@@ -19848,6 +20716,15 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                         .map(Self::UpdateMpcThresholdForContext)
                 }
                 Some(
+                    <UpdatePriorityCoprocessorTxSender as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <UpdatePriorityCoprocessorTxSender as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::UpdatePriorityCoprocessorTxSender)
+                }
+                Some(
                     <UpdatePublicDecryptionThresholdForContext as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
                 ) => {
                     <UpdatePublicDecryptionThresholdForContext as alloy_sol_types::SolEvent>::decode_raw_log(
@@ -19925,6 +20802,9 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 Self::UpdateMpcThresholdForContext(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
+                Self::UpdatePriorityCoprocessorTxSender(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
                 Self::UpdatePublicDecryptionThresholdForContext(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
@@ -19975,6 +20855,9 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::UpdateMpcThresholdForContext(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::UpdatePriorityCoprocessorTxSender(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::UpdatePublicDecryptionThresholdForContext(inner) => {
@@ -20318,6 +21201,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<&P, getMpcThresholdCall, N> {
             self.call_builder(&getMpcThresholdCall)
         }
+        ///Creates a new call builder for the [`getPriorityCoprocessorTxSender`] function.
+        pub fn getPriorityCoprocessorTxSender(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<&P, getPriorityCoprocessorTxSenderCall, N> {
+            self.call_builder(&getPriorityCoprocessorTxSenderCall)
+        }
         ///Creates a new call builder for the [`getProtocolMetadata`] function.
         pub fn getProtocolMetadata(
             &self,
@@ -20492,6 +21381,27 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             chainId: alloy::sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<&P, removeHostChainCall, N> {
             self.call_builder(&removeHostChainCall { chainId })
+        }
+        ///Creates a new call builder for the [`removePriorityCoprocessorTxSender`] function.
+        pub fn removePriorityCoprocessorTxSender(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<
+            &P,
+            removePriorityCoprocessorTxSenderCall,
+            N,
+        > {
+            self.call_builder(&removePriorityCoprocessorTxSenderCall)
+        }
+        ///Creates a new call builder for the [`setPriorityCoprocessorTxSender`] function.
+        pub fn setPriorityCoprocessorTxSender(
+            &self,
+            coprocessorTxSenderAddress: alloy::sol_types::private::Address,
+        ) -> alloy_contract::SolCallBuilder<&P, setPriorityCoprocessorTxSenderCall, N> {
+            self.call_builder(
+                &setPriorityCoprocessorTxSenderCall {
+                    coprocessorTxSenderAddress,
+                },
+            )
         }
         ///Creates a new call builder for the [`unpauseAllGatewayContracts`] function.
         pub fn unpauseAllGatewayContracts(
@@ -20718,6 +21628,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::Event<&P, UpdateMpcThresholdForContext, N> {
             self.event_filter::<UpdateMpcThresholdForContext>()
+        }
+        ///Creates a new event filter for the [`UpdatePriorityCoprocessorTxSender`] event.
+        pub fn UpdatePriorityCoprocessorTxSender_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, UpdatePriorityCoprocessorTxSender, N> {
+            self.event_filter::<UpdatePriorityCoprocessorTxSender>()
         }
         ///Creates a new event filter for the [`UpdatePublicDecryptionThresholdForContext`] event.
         pub fn UpdatePublicDecryptionThresholdForContext_filter(

@@ -43,7 +43,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     string private constant CONTRACT_NAME = "GatewayConfig";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 6;
+    uint256 private constant MINOR_VERSION = 7;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -52,7 +52,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 8;
+    uint64 private constant REINITIALIZER_VERSION = 9;
 
     /**
      * @notice The address of the all gateway contracts
@@ -160,6 +160,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         mapping(uint256 contextId => bool isDestroyed) destroyedKmsContexts;
         /// @notice Whether a registered host chain has been disabled.
         mapping(uint256 chainId => bool isDisabled) disabledHostChains;
+        /// @notice The coprocessor transaction sender that can finalize consensus alone.
+        address priorityCoprocessorTxSender;
     }
 
     /**
@@ -263,11 +265,20 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice Re-initializes the contract from V6.
+     * @notice Re-initializes the contract from V7.
+     * @param initialPriorityCoprocessorTxSender The registered priority coprocessor transaction sender to set,
+     *        or zero to leave priority mode disabled.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV7() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV8(
+        address initialPriorityCoprocessorTxSender
+    ) public virtual reinitializer(REINITIALIZER_VERSION) {
+        if (initialPriorityCoprocessorTxSender != address(0)) {
+            _requireRegisteredPriorityCoprocessorTxSender(initialPriorityCoprocessorTxSender);
+            _updatePriorityCoprocessorTxSender(initialPriorityCoprocessorTxSender);
+        }
+    }
 
     /**
      * @notice See {IGatewayConfig-isPauser}.
@@ -345,6 +356,13 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 newCoprocessorThreshold
     ) external virtual onlyOwner whenInputVerificationPaused {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        address priorityCoprocessorTxSender = $.priorityCoprocessorTxSender;
+        if (
+            priorityCoprocessorTxSender != address(0) &&
+            !_containsCoprocessorTxSender(newCoprocessors, priorityCoprocessorTxSender)
+        ) {
+            revert PriorityCoprocessorTxSenderNotRegistered(priorityCoprocessorTxSender);
+        }
 
         // Remove the old coprocessors
         uint256 oldCoprocessorTxSenderAddressesLength = $.coprocessorTxSenderAddresses.length;
@@ -442,6 +460,21 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     ) external virtual onlyOwner whenInputVerificationPaused {
         _setCoprocessorThreshold(newCoprocessorThreshold);
         emit UpdateCoprocessorThreshold(newCoprocessorThreshold);
+    }
+
+    /**
+     * @notice See {IGatewayConfig-setPriorityCoprocessorTxSender}.
+     */
+    function setPriorityCoprocessorTxSender(address coprocessorTxSenderAddress) external virtual onlyOwner {
+        _requireRegisteredPriorityCoprocessorTxSender(coprocessorTxSenderAddress);
+        _updatePriorityCoprocessorTxSender(coprocessorTxSenderAddress);
+    }
+
+    /**
+     * @notice See {IGatewayConfig-removePriorityCoprocessorTxSender}.
+     */
+    function removePriorityCoprocessorTxSender() external virtual onlyOwner {
+        _updatePriorityCoprocessorTxSender(address(0));
     }
 
     /**
@@ -669,6 +702,14 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function getCoprocessorMajorityThreshold() external view virtual returns (uint256) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         return $.coprocessorThreshold;
+    }
+
+    /**
+     * @notice See {IGatewayConfig-getPriorityCoprocessorTxSender}.
+     */
+    function getPriorityCoprocessorTxSender() external view virtual returns (address) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        return $.priorityCoprocessorTxSender;
     }
 
     /**
@@ -1113,6 +1154,42 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         }
 
         $.coprocessorThreshold = newCoprocessorThreshold;
+    }
+
+    /**
+     * @notice Sets the priority coprocessor transaction sender.
+     * @param coprocessorTxSenderAddress The priority coprocessor transaction sender, or zero to disable priority mode.
+     */
+    function _updatePriorityCoprocessorTxSender(address coprocessorTxSenderAddress) internal virtual {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        $.priorityCoprocessorTxSender = coprocessorTxSenderAddress;
+        emit UpdatePriorityCoprocessorTxSender(coprocessorTxSenderAddress);
+    }
+
+    /**
+     * @notice Reverts if the priority coprocessor transaction sender is not registered.
+     * @param coprocessorTxSenderAddress The priority coprocessor transaction sender to validate.
+     */
+    function _requireRegisteredPriorityCoprocessorTxSender(address coprocessorTxSenderAddress) internal view virtual {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        if (!$.isCoprocessorTxSender[coprocessorTxSenderAddress]) {
+            revert PriorityCoprocessorTxSenderNotRegistered(coprocessorTxSenderAddress);
+        }
+    }
+
+    /**
+     * @notice Returns whether a coprocessor transaction sender is present in a calldata coprocessor list.
+     */
+    function _containsCoprocessorTxSender(
+        Coprocessor[] calldata coprocessors,
+        address coprocessorTxSenderAddress
+    ) internal pure virtual returns (bool) {
+        for (uint256 i = 0; i < coprocessors.length; i++) {
+            if (coprocessors[i].txSenderAddress == coprocessorTxSenderAddress) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

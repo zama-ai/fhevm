@@ -128,6 +128,12 @@ interface IGatewayConfig {
     event UpdateCoprocessorThreshold(uint256 newCoprocessorThreshold);
 
     /**
+     * @notice Emitted when the priority coprocessor transaction sender has been updated.
+     * @param coprocessorTxSenderAddress The new priority coprocessor transaction sender, or zero when disabled.
+     */
+    event UpdatePriorityCoprocessorTxSender(address indexed coprocessorTxSenderAddress);
+
+    /**
      * @notice Emitted when a new host chain has been registered.
      * @param hostChain The new host chain metadata.
      */
@@ -264,6 +270,12 @@ interface IGatewayConfig {
      * @param nCoprocessors The number of coprocessors.
      */
     error InvalidHighCoprocessorThreshold(uint256 coprocessorThreshold, uint256 nCoprocessors);
+
+    /**
+     * @notice Error emitted when the priority coprocessor transaction sender is not registered.
+     * @param coprocessorTxSenderAddress The invalid priority coprocessor transaction sender.
+     */
+    error PriorityCoprocessorTxSenderNotRegistered(address coprocessorTxSenderAddress);
 
     /**
      * @notice Emitted when all the pausable gateway contracts are paused.
@@ -488,6 +500,19 @@ interface IGatewayConfig {
     function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external;
 
     /**
+     * @notice Set the priority coprocessor transaction sender.
+     * @dev When set, coprocessor consensus is finalized only by this registered transaction sender.
+     * @param coprocessorTxSenderAddress The registered coprocessor transaction sender to prioritize.
+     */
+    function setPriorityCoprocessorTxSender(address coprocessorTxSenderAddress) external;
+
+    /**
+     * @notice Remove the priority coprocessor transaction sender.
+     * @dev Restores normal threshold-based coprocessor consensus.
+     */
+    function removePriorityCoprocessorTxSender() external;
+
+    /**
      * @notice Add a new host chain metadata to the GatewayConfig contract.
      * @dev The associated chain ID must be non-zero and representable by a uint64.
      * @param hostChain The new host chain metadata to include.
@@ -603,6 +628,12 @@ interface IGatewayConfig {
      * @return The coprocessor majority threshold.
      */
     function getCoprocessorMajorityThreshold() external view returns (uint256);
+
+    /**
+     * @notice Get the priority coprocessor transaction sender.
+     * @return The priority coprocessor transaction sender, or zero when disabled.
+     */
+    function getPriorityCoprocessorTxSender() external view returns (address);
 
     /**
      * @notice Get the metadata of the KMS node with the given transaction sender address.

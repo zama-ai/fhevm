@@ -45,6 +45,8 @@ contract GatewayConfigMock {
 
     event UpdateCoprocessorThreshold(uint256 newCoprocessorThreshold);
 
+    event UpdatePriorityCoprocessorTxSender(address indexed coprocessorTxSenderAddress);
+
     event AddHostChain(HostChain hostChain);
 
     event DisableHostChain(uint256 indexed chainId);

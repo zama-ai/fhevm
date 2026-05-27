@@ -187,6 +187,10 @@ describe("GatewayConfig", function () {
       ]);
     });
 
+    it("Should expose the GatewayConfig version", async function () {
+      expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.7.0");
+    });
+
     it("Should revert because the KMS nodes list is empty", async function () {
       await expect(
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
@@ -1097,6 +1101,33 @@ describe("GatewayConfig", function () {
             expect(await gatewayConfig.isCoprocessorTxSender(coprocessorTxSender)).to.be.false;
             expect(await gatewayConfig.getCoprocessor(coprocessorTxSender)).to.deep.equal(toValues(nullCoprocessor));
           }
+        });
+
+        it("Should set and remove the priority coprocessor transaction sender", async function () {
+          const priorityTxSender = coprocessorTxSenders[0].address;
+
+          const setTx = await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(priorityTxSender);
+          await expect(setTx).to.emit(gatewayConfig, "UpdatePriorityCoprocessorTxSender").withArgs(priorityTxSender);
+          expect(await gatewayConfig.getPriorityCoprocessorTxSender()).to.equal(priorityTxSender);
+
+          const removeTx = await gatewayConfig.connect(owner).removePriorityCoprocessorTxSender();
+          await expect(removeTx).to.emit(gatewayConfig, "UpdatePriorityCoprocessorTxSender").withArgs(ZeroAddress);
+          expect(await gatewayConfig.getPriorityCoprocessorTxSender()).to.equal(ZeroAddress);
+        });
+
+        it("Should revert when setting an unregistered priority coprocessor transaction sender", async function () {
+          await expect(gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(fakeTxSender.address))
+            .to.be.revertedWithCustomError(gatewayConfig, "PriorityCoprocessorTxSenderNotRegistered")
+            .withArgs(fakeTxSender.address);
+        });
+
+        it("Should revert when removing the priority coprocessor through a coprocessor update", async function () {
+          const priorityTxSender = coprocessorTxSenders[0].address;
+          await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(priorityTxSender);
+
+          await expect(gatewayConfig.connect(owner).updateCoprocessors(coprocessors.slice(1), 1))
+            .to.be.revertedWithCustomError(gatewayConfig, "PriorityCoprocessorTxSenderNotRegistered")
+            .withArgs(priorityTxSender);
         });
 
         it("Should revert because the sender is not the owner", async function () {
