@@ -3,6 +3,7 @@ import { Command } from "@commander-js/extra-typings";
 import { consola } from "consola";
 
 import { DEFAULT_NETWORK } from "./src/config";
+import { registerDelegatedUserDecryptCommands } from "./src/cli/commands/delegated-user-decrypt";
 import { registerFheTestCommands } from "./src/cli/commands/fhe-test";
 import { registerInputProofCommand } from "./src/cli/commands/input-proof";
 import { registerPublicDecryptCommands } from "./src/cli/commands/public-decrypt";
@@ -28,6 +29,7 @@ const program = new Command()
 registerInputProofCommand(program);
 registerPublicDecryptCommands(program);
 registerUserDecryptCommands(program);
+registerDelegatedUserDecryptCommands(program);
 registerFheTestCommands(program);
 
 program.parseAsync().catch((error: unknown) => {
