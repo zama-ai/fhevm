@@ -7,12 +7,14 @@ on:
         paths:
             - "sdk/js-sdk/src/**"
             - "sdk/js-sdk/test/browser/**"
+            - "sdk/js-sdk/test/browserstack/**"
     pull_request:
         branches:
             - main
         paths:
             - "sdk/js-sdk/src/**"
             - "sdk/js-sdk/test/browser/**"
+            - "sdk/js-sdk/test/browserstack/**"
     release:
         types:
             - published
