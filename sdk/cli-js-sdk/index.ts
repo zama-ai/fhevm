@@ -1,7 +1,7 @@
 #!/usr/bin/env -S node --env-file=.env --import tsx
 import { Command, InvalidArgumentError } from "@commander-js/extra-typings";
 import { consola } from "consola";
-import type { Hex } from "viem";
+import { isAddress, isHex, type Hex } from "viem";
 
 import { DEFAULT_NETWORK } from "./src/config";
 import {
@@ -17,7 +17,7 @@ import {
   type FheValueType,
   type NetworkName,
 } from "./src/types";
-import { normalizeHexArray, parseClearValue, serializeValue } from "./src/values";
+import { parseClearValue, serializeValue } from "./src/values";
 
 const parseNetwork = (value: string): NetworkName => {
   if (NETWORKS.includes(value as NetworkName)) return value as NetworkName;
@@ -35,9 +35,24 @@ const parseValueType = (value: string): FheValueType => {
   );
 };
 
-const collectHex = (value: string, previous: string[] = []): string[] => [
+const parseAddress = (value: string): Hex => {
+  if (isAddress(value)) return value;
+  throw new InvalidArgumentError(`Invalid address: ${value}`);
+};
+
+const parseBytes32 = (value: string): Hex => {
+  if (isHex(value) && value.length === 66) return value;
+  throw new InvalidArgumentError(`Invalid bytes32 hex value: ${value}`);
+};
+
+const parsePrivateKey = (value: string): Hex => {
+  if (isHex(value) && value.length === 66) return value;
+  throw new InvalidArgumentError(`Invalid private key: ${value}`);
+};
+
+const collectHandle = (value: string, previous: Hex[] = []): Hex[] => [
   ...previous,
-  value,
+  parseBytes32(value),
 ];
 
 const printJson = (value: unknown) => {
@@ -103,8 +118,12 @@ program
     "bool",
   )
   .option("--value <value>", "clear value to encrypt; defaults to a random value")
-  .option("--contract <address>", "contract address bound into the proof")
-  .option("--user <address>", "user address bound into the proof")
+  .option(
+    "--contract <address>",
+    "contract address bound into the proof",
+    parseAddress,
+  )
+  .option("--user <address>", "user address bound into the proof", parseAddress)
   .action(async (options, command) => {
     const globals = getGlobalOptions(command);
     const value =
@@ -117,8 +136,8 @@ program
       rpcUrl: globals.rpcUrl,
       type: options.type,
       value,
-      contractAddress: options.contract as Hex | undefined,
-      userAddress: options.user as Hex | undefined,
+      contractAddress: options.contract,
+      userAddress: options.user,
       onProgress: createProgressReporter(),
     });
 
@@ -148,17 +167,26 @@ publicDecryptCommand
     parseValueType,
     "bool",
   )
-  .option("--account <address>", "account used for FHETest.getHandleOf")
-  .option("--contract <address>", "FHETest contract address override")
+  .option(
+    "--account <address>",
+    "account used for FHETest.getHandleOf",
+    parseAddress,
+  )
+  .option(
+    "--contract <address>",
+    "FHETest contract address override",
+    parseAddress,
+  )
   .option(
     "--handle <handle>",
     "encrypted handle to decrypt directly; repeat for multiple",
-    collectHex,
+    collectHandle,
     [],
   )
   .option(
     "--private-key <privateKey>",
     "wallet private key; falls back to PRIVATE_KEY",
+    parsePrivateKey,
   )
   .option("--mnemonic <mnemonic>", "wallet mnemonic; falls back to MNEMONIC")
   .action(async (options, command) => {
@@ -168,10 +196,10 @@ publicDecryptCommand
       relayerUrl: globals.relayerUrl,
       rpcUrl: globals.rpcUrl,
       type: options.type,
-      contractAddress: options.contract as Hex | undefined,
-      account: options.account as Hex | undefined,
-      handles: normalizeHexArray(options.handle),
-      privateKey: options.privateKey as Hex | undefined,
+      contractAddress: options.contract,
+      account: options.account,
+      handles: options.handle,
+      privateKey: options.privateKey,
       mnemonic: options.mnemonic,
       onProgress: createProgressReporter(),
     });
@@ -191,10 +219,15 @@ publicDecryptCommand
     "bool",
   )
   .option("--value <value>", "clear value to encrypt; defaults to random")
-  .option("--contract <address>", "FHETest contract address override")
+  .option(
+    "--contract <address>",
+    "FHETest contract address override",
+    parseAddress,
+  )
   .option(
     "--private-key <privateKey>",
     "wallet private key; falls back to PRIVATE_KEY",
+    parsePrivateKey,
   )
   .option("--mnemonic <mnemonic>", "wallet mnemonic; falls back to MNEMONIC")
   .action(async (options, command) => {
@@ -209,8 +242,8 @@ publicDecryptCommand
       rpcUrl: globals.rpcUrl,
       type: options.type,
       value,
-      contractAddress: options.contract as Hex | undefined,
-      privateKey: options.privateKey as Hex | undefined,
+      contractAddress: options.contract,
+      privateKey: options.privateKey,
       mnemonic: options.mnemonic,
       onProgress: createProgressReporter(),
     });
@@ -236,27 +269,32 @@ publicDecryptCommand
     parseValueType,
     "bool",
   )
-  .option("--contract <address>", "FHETest contract address override")
+  .option(
+    "--contract <address>",
+    "FHETest contract address override",
+    parseAddress,
+  )
   .option(
     "--private-key <privateKey>",
     "wallet private key; falls back to PRIVATE_KEY",
+    parsePrivateKey,
   )
   .option("--mnemonic <mnemonic>", "wallet mnemonic; falls back to MNEMONIC")
   .action(async (options, command) => {
-  const globals = getGlobalOptions(command);
-  const result = await makePublicAndDecrypt({
-    network: globals.network,
-    relayerUrl: globals.relayerUrl,
-    rpcUrl: globals.rpcUrl,
-    type: options.type,
-    contractAddress: options.contract as Hex | undefined,
-    privateKey: options.privateKey as Hex | undefined,
-    mnemonic: options.mnemonic,
-    onProgress: createProgressReporter(),
-  });
+    const globals = getGlobalOptions(command);
+    const result = await makePublicAndDecrypt({
+      network: globals.network,
+      relayerUrl: globals.relayerUrl,
+      rpcUrl: globals.rpcUrl,
+      type: options.type,
+      contractAddress: options.contract,
+      privateKey: options.privateKey,
+      mnemonic: options.mnemonic,
+      onProgress: createProgressReporter(),
+    });
 
-  printJson(result);
-});
+    printJson(result);
+  });
 
 const fheTestCommand = program
   .command("fhe-test")
@@ -270,29 +308,34 @@ fheTestCommand
     `initialize one type (${supportedValueTypes}); defaults to all`,
     parseValueType,
   )
-  .option("--contract <address>", "FHETest contract address override")
+  .option(
+    "--contract <address>",
+    "FHETest contract address override",
+    parseAddress,
+  )
   .option("--force", "overwrite existing handles", false)
   .option(
     "--private-key <privateKey>",
     "wallet private key; falls back to PRIVATE_KEY",
+    parsePrivateKey,
   )
   .option("--mnemonic <mnemonic>", "wallet mnemonic; falls back to MNEMONIC")
   .action(async (options, command) => {
-  const globals = getGlobalOptions(command);
-  const result = await initFheTest({
-    network: globals.network,
-    relayerUrl: globals.relayerUrl,
-    rpcUrl: globals.rpcUrl,
-    type: options.type,
-    contractAddress: options.contract as Hex | undefined,
-    force: options.force,
-    privateKey: options.privateKey as Hex | undefined,
-    mnemonic: options.mnemonic,
-    onProgress: createProgressReporter(),
-  });
+    const globals = getGlobalOptions(command);
+    const result = await initFheTest({
+      network: globals.network,
+      relayerUrl: globals.relayerUrl,
+      rpcUrl: globals.rpcUrl,
+      type: options.type,
+      contractAddress: options.contract,
+      force: options.force,
+      privateKey: options.privateKey,
+      mnemonic: options.mnemonic,
+      onProgress: createProgressReporter(),
+    });
 
-  printJson(result);
-});
+    printJson(result);
+  });
 
 program.parseAsync().catch((error: unknown) => {
   consola.error(error instanceof Error ? error.message : error);

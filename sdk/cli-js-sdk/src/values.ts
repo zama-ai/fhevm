@@ -1,4 +1,4 @@
-import { isAddress, type Hex } from "viem";
+import { isAddress } from "viem";
 
 import {
   randomAddress,
@@ -10,6 +10,17 @@ import {
   randomUint256,
 } from "./random";
 import type { FheClearValue, FheValueType, EncryptValue } from "./types";
+
+const UINT_BITS = {
+  uint8: 8n,
+  uint16: 16n,
+  uint32: 32n,
+  uint64: 64n,
+  uint128: 128n,
+  uint256: 256n,
+} as const satisfies Record<Exclude<FheValueType, "bool" | "address">, bigint>;
+
+type UintValueType = keyof typeof UINT_BITS;
 
 export const createInputProofValues = (): readonly EncryptValue[] => [
   { type: "bool", value: randomUint8() % 2 === 0 },
@@ -48,6 +59,25 @@ export const createFreshDecryptValues = (
 ): readonly EncryptValue[] => [createRandomValue(valueType)];
 
 const maxUint = (bits: bigint): bigint => (1n << bits) - 1n;
+
+const parseUint = (valueType: UintValueType, value: string): bigint => {
+  if (value.length === 0 || value.trim() !== value) {
+    throw new Error(`Invalid ${valueType} value: ${value}`);
+  }
+
+  let parsed: bigint;
+  try {
+    parsed = BigInt(value);
+  } catch {
+    throw new Error(`Invalid ${valueType} value: ${value}`);
+  }
+
+  if (parsed < 0n || parsed > maxUint(UINT_BITS[valueType])) {
+    throw new Error(`Invalid ${valueType} value: ${value}`);
+  }
+
+  return parsed;
+};
 
 export const createInitValue = (valueType: FheValueType): EncryptValue => {
   switch (valueType) {
@@ -90,18 +120,12 @@ export const parseClearValue = (
     case "uint8":
     case "uint16":
     case "uint32": {
-      const parsed = Number(value);
-      if (!Number.isInteger(parsed) || parsed < 0) {
-        throw new Error(`Invalid ${valueType} value: ${value}`);
-      }
-      return parsed;
+      return Number(parseUint(valueType, value));
     }
     case "uint64":
     case "uint128":
     case "uint256": {
-      const parsed = BigInt(value);
-      if (parsed < 0n) throw new Error(`Invalid ${valueType} value: ${value}`);
-      return parsed;
+      return parseUint(valueType, value);
     }
   }
 };
@@ -115,6 +139,3 @@ export const serializeValue = (
       ? value.value.toString()
       : String(value.value),
 });
-
-export const normalizeHexArray = (values: readonly string[]): readonly Hex[] =>
-  values.map((value) => value as Hex);
