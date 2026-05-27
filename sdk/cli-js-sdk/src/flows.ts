@@ -2,7 +2,6 @@ import type { FhevmChain } from "@fhevm/sdk/chains";
 import type { Hex } from "viem";
 
 import {
-  createClients,
   createClientContext,
   createWalletContext,
   loadAccount,
@@ -16,6 +15,8 @@ import {
   simulateSetClearValue,
   simulateSetEncryptedValue,
 } from "./fhe-test/writes";
+import { encryptValues } from "./fhevm/encryption";
+import { readPublicValues } from "./fhevm/public-decrypt";
 import { sendAndWait } from "./shared/transactions";
 import type { ProgressReporter } from "./shared/progress";
 import type {
@@ -32,8 +33,6 @@ import {
   createInitValue,
   createRandomValue,
 } from "./values";
-
-type FhevmClientLike = ReturnType<typeof createClients>["fhevm"];
 
 export type RequestInputProofOptions = ClientOptions &
   Readonly<{
@@ -59,13 +58,12 @@ export const requestInputProof = async (
       ? [createRandomValue(valueType)]
       : [{ type: valueType, value: options.value }]);
 
-  options.onProgress?.(
-    `Encrypting ${values.length.toString()} ${valueType} value(s) and requesting verified input proof`,
-  );
-  const encrypted = await fhevm.encryptValues({
+  const encrypted = await encryptValues(fhevm, {
     contractAddress,
     userAddress,
     values,
+    onProgress: options.onProgress,
+    progressLabel: `Encrypting ${values.length.toString()} ${valueType} value(s) and requesting verified input proof`,
   });
 
   options.onProgress?.("Input proof received");
@@ -73,8 +71,8 @@ export const requestInputProof = async (
     contractAddress,
     userAddress,
     values,
-    encryptedValues: encrypted.encryptedValues as readonly Hex[],
-    inputProof: encrypted.inputProof as Hex,
+    encryptedValues: encrypted.encryptedValues,
+    inputProof: encrypted.inputProof,
   };
 };
 
@@ -149,7 +147,7 @@ export const freshPublicDecrypt = async (
   if (!value) throw new Error("No value to encrypt.");
 
   options.onProgress?.(`Encrypting ${options.type} value`);
-  const encrypted = await fhevm.encryptValues({
+  const encrypted = await encryptValues(fhevm, {
     contractAddress,
     userAddress: account.address,
     values,
@@ -165,7 +163,7 @@ export const freshPublicDecrypt = async (
     { account, contractAddress, publicClient },
     {
       encryptedValue,
-      inputProof: encrypted.inputProof as Hex,
+      inputProof: encrypted.inputProof,
       value,
       makePublic: true,
     },
@@ -194,7 +192,7 @@ export const freshPublicDecrypt = async (
   return {
     ...decrypted,
     transactionHash,
-    inputProof: encrypted.inputProof as Hex,
+    inputProof: encrypted.inputProof,
     inputValues: values,
     handle,
   };
@@ -337,34 +335,6 @@ const resolveAccountAddress = (
 ): Hex => {
   if (options.account) return options.account;
   return loadAccount(options.privateKey, options.mnemonic).address;
-};
-
-const readPublicValues = async (
-  fhevm: FhevmClientLike,
-  encryptedValues: readonly Hex[],
-  onProgress?: ProgressReporter,
-): Promise<PublicDecryptResult> => {
-  onProgress?.(
-    `Requesting public decryption for ${encryptedValues.length.toString()} handle(s)`,
-  );
-  const result = await fhevm.readPublicValuesWithSignatures({
-    encryptedValues,
-  });
-  onProgress?.("Public decryption received and signatures verified");
-
-  return {
-    encryptedValues,
-    clearValues: result.clearValues.map((value) => ({
-      type: value.type,
-      value:
-        typeof value.value === "bigint"
-          ? value.value.toString()
-          : String(value.value),
-    })),
-    abiEncodedCleartexts: result.checkSignaturesArgs
-      .abiEncodedCleartexts as Hex,
-    decryptionProof: result.checkSignaturesArgs.decryptionProof as Hex,
-  };
 };
 
 export const describeNetwork = (
