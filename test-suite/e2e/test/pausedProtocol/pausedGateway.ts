@@ -57,7 +57,7 @@ describe('Paused gateway', function () {
     );
     const dummyCtHandle = '0x0000000000000000000000000000000000000000000000000000000000000000';
 
-    await expect(decryption.publicDecryptionRequest([dummyCtHandle], '0x')).to.be.rejectedWith(
+    await expect(decryption.publicDecryptionRequest.staticCall([dummyCtHandle], '0x')).to.be.rejectedWith(
       new RegExp(ENFORCED_PAUSE_SELECTOR),
     );
   });
