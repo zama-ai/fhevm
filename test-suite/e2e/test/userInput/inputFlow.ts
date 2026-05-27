@@ -1,7 +1,7 @@
 import { assert, expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import { createInstances } from '../instance';
+import { aclAddress, coprocessorAddress, createInstances, kmsVerifierAddress } from '../instance';
 import { getSigners, initSigners } from '../signers';
 
 describe('Input Flow', function () {
@@ -14,7 +14,9 @@ describe('Input Flow', function () {
     const envContractAddress = process.env.TEST_INPUT_CONTRACT_ADDRESS;
     const contractFactory = await ethers.getContractFactory('TestInput');
     if (!envContractAddress) {
-      this.contract = await contractFactory.connect(this.signers.alice).deploy();
+      this.contract = await contractFactory
+        .connect(this.signers.alice)
+        .deploy(aclAddress, coprocessorAddress, kmsVerifierAddress);
       this.contractAddress = await this.contract.getAddress();
       await this.contract.waitForDeployment();
     } else {

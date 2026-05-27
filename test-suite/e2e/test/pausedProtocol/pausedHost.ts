@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import { createInstances } from '../instance';
+import { aclAddress, coprocessorAddress, createInstances, kmsVerifierAddress } from '../instance';
 import { getSigners, initSigners } from '../signers';
 
 const ENFORCED_PAUSE_SELECTOR = '0xd93c0665';
@@ -17,7 +17,9 @@ describe('Paused host', function () {
   it('test paused host user input (allow)', async function () {
     // Initialize TestInput contract.
     const testInputContractFactory = await ethers.getContractFactory('TestInput');
-    const testInputContract = await testInputContractFactory.connect(this.signers.alice).deploy();
+    const testInputContract = await testInputContractFactory
+      .connect(this.signers.alice)
+      .deploy(aclAddress, coprocessorAddress, kmsVerifierAddress);
     const testInputContractAddress = await testInputContract.getAddress();
     await testInputContract.waitForDeployment();
 

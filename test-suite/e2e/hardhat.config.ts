@@ -78,6 +78,7 @@ const chainIds = {
   localCoprocessor: 12345,
   staging: 12345,
   zwsDev: 1337,
+  polygonAmoy: 80002,
   sepolia: 11155111,
   mainnet: 1,
   localCoprocessorL1: 123456,
@@ -102,6 +103,7 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
   switch (chain) {
     case 'staging':
     case 'zwsDev':
+    case 'polygonAmoy':
       jsonRpcUrl = process.env.RPC_URL ?? vars.get('RPC_URL', defaultRpcUrl);
       if (shouldWarn && jsonRpcUrl === defaultRpcUrl) {
         console.warn(`WARN: RPC_URL not set for network '${chain}'. Using default: ${defaultRpcUrl}`);
@@ -189,6 +191,7 @@ const config: HardhatUserConfig = {
     },
     staging: getChainConfig('staging'),
     zwsDev: getChainConfig('zwsDev'),
+    polygonAmoy: getChainConfig('polygonAmoy'),
     sepolia: getChainConfig('sepolia'),
     mainnet: getChainConfig('mainnet'),
     localNative: getChainConfig('localNative'),
