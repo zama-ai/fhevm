@@ -786,6 +786,8 @@ async fn assert_ciphertext_uploaded(
     expected_ct_len: Option<i64>,
     expected_ct_format: Option<(&str, CiphertextFormat)>,
 ) -> anyhow::Result<()> {
+    use crate::S3_FORMAT_VERSION_V1;
+
     s3_utils::assert_key_exists(
         test_env.s3_client.to_owned(),
         bucket,

@@ -39,7 +39,7 @@ pub const EVENT_CIPHERTEXTS_UPLOADED: &str = "event_ciphertexts_uploaded";
 // There might be pending uploads in the database
 // with sizes of 32MiB so the batch size is set to 10
 const DEFAULT_BATCH_SIZE: usize = 10;
-const COPROCESSOR_CONTEXT_ID: U256 = U256::ZERO;
+const COPROCESSOR_CONTEXT_ID_0: U256 = U256::ZERO;
 const NO_SNS_CIPHERTEXT_DIGEST: [u8; 32] = [0; 32];
 
 pub(crate) async fn spawn_resubmit_task(
@@ -337,8 +337,8 @@ async fn upload_ct(
     Ok(result)
 }
 
-fn s3_ciphertext_key(handle: &[u8]) -> String {
-    hex::encode(handle)
+fn s3_ciphertext_key(handle: &[u8], context_id: U256) -> String {
+    hex::encode(handle) + "/" + &context_id.to_string()
 }
 
 fn b256_from_bytes(field: &str, bytes: &[u8]) -> anyhow::Result<B256> {
@@ -413,6 +413,7 @@ fn upload_material(task: &HandleItem) -> anyhow::Result<UploadMaterial> {
 
 async fn build_attestation(
     task: &HandleItem,
+    context_id: U256,
     ct64_digest: &[u8],
     ct128_digest: &[u8],
     format: CiphertextFormat,
@@ -422,7 +423,7 @@ async fn build_attestation(
         Version::V1,
         b256_from_bytes("handle", &task.handle)?,
         u256_from_bytes("key_id_gw", &task.key_id_gw)?,
-        COPROCESSOR_CONTEXT_ID,
+        context_id,
         b256_from_bytes("ciphertext digest", ct64_digest)?,
         b256_from_bytes("sns ciphertext digest", ct128_digest)?,
         format,
@@ -455,6 +456,7 @@ async fn upload_ciphertexts(
     conf: &S3Config,
     signer: CoproSigner,
 ) -> anyhow::Result<()> {
+    let context_id = COPROCESSOR_CONTEXT_ID_0;
     let handle_as_hex: String = to_hex(&task.handle);
     info!(handle = handle_as_hex, "Received task");
 
@@ -465,6 +467,7 @@ async fn upload_ciphertexts(
     let attestation_format = attestation_format(task.ct128.format())?;
     let attestation = build_attestation(
         &task,
+        context_id,
         &upload_material.ct64_digest,
         ct128_digest,
         attestation_format,
@@ -491,7 +494,7 @@ async fn upload_ciphertexts(
             "Uploading ct128"
         );
 
-        let key = s3_ciphertext_key(&task.handle);
+        let key = s3_ciphertext_key(&task.handle, context_id);
         let digest_key = hex::encode(ct128_digest);
 
         let ct128_check_span = tracing::info_span!(
@@ -567,7 +570,7 @@ async fn upload_ciphertexts(
         );
 
         let ct64_digest = &upload_material.ct64_digest;
-        let key = s3_ciphertext_key(&task.handle);
+        let key = s3_ciphertext_key(&task.handle, context_id);
 
         let ct64_check_span = tracing::info_span!(
             "ct64_check_s3",
@@ -1059,4 +1062,13 @@ mod tests {
         assert_eq!(material.ct64_digest, compute_digest(&ct64));
         assert_eq!(material.ct128_digest, NO_SNS_CIPHERTEXT_DIGEST.to_vec());
     }
+
+    #[test]
+    fn s3_key_v1() {
+        let handle = B256::ZERO;
+        let coprocessor_context_id = U256::ZERO;
+        let s3_key = s3_ciphertext_key(&handle.to_vec(), coprocessor_context_id);
+        assert_eq!("0000000000000000000000000000000000000000000000000000000000000000/0", &s3_key);
+    }
+
 }
