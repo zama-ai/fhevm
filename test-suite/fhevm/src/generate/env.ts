@@ -293,6 +293,24 @@ export const renderEnvMaps = async (
   envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_CHAIN_ID = defaultChain.chainId;
   envs["test-suite"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["test-suite"].CHAIN_ID_HOST = defaultChain.chainId;
+
+  // Multi-chain seeding for the coprocessor dbMigration container.
+  // HOST_CHAINS_COUNT + indexed HOST_CHAIN_<i>_{ID,NAME,ACL} drive
+  // `seed_host_chains` in `initialize_db.sh`. Same shape the helm chart
+  // renders from `.Values.chains` — keeps the e2e on the same code path
+  // as production rather than bypassing it via direct SQL. Applied BEFORE
+  // `buildInstanceEnvs` so multi-coprocessor topology instances inherit
+  // these env vars when they clone `envs["coprocessor"]`.
+  envs["coprocessor"].HOST_CHAINS_COUNT = String(chains.length);
+  for (const chain of chains) {
+    const chainIndex = chain.index;
+    const hostAddresses = state.discovery?.hosts[chain.key] ?? {};
+    envs["coprocessor"][`HOST_CHAIN_${chainIndex}_ID`] = chain.chainId;
+    envs["coprocessor"][`HOST_CHAIN_${chainIndex}_NAME`] = chain.key;
+    envs["coprocessor"][`HOST_CHAIN_${chainIndex}_ACL`] =
+      hostAddresses.ACL_CONTRACT_ADDRESS ?? "";
+  }
+
   const instanceEnvs = await buildInstanceEnvs(envs, plan, deriveWallet);
 
   // Uniform per-chain gateway-sc indexed vars for ALL host chains.
