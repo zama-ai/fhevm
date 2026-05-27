@@ -48,8 +48,6 @@ abstract contract HandlesReceiver is OAppReceiver, ILayerZeroComposer, BridgeEve
     /// @notice Returned when `lzCompose` is invoked by an unauthorized caller.
     error NotLzEndpoint(address caller);
 
-    error WrongChainId();
-
     /// @notice Returned when the compose message claims a `from` address other than this contract.
     /// @dev    Defense in depth: only HandlesReceiver itself dispatches compose messages.
     error UnexpectedComposeOrigin(address from);
@@ -220,7 +218,7 @@ abstract contract HandlesReceiver is OAppReceiver, ILayerZeroComposer, BridgeEve
 
         // Clear bytes 21-31 in preparation for metadata embedding.
         result = result & 0xffffffffffffffffffffffffffffffffffffffffff0000000000000000000000;
-        // Byte 21 = 0xff (non-input/computation marker, matches FHEVMExecutor pattern).
+        // Byte 21 = 0xff for non-input (i.e. computation) marker, matches FHEVMExecutor pattern.
         result = result | (bytes32(uint256(0xff)) << 80);
         // Bytes 22-29 = chain id of this (destination) chain.
         result = result | (bytes32(uint256(uint64(block.chainid))) << 16);

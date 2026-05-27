@@ -24,8 +24,8 @@ interface IDstApp {
      *
      * @dev Reverting from `onReceive` reverts only the lzCompose transaction. Bridge state
      *      from the lzReceive step (derivations + `HandleBridged` events) is already
-     *      committed on-chain and the coprocessor's association is unaffected. LayerZero
-     *      will retry `lzCompose` independently. If the app determines the source chain is
+     *      committed on-chain and the coprocessor's association is unaffected.
+     *      Note that `lzCompose` can be retried. If the app determines the source chain is
      *      untrusted, it should revert here to prevent app-level state changes.
      */
     function onReceive(
