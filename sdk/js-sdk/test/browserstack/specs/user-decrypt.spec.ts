@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test('decryptValue performs full user decrypt flow (keypair + permit + TKMS)', async ({ page }) => {
-  await page.goto('/test/browser/pages/user-decrypt.html');
+  await page.goto('/test/browserstack/pages/user-decrypt.html');
 
   const result = page.locator('#result');
   await result.waitFor({ timeout: 300_000 });
