@@ -1,7 +1,7 @@
 {
-  "target": "latest-supported",
-  "lockName": "latest-supported.json",
-  "sources": ["profile=latest-supported"],
+  "target": "mainnet",
+  "lockName": "v0.11.0-mainnet.json",
+  "sources": ["profile=v0.11.0-mainnet"],
   "env": {
     "GATEWAY_VERSION": "v0.11.0",
     "HOST_VERSION": "v0.11.0",

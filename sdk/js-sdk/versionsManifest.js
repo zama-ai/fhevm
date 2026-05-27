@@ -26,6 +26,9 @@
 //     Supports local packages via `file:` URLs relative to sdk/js-sdk, e.g.
 //     `source: 'file:./src/wasm/tfhe/dev.local'`.
 //
+// `WASM_DEFAULT_VERSIONS` controls the generated DEFAULT_* loader constants.
+// Each default must be present in the active profile's manifest-listed versions.
+//
 // To add a new version:
 //   1. Add a row here with the appropriate `tags`.
 //   2. Run `npm run wasm:install -- --lib <tfhe|tkms> --force` to install
@@ -46,5 +49,16 @@ export const KMS_MANIFEST = Object.freeze([
   Object.freeze({ version: '0.13.10', tags: Object.freeze(['prod', 'dev']) }),
   Object.freeze({ version: '0.13.20-0', tags: Object.freeze(['prod', 'dev']) }),
 ]);
+
+export const WASM_DEFAULT_VERSIONS = Object.freeze({
+  prod: Object.freeze({
+    tfhe: '1.6.1',
+    tkms: '0.13.20-0',
+  }),
+  dev: Object.freeze({
+    tfhe: '1.6.1',
+    tkms: '0.13.20-0',
+  }),
+});
 
 export const BUILD_PROFILES = Object.freeze(['prod', 'dev']);

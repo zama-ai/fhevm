@@ -7,6 +7,7 @@ import { BUILD_PROFILES, KMS_MANIFEST, TFHE_MANIFEST } from '../../versionsManif
 import {
   generateKmsApiSource,
   generateKmsLoaderSource,
+  resolveDefaultWasmVersions,
   generateTfheApiSource,
   generateTfheLoaderSource,
 } from './codegen-loaders.mjs';
@@ -26,7 +27,8 @@ export const generatedWasmArtifacts = Object.freeze({
   tfheLoader: Object.freeze({
     rel: 'tfhe/loadTfheLib.js',
     kind: 'loader',
-    source: ({ profile, tfheVersions }) => generateTfheLoaderSource(tfheVersions, profile),
+    source: ({ profile, tfheDefaultVersion, tfheVersions }) =>
+      generateTfheLoaderSource(tfheVersions, profile, tfheDefaultVersion),
   }),
   tfheApi: Object.freeze({
     rel: 'tfhe/TfheApi.d.ts',
@@ -36,7 +38,8 @@ export const generatedWasmArtifacts = Object.freeze({
   kmsLoader: Object.freeze({
     rel: 'tkms/loadKmsLib.js',
     kind: 'loader',
-    source: ({ kmsVersions, profile }) => generateKmsLoaderSource(kmsVersions, profile),
+    source: ({ kmsDefaultVersion, kmsVersions, profile }) =>
+      generateKmsLoaderSource(kmsVersions, profile, kmsDefaultVersion),
   }),
   kmsApi: Object.freeze({
     rel: 'tkms/KmsLibApi.d.ts',
@@ -64,6 +67,7 @@ export function createWasmBuildContext(target, scriptName) {
 
   const tfheVersions = TFHE_MANIFEST.filter((entry) => entry.tags.includes(profile)).map((entry) => entry.version);
   const kmsVersions = KMS_MANIFEST.filter((entry) => entry.tags.includes(profile)).map((entry) => entry.version);
+  const defaultVersions = resolveDefaultWasmVersions(profile);
   const dest = target === 'types' ? 'src/_types/wasm' : `src/_${target}/wasm`;
   const tsconfig = target === 'cjs' ? 'src/wasm/tsconfig.cjs.json' : 'src/wasm/tsconfig.esm.json';
   const tsconfigSourceRels = readTsconfigSourceRels(tsconfig, WASM_SRC);
@@ -72,8 +76,10 @@ export function createWasmBuildContext(target, scriptName) {
     ...kmsVersions.map((version) => `tkms/v${version}`),
   ]);
   const versions = {
+    kmsDefaultVersion: defaultVersions.tkms,
     kmsVersions,
     profile,
+    tfheDefaultVersion: defaultVersions.tfhe,
     tfheVersions,
   };
 
@@ -82,11 +88,13 @@ export function createWasmBuildContext(target, scriptName) {
     allTsSourceRels: [],
     allowedTsSourceRels: [],
     dest,
+    kmsDefaultVersion: defaultVersions.tkms,
     kmsVersions,
     profile,
     scriptName,
     sourceRel: (p) => relative(WASM_SRC, p).split(sep).join('/'),
     target,
+    tfheDefaultVersion: defaultVersions.tfhe,
     tfheVersions,
     tsconfig,
     tsconfigSourceRels,

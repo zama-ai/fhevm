@@ -266,7 +266,7 @@ async function decrypt(): Promise<void> {
 
     if (options.publicDecrypt) {
       setBusy(true, 'Running public decrypt...');
-      const publicValues = await state.client.readPublicValues({ encryptedValues: valuesToDecrypt });
+      const publicValues = await state.client.decryptPublicValues({ encryptedValues: valuesToDecrypt });
       const value = publicValues[0]?.value;
       assertRoundTrip('public decrypt', value, state.value);
       clearValue = value;

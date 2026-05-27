@@ -9,7 +9,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 export const TFHE_VERSIONS = Object.freeze(['1.5.3', '1.6.1']);
-export const DEFAULT_TFHE_VERSION = '1.5.3';
+export const DEFAULT_TFHE_VERSION = '1.6.1';
 
 const _loaders = {
   '1.5.3': () => import('./v1.5.3/tfhe.js'),

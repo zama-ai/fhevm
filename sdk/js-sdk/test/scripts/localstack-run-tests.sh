@@ -21,7 +21,8 @@ Options:
   --ethlib ethers          Run only the ethers test suite.
   --ethlib viem            Run only the viem test suite.
   --ethlib ethers,viem     Run both suites (default).
-  --profile, -p <name>     Profile filename forwarded to localstack-restart.sh
+  --fhevm-cli-profile <name>
+                           Profile filename forwarded to localstack-restart.sh
                            (e.g., v0.11.0-mainnet.json). If omitted, the stack
                            starts without a profile lock file.
   --chain, -c <name>       Chain forwarded to localstack-restart.sh and used as
@@ -66,10 +67,14 @@ while [[ $# -gt 0 ]]; do
             LIB="${1#--ethlib=}"
             shift
             ;;
-        --profile|-p)
+        --fhevm-cli-profile)
             require_arg_value "$1" "${2:-}"
             PROFILE="$2"
             shift 2
+            ;;
+        --fhevm-cli-profile=*)
+            PROFILE="${1#--fhevm-cli-profile=}"
+            shift
             ;;
         --chain|-c)
             require_arg_value "$1" "${2:-}"
@@ -114,7 +119,7 @@ cd "$ROOT_DIR"
 if [ "$SKIP_START" = false ]; then
   RESTART_ARGS=(--chain "$CHAIN")
   if [[ -n "$PROFILE" ]]; then
-    RESTART_ARGS+=(--profile "$PROFILE")
+    RESTART_ARGS+=(--fhevm-cli-profile "$PROFILE")
   fi
   RESTART_ARGS+=(--force)
   "$SCRIPT_DIR/localstack-restart.sh" "${RESTART_ARGS[@]}"
@@ -134,5 +139,7 @@ fi
 [[ "$RUN_ETHERS" -eq 1 ]] && npx vitest run --config test/fheTest/vitest.config.ts test/fheTest/ethers
 
 if [ "$SKIP_START" = false ]; then
-  $SCRIPT_DIR/localstack-stop.sh
+  if ! "$SCRIPT_DIR/localstack-stop.sh"; then
+    echo "Warning: localstack-stop.sh failed; ignoring teardown error because tests already completed." >&2
+  fi
 fi

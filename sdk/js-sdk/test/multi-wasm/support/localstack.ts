@@ -7,11 +7,12 @@ export async function ensureLocalstackReady(parameters: {
   readonly restart: boolean;
   readonly rpcUrl: string;
   readonly chainName: string;
+  readonly fhevmCliProfile?: string | undefined;
 }): Promise<void> {
-  const { restart, rpcUrl, chainName } = parameters;
+  const { restart, rpcUrl, chainName, fhevmCliProfile } = parameters;
 
   if (restart) {
-    runLocalstackRestart(chainName);
+    runLocalstackRestart({ chainName, fhevmCliProfile });
   }
 
   if (await isJsonRpcReady(rpcUrl)) {
@@ -51,8 +52,17 @@ export async function isJsonRpcReady(rpcUrl: string): Promise<boolean> {
   }
 }
 
-function runLocalstackRestart(chainName: string): void {
-  const result = spawnSync(localstackRestartScript, ['--force', '--chain', chainName], {
+function runLocalstackRestart(parameters: {
+  readonly chainName: string;
+  readonly fhevmCliProfile?: string | undefined;
+}): void {
+  const args = ['--force', '--chain', parameters.chainName];
+
+  if (parameters.fhevmCliProfile !== undefined && parameters.fhevmCliProfile !== '') {
+    args.push('--fhevm-cli-profile', parameters.fhevmCliProfile);
+  }
+
+  const result = spawnSync(localstackRestartScript, args, {
     cwd: resolve(import.meta.dirname, '../../..'),
     stdio: 'inherit',
   });

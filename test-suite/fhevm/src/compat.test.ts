@@ -305,6 +305,34 @@ describe("compat", () => {
     expect(requiresGatewayKmsGenerationAddress(state)).toBe(false);
   });
 
+  test("treats numeric Docker tag suffixes as release builds", () => {
+    const state = {
+      versions: {
+        target: "mainnet" as const,
+        lockName: "v0.13.0.json",
+        env: {
+          GATEWAY_VERSION: "v0.13.0-2",
+          HOST_VERSION: "v0.13.0-2",
+          COPROCESSOR_GW_LISTENER_VERSION: "v0.13.0-2",
+          COPROCESSOR_HOST_LISTENER_VERSION: "v0.13.0-2",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    };
+
+    expect(requiresLegacyGatewayKmsGenerationAddress(state)).toBe(false);
+    expect(requiresModernHostAddressArtifacts(state)).toBe(true);
+    expect(requiresGatewayKmsGenerationAddress(state)).toBe(false);
+
+    const policy = compatPolicyForState(state);
+    expect(policy.coprocessorArgs["gw-listener"]).toBeUndefined();
+    expect(policy.coprocessorDropFlags["host-listener"]).toBeUndefined();
+    expect(policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-proxy-address");
+    expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-proxy-address");
+  });
+
   test("requires modern host addresses when host-contracts is locally overridden", () => {
     const state = {
       versions: {
@@ -336,6 +364,24 @@ describe("compat", () => {
     });
     expect(policy.composeEnv.RELAYER_IMAGE_REPOSITORY).toBe(LEGACY_RELAYER_IMAGE_REPOSITORY);
     expect(policy.composeEnv.RELAYER_MIGRATE_IMAGE_REPOSITORY).toBe(LEGACY_RELAYER_MIGRATE_IMAGE_REPOSITORY);
+  });
+
+  test("routes v0.13 relayer images to the fhevm registry", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "mainnet",
+        lockName: "v0.13.0.json",
+        env: {
+          RELAYER_VERSION: "v0.13.0-2",
+          RELAYER_MIGRATE_VERSION: "v0.13.0-2",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.composeEnv.RELAYER_IMAGE_REPOSITORY).toBe(MODERN_RELAYER_IMAGE_REPOSITORY);
+    expect(policy.composeEnv.RELAYER_MIGRATE_IMAGE_REPOSITORY).toBe(MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY);
   });
 
   test("routes sha-style relayer images to the fhevm registry", () => {

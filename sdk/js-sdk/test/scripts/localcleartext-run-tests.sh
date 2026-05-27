@@ -5,10 +5,10 @@ set -euo pipefail
 #
 # Run cleartext FHEVM tests against an Anvil node.
 #
-# Usage: run-localcleartext.sh [--ethlib ethers|viem|ethers,viem|none] [--profile <name>] [--verbose] [--help]
+# Usage: run-localcleartext.sh [--ethlib ethers|viem|ethers,viem|none] [--foundry-profile <name>] [--verbose] [--help]
 #
 # Flow:
-#   1. Parse --ethlib (default: ethers,viem) and --profile (default: latest).
+#   1. Parse --ethlib (default: ethers,viem) and --foundry-profile (default: latest).
 #   2. If Anvil is already running on RPC_URL, reuse it; otherwise start one.
 #   3. Deploy the cleartext FHEVM stack (skipped when reusing).
 #   4. Run the requested test suites sequentially against the same node.
@@ -27,7 +27,7 @@ Options:
   --ethlib viem            Run only the viem test suite.
   --ethlib ethers,viem     Run both suites (default).
   --ethlib none            Start Anvil + deploy only; wait for Anvil to exit (no tests run).
-  --profile <name>         Foundry profile to use (default: latest, possible values: v12, v13).
+  --foundry-profile <name> Foundry profile to use (default: latest, possible values: v11, v12, v13).
   --use-pack               Use vitest-manual-pack.config.ts instead of vitest.config.ts.
   --verbose                Print Anvil logs to the console instead of redirecting to a file.
   --help                   Print this help message and exit.
@@ -37,7 +37,7 @@ Environment variables (all optional, CLI flags take precedence):
   RPC_URL          Anvil RPC URL       (default: http://127.0.0.1:\$PORT)
   CHAIN_ID         Anvil chain ID      (default: 31337)
   READY_TIMEOUT    Ready timeout       (default: 30s)
-  FOUNDRY_PROFILE  Foundry profile     (default: latest; overridden by --profile)
+  FOUNDRY_PROFILE  Foundry profile     (default: latest; overridden by --foundry-profile)
 EOF
 }
 
@@ -65,17 +65,17 @@ while [[ $# -gt 0 ]]; do
             LIB="${1#--ethlib=}"
             shift
             ;;
-        --profile)
+        --foundry-profile)
             shift
             if [[ $# -eq 0 ]]; then
-                echo "Error: --profile requires an argument." >&2
+                echo "Error: --foundry-profile requires an argument." >&2
                 exit 1
             fi
             PROFILE="$1"
             shift
             ;;
-        --profile=*)
-            PROFILE="${1#--profile=}"
+        --foundry-profile=*)
+            PROFILE="${1#--foundry-profile=}"
             shift
             ;;
         --use-pack)
@@ -213,7 +213,7 @@ anvil_deploy_cleartext() {
 # ------------------------------------------------------------------------------
 
 anvil_setup_dirs
-# Let --profile override FOUNDRY_PROFILE before anvil_setup_vars reads it.
+# Let --foundry-profile override FOUNDRY_PROFILE before anvil_setup_vars reads it.
 [[ -n "$PROFILE" ]] && FOUNDRY_PROFILE="$PROFILE"
 anvil_setup_vars
 anvil_check_deps

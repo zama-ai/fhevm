@@ -27,7 +27,8 @@ By default, if anvil is already listening on port ${PORT}, the script assumes
 the local stack is already running and exits without restarting or redeploying.
 
 Options:
-  --profile, -p <name>  Profile filename in ${PROFILES_DIR} (e.g., v0.11.0-mainnet.json).
+  --fhevm-cli-profile <name>
+                        Profile filename in ${PROFILES_DIR} (e.g., v0.11.0-mainnet.json).
                         If omitted, fhevm-cli starts without a profile lock file.
   --chain, -c <name>    Chain to pass to fhetest-deploy.sh. One of:
                         ${VALID_CHAINS[*]}.
@@ -59,10 +60,14 @@ require_arg_value() {
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --profile|-p)
+        --fhevm-cli-profile)
             require_arg_value "$1" "${2:-}"
             PROFILE="$2"
             shift 2
+            ;;
+        --fhevm-cli-profile=*)
+            PROFILE="${1#--fhevm-cli-profile=}"
+            shift
             ;;
         --chain|-c)
             require_arg_value "$1" "${2:-}"

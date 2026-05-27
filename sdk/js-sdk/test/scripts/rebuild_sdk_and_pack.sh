@@ -9,9 +9,9 @@ PACK_DIR="$SCRIPT_DIR/../$MANUAL_PACK_DIRNAME"
 PROFILE="dev"
 for arg in "$@"; do
   case "$arg" in
-    --profile=dev)  PROFILE="dev" ;;
-    --profile=prod) PROFILE="prod" ;;
-    --profile=*)    echo "Error: unknown --profile value '${arg#--profile=}'. Use 'dev' or 'prod'." >&2; exit 1 ;;
+    --build-profile=dev)  PROFILE="dev" ;;
+    --build-profile=prod) PROFILE="prod" ;;
+    --build-profile=*)    echo "Error: unknown --build-profile value '${arg#--build-profile=}'. Use 'dev' or 'prod'." >&2; exit 1 ;;
   esac
 done
 

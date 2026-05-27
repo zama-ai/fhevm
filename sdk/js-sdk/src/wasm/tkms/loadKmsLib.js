@@ -9,7 +9,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 export const KMS_VERSIONS = Object.freeze(['0.13.10', '0.13.20-0']);
-export const DEFAULT_TKMS_VERSION = '0.13.10';
+export const DEFAULT_TKMS_VERSION = '0.13.20-0';
 
 const _loaders = {
   '0.13.10': () => import('./v0.13.10/kms_lib.js'),

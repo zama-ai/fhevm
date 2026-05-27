@@ -30,6 +30,7 @@ export interface KmsLibApi {
   u8vec_to_ml_kem_pke_sk: typeof import('./v0.13.10/kms_lib.js').u8vec_to_ml_kem_pke_sk;
 }
 
+// Default version
 export type TkmsVersion = '0.13.10' | '0.13.20-0';
 
 export type TkmsWasmBase64 = {
