@@ -1,9 +1,18 @@
 #!/usr/bin/env -S node --env-file=.env --import tsx
-import { Command, InvalidArgumentError } from "@commander-js/extra-typings";
+import { Command } from "@commander-js/extra-typings";
 import { consola } from "consola";
-import { isAddress, isHex, type Hex } from "viem";
 
 import { DEFAULT_NETWORK } from "./src/config";
+import { getGlobalOptions } from "./src/cli/options";
+import {
+  collectHandle,
+  parseAddress,
+  parseNetwork,
+  parsePrivateKey,
+  parseValueType,
+} from "./src/cli/parsers";
+import { printJson } from "./src/cli/output";
+import { createProgressReporter } from "./src/cli/progress";
 import {
   freshPublicDecrypt,
   initFheTest,
@@ -11,82 +20,8 @@ import {
   publicDecrypt,
   requestInputProof,
 } from "./src/flows";
-import {
-  FHE_VALUE_TYPES,
-  NETWORKS,
-  type FheValueType,
-  type NetworkName,
-} from "./src/types";
+import { FHE_VALUE_TYPES } from "./src/types";
 import { parseClearValue, serializeValue } from "./src/values";
-
-const parseNetwork = (value: string): NetworkName => {
-  if (NETWORKS.includes(value as NetworkName)) return value as NetworkName;
-  throw new InvalidArgumentError(
-    `Unsupported network "${value}". Supported: ${NETWORKS.join(", ")}`,
-  );
-};
-
-const parseValueType = (value: string): FheValueType => {
-  if (FHE_VALUE_TYPES.includes(value as FheValueType)) {
-    return value as FheValueType;
-  }
-  throw new InvalidArgumentError(
-    `Unsupported type "${value}". Supported: ${FHE_VALUE_TYPES.join(", ")}`,
-  );
-};
-
-const parseAddress = (value: string): Hex => {
-  if (isAddress(value)) return value;
-  throw new InvalidArgumentError(`Invalid address: ${value}`);
-};
-
-const parseBytes32 = (value: string): Hex => {
-  if (isHex(value) && value.length === 66) return value;
-  throw new InvalidArgumentError(`Invalid bytes32 hex value: ${value}`);
-};
-
-const parsePrivateKey = (value: string): Hex => {
-  if (isHex(value) && value.length === 66) return value;
-  throw new InvalidArgumentError(`Invalid private key: ${value}`);
-};
-
-const collectHandle = (value: string, previous: Hex[] = []): Hex[] => [
-  ...previous,
-  parseBytes32(value),
-];
-
-const printJson = (value: unknown) => {
-  process.stdout.write(
-    JSON.stringify(
-      value,
-      (_key, item) => (typeof item === "bigint" ? item.toString() : item),
-      2,
-    ) + "\n",
-  );
-};
-
-const createProgressReporter = () => {
-  const startedAt = performance.now();
-  return (message: string) => {
-    const elapsedSeconds = ((performance.now() - startedAt) / 1000).toFixed(1);
-    process.stderr.write(`[${elapsedSeconds}s] ${message}\n`);
-  };
-};
-
-type GlobalOptions = Readonly<{
-  network: NetworkName;
-  relayerUrl?: string;
-  rpcUrl?: string;
-}>;
-
-const getGlobalOptions = (command: Command): GlobalOptions => {
-  const options = command.optsWithGlobals() as Partial<GlobalOptions>;
-  return {
-    network: options.network ?? DEFAULT_NETWORK,
-    relayerUrl: options.relayerUrl,
-    rpcUrl: options.rpcUrl,
-  };
-};
 
 const program = new Command()
   .name("cli-relayer-sdk")
