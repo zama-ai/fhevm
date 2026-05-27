@@ -4,7 +4,7 @@ import { expect } from "chai";
 import { Wallet } from "ethers";
 import hre from "hardhat";
 
-import { CiphertextCommits, CiphertextCommits__factory, GatewayConfig } from "../typechain-types";
+import { CiphertextCommits, CiphertextCommits__factory, GatewayConfig, InputVerification } from "../typechain-types";
 import {
   createBytes32,
   createCtHandle,
@@ -39,8 +39,10 @@ describe("CiphertextCommits", function () {
 
   let ciphertextCommits: CiphertextCommits;
   let gatewayConfig: GatewayConfig;
+  let inputVerification: InputVerification;
   let coprocessorTxSenders: HardhatEthersSigner[];
   let owner: Wallet;
+  let pauser: Wallet;
 
   async function prepareFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
@@ -71,7 +73,9 @@ describe("CiphertextCommits", function () {
     coprocessorTxSenders = fixture.coprocessorTxSenders;
     ciphertextCommits = fixture.ciphertextCommits;
     gatewayConfig = fixture.gatewayConfig;
+    inputVerification = fixture.inputVerification;
     owner = fixture.owner;
+    pauser = fixture.pauser;
   });
 
   describe("Deployment", function () {
@@ -226,6 +230,7 @@ describe("CiphertextCommits", function () {
 
     it("Should let only the priority coprocessor transaction sender finalize ciphertext material", async function () {
       const priorityTxSender = coprocessorTxSenders[2];
+      await inputVerification.connect(pauser).pause();
       await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(priorityTxSender.address);
 
       await ciphertextCommits

@@ -458,6 +458,7 @@ describe("InputVerification", function () {
 
     it("Should let only the priority coprocessor transaction sender finalize proof verification", async function () {
       const priorityTxSender = coprocessorTxSenders[2];
+      await inputVerification.connect(pauser).pause();
       await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(priorityTxSender.address);
 
       await inputVerification
@@ -788,6 +789,7 @@ describe("InputVerification", function () {
 
     it("Should let only the priority coprocessor transaction sender finalize proof rejection", async function () {
       const priorityTxSender = coprocessorTxSenders[2];
+      await inputVerification.connect(pauser).pause();
       await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(priorityTxSender.address);
 
       await inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId, extraDataV0);

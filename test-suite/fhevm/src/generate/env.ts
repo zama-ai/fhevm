@@ -314,6 +314,7 @@ export const renderEnvMaps = async (
 
   const instanceEnvs = await buildInstanceEnvs(envs, plan, deriveWallet);
   envs["test-suite"].GATEWAY_DEPLOYER_PRIVATE_KEY = envs["gateway-sc"].DEPLOYER_PRIVATE_KEY;
+  envs["test-suite"].GATEWAY_PAUSER_PRIVATE_KEY = envs["gateway-sc"].PAUSER_PRIVATE_KEY;
   envs["test-suite"].PRIORITY_COPROCESSOR_TX_SENDER_ADDRESS =
     envs["gateway-sc"].COPROCESSOR_TX_SENDER_ADDRESS_0;
 

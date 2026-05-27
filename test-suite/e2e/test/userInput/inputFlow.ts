@@ -11,6 +11,12 @@ const GATEWAY_CONFIG_ABI = [
   'function removePriorityCoprocessorTxSender()',
 ];
 
+const GATEWAY_INPUT_VERIFICATION_ABI = [
+  'function pause()',
+  'function unpause()',
+  'function paused() view returns (bool)',
+];
+
 const INPUT_VERIFIER_ABI = [
   'function getCoprocessorSigners() view returns (address[])',
   'function getThreshold() view returns (uint256)',
@@ -19,28 +25,49 @@ const INPUT_VERIFIER_ABI = [
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 
-const getGatewayConfig = () => {
-  const gatewayConfigAddress = process.env.GATEWAY_CONFIG_ADDRESS;
-  const gatewayRpcUrl = process.env.GATEWAY_RPC_URL;
-  const gatewayDeployerPrivateKey = process.env.GATEWAY_DEPLOYER_PRIVATE_KEY;
-
-  if (!gatewayConfigAddress || !gatewayRpcUrl || !gatewayDeployerPrivateKey) {
-    return undefined;
+const requiredEnv = (name: string) => {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} is required`);
   }
+  return value;
+};
+
+const getGatewayConfig = () => {
+  const gatewayConfigAddress = requiredEnv('GATEWAY_CONFIG_ADDRESS');
+  const gatewayRpcUrl = requiredEnv('GATEWAY_RPC_URL');
+  const gatewayDeployerPrivateKey = requiredEnv('GATEWAY_DEPLOYER_PRIVATE_KEY');
 
   const provider = new ethers.JsonRpcProvider(gatewayRpcUrl);
   const wallet = new ethers.Wallet(gatewayDeployerPrivateKey, provider);
   return new ethers.Contract(gatewayConfigAddress, GATEWAY_CONFIG_ABI, wallet);
 };
 
-const getInputVerifier = () => {
-  const inputVerifierAddress = process.env.INPUT_VERIFIER_CONTRACT_ADDRESS;
-  const hostRpcUrl = process.env.RPC_URL;
-  const deployerPrivateKey = process.env.DEPLOYER_PRIVATE_KEY;
+const getGatewayInputVerification = () => {
+  const inputVerificationAddress = requiredEnv('INPUT_VERIFICATION_ADDRESS');
+  const gatewayRpcUrl = requiredEnv('GATEWAY_RPC_URL');
+  const gatewayPauserPrivateKey = requiredEnv('GATEWAY_PAUSER_PRIVATE_KEY');
+  const gatewayDeployerPrivateKey = requiredEnv('GATEWAY_DEPLOYER_PRIVATE_KEY');
 
-  if (!inputVerifierAddress || !hostRpcUrl || !deployerPrivateKey) {
-    return undefined;
-  }
+  const provider = new ethers.JsonRpcProvider(gatewayRpcUrl);
+  return {
+    asOwner: new ethers.Contract(
+      inputVerificationAddress,
+      GATEWAY_INPUT_VERIFICATION_ABI,
+      new ethers.Wallet(gatewayDeployerPrivateKey, provider),
+    ),
+    asPauser: new ethers.Contract(
+      inputVerificationAddress,
+      GATEWAY_INPUT_VERIFICATION_ABI,
+      new ethers.Wallet(gatewayPauserPrivateKey, provider),
+    ),
+  };
+};
+
+const getInputVerifier = () => {
+  const inputVerifierAddress = requiredEnv('INPUT_VERIFIER_CONTRACT_ADDRESS');
+  const hostRpcUrl = requiredEnv('RPC_URL');
+  const deployerPrivateKey = requiredEnv('DEPLOYER_PRIVATE_KEY');
 
   const provider = new ethers.JsonRpcProvider(hostRpcUrl);
   const wallet = new ethers.Wallet(deployerPrivateKey, provider);
@@ -50,6 +77,24 @@ const getInputVerifier = () => {
 const sameAddresses = (left: string[], right: string[]) =>
   left.length === right.length &&
   left.every((address, index) => ethers.getAddress(address) === ethers.getAddress(right[index]));
+
+const pauseGatewayInputVerification = async (
+  gatewayInputVerification: ReturnType<typeof getGatewayInputVerification>,
+) => {
+  if (!(await gatewayInputVerification.asOwner.paused())) {
+    const tx = await gatewayInputVerification.asPauser.pause();
+    await tx.wait();
+  }
+};
+
+const unpauseGatewayInputVerification = async (
+  gatewayInputVerification: ReturnType<typeof getGatewayInputVerification>,
+) => {
+  if (await gatewayInputVerification.asOwner.paused()) {
+    const tx = await gatewayInputVerification.asOwner.unpause();
+    await tx.wait();
+  }
+};
 
 const runAdd42InputAndDecrypt = async function (this: Mocha.Context) {
   const encryptedInput = await this.instances.alice.encryptUint64({
@@ -128,34 +173,28 @@ describe('Input Flow', function () {
 
   it('test priority coprocessor input flow', async function () {
     const gatewayConfig = getGatewayConfig();
+    const gatewayInputVerification = getGatewayInputVerification();
     const inputVerifier = getInputVerifier();
-    const priorityCoprocessorTxSenderEnv = process.env.PRIORITY_COPROCESSOR_TX_SENDER_ADDRESS;
-
-    if (!gatewayConfig || !inputVerifier || !priorityCoprocessorTxSenderEnv) {
-      this.skip();
-      return;
-    }
-    const priorityCoprocessorTxSender = ethers.getAddress(priorityCoprocessorTxSenderEnv);
+    const priorityCoprocessorTxSender = ethers.getAddress(requiredEnv('PRIORITY_COPROCESSOR_TX_SENDER_ADDRESS'));
 
     let originalPriority = ZERO_ADDRESS;
     let originalHostSigners: string[] = [];
     let originalHostThreshold = 0n;
     let hostContextChanged = false;
-    try {
-      originalPriority = await gatewayConfig.getPriorityCoprocessorTxSender();
-      originalHostSigners = Array.from(await inputVerifier.getCoprocessorSigners(), (signer) =>
-        ethers.getAddress(signer),
-      );
-      originalHostThreshold = await inputVerifier.getThreshold();
-    } catch {
-      this.skip();
-      return;
+    originalPriority = await gatewayConfig.getPriorityCoprocessorTxSender();
+    originalHostSigners = Array.from(await inputVerifier.getCoprocessorSigners(), (signer) =>
+      ethers.getAddress(signer),
+    );
+    originalHostThreshold = await inputVerifier.getThreshold();
+    if (await gatewayInputVerification.asOwner.paused()) {
+      throw new Error('Gateway InputVerification must be unpaused before running the priority input flow test');
     }
 
     try {
       const priorityCoprocessor = await gatewayConfig.getCoprocessor(priorityCoprocessorTxSender);
       const priorityCoprocessorSigner = ethers.getAddress(priorityCoprocessor.signerAddress);
 
+      await pauseGatewayInputVerification(gatewayInputVerification);
       const setTx = await gatewayConfig.setPriorityCoprocessorTxSender(priorityCoprocessorTxSender);
       await setTx.wait();
       expect(await gatewayConfig.getPriorityCoprocessorTxSender()).to.equal(
@@ -167,22 +206,28 @@ describe('Input Flow', function () {
         await hostTx.wait();
         hostContextChanged = true;
       }
+      await unpauseGatewayInputVerification(gatewayInputVerification);
 
       await runAdd42InputAndDecrypt.call(this);
     } finally {
       try {
+        await pauseGatewayInputVerification(gatewayInputVerification);
         if (hostContextChanged) {
           const restoreHostTx = await inputVerifier.defineNewContext(originalHostSigners, originalHostThreshold);
           await restoreHostTx.wait();
         }
       } finally {
-        const currentPriority = await gatewayConfig.getPriorityCoprocessorTxSender();
-        if (currentPriority.toLowerCase() !== originalPriority.toLowerCase()) {
-          const restoreTx =
-            originalPriority === ZERO_ADDRESS
-              ? await gatewayConfig.removePriorityCoprocessorTxSender()
-              : await gatewayConfig.setPriorityCoprocessorTxSender(originalPriority);
-          await restoreTx.wait();
+        try {
+          const currentPriority = await gatewayConfig.getPriorityCoprocessorTxSender();
+          if (currentPriority.toLowerCase() !== originalPriority.toLowerCase()) {
+            const restoreTx =
+              originalPriority === ZERO_ADDRESS
+                ? await gatewayConfig.removePriorityCoprocessorTxSender()
+                : await gatewayConfig.setPriorityCoprocessorTxSender(originalPriority);
+            await restoreTx.wait();
+          }
+        } finally {
+          await unpauseGatewayInputVerification(gatewayInputVerification);
         }
       }
     }

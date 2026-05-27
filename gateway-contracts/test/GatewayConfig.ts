@@ -188,7 +188,7 @@ describe("GatewayConfig", function () {
     });
 
     it("Should expose the GatewayConfig version", async function () {
-      expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.7.0");
+      expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.6.0");
     });
 
     it("Should revert because the KMS nodes list is empty", async function () {
@@ -1119,6 +1119,38 @@ describe("GatewayConfig", function () {
           await expect(gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(fakeTxSender.address))
             .to.be.revertedWithCustomError(gatewayConfig, "PriorityCoprocessorTxSenderNotRegistered")
             .withArgs(fakeTxSender.address);
+        });
+
+        it("Should revert when setting the priority coprocessor because the sender is not the owner", async function () {
+          await expect(gatewayConfig.connect(fakeOwner).setPriorityCoprocessorTxSender(coprocessorTxSenders[0].address))
+            .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+            .withArgs(fakeOwner.address);
+        });
+
+        it("Should revert when removing the priority coprocessor because the sender is not the owner", async function () {
+          await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(coprocessorTxSenders[0].address);
+
+          await expect(gatewayConfig.connect(fakeOwner).removePriorityCoprocessorTxSender())
+            .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+            .withArgs(fakeOwner.address);
+        });
+
+        it("Should revert when setting the priority coprocessor while InputVerification is not paused", async function () {
+          await inputVerification.connect(owner).unpause();
+
+          await expect(
+            gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(coprocessorTxSenders[0].address),
+          ).to.be.revertedWithCustomError(gatewayConfig, "InputVerificationMustBePaused");
+        });
+
+        it("Should revert when removing the priority coprocessor while InputVerification is not paused", async function () {
+          await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(coprocessorTxSenders[0].address);
+          await inputVerification.connect(owner).unpause();
+
+          await expect(gatewayConfig.connect(owner).removePriorityCoprocessorTxSender()).to.be.revertedWithCustomError(
+            gatewayConfig,
+            "InputVerificationMustBePaused",
+          );
         });
 
         it("Should revert when removing the priority coprocessor through a coprocessor update", async function () {

@@ -43,7 +43,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     string private constant CONTRACT_NAME = "GatewayConfig";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 7;
+    uint256 private constant MINOR_VERSION = 6;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -52,7 +52,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 9;
+    uint64 private constant REINITIALIZER_VERSION = 8;
 
     /**
      * @notice The address of the all gateway contracts
@@ -189,9 +189,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      *      The operator must pause `InputVerification` first to drain in-flight requests.
      */
     modifier whenInputVerificationPaused() {
-        if (!INPUT_VERIFICATION.paused()) {
-            revert InputVerificationMustBePaused();
-        }
+        _checkInputVerificationPaused();
         _;
     }
 
@@ -265,16 +263,17 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice Re-initializes the contract from V7.
+     * @notice Re-initializes the contract from V6.
      * @param initialPriorityCoprocessorTxSender The registered priority coprocessor transaction sender to set,
      *        or zero to leave priority mode disabled.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV8(
+    function reinitializeV7(
         address initialPriorityCoprocessorTxSender
-    ) public virtual reinitializer(REINITIALIZER_VERSION) {
+    ) public virtual onlyOwner reinitializer(REINITIALIZER_VERSION) {
         if (initialPriorityCoprocessorTxSender != address(0)) {
+            _checkInputVerificationPaused();
             _requireRegisteredPriorityCoprocessorTxSender(initialPriorityCoprocessorTxSender);
             _updatePriorityCoprocessorTxSender(initialPriorityCoprocessorTxSender);
         }
@@ -465,7 +464,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /**
      * @notice See {IGatewayConfig-setPriorityCoprocessorTxSender}.
      */
-    function setPriorityCoprocessorTxSender(address coprocessorTxSenderAddress) external virtual onlyOwner {
+    function setPriorityCoprocessorTxSender(
+        address coprocessorTxSenderAddress
+    ) external virtual onlyOwner whenInputVerificationPaused {
         _requireRegisteredPriorityCoprocessorTxSender(coprocessorTxSenderAddress);
         _updatePriorityCoprocessorTxSender(coprocessorTxSenderAddress);
     }
@@ -473,7 +474,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /**
      * @notice See {IGatewayConfig-removePriorityCoprocessorTxSender}.
      */
-    function removePriorityCoprocessorTxSender() external virtual onlyOwner {
+    function removePriorityCoprocessorTxSender() external virtual onlyOwner whenInputVerificationPaused {
         _updatePriorityCoprocessorTxSender(address(0));
     }
 
@@ -1164,6 +1165,15 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         $.priorityCoprocessorTxSender = coprocessorTxSenderAddress;
         emit UpdatePriorityCoprocessorTxSender(coprocessorTxSenderAddress);
+    }
+
+    /**
+     * @notice Reverts if InputVerification is not paused.
+     */
+    function _checkInputVerificationPaused() internal view virtual {
+        if (!INPUT_VERIFICATION.paused()) {
+            revert InputVerificationMustBePaused();
+        }
     }
 
     /**
