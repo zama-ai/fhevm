@@ -143,7 +143,9 @@ describe('Input Flow', function () {
     let hostContextChanged = false;
     try {
       originalPriority = await gatewayConfig.getPriorityCoprocessorTxSender();
-      originalHostSigners = await inputVerifier.getCoprocessorSigners();
+      originalHostSigners = Array.from(await inputVerifier.getCoprocessorSigners(), (signer) =>
+        ethers.getAddress(signer),
+      );
       originalHostThreshold = await inputVerifier.getThreshold();
     } catch {
       this.skip();
