@@ -20,6 +20,17 @@ on:
         options:
           - rollout-standard
           - rollout-heavy
+      old_sns_image_tag:
+        description: |
+          For the sns-worker-s3-format-migration rollout only:
+          Use this as OLD_SNS_IMAGE_TAG (the "previous version" for the baseline).
+          - Set to a 0.13 release tag (e.g. v0.13.20-0 or latest 0.13 coprocessor/sns-worker tag)
+            to pull a real published image as the "old" sns-worker.
+          - Leave empty (or "pre-s3-format") for the dev path that builds from an old git commit.
+          Why both? The *tag* is what goes into COPROCESSOR_SNS_WORKER_VERSION for the old phase.
+          The *commit* (PREVIOUS_SNS_COMMIT) is only a build source for local unreleased simulation.
+        type: string
+        default: ""
 
 permissions: {}
 
@@ -141,12 +152,29 @@ jobs:
 
       - name: Execute stateful rollout
         working-directory: test-suite/fhevm
+        env:
+          INPUT_OLD_SNS_IMAGE_TAG: ${{ inputs.old_sns_image_tag }}
+          ROLLOUT_RUNBOOK: ${{ env.ROLLOUT_RUNBOOK }}
         run: |
           set -euo pipefail
           runbook="$ROLLOUT_RUNBOOK"
           if [ ! -f "$runbook" ]; then
             runbook="${GITHUB_WORKSPACE}/${ROLLOUT_RUNBOOK}"
           fi
+
+          # Default OLD_SNS_IMAGE_TAG for the SNS S3 format migration scenario to a 0.13 release.
+          # 0.13 contains the old S3 format behavior (pre new upload format + migration).
+          # This allows testing real migration from a released 0.13 deployment.
+          old_tag="${INPUT_OLD_SNS_IMAGE_TAG}"
+          if [ -z "$old_tag" ] && echo "$runbook" | grep -q "sns-worker-s3-format-migration"; then
+            old_tag="v0.13.20-0"
+            echo "Defaulting OLD_SNS_IMAGE_TAG to ${old_tag} for sns-worker s3 migration rollout (0.13 has the old behavior)"
+          fi
+
+          if [ -n "$old_tag" ]; then
+            export OLD_SNS_IMAGE_TAG="$old_tag"
+          fi
+
           ./fhevm-cli rollout run "$runbook"
 
       - name: Show rollout receipt

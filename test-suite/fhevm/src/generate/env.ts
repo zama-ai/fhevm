@@ -414,6 +414,26 @@ export const renderEnvMaps = async (
     envs["gateway-sc"].COPROCESSOR_TX_SENDER_ADDRESS_0;
   Object.assign(instanceEnvs, buildKmsConnectorInstanceEnvs(envs, kmsParties));
 
+  // Propagate SNS-worker S3 migration configuration.
+  // These are carried in version locks (see rollouts/.../versions.ts) so that
+  // rollout phases can request "concurrent" etc. without touching the compose
+  // command line (old pre-feature binaries must not see new --flags).
+  // We write them into the coprocessor env files (base + all instance + chain copies)
+  // so the clap parser (with env=) in the new binary picks them up.
+  const migrationMode = plan.versions.env.S3_MIGRATION_MODE ?? "no";
+  const cleanOld = plan.versions.env.CLEAN_OLD_S3_FORMAT_VERSION ?? "false";
+  envs["coprocessor"].S3_MIGRATION_MODE = migrationMode;
+  envs["coprocessor"].CLEAN_OLD_S3_FORMAT_VERSION = cleanOld;
+  // Also push into any per-instance envs that were already built (they clone the base).
+  for (const [name, inst] of Object.entries(instanceEnvs)) {
+    if (name.startsWith("coprocessor")) {
+      inst.S3_MIGRATION_MODE = migrationMode;
+      inst.CLEAN_OLD_S3_FORMAT_VERSION = cleanOld;
+    }
+  }
+  // The later host-chain coprocessor-*.N copies are built from the base + spreads
+  // in the loop below, so they will inherit the values we just set on the base.
+
   // Uniform per-chain gateway-sc indexed vars for ALL host chains.
   envs["gateway-sc"].NUM_HOST_CHAINS = String(chains.length);
   for (const chain of chains) {

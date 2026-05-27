@@ -6,7 +6,7 @@ use fhevm_engine_common::types::SignerType;
 use fhevm_engine_common::utils::DatabaseURL;
 use humantime::parse_duration;
 use sns_worker::metrics::SNS_LATENCY_OP_HISTOGRAM_CONF;
-use sns_worker::SchedulePolicy;
+use sns_worker::{S3MigrationMode, SchedulePolicy};
 use tracing::Level;
 
 #[derive(Parser, Debug, Clone)]
@@ -137,6 +137,25 @@ pub struct Args {
 
     #[arg(short, long)]
     pub private_key: Option<String>,
+
+    /// S3 object format migration mode: no, before, before-and-quit, or concurrent.
+    ///
+    /// concurrent keeps the worker running and publishes legacy S3 object copies
+    /// alongside the current format for mixed-version rollouts.
+    ///
+    /// The value can also be supplied via the S3_MIGRATION_MODE environment variable
+    /// (useful for test-suite rollouts so that old pre-feature images are unaffected
+    /// by changes to the compose command line).
+    #[arg(long, default_value = "no", value_parser = clap::value_parser!(S3MigrationMode), env = "S3_MIGRATION_MODE")]
+    pub s3_migration: S3MigrationMode,
+
+    /// Delay between S3 migration retries after idle concurrent scans or migration panics.
+    #[arg(long = "migration-sleep-duration", default_value = "5m", value_parser = parse_duration, env = "S3_MIGRATION_SLEEP_DURATION")]
+    pub migration_sleep_duration: Duration,
+
+    /// Reserved flag for future cleanup of old S3 object formats after migration
+    #[arg(long, default_value_t = false, env = "CLEAN_OLD_S3_FORMAT_VERSION")]
+    pub clean_old_s3_format_version: bool,
 }
 
 pub fn parse_args() -> Args {

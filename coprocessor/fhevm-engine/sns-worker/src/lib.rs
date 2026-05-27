@@ -1,9 +1,11 @@
 mod aws_upload;
 mod executor;
 mod keyset;
+mod s3_migration;
 mod squash_noise;
 
 pub mod metrics;
+pub use crate::s3_migration::S3MigrationMode;
 
 #[cfg(test)]
 mod tests;
@@ -50,13 +52,17 @@ use crate::{
     aws_upload::{check_is_ready, spawn_resubmit_task, spawn_uploader},
     executor::SwitchNSquashService,
     metrics::spawn_gauge_update_routine,
+    s3_migration::{run_startup_migrations, S3MigrationConfig},
 };
 
 pub const UPLOAD_QUEUE_SIZE: usize = 20;
 pub const SAFE_SER_LIMIT: u64 = 1024 * 1024 * 66;
-pub(crate) const S3_FORMAT_VERSION_LEGACY: i16 = 0;
+
+pub(crate) const CLEAN_OLD_S3_FORMAT_VERSION: i16 = 0;
+pub(crate) const S3_FORMAT_VERSION_V0: i16 = 0;
 pub(crate) const S3_FORMAT_VERSION_V1: i16 = 1;
 pub(crate) const CURRENT_S3_FORMAT_VERSION: i16 = S3_FORMAT_VERSION_V1;
+pub(crate) const S3_FORMAT_VERSION_LEGACY: i16 = S3_FORMAT_VERSION_V0;
 pub type InternalEvents = Option<tokio::sync::mpsc::Sender<&'static str>>;
 
 #[cfg(feature = "gpu")]
@@ -133,6 +139,9 @@ pub struct Config {
     pub pg_auto_explain_with_min_duration: Option<Duration>,
     pub signer_type: SignerType,
     pub private_key: Option<String>,
+    pub s3_migration: S3MigrationMode,
+    pub s3_migration_sleep_duration: Duration,
+    pub clean_old_s3_format_version: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -554,8 +563,8 @@ pub async fn run_all(
     let token = parent_token.child_token();
     let tx = uploads_tx.clone();
     // Initialize the S3 uploader
-    let (client, is_ready) = create_s3_client(&conf).await;
-    let is_ready = Arc::new(AtomicBool::new(is_ready));
+    let (client, is_ready_bool) = create_s3_client(&conf).await;
+    let is_ready = Arc::new(AtomicBool::new(is_ready_bool));
     let s3 = client.clone();
     let jobs_rx: Arc<RwLock<mpsc::Receiver<UploadJob>>> = Arc::new(RwLock::new(uploads_rx));
 
@@ -615,7 +624,7 @@ pub async fn run_all(
             conf.clone(),
             uploads_tx,
             token.child_token(),
-            client,
+            client.clone(),
             events_tx.clone(),
         )
         .await?,
@@ -647,6 +656,51 @@ pub async fn run_all(
         drift_revert::WatcherTimeouts::default(),
     )
     .await?;
+
+    let migration_config = S3MigrationConfig {
+        batch_size: 16,
+        signer: signer.clone(),
+        s3: conf.s3.clone(),
+        mode: conf.s3_migration,
+        sleep_duration: conf.s3_migration_sleep_duration,
+    };
+
+    match migration_config.mode {
+        S3MigrationMode::No => {
+            info!("S3 migration is disabled");
+        }
+        S3MigrationMode::Before | S3MigrationMode::BeforeAndQuit => {
+            info!("S3 migration is enabled: {}", conf.s3_migration);
+            if !is_ready_bool {
+                error!("S3 is not ready");
+            };
+            let db_pool = pool_mngr.pool();
+            run_startup_migrations(&migration_config, &db_pool, &client).await?;
+        }
+        S3MigrationMode::Concurrent => {
+            let db_pool = pool_mngr.pool();
+            let client = client.clone();
+            spawn(async move {
+                info!("S3 migration is enabled: {}", S3MigrationMode::Concurrent);
+                if !is_ready_bool {
+                    error!("S3 is not ready");
+                };
+                if let Err(err) = run_startup_migrations(&migration_config, &db_pool, &client).await
+                {
+                    error!(
+                        error = %err,
+                        "Failed to run concurrent S3 format migration"
+                    );
+                }
+            });
+        }
+    }
+
+    if conf.s3_migration == S3MigrationMode::BeforeAndQuit {
+        info!("SNS worker stopped after S3 migration-only run");
+        token.cancel();
+        return Ok(());
+    }
 
     // Keep the uploader's handle so its failure exits the process too.
     let uploader = spawn(async move {
