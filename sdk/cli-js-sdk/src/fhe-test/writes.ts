@@ -1,6 +1,6 @@
 import type { Hex } from "viem";
 
-import { fheTestAbi } from "../abi";
+import { fheTestAbi } from "./abi";
 import type { WalletContext } from "../config";
 import type { EncryptValue, FheValueType } from "../types";
 import { FHE_TYPE_IDS } from "../types";

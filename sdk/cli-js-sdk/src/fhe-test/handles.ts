@@ -1,6 +1,6 @@
 import type { Hex } from "viem";
 
-import { fheTestAbi } from "../abi";
+import { fheTestAbi } from "./abi";
 import type { ClientContext } from "../config";
 import type { ProgressReporter } from "../shared/progress";
 import type { FheTestHandle, FheValueType } from "../types";
