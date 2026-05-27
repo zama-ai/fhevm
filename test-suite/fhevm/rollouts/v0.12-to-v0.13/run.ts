@@ -200,7 +200,7 @@ export default async function run(ctx: RolloutRunContext) {
   const listenerCoreLock = await writePhaseVersionLock(ctx, "04-listener-core", phaseVersions.listenerCore);
   const coprocessorLock = await writePhaseVersionLock(ctx, "05-coprocessor", phaseVersions.coprocessor);
 
-  logPhase("00 baseline: boot v0.12.4 with the target test-suite harness");
+  logPhase("00 baseline: boot v0.12.5 with the target test-suite harness");
   await ctx.up({ lockFile: baselineLock, scenario, overrides: [{ group: "test-suite" }] });
   await testPhase(ctx, "baseline", testMode);
 
