@@ -354,6 +354,15 @@ interface IDecryption {
     error UnsupportedExtraDataVersion(uint8 version);
 
     /**
+     * @notice Error indicating that the caller-supplied context ID in extraData is zero.
+     * @dev Context ID `0` is reserved as the "pre-pinning legacy" sentinel for in-flight
+     *      decryption requests recorded before context pinning was introduced. Allowing
+     *      a caller to pin a new request to `0` would re-engage that legacy fallback path
+     *      and silently disable the context-mismatch guard on the response handler.
+     */
+    error InvalidNullContextId();
+
+    /**
      * @notice Error indicating that the (public, user, delegated user) decryption is not requested yet.
      * @param decryptionId The decryption request ID.
      */
