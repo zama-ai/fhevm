@@ -7,6 +7,7 @@ skip-lint = false
 
 [programs.localnet]
 confidential_token = "5GKzUSfqBSNjoVW83w3xPtTnAe84srZcDTBstpSoBCR4"
+confidential_token_receiver = "8X98Eaeo9vvspSd8FUm8qW67S64BGMwQ5S8QfmdhF4PU"
 zama_host = "EMhXFu68v61bQV4GrF6ZhZhWNVbH6bHPnTdLtXK8meqn"
 
 [registry]

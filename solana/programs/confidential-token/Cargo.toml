@@ -20,5 +20,7 @@ idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build", "zama-host/idl-bui
 
 [dependencies]
 anchor-lang = "1.0.2"
-anchor-spl = { version = "1.0.2", default-features = false, features = ["token", "token_2022"] }
+anchor-spl = { version = "1.0.2", default-features = false, features = ["associated_token", "token", "token_2022"] }
+confidential-token-receiver-sdk = { path = "../../crates/confidential-token-receiver-sdk" }
+solana-instructions-sysvar = "3.0.1"
 zama-host = { path = "../zama-host", features = ["cpi"] }

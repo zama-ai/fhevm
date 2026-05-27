@@ -1,0 +1,1076 @@
+//! Shared account contexts and validation helpers for instruction modules.
+
+use anchor_lang::prelude::*;
+use anchor_lang::solana_program::{program::invoke_signed, system_instruction};
+use solana_instructions_sysvar::{
+    load_current_index_checked, load_instruction_at_checked, ID as INSTRUCTIONS_SYSVAR_ID,
+};
+use solana_sha256_hasher::hashv;
+
+use crate::{
+    errors::ZamaHostError,
+    events::{AclRecordBoundEvent, AclSubjectAllowedEvent, HostConfigUpdatedEvent},
+    state::{
+        acl_nonce_key, acl_permission_address, acl_record_address,
+        acl_record_subject_slots_are_canonical, assert_handle_for_chain, deny_subject_address,
+        host_config_address, role_flags_are_known, subject_has_role, transient_session_address,
+        AclPermission, AclRecord, AclSubjectEntry, DenySubjectRecord, HostConfig,
+        TransientCapability, TransientCapabilityGrant, TransientSession, ACL_PERMISSION_SEED,
+        ACL_ROLE_COMPUTE, ACL_ROLE_USE, EVENT_VERSION, HOST_CONFIG_SEED, MAX_ACL_SUBJECTS,
+        MAX_TRANSIENT_CAPABILITIES, TRANSIENT_SESSION_STATE_OPEN, TRANSIENT_SESSION_STATE_SEALED,
+    },
+};
+
+/// Shared account context for admin-only config updates.
+#[derive(Accounts)]
+pub struct HostAdmin<'info> {
+    /// Configured host admin.
+    pub admin: Signer<'info>,
+    /// Singleton config PDA.
+    #[account(mut, seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
+    pub host_config: Account<'info, HostConfig>,
+}
+
+/// Accounts for authority-gated test event shims.
+///
+/// These shims do not prove or mutate protocol state and must not be treated as
+/// production APIs.
+#[derive(Accounts)]
+#[event_cpi]
+pub struct TestEmitProtocolEvent<'info> {
+    /// Configured test-shim authority.
+    pub test_authority: Signer<'info>,
+    /// Singleton config PDA with `test_shims_enabled`.
+    #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
+    pub host_config: Account<'info, HostConfig>,
+}
+
+pub(super) fn assert_no_remaining_accounts(remaining_accounts: &[AccountInfo]) -> Result<()> {
+    require!(
+        remaining_accounts.is_empty(),
+        ZamaHostError::UnexpectedRemainingAccounts
+    );
+    Ok(())
+}
+
+pub(super) fn assert_host_config_shape(config: &Account<HostConfig>) -> Result<()> {
+    let (expected_key, expected_bump) = host_config_address();
+    require_keys_eq!(
+        config.key(),
+        expected_key,
+        ZamaHostError::HostConfigMismatch
+    );
+    require!(
+        config.to_account_info().data_len() == 8 + HostConfig::SPACE,
+        ZamaHostError::HostConfigMismatch
+    );
+    require!(
+        config.bump == expected_bump,
+        ZamaHostError::HostConfigMismatch
+    );
+    Ok(())
+}
+
+pub(super) fn assert_admin(config: &Account<HostConfig>, admin: Pubkey) -> Result<()> {
+    assert_host_config_shape(config)?;
+    require_keys_eq!(config.admin, admin, ZamaHostError::HostConfigAdminMismatch);
+    Ok(())
+}
+
+pub(super) fn assert_not_paused(config: &Account<HostConfig>) -> Result<()> {
+    assert_host_config_shape(config)?;
+    require!(!config.paused, ZamaHostError::HostConfigPaused);
+    Ok(())
+}
+
+pub(super) fn assert_test_shim_authority(
+    config: &Account<HostConfig>,
+    authority: Pubkey,
+) -> Result<()> {
+    assert_not_paused(config)?;
+    require!(config.test_shims_enabled, ZamaHostError::TestShimsDisabled);
+    require_keys_eq!(
+        config.test_authority,
+        authority,
+        ZamaHostError::TestShimAuthorityMismatch
+    );
+    Ok(())
+}
+
+pub(super) fn emit_config_updated(config: &HostConfig, admin: Pubkey) {
+    emit!(HostConfigUpdatedEvent {
+        version: EVENT_VERSION,
+        config: crate::state::host_config_address().0,
+        admin,
+        paused: config.paused,
+        mock_input_enabled: config.mock_input_enabled,
+        test_shims_enabled: config.test_shims_enabled,
+        grant_deny_list_enabled: config.grant_deny_list_enabled,
+        updated_slot: config.updated_slot,
+    });
+}
+
+pub(super) fn write_acl_record(
+    record: &mut Account<AclRecord>,
+    nonce_key: [u8; 32],
+    nonce_sequence: u64,
+    acl_domain_key: Pubkey,
+    app_account: Pubkey,
+    encrypted_value_label: [u8; 32],
+    handle: [u8; 32],
+    subjects: &[AclSubjectEntry],
+    public_decrypt: bool,
+    created_slot: u64,
+    bump: u8,
+) {
+    record.handle = handle;
+    record.nonce_key = nonce_key;
+    record.nonce_sequence = nonce_sequence;
+    record.acl_domain_key = acl_domain_key;
+    record.app_account = app_account;
+    record.encrypted_value_label = encrypted_value_label;
+    record.subjects = [Pubkey::default(); MAX_ACL_SUBJECTS];
+    record.subject_roles = [0; MAX_ACL_SUBJECTS];
+    record.subject_count = subjects.len() as u8;
+    record.overflow_subject_count = 0;
+    record.public_decrypt = public_decrypt;
+    record.material_commitment = Pubkey::default();
+    record.material_commitment_hash = [0; 32];
+    record.material_key_id = [0; 32];
+    record.created_slot = created_slot;
+    record.bump = bump;
+
+    for (index, subject) in subjects.iter().enumerate() {
+        record.subjects[index] = subject.pubkey;
+        record.subject_roles[index] = subject.role_flags;
+    }
+}
+
+pub(super) struct AclSubjectUpdate {
+    pub subject: AclSubjectEntry,
+    pub permission_record: Pubkey,
+    pub inline_index: u8,
+}
+
+pub(super) fn extend_acl_subjects<'info>(
+    payer: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    record_key: Pubkey,
+    record: &mut Account<AclRecord>,
+    subjects: &[AclSubjectEntry],
+    permission_accounts: &[AccountInfo<'info>],
+) -> Result<Vec<AclSubjectUpdate>> {
+    require!(
+        !subjects.is_empty(),
+        ZamaHostError::AclSubjectCapacityExceeded
+    );
+
+    let mut overflow_index = 0usize;
+    let mut subject_count = record.subject_count as usize;
+    let mut emitted = Vec::new();
+    for subject in subjects {
+        require!(
+            subject.pubkey != Pubkey::default() && role_flags_are_known(subject.role_flags),
+            ZamaHostError::AclSubjectRoleMismatch
+        );
+        if let Some(index) = record.inline_subject_index(subject.pubkey) {
+            let updated_roles = record.subject_roles[index] | subject.role_flags;
+            if updated_roles != record.subject_roles[index] {
+                record.subject_roles[index] = updated_roles;
+                emitted.push(AclSubjectUpdate {
+                    subject: *subject,
+                    permission_record: Pubkey::default(),
+                    inline_index: index as u8,
+                });
+            }
+            continue;
+        }
+        if subject_count < MAX_ACL_SUBJECTS {
+            let inline_index = subject_count as u8;
+            record.subjects[subject_count] = subject.pubkey;
+            record.subject_roles[subject_count] = subject.role_flags;
+            subject_count += 1;
+            emitted.push(AclSubjectUpdate {
+                subject: *subject,
+                permission_record: Pubkey::default(),
+                inline_index,
+            });
+            continue;
+        }
+
+        let permission = permission_accounts
+            .get(overflow_index)
+            .ok_or(ZamaHostError::AclPermissionMissing)?;
+        overflow_index += 1;
+        let update = create_or_update_permission(
+            payer,
+            system_program,
+            permission,
+            record_key,
+            subject.pubkey,
+            subject.role_flags,
+        )?;
+        if update.created {
+            record.overflow_subject_count = record.overflow_subject_count.saturating_add(1);
+        }
+        if update.changed {
+            emitted.push(AclSubjectUpdate {
+                subject: *subject,
+                permission_record: permission.key(),
+                inline_index: u8::MAX,
+            });
+        }
+    }
+    record.subject_count = subject_count as u8;
+    require!(
+        overflow_index == permission_accounts.len(),
+        ZamaHostError::AclPermissionMismatch
+    );
+    Ok(emitted)
+}
+
+pub(super) fn assert_output_acl_metadata(
+    app_account_authority: Pubkey,
+    nonce_key: [u8; 32],
+    acl_domain_key: Pubkey,
+    app_account: Pubkey,
+    encrypted_value_label: [u8; 32],
+    subjects: &[AclSubjectEntry],
+) -> Result<()> {
+    require_keys_eq!(
+        app_account_authority,
+        app_account,
+        ZamaHostError::AppAccountAuthorityMismatch
+    );
+    assert_nonce_key_matches_fields(
+        nonce_key,
+        acl_domain_key,
+        app_account,
+        encrypted_value_label,
+    )?;
+    require!(
+        !subjects.is_empty() && subjects.len() <= MAX_ACL_SUBJECTS,
+        ZamaHostError::AclSubjectCapacityExceeded
+    );
+    require!(
+        subjects
+            .iter()
+            .all(|subject| subject.pubkey != Pubkey::default()
+                && role_flags_are_known(subject.role_flags)
+                && subject_has_role(subject.role_flags, ACL_ROLE_USE)),
+        ZamaHostError::AclSubjectRoleMismatch
+    );
+    for (index, subject) in subjects.iter().enumerate() {
+        require!(
+            !subjects
+                .iter()
+                .skip(index + 1)
+                .any(|later| later.pubkey == subject.pubkey),
+            ZamaHostError::AclSubjectRoleMismatch
+        );
+    }
+    Ok(())
+}
+
+pub(super) fn assert_public_decrypt_not_set_at_birth(output_public_decrypt: bool) -> Result<()> {
+    require!(
+        !output_public_decrypt,
+        ZamaHostError::PublicDecryptAtBirthUnsupported
+    );
+    Ok(())
+}
+
+pub(super) fn assert_record(
+    record_info: &AccountInfo,
+    record: &Account<AclRecord>,
+    nonce_key: [u8; 32],
+    nonce_sequence: u64,
+    acl_domain_key: Pubkey,
+    app_account: Pubkey,
+    encrypted_value_label: [u8; 32],
+    handle: [u8; 32],
+    subject: Pubkey,
+    permission_info: Option<&AccountInfo>,
+) -> Result<()> {
+    assert_nonce_key_matches_fields(
+        nonce_key,
+        acl_domain_key,
+        app_account,
+        encrypted_value_label,
+    )?;
+    assert_canonical_acl_record(record_info, record)?;
+    require!(
+        record.nonce_key == nonce_key,
+        ZamaHostError::AclNonceKeyMismatch
+    );
+    require!(
+        record.nonce_sequence == nonce_sequence,
+        ZamaHostError::AclNonceSequenceMismatch
+    );
+    require_keys_eq!(
+        record.acl_domain_key,
+        acl_domain_key,
+        ZamaHostError::AclDomainKeyMismatch
+    );
+    require_keys_eq!(
+        record.app_account,
+        app_account,
+        ZamaHostError::AclAppAccountMismatch
+    );
+    require!(
+        record.encrypted_value_label == encrypted_value_label,
+        ZamaHostError::AclEncryptedValueLabelMismatch
+    );
+    assert_record_subject_role(
+        record,
+        record_info.key(),
+        handle,
+        subject,
+        ACL_ROLE_USE,
+        permission_info,
+    )
+}
+
+pub(super) fn assert_canonical_acl_record(
+    record_info: &AccountInfo,
+    record: &Account<AclRecord>,
+) -> Result<()> {
+    require!(
+        record_info.data_len() == 8 + AclRecord::SPACE,
+        ZamaHostError::AclRecordPdaMismatch
+    );
+    assert_canonical_acl_record_data(record_info.key(), record)
+}
+
+pub(super) fn assert_acl_record_handle_for_chain(record: &AclRecord, chain_id: u64) -> Result<()> {
+    assert_handle_for_chain(record.handle, chain_id)
+}
+
+fn assert_canonical_acl_record_data(record_key: Pubkey, record: &AclRecord) -> Result<()> {
+    assert_nonce_key_matches_fields(
+        record.nonce_key,
+        record.acl_domain_key,
+        record.app_account,
+        record.encrypted_value_label,
+    )?;
+
+    let (expected, expected_bump) = acl_record_address(record.nonce_key, record.nonce_sequence);
+    require_keys_eq!(record_key, expected, ZamaHostError::AclRecordPdaMismatch);
+    require!(
+        record.bump == expected_bump,
+        ZamaHostError::AclRecordPdaMismatch
+    );
+    require!(
+        acl_record_subject_slots_are_canonical(record),
+        ZamaHostError::AclSubjectRoleMismatch
+    );
+    Ok(())
+}
+
+pub(super) fn assert_unchecked_acl_record_subject_role(
+    record_info: &AccountInfo,
+    handle: [u8; 32],
+    chain_id: u64,
+    subject: Pubkey,
+    role: u8,
+    permission_info: Option<&AccountInfo>,
+) -> Result<()> {
+    require_keys_eq!(
+        *record_info.owner,
+        crate::ID,
+        ZamaHostError::AclRecordPdaMismatch
+    );
+    let record = read_acl_record(record_info)?;
+    assert_canonical_acl_record_data(record_info.key(), &record)?;
+    assert_acl_record_handle_for_chain(&record, chain_id)?;
+    assert_record_subject_role(
+        &record,
+        record_info.key(),
+        handle,
+        subject,
+        role,
+        permission_info,
+    )
+}
+
+pub(super) fn unchecked_acl_record_subject_has_role(
+    record_info: &AccountInfo,
+    handle: [u8; 32],
+    subject: Pubkey,
+    role: u8,
+    permission_info: Option<&AccountInfo>,
+) -> Result<bool> {
+    require_keys_eq!(
+        *record_info.owner,
+        crate::ID,
+        ZamaHostError::AclRecordPdaMismatch
+    );
+    let record = read_acl_record(record_info)?;
+    assert_canonical_acl_record_data(record_info.key(), &record)?;
+    require!(record.handle == handle, ZamaHostError::AclHandleMismatch);
+    if let Some(index) = record.inline_subject_index(subject) {
+        require!(
+            permission_info.is_none(),
+            ZamaHostError::AclPermissionMismatch
+        );
+        return Ok(subject_has_role(record.subject_roles[index], role));
+    }
+    let Some(permission_info) = permission_info else {
+        return Ok(false);
+    };
+    let permission = read_permission(permission_info)?;
+    let (expected, expected_bump) = acl_permission_address(record_info.key(), subject);
+    require_keys_eq!(
+        permission_info.key(),
+        expected,
+        ZamaHostError::AclPermissionPdaMismatch
+    );
+    require!(
+        permission.bump == expected_bump,
+        ZamaHostError::AclPermissionPdaMismatch
+    );
+    require_keys_eq!(
+        permission.acl_record,
+        record_info.key(),
+        ZamaHostError::AclPermissionMismatch
+    );
+    require_keys_eq!(
+        permission.subject,
+        subject,
+        ZamaHostError::AclPermissionMismatch
+    );
+    Ok(subject_has_role(permission.role_flags, role))
+}
+
+pub(super) fn read_acl_record(record_info: &AccountInfo) -> Result<AclRecord> {
+    require!(
+        record_info.data_len() == 8 + AclRecord::SPACE,
+        ZamaHostError::AclRecordPdaMismatch
+    );
+    let data = record_info.try_borrow_data()?;
+    let mut data_slice: &[u8] = &data;
+    AclRecord::try_deserialize(&mut data_slice)
+}
+
+fn assert_nonce_key_matches_fields(
+    nonce_key: [u8; 32],
+    acl_domain_key: Pubkey,
+    app_account: Pubkey,
+    encrypted_value_label: [u8; 32],
+) -> Result<()> {
+    require!(
+        nonce_key == acl_nonce_key(acl_domain_key, app_account, encrypted_value_label),
+        ZamaHostError::AclNonceKeyMismatch
+    );
+    Ok(())
+}
+
+pub(super) fn assert_record_subject_role(
+    record: &AclRecord,
+    record_key: Pubkey,
+    handle: [u8; 32],
+    subject: Pubkey,
+    role: u8,
+    permission_info: Option<&AccountInfo>,
+) -> Result<()> {
+    require!(record.handle == handle, ZamaHostError::AclHandleMismatch);
+    if let Some(index) = record.inline_subject_index(subject) {
+        require!(
+            permission_info.is_none(),
+            ZamaHostError::AclPermissionMismatch
+        );
+        if subject_has_role(record.subject_roles[index], role) {
+            return Ok(());
+        }
+        return err!(ZamaHostError::AclSubjectRoleMismatch);
+    }
+    let permission_info = permission_info.ok_or(ZamaHostError::AclPermissionMissing)?;
+    let permission = read_permission(permission_info)?;
+    let (expected, expected_bump) = acl_permission_address(record_key, subject);
+    require_keys_eq!(
+        permission_info.key(),
+        expected,
+        ZamaHostError::AclPermissionPdaMismatch
+    );
+    require!(
+        permission.bump == expected_bump,
+        ZamaHostError::AclPermissionPdaMismatch
+    );
+    require_keys_eq!(
+        permission.acl_record,
+        record_key,
+        ZamaHostError::AclPermissionMismatch
+    );
+    require_keys_eq!(
+        permission.subject,
+        subject,
+        ZamaHostError::AclPermissionMismatch
+    );
+    require!(
+        subject_has_role(permission.role_flags, role),
+        ZamaHostError::AclSubjectRoleMismatch
+    );
+    Ok(())
+}
+
+pub(super) fn check_grant_not_denied(
+    config: &HostConfig,
+    subject: Pubkey,
+    deny_record: Option<&UncheckedAccount>,
+) -> Result<()> {
+    if !config.grant_deny_list_enabled {
+        require!(deny_record.is_none(), ZamaHostError::AclDenyRecordMismatch);
+        return Ok(());
+    }
+    let deny_record = deny_record.ok_or(ZamaHostError::AclDenyRecordMissing)?;
+    let info = deny_record.to_account_info();
+    let (expected, expected_bump) = deny_subject_address(subject);
+    require_keys_eq!(info.key(), expected, ZamaHostError::AclDenyRecordMismatch);
+
+    if is_absent_deny_record(&info)? {
+        return Ok(());
+    }
+    require_keys_eq!(*info.owner, crate::ID, ZamaHostError::AclDenyRecordMismatch);
+    require!(
+        info.data_len() == 8 + DenySubjectRecord::SPACE,
+        ZamaHostError::AclDenyRecordMismatch
+    );
+    let mut data: &[u8] = &info.try_borrow_data()?;
+    let record = DenySubjectRecord::try_deserialize(&mut data)?;
+    require!(
+        record.bump == expected_bump,
+        ZamaHostError::AclDenyRecordMismatch
+    );
+    require_keys_eq!(
+        record.subject,
+        subject,
+        ZamaHostError::AclDenyRecordMismatch
+    );
+    require!(!record.denied, ZamaHostError::AclSubjectDenied);
+    Ok(())
+}
+
+pub(super) fn is_absent_deny_record(info: &AccountInfo) -> Result<bool> {
+    if info.owner == &System::id() && info.data_is_empty() {
+        require!(!info.executable, ZamaHostError::AclDenyRecordMismatch);
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn absent_deny_record_accepts_non_executable_system_empty_account() {
+        let key = Pubkey::new_unique();
+        let owner = System::id();
+        let mut lamports = 0;
+        let mut data = Vec::new();
+        let info = AccountInfo::new(&key, false, false, &mut lamports, &mut data, &owner, false);
+
+        assert!(is_absent_deny_record(&info).unwrap());
+    }
+
+    #[test]
+    fn absent_deny_record_rejects_executable_system_empty_account() {
+        let key = Pubkey::new_unique();
+        let owner = System::id();
+        let mut lamports = 0;
+        let mut data = Vec::new();
+        let info = AccountInfo::new(&key, false, false, &mut lamports, &mut data, &owner, true);
+
+        assert!(is_absent_deny_record(&info).is_err());
+    }
+
+    #[test]
+    fn absent_deny_record_ignores_non_system_empty_account() {
+        let key = Pubkey::new_unique();
+        let owner = crate::ID;
+        let mut lamports = 0;
+        let mut data = Vec::new();
+        let info = AccountInfo::new(&key, false, false, &mut lamports, &mut data, &owner, false);
+
+        assert!(!is_absent_deny_record(&info).unwrap());
+    }
+}
+
+pub(super) fn assert_transient_session_data(
+    session_key: Pubkey,
+    session: &TransientSession,
+) -> Result<()> {
+    require!(
+        session.session_nonce != [0; 32],
+        ZamaHostError::InvalidTransientSessionNonce
+    );
+    require!(
+        session.max_entries as usize <= MAX_TRANSIENT_CAPABILITIES && session.max_entries > 0,
+        ZamaHostError::TransientSessionCapacityInvalid
+    );
+    require!(
+        session.entries.len() <= session.max_entries as usize,
+        ZamaHostError::TransientSessionCapacityInvalid
+    );
+    let (expected, expected_bump) =
+        transient_session_address(session.authority, session.session_nonce);
+    require_keys_eq!(
+        session_key,
+        expected,
+        ZamaHostError::TransientSessionPdaMismatch
+    );
+    require!(
+        session.bump == expected_bump,
+        ZamaHostError::TransientSessionPdaMismatch
+    );
+    Ok(())
+}
+
+pub(super) fn assert_transient_session_account(
+    session_info: &AccountInfo,
+    session: &TransientSession,
+) -> Result<()> {
+    require!(
+        session_info.data_len() == 8 + TransientSession::SPACE,
+        ZamaHostError::TransientSessionPdaMismatch
+    );
+    assert_transient_session_data(session_info.key(), session)
+}
+
+pub(super) fn read_transient_session(session_info: &AccountInfo) -> Result<TransientSession> {
+    require_keys_eq!(
+        *session_info.owner,
+        crate::ID,
+        ZamaHostError::TransientSessionPdaMismatch
+    );
+    require!(
+        session_info.data_len() == 8 + TransientSession::SPACE,
+        ZamaHostError::TransientSessionPdaMismatch
+    );
+    let data = session_info.try_borrow_data()?;
+    let mut data_slice: &[u8] = &data;
+    let session = TransientSession::try_deserialize(&mut data_slice)?;
+    assert_transient_session_data(session_info.key(), &session)?;
+    Ok(session)
+}
+
+pub(super) fn append_transient_capability(
+    session_info: &AccountInfo,
+    authority: Pubkey,
+    current_slot: u64,
+    handle: [u8; 32],
+    grant: TransientCapabilityGrant,
+) -> Result<()> {
+    require!(
+        session_info.is_writable,
+        ZamaHostError::InvalidFheEvalAccount
+    );
+    let mut session = read_transient_session(session_info)?;
+    append_transient_capability_to_session(
+        session_info.key(),
+        &mut session,
+        authority,
+        current_slot,
+        handle,
+        grant,
+    )?;
+    write_account(session_info, &session)
+}
+
+pub(super) fn append_transient_capability_to_session(
+    session_key: Pubkey,
+    session: &mut TransientSession,
+    authority: Pubkey,
+    current_slot: u64,
+    handle: [u8; 32],
+    grant: TransientCapabilityGrant,
+) -> Result<()> {
+    assert_transient_session_data(session_key, session)?;
+    require_keys_eq!(
+        session.authority,
+        authority,
+        ZamaHostError::TransientSessionAuthorityMismatch
+    );
+    require!(
+        session.state == TRANSIENT_SESSION_STATE_OPEN,
+        ZamaHostError::TransientSessionStateInvalid
+    );
+    require!(
+        current_slot <= session.expires_slot,
+        ZamaHostError::TransientSessionExpired
+    );
+    require!(
+        session.entries.len() < session.max_entries as usize,
+        ZamaHostError::TransientSessionCapacityInvalid
+    );
+    assert_transient_grant(session, grant)?;
+    session.entries.push(TransientCapability {
+        handle,
+        grant,
+        used_count: 0,
+    });
+    Ok(())
+}
+
+pub(super) fn consume_transient_capability(
+    session_info: &AccountInfo,
+    authority: Pubkey,
+    current_slot: u64,
+    handle: [u8; 32],
+    subject: Pubkey,
+    role: u8,
+    capability_index: u16,
+    instructions_sysvar: Option<&AccountInfo>,
+) -> Result<TransientCapability> {
+    require!(
+        session_info.is_writable,
+        ZamaHostError::InvalidFheEvalAccount
+    );
+    let mut session = read_transient_session(session_info)?;
+    require_keys_eq!(
+        session.authority,
+        authority,
+        ZamaHostError::TransientSessionAuthorityMismatch
+    );
+    require!(
+        session.state == TRANSIENT_SESSION_STATE_SEALED,
+        ZamaHostError::TransientSessionStateInvalid
+    );
+    require!(
+        current_slot <= session.expires_slot,
+        ZamaHostError::TransientSessionExpired
+    );
+    let instructions_sysvar =
+        instructions_sysvar.ok_or(ZamaHostError::TransientCapabilityReceiverMissing)?;
+    require_keys_eq!(
+        instructions_sysvar.key(),
+        INSTRUCTIONS_SYSVAR_ID,
+        ZamaHostError::TransientCapabilityReceiverMissing
+    );
+    assert_transient_session_created_in_current_transaction(
+        instructions_sysvar,
+        *session_info.key,
+    )?;
+    require_keys_eq!(
+        session.compute_subject,
+        subject,
+        ZamaHostError::TransientCapabilityUnauthorized
+    );
+
+    let capability = session
+        .entries
+        .get_mut(capability_index as usize)
+        .ok_or(ZamaHostError::TransientCapabilityMismatch)?;
+    require!(
+        capability.handle == handle,
+        ZamaHostError::TransientCapabilityMismatch
+    );
+    require_keys_eq!(
+        capability.grant.subject,
+        subject,
+        ZamaHostError::TransientCapabilityUnauthorized
+    );
+    require!(
+        subject_has_role(capability.grant.role_flags, role),
+        ZamaHostError::TransientCapabilityUnauthorized
+    );
+    require!(
+        capability.used_count < capability.grant.max_uses,
+        ZamaHostError::TransientCapabilityConsumed
+    );
+    assert_current_receiver_program(instructions_sysvar, capability.grant.receiver_program)?;
+
+    capability.used_count = capability
+        .used_count
+        .checked_add(1)
+        .ok_or(ZamaHostError::TransientCapabilityConsumed)?;
+    let consumed = *capability;
+    write_account(session_info, &session)?;
+    Ok(consumed)
+}
+
+fn assert_transient_grant(
+    session: &TransientSession,
+    grant: TransientCapabilityGrant,
+) -> Result<()> {
+    require!(
+        grant.subject == session.compute_subject,
+        ZamaHostError::TransientCapabilityUnauthorized
+    );
+    require!(
+        grant.receiver_program != Pubkey::default(),
+        ZamaHostError::TransientCapabilityReceiverMissing
+    );
+    require!(
+        role_flags_are_known(grant.role_flags)
+            && grant.role_flags & !(ACL_ROLE_USE | ACL_ROLE_COMPUTE) == 0
+            && subject_has_role(grant.role_flags, ACL_ROLE_USE),
+        ZamaHostError::TransientCapabilityUnauthorized
+    );
+    require!(
+        grant.max_uses == 1,
+        ZamaHostError::TransientCapabilityConsumed
+    );
+    require!(
+        !grant.public_decrypt_allowed,
+        ZamaHostError::TransientCapabilityPublicDecryptDenied
+    );
+    Ok(())
+}
+
+fn assert_current_receiver_program(
+    instructions_sysvar: &AccountInfo,
+    expected_receiver_program: Pubkey,
+) -> Result<()> {
+    let current_index = load_current_index_checked(instructions_sysvar)?;
+    let current_instruction =
+        load_instruction_at_checked(current_index as usize, instructions_sysvar)?;
+    require_keys_eq!(
+        current_instruction.program_id,
+        expected_receiver_program,
+        ZamaHostError::TransientCapabilityUnauthorized
+    );
+    Ok(())
+}
+
+fn assert_transient_session_created_in_current_transaction(
+    instructions_sysvar: &AccountInfo,
+    session_key: Pubkey,
+) -> Result<()> {
+    let current_index = load_current_index_checked(instructions_sysvar)?;
+    let discriminator = anchor_global_discriminator("create_transient_session");
+    for instruction_index in 0..current_index {
+        let instruction =
+            load_instruction_at_checked(instruction_index as usize, instructions_sysvar)?;
+        if instruction.program_id != crate::ID || instruction.data.len() < 8 {
+            continue;
+        }
+        if instruction.data[..8] != discriminator {
+            continue;
+        }
+        let Some(session_meta) = instruction.accounts.get(2) else {
+            continue;
+        };
+        if session_meta.pubkey == session_key {
+            return Ok(());
+        }
+    }
+    err!(ZamaHostError::TransientSessionCreationMissing)
+}
+
+fn anchor_global_discriminator(name: &str) -> [u8; 8] {
+    let preimage = [b"global:", name.as_bytes()].concat();
+    let digest = hashv(&[&preimage]).to_bytes();
+    let mut discriminator = [0u8; 8];
+    discriminator.copy_from_slice(&digest[..8]);
+    discriminator
+}
+
+struct PermissionUpdate {
+    created: bool,
+    changed: bool,
+}
+
+fn create_or_update_permission<'info>(
+    payer: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    permission_info: &AccountInfo<'info>,
+    record_key: Pubkey,
+    subject: Pubkey,
+    role_flags: u8,
+) -> Result<PermissionUpdate> {
+    let (expected, bump) = acl_permission_address(record_key, subject);
+    require_keys_eq!(
+        permission_info.key(),
+        expected,
+        ZamaHostError::AclPermissionPdaMismatch
+    );
+    let created = permission_info.owner != &crate::ID;
+    create_pda_if_needed(
+        payer,
+        permission_info,
+        system_program,
+        8 + AclPermission::SPACE,
+        &[
+            ACL_PERMISSION_SEED,
+            record_key.as_ref(),
+            subject.as_ref(),
+            &[bump],
+        ],
+    )?;
+
+    let mut permission = if created {
+        AclPermission {
+            acl_record: record_key,
+            subject,
+            role_flags: 0,
+            bump,
+        }
+    } else {
+        read_permission(permission_info)?
+    };
+    require_keys_eq!(
+        permission.acl_record,
+        record_key,
+        ZamaHostError::AclPermissionMismatch
+    );
+    require_keys_eq!(
+        permission.subject,
+        subject,
+        ZamaHostError::AclPermissionMismatch
+    );
+    require!(
+        permission.bump == bump,
+        ZamaHostError::AclPermissionPdaMismatch
+    );
+    let updated_roles = permission.role_flags | role_flags;
+    let changed = created || updated_roles != permission.role_flags;
+    permission.role_flags = updated_roles;
+    write_account(permission_info, &permission)?;
+    Ok(PermissionUpdate { created, changed })
+}
+
+fn read_permission(permission_info: &AccountInfo) -> Result<AclPermission> {
+    require_keys_eq!(
+        *permission_info.owner,
+        crate::ID,
+        ZamaHostError::AclPermissionMismatch
+    );
+    require!(
+        permission_info.data_len() == 8 + AclPermission::SPACE,
+        ZamaHostError::AclPermissionMismatch
+    );
+    let data = permission_info.try_borrow_data()?;
+    let mut data_slice: &[u8] = &data;
+    AclPermission::try_deserialize(&mut data_slice)
+}
+
+pub(super) fn create_pda_if_needed<'info>(
+    payer: &AccountInfo<'info>,
+    account: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    space: usize,
+    seeds: &[&[u8]],
+) -> Result<()> {
+    if account.owner == &crate::ID {
+        return Ok(());
+    }
+    require_keys_eq!(
+        *account.owner,
+        System::id(),
+        ZamaHostError::PdaCreationMismatch
+    );
+    require!(account.data_is_empty(), ZamaHostError::PdaCreationMismatch);
+    require!(!account.executable, ZamaHostError::PdaCreationMismatch);
+    let rent = Rent::get()?.minimum_balance(space);
+    invoke_signed(
+        &system_instruction::create_account(payer.key, account.key, rent, space as u64, &crate::ID),
+        &[payer.clone(), account.clone(), system_program.clone()],
+        &[seeds],
+    )?;
+    require_keys_eq!(
+        *account.owner,
+        crate::ID,
+        ZamaHostError::PdaCreationMismatch
+    );
+    require!(!account.executable, ZamaHostError::PdaCreationMismatch);
+    require!(
+        account.data_len() == space,
+        ZamaHostError::PdaCreationMismatch
+    );
+    require!(
+        account.lamports() >= rent,
+        ZamaHostError::PdaCreationMismatch
+    );
+    Ok(())
+}
+
+pub(super) fn create_pda_strict<'info>(
+    payer: &AccountInfo<'info>,
+    account: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    space: usize,
+    seeds: &[&[u8]],
+) -> Result<()> {
+    require!(account.is_writable, ZamaHostError::InvalidFheEvalAccount);
+    require_keys_eq!(
+        *account.owner,
+        System::id(),
+        ZamaHostError::FheEvalOutputAlreadyInitialized
+    );
+    require!(
+        account.data_is_empty(),
+        ZamaHostError::FheEvalOutputAlreadyInitialized
+    );
+    require!(
+        !account.executable,
+        ZamaHostError::FheEvalOutputAlreadyInitialized
+    );
+    let rent = Rent::get()?.minimum_balance(space);
+    invoke_signed(
+        &system_instruction::create_account(payer.key, account.key, rent, space as u64, &crate::ID),
+        &[payer.clone(), account.clone(), system_program.clone()],
+        &[seeds],
+    )?;
+    require_keys_eq!(
+        *account.owner,
+        crate::ID,
+        ZamaHostError::FheEvalOutputAlreadyInitialized
+    );
+    require!(
+        !account.executable,
+        ZamaHostError::FheEvalOutputAlreadyInitialized
+    );
+    require!(
+        account.data_len() == space,
+        ZamaHostError::FheEvalOutputAlreadyInitialized
+    );
+    require!(
+        account.lamports() >= rent,
+        ZamaHostError::FheEvalOutputAlreadyInitialized
+    );
+    Ok(())
+}
+
+pub(super) fn write_account<T: AccountSerialize>(info: &AccountInfo, account: &T) -> Result<()> {
+    let mut data = info.try_borrow_mut_data()?;
+    let mut cursor = &mut data[..];
+    account.try_serialize(&mut cursor)?;
+    Ok(())
+}
+
+pub(super) fn emit_record_bound(record_key: Pubkey, record: &AclRecord) {
+    emit!(AclRecordBoundEvent {
+        version: EVENT_VERSION,
+        acl_record: record_key,
+        handle: record.handle,
+        nonce_key: record.nonce_key,
+        nonce_sequence: record.nonce_sequence,
+        acl_domain_key: record.acl_domain_key,
+        app_account: record.app_account,
+        encrypted_value_label: record.encrypted_value_label,
+        subject_count: record.subject_count,
+        public_decrypt: record.public_decrypt,
+        created_slot: record.created_slot,
+    });
+}
+
+pub(super) fn emit_subject_event(
+    record_key: Pubkey,
+    handle: [u8; 32],
+    subject: AclSubjectEntry,
+    overflow_permission_record: Pubkey,
+) {
+    let updated_slot = Clock::get().map_or(0, |clock| clock.slot);
+    emit!(AclSubjectAllowedEvent {
+        version: EVENT_VERSION,
+        acl_record: record_key,
+        handle,
+        authority_subject: Pubkey::default(),
+        subject: subject.pubkey.to_bytes(),
+        role_flags: subject.role_flags,
+        overflow_permission_record,
+        inline_index: u8::MAX,
+        updated_slot,
+    });
+}

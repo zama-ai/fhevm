@@ -18,6 +18,7 @@ The PoC does not settle the final Solana product shape. It makes one path real e
 solana/programs/zama-host
   Protocol-side host program.
   Owns FHE event emission and ACL enforcement.
+  Read the Rustdoc for account layouts, role flags, PDA helpers, and instruction invariants.
 
 solana/programs/confidential-token
   App-side PoC program.
@@ -28,12 +29,89 @@ solana/runtime-tests
   Fast LiteSVM tests for Solana accounts, PDAs, CPI, events, and ACL behavior.
   tests/support/fhe_runtime.rs adds a cleartext backend that consumes real ZamaHost events.
 
+solana/docs
+  Permanent design rationale.
+  Start with DESIGN_DECISIONS.md before changing ACL, KMS, event transport, decrypt, or token
+  transfer behavior.
+
 coprocessor/fhevm-engine/host-listener/src/solana_adapter.rs
   Maps typed Solana host events into the existing coprocessor DB model.
 
 coprocessor/fhevm-engine/tfhe-worker/src/tests/solana_poc.rs
   Worker-backed end-to-end tests with real small TFHE ciphertexts.
 ```
+
+## Current Architecture At A Glance
+
+The PoC has one protocol program and one app program.
+
+```text
+confidential-token
+  owns token semantics
+  stores current balance handle pointers
+  chooses ACL domain/app account/label/nonce sequence
+  calls ZamaHost through named helpers in src/fhe.rs
+
+zama-host
+  owns canonical ACL records
+  verifies host operation preconditions
+  derives or checks FHE handles
+  emits protocol events
+  gates mock/test-only paths through HostConfig authorities
+
+host-listener / tfhe-worker / KMS connector
+  consume protocol events and account-shaped evidence
+  must treat events as indexing hints
+  must verify ACL state before authorizing decrypts
+```
+
+The most important account boundary is:
+
+```text
+App account state lives in confidential-token.
+Host ACL state lives in zama-host.
+Opaque handles are stored in ACL records; they are not PDA seeds.
+```
+
+This keeps Solana account discovery compatible with unpredictable FHEVM handles. Apps can prepare
+the output ACL PDA before the transaction executes, while `zama-host` writes the actual computed
+handle after it verifies the operation.
+
+## Documentation Contract
+
+Keep these documentation layers in sync:
+
+```text
+solana/README.md
+  branch-level architecture, safety boundaries, commands, and handoff notes
+
+solana/docs/
+  permanent design rationale and focused notes for decisions that should outlive the issue ledger
+
+solana/docs/DESIGN_DECISIONS.md
+  stable decision index: problem, selected path, rationale, consequences, and open product work
+
+solana/OZ_GUIDE.md
+  short role-specific index for OpenZeppelin follow-up work
+
+solana/DEVELOPMENT_ISSUES.md
+  temporal development pitfalls, known failures, workarounds tried, and unresolved follow-up items
+
+solana/DEVELOPMENT_LOGBOOK.md
+  temporal resume state and current audit notes
+
+Rustdoc in solana/programs/*
+  authoritative inline documentation for public accounts, events, errors, helpers, and CPI-facing
+  instruction contexts
+```
+
+Inline docs should explain the invariant or trust boundary, not restate the identifier. Public
+account fields should document who writes them, who verifies them, or why they are part of an
+off-chain witness. Test/mock instructions must say why they are not production APIs.
+
+When a temporal issue discovers a durable architecture decision, promote the rationale into
+[`docs/DESIGN_DECISIONS.md`](docs/DESIGN_DECISIONS.md) or a focused file under `docs/` before
+handoff.
 
 ## Handoff Path
 
@@ -44,8 +122,10 @@ Use this order when picking up the branch:
    cd solana
    NO_DNA=1 anchor build --ignore-keys
    cargo test --workspace
+   cargo doc --no-deps -p zama-host -p confidential-token
 
 2. Read the flow
+   Start with docs/DESIGN_DECISIONS.md for rationale.
    Start with "Global Flow", then "Confidential Transfer", then "User Decrypt Shape".
    The canonical product-shaped test is:
      confidential_token_e2e_wrap_transfer_and_decrypts_current_and_historical_balances
@@ -63,9 +143,12 @@ Use this order when picking up the branch:
 
 ## Collaboration Contract
 
-Use this guide as the central technical handoff document for the branch. The short
-[`OZ_GUIDE.md`](./OZ_GUIDE.md) file is a role-specific index for OpenZeppelin follow-up work; keep
-technical details here and link back from that file instead of duplicating large sections.
+Use this guide as the central technical handoff document for the branch. The permanent
+[`docs/DESIGN_DECISIONS.md`](./docs/DESIGN_DECISIONS.md) file records durable rationale, the short
+[`OZ_GUIDE.md`](./OZ_GUIDE.md) file is a role-specific index for OpenZeppelin follow-up work, and
+the temporal [`DEVELOPMENT_ISSUES.md`](./DEVELOPMENT_ISSUES.md) ledger records implementation
+pitfalls and known failures. Keep technical details here or in `docs/`, and link back from temporal
+files instead of duplicating large sections.
 
 The PoC can still have breaking changes. The rule is:
 
@@ -89,6 +172,9 @@ Change emitted host events?
 
 Change user decrypt semantics?
   update runtime KMS model tests + tfhe-worker solana_poc tests
+
+Change public accounts/events/helpers?
+  update Rustdoc and run cargo doc for zama-host + confidential-token
 ```
 
 For OpenZeppelin follow-up work, the safe area is:
@@ -127,11 +213,43 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
       the checked-in ZamaHost Anchor IDL snapshot.
 - [x] Solana host events normalize into the existing coprocessor DB event shape.
 - [x] Worker-backed tests use real small TFHE ciphertexts for Solana-originated events.
-- [x] Confidential token can initialize a mint and token accounts.
-- [x] Confidential token can wrap SPL-like USDC into a confidential balance handle.
-- [x] Confidential token can transfer by rotating Alice and Bob balance handles.
+- [x] Confidential token can initialize a mint with an encrypted total-supply handle and initialize
+      token accounts with zero encrypted balance handles; nonzero confidential supply enters
+      through wrap or a future explicit mint flow.
+- [x] Confidential token can wrap SPL-like USDC by rotating both the recipient balance handle and
+      the mint-level encrypted total-supply handle.
+- [x] Confidential token can transfer by rotating Alice and Bob balance handles through the
+      all-or-zero ERC7984-style graph: `ge`, debit candidate `sub`, encrypted `if_then_else`,
+      transferred amount `sub`, and recipient `add`.
+- [x] Confidential token can settle a receiver callback result through a split prepare/finalize
+      refund graph: prepare computes and debits the encrypted refund from the recipient, finalize
+      credits the original sender and records the final encrypted transferred amount.
+- [x] Confidential token can call an arbitrary receiver hook program between transfer and callback
+      settlement through owner-gated and active-operator-gated split instructions, then verify the
+      hook's Solana return data binds the encrypted callback-success handle and ACL record to the
+      prior transfer.
+- [x] `confidential-token-receiver-sdk` packages the reusable receiver-hook return ABI
+      (`TransferReceiverReturn`, `TRANSFER_RECEIVER_RETURN_MAGIC`,
+      `transfer_receiver_return_data`, and a return-data setter) for external receiver programs.
+- [x] Confidential token re-exports the receiver-hook ABI, and the separate
+      `confidential-token-receiver` sample program uses the SDK in runtime tests.
+- [x] Confidential token can burn through the same all-or-zero graph, rotating the holder balance
+      and mint-level encrypted total supply while emitting the encrypted burned amount.
+- [x] Confidential token supports expiring operator PDAs and operator `transfer_from` without the
+      holder signing the transfer instruction. Revoked or expired operator PDAs can be closed by
+      anyone, while active operator PDAs require the token owner to close; rent always refunds to
+      the token owner.
 - [x] Confidential token emits local balance-history events for app/front-end indexing. These
       events are not consumed by the generic coprocessor listener.
+- [x] Confidential token emits local total-supply history events for app/front-end indexing.
+- [x] Confidential token emits encrypted transferred/burned amounts and can request public
+      disclosure for either the current balance or any token-scoped amount whose ACL grants the
+      requester `ACL_ROLE_PUBLIC_DECRYPT`.
+- [x] Confidential token can emit KMS-certified cleartext balance/amount disclosure events after
+      verifying the ACL public-decrypt release flag, a native Ed25519 disclosure certificate, and
+      host material commitment witness.
+- [x] Confidential token can redeem a KMS-certified burned amount from the underlying vault once,
+      protected by a material witness and burn-redemption replay marker PDA.
 - [x] Canonical confidential token scenario covers wrap, transfer, current decrypt, historical
       decrypt, and expected failures.
 - [x] Compute-time ACL is enforced by `zama-host::fhe_binary_op` before event emission.
@@ -139,8 +257,25 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
       the fused `fhe_binary_op_and_bind_output` path that also emits the compute event.
 - [x] Generic persistent ACL grants mutate the existing canonical ACL record instead of creating a
       second record for the same handle.
-- [x] Token account initialization creates the initial balance handle through a host-owned
-      `trivial_encrypt_and_bind` path, not through caller-supplied handle binding.
+- [x] ACL subjects carry explicit role flags for compute/use, grant authority, public decrypt, and
+      user decrypt policy checks; host writes and KMS witness decoding reject zero or unknown role
+      bitsets and malformed subject slots.
+- [x] More than eight subjects are represented with per-subject overflow permission PDAs instead of
+      deriving any account address from the handle bytes.
+- [x] Host-level config gates pause state, mock input binding, test event shims, and grant deny-list
+      behavior behind configured authorities.
+- [x] Public decrypt is role-gated through `ACL_ROLE_PUBLIC_DECRYPT`, not by plain subject
+      membership.
+- [x] Token account initialization creates a zero balance handle through a host-owned
+      `trivial_encrypt_and_bind` path, not through caller-supplied handle binding or unbacked
+      balance birth.
+- [x] ZamaHost can create durable random ciphertext handles through `fhe_rand_and_bind` and
+      `fhe_rand_bounded_and_bind`, deriving the random seed on-chain from slot context plus output
+      nonce metadata, emitting worker-consumable random events, and binding the result into a
+      canonical ACL record.
+- [x] Confidential token can create token-scoped random and bounded-random amount handles through
+      `create_random_amount` and `create_random_bounded_amount`, using the same host-owned ACL
+      record shape as transfer and burn input amounts.
 - [x] Runtime tests include a cleartext FHE backend that consumes emitted ZamaHost events and checks
       the plaintext semantics of transfer and wrap flows.
 - [x] Confidential token uses a small `fhe` helper module so app logic calls named FHE helpers
@@ -150,33 +285,102 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 - [x] Current and historical balance decrypt are both modeled when the relevant ACL record still
       exists.
 - [x] Public decrypt is modeled through `allow_for_decryption`.
+- [x] User-decryption delegation records carry a monotonic counter and last-update slot, and reject
+      same-slot double updates so signed witness counters cannot be invalidated twice in one slot.
 - [x] Negative tests cover wrong signer, wrong ACL record, wrong handle, wrong domain key, stale
       current ACL, wrong output ACL, reused output ACL, scalar RHS account behavior, and
-      unauthorized public decrypt.
+      unauthorized public decrypt, revoked operators, delegation counter updates, and same-slot
+      delegation double updates.
 - [x] Scalar RHS host behavior is modeled: encrypted RHS requires an ACL record; scalar RHS does
       not.
+- [x] External encrypted-input birth has a production-shaped Solana path:
+      `verify_input_and_bind` validates a signed `SolanaInputProof` through a native Ed25519
+      pre-instruction before writing the canonical ACL record.
+- [x] ZamaHost has host-owned material commitment PDAs for handle decryptability, committed by the
+      configured material authority for supported host-chain handles, sealed onto the ACL record,
+      and verified separately from ACL membership.
+- [x] The real KMS connector has an explicit `chain_kind = "solana"` fail-closed path, so Solana
+      handles are not checked through the EVM ACL contract ABI by accident.
+- [x] The KMS connector has a native Solana ACL witness verifier that decodes raw Anchor account
+      data for host-owned ACL records, overflow permission PDAs, and user-decryption delegation
+      PDAs, then checks subject-slot exactness, domain scope, public decrypt flags, and material
+      commitment witnesses.
+- [x] The KMS connector has a native-v0 Solana request admission primitive for typed request modes,
+      request hashes, native extra-data hashes, reencryption-key hashes, app-context membership,
+      handle metadata and encrypted-bit limits, material witness binding, same-key batch
+      enforcement, replay-key derivation, and same-hash/different-hash replay decisions.
+- [x] The KMS connector has a native-v0 Ed25519 request-signature verifier over the canonical
+      signed request-hash message.
+- [x] The KMS connector has a durable native-v0 replay reservation table/helper for signed Solana
+      requests, keyed by host chain, cluster, KMS context, signer, and nonce.
+- [x] The KMS connector has a native-v0 request wire parser that extracts payload fields, handle
+      entries, raw extra data, reencryption keys, request signatures, and the exact account fetch
+      plan, then rejects missing, duplicate, or extra account witnesses before attaching fetched
+      accounts into the admission request type.
+- [x] The KMS connector has a native-v0 live-path policy boundary for account-fetch count, RPC
+      response size, finalized-by-default commitment policy, signed validity windows, and explicit
+      opt-in rechecks for non-finalized reads before release.
+- [x] The KMS connector has a native-v0 Solana JSON-RPC `getMultipleAccounts` fetcher that reads a
+      single response-context slot, decodes base64 account data, and preserves account owner pubkeys
+      for witness attachment.
+- [x] The KMS connector has a native-v0 finality recheck helper that re-fetches accepted
+      non-finalized witness accounts at finalized commitment, compares them byte-for-byte against
+      the accepted snapshot, and re-runs admission before release.
+- [x] The KMS connector has a native-v0 admission service that combines witness verification,
+      request-signature verification, and replay reservation for already-fetched requests.
+- [x] The KMS connector has a native-v0 response verifier for accepted-request binding, response
+      body hashes, release-pinned signer-set hashes, certificate thresholds, sorted signer
+      identities, and Ed25519 KMS response signatures.
+- [x] The KMS connector has a worker-side native-v0 live-flow boundary that parses signed native
+      request bytes, fetches and admits Solana witnesses, rechecks non-finalized reads before
+      release, verifies native KMS response certificates, and returns routed response metadata.
+- [x] The KMS connector has durable native-v0 Solana decryption request/response tables plus a
+      store boundary for inserting parsed request bytes, picking pending native requests, recording
+      release metadata, and publishing verified native response rows.
+- [x] The KMS connector has a native-v0 Solana request/response notification and picker boundary
+      over those tables, with polling fallback, without widening the legacy Gateway event enum.
+- [x] tx-sender has a separate native-v0 Solana response row picker/status/publisher boundary for
+      `solana_native_decryption_responses_v0`, so verified native responses are not routed through
+      the EVM Gateway response sender.
+- [x] The KMS connector can consume a branch-local Gateway-PoC `extraData` witness envelope for
+      public, direct user, and delegated user Solana decryption checks. This is end-to-end PoC
+      wiring, not the production native-v0 request format.
 
 ### Partly Modeled
 
-- [ ] KMS verification is modeled in Rust tests, not wired into the real KMS connector.
-- [ ] Input handles use an explicit `mock_input_verified_and_bind` mock short-circuit instead of a
-      real Solana input verifier or transciphering path.
-- [ ] `test_emit_fhe_rand` exists for worker-backed tests, but the final random-handle birth API is
-      not designed yet.
+- [ ] KMS Solana verification for live event processing is wired only through a Gateway-PoC
+      `extraData` envelope. The worker-side native-v0 request/response flow exists, but production
+      still needs KMS Core native work-item dispatch and a concrete tx-sender
+      `SolanaNativeResponsePublisher` target from `acl_storage_spec.md`.
+- [ ] `verify_input_and_bind` checks the Solana account/transaction witness shape for external
+      encrypted inputs, but threshold verifier policy and real proof/transciphering validation still
+      live outside this program. The old mock shim remains authority-gated test glue.
 - [ ] ACL records are created already initialized through Anchor `init`; there is no stored
       `Empty -> Bound` enum in the PoC.
-- [ ] Public decrypt authority is intentionally incomplete: the PoC uses the same subject list for
-      compute and user-decrypt, but production must decide who may flip `public_decrypt`.
-- [ ] The subject list has a PoC capacity. Overflow/chunking is not designed yet.
+- [ ] Role names and production governance for public decrypt are still subject to product review,
+      but compute-only subjects cannot flip `public_decrypt`.
+- [ ] Subject overflow works through witness PDAs, but durable ACL/material compaction and archival
+      are not designed yet. Durable ACL rows, overflow permissions, material commitments,
+      delegation rows, and replay markers are intentionally not closeable in this PoC.
+- [x] Transient allow is modeled with instruction-local `fhe_eval` outputs and host-owned
+      one-shot `TransientSession` PDAs: one capability per session, one successful consume, and no
+      public decrypt authority. Consumes must prove an earlier top-level host
+      `create_transient_session` for the same account in the current transaction, so slot expiry is
+      only defense in depth. Sessions can be closed by authority before expiry or
+      permissionlessly after expiry; the permanent rationale is captured in
+      [`docs/TRANSIENT_ALLOW.md`](docs/TRANSIENT_ALLOW.md), while broader SDK ergonomics remain open.
 - [ ] Historical handle lookup is assumed to be app/indexer responsibility for now.
 
 ### Missing Next
 
-- [ ] Define and implement the real Solana input path for external encrypted inputs.
-- [ ] Model transient allow semantics for same-transaction intermediate handles.
-- [ ] Decide how subject overflow works without imposing a small protocol-level subject limit.
-- [ ] Decide account cleanup, rent refund, compaction, and archival rules.
-- [ ] Wire the KMS connector to verify Solana ACL records instead of using only test-local checks.
+- [ ] Connect `verify_input_and_bind` to the real input verifier service and threshold policy.
+- [ ] Finalize client/app SDK ergonomics for transient allow sessions on top of the one-shot
+      session convention, especially automatic create/consume/close instruction assembly.
+- [ ] Decide archival/compaction rules for durable ACL and material evidence without breaking
+      historical decrypt or replay safety.
+- [ ] Replace the Gateway-PoC `extraData` witness envelope in the live connector path with KMS Core
+      native work-item dispatch and a concrete native Solana response publisher from
+      `acl_storage_spec.md`.
 - [ ] Extend the canonical confidential token scenario when adding new token features, instead of
       creating a second product flow.
 - [ ] Keep RFC 024 aligned when the PoC proves or disproves a design choice.
@@ -193,6 +397,15 @@ confidential-token program
     ConfidentialTokenAccount
   app events:
     BalanceHandleUpdatedEvent
+    TotalSupplyHandleUpdatedEvent
+    ConfidentialTransferEvent
+    ConfidentialBurnEvent
+    BalanceDisclosureRequestedEvent
+    AmountDisclosureRequestedEvent
+    RandomAmountCreatedEvent
+    BalanceDisclosedEvent
+    AmountDisclosedEvent
+    BurnRedeemedEvent
       for frontend/app indexers only
   |
   | CPI
@@ -200,12 +413,14 @@ confidential-token program
 zama-host program
   protocol state:
     ACL record PDAs
+    handle material commitment PDAs
   generic protocol events exposed through the ZamaHost Anchor IDL:
     FheBinaryOpEvent
     TrivialEncryptEvent
     FheRandEvent
     AclAllowedEvent
     InputVerifiedEvent
+    rich host config / ACL role / public decrypt / deny / delegation / material events
   |
   | Anchor self-CPI event bytes
   v
@@ -243,6 +458,15 @@ host-listener consumes:
 
 host-listener does not consume:
   confidential-token BalanceHandleUpdatedEvent
+  confidential-token TotalSupplyHandleUpdatedEvent
+  confidential-token ConfidentialTransferEvent
+  confidential-token ConfidentialBurnEvent
+  confidential-token BalanceDisclosureRequestedEvent
+  confidential-token AmountDisclosureRequestedEvent
+  confidential-token RandomAmountCreatedEvent
+  confidential-token BalanceDisclosedEvent
+  confidential-token AmountDisclosedEvent
+  confidential-token BurnRedeemedEvent
   token account state
   cUSDC-specific labels or nonce conventions
 ```
@@ -256,9 +480,78 @@ frontend / app indexer
   builds current and historical decrypt requests
 ```
 
+## Event Transport Note
+
+### Why Not EVM-Style Event Reliance
+
+The Solana PoC keeps the EVM-compatible listener shape for compute indexing, but Solana events are
+not the authorization source. On the EVM side, contract logs can drive much of the coprocessor
+workflow because the relevant contract state and log stream share the same execution model. On
+Solana, log delivery is provider-dependent, plain `emit!` logs may be truncated, and
+application-local events are not protocol authority. Production authorization must therefore be
+rebuilt from finalized or policy-approved transaction/account data and verified against host-owned
+ACL, material, delegation, and replay witnesses.
+
+The current PoC keeps Anchor CPI events because the local listener and LiteSVM tests already decode
+that shape. This is a PoC convenience, not a free production choice: every `emit_cpi!` adds a
+ZamaHost self-CPI frame, and Solana has a hard CPI/instruction-stack nesting limit. Deep app flows
+such as token -> host -> hook/settlement paths can hit that limit before compute budget is the
+binding constraint. Production event transport should not rely on `emit!` logs for Zama-critical
+data, and should avoid adding a self-CPI to every app path solely for observability.
+
+The recommended production direction is a Yellowstone gRPC / Geyser listener:
+
+```text
+Yellowstone regular transaction stream
+  subscribe by ZamaHost program id and confidential-token program id
+  receive finalized or policy-approved transaction updates with status metadata
+  decode top-level and inner instruction data, including existing Anchor CPI event bytes
+  if using processed/confirmed for latency, buffer by slot and release only after slot finality policy
+  fetch/verify host-owned ACL/material/delegation state before authorizing decrypts
+
+Yellowstone account stream
+  subscribe by owner = ZamaHost program id and confidential-token program id
+  index account writes for current app pointers and durable ACL/material evidence
+  treat account data as discovery input until KMS witness verification accepts it
+
+Yellowstone slot/replay handling
+  subscribe to slot notifications alongside transaction/account streams
+  dedupe reconnect replay from `from_slot` and use `SubscribeReplayInfo` to detect retention limits
+  for finalized policy, retroactively finalize ancestors when a provider omits per-slot finalization
+
+Yellowstone deshred stream
+  optional low-latency pre-execution signal only
+  not an authorization or event-completeness source because it lacks execution metadata
+```
+
+Source notes from the 2026-05-26 investigation:
+
+- Anchor documents that `emit!` writes program logs that may be truncated by data providers, while
+  `emit_cpi!` stores event data in CPI instruction data but adds CPI compute cost:
+  `https://www.anchor-lang.com/docs/features/events`.
+- Triton's Yellowstone Dragon's Mouth docs and the upstream `yellowstone-grpc` README document
+  account, transaction, block, and slot subscriptions with server-side filters and commitment
+  levels: `https://docs.triton.one/project-yellowstone/dragons-mouth-grpc-subscriptions` and
+  `https://github.com/rpcpool/yellowstone-grpc`.
+- Triton's docs recommend buffering transaction/account updates by slot when the client manages
+  `confirmed` or `finalized` commitment, and document `from_slot`/`SubscribeReplayInfo` replay for
+  short reconnects. They also note finalized slot notifications can be incomplete and require
+  retroactively marking ancestors finalized when a finalized descendant is observed.
+- The upstream protobuf exposes `SubscribeRequest` filters for accounts, slots, transactions,
+  transaction status, blocks, block metadata, entries, commitment, and `from_slot`; normal
+  transaction updates carry `TransactionStatusMeta`. The deshred stream is a separate RPC and is
+  faster but explicitly lacks execution status, logs, inner instructions, balances, compute usage,
+  and `TransactionStatusMeta`:
+  `https://raw.githubusercontent.com/rpcpool/yellowstone-grpc/master/yellowstone-grpc-proto/proto/geyser.proto`.
+- Solana's current CPI stack depth is still a production constraint. Official docs describe
+  `MAX_INSTRUCTION_STACK_DEPTH = 5`, which means entry instruction plus four CPI levels before any
+  SIMD-0268 increase is active on the target cluster:
+  `https://solana.com/docs/core/cpi/cpi-execution`.
+
 `test_emit_*` instructions are not protocol APIs. They emit typed events without proving or writing
-the corresponding ACL record and exist only to keep listener / worker tests fast while the real
-Solana input, trivial-encrypt, and random-handle birth paths are still being designed.
+the corresponding ACL record and exist only to keep listener / worker tests fast. Production-shaped
+birth paths now live in `verify_input_and_bind`, `trivial_encrypt_and_bind`,
+`fhe_rand_and_bind`, `fhe_rand_bounded_and_bind`, and the token-level random amount wrappers.
 
 ## Vocabulary
 
@@ -279,7 +572,7 @@ app account
 
 encrypted value label
   Domain-separated label for one encrypted field inside an app account.
-  In the token PoC: "balance".
+  In the token PoC: "balance", "transfer_amount", "burn_amount", and scratch labels.
 
 nonce key
   Hash of:
@@ -290,15 +583,16 @@ nonce key
 
 nonce sequence
   App-maintained monotonic counter for one nonce key.
-  In the token PoC: ConfidentialTokenAccount.next_balance_nonce_sequence.
+  In the token PoC: ConfidentialTokenAccount.next_balance_nonce_sequence for balances and
+  ConfidentialTokenAccount.next_amount_nonce_sequence for token-owned random amount birth.
 
 ACL record
   PDA owned by zama-host:
     PDA("acl-record", nonce_key, nonce_sequence)
 
 subject
-  Pubkey that is allowed by an ACL record.
-  Examples: Alice for user decrypt, compute_signer for compute.
+  Pubkey plus role flags stored by an ACL record.
+  Examples: Alice with user/use/public-decrypt roles, compute_signer with compute/use roles.
 
 compute signer
   Program-controlled PDA that signs CPI calls into zama-host.
@@ -358,6 +652,41 @@ pass, `zama-host` verifies the result handle, emits the compute event, and creat
 canonical ACL record for the output handle in the same instruction. `zama-host::fhe_binary_op`
 still exists for transient/intermediate compute when no durable ACL record should be created.
 
+## Host Config And Test Gates
+
+`zama-host` has a singleton config PDA:
+
+```text
+host_config = PDA("host-config")
+```
+
+It stores the host-chain id used in handle derivation, admin authority, input verifier authority,
+test-shim authority, pause state, and feature gates for the mock input path, test event shims, and
+grant deny-list checks.
+
+Production-shaped instructions read `host_config` and reject while paused. The PoC test-only
+instructions are explicitly gated:
+
+```text
+mock_input_verified_and_bind
+  requires host_config.mock_input_enabled
+  requires input_verifier_authority signer
+
+test_emit_*
+  requires host_config.test_shims_enabled
+  requires test_authority signer
+```
+
+These shims are still not protocol APIs. They exist to test listener/worker paths independently of
+the production-shaped input, trivial-encrypt, and random-handle birth instructions.
+
+The config also controls grant deny-list enforcement. When enabled, `allow_acl_subjects` requires a
+matching deny-list witness for the grant authority and refuses the grant if that subject is denied.
+User-decryption delegation is represented by host-owned delegation PDAs with monotonic counters and
+last-update slots. Grant/regrant/revoke updates reject if the row was already updated in the current
+slot, matching the native-v0 stale-counter guard. The Gateway/KMS witness format still needs to
+carry and verify those records.
+
 ## ACL Account Model
 
 ```text
@@ -374,14 +703,29 @@ ACL record PDA
     acl_domain_key        = cUSDCMint
     app_account           = AliceTokenAccount
     encrypted_value_label = "balance"
-    subjects              = [Alice, compute_signer]
+    subjects              = [
+      Alice: use + user + grant + public_decrypt,
+      compute_signer: use + compute
+    ]
+    overflow_subject_count = 0
 ```
 
-`subjects` is intentionally a plain allow-list. It does not store `Compute` or `UserDecrypt`
-permission kinds. This matches the EVM ACL model: the same `(handle, subject)` authorization is used
-by different verification paths. `zama-host::fhe_binary_op` interprets `compute_signer` membership as
-permission to compute, while the KMS/user-decrypt path interprets Alice membership as permission to
-decrypt. Public decrypt is the separate `public_decrypt` flag on the ACL record.
+`subjects` stores Pubkeys plus role flags. `ACL_ROLE_USE` is the base membership bit used by normal
+handle access checks. `ACL_ROLE_COMPUTE` is used by host compute operations, `ACL_ROLE_GRANT` is
+required to extend persistent grants, and `ACL_ROLE_PUBLIC_DECRYPT` is required to flip the durable
+public-decrypt flag. The token PoC gives users the user/grant/public-decrypt roles for their own
+balance records and gives the compute signer compute/use only.
+
+The first eight subjects are embedded in the canonical ACL record. Additional subjects use witness
+PDAs:
+
+```text
+acl_permission = PDA("acl-permission", acl_record, subject)
+```
+
+`allow_acl_subjects` creates or updates those overflow permission accounts through
+`remaining_accounts`. KMS/Gateway witness design must carry these PDAs when a decrypted handle is
+authorized through an overflow subject.
 
 For computed outputs, the address is known before execution but the handle is not:
 
@@ -394,12 +738,14 @@ during zama-host::fhe_binary_op_and_bind_output:
   base = H("FHE_comp", op, lhs, rhs, scalar, zama_host, chain_id, previous_bank_hash, timestamp)
   h7   = H("FHE_bound_output", base, nonce_key, 7)
   A7.handle = h7
-  A7.subjects = [Alice, compute_signer]
+  A7.subjects = [Alice: user/grant/public_decrypt, compute_signer: compute]
 ```
 
 The durable output nonce is part of the bound output handle. This prevents two different ACL record
 addresses for the same app account from intentionally binding the exact same computed handle. If an
 app wants two durable outputs for the same operation, it gets two distinct opaque handles.
+`trivial_encrypt_and_bind` uses the same output nonce metadata in its handle derivation, so equal
+plaintexts born for different ACL records do not alias to the same host handle.
 
 The PoC uses the previous slot hash when LiteSVM or the cluster exposes it. Local bootstrap tests can
 fall back to zero when no prior slot hash exists; this is test glue, not the intended production
@@ -414,15 +760,19 @@ zama-host::trivial_encrypt_and_bind(...)
   creates a trivial-encrypt handle and its first ACL record
 
 zama-host::mock_input_verified_and_bind(...)
-  mock short-circuit for future InputVerifier/transciphering birth
+  authority-gated mock short-circuit for future InputVerifier/transciphering birth
+
+zama-host::verify_input_and_bind(...)
+  checks a signed SolanaInputProof via the immediately preceding Ed25519 verifier instruction
+  before creating the input handle ACL record
 
 zama-host::fhe_binary_op_and_bind_output(...)
   checks operand ACL records, emits a compute event for the verified output handle,
   and creates the durable output ACL record
 ```
 
-Generic persistent grants extend the existing canonical ACL record. `allow_acl_subjects` requires
-the caller to already be allowed on the same handle:
+Generic persistent grants extend the existing canonical ACL record or create overflow permission
+PDAs. `allow_acl_subjects` requires the caller to have the grant role on the same handle:
 
 ```text
 zama-host::allow_acl_subjects(handle = h7, authority = Alice, acl_record = A7, subjects = [Bob])
@@ -431,10 +781,11 @@ requires:
   A7 is owned by zama-host
   A7 is the canonical PDA for its stored nonce fields
   A7.handle == h7
-  A7.subjects contains Alice
+  A7.subjects contains Alice with ACL_ROLE_GRANT
+  optional deny-list witness does not mark Alice as grant-denied
 
 effect:
-  A7.subjects now also contains Bob
+  A7.subjects now also contains Bob, or PDA("acl-permission", A7, Bob) exists if inline capacity is full
 ```
 
 This prevents handle laundering:
@@ -442,7 +793,7 @@ This prevents handle laundering:
 ```text
 Mallory sees Alice's handle h7
 Mallory tries to create M1 storing h7 and subjects = [Mallory]
-zama-host rejects it unless Mallory is already allowed by a canonical ACL record for h7
+zama-host rejects it unless Mallory has grant authority through a canonical ACL record for h7
 ```
 
 For token balances, `confidential-token` signs as:
@@ -459,22 +810,25 @@ expected_nonce_key = H(acl_domain_key, app_account, encrypted_value_label)
 record.nonce_key == expected_nonce_key
 the ACL PDA address matches ("acl-record", expected_nonce_key, nonce_sequence, bump)
 the stored ACL fields match the instruction fields
-the requested subject is in subjects[]
+the requested subject is in subjects[] with the role required by the instruction
+or a canonical overflow permission PDA witnesses that subject
 ```
 
 That keeps token-specific semantics inside the token program.
 
 ## Initial Balance Birth
 
-The token program does not accept a caller-provided initial balance handle anymore.
+The token program does not accept caller-provided initial balance handles or nonzero initial
+balances. Account initialization is zero-only so the wrapper cannot mint unbacked confidential
+supply outside the explicit wrap path.
 
 ```text
-confidential-token::initialize_token_account(initial_balance = 125)
+confidential-token::initialize_token_account(initial_balance = 0)
   |
-  +--> CPI zama-host::trivial_encrypt_and_bind(125)
+  +--> CPI zama-host::trivial_encrypt_and_bind(0)
   |      app_account = AliceTokenAccount
   |      output ACL = A0
-  |      subjects = [Alice, compute_signer]
+  |      subjects = [Alice: user/grant/public_decrypt, compute_signer: compute]
   |      creates hA0 inside zama-host
   |
   +--> stores:
@@ -522,23 +876,25 @@ Alice signs tx
   v
 confidential-token::confidential_transfer(amount = hX)
   |
+  +--> CPI zama-host::fhe_binary_op_and_bind_output(Ge)
+  |      verifies hOk = FHE.ge(hA0, hX)
+  |      creates compute-only success ACL
+  |
   +--> CPI zama-host::fhe_binary_op_and_bind_output(Sub)
-  |      compute_subject = compute_signer
-  |      checks:
-  |        A0 stores hA0 and subjects includes compute_signer
-  |        X  stores hX  and subjects includes compute_signer
-  |      verifies hA1 = FHE.sub(hA0, hX)
-  |      emits FHE.sub(hA0, hX) -> hA1
-  |      creates A1 for hA1 with subjects = [Alice, compute_signer]
+  |      verifies hDebitCandidate = FHE.sub(hA0, hX)
+  |      creates compute-only scratch ACL
+  |
+  +--> CPI zama-host::fhe_ternary_op_and_bind_output(IfThenElse)
+  |      verifies hA1 = FHE.ifThenElse(hOk, hDebitCandidate, hA0)
+  |      creates A1 for hA1 with Alice user/grant/public_decrypt and compute_signer compute roles
+  |
+  +--> CPI zama-host::fhe_binary_op_and_bind_output(Sub)
+  |      verifies hMoved = FHE.sub(hA0, hA1)
+  |      creates transferred-amount ACL with Alice, Bob, and compute_signer subjects
   |
   +--> CPI zama-host::fhe_binary_op_and_bind_output(Add)
-  |      compute_subject = compute_signer
-  |      checks:
-  |        B0 stores hB0 and subjects includes compute_signer
-  |        X  stores hX  and subjects includes compute_signer
-  |      verifies hB1 = FHE.add(hB0, hX)
-  |      emits FHE.add(hB0, hX) -> hB1
-  |      creates B1 for hB1 with subjects = [Bob, compute_signer]
+  |      verifies hB1 = FHE.add(hB0, hMoved)
+  |      creates B1 for hB1 with Bob user/grant/public_decrypt and compute_signer compute roles
   |
   +--> stores:
          AliceTokenAccount.balance_handle = hA1
@@ -549,24 +905,189 @@ confidential-token::confidential_transfer(amount = hX)
          BobTokenAccount.next_balance_nonce_sequence = 2
 ```
 
-The amount handle ACL is temporary mock glue. Today the tests use `mock_input_verified_and_bind` as an
-explicit short-circuit for the future input verifier / transciphering boundary:
+The transfer amount handle ACL can be created through the signed input path or through token-level
+random amount creation. For direct holder transfers the amount is scoped to the sender owner. For
+active-operator `confidential_transfer_from`, the amount must be scoped to the operator that signs
+the transfer instruction:
 
 ```text
-ACL domain key = Alice
-app account    = Alice
-label          = "input"
-subjects       = [compute_signer]
-handle         = hX
+direct transfer:
+  ACL domain key = confidential mint
+  app account    = sender owner
+  label          = "transfer_amount"
+  subjects       = [compute_signer: compute/use]
+  handle         = hX selected from SolanaInputProof.handles[]
+
+transfer_from:
+  ACL domain key = confidential mint
+  app account    = active operator
+  label          = "transfer_amount"
+  subjects       = [compute_signer: compute/use]
+  handle         = hX selected from SolanaInputProof.handles[]
 ```
 
-The mock input ACL record uses an explicit test nonce sequence. It must not derive placement from
-the handle bytes; handles are opaque even in tests.
+For randomized token amounts, `confidential-token::create_random_amount` and
+`confidential-token::create_random_bounded_amount` call ZamaHost `fhe_rand_and_bind` or
+`fhe_rand_bounded_and_bind` with the same `(mint, owner, transfer_amount)` metadata, consume
+`ConfidentialTokenAccount.next_amount_nonce_sequence`, and emit `RandomAmountCreatedEvent` for
+token-aware indexers.
 
-This instruction deliberately trusts the caller-supplied input handle. It is also deliberately not a
-generic allow API: the first ACL record for an input handle must come from a trusted input path. The
-real design still needs the Solana equivalent of transient input authorization from the input
-verifier path.
+The token program rejects transfer amount handles whose FHE type byte is not the confidential
+balance type (`euint64` in this PoC) and rejects amount ACL records outside that
+`(mint, current transfer authority, transfer_amount)` scope. For `confidential_transfer_from`, the
+current transfer authority is the active operator, matching ERC7984's `FHE.fromExternal` caller
+binding. Operator-scoped amount input authority is only an input-use bridge to the token compute
+signer; the transferred amount output still grants durable user/public-decrypt roles only to the
+sender, recipient, and compute signer.
+
+The input ACL record uses an explicit test nonce sequence. It must not derive placement from the
+handle bytes; handles are opaque even in tests.
+
+The mock instruction deliberately trusts the caller-supplied input handle and remains test glue for
+legacy listener tests. The production-shaped path is `zama_host::verify_input_and_bind`:
+
+```text
+SolanaInputProof
+  handles[]       = ordered encrypted-input handles certified by the verifier
+  handle_index    = selected handle for this bind
+  user            = user associated with the encrypted input
+  app_account     = app account scope
+  acl_domain_key  = app ACL domain scope
+  extra_data      = opaque verifier transcript/proof metadata
+
+SolanaInputBindIntent
+  output_nonce_key
+  output_nonce_sequence
+  output_acl_domain_key
+  output_app_account
+  output_encrypted_value_label
+  output_subjects
+  output_public_decrypt
+
+signed message =
+  canonical input_proof_message bytes over
+  (host program id, chain id, proof fields, bind intent fields)
+```
+
+The transaction must place a native Ed25519 verifier instruction immediately before the host
+instruction. `verify_input_and_bind` inspects the instructions sysvar, requires that Ed25519
+instruction to contain a signature by `HostConfig.input_verifier_authority` over the canonical
+`input_proof_message`, checks that `handles[handle_index]` equals the requested input handle, and
+then writes the same canonical ACL record as the mock path. Input handles must carry the host chain
+id, a supported FHE type byte, the handle version byte, and the proof index in byte 21.
+
+Remaining production work is threshold verifier policy and real proof/transciphering validation by
+the external input verifier service. The Solana host now has the account and transaction witness
+shape needed for that service instead of a generic allow API.
+
+## Confidential Burn
+
+`confidential-token::confidential_burn` mirrors ERC7984 `_burn` value semantics without exposing the
+requested amount. The burn amount uses its own signed-input/random-amount label:
+
+```text
+ACL domain key = confidential mint
+app account    = owner
+label          = "burn_amount"
+subjects       = [compute_signer: compute/use]
+```
+
+The burn graph is all-or-zero:
+
+```text
+hOk              = FHE.ge(old_balance, burn_amount)
+hDebitCandidate  = FHE.sub(old_balance, burn_amount)
+new_balance      = FHE.ifThenElse(hOk, hDebitCandidate, old_balance)
+hBurned          = FHE.sub(old_balance, new_balance)
+new_total_supply = FHE.sub(old_total_supply, hBurned)
+```
+
+The holder balance output remains owned by the token account with owner and compute subjects. The
+burned amount ACL is scoped to the token account and grants the owner public-decrypt authority so
+the app can request disclosure of the actual burned amount. The encrypted total supply remains
+scoped to `PDA("total-supply", mint)` and grants only compute/use to the compute signer.
+
+Redeem/unwrap is intentionally two-phase because the KMS certificate cannot exist before the burn
+transaction finalizes:
+
+```text
+confidential_burn
+  -> rotates encrypted balance and encrypted total supply
+  -> emits ConfidentialBurnEvent with hBurned
+
+off-chain Gateway/KMS public decrypt
+  -> certifies (token program id, mint, hBurned, cleartext burned amount)
+
+redeem_burned_amount
+  -> verifies burned-amount ACL public-decrypt release, sealed material,
+     and native Ed25519 KMS certificate
+  -> initializes PDA("burn-redemption", mint, hBurned)
+  -> transfers cleartext underlying SPL from the vault to the owner destination
+```
+
+The redemption marker makes the cleartext vault transfer one-shot for each burned handle.
+
+### Operators
+
+The token PoC mirrors the ERC7984 operator idea with a Solana account row:
+
+```text
+ConfidentialOperator
+  address = PDA("operator", token_account, operator)
+  token_account = AliceTokenAccount
+  owner = Alice
+  operator = Carol
+  expiration_slot = 123
+```
+
+`set_operator` is signed by the token account owner and writes or revokes that row. An active
+operator can call `confidential_transfer_from` and pay rent for the output ACL records without Alice
+signing the transfer instruction. The encrypted transfer amount must be scoped to the current
+transfer authority: Alice for direct transfers, or the active operator for
+`confidential_transfer_from`. This matches the ERC7984 external-input overload while preserving
+Solana's durable ACL boundary. Token balances still rotate through the same ZamaHost CPI path, so
+operator authority never becomes a host ACL grant or KMS decrypt permission.
+
+### Receiver Hook Interface
+
+`confidential_call_transfer_receiver` and `confidential_call_transfer_receiver_from` invoke the
+caller-supplied receiver program with caller-supplied instruction data and remaining accounts. The
+token program clears Solana return data before the CPI and requires the receiver program to be the
+return-data writer.
+
+External receiver programs should use `confidential-token-receiver-sdk`; the token crate re-exports
+the same ABI for compatibility:
+
+```text
+TransferReceiverReturn::encode()
+transfer_receiver_return_data(...)
+set_transfer_receiver_return_data(...)
+
+layout:
+  magic = "ZAMA_CT_RECEIVER_RET_V0"
+  mint
+  from_token_account
+  to_token_account
+  sent_handle
+  sent_acl_record
+  callback_success_handle
+  callback_success_acl_record
+```
+
+The token program decodes the same fixed layout with `TransferReceiverReturn::decode` and rejects
+wrong length, wrong magic, wrong return program, or any mismatched field. The callback-success ACL
+must already be scoped to the recipient owner and allow the compute signer to use the encrypted bool;
+the hook return data proves that the receiver accepted that exact callback witness for the prior
+transfer. A successful hook call creates a `TransferReceiverHookCall` PDA keyed by `(mint,
+sent_handle)`, so a repeated hook attempt for the same transferred handle fails before the external
+receiver CPI is invoked. `confidential_prepare_transfer_callback` requires that marker and checks it
+against the sent amount and callback-success witness before computing any refund. The later
+callback-settlement PDA separately tracks refund preparation and finalization.
+
+The `programs/confidential-token-receiver` sample program is intentionally small and exists as an
+external-program reference for this ABI. It depends on the SDK crate, not the token program crate,
+and is loaded in LiteSVM receiver-hook tests instead of relying only on the token program's test
+receiver endpoint.
 
 ## cUSDC Wrapper
 
@@ -592,19 +1113,35 @@ wrap_usdc(amount)
   |
   +--> CPI zama-host::fhe_binary_op_and_bind_output(Add)
   |      checks:
-  |        current balance ACL stores hA0 and allows compute_signer
-  |        amount ACL stores hDeposit and allows compute_signer
+  |        current balance ACL stores hA0 and allows compute_signer compute/use
+  |        amount ACL stores hDeposit and allows compute_signer compute/use
   |      verifies hA1 = FHE.add(hA0, hDeposit)
   |      emits FHE.add(hA0, hDeposit) -> hA1
   |      creates one output ACL record for hA1
-  |      subjects = [Alice, compute_signer]
+  |      subjects = [Alice: user/grant/public_decrypt, compute_signer: compute/use]
+  |
+  +--> CPI zama-host::fhe_binary_op_and_bind_output(Add)
+         checks:
+           current total-supply ACL stores hS0 and allows compute_signer compute/use
+           amount ACL stores hDeposit and allows compute_signer compute/use
+         verifies hS1 = FHE.add(hS0, hDeposit)
+         emits FHE.add(hS0, hDeposit) -> hS1
+         creates one output ACL record for hS1
+         subjects = [compute_signer: compute/use]
 ```
 
 The deposit amount is public in this slice because wrapping an underlying token starts from a known
 SPL amount. The wrapper now uses the host `trivial_encrypt_and_bind(...)` path so the amount handle
 has durable ACL state before it is used by `fhe_binary_op`. Tests that need an encrypted-input shape
-can use the `mock_input_verified_and_bind(...)` short-circuit, but app flows should eventually use
-the final input path and the real ZKPoK/input verifier or transciphering boundary.
+can use the `mock_input_verified_and_bind(...)` short-circuit or the signed
+`verify_input_and_bind(...)` path, depending on whether the test needs verifier transaction
+witnesses. Production app flows should use `verify_input_and_bind(...)` with the real ZKPoK/input
+verifier or transciphering boundary.
+
+The encrypted total supply is stored on `ConfidentialMint` as a handle plus current ACL record. The
+mint remains the ACL domain, while `PDA("total-supply", mint)` signs as the app account authority for
+total-supply ACL records. This mirrors ERC7984's `_totalSupply` pointer without forcing the mint
+account itself to be a PDA.
 
 ## App-Side FHE Helper
 
@@ -622,12 +1159,19 @@ fhe::trivial_encrypt_u64(...)
   -> CPI zama-host::trivial_encrypt_and_bind(...)
   -> returns the host-born output handle stored in the output ACL record
 
+fhe::trivial_encrypt_u64_with_app_pda(...)
+  -> same host path, but for mint-scoped app-authority PDAs such as total supply
+
 fhe::add(...)
 fhe::sub(...)
   -> CPI zama-host::fhe_binary_op_and_bind_output(...)
   -> checks operand ACL records inside ZamaHost
   -> emits the compute event
   -> creates durable ACL state for the output handle
+
+fhe::add_with_app_pda(...)
+fhe::sub_with_app_pda(...)
+  -> same host path, but for mint-scoped app-authority PDAs such as total supply
   -> returns the verified output handle
 ```
 
@@ -665,7 +1209,8 @@ KMS-style verification:
      acl_record_pubkey == PDA("acl-record", expected_nonce_key, record.nonce_sequence)
      record.acl_domain_key is in allowed_acl_domain_keys
      record.handle == handle
-     record.subjects contains owner_pubkey
+     record.subjects contains owner_pubkey with ACL_ROLE_USE
+     or PDA("acl-permission", acl_record, owner_pubkey) witnesses overflow access
 ```
 
 Visual version:
@@ -683,7 +1228,7 @@ ACL record A1
   proves on-chain:
     A1 belongs to cUSDCMint / AliceTokenAccount / balance / sequence 1
     A1 stores hA1
-    A1 allows Alice
+    A1 allows Alice for use/user decrypt
 ```
 
 For the current balance, the frontend does not need to search:
@@ -708,13 +1253,17 @@ Public decrypt is a durable flag on the canonical ACL record.
 Alice already allowed on A1 for hA1
   |
   v
-zama-host::allow_for_decryption(handle = hA1, acl_record = A1)
+zama-host::allow_for_decryption(handle = hA1, authority = Alice, acl_record = A1)
   checks:
     A1 stores hA1
-    A1 subjects includes Alice
+    A1 subjects includes Alice with ACL_ROLE_PUBLIC_DECRYPT
   writes:
     A1.public_decrypt = true
 ```
+
+Host-owned handle birth paths initialize this flag as `false`. Public decrypt release must happen
+after ACL record birth through `allow_for_decryption`, so the release is subject to the public
+decrypt authority checks and emits the dedicated host release event.
 
 The public decrypt request does not need a user signature:
 
@@ -722,6 +1271,7 @@ The public decrypt request does not need a user signature:
 request carries:
   handle = hA1
   acl_record_pubkey = A1
+  material_commitment_pubkey = M1
 ```
 
 KMS-style verification:
@@ -735,29 +1285,64 @@ KMS-style verification:
 4. Verify:
      record.handle == handle
      record.public_decrypt == true
+5. Read material_commitment_pubkey.
+6. Verify:
+     material_commitment_pubkey == PDA("handle-material", host_config, acl_record_pubkey)
+     material.account is owned by zama-host
+     material.acl_record == acl_record_pubkey
+     material.handle == handle
+     material.state == COMMITTED
+     material.material_commitment_hash matches the decoded key/digest fields
+     acl_record.material_commitment == material_commitment_pubkey
+     acl_record.material_commitment_hash == material.material_commitment_hash
+     acl_record.material_key_id == material.key_id
 ```
 
 This is separate from ordinary `allow`.
 
 ```text
 allow subject on handle
-  -> subject can compute / user-decrypt through ACL checks
+  -> subject can use the handle according to its stored role flags
 
 allow_for_decryption on handle
   -> anyone can request public decrypt for that handle
 ```
 
-Design warning:
+Compute-only subjects cannot flip `public_decrypt`; negative LiteSVM tests cover this case. ACL
+membership and `public_decrypt` are authorization state, while `HandleMaterialCommitment` plus the
+ACL record's sealed material fields are decryptability state. Native-v0 KMS admission needs both
+sides to agree.
+
+## Disclosure Proof Shape
+
+`confidential-token` now has the token-local equivalent of ERC7984
+`discloseEncryptedAmount`: `disclose_balance` and `disclose_amount` emit cleartext events only when
+the disclosed ACL record has already been released for public decrypt, the immediately preceding
+native Ed25519 instruction is signed by the mint's `kms_verifier_authority`, and the disclosed
+handle has a committed host material witness sealed onto the ACL record.
+
+`disclose_amount` is limited to token amount labels: wrapped amounts, transfer inputs, burn inputs,
+burned amounts, transferred amounts, and callback refund amounts. Current balance handles must use
+the balance disclosure path, and total-supply/callback-success handles are not accepted as
+disclosable token amounts.
+
+The signed message is:
 
 ```text
-The PoC currently authorizes allow_for_decryption with the same subjects[] list
-used for compute and private user decrypt.
-
-That is not a final authority rule.
-Production must decide who may flip public_decrypt.
-A compute_signer should not automatically gain that power just because it can
-compute on a handle.
+"zama-confidential-token-disclosure-v1"
+token_program_id
+mint
+handle
+cleartext_amount_le_u64
 ```
+
+This does not replace the Gateway/KMS request protocol. It is the Solana-side app verification
+surface for a KMS response certificate once the Gateway request path carries native Solana
+ACL/material witnesses. The same certificate shape is used by `redeem_burned_amount`; redeem
+additionally checks the burned-amount ACL public-decrypt release flag, sealed host material
+commitment, vault constraints, owner destination, and burn-redemption replay marker. Negative
+LiteSVM tests cover missing public release, missing material, unsealed material, mismatched
+cleartext messages, and the wrong KMS signer.
 
 ## Operator Encoding Notes
 
@@ -768,6 +1353,7 @@ scalar = false:
   lhs is a handle
   rhs is a handle
   host checks both lhs_acl_record and rhs_acl_record
+  host requires rhs type == lhs type
 
 scalar = true:
   lhs is a handle
@@ -776,7 +1362,11 @@ scalar = true:
   rhs_acl_record may be a dummy account and is not deserialized
 ```
 
-The current confidential-token transfer/wrap flows only use encrypted/encrypted binary ops. The
+Add/Sub require the LHS handle type to match the declared output type. Ge requires a numeric LHS
+handle and a Bool output. This mirrors the EVM executor rule that Add/Sub results inherit the LHS
+type while comparison results are Bool.
+
+The current confidential-token transfer/wrap/burn flows only use encrypted/encrypted binary ops. The
 host-level scalar path is covered by LiteSVM tests so future token helpers can pass `scalar = true`
 without changing ZamaHost.
 
@@ -887,9 +1477,9 @@ Solana-born ciphertext transfer:
 
 ```text
 LiteSVM emits:
-  trivial_encrypt_and_bind(125) -> hA0
-  trivial_encrypt_and_bind(20)  -> hB0
-  trivial_encrypt_and_bind(100) -> hX
+  initialize_token_account -> trivial_encrypt_and_bind(0) -> hA0
+  initialize_token_account -> trivial_encrypt_and_bind(0) -> hB0
+  wrap_usdc(100) -> trivial_encrypt_and_bind(100) -> hX
 
 tfhe-worker
   -> creates real ciphertexts for hA0, hB0, hX
@@ -908,13 +1498,17 @@ Random ciphertext creation:
 
 ```text
 LiteSVM emits:
-  test_emit_fhe_rand(seed, Uint8) -> hRand
+  fhe_rand_and_bind(Uint8, nonce metadata) -> hRand + ACL record
+  fhe_rand_bounded_and_bind(upper_bound, Uint8, nonce metadata) -> hRandBounded + ACL record
+  create_random_bounded_amount(Transfer, upper_bound) -> hTokenRand + ACL record
 
 tfhe-worker
-  -> creates a real random ciphertext for hRand
+  -> creates real random ciphertexts for hRand, hRandBounded, and hTokenRand
 
 test decrypt
   -> hRand is a Uint8 plaintext
+  -> hRandBounded is below upper_bound
+  -> hTokenRand can drive a confidential_transfer through the existing transfer amount ACL checks
 ```
 
 ## Behavior Tests
@@ -939,8 +1533,20 @@ User decrypt checks signed authorization plus on-chain ACL state.
   Passing the wrong ACL record fails.
   Passing the wrong handle fails.
 
+Public decrypt is separate from compute authority.
+  A subject with compute/use only cannot enable public decrypt.
+
+Persistent grants require grant authority and support overflow permission PDAs.
+  The ninth subject is stored in PDA("acl-permission", acl_record, subject).
+
+Mock input and test event shims are gated by HostConfig authorities.
+  They are not generic protocol entrypoints.
+
 Solana events can enter the existing coprocessor DB path.
   Worker tests compile against the Solana event adapter and use real ciphertexts.
+
+KMS connector does not silently apply EVM ACL checks to Solana handles.
+  host chain config with chain_kind = "solana" returns a recoverable fail-closed error.
 ```
 
 When adding a feature, prefer a test shaped like:
@@ -973,9 +1579,10 @@ each output ACL record stores both subjects: user + compute_signer
 max CPI depth remains 3 in the tested direct token -> zama-host -> event-CPI path
 ```
 
-Open optimization question: event emission mode.
+Open optimization question: event transport mode.
 
-This PoC uses Anchor `emit_cpi!` for host events. That makes events typed and easy to decode from self-CPI instruction data, including in runtime tests and listener code.
+This PoC uses Anchor `emit_cpi!` for host events. That makes events typed and easy to decode from
+self-CPI instruction data, including in runtime tests and listener code.
 
 The cost is visible:
 
@@ -985,7 +1592,12 @@ confidential-token
       -> zama-host event self-CPI
 ```
 
-Anchor `emit!` log events may be cheaper, but it changes listener and explorer decoding assumptions. Keep `emit_cpi!` for now because this slice optimizes for correctness and typed decoding. Revisit after the ACL and token model stabilize.
+Do not switch production-critical Zama events to plain `emit!` logs just to save CPI depth; provider
+log truncation is not acceptable for this use case. Also do not assume the current `emit_cpi!` shape
+scales to every production path, because each emitted event spends one nested CPI frame and can push
+complex call graphs into Solana's hard CPI depth limit. The current production direction is the
+Yellowstone/Geyser listener described in [Event Transport Note](#event-transport-note), using
+transaction/account streams for indexing and account-state witnesses for authorization.
 
 ## Commands
 
@@ -995,6 +1607,13 @@ Solana program build and runtime tests:
 cd solana
 NO_DNA=1 anchor build --ignore-keys
 cargo test --workspace
+```
+
+Rustdoc check for the two PoC programs:
+
+```bash
+cd solana
+cargo doc --no-deps -p zama-host -p confidential-token
 ```
 
 Worker test compile check:

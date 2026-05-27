@@ -1,67 +1,106 @@
+//! Anchor program for the Solana FHEVM host PoC.
+//!
+//! `zama-host` owns the protocol-facing parts of the PoC:
+//! ACL records, handle derivation, FHE event emission, public-decrypt state,
+//! test/mock gates, and the small set of account witnesses that a future
+//! Gateway/KMS request must verify.
+//!
+//! The program intentionally keeps app semantics outside this crate. App
+//! programs, such as `confidential-token`, decide which app accounts and
+//! labels they authorize, then call this program by CPI to create or verify
+//! host-owned ACL state.
+
 // Anchor macros generate framework-shaped code that trips rustc/Clippy checks.
 #![allow(unexpected_cfgs)]
 #![allow(clippy::diverging_sub_expression, clippy::too_many_arguments)]
 
+/// Program-specific errors returned by ZamaHost instructions.
+pub mod errors;
+/// Anchor events emitted by protocol and test-shim instructions.
+pub mod events;
+/// Instruction account contexts and handlers.
+pub mod instructions;
+/// Account layouts, PDA helpers, roles, and handle derivation helpers.
+pub mod state;
+
 use anchor_lang::prelude::*;
-use solana_sha256_hasher::hashv;
-use solana_sysvar::slot_hashes::PodSlotHashes;
+
+/// Re-export error types for generated clients and tests.
+pub use errors::*;
+/// Re-export event types for generated clients, listeners, and tests.
+pub use events::*;
+/// Re-export account layouts and helper functions used by app programs.
+pub use state::*;
+
+use instructions::*;
 
 declare_id!("EMhXFu68v61bQV4GrF6ZhZhWNVbH6bHPnTdLtXK8meqn");
 
-pub const EVENT_VERSION: u8 = 0;
-pub const MAX_ACL_SUBJECTS: usize = 8;
-pub const SOLANA_POC_CHAIN_ID: u64 = 12345;
-
-const COMPUTATION_DOMAIN_SEPARATOR: &[u8] = b"FHE_comp";
-const COMPUTED_HANDLE_MARKER: u8 = 0xff;
-const HANDLE_VERSION: u8 = 0;
-
+/// Anchor entrypoint module generated into the ZamaHost IDL.
 #[program]
 pub mod zama_host {
     use super::*;
 
-    /// Test-only event shim.
-    ///
-    /// This bypasses ACL record verification and exists only to feed listener /
-    /// worker tests. Protocol flows should create ACL state through authenticated
-    /// handle-producing instructions such as `trivial_encrypt_and_bind` or an
-    /// input verifier.
-    /// Input flows may use `mock_input_verified_and_bind` only as a temporary mock
-    /// short-circuit until the verifier/transciphering boundary exists.
+    pub fn initialize_host_config(
+        ctx: Context<InitializeHostConfig>,
+        args: InitializeHostConfigArgs,
+    ) -> Result<()> {
+        instructions::initialize_host_config(ctx, args)
+    }
+
+    pub fn set_host_pause(ctx: Context<HostAdmin>, paused: bool) -> Result<()> {
+        instructions::set_host_pause(ctx, paused)
+    }
+
+    pub fn set_test_shims_enabled(ctx: Context<HostAdmin>, enabled: bool) -> Result<()> {
+        instructions::set_test_shims_enabled(ctx, enabled)
+    }
+
+    pub fn set_mock_input_enabled(ctx: Context<HostAdmin>, enabled: bool) -> Result<()> {
+        instructions::set_mock_input_enabled(ctx, enabled)
+    }
+
+    pub fn set_grant_deny_list_enabled(ctx: Context<HostAdmin>, enabled: bool) -> Result<()> {
+        instructions::set_grant_deny_list_enabled(ctx, enabled)
+    }
+
+    pub fn set_deny_subject(
+        ctx: Context<SetDenySubject>,
+        subject: Pubkey,
+        denied: bool,
+    ) -> Result<()> {
+        instructions::set_deny_subject(ctx, subject, denied)
+    }
+
+    pub fn delegate_for_user_decryption(
+        ctx: Context<DelegateForUserDecryption>,
+        delegate: Pubkey,
+        app_account: Pubkey,
+        expiration_slot: u64,
+    ) -> Result<()> {
+        instructions::delegate_for_user_decryption(ctx, delegate, app_account, expiration_slot)
+    }
+
+    pub fn revoke_delegation_for_user_decryption(
+        ctx: Context<RevokeDelegationForUserDecryption>,
+    ) -> Result<()> {
+        instructions::revoke_delegation_for_user_decryption(ctx)
+    }
+
     pub fn test_emit_acl_allowed(
         ctx: Context<TestEmitProtocolEvent>,
         handle: [u8; 32],
         subject: Pubkey,
     ) -> Result<()> {
-        emit_cpi!(AclAllowedEvent {
-            version: EVENT_VERSION,
-            handle,
-            subject: subject.to_bytes(),
-        });
-        Ok(())
+        instructions::test_emit_acl_allowed(ctx, handle, subject)
     }
 
-    pub fn allow_acl_subjects(
-        ctx: Context<AllowAclSubjects>,
+    pub fn allow_acl_subjects<'info>(
+        ctx: Context<'info, AllowAclSubjects<'info>>,
         handle: [u8; 32],
         subjects: Vec<AclSubjectEntry>,
     ) -> Result<()> {
-        let authority = ctx.accounts.authority.key();
-        assert_canonical_acl_record(
-            &ctx.accounts.acl_record.to_account_info(),
-            &ctx.accounts.acl_record,
-        )?;
-        assert_record_allows_handle(&ctx.accounts.acl_record, handle, authority)?;
-        extend_acl_subjects(&mut ctx.accounts.acl_record, &subjects)?;
-
-        for subject in subjects {
-            emit_cpi!(AclAllowedEvent {
-                version: EVENT_VERSION,
-                handle,
-                subject: subject.pubkey.to_bytes(),
-            });
-        }
-        Ok(())
+        instructions::allow_acl_subjects(ctx, handle, subjects)
     }
 
     pub fn assert_acl_record(
@@ -74,9 +113,8 @@ pub mod zama_host {
         handle: [u8; 32],
         subject: Pubkey,
     ) -> Result<()> {
-        assert_record(
-            &ctx.accounts.acl_record.to_account_info(),
-            &ctx.accounts.acl_record,
+        instructions::assert_acl_record(
+            ctx,
             nonce_key,
             nonce_sequence,
             acl_domain_key,
@@ -84,28 +122,61 @@ pub mod zama_host {
             encrypted_value_label,
             handle,
             subject,
-        )?;
-        Ok(())
+        )
     }
 
     pub fn allow_for_decryption(ctx: Context<AllowForDecryption>, handle: [u8; 32]) -> Result<()> {
-        let subject = ctx.accounts.authority.key();
-        assert_canonical_acl_record(
-            &ctx.accounts.acl_record.to_account_info(),
-            &ctx.accounts.acl_record,
-        )?;
-        assert_record_allows_handle(&ctx.accounts.acl_record, handle, subject)?;
-        // Design note: this PoC uses one ACL subject list for compute and
-        // decryption. A production Solana host must define which subjects may
-        // make a handle publicly decryptable; a compute signer should not gain
-        // that authority just because it may compute on the handle.
-        ctx.accounts.acl_record.public_decrypt = true;
-        emit_cpi!(AclAllowedEvent {
-            version: EVENT_VERSION,
-            handle,
-            subject: subject.to_bytes(),
-        });
-        Ok(())
+        instructions::allow_for_decryption(ctx, handle)
+    }
+
+    pub fn commit_handle_material(
+        ctx: Context<CommitHandleMaterial>,
+        key_id: [u8; 32],
+        ciphertext_digest: [u8; 32],
+        sns_ciphertext_digest: [u8; 32],
+        coprocessor_set_digest: [u8; 32],
+    ) -> Result<()> {
+        instructions::commit_handle_material(
+            ctx,
+            key_id,
+            ciphertext_digest,
+            sns_ciphertext_digest,
+            coprocessor_set_digest,
+        )
+    }
+
+    pub fn create_transient_session(
+        ctx: Context<CreateTransientSession>,
+        session_nonce: [u8; 32],
+        refund_recipient: Pubkey,
+        compute_subject: Pubkey,
+        expires_slot: u64,
+        max_entries: u8,
+    ) -> Result<()> {
+        instructions::create_transient_session(
+            ctx,
+            session_nonce,
+            refund_recipient,
+            compute_subject,
+            expires_slot,
+            max_entries,
+        )
+    }
+
+    pub fn allow_transient_handle(
+        ctx: Context<AllowTransientHandle>,
+        handle: [u8; 32],
+        capability: TransientCapabilityGrant,
+    ) -> Result<()> {
+        instructions::allow_transient_handle(ctx, handle, capability)
+    }
+
+    pub fn seal_transient_session(ctx: Context<SealTransientSession>) -> Result<()> {
+        instructions::seal_transient_session(ctx)
+    }
+
+    pub fn close_transient_session(ctx: Context<CloseTransientSession>) -> Result<()> {
+        instructions::close_transient_session(ctx)
     }
 
     pub fn trivial_encrypt_and_bind(
@@ -120,63 +191,20 @@ pub mod zama_host {
         output_subjects: Vec<AclSubjectEntry>,
         output_public_decrypt: bool,
     ) -> Result<()> {
-        let subject = ctx.accounts.compute_subject.key();
-        assert_output_acl_metadata(
-            ctx.accounts.app_account_authority.key(),
-            output_nonce_key,
-            output_acl_domain_key,
-            output_app_account,
-            output_encrypted_value_label,
-            &output_subjects,
-        )?;
-
-        let clock = Clock::get()?;
-        let previous_bank_hash = previous_bank_hash(clock.slot)?;
-        let result = computed_trivial_handle(
+        instructions::trivial_encrypt_and_bind(
+            ctx,
             plaintext,
             fhe_type,
-            SOLANA_POC_CHAIN_ID,
-            previous_bank_hash,
-            clock.unix_timestamp,
-        );
-
-        write_acl_record(
-            &mut ctx.accounts.output_acl_record,
             output_nonce_key,
             output_nonce_sequence,
             output_acl_domain_key,
             output_app_account,
             output_encrypted_value_label,
-            result,
-            &output_subjects,
+            output_subjects,
             output_public_decrypt,
-            ctx.bumps.output_acl_record,
-        );
-
-        emit_cpi!(TrivialEncryptEvent {
-            version: EVENT_VERSION,
-            subject: subject.to_bytes(),
-            plaintext,
-            fhe_type,
-            result,
-        });
-        for output_subject in output_subjects {
-            emit_cpi!(AclAllowedEvent {
-                version: EVENT_VERSION,
-                handle: result,
-                subject: output_subject.pubkey.to_bytes(),
-            });
-        }
-        Ok(())
+        )
     }
 
-    /// Mock input-verification short-circuit for Solana input birth.
-    ///
-    /// This creates an ACL record for a caller-supplied input handle and emits
-    /// the same event shape the worker currently consumes. It does not verify a
-    /// ZKPoK, ciphertext preimage, or transciphering proof. The final input path
-    /// must replace this with a real verifier authority before it is treated as
-    /// protocol logic.
     pub fn mock_input_verified_and_bind(
         ctx: Context<MockInputVerifiedAndBind>,
         input_handle: [u8; 32],
@@ -189,43 +217,44 @@ pub mod zama_host {
         output_subjects: Vec<AclSubjectEntry>,
         output_public_decrypt: bool,
     ) -> Result<()> {
-        assert_output_acl_metadata(
-            ctx.accounts.app_account_authority.key(),
-            output_nonce_key,
-            output_acl_domain_key,
-            output_app_account,
-            output_encrypted_value_label,
-            &output_subjects,
-        )?;
-
-        write_acl_record(
-            &mut ctx.accounts.output_acl_record,
+        instructions::mock_input_verified_and_bind(
+            ctx,
+            input_handle,
+            user,
             output_nonce_key,
             output_nonce_sequence,
             output_acl_domain_key,
             output_app_account,
             output_encrypted_value_label,
-            input_handle,
-            &output_subjects,
+            output_subjects,
             output_public_decrypt,
-            ctx.bumps.output_acl_record,
-        );
+        )
+    }
 
-        emit_cpi!(InputVerifiedEvent {
-            version: EVENT_VERSION,
+    pub fn verify_input_and_bind(
+        ctx: Context<VerifyInputAndBind>,
+        input_handle: [u8; 32],
+        proof: SolanaInputProof,
+        output_nonce_key: [u8; 32],
+        output_nonce_sequence: u64,
+        output_acl_domain_key: Pubkey,
+        output_app_account: Pubkey,
+        output_encrypted_value_label: [u8; 32],
+        output_subjects: Vec<AclSubjectEntry>,
+        output_public_decrypt: bool,
+    ) -> Result<()> {
+        instructions::verify_input_and_bind(
+            ctx,
             input_handle,
-            result_handle: input_handle,
-            user: user.to_bytes(),
-            acl_domain_key: output_acl_domain_key.to_bytes(),
-        });
-        for output_subject in output_subjects {
-            emit_cpi!(AclAllowedEvent {
-                version: EVENT_VERSION,
-                handle: input_handle,
-                subject: output_subject.pubkey.to_bytes(),
-            });
-        }
-        Ok(())
+            proof,
+            output_nonce_key,
+            output_nonce_sequence,
+            output_acl_domain_key,
+            output_app_account,
+            output_encrypted_value_label,
+            output_subjects,
+            output_public_decrypt,
+        )
     }
 
     pub fn fhe_binary_op(
@@ -237,55 +266,7 @@ pub mod zama_host {
         output_fhe_type: u8,
         result: [u8; 32],
     ) -> Result<()> {
-        let subject = ctx.accounts.compute_subject.key();
-
-        // Match the EVM executor boundary: no compute event is emitted until
-        // the host program verifies that the compute subject can use the
-        // operand handles.
-        assert_canonical_acl_record(
-            &ctx.accounts.lhs_acl_record.to_account_info(),
-            &ctx.accounts.lhs_acl_record,
-        )?;
-        assert_record_allows_handle(&ctx.accounts.lhs_acl_record, lhs, subject)?;
-        if !scalar {
-            assert_unchecked_acl_record_allows_handle(
-                &ctx.accounts.rhs_acl_record.to_account_info(),
-                rhs,
-                subject,
-            )?;
-        }
-
-        let clock = Clock::get()?;
-        let previous_bank_hash = previous_bank_hash(clock.slot)?;
-        let expected_result = computed_binary_handle(
-            op,
-            lhs,
-            rhs,
-            scalar,
-            output_fhe_type,
-            SOLANA_POC_CHAIN_ID,
-            previous_bank_hash,
-            clock.unix_timestamp,
-        );
-        require!(
-            result == expected_result,
-            ZamaHostError::ComputedHandleMismatch
-        );
-
-        // Future scalar and ternary ops must keep the EVM scalarByte rule:
-        // bit i flags whether the i-th argument from the right is scalar.
-        // Example for mulDiv(lhs, rhs, divisor):
-        // enc x enc x scalar => 0x01, enc x scalar x scalar => 0x03.
-        emit_cpi!(FheBinaryOpEvent {
-            version: EVENT_VERSION,
-            op,
-            subject: subject.to_bytes(),
-            lhs,
-            rhs,
-            scalar,
-            result,
-        });
-        Ok(())
+        instructions::fhe_binary_op(ctx, op, lhs, rhs, scalar, output_fhe_type, result)
     }
 
     pub fn fhe_binary_op_and_bind_output(
@@ -304,86 +285,112 @@ pub mod zama_host {
         output_subjects: Vec<AclSubjectEntry>,
         output_public_decrypt: bool,
     ) -> Result<()> {
-        let subject = ctx.accounts.compute_subject.key();
-        assert_output_acl_metadata(
-            ctx.accounts.app_account_authority.key(),
-            output_nonce_key,
-            output_acl_domain_key,
-            output_app_account,
-            output_encrypted_value_label,
-            &output_subjects,
-        )?;
-
-        assert_canonical_acl_record(
-            &ctx.accounts.lhs_acl_record.to_account_info(),
-            &ctx.accounts.lhs_acl_record,
-        )?;
-        assert_record_allows_handle(&ctx.accounts.lhs_acl_record, lhs, subject)?;
-        if !scalar {
-            assert_unchecked_acl_record_allows_handle(
-                &ctx.accounts.rhs_acl_record.to_account_info(),
-                rhs,
-                subject,
-            )?;
-        }
-
-        let clock = Clock::get()?;
-        let previous_bank_hash = previous_bank_hash(clock.slot)?;
-        let expected_result = computed_bound_binary_handle(
+        instructions::fhe_binary_op_and_bind_output(
+            ctx,
             op,
             lhs,
             rhs,
             scalar,
             output_fhe_type,
-            SOLANA_POC_CHAIN_ID,
-            previous_bank_hash,
-            clock.unix_timestamp,
-            output_nonce_key,
-            output_nonce_sequence,
-        );
-        require!(
-            result == expected_result,
-            ZamaHostError::ComputedHandleMismatch
-        );
-
-        emit_cpi!(FheBinaryOpEvent {
-            version: EVENT_VERSION,
-            op,
-            subject: subject.to_bytes(),
-            lhs,
-            rhs,
-            scalar,
             result,
-        });
-
-        write_acl_record(
-            &mut ctx.accounts.output_acl_record,
             output_nonce_key,
             output_nonce_sequence,
             output_acl_domain_key,
             output_app_account,
             output_encrypted_value_label,
-            result,
-            &output_subjects,
+            output_subjects,
             output_public_decrypt,
-            ctx.bumps.output_acl_record,
-        );
-
-        for output_subject in output_subjects {
-            emit_cpi!(AclAllowedEvent {
-                version: EVENT_VERSION,
-                handle: result,
-                subject: output_subject.pubkey.to_bytes(),
-            });
-        }
-        Ok(())
+        )
     }
 
-    /// Test-only event shim.
-    ///
-    /// This emits a caller-chosen trivial-encrypt result handle without creating
-    /// an ACL record. App flows should use `trivial_encrypt_and_bind` when they
-    /// need a host-born trivial encryption handle with durable ACL state.
+    pub fn fhe_ternary_op_and_bind_output(
+        ctx: Context<FheTernaryOpAndBindOutput>,
+        op: FheTernaryOpCode,
+        control: [u8; 32],
+        if_true: [u8; 32],
+        if_false: [u8; 32],
+        output_fhe_type: u8,
+        result: [u8; 32],
+        output_nonce_key: [u8; 32],
+        output_nonce_sequence: u64,
+        output_acl_domain_key: Pubkey,
+        output_app_account: Pubkey,
+        output_encrypted_value_label: [u8; 32],
+        output_subjects: Vec<AclSubjectEntry>,
+        output_public_decrypt: bool,
+    ) -> Result<()> {
+        instructions::fhe_ternary_op_and_bind_output(
+            ctx,
+            op,
+            control,
+            if_true,
+            if_false,
+            output_fhe_type,
+            result,
+            output_nonce_key,
+            output_nonce_sequence,
+            output_acl_domain_key,
+            output_app_account,
+            output_encrypted_value_label,
+            output_subjects,
+            output_public_decrypt,
+        )
+    }
+
+    pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -> Result<()> {
+        instructions::fhe_eval(ctx, args)
+    }
+
+    pub fn fhe_rand_and_bind(
+        ctx: Context<FheRandAndBind>,
+        fhe_type: u8,
+        output_nonce_key: [u8; 32],
+        output_nonce_sequence: u64,
+        output_acl_domain_key: Pubkey,
+        output_app_account: Pubkey,
+        output_encrypted_value_label: [u8; 32],
+        output_subjects: Vec<AclSubjectEntry>,
+        output_public_decrypt: bool,
+    ) -> Result<()> {
+        instructions::fhe_rand_and_bind(
+            ctx,
+            fhe_type,
+            output_nonce_key,
+            output_nonce_sequence,
+            output_acl_domain_key,
+            output_app_account,
+            output_encrypted_value_label,
+            output_subjects,
+            output_public_decrypt,
+        )
+    }
+
+    pub fn fhe_rand_bounded_and_bind(
+        ctx: Context<FheRandBoundedAndBind>,
+        upper_bound: [u8; 32],
+        fhe_type: u8,
+        output_nonce_key: [u8; 32],
+        output_nonce_sequence: u64,
+        output_acl_domain_key: Pubkey,
+        output_app_account: Pubkey,
+        output_encrypted_value_label: [u8; 32],
+        output_subjects: Vec<AclSubjectEntry>,
+        output_public_decrypt: bool,
+    ) -> Result<()> {
+        instructions::fhe_rand_bounded_and_bind(
+            ctx,
+            upper_bound,
+            fhe_type,
+            output_nonce_key,
+            output_nonce_sequence,
+            output_acl_domain_key,
+            output_app_account,
+            output_encrypted_value_label,
+            output_subjects,
+            output_public_decrypt,
+        )
+    }
+
     pub fn test_emit_trivial_encrypt(
         ctx: Context<TestEmitProtocolEvent>,
         subject: Pubkey,
@@ -391,20 +398,9 @@ pub mod zama_host {
         fhe_type: u8,
         result: [u8; 32],
     ) -> Result<()> {
-        emit_cpi!(TrivialEncryptEvent {
-            version: EVENT_VERSION,
-            subject: subject.to_bytes(),
-            plaintext,
-            fhe_type,
-            result,
-        });
-        Ok(())
+        instructions::test_emit_trivial_encrypt(ctx, subject, plaintext, fhe_type, result)
     }
 
-    /// Test-only event shim.
-    ///
-    /// This emits a caller-chosen random result handle. It is useful for worker
-    /// tests and should not be treated as the final random-handle birth API.
     pub fn test_emit_fhe_rand(
         ctx: Context<TestEmitProtocolEvent>,
         subject: Pubkey,
@@ -412,21 +408,9 @@ pub mod zama_host {
         fhe_type: u8,
         result: [u8; 32],
     ) -> Result<()> {
-        emit_cpi!(FheRandEvent {
-            version: EVENT_VERSION,
-            subject: subject.to_bytes(),
-            seed,
-            fhe_type,
-            result,
-        });
-        Ok(())
+        instructions::test_emit_fhe_rand(ctx, subject, seed, fhe_type, result)
     }
 
-    /// Test-only event shim.
-    ///
-    /// This only emits an input-verification event. The PoC ACL-bearing stand-in
-    /// is `mock_input_verified_and_bind`; the final version should require the real
-    /// InputVerifier/transciphering boundary.
     pub fn test_emit_input_verified(
         ctx: Context<TestEmitProtocolEvent>,
         input_handle: [u8; 32],
@@ -434,629 +418,12 @@ pub mod zama_host {
         user: Pubkey,
         acl_domain_key: Pubkey,
     ) -> Result<()> {
-        emit_cpi!(InputVerifiedEvent {
-            version: EVENT_VERSION,
+        instructions::test_emit_input_verified(
+            ctx,
             input_handle,
             result_handle,
-            user: user.to_bytes(),
-            acl_domain_key: acl_domain_key.to_bytes(),
-        });
-        Ok(())
+            user,
+            acl_domain_key,
+        )
     }
-}
-
-/// Accounts for test-only event shims that bypass protocol state writes.
-#[derive(Accounts)]
-#[event_cpi]
-pub struct TestEmitProtocolEvent {}
-
-#[derive(Accounts)]
-#[event_cpi]
-pub struct AllowAclSubjects<'info> {
-    pub authority: Signer<'info>,
-    #[account(mut)]
-    pub acl_record: Account<'info, AclRecord>,
-}
-
-#[derive(Accounts)]
-#[instruction(
-    plaintext: [u8; 32],
-    fhe_type: u8,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64
-)]
-#[event_cpi]
-pub struct TrivialEncryptAndBind<'info> {
-    #[account(mut)]
-    pub payer: Signer<'info>,
-    pub compute_subject: Signer<'info>,
-    pub app_account_authority: Signer<'info>,
-    #[account(
-        init,
-        payer = payer,
-        space = 8 + AclRecord::SPACE,
-        seeds = [b"acl-record", output_nonce_key.as_ref(), &output_nonce_sequence.to_le_bytes()],
-        bump
-    )]
-    pub output_acl_record: Account<'info, AclRecord>,
-    pub system_program: Program<'info, System>,
-}
-
-/// Accounts for the mock input short-circuit.
-///
-/// `app_account_authority` only proves that the app account accepted this input
-/// binding. It is not a cryptographic input verifier.
-#[derive(Accounts)]
-#[instruction(
-    input_handle: [u8; 32],
-    user: Pubkey,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64
-)]
-#[event_cpi]
-pub struct MockInputVerifiedAndBind<'info> {
-    #[account(mut)]
-    pub payer: Signer<'info>,
-    pub app_account_authority: Signer<'info>,
-    #[account(
-        init,
-        payer = payer,
-        space = 8 + AclRecord::SPACE,
-        seeds = [b"acl-record", output_nonce_key.as_ref(), &output_nonce_sequence.to_le_bytes()],
-        bump
-    )]
-    pub output_acl_record: Account<'info, AclRecord>,
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct AssertAclRecord<'info> {
-    pub acl_record: Account<'info, AclRecord>,
-}
-
-#[derive(Accounts)]
-#[event_cpi]
-pub struct AllowForDecryption<'info> {
-    pub authority: Signer<'info>,
-    #[account(mut)]
-    pub acl_record: Account<'info, AclRecord>,
-}
-
-#[derive(Accounts)]
-#[instruction(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    output_fhe_type: u8
-)]
-#[event_cpi]
-pub struct FheBinaryOp<'info> {
-    pub compute_subject: Signer<'info>,
-    pub lhs_acl_record: Account<'info, AclRecord>,
-    /// CHECK: encrypted RHS operands are deserialized and ACL-checked in the
-    /// instruction body; scalar RHS operands deliberately skip this account.
-    pub rhs_acl_record: UncheckedAccount<'info>,
-}
-
-#[derive(Accounts)]
-#[instruction(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    output_fhe_type: u8,
-    result: [u8; 32],
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64
-)]
-#[event_cpi]
-pub struct FheBinaryOpAndBindOutput<'info> {
-    #[account(mut)]
-    pub payer: Signer<'info>,
-    pub compute_subject: Signer<'info>,
-    pub app_account_authority: Signer<'info>,
-    pub lhs_acl_record: Account<'info, AclRecord>,
-    /// CHECK: encrypted RHS operands are deserialized and ACL-checked in the
-    /// instruction body; scalar RHS operands deliberately skip this account.
-    pub rhs_acl_record: UncheckedAccount<'info>,
-    #[account(
-        init,
-        payer = payer,
-        space = 8 + AclRecord::SPACE,
-        seeds = [b"acl-record", output_nonce_key.as_ref(), &output_nonce_sequence.to_le_bytes()],
-        bump
-    )]
-    pub output_acl_record: Account<'info, AclRecord>,
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
-pub struct AclSubjectEntry {
-    pub pubkey: Pubkey,
-}
-
-#[account]
-pub struct AclRecord {
-    pub handle: [u8; 32],
-    pub nonce_key: [u8; 32],
-    pub nonce_sequence: u64,
-    pub acl_domain_key: Pubkey,
-    pub app_account: Pubkey,
-    pub encrypted_value_label: [u8; 32],
-    pub subjects: [Pubkey; MAX_ACL_SUBJECTS],
-    pub subject_count: u8,
-    pub public_decrypt: bool,
-    pub bump: u8,
-}
-
-impl AclRecord {
-    pub const SPACE: usize = 32 + 32 + 8 + 32 + 32 + 32 + (32 * MAX_ACL_SUBJECTS) + 1 + 1 + 1;
-}
-
-#[event]
-pub struct FheBinaryOpEvent {
-    pub version: u8,
-    pub op: FheBinaryOpCode,
-    pub subject: [u8; 32],
-    pub lhs: [u8; 32],
-    pub rhs: [u8; 32],
-    pub scalar: bool,
-    pub result: [u8; 32],
-}
-
-#[event]
-pub struct TrivialEncryptEvent {
-    pub version: u8,
-    pub subject: [u8; 32],
-    pub plaintext: [u8; 32],
-    pub fhe_type: u8,
-    pub result: [u8; 32],
-}
-
-#[event]
-pub struct FheRandEvent {
-    pub version: u8,
-    pub subject: [u8; 32],
-    pub seed: [u8; 16],
-    pub fhe_type: u8,
-    pub result: [u8; 32],
-}
-
-#[event]
-pub struct AclAllowedEvent {
-    pub version: u8,
-    pub handle: [u8; 32],
-    pub subject: [u8; 32],
-}
-
-#[event]
-pub struct InputVerifiedEvent {
-    pub version: u8,
-    pub input_handle: [u8; 32],
-    pub result_handle: [u8; 32],
-    pub user: [u8; 32],
-    pub acl_domain_key: [u8; 32],
-}
-
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FheBinaryOpCode {
-    Add,
-    Sub,
-}
-
-impl FheBinaryOpCode {
-    pub fn as_u8(self) -> u8 {
-        match self {
-            Self::Add => 0,
-            Self::Sub => 1,
-        }
-    }
-}
-
-#[error_code]
-pub enum ZamaHostError {
-    #[msg("ACL app account authority does not match app account")]
-    AppAccountAuthorityMismatch,
-    #[msg("ACL record nonce key does not match")]
-    AclNonceKeyMismatch,
-    #[msg("ACL record address is not the canonical PDA for its nonce key")]
-    AclRecordPdaMismatch,
-    #[msg("ACL record nonce sequence does not match")]
-    AclNonceSequenceMismatch,
-    #[msg("ACL record domain key does not match")]
-    AclDomainKeyMismatch,
-    #[msg("ACL record app account does not match")]
-    AclAppAccountMismatch,
-    #[msg("ACL record encrypted value label does not match")]
-    AclEncryptedValueLabelMismatch,
-    #[msg("ACL record handle does not match")]
-    AclHandleMismatch,
-    #[msg("ACL record subject is not allowed")]
-    AclSubjectMismatch,
-    #[msg("ACL record has too many subjects")]
-    AclSubjectCapacityExceeded,
-    #[msg("previous bank hash is not available")]
-    PreviousBankHashUnavailable,
-    #[msg("computed handle does not match host formula")]
-    ComputedHandleMismatch,
-}
-
-fn write_acl_record(
-    record: &mut Account<AclRecord>,
-    nonce_key: [u8; 32],
-    nonce_sequence: u64,
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-    handle: [u8; 32],
-    subjects: &[AclSubjectEntry],
-    public_decrypt: bool,
-    bump: u8,
-) {
-    record.handle = handle;
-    record.nonce_key = nonce_key;
-    record.nonce_sequence = nonce_sequence;
-    record.acl_domain_key = acl_domain_key;
-    record.app_account = app_account;
-    record.encrypted_value_label = encrypted_value_label;
-    record.subjects = [Pubkey::default(); MAX_ACL_SUBJECTS];
-    record.subject_count = subjects.len() as u8;
-    record.public_decrypt = public_decrypt;
-    record.bump = bump;
-
-    for (index, subject) in subjects.iter().enumerate() {
-        record.subjects[index] = subject.pubkey;
-    }
-}
-
-fn extend_acl_subjects(
-    record: &mut Account<AclRecord>,
-    subjects: &[AclSubjectEntry],
-) -> Result<()> {
-    require!(
-        !subjects.is_empty(),
-        ZamaHostError::AclSubjectCapacityExceeded
-    );
-
-    let mut subject_count = record.subject_count as usize;
-    for subject in subjects {
-        if record.subjects[..subject_count].contains(&subject.pubkey) {
-            continue;
-        }
-        require!(
-            subject_count < MAX_ACL_SUBJECTS,
-            ZamaHostError::AclSubjectCapacityExceeded
-        );
-        record.subjects[subject_count] = subject.pubkey;
-        subject_count += 1;
-    }
-    record.subject_count = subject_count as u8;
-    Ok(())
-}
-
-fn assert_output_acl_metadata(
-    app_account_authority: Pubkey,
-    nonce_key: [u8; 32],
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-    subjects: &[AclSubjectEntry],
-) -> Result<()> {
-    require_keys_eq!(
-        app_account_authority,
-        app_account,
-        ZamaHostError::AppAccountAuthorityMismatch
-    );
-    assert_nonce_key_matches_fields(
-        nonce_key,
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-    )?;
-    require!(
-        !subjects.is_empty() && subjects.len() <= MAX_ACL_SUBJECTS,
-        ZamaHostError::AclSubjectCapacityExceeded
-    );
-    Ok(())
-}
-
-fn assert_record(
-    record_info: &AccountInfo,
-    record: &Account<AclRecord>,
-    nonce_key: [u8; 32],
-    nonce_sequence: u64,
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-    handle: [u8; 32],
-    subject: Pubkey,
-) -> Result<()> {
-    assert_nonce_key_matches_fields(
-        nonce_key,
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-    )?;
-    assert_canonical_acl_record(record_info, record)?;
-    require!(
-        record.nonce_key == nonce_key,
-        ZamaHostError::AclNonceKeyMismatch
-    );
-    require!(
-        record.nonce_sequence == nonce_sequence,
-        ZamaHostError::AclNonceSequenceMismatch
-    );
-    require_keys_eq!(
-        record.acl_domain_key,
-        acl_domain_key,
-        ZamaHostError::AclDomainKeyMismatch
-    );
-    require_keys_eq!(
-        record.app_account,
-        app_account,
-        ZamaHostError::AclAppAccountMismatch
-    );
-    require!(
-        record.encrypted_value_label == encrypted_value_label,
-        ZamaHostError::AclEncryptedValueLabelMismatch
-    );
-    assert_record_allows_handle(record, handle, subject)
-}
-
-fn assert_canonical_acl_record(
-    record_info: &AccountInfo,
-    record: &Account<AclRecord>,
-) -> Result<()> {
-    assert_canonical_acl_record_data(record_info.key(), record)
-}
-
-fn assert_canonical_acl_record_data(record_key: Pubkey, record: &AclRecord) -> Result<()> {
-    assert_nonce_key_matches_fields(
-        record.nonce_key,
-        record.acl_domain_key,
-        record.app_account,
-        record.encrypted_value_label,
-    )?;
-
-    let (expected, expected_bump) = Pubkey::find_program_address(
-        &[
-            b"acl-record",
-            record.nonce_key.as_ref(),
-            &record.nonce_sequence.to_le_bytes(),
-        ],
-        &crate::ID,
-    );
-    require_keys_eq!(record_key, expected, ZamaHostError::AclRecordPdaMismatch);
-    require!(
-        record.bump == expected_bump,
-        ZamaHostError::AclRecordPdaMismatch
-    );
-    Ok(())
-}
-
-fn assert_unchecked_acl_record_allows_handle(
-    record_info: &AccountInfo,
-    handle: [u8; 32],
-    subject: Pubkey,
-) -> Result<()> {
-    require_keys_eq!(
-        *record_info.owner,
-        crate::ID,
-        ZamaHostError::AclRecordPdaMismatch
-    );
-    let data = record_info.try_borrow_data()?;
-    let mut data_slice: &[u8] = &data;
-    let record = AclRecord::try_deserialize(&mut data_slice)?;
-    assert_canonical_acl_record_data(record_info.key(), &record)?;
-    assert_record_allows_handle(&record, handle, subject)
-}
-
-fn assert_nonce_key_matches_fields(
-    nonce_key: [u8; 32],
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-) -> Result<()> {
-    require!(
-        nonce_key == acl_nonce_key(acl_domain_key, app_account, encrypted_value_label),
-        ZamaHostError::AclNonceKeyMismatch
-    );
-    Ok(())
-}
-
-pub fn acl_nonce_key(
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-) -> [u8; 32] {
-    hashv(&[
-        b"zama-acl-nonce-key-v1",
-        acl_domain_key.as_ref(),
-        app_account.as_ref(),
-        &encrypted_value_label,
-    ])
-    .to_bytes()
-}
-
-pub fn computed_binary_handle_for_current_slot(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-) -> Result<[u8; 32]> {
-    let clock = Clock::get()?;
-    let previous_bank_hash = previous_bank_hash(clock.slot)?;
-    Ok(computed_binary_handle(
-        op,
-        lhs,
-        rhs,
-        scalar,
-        fhe_type,
-        SOLANA_POC_CHAIN_ID,
-        previous_bank_hash,
-        clock.unix_timestamp,
-    ))
-}
-
-pub fn computed_bound_binary_handle_for_current_slot(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> Result<[u8; 32]> {
-    let clock = Clock::get()?;
-    let previous_bank_hash = previous_bank_hash(clock.slot)?;
-    Ok(computed_bound_binary_handle(
-        op,
-        lhs,
-        rhs,
-        scalar,
-        fhe_type,
-        SOLANA_POC_CHAIN_ID,
-        previous_bank_hash,
-        clock.unix_timestamp,
-        output_nonce_key,
-        output_nonce_sequence,
-    ))
-}
-
-pub fn computed_binary_handle(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-) -> [u8; 32] {
-    let op_byte = [op.as_u8()];
-    let scalar_byte = [u8::from(scalar)];
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let mut result = hashv(&[
-        COMPUTATION_DOMAIN_SEPARATOR,
-        &op_byte,
-        &lhs,
-        &rhs,
-        &scalar_byte,
-        crate::ID.as_ref(),
-        &chain_id_bytes,
-        &previous_bank_hash,
-        &timestamp_bytes,
-    ])
-    .to_bytes();
-
-    result[21..32].fill(0);
-    result[21] = COMPUTED_HANDLE_MARKER;
-    result[22..30].copy_from_slice(&chain_id_bytes);
-    result[30] = fhe_type;
-    result[31] = HANDLE_VERSION;
-    result
-}
-
-pub fn computed_bound_binary_handle(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> [u8; 32] {
-    let sequence_bytes = output_nonce_sequence.to_be_bytes();
-    let base_result = computed_binary_handle(
-        op,
-        lhs,
-        rhs,
-        scalar,
-        fhe_type,
-        chain_id,
-        previous_bank_hash,
-        unix_timestamp,
-    );
-    let mut result = base_result;
-    result[..21].copy_from_slice(
-        &hashv(&[
-            b"FHE_bound_output",
-            &base_result,
-            &output_nonce_key,
-            &sequence_bytes,
-        ])
-        .to_bytes()[..21],
-    );
-    result
-}
-
-pub fn computed_trivial_handle(
-    plaintext: [u8; 32],
-    fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-) -> [u8; 32] {
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let fhe_type_bytes = [fhe_type];
-    let mut result = hashv(&[
-        COMPUTATION_DOMAIN_SEPARATOR,
-        &[2],
-        &plaintext,
-        &fhe_type_bytes,
-        crate::ID.as_ref(),
-        &chain_id_bytes,
-        &previous_bank_hash,
-        &timestamp_bytes,
-    ])
-    .to_bytes();
-
-    result[21..32].fill(0);
-    result[21] = COMPUTED_HANDLE_MARKER;
-    result[22..30].copy_from_slice(&chain_id_bytes);
-    result[30] = fhe_type;
-    result[31] = HANDLE_VERSION;
-    result
-}
-
-fn previous_bank_hash(current_slot: u64) -> Result<[u8; 32]> {
-    let Some(previous_slot) = current_slot.checked_sub(1) else {
-        return Ok([0; 32]);
-    };
-    let slot_hashes =
-        PodSlotHashes::fetch().map_err(|_| error!(ZamaHostError::PreviousBankHashUnavailable))?;
-    if let Some(hash) = slot_hashes
-        .get(&previous_slot)
-        .map_err(|_| error!(ZamaHostError::PreviousBankHashUnavailable))?
-    {
-        return Ok(hash.to_bytes());
-    }
-
-    // LiteSVM starts from an empty slot-hash history in these PoC tests.
-    // Real cluster execution should take the branch above.
-    Ok([0; 32])
-}
-
-fn assert_record_allows_handle(
-    record: &AclRecord,
-    handle: [u8; 32],
-    subject: Pubkey,
-) -> Result<()> {
-    require!(record.handle == handle, ZamaHostError::AclHandleMismatch);
-    require!(
-        record_allows(record, subject),
-        ZamaHostError::AclSubjectMismatch
-    );
-    Ok(())
-}
-
-pub fn record_allows(record: &AclRecord, subject: Pubkey) -> bool {
-    record.subjects[..record.subject_count as usize].contains(&subject)
 }
