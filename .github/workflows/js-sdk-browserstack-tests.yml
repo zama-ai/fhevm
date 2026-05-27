@@ -236,7 +236,7 @@ jobs:
                   npm run ${{ matrix.test }} -- --config test/browser/playwright.config.ts ${{ steps.test_args.outputs.extra }}
 
             - name: Upload generated BrowserStack config
-              if: ${{ always() }}
+              if: ${{ always() && env.BROWSERSTACK_CONFIG_FILE != '' }}
               uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
               with:
                   path: ${{ env.BROWSERSTACK_CONFIG_FILE }}
