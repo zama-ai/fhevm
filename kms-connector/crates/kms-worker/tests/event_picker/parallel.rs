@@ -1,12 +1,10 @@
 use alloy::primitives::U256;
-use connector_utils::{
-    tests::{
-        db::requests::{
-            InsertRequestOptions, check_no_uncompleted_request_in_db, insert_rand_request,
-        },
-        setup::TestInstanceBuilder,
+use connector_utils::tests::{
+    db::requests::{
+        InsertRequestOptions, TestEventType, check_no_uncompleted_request_in_db,
+        insert_rand_request,
     },
-    types::db::EventType,
+    setup::TestInstanceBuilder,
 };
 use kms_worker::core::{Config, DbEventPicker, EventPicker};
 use rstest::rstest;
@@ -15,14 +13,15 @@ use std::time::Duration;
 use tracing::info;
 
 #[rstest]
-#[case::public_decryption(EventType::PublicDecryptionRequest)]
-#[case::user_decryption(EventType::UserDecryptionRequest)]
-#[case::prep_keygen(EventType::PrepKeygenRequest)]
-#[case::keygen(EventType::KeygenRequest)]
-#[case::crsgen(EventType::CrsgenRequest)]
+#[case::public_decryption(TestEventType::PublicDecryption)]
+#[case::user_decryption(TestEventType::UserDecryption)]
+#[case::user_decryption_v2(TestEventType::UserDecryptionV2)]
+#[case::prep_keygen(TestEventType::PrepKeygen)]
+#[case::keygen(TestEventType::Keygen)]
+#[case::crsgen(TestEventType::Crsgen)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_parallel_request_picking(#[case] event_type: EventType) -> anyhow::Result<()> {
+async fn test_parallel_request_picking(#[case] event_type: TestEventType) -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_setup().await?;
     let mut event_picker = init_event_picker(test_instance.db().clone()).await?;
 
