@@ -672,9 +672,11 @@ contract Decryption is
         payload.extraData = extraData;
         payload.signature = signature;
 
+        uint256 contextId = _extractContextId(extraData);
+
         _collectUserDecryptionFee(msg.sender);
 
-        _executeUnifiedUserDecryptionRequest(handles, payload);
+        _executeUnifiedUserDecryptionRequest(handles, payload, contextId);
     }
 
     /**
@@ -688,7 +690,8 @@ contract Decryption is
      */
     function _executeUnifiedUserDecryptionRequest(
         HandleEntry[] calldata handles,
-        UserDecryptionRequestPayload memory payload
+        UserDecryptionRequestPayload memory payload,
+        uint256 contextId
     ) internal virtual {
         bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceHandleEntry(handles);
 
@@ -708,6 +711,9 @@ contract Decryption is
 
         // The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
         $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(payload.publicKey, ctHandles);
+
+        // Pin the KMS context at request time. See `decryptionContextId` storage docs.
+        $.decryptionContextId[userDecryptionId] = contextId;
 
         emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, handles, payload);
     }
@@ -956,7 +962,13 @@ contract Decryption is
             if (extraData.length < 33) {
                 revert InvalidExtraDataLength(extraData.length, 33);
             }
-            return uint256(bytes32(extraData[1:33]));
+            contextId = uint256(bytes32(extraData[1:33]));
+            // Reject the all-zeros payload: contextId 0 is reserved for the pre-pinning
+            // legacy fallback and must not be reachable from caller-supplied extraData.
+            if (contextId == 0) {
+                revert InvalidNullContextId();
+            }
+            return contextId;
         }
 
         // Unsupported version
