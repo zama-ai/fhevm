@@ -3,9 +3,8 @@ import type { Hex } from "viem";
 const randomBytes = (length: number): Uint8Array =>
   crypto.getRandomValues(new Uint8Array(length));
 
-export const randomAddress = (): Hex => {
-  return `0x${Array.from(randomBytes(20), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
-};
+export const randomAddress = (): Hex =>
+  `0x${Array.from(randomBytes(20), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 
 export const randomUint8 = (): number => randomBytes(1)[0] ?? 0;
 
