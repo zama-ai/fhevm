@@ -42,6 +42,19 @@ fn generate_zama_host_events() {
                 .expect("enum variant must have a name")
         })
         .collect::<Vec<_>>();
+    let ternary_op_type = types
+        .get("FheTernaryOpCode")
+        .expect("ZamaHost IDL must define FheTernaryOpCode");
+    let ternary_op_variants = ternary_op_type["type"]["variants"]
+        .as_array()
+        .expect("FheTernaryOpCode must be an enum")
+        .iter()
+        .map(|variant| {
+            variant["name"]
+                .as_str()
+                .expect("enum variant must have a name")
+        })
+        .collect::<Vec<_>>();
 
     let mut output = String::from(
         r#"// Generated from `host-listener/idl/zama_host.json` by `host-listener/build.rs`.
@@ -58,6 +71,14 @@ pub const ANCHOR_EVENT_IX_TAG_LE: [u8; 8] = 0x1d9acb512ea545e4_u64.to_le_bytes()
     output.push_str("#[derive(Clone, Copy, Debug, PartialEq, Eq)]\n");
     output.push_str("pub enum FheBinaryOpCode {\n");
     for variant in &op_variants {
+        output.push_str("    ");
+        output.push_str(variant);
+        output.push_str(",\n");
+    }
+    output.push_str("}\n\n");
+    output.push_str("#[derive(Clone, Copy, Debug, PartialEq, Eq)]\n");
+    output.push_str("pub enum FheTernaryOpCode {\n");
+    for variant in &ternary_op_variants {
         output.push_str("    ");
         output.push_str(variant);
         output.push_str(",\n");
@@ -165,6 +186,16 @@ pub const ANCHOR_EVENT_IX_TAG_LE: [u8; 8] = 0x1d9acb512ea545e4_u64.to_le_bytes()
         output.push_str("),\n");
     }
     output.push_str("        _ => None,\n    }\n}\n\n");
+    output.push_str("fn read_fhe_ternary_op_code(cursor: &mut Cursor<'_>) -> Option<FheTernaryOpCode> {\n");
+    output.push_str("    match cursor.read_u8()? {\n");
+    for (index, variant) in ternary_op_variants.iter().enumerate() {
+        output.push_str("        ");
+        output.push_str(&index.to_string());
+        output.push_str(" => Some(FheTernaryOpCode::");
+        output.push_str(variant);
+        output.push_str("),\n");
+    }
+    output.push_str("        _ => None,\n    }\n}\n\n");
 
     output.push_str(
         r#"struct Cursor<'a> {
@@ -193,6 +224,10 @@ impl<'a> Cursor<'a> {
             1 => Some(true),
             _ => None,
         }
+    }
+
+    fn read_u64(&mut self) -> Option<u64> {
+        Some(u64::from_le_bytes(self.read_array::<8>()?))
     }
 
     fn read_array<const N: usize>(&mut self) -> Option<[u8; N]> {
@@ -229,7 +264,9 @@ fn rust_type(idl_type: &Value) -> String {
     if let Some(primitive) = idl_type.as_str() {
         return match primitive {
             "u8" => "u8".to_string(),
+            "u64" => "u64".to_string(),
             "bool" => "bool".to_string(),
+            "pubkey" => "[u8; 32]".to_string(),
             other => panic!("unsupported IDL primitive type {other}"),
         };
     }
@@ -252,7 +289,9 @@ fn read_expr(idl_type: &Value) -> String {
     if let Some(primitive) = idl_type.as_str() {
         return match primitive {
             "u8" => "cursor.read_u8()".to_string(),
+            "u64" => "cursor.read_u64()".to_string(),
             "bool" => "cursor.read_bool()".to_string(),
+            "pubkey" => "cursor.read_array::<32>()".to_string(),
             other => panic!("unsupported IDL primitive type {other}"),
         };
     }
@@ -269,6 +308,9 @@ fn read_expr(idl_type: &Value) -> String {
         return match defined {
             "FheBinaryOpCode" => {
                 "read_fhe_binary_op_code(&mut cursor)".to_string()
+            }
+            "FheTernaryOpCode" => {
+                "read_fhe_ternary_op_code(&mut cursor)".to_string()
             }
             other => panic!("unsupported IDL defined type {other}"),
         };

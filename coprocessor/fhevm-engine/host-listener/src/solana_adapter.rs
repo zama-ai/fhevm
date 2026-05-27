@@ -7,8 +7,9 @@ use sqlx::Error as SqlxError;
 
 use crate::generated::{
     decode_anchor_cpi_event as decode_zama_host_anchor_cpi_event,
-    FheBinaryOpCode, FheBinaryOpEvent, FheRandEvent, TrivialEncryptEvent,
-    ZamaHostEvent,
+    FheBinaryOpCode, FheBinaryOpEvent, FheRandBoundedEvent, FheRandEvent,
+    FheTernaryOpCode, FheTernaryOpEvent, TrivialEncryptEvent, ZamaHostEvent,
+    EVENT_VERSION,
 };
 
 use crate::contracts::TfheContract;
@@ -29,8 +30,10 @@ pub struct SolanaAclAllowedEvent {
 #[derive(Clone, Debug)]
 pub enum SolanaHostEvent {
     FheBinaryOp(FheBinaryOpEvent),
+    FheTernaryOp(FheTernaryOpEvent),
     TrivialEncrypt(TrivialEncryptEvent),
     FheRand(FheRandEvent),
+    FheRandBounded(FheRandBoundedEvent),
     AclAllowed(SolanaAclAllowedEvent),
 }
 
@@ -59,14 +62,24 @@ pub fn solana_transaction_id(signature_bytes: &[u8]) -> TransactionHash {
 }
 
 pub fn decode_anchor_cpi_event(data: &[u8]) -> Option<SolanaHostEvent> {
-    match decode_zama_host_anchor_cpi_event(data)? {
+    let event = decode_zama_host_anchor_cpi_event(data)?;
+    if zama_host_event_version(&event) != EVENT_VERSION {
+        return None;
+    }
+    match event {
         ZamaHostEvent::FheBinaryOp(event) => {
             Some(SolanaHostEvent::FheBinaryOp(event))
+        }
+        ZamaHostEvent::FheTernaryOp(event) => {
+            Some(SolanaHostEvent::FheTernaryOp(event))
         }
         ZamaHostEvent::TrivialEncrypt(event) => {
             Some(SolanaHostEvent::TrivialEncrypt(event))
         }
         ZamaHostEvent::FheRand(event) => Some(SolanaHostEvent::FheRand(event)),
+        ZamaHostEvent::FheRandBounded(event) => {
+            Some(SolanaHostEvent::FheRandBounded(event))
+        }
         ZamaHostEvent::AclAllowed(event) => {
             Some(SolanaHostEvent::AclAllowed(SolanaAclAllowedEvent {
                 handle: Handle::from(event.handle),
@@ -74,7 +87,37 @@ pub fn decode_anchor_cpi_event(data: &[u8]) -> Option<SolanaHostEvent> {
                 event_type: AllowEvents::AllowedAccount,
             }))
         }
-        ZamaHostEvent::InputVerified(_) => None,
+        ZamaHostEvent::InputVerified(_)
+        | ZamaHostEvent::AclRecordBound(_)
+        | ZamaHostEvent::AclSubjectAllowed(_)
+        | ZamaHostEvent::DenySubjectUpdated(_)
+        | ZamaHostEvent::HandleMaterialCommitted(_)
+        | ZamaHostEvent::HandleMaterialSealed(_)
+        | ZamaHostEvent::HostConfigInitialized(_)
+        | ZamaHostEvent::HostConfigUpdated(_)
+        | ZamaHostEvent::PublicDecryptAllowed(_)
+        | ZamaHostEvent::UserDecryptionDelegationUpdated(_) => None,
+    }
+}
+
+fn zama_host_event_version(event: &ZamaHostEvent) -> u8 {
+    match event {
+        ZamaHostEvent::AclAllowed(event) => event.version,
+        ZamaHostEvent::AclRecordBound(event) => event.version,
+        ZamaHostEvent::AclSubjectAllowed(event) => event.version,
+        ZamaHostEvent::DenySubjectUpdated(event) => event.version,
+        ZamaHostEvent::FheBinaryOp(event) => event.version,
+        ZamaHostEvent::FheRand(event) => event.version,
+        ZamaHostEvent::FheRandBounded(event) => event.version,
+        ZamaHostEvent::FheTernaryOp(event) => event.version,
+        ZamaHostEvent::HandleMaterialCommitted(event) => event.version,
+        ZamaHostEvent::HandleMaterialSealed(event) => event.version,
+        ZamaHostEvent::HostConfigInitialized(event) => event.version,
+        ZamaHostEvent::HostConfigUpdated(event) => event.version,
+        ZamaHostEvent::InputVerified(event) => event.version,
+        ZamaHostEvent::PublicDecryptAllowed(event) => event.version,
+        ZamaHostEvent::TrivialEncrypt(event) => event.version,
+        ZamaHostEvent::UserDecryptionDelegationUpdated(event) => event.version,
     }
 }
 
@@ -83,11 +126,17 @@ pub fn map_solana_event(event: SolanaHostEvent) -> SolanaMappedEvent {
         SolanaHostEvent::FheBinaryOp(event) => {
             SolanaMappedEvent::Tfhe(to_tfhe_event(event))
         }
+        SolanaHostEvent::FheTernaryOp(event) => {
+            SolanaMappedEvent::Tfhe(to_tfhe_ternary_event(event))
+        }
         SolanaHostEvent::TrivialEncrypt(event) => {
             SolanaMappedEvent::Tfhe(to_trivial_encrypt_event(event))
         }
         SolanaHostEvent::FheRand(event) => {
             SolanaMappedEvent::Tfhe(to_fhe_rand_event(event))
+        }
+        SolanaHostEvent::FheRandBounded(event) => {
+            SolanaMappedEvent::Tfhe(to_fhe_rand_bounded_event(event))
         }
         SolanaHostEvent::AclAllowed(event) => {
             SolanaMappedEvent::AclAllowed(event)
@@ -240,6 +289,35 @@ pub fn to_tfhe_event(event: FheBinaryOpEvent) -> Log<TfheContractEvents> {
                 result: Handle::from(event.result),
             })
         }
+        FheBinaryOpCode::Ge => TfheContractEvents::FheGe(TfheContract::FheGe {
+            caller,
+            lhs: Handle::from(event.lhs),
+            rhs: Handle::from(event.rhs),
+            scalarByte: scalar_byte,
+            result: Handle::from(event.result),
+        }),
+    };
+
+    Log {
+        address: caller,
+        data,
+    }
+}
+
+pub fn to_tfhe_ternary_event(
+    event: FheTernaryOpEvent,
+) -> Log<TfheContractEvents> {
+    let caller = Address::ZERO;
+    let data = match event.op {
+        FheTernaryOpCode::IfThenElse => {
+            TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse {
+                caller,
+                control: Handle::from(event.control),
+                ifTrue: Handle::from(event.if_true),
+                ifFalse: Handle::from(event.if_false),
+                result: Handle::from(event.result),
+            })
+        }
     };
 
     Log {
@@ -275,6 +353,24 @@ pub fn to_fhe_rand_event(event: FheRandEvent) -> Log<TfheContractEvents> {
             seed: FixedBytes::<16>::from(event.seed),
             result: Handle::from(event.result),
         }),
+    }
+}
+
+pub fn to_fhe_rand_bounded_event(
+    event: FheRandBoundedEvent,
+) -> Log<TfheContractEvents> {
+    let caller = Address::ZERO;
+    Log {
+        address: caller,
+        data: TfheContractEvents::FheRandBounded(
+            TfheContract::FheRandBounded {
+                caller,
+                upperBound: ClearConst::from_be_slice(&event.upper_bound),
+                randType: event.fhe_type,
+                seed: FixedBytes::<16>::from(event.seed),
+                result: Handle::from(event.result),
+            },
+        ),
     }
 }
 
@@ -376,6 +472,16 @@ mod tests {
     }
 
     #[test]
+    fn rejects_anchor_cpi_events_with_unsupported_version() {
+        let mut payload =
+            binary_op_payload(0, [9; 32], [1; 32], [2; 32], false, [3; 32]);
+        payload[0] = EVENT_VERSION.wrapping_add(1);
+        let encoded = anchor_cpi_event("FheBinaryOpEvent", payload);
+
+        assert!(decode_anchor_cpi_event(&encoded).is_none());
+    }
+
+    #[test]
     fn maps_binary_add_to_existing_tfhe_event() {
         let mapped = to_tfhe_event(FheBinaryOpEvent {
             version: EVENT_VERSION,
@@ -403,6 +509,60 @@ mod tests {
     }
 
     #[test]
+    fn maps_binary_ge_to_existing_tfhe_event() {
+        let mapped = to_tfhe_event(FheBinaryOpEvent {
+            version: EVENT_VERSION,
+            op: FheBinaryOpCode::Ge,
+            subject: [0; 32],
+            lhs: [1; 32],
+            rhs: [2; 32],
+            scalar: false,
+            result: [3; 32],
+        });
+
+        assert!(matches!(
+            mapped.data,
+            TfheContractEvents::FheGe(TfheContract::FheGe {
+                lhs,
+                rhs,
+                scalarByte,
+                result,
+                ..
+            }) if lhs == handle(1)
+                && rhs == handle(2)
+                && scalarByte == FixedBytes::<1>::from([0])
+                && result == handle(3)
+        ));
+    }
+
+    #[test]
+    fn maps_ternary_if_then_else_to_existing_tfhe_event() {
+        let mapped = to_tfhe_ternary_event(FheTernaryOpEvent {
+            version: EVENT_VERSION,
+            op: FheTernaryOpCode::IfThenElse,
+            subject: [0; 32],
+            control: [1; 32],
+            if_true: [2; 32],
+            if_false: [3; 32],
+            result: [4; 32],
+        });
+
+        assert!(matches!(
+            mapped.data,
+            TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse {
+                control,
+                ifTrue,
+                ifFalse,
+                result,
+                ..
+            }) if control == handle(1)
+                && ifTrue == handle(2)
+                && ifFalse == handle(3)
+                && result == handle(4)
+        ));
+    }
+
+    #[test]
     fn maps_trivial_encrypt_to_existing_tfhe_event() {
         let mut plaintext = [0_u8; 32];
         plaintext[31] = 7;
@@ -424,6 +584,35 @@ mod tests {
                 ..
             }) if pt == ClearConst::from(7_u64)
                 && toType == 5
+                && result == handle(8)
+        ));
+    }
+
+    #[test]
+    fn maps_bounded_random_to_existing_tfhe_event() {
+        let mut upper_bound = [0_u8; 32];
+        upper_bound[30] = 1;
+
+        let mapped = to_fhe_rand_bounded_event(FheRandBoundedEvent {
+            version: EVENT_VERSION,
+            subject: [0; 32],
+            upper_bound,
+            seed: [7; 16],
+            fhe_type: 3,
+            result: [8; 32],
+        });
+
+        assert!(matches!(
+            mapped.data,
+            TfheContractEvents::FheRandBounded(TfheContract::FheRandBounded {
+                upperBound,
+                randType,
+                seed,
+                result,
+                ..
+            }) if upperBound == ClearConst::from(256_u64)
+                && randType == 3
+                && seed == FixedBytes::<16>::from([7; 16])
                 && result == handle(8)
         ));
     }
