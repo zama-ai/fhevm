@@ -23,6 +23,11 @@ describe('Paused gateway', function () {
     this.userDecryptContract = await userDecryptContractFactory.connect(this.signers.alice).deploy();
     await this.userDecryptContract.waitForDeployment();
     this.userDecryptContractAddress = await this.userDecryptContract.getAddress();
+
+    // Initialize HTTPPublicDecrypt contract.
+    const httpPublicDecryptContractFactory = await ethers.getContractFactory('HTTPPublicDecrypt');
+    this.httpPublicDecryptContract = await httpPublicDecryptContractFactory.connect(this.signers.alice).deploy();
+    await this.httpPublicDecryptContract.waitForDeployment();
   });
 
   // The following test case should cover the InputVerification.verifyProofRequest method calling.
@@ -50,14 +55,10 @@ describe('Paused gateway', function () {
 
   // The following test case should cover the Decryption.publicDecryptionRequest method calling.
   it('test paused gateway HTTP public decrypt (public decryption request)', async function () {
-    const decryption = new ethers.Contract(
-      process.env.DECRYPTION_ADDRESS!,
-      ['function publicDecryptionRequest(bytes32[] ctHandles, bytes extraData)'],
-      this.signers.alice,
-    );
-    const dummyCtHandle = '0x0000000000000000000000000000000000000000000000000000000000000000';
-
-    await expect(decryption.publicDecryptionRequest.staticCall([dummyCtHandle], '0x')).to.be.rejectedWith(
+    const handleBool = await this.httpPublicDecryptContract.xBool();
+    const handleAddress = await this.httpPublicDecryptContract.xAddress();
+    const handle32 = await this.httpPublicDecryptContract.xUint32();
+    await expect(this.instances.alice.publicDecrypt([handleAddress, handle32, handleBool])).to.be.rejectedWith(
       new RegExp(ENFORCED_PAUSE_SELECTOR),
     );
   });
