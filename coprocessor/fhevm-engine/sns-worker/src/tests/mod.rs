@@ -811,13 +811,17 @@ async fn assert_ciphertext_uploaded(
     let attestation: CiphertextAttestation = serde_json::from_str(attestation_json)?;
     attestation.verify(B256::from_slice(handle), COPROCESSOR_CONTEXT_ID)?;
 
-    let row =
-        sqlx::query("SELECT ciphertext, ciphertext128 FROM ciphertext_digest WHERE handle = $1")
-            .bind(handle)
-            .fetch_one(&test_env.pool)
-            .await?;
+    let row = sqlx::query(
+        "SELECT ciphertext, ciphertext128, s3_format_version
+        FROM ciphertext_digest
+        WHERE handle = $1",
+    )
+    .bind(handle)
+    .fetch_one(&test_env.pool)
+    .await?;
     let ciphertext_digest: Vec<u8> = row.try_get("ciphertext")?;
     let sns_ciphertext_digest: Vec<u8> = row.try_get("ciphertext128")?;
+    let s3_format_version: i16 = row.try_get("s3_format_version")?;
     let signer = PrivateKeySigner::from_str(&hex::encode(&test_env.private_key))?;
 
     assert_eq!(
@@ -839,6 +843,10 @@ async fn assert_ciphertext_uploaded(
         attestation.signer,
         signer.address(),
         "attestation should include the expected signer"
+    );
+    assert_eq!(
+        s3_format_version, S3_FORMAT_VERSION_V1,
+        "ciphertext_digest should record the current S3 format version"
     );
     assert_eq!(
         metadata.get("key-id"),

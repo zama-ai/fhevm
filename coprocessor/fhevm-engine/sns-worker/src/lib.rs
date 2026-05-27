@@ -55,6 +55,7 @@ use crate::{
 
 pub const UPLOAD_QUEUE_SIZE: usize = 20;
 pub const SAFE_SER_LIMIT: u64 = 1024 * 1024 * 66;
+pub(crate) const S3_FORMAT_VERSION_V1: i16 = 1;
 pub type InternalEvents = Option<tokio::sync::mpsc::Sender<&'static str>>;
 
 #[cfg(feature = "gpu")]
@@ -310,14 +311,20 @@ impl HandleItem {
     ) -> Result<(), ExecutionError> {
         let format: i16 = self.ct128.format().into();
 
-        sqlx::query!(
+        sqlx::query(
             "UPDATE ciphertext_digest
-            SET ciphertext128 = $1, ciphertext128_format = $2
-            WHERE handle = $3",
-            digest,
-            format,
-            self.handle,
+            SET ciphertext128 = $1,
+                ciphertext128_format = $2,
+                s3_format_version = CASE
+                    WHEN s3_format_version IS NULL THEN $3
+                    ELSE s3_format_version
+                END
+            WHERE handle = $4",
         )
+        .bind(&digest)
+        .bind(format)
+        .bind(S3_FORMAT_VERSION_V1)
+        .bind(&self.handle)
         .execute(trx.as_mut())
         .await?;
 
@@ -336,13 +343,18 @@ impl HandleItem {
         trx: &mut Transaction<'_, Postgres>,
         digest: Vec<u8>,
     ) -> Result<(), ExecutionError> {
-        sqlx::query!(
+        sqlx::query(
             "UPDATE ciphertext_digest
-             SET ciphertext = $1
-             WHERE handle = $2",
-            digest,
-            self.handle
+            SET ciphertext = $1,
+                s3_format_version = CASE
+                    WHEN s3_format_version IS NULL THEN $2
+                    ELSE s3_format_version
+                END
+            WHERE handle = $3",
         )
+        .bind(&digest)
+        .bind(S3_FORMAT_VERSION_V1)
+        .bind(&self.handle)
         .execute(trx.as_mut())
         .await?;
 
