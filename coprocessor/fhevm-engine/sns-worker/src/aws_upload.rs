@@ -1067,8 +1067,10 @@ mod tests {
     fn s3_key_v1() {
         let handle = B256::ZERO;
         let coprocessor_context_id = U256::ZERO;
-        let s3_key = s3_ciphertext_key(&handle.to_vec(), coprocessor_context_id);
-        assert_eq!("0000000000000000000000000000000000000000000000000000000000000000/0", &s3_key);
+        let s3_key = s3_ciphertext_key(handle.as_ref(), coprocessor_context_id);
+        assert_eq!(
+            "0000000000000000000000000000000000000000000000000000000000000000/0",
+            &s3_key
+        );
     }
-
 }
