@@ -7,6 +7,7 @@ import {ILayerZeroComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/in
 import {ACL} from "../ACL.sol";
 import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
 import {HANDLE_VERSION} from "../shared/Constants.sol";
+import {FheType} from "../shared/FheType.sol";
 import {BridgeEvents} from "./BridgeEvents.sol";
 import {IDstApp} from "./interfaces/IDstApp.sol";
 
@@ -60,6 +61,20 @@ abstract contract HandlesReceiver is OAppReceiver, ILayerZeroComposer, BridgeEve
 
     error WrongChainIdInDstHandle();
 
+    /// @notice Returned when byte 21 of `dstHandle` is not the `0xff` computation marker.
+    error WrongIndexByteInDstHandle();
+
+    /// @notice Returned when byte 31 of `dstHandle` does not match this chain's `HANDLE_VERSION`.
+    error WrongHandleVersionInDstHandle();
+
+    /// @notice Returned when byte 30 of `dstHandle` decodes to an `FheType` outside the
+    ///         set supported by `grantFallbackPlaintext`.
+    error UnsupportedFheTypeInDstHandle();
+
+    /// @notice Returned when `plaintext` does not fit in the bit width implied by the
+    ///         `FheType` encoded in `dstHandle`.
+    error PlaintextOutOfRange();
+
     /// @notice OApp version tuple. HandlesReceiver is receive-only: sender side is `0`.
     /// @dev    Virtual so the combined {ConfidentialBridge} can return `(1, 2)`.
     function oAppVersion() public pure virtual override returns (uint64 senderVersion, uint64 receiverVersion) {
@@ -81,12 +96,55 @@ abstract contract HandlesReceiver is OAppReceiver, ILayerZeroComposer, BridgeEve
      *         `FallbackGrantedPlaintext` event is source of truth.
      */
     function grantFallbackPlaintext(bytes32 dstHandle, uint256 plaintext) external onlyOwner {
+        // Bytes 22-29 must encode this chain's id (matches `_appendMetadataToPrehandle`).
         uint256 extractedChainId = uint256(
             dstHandle & 0x00000000000000000000000000000000000000000000ffffffffffffffff0000
         ) >> 16;
         if (extractedChainId != block.chainid) revert WrongChainIdInDstHandle();
-        // TODO: add other checks on dstHandle and plaintext, such as index byte, version, range of cleartext, fheType validity.
+
+        // Byte 21 is the index/marker byte; bridged handles always set it to 0xff.
+        if (uint8(dstHandle[21]) != 0xff) revert WrongIndexByteInDstHandle();
+
+        // Byte 31 carries the destination chain's HANDLE_VERSION.
+        if (uint8(dstHandle[31]) != HANDLE_VERSION) revert WrongHandleVersionInDstHandle();
+
+        // Byte 30 is the FheType.
+        FheType fheType = FheType(uint8(dstHandle[30]));
+        uint256 supportedTypes = (1 << uint8(FheType.Bool)) +
+            (1 << uint8(FheType.Uint8)) +
+            (1 << uint8(FheType.Uint16)) +
+            (1 << uint8(FheType.Uint32)) +
+            (1 << uint8(FheType.Uint64)) +
+            (1 << uint8(FheType.Uint128)) +
+            (1 << uint8(FheType.Uint160)) +
+            (1 << uint8(FheType.Uint256));
+        if ((1 << uint8(fheType)) & supportedTypes == 0) revert UnsupportedFheTypeInDstHandle();
+
+        // Plaintext must fit in the FheType's bit width.
+        _checkPlaintextFits(plaintext, fheType);
+
         emit FallbackGrantedPlaintext(dstHandle, plaintext);
+    }
+
+    /// @dev Reverts if `plaintext` cannot be represented in the bit width of `fheType`.
+    ///      Caller is responsible for ensuring `fheType` is in the supported allowlist.
+    function _checkPlaintextFits(uint256 plaintext, FheType fheType) private pure {
+        if (fheType == FheType.Bool) {
+            if (plaintext > 1) revert PlaintextOutOfRange();
+        } else if (fheType == FheType.Uint8) {
+            if (plaintext > type(uint8).max) revert PlaintextOutOfRange();
+        } else if (fheType == FheType.Uint16) {
+            if (plaintext > type(uint16).max) revert PlaintextOutOfRange();
+        } else if (fheType == FheType.Uint32) {
+            if (plaintext > type(uint32).max) revert PlaintextOutOfRange();
+        } else if (fheType == FheType.Uint64) {
+            if (plaintext > type(uint64).max) revert PlaintextOutOfRange();
+        } else if (fheType == FheType.Uint128) {
+            if (plaintext > type(uint128).max) revert PlaintextOutOfRange();
+        } else if (fheType == FheType.Uint160) {
+            if (plaintext > type(uint160).max) revert PlaintextOutOfRange();
+        }
+        // Uint256: no upper-bound check needed (uint256 is the wire type).
     }
 
     /**
