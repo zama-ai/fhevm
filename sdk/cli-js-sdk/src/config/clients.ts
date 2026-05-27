@@ -5,6 +5,7 @@ import {
   http,
   type Hex,
 } from "viem";
+import type { Account } from "viem/accounts";
 
 import { loadAccount } from "./account";
 import { resolveNetworkConfig } from "./networks";
@@ -46,6 +47,13 @@ export const createWallet = (
   options: ClientOptions & { privateKey?: Hex; mnemonic?: string },
 ) => {
   const account = loadAccount(options.privateKey, options.mnemonic);
+  return createWalletForAccount(options, account);
+};
+
+export const createWalletForAccount = (
+  options: ClientOptions,
+  account: Account,
+) => {
   const { transport, publicClient, fhevm, chain, rpcUrl } =
     createClients(options);
   const walletClient = createWalletClient({
@@ -66,5 +74,13 @@ export const createWalletContext = (
   options: ClientOptions & { privateKey?: Hex; mnemonic?: string },
 ): WalletContext => ({
   ...createWallet(options),
+  contractAddress: resolveContractAddress(options),
+});
+
+export const createWalletContextForAccount = (
+  options: ClientOptions,
+  account: Account,
+): WalletContext => ({
+  ...createWalletForAccount(options, account),
   contractAddress: resolveContractAddress(options),
 });
