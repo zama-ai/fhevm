@@ -1,28 +1,36 @@
 import type { Hex } from "viem";
 
-export const NETWORKS = ["testnet"] as const;
+export const NETWORKS = ["testnet", "devnet"] as const;
 export type NetworkName = (typeof NETWORKS)[number];
 
-export const DECRYPT_TYPES = [
+export const FHE_VALUE_TYPES = [
   "bool",
   "uint8",
+  "uint16",
+  "uint32",
+  "uint64",
   "uint128",
+  "uint256",
   "address",
-  "mixed",
 ] as const;
-export type DecryptType = (typeof DECRYPT_TYPES)[number];
+export type FheValueType = (typeof FHE_VALUE_TYPES)[number];
+
+export const FHE_TYPE_IDS = {
+  bool: 0,
+  uint8: 2,
+  uint16: 3,
+  uint32: 4,
+  uint64: 5,
+  uint128: 6,
+  address: 7,
+  uint256: 8,
+} as const satisfies Record<FheValueType, number>;
+
+export type FheClearValue = boolean | number | bigint | string;
 
 export type EncryptValue = Readonly<{
-  type:
-    | "bool"
-    | "uint8"
-    | "uint16"
-    | "uint32"
-    | "uint64"
-    | "uint128"
-    | "uint256"
-    | "address";
-  value: boolean | number | bigint | string;
+  type: FheValueType;
+  value: FheClearValue;
 }>;
 
 export type InputProofResult = Readonly<{
@@ -38,4 +46,12 @@ export type PublicDecryptResult = Readonly<{
   clearValues: readonly Readonly<{ type: string; value: string }>[];
   abiEncodedCleartexts: Hex;
   decryptionProof: Hex;
+}>;
+
+export type FheTestHandle = Readonly<{
+  type: FheValueType;
+  fheTypeId: number;
+  account: Hex;
+  handle: Hex;
+  clearText?: string;
 }>;
