@@ -72,6 +72,54 @@ precreate_index() {
   esac
 }
 
+insert_host_chain_row() {
+  local chain_id="$1" name="$2" acl="$3"
+  echo "  INSERT host_chains chain_id=$chain_id name=$name acl=$acl"
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c \
+    "INSERT INTO host_chains (chain_id, name, acl_contract_address) \
+     VALUES ('$chain_id', '$name', '$acl') \
+     ON CONFLICT (chain_id) DO NOTHING;"
+}
+
+seed_host_chains() {
+  # Idempotent seeding of the `host_chains` table.
+  #
+  # Source of truth: numbered env vars rendered by the helm chart from
+  # .Values.chains:
+  #   HOST_CHAINS_COUNT=2
+  #   HOST_CHAIN_0_ID=11155111   HOST_CHAIN_0_NAME=sepolia      HOST_CHAIN_0_ACL=<addr>
+  #   HOST_CHAIN_1_ID=80002      HOST_CHAIN_1_NAME=polygonAmoy  HOST_CHAIN_1_ACL=<addr>
+  # Each *_ACL env var is injected by the chart via the same
+  # `valueFrom: configMapKeyRef` the listeners use, so kubelet resolves the
+  # literal address at pod-start from the shared contract-address ConfigMap.
+  #
+  # No jq dependency: keeps the runtime image (Chainguard postgres) minimal.
+  local count="${HOST_CHAINS_COUNT:-0}"
+  if [[ "$count" -eq 0 ]]; then
+    echo "HOST_CHAINS_COUNT is 0 or unset; skipping host_chains seeding."
+    return 0
+  fi
+
+  echo "Seeding host_chains: $count entries"
+  local i
+  for ((i = 0; i < count; i++)); do
+    local id_var="HOST_CHAIN_${i}_ID"
+    local name_var="HOST_CHAIN_${i}_NAME"
+    local acl_var="HOST_CHAIN_${i}_ACL"
+    local chain_id="${!id_var:-}"
+    local name="${!name_var:-}"
+    local acl="${!acl_var:-}"
+    if [[ -z "$chain_id" || -z "$name" || -z "$acl" ]]; then
+      echo "Error: host_chains entry $i is missing one or more of $id_var, $name_var, $acl_var."
+      echo "  Check that the chart wired chainId, name, and a literal/valueFrom ACL for this chain."
+      exit 1
+    fi
+    insert_host_chain_row "$chain_id" "$name" "$acl"
+  done
+
+  echo "host_chains seeding completed."
+}
+
 run_remove_tenants_prerequisites() {
   echo "Running online migrations before remove_tenants..."
   sqlx migrate run --source "$MIGRATION_DIR" --target-version $REMOVE_TENANTS_PREVIOUS_VERSION || { echo "Failed to run migrations."; exit 1; }
@@ -102,9 +150,12 @@ sqlx database create || { echo "Failed to create database."; exit 1; }
 
 echo "Running migrations..."
 if [ "${RUN_MIGRATIONS_UNTIL_REMOVE_TENANTS:-}" = "true" ]; then
+  # Partial migrations — the host_chains table doesn't exist yet on this path,
+  # so do not attempt to seed.
   run_remove_tenants_prerequisites
 else
   sqlx migrate run --source "$MIGRATION_DIR" || { echo "Failed to run migrations."; exit 1; }
+  seed_host_chains
 fi
 
 echo "Database initialization completed successfully."
