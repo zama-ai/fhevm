@@ -20,12 +20,12 @@ contract BridgeEvents {
     event HandleBridged(address indexed receiverDapp, bytes32 srcHandle, bytes32 dstHandle, bytes32 guid);
 
     /// @notice Emitted by the HandlesReceiver when governance authorizes a fallback association
-    ///         between `dstHandle` and the ciphertext identified by `ciphertextHash`. The
-    ///         coprocessor uses this when a matching pair of bridge events did not arrive or
-    ///         when the source ciphertext is missing. This is a permission, not an assertion:
-    ///         if a node already has a real association it prefers that.
+    ///         between `dstHandle` and a plaintext value. Could be used when a ciphertext is missing in
+    ///         the coprocessor.
+    ///         This is a permission, not an assertion:
+    ///         if the coprocessor already has a real association it prefers that.
     /// @param dstHandle  The destination handle to associate a fallback ciphertext with.
-    /// @param plaintext  value corresponding to the dstHandle, trivially encrypted by coprocessor.
+    /// @param plaintext  value corresponding to the dstHandle, trivially-encrypted by the coprocessor.
     event FallbackGrantedPlaintext(bytes32 indexed dstHandle, uint256 plaintext);
 
     /// @notice Emitted by the HandlesSender when governance updates the dstEid → dstChainId map.
