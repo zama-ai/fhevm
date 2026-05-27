@@ -10,7 +10,7 @@ import {
   isCleartext,
   fheTypeIdFromName,
   clearTypeFromHandle,
-  getBaseEnv,
+  prepareFheTestEnv,
   isV2,
   fheTypeIdFromHandle,
 } from '../setupCommon.js';
@@ -28,6 +28,7 @@ import {
 // localstack:
 // ----------------
 // CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.delegateDecrypt
+// CHAIN=localstack_v11 npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.delegateDecrypt
 //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -74,7 +75,7 @@ async function delegateForUserDecryption(parameters: {
   const walletClient = createWalletClient({
     account: parameters.delegatorAccount,
     chain: parameters.publicClient.chain,
-    transport: http(getBaseEnv().rpcUrl),
+    transport: http(prepareFheTestEnv().rpcUrl),
   });
 
   const expirationDate = BigInt(Math.floor(Date.now() / 1000) + parameters.durationSeconds);

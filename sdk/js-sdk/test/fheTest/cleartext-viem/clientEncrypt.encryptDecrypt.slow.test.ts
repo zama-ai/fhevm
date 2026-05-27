@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { createFhevmCleartextEncryptClient, createFhevmCleartextDecryptClient } from '@fhevm/sdk/viem/cleartext';
 import { getViemTestConfig, type FheTestViemConfig } from '../viem/setup.js';
-import { clearTypeFromHandle, encryptTestCases, getBaseEnv, isBytes32Hex, isCleartext } from '../setupCommon.js';
+import { clearTypeFromHandle, encryptTestCases, prepareFheTestEnv, isBytes32Hex, isCleartext } from '../setupCommon.js';
 import { FHETestABI } from '../abi-v2.js';
 import { createWalletClient, http, type Hex } from 'viem';
 
@@ -70,7 +70,7 @@ describe.runIf(isCleartext(getViemTestConfig().chainName))(
       const walletClient = createWalletClient({
         account: config.account,
         chain: config.publicClient.chain,
-        transport: http(getBaseEnv().rpcUrl),
+        transport: http(prepareFheTestEnv().rpcUrl),
       });
 
       for (let i = 0; i < encryptTestCases.length; i++) {

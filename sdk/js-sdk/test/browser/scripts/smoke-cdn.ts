@@ -24,8 +24,11 @@ function done(status: 'pass' | 'fail') {
 // cross-origin module worker, and the file is SDK-specific anyway.
 const WASM_URLS: Record<string, URL> = {
   'tfhe_bg.v1.5.3.wasm': new URL('https://cdn.jsdelivr.net/npm/tfhe@1.5.3/tfhe_bg.wasm'),
-  'tfhe-worker.v1.5.3.mjs': new URL('/src/wasm/tfhe/tfhe-worker.v1.5.3.mjs', location.origin),
+  'tfhe-worker.v1.5.3.mjs': new URL('/__raw_wasm/src/wasm/tfhe/v1.5.3/tfhe-worker.mjs', location.origin),
+  'tfhe_bg.v1.6.1.wasm': new URL('https://cdn.jsdelivr.net/npm/tfhe@1.6.1/tfhe_bg.wasm'),
+  'tfhe-worker.v1.6.1.mjs': new URL('/__raw_wasm/src/wasm/tfhe/v1.6.1/tfhe-worker.mjs', location.origin),
   'kms_lib_bg.v0.13.10.wasm': new URL('https://cdn.jsdelivr.net/npm/tkms@0.13.10/kms_lib_bg.wasm'),
+  'kms_lib_bg.v0.13.20-0.wasm': new URL('https://cdn.jsdelivr.net/npm/tkms@0.13.20-0/kms_lib_bg.wasm'),
 };
 
 async function run() {

@@ -4,13 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const WASM_ASSET_LOAD_MODES = [
-  'auto',
-  'embedded-base64',
-  'verified-blob',
-  'precheck-direct-url',
-  'trusted-direct-url',
-];
+const WASM_ASSET_LOAD_MODES = ['auto', 'embedded-base64', 'verified-blob', 'precheck-direct-url', 'trusted-direct-url'];
 const LOCAL_CDN = 'local';
 
 const matrixPath = resolve('test/multi-wasm/matrix.json');
@@ -31,6 +25,7 @@ validateSelection(options);
 const env = {
   ...process.env,
   ...(options.restartLocalstack ? { MULTI_WASM_RESTART_LOCALSTACK: '1' } : {}),
+  ...(options.fhevmCliProfile !== undefined ? { MULTI_WASM_FHEVM_CLI_PROFILE: options.fhevmCliProfile } : {}),
   ...(options.tfheVersion !== undefined ? { MULTI_WASM_TFHE_VERSION: options.tfheVersion } : {}),
   ...(options.kmsVersion !== undefined ? { MULTI_WASM_KMS_VERSION: options.kmsVersion } : {}),
   ...(options.mode !== undefined ? { MULTI_WASM_MODE: options.mode } : {}),
@@ -50,6 +45,7 @@ process.exit(result.status ?? 1);
 
 function parseArgs(args) {
   let restartLocalstack = false;
+  let fhevmCliProfile;
   let tfheVersion;
   let kmsVersion;
   let mode;
@@ -67,6 +63,17 @@ function parseArgs(args) {
 
     if (arg === '--restart-localstack') {
       restartLocalstack = true;
+      continue;
+    }
+
+    if (arg === '--fhevm-cli-profile') {
+      fhevmCliProfile = readOptionValue(args, i, '--fhevm-cli-profile');
+      i++;
+      continue;
+    }
+
+    if (arg.startsWith('--fhevm-cli-profile=')) {
+      fhevmCliProfile = readInlineOptionValue(arg, '--fhevm-cli-profile');
       continue;
     }
 
@@ -122,7 +129,7 @@ function parseArgs(args) {
     throwUsage(`Unknown option '${arg}'. Use -- to pass arguments through to Playwright.`);
   }
 
-  return { cdn, help, kmsVersion, mode, playwrightArgs, restartLocalstack, tfheVersion };
+  return { cdn, fhevmCliProfile, help, kmsVersion, mode, playwrightArgs, restartLocalstack, tfheVersion };
 }
 
 function readOptionValue(args, index, optionName) {
@@ -158,9 +165,20 @@ function normalizeSelectionOptions(options) {
   if (options.cdn !== undefined) {
     options.cdn = options.cdn.trim().toLowerCase();
   }
+  if (options.fhevmCliProfile !== undefined) {
+    options.fhevmCliProfile = options.fhevmCliProfile.trim();
+  }
 }
 
 function validateSelection(options) {
+  if (options.fhevmCliProfile === '') {
+    throwUsage('--fhevm-cli-profile requires a non-empty value.');
+  }
+
+  if (options.fhevmCliProfile !== undefined && !options.restartLocalstack) {
+    throwUsage('--fhevm-cli-profile requires --restart-localstack.');
+  }
+
   if (options.mode !== undefined && !WASM_ASSET_LOAD_MODES.includes(options.mode)) {
     throwUsage(`Unknown --mode '${options.mode}'. Supported modes: ${WASM_ASSET_LOAD_MODES.join(', ')}.`);
   }
@@ -190,6 +208,7 @@ Omitting a flag runs every value on that axis.
 
 Options:
   --restart-localstack       Restart localstack before the browser suite.
+  --fhevm-cli-profile <name> Profile filename forwarded to localstack-restart.sh.
   --tfhe <version>           Filter by TFHE version. Leading "v" is accepted.
   --kms <version>            Filter by TKMS version. Leading "v" is accepted.
   --mode <mode>              Filter by wasmAssetLoadMode.
@@ -206,13 +225,14 @@ Supported version pairs:
   ${matrix.supportedVersionPairs.map((pair) => `tfhe ${pair.tfhe}, kms ${pair.kms}`).join('\n  ')}
 
 Examples:
-  npm run test:multi-wasm                                                            # all entries
+  npm run test:multi-wasm                                                             # all entries
   npm run test:multi-wasm -- --tfhe 1.5.3 --kms 0.13.10                               # all entries for that pair
   npm run test:multi-wasm -- --tfhe 1.5.3 --kms 0.13.10 --cdn local                   # all modes for that pair, local only
   npm run test:multi-wasm -- --mode embedded-base64                                   # one entry per pair
   npm run test:multi-wasm -- --cdn local                                              # all local entries
   npm run test:multi-wasm -- --tfhe 1.5.3 --kms 0.13.10 --mode verified-blob --cdn ${remoteCdns[0] ?? 'jsdelivr'}  # exactly one
   npm run test:multi-wasm -- --restart-localstack
+  npm run test:multi-wasm -- --restart-localstack --fhevm-cli-profile v0.11.0-mainnet.json
   npm run test:multi-wasm -- --mode auto --cdn local -- --headed
 `);
 }

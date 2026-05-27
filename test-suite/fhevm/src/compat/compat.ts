@@ -117,18 +117,36 @@ const SHIM_PROFILES = {
 
 /** Parses a semver-like version string into comparable numeric parts. */
 const parseCompatVersion = (version: string) => {
-  const match = version.match(/^v?(\d+)\.(\d+)\.(\d+)(?:([-+]).*)?$/);
+  const match = version.match(/^v?(\d+)\.(\d+)\.(\d+)(?:([-+])(.+))?$/);
   if (!match) {
     return undefined;
   }
-  const [, major, minor, patch, suffixType] = match;
+  const [, major, minor, patch, suffixType, suffix = ""] = match;
   return {
     parts: [Number(major), Number(minor), Number(patch)] as const,
-    prerelease: suffixType === "-",
+    prerelease: suffixType === "-" && !/^\d+$/.test(suffix),
   };
 };
 
-const usesModernRelayerRepository = (version: string) => !parseCompatVersion(version);
+const compatVersionGte = (
+  version: string,
+  target: CompatSemver,
+  options?: { unparsed?: "modern" | "legacy" },
+) => {
+  const parsed = parseCompatVersion(version);
+  if (!parsed) {
+    return options?.unparsed === "modern";
+  }
+  for (let index = 0; index < parsed.parts.length; index += 1) {
+    if (parsed.parts[index] !== target[index]) {
+      return parsed.parts[index] > target[index];
+    }
+  }
+  return !parsed.prerelease;
+};
+
+const usesModernRelayerRepository = (version: string) =>
+  compatVersionGte(version, [0, 13, 0], { unparsed: "modern" });
 
 const sameCompatBase = (version: string, target: CompatSemver) => {
   const parsed = parseCompatVersion(version);

@@ -1,5 +1,6 @@
 import { defineFhevmChain } from '@fhevm/sdk/chains';
 import { createFhevmClient, hasFhevmRuntimeConfig, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
+import { createFhevmCleartextClient } from '@fhevm/sdk/ethers/cleartext';
 import type { Signer } from 'ethers';
 import { JsonRpcProvider, getBytes, hexlify } from 'ethers';
 
@@ -16,6 +17,8 @@ type FhevmClient = ReturnType<typeof createFhevmClient>;
 type CreateFhevmClientParameters = Parameters<typeof createFhevmClient>[0];
 type FhevmClientProvider = CreateFhevmClientParameters['provider'];
 type Auth = any;
+
+const CLEARTEXT = true;
 
 export class FhevmSdk implements SdkInstance {
   #fullClient: FhevmClient;
@@ -100,7 +103,7 @@ export class FhevmSdk implements SdkInstance {
         },
       });
     }
-    const fullClient = createFhevmClient({
+    const args = {
       provider: new JsonRpcProvider(rpcUrl) as unknown as FhevmClientProvider,
       chain: defineFhevmChain({
         id: chainId,
@@ -124,7 +127,9 @@ export class FhevmSdk implements SdkInstance {
           },
         },
       }),
-    });
+    };
+
+    const fullClient = CLEARTEXT ? createFhevmCleartextClient(args) : createFhevmClient(args);
     await fullClient.ready;
     return new FhevmSdk(fullClient, auth);
   }

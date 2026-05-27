@@ -1,44 +1,31 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { resolve } from 'node:path';
 
-export type LocalstackEnv = {
-  readonly rpcUrl: string;
-};
-
-const localstackEnvPath = resolve(import.meta.dirname, '../../.env.localstack');
 const localstackRestartScript = resolve(import.meta.dirname, '../../scripts/localstack-restart.sh');
 
-export function loadLocalstackEnv(): LocalstackEnv {
-  const env = parseEnvFile(localstackEnvPath);
-  const rpcUrl = env.RPC_URL ?? process.env.RPC_URL;
+export async function ensureLocalstackReady(parameters: {
+  readonly restart: boolean;
+  readonly rpcUrl: string;
+  readonly chainName: string;
+  readonly fhevmCliProfile?: string | undefined;
+}): Promise<void> {
+  const { restart, rpcUrl, chainName, fhevmCliProfile } = parameters;
 
-  if (rpcUrl === undefined || rpcUrl === '') {
-    throw new Error(`RPC_URL is missing. Set it in ${localstackEnvPath} or as an environment variable.`);
+  if (restart) {
+    runLocalstackRestart({ chainName, fhevmCliProfile });
   }
 
-  return Object.freeze({ rpcUrl });
-}
-
-export async function ensureLocalstackReady(parameters: { readonly restart: boolean }): Promise<LocalstackEnv> {
-  const env = loadLocalstackEnv();
-
-  if (parameters.restart) {
-    runLocalstackRestart();
+  if (await isJsonRpcReady(rpcUrl)) {
+    return;
   }
 
-  if (await isJsonRpcReady(env.rpcUrl)) {
-    return env;
-  }
-
-  if (!parameters.restart) {
+  if (!restart) {
     throw new Error(
-      `Localstack JSON-RPC is not responding at ${env.rpcUrl}. ` +
-        'Start it first, or rerun with --restart-localstack.',
+      `Localstack JSON-RPC is not responding at ${rpcUrl}. ` + 'Start it first, or rerun with --restart-localstack.',
     );
   }
 
-  throw new Error(`Localstack JSON-RPC is still not responding at ${env.rpcUrl} after restart.`);
+  throw new Error(`Localstack JSON-RPC is still not responding at ${rpcUrl} after restart.`);
 }
 
 export async function isJsonRpcReady(rpcUrl: string): Promise<boolean> {
@@ -65,8 +52,17 @@ export async function isJsonRpcReady(rpcUrl: string): Promise<boolean> {
   }
 }
 
-function runLocalstackRestart(): void {
-  const result = spawnSync(localstackRestartScript, ['--force'], {
+function runLocalstackRestart(parameters: {
+  readonly chainName: string;
+  readonly fhevmCliProfile?: string | undefined;
+}): void {
+  const args = ['--force', '--chain', parameters.chainName];
+
+  if (parameters.fhevmCliProfile !== undefined && parameters.fhevmCliProfile !== '') {
+    args.push('--fhevm-cli-profile', parameters.fhevmCliProfile);
+  }
+
+  const result = spawnSync(localstackRestartScript, args, {
     cwd: resolve(import.meta.dirname, '../../..'),
     stdio: 'inherit',
   });
@@ -74,32 +70,4 @@ function runLocalstackRestart(): void {
   if (result.status !== 0) {
     throw new Error(`localstack restart failed: ${localstackRestartScript}`);
   }
-}
-
-function parseEnvFile(filePath: string): Record<string, string> {
-  if (!existsSync(filePath)) {
-    return {};
-  }
-
-  const result: Record<string, string> = {};
-  for (const line of readFileSync(filePath, 'utf-8').split('\n')) {
-    const trimmed = line.trim();
-    if (trimmed === '' || trimmed.startsWith('#')) {
-      continue;
-    }
-
-    const eqIndex = trimmed.indexOf('=');
-    if (eqIndex === -1) {
-      continue;
-    }
-
-    const key = trimmed.slice(0, eqIndex).trim();
-    let value = trimmed.slice(eqIndex + 1).trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-    result[key] = value;
-  }
-
-  return result;
 }

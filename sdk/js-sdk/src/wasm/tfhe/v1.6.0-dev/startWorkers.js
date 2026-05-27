@@ -108,14 +108,15 @@ async function __sha256(bytes) {
  * Verifies that worker bytes match the expected SHA-256 digest.
  * @param {ArrayBuffer | Uint8Array} bytes Worker bytes to verify.
  * @param {string} expectedSha256 Expected lowercase hex digest without a `0x` prefix.
+ * @param {string} url Url to verify.
  * @returns {Promise<void>} Resolves when the digest matches.
  * @throws {Error} Throws a `Sha256MismatchError` when the digest does not match.
  */
-async function __verifySha256(bytes, expectedSha256) {
+async function __verifySha256(bytes, expectedSha256, url) {
   const actualSha256 = await __sha256(bytes);
 
   if (actualSha256 !== expectedSha256) {
-    const error = new Error(`SHA-256 mismatch: expected ${expectedSha256}, got ${actualSha256}`);
+    const error = new Error(`SHA-256 mismatch: expected ${expectedSha256}, got ${actualSha256}. url=${url}`);
     error.name = 'Sha256MismatchError';
     throw error;
   }
@@ -138,7 +139,7 @@ function __isSha256MismatchError(error) {
 async function __fetchAndVerifyWorkerUrlBytes(url, expectedSha256) {
   const bytes = await __readWorkerUrlBytes(url);
 
-  await __verifySha256(bytes, expectedSha256);
+  await __verifySha256(bytes, expectedSha256, url);
 
   return bytes;
 }

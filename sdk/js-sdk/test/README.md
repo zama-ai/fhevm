@@ -147,6 +147,30 @@ INPUT_VERIFIER=0x36772142b74871f255CbD7A3e89B401d3e45825f
 HCU_LIMIT=0x233ff88A48c172d29F675403e6A8e302b0F032D9
 ```
 
+# @fhevm/solidity
+
+```
+    // chainId = 31337
+    function _getLocalConfig() private pure returns (CoprocessorConfig memory) {
+        return
+            CoprocessorConfig({
+                ACLAddress: 0x50157CFfD6bBFA2DECe204a89ec419c23ef5755D,
+                CoprocessorAddress: 0xe3a9105a3a932253A70F126eb1E3b589C643dD24,
+                KMSVerifierAddress: 0x901F8942346f7AB3a01F6D7613119Bca447Bb030
+            });
+    }
+
+    // chainId = 31337
+    function _getLocalstackConfig() private pure returns (CoprocessorConfig memory) {
+        return
+            CoprocessorConfig({
+                ACLAddress: 0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c,
+                CoprocessorAddress: 0xcCAe95fF1d11656358E782570dF0418F59fA40e1,
+                KMSVerifierAddress: 0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11
+            });
+    }
+```
+
 # fhevm-cli
 
 Run e2e tests using @fhevm/sdk:

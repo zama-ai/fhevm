@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FHEVM Browser UI</title>
+    <script type="module" src="./src/main.ts"></script>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1>FHEVM Browser UI</h1>
+          <p id="environmentLine">Loading local test configuration...</p>
+        </div>
+      </header>
+
+      <section class="workspace">
+        <form id="demoForm" class="control-panel">
+          <div class="value-action-row">
+            <label class="field field-wide">
+              <span id="valueInputLabel">uint64 value</span>
+              <input id="valueInput" name="value" inputmode="numeric" autocomplete="off" value="42" />
+            </label>
+
+            <div class="button-row">
+              <button id="encryptButton" type="button" class="primary-action">Encrypt</button>
+              <button id="restartButton" type="button" class="primary-action secondary" disabled>Restart</button>
+            </div>
+          </div>
+
+          <div class="dropdown-row">
+            <label class="field">
+              <span>Chain</span>
+              <select id="chainTarget" name="chainTarget">
+                <option value="localcleartext">localcleartext</option>
+                <option value="localstack">localstack</option>
+                <option value="testnet">testnet</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Worker load mode</span>
+              <select id="wasmAssetLoadMode" name="wasmAssetLoadMode">
+                <option value="auto">auto</option>
+                <option value="embedded-base64">embedded-base64</option>
+                <option value="verified-blob">verified-blob</option>
+                <option value="precheck-direct-url">precheck-direct-url</option>
+                <option value="trusted-direct-url">trusted-direct-url</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>TFHE version</span>
+              <select id="tfheVersion" name="tfheVersion"></select>
+            </label>
+
+            <label class="field">
+              <span>KMS version</span>
+              <select id="kmsVersion" name="kmsVersion"></select>
+            </label>
+
+            <label class="field">
+              <span>Asset source</span>
+              <select id="assetSource" name="assetSource"></select>
+            </label>
+
+            <label class="field">
+              <span>Threading</span>
+              <select id="threadingMode" name="threadingMode">
+                <option value="threaded">threaded</option>
+                <option value="single-thread">single-thread</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Init mode</span>
+              <select id="initMode" name="initMode">
+                <option value="manual">manual init</option>
+                <option value="lazy">lazy init</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Decrypt mode</span>
+              <select id="decryptMode" name="decryptMode">
+                <option value="both">public + user</option>
+                <option value="public">public only</option>
+                <option value="user">user only</option>
+              </select>
+            </label>
+          </div>
+        </form>
+
+        <section class="status-panel" aria-live="polite">
+          <dl class="result-grid">
+            <div>
+              <dt>Input handle</dt>
+              <dd id="inputHandle">-</dd>
+            </div>
+            <div>
+              <dt>Stored handle</dt>
+              <dd id="storedHandle">-</dd>
+            </div>
+            <div>
+              <dt>Transaction</dt>
+              <dd id="transactionHash">-</dd>
+            </div>
+          </dl>
+        </section>
+
+        <pre id="logOutput" class="log-panel"></pre>
+      </section>
+    </main>
+  </body>
+</html>

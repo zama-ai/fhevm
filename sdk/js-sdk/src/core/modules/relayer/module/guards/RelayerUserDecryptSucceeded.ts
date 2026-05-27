@@ -1,5 +1,6 @@
 import type { ErrorMetadataParams } from '../../../../base/errors/ErrorBase.js';
 import type { RelayerResult200UserDecrypt, RelayerUserDecryptSucceeded } from '../../../../types/relayer-p.js';
+import type { BytesHex } from '../../../../types/primitives.js';
 import { assertRecordBytesHexNo0xProperty, assertRecordBytesHexProperty } from '../../../../base/bytes.js';
 import { assertRecordArrayProperty, assertRecordNonNullableProperty } from '../../../../base/record.js';
 import { assertRecordStringProperty } from '../../../../base/string.js';
@@ -72,6 +73,20 @@ function _assertIsRelayerResult200UserDecrypt(
   // In v11 extraData is optional.
   const requiredExtraData = false;
   _assertExtraData(value.result, name, requiredExtraData, options);
+
+  _patchMissingExtraDataV11(value.result as Array<{ extraData?: BytesHex }>);
+}
+
+// In v11 the relayer does not include extraData in response.
+// Put it to '0x' to match the assertion
+function _patchMissingExtraDataV11(
+  items: Array<{ extraData?: BytesHex }>,
+): asserts items is Array<{ extraData: BytesHex }> {
+  for (const item of items) {
+    if (!Object.prototype.hasOwnProperty.call(item, 'extraData')) {
+      item.extraData = '0x' as BytesHex;
+    }
+  }
 }
 
 /**

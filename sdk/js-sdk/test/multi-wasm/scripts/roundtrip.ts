@@ -48,37 +48,43 @@ const WASM_ASSET_LOAD_MODES: readonly WasmAssetLoadMode[] = [
   'trusted-direct-url',
 ];
 
-const LOCALSTACK_MNEMONIC = 'test test test test test test test future home engine virtual motion';
+// solve minio problem
 const LOCALSTACK_RELAYER_URL = new URL('/__localstack_relayer', location.origin).toString();
 
-const localstack = /*#__PURE__*/ defineFhevmChain({
-  id: 12_345,
-  fhevm: {
-    contracts: {
-      acl: {
-        address: '0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c',
-      },
-      inputVerifier: {
-        address: '0x857Ca72A957920Fa0FB138602995839866Bd4005',
-      },
-      kmsVerifier: {
-        address: '0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11',
-      },
-    },
-    relayerUrl: LOCALSTACK_RELAYER_URL,
-    gateway: {
-      id: 54_321,
-      contracts: {
-        decryption: {
-          address: '0xF0bFB159C7381F7CB332586004d8247252C5b816',
-        },
-        inputVerification: {
-          address: '0x35760912360E875DA50D40a74305575c23D55783',
-        },
-      },
-    },
-  },
-}) satisfies FhevmChain;
+// Eager-import all localstack* chain configs from the test/fheTest/chains
+// folder. `import.meta.glob` requires a static string literal, but the
+// pattern matches every current and future variant (localstack.ts,
+// localstack_v11.ts, ...), so adding a new chain just means dropping its
+// .ts file in that directory — no edit here.
+const localstackChainLoaders = import.meta.glob<Record<string, FhevmChain>>('../../fheTest/chains/localstack*.ts');
+
+async function resolveChain(parameters: {
+  readonly chainName: string;
+  readonly relayerUrl: string;
+}): Promise<FhevmChain> {
+  const { chainName, relayerUrl } = parameters;
+
+  const modulePath = `../../fheTest/chains/${chainName}.ts`;
+  const loader = localstackChainLoaders[modulePath];
+  if (!loader) {
+    const available = Object.keys(localstackChainLoaders)
+      .map((p) => p.replace(/^.*\/(.+)\.ts$/, '$1'))
+      .join(', ');
+    throw new Error(`Unsupported chainName "${chainName}". Available: ${available}.`);
+  }
+
+  const mod = await loader();
+  const sourceChain = mod[chainName];
+  if (!sourceChain) {
+    throw new Error(`Chain "${chainName}" not exported by ${modulePath}.`);
+  }
+
+  // Override relayerUrl with the COEP-safe Vite proxy URL.
+  return defineFhevmChain({
+    id: sourceChain.id,
+    fhevm: { ...sourceChain.fhevm, relayerUrl },
+  }) satisfies FhevmChain;
+}
 
 const FHETEST_ABI = [
   {
@@ -121,7 +127,9 @@ async function run() {
     const kms = requiredQuery(query, 'kms') as TkmsVersion;
     const mode = requiredQuery(query, 'mode');
     const cdn = requiredQuery(query, 'cdn');
+    const chainName = requiredQuery(query, 'chainName');
     const rpcUrl = requiredQuery(query, 'rpcUrl');
+    const mnemonic = requiredQuery(query, 'mnemonic');
     const fheTestAddress = requiredQuery(query, 'fheTestAddress');
 
     if (!WASM_ASSET_LOAD_MODES.includes(mode as WasmAssetLoadMode)) {
@@ -170,14 +178,19 @@ async function run() {
       },
     });
 
+    const fhevmChain = await resolveChain({
+      chainName,
+      relayerUrl: LOCALSTACK_RELAYER_URL,
+    });
+
     const provider = new ethers.JsonRpcProvider(rpcUrl);
-    const wallet = ethers.HDNodeWallet.fromMnemonic(ethers.Mnemonic.fromPhrase(LOCALSTACK_MNEMONIC)).connect(provider);
+    const wallet = ethers.HDNodeWallet.fromMnemonic(ethers.Mnemonic.fromPhrase(mnemonic)).connect(provider);
     const signer = new ethers.NonceManager(wallet);
     const fheTest = new ethers.Contract(fheTestAddress, FHETEST_ABI, signer);
 
     log('Creating FHEVM client...');
     const client = createFhevmClient({
-      chain: localstack,
+      chain: fhevmChain,
       provider,
     });
 
