@@ -10,7 +10,7 @@ const platformCatalog = [
     {
         id: "windows-11-chrome",
         label: "Windows 11 - Chrome",
-        configTemplate: "sdk/js-sdk/browserstack-desktop.yml",
+        configTemplate: "browserstack-desktop.yml",
         os: "Windows",
         osKey: "windows-11",
         osVersion: "11",
@@ -20,7 +20,7 @@ const platformCatalog = [
     {
         id: "windows-11-edge",
         label: "Windows 11 - Edge",
-        configTemplate: "sdk/js-sdk/browserstack-desktop.yml",
+        configTemplate: "browserstack-desktop.yml",
         os: "Windows",
         osKey: "windows-11",
         osVersion: "11",
@@ -30,7 +30,7 @@ const platformCatalog = [
     {
         id: "windows-10-chrome",
         label: "Windows 10 - Chrome",
-        configTemplate: "sdk/js-sdk/browserstack-desktop.yml",
+        configTemplate: "browserstack-desktop.yml",
         os: "Windows",
         osKey: "windows-10",
         osVersion: "10",
@@ -40,7 +40,7 @@ const platformCatalog = [
     {
         id: "windows-10-edge",
         label: "Windows 10 - Edge",
-        configTemplate: "sdk/js-sdk/browserstack-desktop.yml",
+        configTemplate: "browserstack-desktop.yml",
         os: "Windows",
         osKey: "windows-10",
         osVersion: "10",
@@ -50,7 +50,7 @@ const platformCatalog = [
     {
         id: "macos-tahoe-chrome",
         label: "macOS Tahoe - Chrome",
-        configTemplate: "sdk/js-sdk/browserstack-desktop.yml",
+        configTemplate: "browserstack-desktop.yml",
         os: "OS X",
         osKey: "macos-tahoe",
         osVersion: "Tahoe",
@@ -60,7 +60,7 @@ const platformCatalog = [
     {
         id: "macos-tahoe-edge",
         label: "macOS Tahoe - Edge",
-        configTemplate: "sdk/js-sdk/browserstack-desktop.yml",
+        configTemplate: "browserstack-desktop.yml",
         os: "OS X",
         osKey: "macos-tahoe",
         osVersion: "Tahoe",
@@ -70,7 +70,7 @@ const platformCatalog = [
     {
         id: "macos-sequoia-chrome",
         label: "macOS Sequoia - Chrome",
-        configTemplate: "sdk/js-sdk/browserstack-desktop.yml",
+        configTemplate: "browserstack-desktop.yml",
         os: "OS X",
         osKey: "macos-sequoia",
         osVersion: "Sequoia",
@@ -80,7 +80,7 @@ const platformCatalog = [
     {
         id: "macos-sequoia-edge",
         label: "macOS Sequoia - Edge",
-        configTemplate: "sdk/js-sdk/browserstack-desktop.yml",
+        configTemplate: "browserstack-desktop.yml",
         os: "OS X",
         osKey: "macos-sequoia",
         osVersion: "Sequoia",
@@ -90,7 +90,7 @@ const platformCatalog = [
     {
         id: "android-15-s25-ultra-chrome",
         label: "Android 15 (Galaxy S25 Ultra) - Chrome",
-        configTemplate: "sdk/js-sdk/browserstack-mobile.yml",
+        configTemplate: "browserstack-mobile.yml",
         deviceName: "Samsung Galaxy S25 Ultra",
         osKey: "android-15-s25-ultra",
         osVersion: "15.0",
