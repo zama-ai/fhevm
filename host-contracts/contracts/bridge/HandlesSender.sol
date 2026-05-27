@@ -188,6 +188,10 @@ abstract contract HandlesSender is OAppSender, BridgeEvents {
      *         and does not need to know about LayerZero endpoint ids.
      */
     function setDstChainId(uint32 dstEid, uint64 dstChainId) external onlyOwner {
+        _setDstChainId(dstEid, dstChainId);
+    }
+
+    function _setDstChainId(uint32 dstEid, uint64 dstChainId) internal {
         _dstChainIdForEid[dstEid] = dstChainId;
         emit DstChainIdSet(dstEid, dstChainId);
     }

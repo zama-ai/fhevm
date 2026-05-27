@@ -395,7 +395,8 @@ task('task:deployBridge')
 
     console.log('Deploying ConfidentialBridge...');
     const bridgeFactory = await ethers.getContractFactory('ConfidentialBridge', deployer);
-    const bridge = await bridgeFactory.deploy(taskArguments.lzEndpoint, deployer.address);
+    // dstEid → dstChainId entries can be seeded post-deploy via setDstChainId(...).
+    const bridge = await bridgeFactory.deploy(taskArguments.lzEndpoint, deployer.address, [], []);
     await bridge.waitForDeployment();
     const bridgeAddress = await bridge.getAddress();
     console.log(`ConfidentialBridge deployed at ${bridgeAddress}`);

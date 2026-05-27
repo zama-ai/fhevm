@@ -22,11 +22,30 @@ import {HandlesReceiver} from "./HandlesReceiver.sol";
  */
 /// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract ConfidentialBridge is HandlesSender, HandlesReceiver {
+    /// @notice Returned when `dstEids` and `dstChainIds` constructor arrays differ in length.
+    error DstChainIdArrayLengthMismatch(uint256 dstEidsLength, uint256 dstChainIdsLength);
+
     /**
-     * @param _lzEndpoint  LayerZero V2 endpoint address on this chain.
-     * @param _owner       Initial owner (governance — also authorized to call grantFallback).
+     * @param _lzEndpoint   LayerZero V2 endpoint address on this chain.
+     * @param _owner        Initial owner (governance — also authorized to call grantFallback).
+     * @param dstEids       LayerZero endpoint ids to seed the dstEid → dstChainId map with.
+     *                      May be empty; pairs can also be added later via {setDstChainId}.
+     * @param dstChainIds   Destination chain ids paired index-by-index with `dstEids`. Must
+     *                      have the same length as `dstEids`.
      */
-    constructor(address _lzEndpoint, address _owner) OAppCore(_lzEndpoint, _owner) Ownable(_owner) {}
+    constructor(
+        address _lzEndpoint,
+        address _owner,
+        uint32[] memory dstEids,
+        uint64[] memory dstChainIds
+    ) OAppCore(_lzEndpoint, _owner) Ownable(_owner) {
+        if (dstEids.length != dstChainIds.length) {
+            revert DstChainIdArrayLengthMismatch(dstEids.length, dstChainIds.length);
+        }
+        for (uint256 i = 0; i < dstEids.length; i++) {
+            _setDstChainId(dstEids[i], dstChainIds[i]);
+        }
+    }
 
     /// @notice OApp version tuple — both send (1) and receive (2) paths are active.
     function oAppVersion()

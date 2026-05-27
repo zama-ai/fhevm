@@ -60,14 +60,19 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
 
         // Deploy one ConfidentialBridge per endpoint. The contract handles both send
         // and receive — in this two-endpoint topology each instance plays one role.
-        srcBridge = new ConfidentialBridge(endpoints[SRC_EID], owner);
-        dstBridge = new ConfidentialBridge(endpoints[DST_EID], owner);
+        // Seed the source-side dstEid → dstChainId map at construction; the dst-side
+        // bridge doesn't send so it needs no seed.
+        uint32[] memory srcDstEids = new uint32[](1);
+        uint64[] memory srcDstChainIds = new uint64[](1);
+        srcDstEids[0] = DST_EID;
+        srcDstChainIds[0] = DST_CHAIN_ID;
+        srcBridge = new ConfidentialBridge(endpoints[SRC_EID], owner, srcDstEids, srcDstChainIds);
+        dstBridge = new ConfidentialBridge(endpoints[DST_EID], owner, new uint32[](0), new uint64[](0));
 
         // Configure peer-to-peer routing.
         vm.startPrank(owner);
         srcBridge.setPeer(DST_EID, _addressToBytes32(address(dstBridge)));
         dstBridge.setPeer(SRC_EID, _addressToBytes32(address(srcBridge)));
-        srcBridge.setDstChainId(DST_EID, DST_CHAIN_ID);
         vm.stopPrank();
 
         dstApp = new MockDstApp();

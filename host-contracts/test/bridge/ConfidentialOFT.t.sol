@@ -49,13 +49,16 @@ contract ConfidentialOFTTest is TestHelperOz5, HostContractsDeployerTestUtils {
         acl = ACL(aclAdd);
         fhevmExecutor = fhevmExecutorAdd;
 
-        srcBridge = new ConfidentialBridge(endpoints[SRC_EID], owner);
-        dstBridge = new ConfidentialBridge(endpoints[DST_EID], owner);
+        uint32[] memory srcDstEids = new uint32[](1);
+        uint64[] memory srcDstChainIds = new uint64[](1);
+        srcDstEids[0] = DST_EID;
+        srcDstChainIds[0] = DST_CHAIN_ID;
+        srcBridge = new ConfidentialBridge(endpoints[SRC_EID], owner, srcDstEids, srcDstChainIds);
+        dstBridge = new ConfidentialBridge(endpoints[DST_EID], owner, new uint32[](0), new uint64[](0));
 
         vm.startPrank(owner);
         srcBridge.setPeer(DST_EID, _addressToBytes32(address(dstBridge)));
         dstBridge.setPeer(SRC_EID, _addressToBytes32(address(srcBridge)));
-        srcBridge.setDstChainId(DST_EID, DST_CHAIN_ID);
         vm.stopPrank();
 
         oft = new ConfidentialOFT(address(dstBridge), owner);

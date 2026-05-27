@@ -30,14 +30,15 @@ export async function deployBridgeFixture() {
   await dstEndpoint.waitForDeployment();
 
   const bridgeFactory = await ethers.getContractFactory('ConfidentialBridge');
+  // Seed dstEid → dstChainId on the source-side bridge directly via the constructor.
   const srcBridge = (await bridgeFactory
     .connect(owner)
-    .deploy(await srcEndpoint.getAddress(), owner.address)) as unknown as ConfidentialBridge;
+    .deploy(await srcEndpoint.getAddress(), owner.address, [DST_EID], [DST_CHAIN_ID])) as unknown as ConfidentialBridge;
   await srcBridge.waitForDeployment();
 
   const dstBridge = (await bridgeFactory
     .connect(owner)
-    .deploy(await dstEndpoint.getAddress(), owner.address)) as unknown as ConfidentialBridge;
+    .deploy(await dstEndpoint.getAddress(), owner.address, [], [])) as unknown as ConfidentialBridge;
   await dstBridge.waitForDeployment();
 
   // Configure peers (bytes32-padded addresses).
@@ -45,9 +46,6 @@ export async function deployBridgeFixture() {
   const srcBridgeAsBytes32 = ethers.zeroPadValue(await srcBridge.getAddress(), 32);
   await (await srcBridge.connect(owner).setPeer(DST_EID, dstBridgeAsBytes32)).wait();
   await (await dstBridge.connect(owner).setPeer(SRC_EID, srcBridgeAsBytes32)).wait();
-
-  // Seed dstEid → dstChainId on the source-side bridge.
-  await (await srcBridge.connect(owner).setDstChainId(DST_EID, DST_CHAIN_ID)).wait();
 
   return {
     owner,
