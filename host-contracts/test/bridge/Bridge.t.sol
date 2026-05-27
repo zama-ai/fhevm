@@ -255,14 +255,24 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
     }
 
     /// @dev Re-implements HandlesReceiver's `_deriveDstHandle` for assertions. Must
-    ///      match exactly — domain sep + ordering matters and is part of the spec
-    ///      contract with the coprocessor.
+    ///      match exactly — domain sep + field ordering matter and are part of the
+    ///      spec contract with the coprocessor.
     function _expectedDstHandle(
         bytes32 srcHandle,
         bytes32 prevBlockHash,
         bytes32 guid
     ) internal view returns (bytes32 result) {
-        result = keccak256(abi.encodePacked(bytes8("FHE_brdg"), srcHandle, block.chainid, prevBlockHash, guid));
+        result = keccak256(
+            abi.encodePacked(
+                bytes8("FHE_brdg"),
+                srcHandle,
+                guid,
+                aclAdd,
+                block.chainid,
+                prevBlockHash,
+                block.timestamp
+            )
+        );
         result = result & 0xffffffffffffffffffffffffffffffffffffffffff0000000000000000000000;
         result = result | (bytes32(uint256(0xff)) << 80);
         result = result | (bytes32(uint256(uint64(block.chainid))) << 16);

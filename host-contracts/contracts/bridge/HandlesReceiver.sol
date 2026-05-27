@@ -207,7 +207,15 @@ abstract contract HandlesReceiver is OAppReceiver, ILayerZeroComposer, BridgeEve
         bytes32 guid
     ) internal view returns (bytes32 result) {
         result = keccak256(
-            abi.encodePacked(BRIDGE_DERIVATION_DOMAIN_SEPARATOR, srcHandle, block.chainid, prevBlockHash, guid)
+            abi.encodePacked(
+                BRIDGE_DERIVATION_DOMAIN_SEPARATOR,
+                srcHandle,
+                guid,
+                ACL_CONTRACT,
+                block.chainid,
+                prevBlockHash,
+                block.timestamp
+            )
         );
 
         // Clear bytes 21-31 in preparation for metadata embedding.
