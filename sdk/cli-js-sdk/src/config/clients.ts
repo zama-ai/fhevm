@@ -1,8 +1,4 @@
-import {
-  createFhevmClient,
-  hasFhevmRuntimeConfig,
-  setFhevmRuntimeConfig,
-} from "@fhevm/sdk/viem";
+import { createFhevmClient } from "@fhevm/sdk/viem";
 import {
   createPublicClient,
   createWalletClient,
@@ -17,12 +13,11 @@ import {
   resolveContractAddress,
   resolveRpcUrl,
 } from "./resolve";
+import { configureFhevmRuntime } from "./runtime";
 import type { ClientOptions } from "./types";
 
 export const createClients = (options: ClientOptions) => {
-  if (!hasFhevmRuntimeConfig()) {
-    setFhevmRuntimeConfig({ singleThread: true });
-  }
+  configureFhevmRuntime();
 
   const chain = resolveChain(options);
   const networkConfig = resolveNetworkConfig(options.network);
