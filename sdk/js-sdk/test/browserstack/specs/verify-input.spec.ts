@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test('encrypt + on-chain verifyInput via FHETest.addEuint8', async ({ page }) => {
-  await page.goto('/test/browser/pages/verify-input.html');
+  await page.goto('/test/browserstack/pages/verify-input.html');
 
   const result = page.locator('#result');
   // Longer timeout: encryption + on-chain tx confirmation

@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test('encryptValues encrypts all FHE types (bool, uint8..uint256, address)', async ({ page }) => {
-  await page.goto('/test/browser/pages/encrypt.html');
+  await page.goto('/test/browserstack/pages/encrypt.html');
 
   const result = page.locator('#result');
   await result.waitFor({ timeout: 300_000 });
