@@ -37,7 +37,7 @@ export const readFheTestHandle = async (options: {
   const hasHandle = await hasFheTestHandle(options);
   if (!hasHandle) {
     throw new Error(
-      `No FHETest handle for account ${options.account} and type ${options.type}. Run "fhe-test init", "public-decrypt fresh", or pass --handle.`,
+      `No FHETest handle for account ${options.account} and type ${options.type}. Run "fhe-test init", "user-decrypt fresh", "delegated-user-decrypt fresh", "public-decrypt fresh", or pass --handle.`,
     );
   }
 
