@@ -48,6 +48,32 @@ export type PublicDecryptResult = Readonly<{
   decryptionProof: Hex;
 }>;
 
+export type DecryptedValue = Readonly<{
+  type: string;
+  value: string;
+}>;
+
+export type DecryptionPermitSummary = Readonly<{
+  isDelegated: boolean;
+  signerAddress: Hex;
+  encryptedDataOwnerAddress: Hex;
+  e2eTransportPublicKey: string;
+  signature: Hex;
+  contractAddresses: readonly string[];
+  startTimestamp: number;
+  durationDays: number;
+}>;
+
+export type UserDecryptResult = Readonly<{
+  contractAddress: Hex;
+  ownerAddress: Hex;
+  signerAddress: Hex;
+  isDelegated: boolean;
+  encryptedValues: readonly Hex[];
+  clearValues: readonly DecryptedValue[];
+  permit: DecryptionPermitSummary;
+}>;
+
 export type FheTestHandle = Readonly<{
   type: FheValueType;
   fheTypeId: number;
