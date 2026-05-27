@@ -9,7 +9,7 @@ data:
   deploy-contracts.sh: |
     #!/bin/bash
     set -eo pipefail
-    
+
     create_configmap() {
       configmap_name="${1}"
       if [[ -z "$configmap_name" ]]; then
@@ -41,13 +41,12 @@ data:
         echo "error: you must supply an item value" 1>&2
         exit 1
       fi
-      # Patch configmap to add key if it doesn't already exists
+      # Upsert configmap key (always patch, log if overwriting)
       configmap_value=$(kubectl get configmap "${configmap_name}" -o jsonpath="{.data['${name//./\\.}']}")
-      if [[ -n "${configmap_value}" ]]; then
-        echo "skipping: ${configmap_name} already contains ${name}:${configmap_value}"
-      else
-        kubectl patch configmap "${configmap_name}" -p="{\"data\": {\"${name}\": \"${value}\"}}"
+      if [[ -n "${configmap_value}" && "${configmap_value}" != "${value}" ]]; then
+        echo "updating: ${configmap_name} ${name}:${configmap_value} -> ${value}"
       fi
+      kubectl patch configmap "${configmap_name}" -p="{\"data\": {\"${name}\": \"${value}\"}}"
     }
     add_annotation_to_configmap() {
       configmap_name="${1}"
