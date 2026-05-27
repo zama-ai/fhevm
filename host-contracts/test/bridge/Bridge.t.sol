@@ -2,13 +2,14 @@
 pragma solidity ^0.8.24;
 
 import {TestHelperOz5} from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";
-import {Origin} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OAppReceiver.sol";
+import {Origin} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppReceiverUpgradeable.sol";
 import {MessagingFee, MessagingReceipt} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 
 import {Vm} from "forge-std/Vm.sol";
 
-import {HostContractsDeployerTestUtils} from "../../fhevm-foundry/HostContractsDeployerTestUtils.sol";
+import {DeployableERC1967Proxy, HostContractsDeployerTestUtils} from "../../fhevm-foundry/HostContractsDeployerTestUtils.sol";
 import {ACL} from "../../contracts/ACL.sol";
+import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {ConfidentialBridge} from "../../contracts/bridge/ConfidentialBridge.sol";
 import {HandlesSender} from "../../contracts/bridge/HandlesSender.sol";
 import {HandlesReceiver} from "../../contracts/bridge/HandlesReceiver.sol";
@@ -58,16 +59,16 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         acl = ACL(aclAdd);
         fhevmExecutor = fhevmExecutorAdd;
 
-        // Deploy one ConfidentialBridge per endpoint. The contract handles both send
-        // and receive — in this two-endpoint topology each instance plays one role.
-        // Seed the source-side dstEid → dstChainId map at construction; the dst-side
-        // bridge doesn't send so it needs no seed.
+        // Deploy one ConfidentialBridge per endpoint behind a UUPS proxy. The contract
+        // handles both send and receive — in this two-endpoint topology each instance
+        // plays one role. The source-side bridge seeds its dstEid → dstChainId map at
+        // initialization; the dst-side bridge doesn't send so it needs no seed.
         uint32[] memory srcDstEids = new uint32[](1);
         uint64[] memory srcDstChainIds = new uint64[](1);
         srcDstEids[0] = DST_EID;
         srcDstChainIds[0] = DST_CHAIN_ID;
-        srcBridge = new ConfidentialBridge(endpoints[SRC_EID], owner, srcDstEids, srcDstChainIds);
-        dstBridge = new ConfidentialBridge(endpoints[DST_EID], owner, new uint32[](0), new uint64[](0));
+        srcBridge = _deployBridgeProxy(endpoints[SRC_EID], owner, srcDstEids, srcDstChainIds);
+        dstBridge = _deployBridgeProxy(endpoints[DST_EID], owner, new uint32[](0), new uint64[](0));
 
         // Configure peer-to-peer routing.
         vm.startPrank(owner);
@@ -80,6 +81,40 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         // Fund the user paying LZ fees.
         vm.deal(srcApp, 100 ether);
         vm.deal(user, 100 ether);
+    }
+
+    /// @dev Deploys a ConfidentialBridge behind a fresh UUPS proxy, following the same
+    ///      two-phase pattern used by the other host contracts: deploy an
+    ///      {EmptyUUPSProxy} (whose upgrade hook is gated by `onlyACLOwner`), then
+    ///      upgrade it to the real {ConfidentialBridge} implementation while invoking
+    ///      `initializeFromEmptyProxy` with the operational owner and dstEid →
+    ///      dstChainId seed lists. The endpoint address is baked into the implementation
+    ///      as an immutable, so each bridge needs its own implementation.
+    ///
+    ///      The upgrade is performed by `owner` (the test's ACL owner — `_deployACL`
+    ///      makes it so); the bridge's operational owner can be a different account,
+    ///      passed in as `bridgeOwner`.
+    function _deployBridgeProxy(
+        address lzEndpoint,
+        address bridgeOwner,
+        uint32[] memory dstEids,
+        uint64[] memory dstChainIds
+    ) internal returns (ConfidentialBridge proxy) {
+        address emptyImpl = address(new EmptyUUPSProxy());
+        DeployableERC1967Proxy raw = new DeployableERC1967Proxy(
+            emptyImpl,
+            abi.encodeCall(EmptyUUPSProxy.initialize, ())
+        );
+        address proxyAddr = address(raw);
+
+        address bridgeImpl = address(new ConfidentialBridge(lzEndpoint));
+
+        vm.prank(owner);
+        EmptyUUPSProxy(proxyAddr).upgradeToAndCall(
+            bridgeImpl,
+            abi.encodeCall(ConfidentialBridge.initializeFromEmptyProxy, (bridgeOwner, dstEids, dstChainIds))
+        );
+        proxy = ConfidentialBridge(payable(proxyAddr));
     }
 
     /// @dev Convenience: grant `account` persistent allowance on `handle` by
@@ -350,7 +385,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
 
         // In a real deployment the ACL bypasses sender checks for the canonical
         // ConfidentialBridge address. In this forge fixture the ACL's compile-time
-        // `CONFIDENTIAL_BRIDGE_ADDRESS` is address(0) (BridgeAddresses.sol default), so
+        // `CONFIDENTIAL_BRIDGE_ADDRESS` is address(0) (BridgeAddress.sol default), so
         // the bypass does NOT trigger for our runtime-deployed bridge. Work around
         // by pre-allowing each dst handle to the bridge — the normal isAllowed
         // path then carries the allowTransient call.
@@ -405,9 +440,9 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
     // ACL bridge wiring
     //
     // The ACL bakes in `CONFIDENTIAL_BRIDGE_ADDRESS` as a compile-time constant
-    // from `addresses/BridgeAddresses.sol`. In this forge fixture it defaults to
-    // address(0) (set by task:initBridgeAddresses). Asserting bypass behavior
-    // would require regenerating BridgeAddresses.sol with the runtime-deployed
+    // from `addresses/BridgeAddress.sol`. In this forge fixture it defaults to
+    // address(0) (set by task:initBridgeAddress). Asserting bypass behavior
+    // would require regenerating BridgeAddress.sol with the runtime-deployed
     // address before forge compiles — out of scope here. Hardhat integration
     // tests (which use the full deploy task pipeline) are the right place to
     // verify the address-aligned bypass.

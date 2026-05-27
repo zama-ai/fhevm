@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {OAppReceiver, Origin} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OAppReceiver.sol";
+import {OAppReceiverUpgradeable, Origin} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppReceiverUpgradeable.sol";
 import {ILayerZeroComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroComposer.sol";
 
 import {ACL} from "../ACL.sol";
@@ -45,7 +45,7 @@ import {IDstApp} from "./interfaces/IDstApp.sol";
  *         intentionally provides none.
  */
 /// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
-abstract contract HandlesReceiver is OAppReceiver, ILayerZeroComposer, BridgeEvents {
+abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer, BridgeEvents {
     /// @notice Returned when `lzCompose` is invoked by an unauthorized caller.
     error NotLzEndpoint(address caller);
 

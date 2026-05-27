@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {OAppSender, MessagingFee, MessagingReceipt} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OAppSender.sol";
-import {OptionsBuilder} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/libs/OptionsBuilder.sol";
+import {OAppSenderUpgradeable, MessagingFee, MessagingReceipt} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppSenderUpgradeable.sol";
+import {OptionsBuilder} from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
 
 import {ACL} from "../ACL.sol";
 import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
@@ -32,7 +32,7 @@ import {BridgeEvents} from "./BridgeEvents.sol";
  *           case `lzComposeGas` must be zero (the caller has full control via options).
  */
 /// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
-abstract contract HandlesSender is OAppSender, BridgeEvents {
+abstract contract HandlesSender is OAppSenderUpgradeable, BridgeEvents {
     using OptionsBuilder for bytes;
 
     /// @notice Maximum number of handles per bridge call.
@@ -64,10 +64,23 @@ abstract contract HandlesSender is OAppSender, BridgeEvents {
     /// @notice ACL contract on this (source) chain.
     ACL private constant ACL_CONTRACT = ACL(aclAdd);
 
-    /// @notice LayerZero endpoint id → destination chain id used in handle derivation.
-    ///         Configured by the owner. A value of 0 means the endpoint id is not
-    ///         registered and `send` will revert for it.
-    mapping(uint32 dstEid => uint64 dstChainId) private _dstChainIdForEid;
+    /// @custom:storage-location erc7201:fhevm.storage.HandlesSender
+    struct HandlesSenderStorage {
+        /// @dev LayerZero endpoint id → destination chain id used in handle derivation.
+        ///      Configured by the owner. A value of 0 means the endpoint id is not
+        ///      registered and `send` will revert for it.
+        mapping(uint32 dstEid => uint64 dstChainId) dstChainIdForEid;
+    }
+
+    /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.HandlesSender")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant HANDLES_SENDER_STORAGE_LOCATION =
+        0x10e1ba6929f9b113e703e9abb104ab627cb3d8e7dfab4ac4ce63791f885d8900;
+
+    function _getHandlesSenderStorage() private pure returns (HandlesSenderStorage storage $) {
+        assembly {
+            $.slot := HANDLES_SENDER_STORAGE_LOCATION
+        }
+    }
 
     /// @notice OApp version tuple. HandlesSender is send-only: receiver side is `0`.
     /// @dev    Virtual so the combined {ConfidentialBridge} can return `(1, 2)`.
@@ -108,7 +121,7 @@ abstract contract HandlesSender is OAppSender, BridgeEvents {
         uint256 nHandles = handleList.length;
         if (nHandles > MAX_HANDLES) revert TooManyHandles(nHandles, MAX_HANDLES);
 
-        uint64 dstChainId = _dstChainIdForEid[dstEid];
+        uint64 dstChainId = _getHandlesSenderStorage().dstChainIdForEid[dstEid];
         if (dstChainId == 0) revert UnknownDstEid(dstEid);
 
         // Check ACL allowance for every handle up-front so we revert before paying the
@@ -174,7 +187,7 @@ abstract contract HandlesSender is OAppSender, BridgeEvents {
         uint128 lzComposeGas,
         bytes calldata options
     ) external view returns (MessagingFee memory fee) {
-        if (_dstChainIdForEid[dstEid] == 0) revert UnknownDstEid(dstEid);
+        if (_getHandlesSenderStorage().dstChainIdForEid[dstEid] == 0) revert UnknownDstEid(dstEid);
 
         bytes memory finalOptions = _resolveOptions(options, handleList.length, lzComposeGas);
         bytes memory message = abi.encode(srcApp, dstApp, payload, handleList);
@@ -192,13 +205,13 @@ abstract contract HandlesSender is OAppSender, BridgeEvents {
     }
 
     function _setDstChainId(uint32 dstEid, uint64 dstChainId) internal {
-        _dstChainIdForEid[dstEid] = dstChainId;
+        _getHandlesSenderStorage().dstChainIdForEid[dstEid] = dstChainId;
         emit DstChainIdSet(dstEid, dstChainId);
     }
 
     /// @notice Returns the destination chain id registered for `dstEid`, or 0 if unset.
     function getDstChainId(uint32 dstEid) external view returns (uint256) {
-        return _dstChainIdForEid[dstEid];
+        return _getHandlesSenderStorage().dstChainIdForEid[dstEid];
     }
 
     function _resolveOptions(

@@ -2,11 +2,12 @@
 pragma solidity ^0.8.24;
 
 import {TestHelperOz5} from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";
-import {Origin} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OAppReceiver.sol";
+import {Origin} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppReceiverUpgradeable.sol";
 import {euint64} from "encrypted-types/EncryptedTypes.sol";
 
-import {HostContractsDeployerTestUtils} from "../../fhevm-foundry/HostContractsDeployerTestUtils.sol";
+import {DeployableERC1967Proxy, HostContractsDeployerTestUtils} from "../../fhevm-foundry/HostContractsDeployerTestUtils.sol";
 import {ACL} from "../../contracts/ACL.sol";
+import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {ConfidentialBridge} from "../../contracts/bridge/ConfidentialBridge.sol";
 import {ConfidentialOFT} from "../../examples/bridge/ConfidentialOFT.sol";
 import {aclAdd, fhevmExecutorAdd} from "../../addresses/FHEVMHostAddresses.sol";
@@ -53,8 +54,8 @@ contract ConfidentialOFTTest is TestHelperOz5, HostContractsDeployerTestUtils {
         uint64[] memory srcDstChainIds = new uint64[](1);
         srcDstEids[0] = DST_EID;
         srcDstChainIds[0] = DST_CHAIN_ID;
-        srcBridge = new ConfidentialBridge(endpoints[SRC_EID], owner, srcDstEids, srcDstChainIds);
-        dstBridge = new ConfidentialBridge(endpoints[DST_EID], owner, new uint32[](0), new uint64[](0));
+        srcBridge = _deployBridgeProxy(endpoints[SRC_EID], owner, srcDstEids, srcDstChainIds);
+        dstBridge = _deployBridgeProxy(endpoints[DST_EID], owner, new uint32[](0), new uint64[](0));
 
         vm.startPrank(owner);
         srcBridge.setPeer(DST_EID, _addressToBytes32(address(dstBridge)));
@@ -64,6 +65,31 @@ contract ConfidentialOFTTest is TestHelperOz5, HostContractsDeployerTestUtils {
         oft = new ConfidentialOFT(address(dstBridge), owner);
 
         vm.deal(alice, 100 ether);
+    }
+
+    /// @dev Deploys a ConfidentialBridge behind a fresh UUPS proxy. See
+    ///      `Bridge.t.sol:_deployBridgeProxy` for the underlying pattern.
+    function _deployBridgeProxy(
+        address lzEndpoint,
+        address bridgeOwner,
+        uint32[] memory dstEids,
+        uint64[] memory dstChainIds
+    ) internal returns (ConfidentialBridge proxy) {
+        address emptyImpl = address(new EmptyUUPSProxy());
+        DeployableERC1967Proxy raw = new DeployableERC1967Proxy(
+            emptyImpl,
+            abi.encodeCall(EmptyUUPSProxy.initialize, ())
+        );
+        address proxyAddr = address(raw);
+
+        address bridgeImpl = address(new ConfidentialBridge(lzEndpoint));
+
+        vm.prank(owner);
+        EmptyUUPSProxy(proxyAddr).upgradeToAndCall(
+            bridgeImpl,
+            abi.encodeCall(ConfidentialBridge.initializeFromEmptyProxy, (bridgeOwner, dstEids, dstChainIds))
+        );
+        proxy = ConfidentialBridge(payable(proxyAddr));
     }
 
     function _addressToBytes32(address a) internal pure returns (bytes32) {
