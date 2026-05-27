@@ -224,6 +224,37 @@ describe("CiphertextCommits", function () {
       expect(addCiphertextMaterialConsensusTxSenders3).to.deep.equal(expectedCoprocessorTxSenders3);
     });
 
+    it("Should let only the priority coprocessor transaction sender finalize ciphertext material", async function () {
+      const priorityTxSender = coprocessorTxSenders[2];
+      await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(priorityTxSender.address);
+
+      await ciphertextCommits
+        .connect(coprocessorTxSenders[0])
+        .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
+
+      const nonPriorityThresholdTx = await ciphertextCommits
+        .connect(coprocessorTxSenders[1])
+        .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
+
+      await expect(nonPriorityThresholdTx).to.not.emit(ciphertextCommits, "AddCiphertextMaterialConsensus");
+      expect(await ciphertextCommits.getAddCiphertextMaterialConsensusTxSenders(ctHandle)).to.deep.equal([]);
+
+      const priorityTx = await ciphertextCommits
+        .connect(priorityTxSender)
+        .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
+
+      await expect(priorityTx)
+        .to.emit(ciphertextCommits, "AddCiphertextMaterialConsensus")
+        .withArgs(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest, [priorityTxSender.address]);
+
+      expect(await ciphertextCommits.getAddCiphertextMaterialConsensusTxSenders(ctHandle)).to.deep.equal([
+        priorityTxSender.address,
+      ]);
+
+      const snsCtMaterials = await ciphertextCommits.getSnsCiphertextMaterials([ctHandle]);
+      expect(snsCtMaterials[0].coprocessorTxSenderAddresses).to.deep.equal([priorityTxSender.address]);
+    });
+
     it("Should revert because the transaction sender is not a coprocessor", async function () {
       await expect(
         ciphertextCommits

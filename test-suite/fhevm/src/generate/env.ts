@@ -200,6 +200,7 @@ const applyDiscoveryEnv = (
     APP_GATEWAY__CONTRACTS__INPUT_VERIFICATION_ADDRESS: state.discovery.gateway.INPUT_VERIFICATION_ADDRESS,
   });
   updateContracts(envs["test-suite"], {
+    GATEWAY_CONFIG_ADDRESS: state.discovery.gateway.GATEWAY_CONFIG_ADDRESS,
     DECRYPTION_ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
     INPUT_VERIFICATION_ADDRESS: state.discovery.gateway.INPUT_VERIFICATION_ADDRESS,
     KMS_VERIFIER_CONTRACT_ADDRESS: primaryHost.KMS_VERIFIER_CONTRACT_ADDRESS,
@@ -312,6 +313,9 @@ export const renderEnvMaps = async (
   }
 
   const instanceEnvs = await buildInstanceEnvs(envs, plan, deriveWallet);
+  envs["test-suite"].GATEWAY_DEPLOYER_PRIVATE_KEY = envs["gateway-sc"].DEPLOYER_PRIVATE_KEY;
+  envs["test-suite"].PRIORITY_COPROCESSOR_TX_SENDER_ADDRESS =
+    envs["gateway-sc"].COPROCESSOR_TX_SENDER_ADDRESS_0;
 
   // Uniform per-chain gateway-sc indexed vars for ALL host chains.
   envs["gateway-sc"].NUM_HOST_CHAINS = String(chains.length);
