@@ -1,5 +1,5 @@
 {
-  "name": "cli-relayer-sdk",
+  "name": "cli-fhevm-sdk",
   "type": "module",
   "private": true,
   "packageManager": "pnpm@10.28.2",

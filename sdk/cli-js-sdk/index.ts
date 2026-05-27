@@ -11,7 +11,7 @@ import { registerUserDecryptCommands } from "./src/cli/commands/user-decrypt";
 import { parseNetwork } from "./src/cli/parsers";
 
 const program = new Command()
-  .name("cli-relayer-sdk")
+  .name("cli-fhevm-sdk")
   .description("CLI for @fhevm/sdk flows against FHETest")
   .version("0.1.0")
   .option(

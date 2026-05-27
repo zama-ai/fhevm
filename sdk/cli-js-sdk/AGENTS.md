@@ -1,10 +1,11 @@
 # Agent Guidance
 
-This is a TypeScript/Node.js project managed with pnpm for a CLI that uses `@fhevm/sdk` and viem to send input proof and public decryption requests against FHETest v2.
+This is a TypeScript/Node.js CLI for `@fhevm/sdk` viem flows against FHETest: input proof, public decrypt, user decrypt, delegated user decrypt, and FHETest setup.
 
-Use pnpm scripts for project commands, and read `docs/agents/ENGINE.md` before running package-manager or TypeScript commands.
+Use pnpm scripts for project commands. Read `docs/agents/ENGINE.md` before package-manager or TypeScript commands.
 
-For focused guidance:
+Focused guidance:
 
+- CLI behavior: `docs/agents/CLI.md`
 - Testing: `docs/agents/TESTING.md`
-- CLI: `docs/agents/CLI.md`
+- Architecture: `docs/agents/ARCHITECTURE.md`
