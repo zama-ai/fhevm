@@ -1,7 +1,6 @@
 import type { FhevmChain } from "@fhevm/sdk/chains";
 import type { Hex } from "viem";
 
-import { fheTestAbi } from "./abi";
 import {
   createClients,
   createClientContext,
@@ -9,6 +8,14 @@ import {
   loadAccount,
   type ClientOptions,
 } from "./config";
+import { hasFheTestHandle, readFheTestHandle } from "./fhe-test/handles";
+import {
+  getSetClearFunctionName,
+  getSetEncryptedFunctionName,
+  simulateMakePubliclyDecryptable,
+  simulateSetClearValue,
+  simulateSetEncryptedValue,
+} from "./fhe-test/writes";
 import { sendAndWait } from "./shared/transactions";
 import type { ProgressReporter } from "./shared/progress";
 import type {
@@ -19,7 +26,7 @@ import type {
   InputProofResult,
   PublicDecryptResult,
 } from "./types";
-import { FHE_TYPE_IDS, FHE_VALUE_TYPES } from "./types";
+import { FHE_VALUE_TYPES } from "./types";
 import {
   createFreshDecryptValues,
   createInitValue,
@@ -27,32 +34,6 @@ import {
 } from "./values";
 
 type FhevmClientLike = ReturnType<typeof createClients>["fhevm"];
-type PublicClientLike = ReturnType<typeof createClients>["publicClient"];
-
-const zeroHandle =
-  "0x0000000000000000000000000000000000000000000000000000000000000000";
-
-const setEncryptedFunctionByType = {
-  bool: "setEbool",
-  uint8: "setEuint8",
-  uint16: "setEuint16",
-  uint32: "setEuint32",
-  uint64: "setEuint64",
-  uint128: "setEuint128",
-  uint256: "setEuint256",
-  address: "setEaddress",
-} as const satisfies Record<FheValueType, string>;
-
-const setClearFunctionByType = {
-  bool: "setClearEbool",
-  uint8: "setClearEuint8",
-  uint16: "setClearEuint16",
-  uint32: "setClearEuint32",
-  uint64: "setClearEuint64",
-  uint128: "setClearEuint128",
-  uint256: "setClearEuint256",
-  address: "setClearEaddress",
-} as const satisfies Record<FheValueType, string>;
 
 export type RequestInputProofOptions = ClientOptions &
   Readonly<{
@@ -177,14 +158,18 @@ export const freshPublicDecrypt = async (
   const encryptedValue = encrypted.encryptedValues[0] as Hex | undefined;
   if (!encryptedValue) throw new Error("FHEVM SDK did not return a handle.");
 
-  options.onProgress?.(`Simulating FHETest.${setEncryptedFunctionByType[options.type]}`);
-  const { request } = await publicClient.simulateContract({
-    account,
-    address: contractAddress,
-    abi: fheTestAbi,
-    functionName: setEncryptedFunctionByType[options.type],
-    args: [encryptedValue, encrypted.inputProof as Hex, value.value, true],
-  } as never);
+  options.onProgress?.(
+    `Simulating FHETest.${getSetEncryptedFunctionName(options.type)}`,
+  );
+  const request = await simulateSetEncryptedValue(
+    { account, contractAddress, publicClient },
+    {
+      encryptedValue,
+      inputProof: encrypted.inputProof as Hex,
+      value,
+      makePublic: true,
+    },
+  );
 
   const transactionHash = await sendAndWait({
     walletClient,
@@ -236,14 +221,13 @@ export const makePublicAndDecrypt = async (
   const { account, contractAddress, fhevm, publicClient, walletClient } =
     createWalletContext(options);
 
-  options.onProgress?.(`Simulating FHETest.makePubliclyDecryptable for ${options.type}`);
-  const { request } = await publicClient.simulateContract({
-    account,
-    address: contractAddress,
-    abi: fheTestAbi,
-    functionName: "makePubliclyDecryptable",
-    args: [FHE_TYPE_IDS[options.type]],
-  } as never);
+  options.onProgress?.(
+    `Simulating FHETest.makePubliclyDecryptable for ${options.type}`,
+  );
+  const request = await simulateMakePubliclyDecryptable(
+    { account, contractAddress, publicClient },
+    options.type,
+  );
 
   const transactionHash = await sendAndWait({
     walletClient,
@@ -315,14 +299,13 @@ export const initFheTest = async (
     }
 
     const value = createInitValue(valueType);
-    options.onProgress?.(`Simulating FHETest.${setClearFunctionByType[valueType]}`);
-    const { request } = await publicClient.simulateContract({
-      account,
-      address: contractAddress,
-      abi: fheTestAbi,
-      functionName: setClearFunctionByType[valueType],
-      args: [value.value, true],
-    } as never);
+    options.onProgress?.(
+      `Simulating FHETest.${getSetClearFunctionName(valueType)}`,
+    );
+    const request = await simulateSetClearValue(
+      { account, contractAddress, publicClient },
+      { value, makePublic: true },
+    );
 
     await sendAndWait({
       walletClient,
@@ -354,62 +337,6 @@ const resolveAccountAddress = (
 ): Hex => {
   if (options.account) return options.account;
   return loadAccount(options.privateKey, options.mnemonic).address;
-};
-
-const hasFheTestHandle = async (options: {
-  publicClient: PublicClientLike;
-  contractAddress: Hex;
-  account: Hex;
-  type: FheValueType;
-}): Promise<boolean> =>
-  (await options.publicClient.readContract({
-    address: options.contractAddress,
-    abi: fheTestAbi,
-    functionName: "hasHandleOf",
-    args: [options.account, FHE_TYPE_IDS[options.type]],
-  } as never)) as boolean;
-
-const readFheTestHandle = async (options: {
-  publicClient: PublicClientLike;
-  contractAddress: Hex;
-  account: Hex;
-  type: FheValueType;
-  onProgress?: ProgressReporter;
-}): Promise<FheTestHandle> => {
-  options.onProgress?.(
-    `Reading FHETest handle for ${options.account} / ${options.type}`,
-  );
-  const hasHandle = await hasFheTestHandle(options);
-  if (!hasHandle) {
-    throw new Error(
-      `No FHETest handle for account ${options.account} and type ${options.type}. Run "fhe-test init", "public-decrypt fresh", or pass --handle.`,
-    );
-  }
-
-  const handle = (await options.publicClient.readContract({
-    address: options.contractAddress,
-    abi: fheTestAbi,
-    functionName: "getHandleOf",
-    args: [options.account, FHE_TYPE_IDS[options.type]],
-  } as never)) as Hex;
-  if (handle === zeroHandle) {
-    throw new Error(`FHETest returned an empty ${options.type} handle.`);
-  }
-
-  const clearText = (await options.publicClient.readContract({
-    address: options.contractAddress,
-    abi: fheTestAbi,
-    functionName: "getClearText",
-    args: [handle],
-  } as never)) as bigint;
-
-  return {
-    type: options.type,
-    fheTypeId: FHE_TYPE_IDS[options.type],
-    account: options.account,
-    handle,
-    clearText: clearText.toString(),
-  };
 };
 
 const readPublicValues = async (
