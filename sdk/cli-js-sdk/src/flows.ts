@@ -4,11 +4,13 @@ import type { Hex } from "viem";
 import { fheTestAbi } from "./abi";
 import {
   createClients,
-  createWallet,
+  createClientContext,
+  createWalletContext,
   loadAccount,
-  resolveContractAddress,
   type ClientOptions,
 } from "./config";
+import { sendAndWait } from "./shared/transactions";
+import type { ProgressReporter } from "./shared/progress";
 import type {
   EncryptValue,
   FheClearValue,
@@ -26,7 +28,6 @@ import {
 
 type FhevmClientLike = ReturnType<typeof createClients>["fhevm"];
 type PublicClientLike = ReturnType<typeof createClients>["publicClient"];
-export type ProgressReporter = (message: string) => void;
 
 const zeroHandle =
   "0x0000000000000000000000000000000000000000000000000000000000000000";
@@ -67,8 +68,7 @@ export const requestInputProof = async (
   options: RequestInputProofOptions,
 ): Promise<InputProofResult> => {
   options.onProgress?.("Creating FHEVM client");
-  const { fhevm } = createClients(options);
-  const contractAddress = resolveContractAddress(options);
+  const { contractAddress, fhevm } = createClientContext(options);
   const userAddress =
     options.userAddress ?? "0x0000000000000000000000000000000000000002";
   const valueType = options.type ?? "bool";
@@ -112,7 +112,7 @@ export const publicDecrypt = async (
   options: PublicDecryptOptions,
 ): Promise<PublicDecryptResult & { handles?: readonly FheTestHandle[] }> => {
   options.onProgress?.("Creating FHEVM client");
-  const { fhevm, publicClient } = createClients(options);
+  const { contractAddress, fhevm, publicClient } = createClientContext(options);
 
   if (options.handles && options.handles.length > 0) {
     options.onProgress?.(
@@ -122,7 +122,6 @@ export const publicDecrypt = async (
   }
 
   const account = resolveAccountAddress(options);
-  const contractAddress = resolveContractAddress(options);
   const handle = await readFheTestHandle({
     publicClient,
     contractAddress,
@@ -159,8 +158,8 @@ export const freshPublicDecrypt = async (
   }
 > => {
   options.onProgress?.("Loading wallet and creating clients");
-  const { account, fhevm, publicClient, walletClient } = createWallet(options);
-  const contractAddress = resolveContractAddress(options);
+  const { account, contractAddress, fhevm, publicClient, walletClient } =
+    createWalletContext(options);
   const values =
     options.value === undefined
       ? createFreshDecryptValues(options.type)
@@ -234,8 +233,8 @@ export const makePublicAndDecrypt = async (
   }
 > => {
   options.onProgress?.("Loading wallet and creating clients");
-  const { account, fhevm, publicClient, walletClient } = createWallet(options);
-  const contractAddress = resolveContractAddress(options);
+  const { account, contractAddress, fhevm, publicClient, walletClient } =
+    createWalletContext(options);
 
   options.onProgress?.(`Simulating FHETest.makePubliclyDecryptable for ${options.type}`);
   const { request } = await publicClient.simulateContract({
@@ -287,8 +286,8 @@ export const initFheTest = async (
   skipped: readonly FheTestHandle[];
 }> => {
   options.onProgress?.("Loading wallet and creating clients");
-  const { account, publicClient, walletClient } = createWallet(options);
-  const contractAddress = resolveContractAddress(options);
+  const { account, contractAddress, publicClient, walletClient } =
+    createWalletContext(options);
   const types = options.type ? [options.type] : FHE_VALUE_TYPES;
   const initialized: FheTestHandle[] = [];
   const skipped: FheTestHandle[] = [];
@@ -411,26 +410,6 @@ const readFheTestHandle = async (options: {
     handle,
     clearText: clearText.toString(),
   };
-};
-
-const sendAndWait = async (options: {
-  walletClient: ReturnType<typeof createWallet>["walletClient"];
-  publicClient: PublicClientLike;
-  request: unknown;
-  onProgress?: ProgressReporter;
-}): Promise<Hex> => {
-  options.onProgress?.("Sending transaction");
-  const transactionHash = await options.walletClient.writeContract(
-    options.request as never,
-  );
-  options.onProgress?.(`Waiting for transaction receipt: ${transactionHash}`);
-  const receipt = await options.publicClient.waitForTransactionReceipt({
-    hash: transactionHash,
-  });
-  if (receipt.status !== "success") {
-    throw new Error(`Transaction reverted: ${transactionHash}`);
-  }
-  return transactionHash;
 };
 
 const readPublicValues = async (

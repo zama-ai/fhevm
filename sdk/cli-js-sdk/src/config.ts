@@ -143,6 +143,16 @@ export const createClients = (options: ClientOptions) => {
   return { chain, fhevm, publicClient, rpcUrl, transport };
 };
 
+export type ClientContext = ReturnType<typeof createClients> &
+  Readonly<{
+    contractAddress: Hex;
+  }>;
+
+export const createClientContext = (options: ClientOptions): ClientContext => ({
+  ...createClients(options),
+  contractAddress: resolveContractAddress(options),
+});
+
 export const loadAccount = (privateKey?: Hex, mnemonic?: string): Account => {
   const resolvedMnemonic = mnemonic ?? process.env.MNEMONIC;
   const resolvedPrivateKey =
@@ -170,3 +180,15 @@ export const createWallet = (
 
   return { account, chain, fhevm, publicClient, rpcUrl, walletClient };
 };
+
+export type WalletContext = ReturnType<typeof createWallet> &
+  Readonly<{
+    contractAddress: Hex;
+  }>;
+
+export const createWalletContext = (
+  options: ClientOptions & { privateKey?: Hex; mnemonic?: string },
+): WalletContext => ({
+  ...createWallet(options),
+  contractAddress: resolveContractAddress(options),
+});
