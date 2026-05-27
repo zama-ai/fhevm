@@ -6,6 +6,7 @@ import { DEFAULT_NETWORK } from "./src/config";
 import { registerFheTestCommands } from "./src/cli/commands/fhe-test";
 import { registerInputProofCommand } from "./src/cli/commands/input-proof";
 import { registerPublicDecryptCommands } from "./src/cli/commands/public-decrypt";
+import { registerUserDecryptCommands } from "./src/cli/commands/user-decrypt";
 import { parseNetwork } from "./src/cli/parsers";
 
 const program = new Command()
@@ -26,6 +27,7 @@ const program = new Command()
 
 registerInputProofCommand(program);
 registerPublicDecryptCommands(program);
+registerUserDecryptCommands(program);
 registerFheTestCommands(program);
 
 program.parseAsync().catch((error: unknown) => {

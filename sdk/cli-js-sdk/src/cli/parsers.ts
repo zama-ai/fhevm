@@ -35,6 +35,12 @@ export const parsePrivateKey = (value: string): Hex => {
   throw new InvalidArgumentError(`Invalid private key: ${value}`);
 };
 
+export const parsePositiveInteger = (value: string): number => {
+  const parsed = Number(value);
+  if (Number.isSafeInteger(parsed) && parsed > 0) return parsed;
+  throw new InvalidArgumentError(`Invalid positive integer: ${value}`);
+};
+
 export const collectHandle = (value: string, previous: Hex[] = []): Hex[] => [
   ...previous,
   parseBytes32(value),
