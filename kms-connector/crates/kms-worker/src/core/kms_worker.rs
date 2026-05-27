@@ -1,7 +1,7 @@
 use crate::{
     core::{
         KmsResponsePublisher,
-        config::Config,
+        config::{Config, HostChainKind},
         event_picker::{DbEventPicker, EventPicker},
         event_processor::{
             DbContextManager, DbEventProcessor, DecryptionProcessor, EventProcessor,
@@ -125,6 +125,22 @@ impl
 
         let mut acl_contracts = HashMap::new();
         for host_chain in &config.host_chains {
+            if host_chain.chain_kind == HostChainKind::Solana {
+                if host_chain.solana_host_program_id.is_some() {
+                    info!(
+                        "Configured Solana host chain {} with native ACL witness verification for \
+                        Gateway-PoC requests.",
+                        host_chain.chain_id
+                    );
+                } else {
+                    info!(
+                        "Configured Solana host chain {} without solana_host_program_id. The KMS \
+                        connector will reject decryption ACL checks for this chain fail-closed.",
+                        host_chain.chain_id
+                    );
+                }
+                continue;
+            }
             let provider = connect_to_rpc_node(host_chain.url.clone(), host_chain.chain_id).await?;
             let acl_contract = ACL::new(host_chain.acl_address, provider);
             let host_chain_id = host_chain.chain_id;

@@ -1,3 +1,4 @@
+use crate::core::solana_acl::SolanaPubkeyBytes;
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use connector_utils::{
     config::{
@@ -13,6 +14,7 @@ use connector_utils::{
     tasks::default_task_limit,
 };
 use serde::{Deserialize, Deserializer, Serialize};
+use solana_pubkey::Pubkey;
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
 /// Configuration of the `KmsWorker`.
@@ -86,6 +88,16 @@ pub struct Config {
     pub healthcheck_timeout: Duration,
 }
 
+/// Supported host-chain ACL backends.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum HostChainKind {
+    /// EVM host chain using the Solidity ACL contract ABI.
+    Evm,
+    /// Solana host chain using account-witness ACL verification.
+    Solana,
+}
+
 /// Configuration of a single Host Chain.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[cfg_attr(debug_assertions, derive(Serialize))]
@@ -95,9 +107,28 @@ pub struct HostChainConfig {
     /// The Chain ID of the Host Chain.
     #[serde(alias = "chainId")]
     pub chain_id: u64,
+    /// The ACL backend for this host chain.
+    #[serde(default = "default_host_chain_kind", alias = "chainKind")]
+    pub chain_kind: HostChainKind,
     /// The `ACL` contract address on the Host Chain.
+    ///
+    /// Required for EVM chains. Ignored for Solana chains.
     #[serde(alias = "aclAddress")]
     pub acl_address: Address,
+    /// The expected ZamaHost program id for Solana-owned ACL/material witnesses.
+    ///
+    /// Required for Solana ACL verification. If omitted for a Solana chain, the
+    /// worker keeps rejecting Solana decrypt ACL checks fail-closed.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_solana_pubkey",
+        alias = "solanaHostProgramId"
+    )]
+    pub solana_host_program_id: Option<SolanaPubkeyBytes>,
+}
+
+fn default_host_chain_kind() -> HostChainKind {
+    HostChainKind::Evm
 }
 
 fn deserialize_host_chains<'de, D>(d: D) -> Result<Vec<HostChainConfig>, D::Error>
@@ -116,6 +147,17 @@ where
     } else {
         Ok(host_chains)
     }
+}
+
+fn deserialize_optional_solana_pubkey<'de, D>(d: D) -> Result<Option<SolanaPubkeyBytes>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let Some(pubkey) = Option::<String>::deserialize(d)? else {
+        return Ok(None);
+    };
+    let pubkey = Pubkey::from_str(&pubkey).map_err(serde::de::Error::custom)?;
+    Ok(Some(pubkey.to_bytes()))
 }
 
 fn deserialize_non_empty<'de, D, T>(d: D) -> Result<Vec<T>, D::Error>
@@ -185,7 +227,9 @@ impl Default for Config {
             host_chains: vec![HostChainConfig {
                 url: Url::from_str("http://localhost:8545").unwrap(),
                 chain_id: 12345,
+                chain_kind: HostChainKind::Evm,
                 acl_address: Address::default(),
+                solana_host_program_id: None,
             }],
             kms_core_endpoints: vec!["http://localhost:50051".to_string()],
             grpc_request_retries: default_grpc_request_retries(),
@@ -314,8 +358,10 @@ mod tests {
             vec![HostChainConfig {
                 url: Url::from_str("http://localhost:9545").unwrap(),
                 chain_id: 31888,
+                chain_kind: HostChainKind::Evm,
                 acl_address: Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3")
-                    .unwrap()
+                    .unwrap(),
+                solana_host_program_id: None,
             }]
         );
         assert_eq!(
@@ -376,7 +422,9 @@ mod tests {
                         {
                             "url": "http://localhost:9545",
                             "chainId": 31888,
-                            "aclAddress": "0x5fbdb2315678afecb367f032d93f642f64180aa3"
+                            "chainKind": "solana",
+                            "aclAddress": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+                            "solanaHostProgramId": "11111111111111111111111111111111"
                         }
                     ]
                 "#,
@@ -392,8 +440,10 @@ mod tests {
             vec![HostChainConfig {
                 url: Url::from_str("http://localhost:9545").unwrap(),
                 chain_id: 31888,
+                chain_kind: HostChainKind::Solana,
                 acl_address: Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3")
-                    .unwrap()
+                    .unwrap(),
+                solana_host_program_id: Some([0; 32]),
             }]
         );
         cleanup_env_vars();

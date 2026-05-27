@@ -14,6 +14,7 @@ fhevm_host_bindings.workspace = true
 actix-web.workspace = true
 alloy.workspace = true
 anyhow.workspace = true
+bc2wrap.workspace = true
 humantime-serde.workspace = true
 prometheus.workspace = true
 serde.workspace = true
@@ -26,7 +27,6 @@ tracing-opentelemetry.workspace = true
 
 [dev-dependencies]
 alloy = { workspace = true, features = ["json-rpc"] }
-bc2wrap.workspace = true
 connector-utils = { workspace = true, features = ["tests"] }
 rstest.workspace = true
 serial_test.workspace = true

@@ -56,6 +56,11 @@ opentelemetry = "=0.30.0"
 opentelemetry-otlp = { version = "=0.30.0", features = ["grpc-tonic"] }
 opentelemetry_sdk = "=0.30.0"
 prometheus = { version = "=0.14.0", default-features = false, features = ["protobuf"] }
+base64 = "=0.22.1"
+reqwest = { version = "=0.12.24", default-features = false, features = [
+    "rustls-tls",
+] }
+ring = "=0.17.14"
 rustls = { version = "=0.23.40", default-features = false, features = [
     "aws-lc-rs",
 ] }
@@ -66,7 +71,11 @@ serde = { version = "=1.0.228", default-features = false, features = [
 serde_json = { version = "=1.0.145", default-features = false, features = [
     "std",
 ] }
+sha2 = { version = "=0.10.9", default-features = false }
 sha3 = { version = "=0.10.8", default-features = false }
+solana-pubkey = { version = "=2.4.0", default-features = false, features = [
+    "curve25519",
+] }
 sqlx = { version = "=0.8.6", default-features = false, features = [
     "chrono",
     "derive",
