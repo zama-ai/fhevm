@@ -182,9 +182,27 @@ task('task:verifyKMSGeneration')
     });
   });
 
-async function verifyTask(
+// Verify tasks deployed on every host chain (canonical and secondary).
+const SHARED_HOST_VERIFY_TASKS = [
+  ['task:verifyACL', 'ACL'],
+  ['task:verifyFHEVMExecutor', 'FHEVMExecutor'],
+  ['task:verifyKMSVerifier', 'KMSVerifier'],
+  ['task:verifyInputVerifier', 'InputVerifier'],
+  ['task:verifyHCULimit', 'HCULimit'],
+  ['task:verifyPauserSet', 'PauserSet'],
+  ['task:verifyProtocolConfig', 'ProtocolConfig'],
+] as const;
+
+// Verify tasks deployed only on the canonical host chain.
+const CANONICAL_ONLY_VERIFY_TASKS = [['task:verifyKMSGeneration', 'KMSGeneration']] as const;
+
+type HostVerifyTaskName =
+  | (typeof SHARED_HOST_VERIFY_TASKS)[number][0]
+  | (typeof CANONICAL_ONLY_VERIFY_TASKS)[number][0];
+
+async function runVerifyTask(
   hre: HardhatRuntimeEnvironment,
-  taskName: string,
+  taskName: HostVerifyTaskName,
   label: string,
   args: TaskArguments,
 ): Promise<void> {
@@ -196,21 +214,6 @@ async function verifyTask(
   }
 }
 
-async function verifyHostContracts(
-  hre: HardhatRuntimeEnvironment,
-  useInternalProxyAddress: boolean,
-): Promise<void> {
-  const args = { useInternalProxyAddress };
-
-  await verifyTask(hre, 'task:verifyACL', 'ACL', args);
-  await verifyTask(hre, 'task:verifyFHEVMExecutor', 'FHEVMExecutor', args);
-  await verifyTask(hre, 'task:verifyKMSVerifier', 'KMSVerifier', args);
-  await verifyTask(hre, 'task:verifyInputVerifier', 'InputVerifier', args);
-  await verifyTask(hre, 'task:verifyHCULimit', 'HCULimit', args);
-  await verifyTask(hre, 'task:verifyPauserSet', 'PauserSet', args);
-  await verifyTask(hre, 'task:verifyProtocolConfig', 'ProtocolConfig', args);
-}
-
 task('task:verifySecondaryHost')
   .addOptionalParam(
     'useInternalProxyAddress',
@@ -219,7 +222,10 @@ task('task:verifySecondaryHost')
     types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, hre) {
-    await verifyHostContracts(hre, useInternalProxyAddress);
+    const args = { useInternalProxyAddress };
+    for (const [taskName, label] of SHARED_HOST_VERIFY_TASKS) {
+      await runVerifyTask(hre, taskName, label, args);
+    }
     console.log('Secondary host contract verification done!');
   });
 
@@ -231,9 +237,9 @@ task('task:verifyCanonicalHost')
     types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, hre) {
-    await verifyHostContracts(hre, useInternalProxyAddress);
-    await verifyTask(hre, 'task:verifyKMSGeneration', 'KMSGeneration', {
-      useInternalProxyAddress,
-    });
+    const args = { useInternalProxyAddress };
+    for (const [taskName, label] of [...SHARED_HOST_VERIFY_TASKS, ...CANONICAL_ONLY_VERIFY_TASKS]) {
+      await runVerifyTask(hre, taskName, label, args);
+    }
     console.log('Canonical host contract verification done!');
   });
