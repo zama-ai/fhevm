@@ -514,7 +514,6 @@ const registerExtraChainInCoprocessor = async (state: State, chain: { key: strin
   }
 };
 
-
 export const runStep = async (state: State, step: StepName) => {
   const stepIndex = stateStepIndex(step) + 1;
   console.log(`[step ${stepIndex}/${STEP_NAMES.length}] ${step}`);
@@ -620,6 +619,7 @@ export const runStep = async (state: State, step: StepName) => {
         "HCU_LIMIT_CONTRACT_ADDRESS",
         ...(requiresModernHostAddressArtifacts(state) ? ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", "KMS_GENERATION_CONTRACT_ADDRESS"] : []),
       ]);
+      // Secondary deploys read canonical addresses from disk, so the canonical deploy must complete first.
       for (const chain of extraHostChains(state)) {
         const scKey = chain.sc;
         await timed(`[multi-chain] ${scKey}-deploy`, async () => {
@@ -686,9 +686,6 @@ export const runStep = async (state: State, step: StepName) => {
       await postBootHealthGate(coprocessorHealthContainers(state));
       for (const chain of extraHostChains(state)) {
         const suffix = chain.suffix;
-        await timed(`[multi-chain] register ${chain.key} in coprocessor DBs`, () =>
-          registerExtraChainInCoprocessor(state, chain),
-        );
         await timed(`[multi-chain] start host-listener${suffix} services`, async () => {
           await multiChainComposeUp(coprocessorHostKey(chain.key));
           await waitForStableChainListeners(state, chain.key);
