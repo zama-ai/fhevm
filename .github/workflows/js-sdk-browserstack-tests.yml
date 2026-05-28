@@ -233,7 +233,7 @@ jobs:
             - name: Run ${{ matrix.test }} on ${{ env.PLATFORM_LABEL }}
               shell: bash
               run: |
-                  npm run ${{ matrix.test }} -- --config test/browser/playwright.config.ts ${{ steps.test_args.outputs.extra }}
+                  npm run ${{ matrix.test }} -- ${{ steps.test_args.outputs.extra }}
 
             - name: Upload generated BrowserStack config
               if: ${{ always() && env.BROWSERSTACK_CONFIG_FILE != '' }}
