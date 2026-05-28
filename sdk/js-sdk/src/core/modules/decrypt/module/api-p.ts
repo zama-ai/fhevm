@@ -295,7 +295,7 @@ export async function decryptAndReconstruct(
   // response must have `degree == threshold`. If not provided, it is computed from the number
   // of server addresses as `(n - 1) / 3`.
   //
-  // Warning! this `theshold` differs from KMSVerifier.getThreshold()
+  // Warning! this `threshold` differs from KMSVerifier.getThreshold()
   //
 
   // 1. Call kms module to decrypt & reconstruct clear values
