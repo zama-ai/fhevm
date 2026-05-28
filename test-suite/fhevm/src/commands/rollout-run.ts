@@ -91,7 +91,6 @@ export const createRolloutContext = (receipt: RolloutReceipt = createRolloutRece
         allowedVersionKeys: options.allowedVersionKeys,
         overrides: (options.overrides ?? []).map((override) => override.group),
       },
-      docker: true,
       lockFile: options.lockFile,
     });
   },
@@ -110,14 +109,12 @@ export const createRolloutContext = (receipt: RolloutReceipt = createRolloutRece
     await runContractTask("gateway-sc", "gateway-sc-deploy", command, options);
     await receipt.record("gateway-contract-task", command, {
       details: { envKeys: Object.keys(options.env ?? {}).sort() },
-      docker: true,
     });
   },
   async runHostContractTask(command, options = {}) {
     await runContractTask("host-sc", "host-sc-deploy", command, options);
     await receipt.record("host-contract-task", command, {
       details: { envKeys: Object.keys(options.env ?? {}).sort() },
-      docker: true,
     });
   },
   async snapshotContracts(surface) {
@@ -131,7 +128,6 @@ export const createRolloutContext = (receipt: RolloutReceipt = createRolloutRece
     await refreshTestSuiteContainer();
     await receipt.record("refresh-test-suite", "recreated test-suite container with current env", {
       details: { profile },
-      docker: true,
     });
     await runTest(profile, {
       network: options.network ?? "staging",
@@ -151,13 +147,12 @@ export const createRolloutContext = (receipt: RolloutReceipt = createRolloutRece
     await up(upOptions(options));
     await receipt.record("up", "boot stack", {
       details: { overrides: (options.overrides ?? []).map((override) => override.group), scenario: options.scenario },
-      docker: true,
       lockFile: options.lockFile,
     });
   },
   async upgradeRuntimeGroup(group, options = {}) {
     await upgradeStackRuntimeGroup(group, options);
-    await receipt.record("upgrade-runtime", group, { docker: true, lockFile: options.lockFile });
+    await receipt.record("upgrade-runtime", group, { lockFile: options.lockFile });
   },
   async writeVersionLock(name, options) {
     const filename = name.endsWith(".json") ? name : `${name}.lock.json`;
@@ -195,12 +190,12 @@ export const runRolloutRunbook = async (script: string, ctx?: RolloutRunContext)
     await (
       await loadRolloutRunbook(script)
     )(context);
-    await receipt?.record("complete", "runbook completed", { docker: true });
+    await receipt?.record("complete", "runbook completed");
   } catch (error) {
     try {
       await receipt?.record("failed", "runbook failed", {
         details: { error: error instanceof Error ? error.message : String(error) },
-        docker: true,
+        diagnostics: true,
       });
     } catch (recordError) {
       console.error("[receipt] failed to record runbook failure", recordError);

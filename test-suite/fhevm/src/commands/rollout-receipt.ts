@@ -28,6 +28,7 @@ type ReceiptEntry = {
   versionChanges?: VersionChange[];
   containers?: ReceiptContainer[];
   dockerInspectError?: string;
+  diagnostics?: DiagnosticSection[];
 };
 
 type DockerInspect = {
@@ -43,6 +44,13 @@ type DockerInspect = {
       Status?: string;
     };
   };
+};
+
+type DiagnosticSection = {
+  title: string;
+  command: string;
+  output: string;
+  error?: string;
 };
 
 const receiptDir = () => path.join(STATE_DIR, "rollout");
@@ -90,6 +98,52 @@ const inspectContainers = async (): Promise<InspectResult> => {
   }
 };
 
+const psql = async (container: string, database: string, sql: string): Promise<DiagnosticSection> => {
+  const command = `docker exec ${container} psql -U postgres -d ${database} -v ON_ERROR_STOP=0 -P pager=off -c ${JSON.stringify(sql)}`;
+  const result = await run(
+    ["docker", "exec", container, "psql", "-U", "postgres", "-d", database, "-v", "ON_ERROR_STOP=0", "-P", "pager=off", "-c", sql],
+    { allowFailure: true },
+  );
+  return {
+    title: `${container}/${database}`,
+    command,
+    output: (result.stdout || "").trim(),
+    error: result.code === 0 ? undefined : (result.stderr || result.stdout).trim() || `psql exited ${result.code}`,
+  };
+};
+
+const diagnosticSql = {
+  relayer: `
+select ext_job_id, req_status, err_reason, accepted, created_at, updated_at
+from input_proof_req
+order by updated_at desc
+limit 20;
+`,
+  coprocessor: `
+select table_name
+from information_schema.tables
+where table_schema = 'public'
+  and (table_name ilike '%proof%' or table_name ilike '%ciphertext%' or table_name ilike '%transaction%')
+order by table_name;
+
+select relname as table_name, n_live_tup as estimated_rows
+from pg_stat_user_tables
+where relname ilike '%proof%'
+   or relname ilike '%ciphertext%'
+   or relname ilike '%transaction%'
+order by relname;
+`,
+};
+
+const collectFailureDiagnostics = async () => {
+  const sections: DiagnosticSection[] = [];
+  sections.push(await psql("fhevm-relayer-db", "relayer_db", diagnosticSql.relayer));
+  for (const database of ["coprocessor", "coprocessor_1", "coprocessor_2"]) {
+    sections.push(await psql("coprocessor-and-kms-db", database, diagnosticSql.coprocessor));
+  }
+  return sections;
+};
+
 const mdEscape = (value: unknown) =>
   String(value ?? "")
     .replaceAll("|", "\\|")
@@ -130,6 +184,19 @@ const markdownEntry = (entry: ReceiptEntry) => {
       );
     }
   }
+  if (entry.diagnostics?.length) {
+    lines.push("", "Diagnostics:");
+    for (const item of entry.diagnostics) {
+      lines.push("", `### ${item.title}`, "", "```text", item.command);
+      if (item.output) {
+        lines.push("", item.output);
+      }
+      if (item.error) {
+        lines.push("", `[error] ${item.error}`);
+      }
+      lines.push("```");
+    }
+  }
   return `${lines.join("\n")}\n`;
 };
 
@@ -159,6 +226,7 @@ export const createRolloutReceipt = () => {
     options: {
       details?: Record<string, unknown>;
       docker?: boolean;
+      diagnostics?: boolean;
       lockFile?: string;
     } = {},
   ) => {
@@ -171,7 +239,8 @@ export const createRolloutReceipt = () => {
     if (lock) {
       currentEnv = lock.env;
     }
-    const docker = options.docker ? await inspectContainers() : undefined;
+    const docker = options.docker || options.diagnostics ? await inspectContainers() : undefined;
+    const diagnostics = options.diagnostics ? await collectFailureDiagnostics() : undefined;
     const entry: ReceiptEntry = {
       seq: ++seq,
       at: new Date().toISOString(),
@@ -182,6 +251,7 @@ export const createRolloutReceipt = () => {
       versionChanges: changes,
       containers: docker?.containers,
       dockerInspectError: docker?.error,
+      diagnostics,
     };
     await fs.appendFile(receiptJsonlPath(), `${JSON.stringify(entry)}\n`);
     await fs.appendFile(receiptMarkdownPath(), markdownEntry(entry));
