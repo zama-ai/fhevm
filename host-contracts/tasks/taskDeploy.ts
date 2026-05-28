@@ -6,7 +6,8 @@ import { task, types } from 'hardhat/config';
 import type { HardhatEthersHelpers, HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 import path from 'path';
 
-import { mirrorProtocolConfigFromCanonical } from './protocolConfigMirror';
+import { mirrorProtocolConfigFromCanonical, type SecondaryDeployArgs } from './protocolConfigMirror';
+import { formatError } from './utils/formatError';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from './utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from './utils/loadVariables';
 
@@ -34,10 +35,6 @@ export function readExistingHostEnv(): Record<string, string> {
     return {};
   }
   return readHostEnv();
-}
-
-function formatError(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 export async function waitForTaskReady(
@@ -109,10 +106,7 @@ task('task:deploySecondaryHost', 'Deploys a secondary host stack without KMSGene
     undefined,
     types.string,
   )
-  .setAction(async function (
-    { canonicalRpcUrl, canonicalProtocolConfigAddress }: { canonicalRpcUrl: string; canonicalProtocolConfigAddress: string },
-    hre,
-  ) {
+  .setAction(async function ({ canonicalRpcUrl, canonicalProtocolConfigAddress }: SecondaryDeployArgs, hre) {
     await hre.run('task:deployHostSkeleton', { skipKmsGeneration: true });
     await hre.run('task:deployProtocolConfigSecondary', {
       canonicalRpcUrl,
@@ -556,13 +550,7 @@ task(
     undefined,
     types.string,
   )
-  .setAction(async function (
-    {
-      canonicalRpcUrl,
-      canonicalProtocolConfigAddress,
-    }: { canonicalRpcUrl: string; canonicalProtocolConfigAddress: string },
-    hre,
-  ) {
+  .setAction(async function ({ canonicalRpcUrl, canonicalProtocolConfigAddress }: SecondaryDeployArgs, hre) {
     const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
     const parsedEnv = readHostEnv();
     const secondaryProxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
@@ -570,6 +558,8 @@ task(
       hre,
       { canonicalProvider, canonicalProtocolConfigAddress, secondaryProxyAddress },
     );
+    // On interval-mining networks, upgradeProxy can return before the tx is mined.
+    await waitForTaskReady(hre, 'task:assertProtocolConfigReady');
     console.log(
       `ProtocolConfig code set successfully at ${secondaryProxyAddress}, mirroring canonical chain ${canonicalChainId} context ${currentContextId} (block ${canonicalBlockTag}) with ${kmsNodes.length} KMS nodes.`,
     );

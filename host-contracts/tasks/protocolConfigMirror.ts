@@ -1,43 +1,28 @@
 import type { Provider } from 'ethers';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
+import type { ProtocolConfig } from '../types';
+import { formatError } from './utils/formatError';
 import { getRequiredEnvVar } from './utils/loadVariables';
 
-function formatError(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
+export type SecondaryDeployArgs = {
+  canonicalRpcUrl: string;
+  canonicalProtocolConfigAddress: string;
+};
 
-async function waitForProtocolConfigReady(
-  hre: HardhatRuntimeEnvironment,
-  proxyAddress: string,
-  timeoutMs = 60_000,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  let lastError: unknown;
-  const protocolConfig = new hre.ethers.Contract(
-    proxyAddress,
-    ['function getVersion() view returns (string)', 'function getCurrentKmsContextId() view returns (uint256)'],
-    hre.ethers.provider,
-  );
+export type KmsNode = {
+  txSenderAddress: string;
+  signerAddress: string;
+  ipAddress: string;
+  storageUrl: string;
+};
 
-  while (true) {
-    try {
-      const version: string = await protocolConfig.getVersion();
-      const currentKmsContextId: bigint = await protocolConfig.getCurrentKmsContextId();
-      if (version.startsWith('ProtocolConfig') && currentKmsContextId !== 0n) {
-        return;
-      }
-    } catch (err) {
-      lastError = err;
-    }
-    if (Date.now() >= deadline) {
-      throw new Error(
-        `ProtocolConfig at ${proxyAddress} did not become ready after ${timeoutMs}ms: ${formatError(lastError)}`,
-      );
-    }
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-}
+export type KmsThresholds = {
+  publicDecryption: bigint;
+  userDecryption: bigint;
+  kmsGen: bigint;
+  mpc: bigint;
+};
 
 export async function mirrorProtocolConfigFromCanonical(
   hre: HardhatRuntimeEnvironment,
@@ -48,28 +33,16 @@ export async function mirrorProtocolConfigFromCanonical(
   },
 ): Promise<{
   currentContextId: bigint;
-  kmsNodes: { txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }[];
-  thresholds: { publicDecryption: bigint; userDecryption: bigint; kmsGen: bigint; mpc: bigint };
+  kmsNodes: KmsNode[];
+  thresholds: KmsThresholds;
   canonicalChainId: bigint;
   canonicalBlockTag: number;
 }> {
   const { ethers, upgrades } = hre;
   const { canonicalProvider, canonicalProtocolConfigAddress, secondaryProxyAddress } = options;
 
-  const canonicalProtocolConfig = new ethers.Contract(
-    canonicalProtocolConfigAddress,
-    [
-      'function getVersion() view returns (string)',
-      'function getCurrentKmsContextId() view returns (uint256)',
-      'function isValidKmsContext(uint256) view returns (bool)',
-      'function getKmsNodesForContext(uint256) view returns (tuple(address txSenderAddress, address signerAddress, string ipAddress, string storageUrl)[])',
-      'function getPublicDecryptionThresholdForContext(uint256) view returns (uint256)',
-      'function getUserDecryptionThresholdForContext(uint256) view returns (uint256)',
-      'function getKmsGenThresholdForContext(uint256) view returns (uint256)',
-      'function getMpcThresholdForContext(uint256) view returns (uint256)',
-    ],
-    canonicalProvider,
-  );
+  const canonicalProtocolConfigBase = await ethers.getContractAt('ProtocolConfig', canonicalProtocolConfigAddress);
+  const canonicalProtocolConfig = canonicalProtocolConfigBase.connect(canonicalProvider) as ProtocolConfig;
 
   let canonicalVersion: string;
   try {
@@ -118,15 +91,13 @@ export async function mirrorProtocolConfigFromCanonical(
     canonicalProtocolConfig.getKmsGenThresholdForContext(currentContextId, at),
     canonicalProtocolConfig.getMpcThresholdForContext(currentContextId, at),
   ]);
-  const kmsNodes = rawNodes.map(
-    (node: { txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }) => ({
-      txSenderAddress: node.txSenderAddress,
-      signerAddress: node.signerAddress,
-      ipAddress: node.ipAddress,
-      storageUrl: node.storageUrl,
-    }),
-  );
-  const thresholds = { publicDecryption, userDecryption, kmsGen, mpc };
+  const kmsNodes: KmsNode[] = rawNodes.map((node) => ({
+    txSenderAddress: node.txSenderAddress,
+    signerAddress: node.signerAddress,
+    ipAddress: node.ipAddress,
+    storageUrl: node.storageUrl,
+  }));
+  const thresholds: KmsThresholds = { publicDecryption, userDecryption, kmsGen, mpc };
   console.log(
     `Canonical snapshot: contextId=${currentContextId}, kmsNodes=${kmsNodes.length}, thresholds={publicDecryption:${publicDecryption}, userDecryption:${userDecryption}, kmsGen:${kmsGen}, mpc:${mpc}}.`,
   );
@@ -143,7 +114,6 @@ export async function mirrorProtocolConfigFromCanonical(
       args: [currentContextId, kmsNodes, thresholds],
     },
   });
-  await waitForProtocolConfigReady(hre, secondaryProxyAddress);
 
   return { currentContextId, kmsNodes, thresholds, canonicalChainId, canonicalBlockTag };
 }
