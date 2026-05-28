@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "npm run build:dev",
+    "build": "npm run build:prod",
     "build:test-suite-e2e": "npm run build:prod",
     "build:dev": "BUILD_PROFILE=dev npm run build:profile",
     "build:prod": "BUILD_PROFILE=prod npm run build:profile",
