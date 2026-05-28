@@ -1,5 +1,5 @@
 import type { FetchFheEncryptionKeyBytesReturnType as FheEncryptionKeyBytes } from '@fhevm/sdk/actions/chain';
-import type { FheTestChainName } from './ethers/setup.js';
+import type { FheTestChainName } from './setupCommon.js';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
