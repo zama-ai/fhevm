@@ -224,8 +224,6 @@ const postgresExec = async (dbName: string, args: string[]) => {
   );
 };
 
-const sqlLiteral = (value: string) => `'${value.replaceAll("'", "''")}'`;
-
 /** Logs elapsed time for one stack subtask. */
 const timed = async <T>(label: string, task: () => Promise<T>) => {
   const started = Date.now();
@@ -454,30 +452,6 @@ const coprocessorDbsSeeded = async (state: Pick<State, "scenario">) =>
     Array.from({ length: topologyForState(state).count }, (_, index) => driftDatabaseName(index)).map(coprocessorDbSeeded),
   )).every(Boolean);
 
-/** Registers an extra host chain in all coprocessor databases and restarts zkproof-workers. */
-const registerExtraChainInCoprocessor = async (state: State, chain: { key: string; chainId: string }) => {
-  const plan = stackSpecForState(state);
-  const chainHost = state.discovery?.hosts[chain.key] ?? {};
-  const aclAddress = chainHost.ACL_CONTRACT_ADDRESS ?? "";
-  for (let index = 0; index < plan.topology.count; index += 1) {
-    const dbName = driftDatabaseName(index);
-    const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
-    console.log(`[multi-chain] registering ${chain.key} in ${dbName}`);
-    const result = await postgresExec(dbName, [
-      "-c",
-      `INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (${chain.chainId}, ${sqlLiteral(chain.key)}, ${sqlLiteral(aclAddress)}) ON CONFLICT (chain_id) DO NOTHING;`,
-    ]);
-    if (result.code !== 0) {
-      throw new PreflightError(result.stderr.trim() || result.stdout.trim() || `failed to register ${chain.key} in ${dbName}`);
-    }
-    console.log(`[multi-chain] restarting ${prefix}zkproof-worker`);
-    await run(["docker", "stop", `${prefix}zkproof-worker`]);
-    await run(["docker", "start", `${prefix}zkproof-worker`]);
-    await waitForContainer(`${prefix}zkproof-worker`, "running");
-  }
-};
-
-
 export const runStep = async (state: State, step: StepName) => {
   const stepIndex = stateStepIndex(step) + 1;
   console.log(`[step ${stepIndex}/${STEP_NAMES.length}] ${step}`);
@@ -583,6 +557,7 @@ export const runStep = async (state: State, step: StepName) => {
         "HCU_LIMIT_CONTRACT_ADDRESS",
         ...(requiresModernHostAddressArtifacts(state) ? ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", "KMS_GENERATION_CONTRACT_ADDRESS"] : []),
       ]);
+      // Secondary deploys read canonical addresses from disk, so the canonical deploy must complete first.
       for (const chain of extraHostChains(state)) {
         const scKey = chain.sc;
         await timed(`[multi-chain] ${scKey}-deploy`, async () => {
@@ -646,9 +621,6 @@ export const runStep = async (state: State, step: StepName) => {
       await postBootHealthGate(coprocessorHealthContainers(state));
       for (const chain of extraHostChains(state)) {
         const suffix = chain.suffix;
-        await timed(`[multi-chain] register ${chain.key} in coprocessor DBs`, () =>
-          registerExtraChainInCoprocessor(state, chain),
-        );
         await timed(`[multi-chain] start host-listener${suffix} services`, async () => {
           await multiChainComposeUp(coprocessorHostKey(chain.key));
           await waitForStableChainListeners(state, chain.key);
