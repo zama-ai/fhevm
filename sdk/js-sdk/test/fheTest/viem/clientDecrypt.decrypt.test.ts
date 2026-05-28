@@ -2,7 +2,7 @@ import type { Hex } from 'viem';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmDecryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
-import { FHETestABI } from '../abi-v2.js';
+import { FHETestABI } from '../FheTest-abi-v2.js';
 import { decryptTestCases, isCleartext, fheTypeIdFromName, clearTypeFromHandle, isV2 } from '../setupCommon.js';
 import { asEncryptedValue, type EncryptedValue, type TypedValue } from '@fhevm/sdk/types';
 

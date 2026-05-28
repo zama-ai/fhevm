@@ -1,7 +1,7 @@
 import type { Hex } from 'viem';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { getViemTestConfig, type FheTestViemConfig } from '../viem/setup.js';
-import { FHETestABI } from '../abi-v2.js';
+import { FHETestABI } from '../FheTest-abi-v2.js';
 import { isCleartext } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////

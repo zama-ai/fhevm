@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { createFhevmCleartextDecryptClient } from '@fhevm/sdk/viem/cleartext';
 import { getViemTestConfig, type FheTestViemConfig } from '../viem/setup.js';
-import { FHETestABI } from '../abi-v2.js';
+import { FHETestABI } from '../FheTest-abi-v2.js';
 import { decryptTestCases, isCleartext, fheTypeIdFromName, clearTypeFromHandle } from '../setupCommon.js';
 import { asEncryptedValue, type EncryptedValue, type TypedValue } from '@fhevm/sdk/types';
 

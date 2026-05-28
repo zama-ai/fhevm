@@ -1,6 +1,6 @@
 import type { FhevmChain } from '@fhevm/sdk/chains';
 import { ethers } from 'ethers';
-import { FHETestABI } from '../abi-v2.js';
+import { FHETestABI } from '../FheTest-abi-v2.js';
 import { prepareFheTestEnv, type FheTestBaseEnv, type FheTestChainName } from '../setupCommon.js';
 
 // Re-export for convenience

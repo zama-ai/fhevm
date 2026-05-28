@@ -4,7 +4,7 @@ import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { createFhevmCleartextEncryptClient, createFhevmCleartextDecryptClient } from '@fhevm/sdk/viem/cleartext';
 import { getViemTestConfig, type FheTestViemConfig } from '../viem/setup.js';
 import { clearTypeFromHandle, encryptTestCases, prepareFheTestEnv, isBytes32Hex, isCleartext } from '../setupCommon.js';
-import { FHETestABI } from '../abi-v2.js';
+import { FHETestABI } from '../FheTest-abi-v2.js';
 import { createWalletClient, http, type Hex } from 'viem';
 
 ////////////////////////////////////////////////////////////////////////////////

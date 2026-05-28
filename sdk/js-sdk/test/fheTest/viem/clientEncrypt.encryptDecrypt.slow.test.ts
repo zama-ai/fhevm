@@ -10,7 +10,7 @@ import {
   isCleartext,
   isV2,
 } from '../setupCommon.js';
-import { FHETestABI } from '../abi-v2.js';
+import { FHETestABI } from '../FheTest-abi-v2.js';
 import { createWalletClient, http, type Hex } from 'viem';
 
 ////////////////////////////////////////////////////////////////////////////////
