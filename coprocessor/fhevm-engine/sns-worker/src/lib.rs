@@ -56,6 +56,7 @@ use crate::{
 pub const UPLOAD_QUEUE_SIZE: usize = 20;
 pub const SAFE_SER_LIMIT: u64 = 1024 * 1024 * 66;
 pub(crate) const S3_FORMAT_VERSION_V1: i16 = 1;
+pub(crate) const CURRENT_S3_FORMAT_VERSION: i16 = S3_FORMAT_VERSION_V1;
 pub type InternalEvents = Option<tokio::sync::mpsc::Sender<&'static str>>;
 
 #[cfg(feature = "gpu")]
@@ -262,8 +263,6 @@ impl HandleItem {
         &self,
         db_txn: &mut Transaction<'_, Postgres>,
     ) -> Result<(), ExecutionError> {
-        let ct128_format = self.ct128.format();
-
         if self.ct128.is_empty() {
             sqlx::query(
                 "INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle, transaction_id)
@@ -275,14 +274,14 @@ impl HandleItem {
             .bind(&self.transaction_id)
             .execute(db_txn.as_mut())
             .await?;
-        } else if ct128_format == Ciphertext128Format::Unknown {
+        } else if self.ct128.format() == Ciphertext128Format::Unknown {
             return Err(ExecutionError::InvalidCiphertext128Format(format!(
                 "non-empty ct128 has unknown format, host_chain_id: {}, handle: {}",
                 self.host_chain_id.as_i64(),
                 to_hex(&self.handle),
             )));
         } else {
-            let ct128_format: i16 = ct128_format.into();
+            let ct128_format: i16 = self.ct128.format().into();
             sqlx::query(
                 "INSERT INTO ciphertext_digest (
                     host_chain_id, key_id_gw, handle, transaction_id, ciphertext128_format
@@ -315,15 +314,12 @@ impl HandleItem {
             "UPDATE ciphertext_digest
             SET ciphertext128 = $1,
                 ciphertext128_format = $2,
-                s3_format_version = CASE
-                    WHEN s3_format_version IS NULL THEN $3
-                    ELSE s3_format_version
-                END
+                s3_format_version = $3
             WHERE handle = $4",
         )
         .bind(&digest)
         .bind(format)
-        .bind(S3_FORMAT_VERSION_V1)
+        .bind(CURRENT_S3_FORMAT_VERSION)
         .bind(&self.handle)
         .execute(trx.as_mut())
         .await?;
@@ -332,7 +328,7 @@ impl HandleItem {
             "Mark ct128 as uploaded, handle: {}, digest: {}, format: {:?}",
             to_hex(&self.handle),
             to_hex(&digest),
-            format,
+            self.ct128.format(),
         );
 
         Ok(())
@@ -346,14 +342,11 @@ impl HandleItem {
         sqlx::query(
             "UPDATE ciphertext_digest
             SET ciphertext = $1,
-                s3_format_version = CASE
-                    WHEN s3_format_version IS NULL THEN $2
-                    ELSE s3_format_version
-                END
+                s3_format_version = $2
             WHERE handle = $3",
         )
         .bind(&digest)
-        .bind(S3_FORMAT_VERSION_V1)
+        .bind(CURRENT_S3_FORMAT_VERSION)
         .bind(&self.handle)
         .execute(trx.as_mut())
         .await?;

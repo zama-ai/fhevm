@@ -743,7 +743,7 @@ async fn assert_ciphertext128(
 
     // Assert that ciphertext128 is uploaded to S3
     // Note: The tests rely on the `test_s3_use_handle_as_key` feature,
-    // which uses the handle as the key instead of the digest.
+    // which uses the handle/context-id S3 key instead of the digest.
     // This approach allows reusing the same ct128 when uploading a batch of ciphertexts to S3 under different keys.
 
     #[cfg(feature = "test_s3_use_handle_as_key")]
@@ -786,12 +786,13 @@ async fn assert_ciphertext_uploaded(
     expected_ct_len: Option<i64>,
     expected_ct_format: Option<(&str, CiphertextFormat)>,
 ) -> anyhow::Result<()> {
+    let ciphertext_key = crate::aws_upload::s3_ciphertext_key(handle, COPROCESSOR_CONTEXT_ID);
     use crate::S3_FORMAT_VERSION_V1;
 
     s3_utils::assert_key_exists(
         test_env.s3_client.to_owned(),
         bucket,
-        &hex::encode(handle),
+        &ciphertext_key,
         expected_ct_len,
         100,
     )
@@ -801,7 +802,7 @@ async fn assert_ciphertext_uploaded(
         .s3_client
         .head_object()
         .bucket(bucket)
-        .key(hex::encode(handle))
+        .key(ciphertext_key)
         .send()
         .await
         .expect("head ciphertext object");
