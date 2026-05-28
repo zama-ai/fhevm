@@ -8,13 +8,6 @@ interface IProtocolConfig {
         uint64 startBlock;
         uint64 endBlock;
     }
-    struct CoprocessorContext {
-        uint64 gwStartBlock;
-        uint64 activatedAtBlock;
-        bool destroyed;
-        string softwareVersion;
-        ChainUpgradeWindow[] chainUpgradeWindows;
-    }
     struct KmsNode {
         address txSenderAddress;
         address signerAddress;
@@ -56,7 +49,6 @@ interface IProtocolConfig {
     function defineNewKmsContext(KmsNode[] memory kmsNodes, KmsThresholds memory thresholds) external;
     function destroyCoprocessorContext(uint256 coprocessorContextId) external;
     function destroyKmsContext(uint256 kmsContextId) external;
-    function getCoprocessorContext(uint256 coprocessorContextId) external view returns (CoprocessorContext memory);
     function getCurrentCoprocessorContextId() external view returns (uint256);
     function getCurrentKmsContextId() external view returns (uint256);
     function getKmsGenThreshold() external view returns (uint256);
@@ -210,69 +202,6 @@ interface IProtocolConfig {
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "getCoprocessorContext",
-    "inputs": [
-      {
-        "name": "coprocessorContextId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "tuple",
-        "internalType": "struct CoprocessorContext",
-        "components": [
-          {
-            "name": "gwStartBlock",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "activatedAtBlock",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "destroyed",
-            "type": "bool",
-            "internalType": "bool"
-          },
-          {
-            "name": "softwareVersion",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
-            "name": "chainUpgradeWindows",
-            "type": "tuple[]",
-            "internalType": "struct ChainUpgradeWindow[]",
-            "components": [
-              {
-                "name": "chainId",
-                "type": "uint64",
-                "internalType": "uint64"
-              },
-              {
-                "name": "startBlock",
-                "type": "uint64",
-                "internalType": "uint64"
-              },
-              {
-                "name": "endBlock",
-                "type": "uint64",
-                "internalType": "uint64"
-              }
-            ]
-          }
-        ]
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -1260,314 +1189,6 @@ struct ChainUpgradeWindow { uint64 chainId; uint64 startBlock; uint64 endBlock; 
                     64,
                 > as alloy_sol_types::EventTopic>::encode_topic_preimage(
                     &rust.endBlock,
-                    out,
-                );
-            }
-            #[inline]
-            fn encode_topic(
-                rust: &Self::RustType,
-            ) -> alloy_sol_types::abi::token::WordToken {
-                let mut out = alloy_sol_types::private::Vec::new();
-                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    rust,
-                    &mut out,
-                );
-                alloy_sol_types::abi::token::WordToken(
-                    alloy_sol_types::private::keccak256(out),
-                )
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**```solidity
-struct CoprocessorContext { uint64 gwStartBlock; uint64 activatedAtBlock; bool destroyed; string softwareVersion; ChainUpgradeWindow[] chainUpgradeWindows; }
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct CoprocessorContext {
-        #[allow(missing_docs)]
-        pub gwStartBlock: u64,
-        #[allow(missing_docs)]
-        pub activatedAtBlock: u64,
-        #[allow(missing_docs)]
-        pub destroyed: bool,
-        #[allow(missing_docs)]
-        pub softwareVersion: alloy::sol_types::private::String,
-        #[allow(missing_docs)]
-        pub chainUpgradeWindows: alloy::sol_types::private::Vec<
-            <ChainUpgradeWindow as alloy::sol_types::SolType>::RustType,
-        >,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = (
-            alloy::sol_types::sol_data::Uint<64>,
-            alloy::sol_types::sol_data::Uint<64>,
-            alloy::sol_types::sol_data::Bool,
-            alloy::sol_types::sol_data::String,
-            alloy::sol_types::sol_data::Array<ChainUpgradeWindow>,
-        );
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            u64,
-            u64,
-            bool,
-            alloy::sol_types::private::String,
-            alloy::sol_types::private::Vec<
-                <ChainUpgradeWindow as alloy::sol_types::SolType>::RustType,
-            >,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<CoprocessorContext> for UnderlyingRustTuple<'_> {
-            fn from(value: CoprocessorContext) -> Self {
-                (
-                    value.gwStartBlock,
-                    value.activatedAtBlock,
-                    value.destroyed,
-                    value.softwareVersion,
-                    value.chainUpgradeWindows,
-                )
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for CoprocessorContext {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {
-                    gwStartBlock: tuple.0,
-                    activatedAtBlock: tuple.1,
-                    destroyed: tuple.2,
-                    softwareVersion: tuple.3,
-                    chainUpgradeWindows: tuple.4,
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolValue for CoprocessorContext {
-            type SolType = Self;
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::SolTypeValue<Self> for CoprocessorContext {
-            #[inline]
-            fn stv_to_tokens(&self) -> <Self as alloy_sol_types::SolType>::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        64,
-                    > as alloy_sol_types::SolType>::tokenize(&self.gwStartBlock),
-                    <alloy::sol_types::sol_data::Uint<
-                        64,
-                    > as alloy_sol_types::SolType>::tokenize(&self.activatedAtBlock),
-                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        &self.destroyed,
-                    ),
-                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
-                        &self.softwareVersion,
-                    ),
-                    <alloy::sol_types::sol_data::Array<
-                        ChainUpgradeWindow,
-                    > as alloy_sol_types::SolType>::tokenize(&self.chainUpgradeWindows),
-                )
-            }
-            #[inline]
-            fn stv_abi_encoded_size(&self) -> usize {
-                if let Some(size) = <Self as alloy_sol_types::SolType>::ENCODED_SIZE {
-                    return size;
-                }
-                let tuple = <UnderlyingRustTuple<
-                    '_,
-                > as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
-            }
-            #[inline]
-            fn stv_eip712_data_word(&self) -> alloy_sol_types::Word {
-                <Self as alloy_sol_types::SolStruct>::eip712_hash_struct(self)
-            }
-            #[inline]
-            fn stv_abi_encode_packed_to(
-                &self,
-                out: &mut alloy_sol_types::private::Vec<u8>,
-            ) {
-                let tuple = <UnderlyingRustTuple<
-                    '_,
-                > as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_encode_packed_to(&tuple, out)
-            }
-            #[inline]
-            fn stv_abi_packed_encoded_size(&self) -> usize {
-                if let Some(size) = <Self as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE {
-                    return size;
-                }
-                let tuple = <UnderlyingRustTuple<
-                    '_,
-                > as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_packed_encoded_size(&tuple)
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolType for CoprocessorContext {
-            type RustType = Self;
-            type Token<'a> = <UnderlyingSolTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SOL_NAME: &'static str = <Self as alloy_sol_types::SolStruct>::NAME;
-            const ENCODED_SIZE: Option<usize> = <UnderlyingSolTuple<
-                '_,
-            > as alloy_sol_types::SolType>::ENCODED_SIZE;
-            const PACKED_ENCODED_SIZE: Option<usize> = <UnderlyingSolTuple<
-                '_,
-            > as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
-            #[inline]
-            fn valid_token(token: &Self::Token<'_>) -> bool {
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::valid_token(token)
-            }
-            #[inline]
-            fn detokenize(token: Self::Token<'_>) -> Self::RustType {
-                let tuple = <UnderlyingSolTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::detokenize(token);
-                <Self as ::core::convert::From<UnderlyingRustTuple<'_>>>::from(tuple)
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolStruct for CoprocessorContext {
-            const NAME: &'static str = "CoprocessorContext";
-            #[inline]
-            fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
-                alloy_sol_types::private::Cow::Borrowed(
-                    "CoprocessorContext(uint64 gwStartBlock,uint64 activatedAtBlock,bool destroyed,string softwareVersion,ChainUpgradeWindow[] chainUpgradeWindows)",
-                )
-            }
-            #[inline]
-            fn eip712_components() -> alloy_sol_types::private::Vec<
-                alloy_sol_types::private::Cow<'static, str>,
-            > {
-                let mut components = alloy_sol_types::private::Vec::with_capacity(1);
-                components
-                    .push(
-                        <ChainUpgradeWindow as alloy_sol_types::SolStruct>::eip712_root_type(),
-                    );
-                components
-                    .extend(
-                        <ChainUpgradeWindow as alloy_sol_types::SolStruct>::eip712_components(),
-                    );
-                components
-            }
-            #[inline]
-            fn eip712_encode_data(&self) -> alloy_sol_types::private::Vec<u8> {
-                [
-                    <alloy::sol_types::sol_data::Uint<
-                        64,
-                    > as alloy_sol_types::SolType>::eip712_data_word(&self.gwStartBlock)
-                        .0,
-                    <alloy::sol_types::sol_data::Uint<
-                        64,
-                    > as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.activatedAtBlock,
-                        )
-                        .0,
-                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.destroyed,
-                        )
-                        .0,
-                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.softwareVersion,
-                        )
-                        .0,
-                    <alloy::sol_types::sol_data::Array<
-                        ChainUpgradeWindow,
-                    > as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.chainUpgradeWindows,
-                        )
-                        .0,
-                ]
-                    .concat()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::EventTopic for CoprocessorContext {
-            #[inline]
-            fn topic_preimage_length(rust: &Self::RustType) -> usize {
-                0usize
-                    + <alloy::sol_types::sol_data::Uint<
-                        64,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.gwStartBlock,
-                    )
-                    + <alloy::sol_types::sol_data::Uint<
-                        64,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.activatedAtBlock,
-                    )
-                    + <alloy::sol_types::sol_data::Bool as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.destroyed,
-                    )
-                    + <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.softwareVersion,
-                    )
-                    + <alloy::sol_types::sol_data::Array<
-                        ChainUpgradeWindow,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.chainUpgradeWindows,
-                    )
-            }
-            #[inline]
-            fn encode_topic_preimage(
-                rust: &Self::RustType,
-                out: &mut alloy_sol_types::private::Vec<u8>,
-            ) {
-                out.reserve(
-                    <Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust),
-                );
-                <alloy::sol_types::sol_data::Uint<
-                    64,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.gwStartBlock,
-                    out,
-                );
-                <alloy::sol_types::sol_data::Uint<
-                    64,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.activatedAtBlock,
-                    out,
-                );
-                <alloy::sol_types::sol_data::Bool as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.destroyed,
-                    out,
-                );
-                <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.softwareVersion,
-                    out,
-                );
-                <alloy::sol_types::sol_data::Array<
-                    ChainUpgradeWindow,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.chainUpgradeWindows,
                     out,
                 );
             }
@@ -4745,162 +4366,6 @@ function destroyKmsContext(uint256 kmsContextId) external;
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `getCoprocessorContext(uint256)` and selector `0x9a7860e0`.
-```solidity
-function getCoprocessorContext(uint256 coprocessorContextId) external view returns (CoprocessorContext memory);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getCoprocessorContextCall {
-        #[allow(missing_docs)]
-        pub coprocessorContextId: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`getCoprocessorContext(uint256)`](getCoprocessorContextCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getCoprocessorContextReturn {
-        #[allow(missing_docs)]
-        pub _0: <CoprocessorContext as alloy::sol_types::SolType>::RustType,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getCoprocessorContextCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: getCoprocessorContextCall) -> Self {
-                    (value.coprocessorContextId,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getCoprocessorContextCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        coprocessorContextId: tuple.0,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (CoprocessorContext,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                <CoprocessorContext as alloy::sol_types::SolType>::RustType,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getCoprocessorContextReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: getCoprocessorContextReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getCoprocessorContextReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for getCoprocessorContextCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = <CoprocessorContext as alloy::sol_types::SolType>::RustType;
-            type ReturnTuple<'a> = (CoprocessorContext,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "getCoprocessorContext(uint256)";
-            const SELECTOR: [u8; 4] = [154u8, 120u8, 96u8, 224u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.coprocessorContextId),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<CoprocessorContext as alloy_sol_types::SolType>::tokenize(ret),)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: getCoprocessorContextReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: getCoprocessorContextReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getCurrentCoprocessorContextId()` and selector `0x170a2981`.
 ```solidity
 function getCurrentCoprocessorContextId() external view returns (uint256);
@@ -8033,8 +7498,6 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
         #[allow(missing_docs)]
         destroyKmsContext(destroyKmsContextCall),
         #[allow(missing_docs)]
-        getCoprocessorContext(getCoprocessorContextCall),
-        #[allow(missing_docs)]
         getCurrentCoprocessorContextId(getCurrentCoprocessorContextIdCall),
         #[allow(missing_docs)]
         getCurrentKmsContextId(getCurrentKmsContextIdCall),
@@ -8101,7 +7564,6 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
             [126u8, 170u8, 200u8, 242u8],
             [148u8, 71u8, 207u8, 212u8],
             [151u8, 111u8, 62u8, 185u8],
-            [154u8, 120u8, 96u8, 224u8],
             [169u8, 44u8, 117u8, 203u8],
             [180u8, 114u8, 43u8, 196u8],
             [191u8, 155u8, 22u8, 200u8],
@@ -8117,7 +7579,7 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
     impl alloy_sol_types::SolInterface for IProtocolConfigCalls {
         const NAME: &'static str = "IProtocolConfigCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 25usize;
+        const COUNT: usize = 24usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -8132,9 +7594,6 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                 }
                 Self::destroyKmsContext(_) => {
                     <destroyKmsContextCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::getCoprocessorContext(_) => {
-                    <getCoprocessorContextCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getCurrentCoprocessorContextId(_) => {
                     <getCurrentCoprocessorContextIdCall as alloy_sol_types::SolCall>::SELECTOR
@@ -8381,17 +7840,6 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                             .map(IProtocolConfigCalls::getCurrentKmsContextId)
                     }
                     getCurrentKmsContextId
-                },
-                {
-                    fn getCoprocessorContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
-                        <getCoprocessorContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IProtocolConfigCalls::getCoprocessorContext)
-                    }
-                    getCoprocessorContext
                 },
                 {
                     fn defineNewKmsContext(
@@ -8682,17 +8130,6 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                     getCurrentKmsContextId
                 },
                 {
-                    fn getCoprocessorContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
-                        <getCoprocessorContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolConfigCalls::getCoprocessorContext)
-                    }
-                    getCoprocessorContext
-                },
-                {
                     fn defineNewKmsContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
@@ -8827,11 +8264,6 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                         inner,
                     )
                 }
-                Self::getCoprocessorContext(inner) => {
-                    <getCoprocessorContextCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::getCurrentCoprocessorContextId(inner) => {
                     <getCurrentCoprocessorContextIdCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
@@ -8955,12 +8387,6 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                 }
                 Self::destroyKmsContext(inner) => {
                     <destroyKmsContextCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::getCoprocessorContext(inner) => {
-                    <getCoprocessorContextCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -10223,17 +9649,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             self.call_builder(
                 &destroyKmsContextCall {
                     kmsContextId,
-                },
-            )
-        }
-        ///Creates a new call builder for the [`getCoprocessorContext`] function.
-        pub fn getCoprocessorContext(
-            &self,
-            coprocessorContextId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<&P, getCoprocessorContextCall, N> {
-            self.call_builder(
-                &getCoprocessorContextCall {
-                    coprocessorContextId,
                 },
             )
         }

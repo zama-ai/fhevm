@@ -6,7 +6,7 @@ import {HostContractsDeployerTestUtils} from "@fhevm-foundry/HostContractsDeploy
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
 import {ProtocolConfigUpgradedExample} from "@fhevm-host-contracts/examples/ProtocolConfigUpgradedExample.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
-import {KmsNode, ChainUpgradeWindow, CoprocessorContext} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
+import {KmsNode, ChainUpgradeWindow} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
@@ -669,38 +669,21 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         assertEq(protocolConfig.getCurrentCoprocessorContextId(), expectedId);
         assertTrue(protocolConfig.isValidCoprocessorContext(expectedId));
-
-        CoprocessorContext memory ctx = protocolConfig.getCoprocessorContext(expectedId);
-        assertEq(ctx.softwareVersion, version);
-        assertEq(ctx.gwStartBlock, gwStart);
-        assertEq(ctx.activatedAtBlock, uint64(block.number));
-        assertFalse(ctx.destroyed);
-        assertEq(ctx.chainUpgradeWindows.length, 1);
-        assertEq(ctx.chainUpgradeWindows[0].chainId, windows[0].chainId);
-        assertEq(ctx.chainUpgradeWindows[0].startBlock, windows[0].startBlock);
-        assertEq(ctx.chainUpgradeWindows[0].endBlock, windows[0].endBlock);
     }
 
     function test_defineNewCoprocessorContext_multiChain() public {
         _setupDefault();
         ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(3);
+        uint64 gwStart = _defaultGwStartBlock();
+        string memory version = _defaultSoftwareVersion();
+        uint256 expectedId = COPROC_CONTEXT_COUNTER_BASE + 1;
 
+        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        emit IProtocolConfig.NewCoprocessorContext(expectedId, version, windows, gwStart);
         vm.prank(owner);
-        protocolConfig.defineNewCoprocessorContext(
-            _defaultSoftwareVersion(),
-            windows,
-            _defaultGwStartBlock()
-        );
+        protocolConfig.defineNewCoprocessorContext(version, windows, gwStart);
 
-        CoprocessorContext memory ctx = protocolConfig.getCoprocessorContext(
-            protocolConfig.getCurrentCoprocessorContextId()
-        );
-        assertEq(ctx.chainUpgradeWindows.length, 3);
-        for (uint256 i = 0; i < 3; i++) {
-            assertEq(ctx.chainUpgradeWindows[i].chainId, windows[i].chainId);
-            assertEq(ctx.chainUpgradeWindows[i].startBlock, windows[i].startBlock);
-            assertEq(ctx.chainUpgradeWindows[i].endBlock, windows[i].endBlock);
-        }
+        assertTrue(protocolConfig.isValidCoprocessorContext(expectedId));
     }
 
     function test_defineNewCoprocessorContext_monotonicCounter() public {
@@ -834,30 +817,6 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidCoprocessorContext.selector, invalidId));
         protocolConfig.destroyCoprocessorContext(invalidId);
-    }
-
-    function test_revertGetCoprocessorContext_invalid() public {
-        _setupDefault();
-        uint256 invalidId = COPROC_CONTEXT_COUNTER_BASE + 999;
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidCoprocessorContext.selector, invalidId));
-        protocolConfig.getCoprocessorContext(invalidId);
-    }
-
-    function test_revertGetCoprocessorContext_destroyed() public {
-        _setupDefault();
-        vm.prank(owner);
-        protocolConfig.defineNewCoprocessorContext(
-            _defaultSoftwareVersion(),
-            _makeChainUpgradeWindows(1),
-            _defaultGwStartBlock()
-        );
-        uint256 id = protocolConfig.getCurrentCoprocessorContextId();
-
-        vm.prank(owner);
-        protocolConfig.destroyCoprocessorContext(id);
-
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidCoprocessorContext.selector, id));
-        protocolConfig.getCoprocessorContext(id);
     }
 
     function test_isValidCoprocessorContext_branches() public {

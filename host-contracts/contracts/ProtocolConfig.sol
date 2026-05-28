@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
-import {KmsNode, ChainUpgradeWindow, CoprocessorContext} from "./shared/Structs.sol";
+import {KmsNode, ChainUpgradeWindow} from "./shared/Structs.sol";
 import {KMS_CONTEXT_COUNTER_BASE, COPROC_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
@@ -64,8 +64,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         mapping(uint256 contextId => bool) destroyedContexts;
         /// @notice Current coprocessor context ID counter.
         uint256 currentCoprocessorContextId;
-        /// @notice Stored coprocessor context records.
-        mapping(uint256 contextId => CoprocessorContext) coprocessorContexts;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.ProtocolConfig")) - 1)) & ~bytes32(uint256(0xff))
@@ -202,29 +200,17 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
             }
         }
 
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        uint256 newCoprocessorContextId = ++$.currentCoprocessorContextId;
-
-        CoprocessorContext storage ctx = $.coprocessorContexts[newCoprocessorContextId];
-        ctx.softwareVersion = softwareVersion;
-        ctx.gwStartBlock = gwStartBlock;
-        ctx.activatedAtBlock = uint64(block.number);
-        for (uint256 i = 0; i < chainUpgradeWindows.length; i++) {
-            ctx.chainUpgradeWindows.push(chainUpgradeWindows[i]);
-        }
-
+        uint256 newCoprocessorContextId = ++_getProtocolConfigStorage().currentCoprocessorContextId;
         emit NewCoprocessorContext(newCoprocessorContextId, softwareVersion, chainUpgradeWindows, gwStartBlock);
     }
 
     /// @inheritdoc IProtocolConfig
     function destroyCoprocessorContext(uint256 coprocessorContextId) external virtual onlyACLOwner {
-        // Unlike `destroyKmsContext`, no "current cannot be destroyed" guard — the protocol
-        // does not maintain a single "current coprocessor context" pointer.
         if (!_isValidCoprocessorContext(coprocessorContextId)) {
             revert InvalidCoprocessorContext(coprocessorContextId);
         }
 
-        _getProtocolConfigStorage().coprocessorContexts[coprocessorContextId].destroyed = true;
+        _getProtocolConfigStorage().destroyedContexts[coprocessorContextId] = true;
         emit CoprocessorContextDestroyed(coprocessorContextId);
     }
 
@@ -338,16 +324,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     /// @inheritdoc IProtocolConfig
     function getCurrentCoprocessorContextId() external view virtual returns (uint256) {
         return _getProtocolConfigStorage().currentCoprocessorContextId;
-    }
-
-    /// @inheritdoc IProtocolConfig
-    function getCoprocessorContext(
-        uint256 coprocessorContextId
-    ) external view virtual returns (CoprocessorContext memory) {
-        if (!_isValidCoprocessorContext(coprocessorContextId)) {
-            revert InvalidCoprocessorContext(coprocessorContextId);
-        }
-        return _getProtocolConfigStorage().coprocessorContexts[coprocessorContextId];
     }
 
     /// @inheritdoc IProtocolConfig
@@ -466,16 +442,14 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /**
-     * @dev Checks whether a coprocessor context ID is in range, has windows, and is not destroyed.
+     * @dev Checks whether a context ID is in range and not destroyed.
      */
     function _isValidCoprocessorContext(uint256 coprocessorContextId) internal view virtual returns (bool) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        CoprocessorContext storage ctx = $.coprocessorContexts[coprocessorContextId];
         return
             coprocessorContextId >= COPROC_CONTEXT_COUNTER_BASE + 1 &&
             coprocessorContextId <= $.currentCoprocessorContextId &&
-            ctx.chainUpgradeWindows.length != 0 &&
-            !ctx.destroyed;
+            !$.destroyedContexts[coprocessorContextId];
     }
 
     /**
