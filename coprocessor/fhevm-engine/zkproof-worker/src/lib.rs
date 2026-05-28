@@ -14,15 +14,16 @@ use std::{
 use fhevm_engine_common::{
     pg_pool::ServiceError,
     telemetry::{register_histogram, MetricsConfig},
-    types::FhevmError,
+    types::{FhevmError, COMPUTED_HANDLE_INDEX_MARKER},
     utils::DatabaseURL,
 };
 use prometheus::Histogram;
 use thiserror::Error;
 
-/// The highest index of an input is 254,
-/// cause 255 (0xff) is reserved for handles originating from the FHE operations
-pub const MAX_INPUT_INDEX: u8 = u8::MAX - 1;
+/// Highest allowed ZK input index. Inputs use an index in handle
+/// byte 21; `COMPUTED_HANDLE_INDEX_MARKER` is reserved for handles
+/// originating from FHE operations and the bridge.
+pub const MAX_INPUT_INDEX: u8 = COMPUTED_HANDLE_INDEX_MARKER - 1;
 
 #[derive(Error, Debug)]
 pub enum ExecutionError {

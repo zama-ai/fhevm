@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use fhevm_engine_common::drift_revert::{self, ReExec, RevertRunnerConfig, SignalStatus};
+use fhevm_engine_common::types::COMPUTED_HANDLE_INDEX_MARKER;
 use serial_test::serial;
 use sqlx::PgPool;
 use test_harness::instance::{setup_test_db, ImportMode};
@@ -30,11 +31,11 @@ async fn setup_chain_and_computation(pool: &PgPool, chain_id: i64, block_number:
     .await
     .expect("insert host_chain");
 
-    // Byte 21 = 0xff marks a compute output (see host-contracts FHEVMExecutor.sol).
+    // Byte 21 marks a compute output (see host-contracts FHEVMExecutor.sol).
     // Other bytes are seeded from chain_id so multi-chain tests don't collide.
     let seed = chain_id as u8;
     let mut handle: Vec<u8> = vec![seed; 32];
-    handle[21] = 0xff;
+    handle[21] = COMPUTED_HANDLE_INDEX_MARKER;
     let txn_id: Vec<u8> = vec![seed.wrapping_add(1); 32];
 
     sqlx::query("INSERT INTO transactions (id, chain_id, block_number) VALUES ($1, $2, $3)")
@@ -154,7 +155,7 @@ async fn on_drift_detected_skips_for_input_handle() {
     let db = setup_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
-    // Byte 21 != 0xff → ZK input handle.
+    // Byte 21 != COMPUTED_HANDLE_INDEX_MARKER → ZK input handle.
     let mut input_handle: Vec<u8> = vec![0xAA; 32];
     input_handle[21] = 0x01;
 

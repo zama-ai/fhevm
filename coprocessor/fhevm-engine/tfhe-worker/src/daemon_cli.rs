@@ -16,6 +16,14 @@ pub struct Args {
     #[arg(long, default_value_t = 1000)]
     pub worker_polling_interval_ms: u64,
 
+    /// Polling interval for the confidential bridge worker to associate bridged handles
+    #[arg(long, default_value_t = 1000)]
+    pub bridge_polling_interval_ms: u64,
+
+    /// Max bridged-handle pairs the confidential bridge worker associates per transaction
+    #[arg(long, value_parser = clap::value_parser!(i64).range(1..), default_value_t = 128)]
+    pub bridge_associate_batch_size: i64,
+
     /// Generate fhe keys and exit
     #[arg(long)]
     pub generate_fhe_keys: bool,

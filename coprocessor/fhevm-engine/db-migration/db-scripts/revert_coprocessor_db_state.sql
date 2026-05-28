@@ -121,6 +121,22 @@ DELETE FROM delegate_user_decrypt
    AND block_number > :'to_block_number';
 
 -- ===========================================================================
+-- Delete confidential-bridge events whose block_number is past the revert point.
+--
+-- bridge_handle_events is keyed by the source chain (src_chain_id) and the
+-- destination-side handle_bridged_events by the destination chain (dst_chain_id).
+-- Each is cleaned for whichever role this chain plays.
+-- ===========================================================================
+
+DELETE FROM bridge_handle_events
+ WHERE src_chain_id = :'chain_id'
+   AND block_number > :'to_block_number';
+
+DELETE FROM handle_bridged_events
+ WHERE dst_chain_id = :'chain_id'
+   AND block_number > :'to_block_number';
+
+-- ===========================================================================
 -- Delete ciphertexts that were produced by computations in reverted blocks.
 --
 -- ciphertexts/ciphertexts128 have no transaction_id or block_number.

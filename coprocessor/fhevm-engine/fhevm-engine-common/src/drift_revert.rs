@@ -331,9 +331,12 @@ pub async fn update_signal_status(
 /// Transient failures (DB errors) are logged and swallowed so they don't
 /// cascade into the drift detector — the next detection cycle will retry.
 pub async fn on_drift_detected(pool: &Pool<Postgres>, handle: &[u8], host_chain_id: i64) {
-    // Byte 21 is 0xff for compute outputs; inputs encode the ciphertext index
-    // in the proof (0x00..=0xfe). Input drift is out of scope for auto-recovery.
-    if handle.len() != 32 || handle[21] != 0xff {
+    // Byte 21 is `COMPUTED_HANDLE_INDEX_MARKER` for compute outputs; inputs
+    // encode the ciphertext index in the proof (0x00..=0xfe). Input drift is
+    // out of scope for auto-recovery.
+    if handle.len() != crate::types::HANDLE_LEN
+        || handle[21] != crate::types::COMPUTED_HANDLE_INDEX_MARKER
+    {
         warn!(
             host_chain_id,
             "Drifted handle is a ZK input; auto-recovery is not supported for input handles"

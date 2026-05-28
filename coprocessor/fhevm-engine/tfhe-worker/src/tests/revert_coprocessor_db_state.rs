@@ -12,6 +12,10 @@ const PREFIX_TXN: u8 = 1;
 const PREFIX_HANDLE: u8 = 2;
 const PREFIX_DC: u8 = 3;
 const PREFIX_BLOCK_HASH: u8 = 4;
+const PREFIX_SRC_HANDLE: u8 = 5;
+const PREFIX_GUID: u8 = 6;
+const PREFIX_DST_HANDLE: u8 = 7;
+const PREFIX_FALLBACK_HANDLE: u8 = 8;
 
 async fn setup_chains(pool: &PgPool) {
     sqlx::query("INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES ($1, 'chain_a', '0xACL')")
@@ -162,6 +166,50 @@ async fn setup_block(pool: &PgPool, chain_id: i64, block_number: i64, key_id_gw:
     .await
     .expect("insert host_chain_blocks_valid");
 
+    let src_handle = make_id(PREFIX_SRC_HANDLE, chain_id, block_number);
+    let guid = make_id(PREFIX_GUID, chain_id, block_number);
+    let dst_handle = make_id(PREFIX_DST_HANDLE, chain_id, block_number);
+    let fallback_handle = make_id(PREFIX_FALLBACK_HANDLE, chain_id, block_number);
+
+    sqlx::query(
+        "INSERT INTO bridge_handle_events (src_handle, dst_chain_id, src_chain_id, sender_dapp, guid, block_number, transaction_id)
+         VALUES ($1, 999, $2, '\\xdada'::bytea, $3, $4, $5)",
+    )
+    .bind(&src_handle)
+    .bind(chain_id)
+    .bind(&guid)
+    .bind(block_number)
+    .bind(&txn_id)
+    .execute(pool)
+    .await
+    .expect("insert bridge_handle_events");
+
+    sqlx::query(
+        "INSERT INTO handle_bridged_events (src_handle, dst_handle, dst_chain_id, receiver_dapp, guid, block_number, transaction_id)
+         VALUES ($1, $2, $3, '\\xdada'::bytea, $4, $5, $6)",
+    )
+    .bind(&src_handle)
+    .bind(&dst_handle)
+    .bind(chain_id)
+    .bind(&guid)
+    .bind(block_number)
+    .bind(&txn_id)
+    .execute(pool)
+    .await
+    .expect("insert handle_bridged_events");
+
+    sqlx::query(
+        "INSERT INTO bridge_fallback_events (dst_handle, plaintext, dst_chain_id, block_number, transaction_id)
+         VALUES ($1, 42, $2, $3, $4)",
+    )
+    .bind(&fallback_handle)
+    .bind(chain_id)
+    .bind(block_number)
+    .bind(&txn_id)
+    .execute(pool)
+    .await
+    .expect("insert bridge_fallback_events");
+
     // only keep the latest block
     sqlx::query(
         "INSERT INTO host_listener_poller_state (chain_id, last_caught_up_block)
@@ -306,6 +354,41 @@ async fn test_revert_deletes_data_after_block_n() {
         15,
         "allowed_handles"
     );
+    let remaining_bridge_handle_blocks: Vec<i64> = sqlx::query_scalar(
+        "SELECT block_number FROM bridge_handle_events WHERE src_chain_id = $1 ORDER BY block_number",
+    )
+    .bind(CHAIN_A)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        remaining_bridge_handle_blocks, expected,
+        "bridge_handle_events"
+    );
+
+    let remaining_handle_bridged_blocks: Vec<i64> = sqlx::query_scalar(
+        "SELECT block_number FROM handle_bridged_events WHERE dst_chain_id = $1 ORDER BY block_number",
+    )
+    .bind(CHAIN_A)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        remaining_handle_bridged_blocks, expected,
+        "handle_bridged_events"
+    );
+
+    let remaining_bridge_fallback_blocks: Vec<i64> = sqlx::query_scalar(
+        "SELECT block_number FROM bridge_fallback_events WHERE dst_chain_id = $1 ORDER BY block_number",
+    )
+    .bind(CHAIN_A)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        remaining_bridge_fallback_blocks, expected,
+        "bridge_fallback_events"
+    );
 
     // Poller state should be reset to 15
     let poller_block: i64 = sqlx::query_scalar(
@@ -388,6 +471,36 @@ async fn test_revert_preserves_other_chain_data() {
         .await,
         20,
         "chain B delegations should be untouched"
+    );
+    assert_eq!(
+        count_with_bind(
+            &pool,
+            "SELECT COUNT(*) FROM bridge_handle_events WHERE src_chain_id = $1",
+            CHAIN_B
+        )
+        .await,
+        20,
+        "chain B bridge_handle_events should be untouched"
+    );
+    assert_eq!(
+        count_with_bind(
+            &pool,
+            "SELECT COUNT(*) FROM handle_bridged_events WHERE dst_chain_id = $1",
+            CHAIN_B
+        )
+        .await,
+        20,
+        "chain B handle_bridged_events should be untouched"
+    );
+    assert_eq!(
+        count_with_bind(
+            &pool,
+            "SELECT COUNT(*) FROM bridge_fallback_events WHERE dst_chain_id = $1",
+            CHAIN_B
+        )
+        .await,
+        20,
+        "chain B bridge_fallback_events should be untouched"
     );
 
     // Chain B poller should be unchanged at 20
@@ -478,6 +591,41 @@ async fn test_revert_no_op_when_no_data_above_block_n() {
         .await,
         10,
         "allowed_handles"
+    );
+    let remaining_bridge_handle_blocks: Vec<i64> = sqlx::query_scalar(
+        "SELECT block_number FROM bridge_handle_events WHERE src_chain_id = $1 ORDER BY block_number",
+    )
+    .bind(CHAIN_A)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        remaining_bridge_handle_blocks, expected,
+        "bridge_handle_events"
+    );
+
+    let remaining_handle_bridged_blocks: Vec<i64> = sqlx::query_scalar(
+        "SELECT block_number FROM handle_bridged_events WHERE dst_chain_id = $1 ORDER BY block_number",
+    )
+    .bind(CHAIN_A)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        remaining_handle_bridged_blocks, expected,
+        "handle_bridged_events"
+    );
+
+    let remaining_bridge_fallback_blocks: Vec<i64> = sqlx::query_scalar(
+        "SELECT block_number FROM bridge_fallback_events WHERE dst_chain_id = $1 ORDER BY block_number",
+    )
+    .bind(CHAIN_A)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        remaining_bridge_fallback_blocks, expected,
+        "bridge_fallback_events"
     );
 
     let remaining_delegation_blocks: Vec<i64> = sqlx::query_scalar(
