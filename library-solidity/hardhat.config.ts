@@ -57,7 +57,8 @@ task('test', async (_taskArgs, hre, runSuper) => {
 
   // Run modified test task
   if (hre.network.name === 'hardhat') {
-    await hre.run('task:deployAllHostContracts', { withKmsGeneration: true });
+    // Local tests deploy the full canonical-host stack.
+    await hre.run('task:deployCanonicalHost');
     await hre.run('task:addHostPausers', { useInternalProxyAddress: true });
   }
 

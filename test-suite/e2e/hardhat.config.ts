@@ -40,10 +40,7 @@ task('test', async (taskArgs, hre, runSuper) => {
     // await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmRelayer });
 
     await hre.run('compile:specific', { contract: 'contracts/emptyProxy' });
-    await hre.run('task:deployEmptyUUPSProxies', {
-      privateKey: privKeyFhevmDeployer,
-      useCoprocessorAddress: false,
-    });
+    await hre.run('task:deployHostProxyAddresses');
 
     await hre.run('compile:specific', { contract: 'contracts' });
     await hre.run('compile:specific', { contract: 'lib' });

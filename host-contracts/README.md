@@ -98,25 +98,81 @@ Notes:
 - `KMSVerifier.NewContextSet(uint256,address[],uint256)` -> `ProtocolConfig.NewKmsContext(uint256,KmsNode[],KmsThresholds)`
 - `KMSVerifier.KMSContextDestroyed(uint256)` -> `ProtocolConfig.KmsContextDestroyed(uint256)`
 
-## Host Deployment Role
+## Host Deployment Roles
 
-`task:deployAllHostContracts` requires an explicit `--with-kms-generation` value:
+A host chain is deployed in one of two roles:
+
+- **Canonical host**: owns `KMSGeneration`, creates the first `ProtocolConfig` KMS
+  context, and deploys `KMSVerifier`.
+- **Secondary host**: never writes `KMS_GENERATION_CONTRACT_ADDRESS`; it mirrors
+  `ProtocolConfig` from the canonical host, then deploys `KMSVerifier`.
+
+Use the role-level tasks for normal deployments.
+
+| Task | Role | Standalone? | What it does |
+|---|---|---:|---|
+| `task:deployCanonicalHost` | canonical | yes | Deploys the complete canonical host stack. |
+| `task:deploySecondaryHost` | secondary | yes | Deploys a secondary host without `KMSGeneration`. |
+| `task:deployHostSkeleton` | shared | no | Deploys only the shared host skeleton: proxy addresses, PauserSet, ACL, FHEVMExecutor, InputVerifier, and HCULimit. |
+| `task:deployHostProxyAddresses` | shared | no | Deploys empty UUPS proxies and writes address artifacts. Use `--skip-kms-generation` only when composing a secondary host. |
+| `task:deployProtocolConfigCanonical` | canonical | no | Upgrades the local `ProtocolConfig` proxy and seeds the first KMS context from env vars. |
+| `task:deployProtocolConfigSecondary` | secondary | no | Upgrades the local `ProtocolConfig` proxy from a pinned canonical snapshot. |
+| `task:deployKMSVerifier` | both | no | Upgrades the local `KMSVerifier` proxy. Requires local `ProtocolConfig` to be ready first. |
+| `task:initializeKMSGeneration` | canonical | no | Upgrades the canonical-only `KMSGeneration` proxy and initializes it. Never run this on a secondary host. |
+
+### Env vars by task
+
+| Task | Required env vars |
+|---|---|
+| `task:deployCanonicalHost` | all canonical host vars listed below |
+| `task:deploySecondaryHost` | `DEPLOYER_PRIVATE_KEY`, `CHAIN_ID_GATEWAY`, `INPUT_VERIFICATION_ADDRESS`, `NUM_COPROCESSORS`, `COPROCESSOR_THRESHOLD`, `COPROCESSOR_SIGNER_ADDRESS_0..N-1`, `DECRYPTION_ADDRESS`; takes `--canonical-rpc-url` and `--canonical-protocol-config-address` |
+| `task:deployHostSkeleton` | `DEPLOYER_PRIVATE_KEY`, `CHAIN_ID_GATEWAY`, `INPUT_VERIFICATION_ADDRESS`, `NUM_COPROCESSORS`, `COPROCESSOR_THRESHOLD`, `COPROCESSOR_SIGNER_ADDRESS_0..N-1` |
+| `task:deployProtocolConfigCanonical` | adds `NUM_KMS_NODES`, `KMS_TX_SENDER_ADDRESS_0..N-1`, `KMS_SIGNER_ADDRESS_0..N-1`, `KMS_NODE_STORAGE_URL_0..N-1`, `PUBLIC_DECRYPTION_THRESHOLD`, `USER_DECRYPTION_THRESHOLD`, `KMS_GEN_THRESHOLD`, `MPC_THRESHOLD` |
+| `task:deployProtocolConfigSecondary` | adds **none**: reads everything from canonical via RPC. Takes `--canonical-rpc-url` and `--canonical-protocol-config-address` as task arguments. |
+| `task:deployProtocolConfigFromMigration` | adds `MIGRATION_CONTEXT_ID`, `MIGRATION_KMS_NODES`, `MIGRATION_KMS_THRESHOLDS` (used only for the Gateway-to-Ethereum migration, see below) |
+| `task:deployKMSVerifier` | adds `DECRYPTION_ADDRESS` (and reuses `CHAIN_ID_GATEWAY`) |
+| `task:initializeKMSGeneration` | adds none beyond `DEPLOYER_PRIVATE_KEY` |
+| `task:addHostPausers` | adds `NUM_PAUSERS`, `PAUSER_ADDRESS_0..N-1` |
+
+Secondary chains need no KMS-node env vars. `task:deployProtocolConfigSecondary` mirrors
+the canonical KMS context via RPC at deploy time; later rotations are mirrored by the ACL
+owner.
+
+### Canonical host chain
 
 ```bash
-npx hardhat task:deployAllHostContracts --with-kms-generation true   # canonical host
-npx hardhat task:deployAllHostContracts --with-kms-generation false  # non-canonical host
+npx hardhat task:deployCanonicalHost
 ```
 
-`KMSGeneration` is deployed only on the canonical host chain. Non-canonical host chains
-deploy the common host contracts only.
+This deploys the shared host skeleton, seeds canonical `ProtocolConfig`, deploys
+`KMSVerifier`, and installs `KMSGeneration`.
 
-### Non-canonical host chains
+### Secondary (non-canonical) host chain
 
-`KMSGeneration` is NOT deployed on non-canonical host chains. `ProtocolConfig` on
-non-canonical chains is a replica whose state is mirrored manually (Phase 1) or via
-LayerZero / LzRead (Phase 2) from the canonical chain. Operators mirroring a canonical
-rotation to non-canonical chains call `defineNewKmsContext` directly on each non-canonical
-`ProtocolConfig`, using the same `kmsNodes` and `thresholds` as the canonical rotation.
+```bash
+npx hardhat task:deploySecondaryHost \
+  --canonical-rpc-url <CANONICAL_RPC_URL> \
+  --canonical-protocol-config-address <CANONICAL_PROTOCOL_CONFIG_ADDRESS>
+```
 
-No on-chain guard prevents a non-canonical replica from drifting if a mirror transaction is
-skipped. Operators are responsible for fan-out correctness.
+This deploys the shared host skeleton with `--skip-kms-generation`, mirrors the
+canonical `ProtocolConfig` snapshot via `initializeFromMigration`, and deploys
+`KMSVerifier`. Secondary host discovery must not contain
+`KMS_GENERATION_CONTRACT_ADDRESS`. Later canonical rotations (`defineNewKmsContext`,
+`destroyKmsContext`) must be mirrored by the secondary ACL owner.
+
+### Ownership hand-off
+
+After deployment, the deployer holds ACL ownership on every host chain. Hand control to
+the production owner with `task:transferHostOwnership --new-owner <ADDR>` (followed by
+`task:acceptHostOwnership` or an `acceptOwnership` call from the new owner). On secondary
+chains, `<ADDR>` is the bridge adapter / governance multisig that mirrors canonical
+rotations.
+
+### Gateway-to-Ethereum migration (canonical host only)
+
+`task:deployCanonicalHost` always uses `task:deployProtocolConfigCanonical`. For a
+Gateway-side ProtocolConfig migration, run the lower-level canonical sequence manually and
+substitute `task:deployProtocolConfigFromMigration` for
+`task:deployProtocolConfigCanonical`. The migration task uses `MIGRATION_CONTEXT_ID`,
+`MIGRATION_KMS_NODES`, and `MIGRATION_KMS_THRESHOLDS` to preserve the existing context ID.
