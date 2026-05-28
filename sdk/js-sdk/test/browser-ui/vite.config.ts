@@ -110,7 +110,7 @@ type ChainDefaults = {
   readonly fheTestAddress?: string;
 };
 
-const chainDefaultsPath = resolve(projectRoot, 'test/fheTest/chains/chain-defaults.json');
+const chainDefaultsPath = resolve(projectRoot, 'test/chains/chain-defaults.json');
 
 function loadBrowserUiConfig(): BrowserUiConfig {
   const testDir = resolve(projectRoot, 'test');

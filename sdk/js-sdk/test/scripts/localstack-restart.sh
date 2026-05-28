@@ -14,7 +14,7 @@ PROFILE=""
 PROFILES_DIR="$FHEVM_DIR/profiles"
 CHAIN="localstack"
 VALID_CHAINS=(localstack localstack_v11 localstack_v12 localstack_v13 localstack_v14)
-CHAINS_DIR="$SCRIPT_DIR/../fheTest/chains"
+CHAINS_DIR="$SCRIPT_DIR/../chains"
 CHAIN_DEFAULTS_FILE="$CHAINS_DIR/chain-defaults.json"
 
 usage() {

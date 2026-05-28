@@ -13,7 +13,7 @@ source "$SCRIPT_DIR/fhevm-lib.sh"
 fhevm_mnemonic_default="test test test test test test test future home engine virtual motion"
 fhevm_mnemonic_path="m/44'/60'/0'/0/0"
 chain_default="localcleartext"
-chain_defaults_file="$SCRIPT_DIR/../../test/fheTest/chains/chain-defaults.json"
+chain_defaults_file="$SCRIPT_DIR/../../test/chains/chain-defaults.json"
 
 # ---- CLI parsing ----
 mnemonic_cli=""

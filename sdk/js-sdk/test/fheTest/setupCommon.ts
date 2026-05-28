@@ -4,14 +4,14 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { mnemonicToAccount } from 'viem/accounts';
-import { localcleartext } from './chains/localcleartext.js';
-import { localstack } from './chains/localstack.js';
-import { localstack_v11 } from './chains/localstack_v11.js';
-import { localstack_v12 } from './chains/localstack_v12.js';
-import { localstack_v13 } from './chains/localstack_v13.js';
-import { localstack_v14 } from './chains/localstack_v14.js';
-import { devnet } from './chains/devnet.js';
-import { polygon_devnet } from './chains/polygon_devnet.js';
+import { localcleartext } from '../chains/localcleartext.js';
+import { localstack } from '../chains/localstack.js';
+import { localstack_v11 } from '../chains/localstack_v11.js';
+import { localstack_v12 } from '../chains/localstack_v12.js';
+import { localstack_v13 } from '../chains/localstack_v13.js';
+import { localstack_v14 } from '../chains/localstack_v14.js';
+import { devnet } from '../chains/devnet.js';
+import { polygon_devnet } from '../chains/polygon_devnet.js';
 import { mainnet, sepolia, sepolia as testnet } from '@fhevm/sdk/chains';
 
 // ---------------------------------------------------------------------------
@@ -109,7 +109,7 @@ function resolveChainName(): FheTestChainName {
 function resolveFHETestAddress(chainName: FheTestChainName): string {
   const defaults = loadChainDefaults()[chainName];
   if (!defaults?.fheTestAddress) {
-    throw new Error(`Missing fheTestAddress for "${chainName}" in test/fheTest/chains/chain-defaults.json.`);
+    throw new Error(`Missing fheTestAddress for "${chainName}" in test/chains/chain-defaults.json.`);
   }
   return defaults.fheTestAddress;
 }
@@ -117,7 +117,7 @@ function resolveFHETestAddress(chainName: FheTestChainName): string {
 function resolveFHETestVersion(chainName: FheTestChainName): FheTestVersion {
   const defaults = loadChainDefaults()[chainName];
   if (!defaults?.fheTestVersion) {
-    throw new Error(`Missing fheTestVersion for "${chainName}" in test/fheTest/chains/chain-defaults.json.`);
+    throw new Error(`Missing fheTestVersion for "${chainName}" in test/chains/chain-defaults.json.`);
   }
   return defaults.fheTestVersion;
 }
@@ -139,7 +139,7 @@ let _chainDefaults: Partial<Record<FheTestChainName, ChainDefaults>> | undefined
 
 function loadChainDefaults(): Partial<Record<FheTestChainName, ChainDefaults>> {
   if (_chainDefaults === undefined) {
-    const p = resolve(__dirname, 'chains/chain-defaults.json');
+    const p = resolve(__dirname, '../chains/chain-defaults.json');
     _chainDefaults = JSON.parse(readFileSync(p, 'utf-8')) as Partial<Record<FheTestChainName, ChainDefaults>>;
   }
   return _chainDefaults;
@@ -347,7 +347,7 @@ export function prepareFheTestEnv(): FheTestBaseEnv {
   const mnemonic = sharedEnv.MNEMONIC ?? process.env.MNEMONIC ?? defaults?.mnemonic;
   if (!mnemonic) {
     throw new Error(
-      `MNEMONIC is missing for "${chainName}". Set it in test/.env, as the MNEMONIC env var, or add a mnemonic to test/fheTest/chains/chain-defaults.json.`,
+      `MNEMONIC is missing for "${chainName}". Set it in test/.env, as the MNEMONIC env var, or add a mnemonic to test/chains/chain-defaults.json.`,
     );
   }
 
@@ -359,7 +359,7 @@ export function prepareFheTestEnv(): FheTestBaseEnv {
   const rpcUrl = chainEnv.RPC_URL ?? process.env.RPC_URL ?? defaults?.rpcUrl;
   if (!rpcUrl) {
     throw new Error(
-      `RPC_URL is missing for "${chainName}". Set it in test/${envFilename}, as the RPC_URL env var, or add an entry to test/fheTest/chains/chain-defaults.json.`,
+      `RPC_URL is missing for "${chainName}". Set it in test/${envFilename}, as the RPC_URL env var, or add an entry to test/chains/chain-defaults.json.`,
     );
   }
 

@@ -51,12 +51,12 @@ const WASM_ASSET_LOAD_MODES: readonly WasmAssetLoadMode[] = [
 // solve minio problem
 const LOCALSTACK_RELAYER_URL = new URL('/__localstack_relayer', location.origin).toString();
 
-// Eager-import all localstack* chain configs from the test/fheTest/chains
+// Eager-import all localstack* chain configs from the test/chains
 // folder. `import.meta.glob` requires a static string literal, but the
 // pattern matches every current and future variant (localstack.ts,
 // localstack_v11.ts, ...), so adding a new chain just means dropping its
 // .ts file in that directory — no edit here.
-const localstackChainLoaders = import.meta.glob<Record<string, FhevmChain>>('../../fheTest/chains/localstack*.ts');
+const localstackChainLoaders = import.meta.glob<Record<string, FhevmChain>>('../../chains/localstack*.ts');
 
 async function resolveChain(parameters: {
   readonly chainName: string;
@@ -64,7 +64,7 @@ async function resolveChain(parameters: {
 }): Promise<FhevmChain> {
   const { chainName, relayerUrl } = parameters;
 
-  const modulePath = `../../fheTest/chains/${chainName}.ts`;
+  const modulePath = `../../chains/${chainName}.ts`;
   const loader = localstackChainLoaders[modulePath];
   if (!loader) {
     const available = Object.keys(localstackChainLoaders)

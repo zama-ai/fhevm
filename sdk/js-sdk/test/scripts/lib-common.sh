@@ -27,11 +27,11 @@ detect_rpc_client() {
 }
 
 # Resolves the RPC URL for a chain name. Precedence — matches the
-# convention used by test/fheTest/setupCommon.ts:
+# convention used by test/setupCommon.ts:
 #   1. RPC_URL in test/.env.<chain> (or test/.env.localstack for any
 #      localstack* variant — v11, v12, ... all share that file)
 #   2. RPC_URL in the process environment
-#   3. <chain>.rpcUrl in test/fheTest/chains/chain-defaults.json
+#   3. <chain>.rpcUrl in test/chains/chain-defaults.json
 #      (the canonical source of truth for chain defaults)
 #
 # Errors if none provide a value or the chain has no entry in
@@ -49,7 +49,7 @@ fhevm_assert_chain() {
     local chain="$1"
     local test_dir
     test_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-    local chain_defaults_file="$test_dir/fheTest/chains/chain-defaults.json"
+    local chain_defaults_file="$test_dir/chains/chain-defaults.json"
 
     if [[ ! -f "$chain_defaults_file" ]]; then
         echo "❌ chain-defaults.json not found at $chain_defaults_file" >&2
@@ -76,7 +76,7 @@ fhevm_assert_chain() {
 # sdk/js-sdk/).
 #
 # Public-network chains live under src/core/chains/definitions/; local /
-# fixture chains live under test/fheTest/chains/. The chain name doesn't
+# fixture chains live under test/chains/. The chain name doesn't
 # always match the filename (testnet → sepolia.ts).
 #
 # Usage: fhevm_chain_file <chain_name>
@@ -90,9 +90,8 @@ fhevm_chain_file() {
             # SDK file is named after the network (sepolia); testnet is an alias.
             printf '%s/src/core/chains/definitions/sepolia.ts\n' "$sdk_root"
             ;;
-        )
         devnet|polygon_devnet|localcleartext|localstack|localstack_*)
-            printf '%s/test/fheTest/chains/%s.ts\n' "$sdk_root" "$chain"
+            printf '%s/test/chains/%s.ts\n' "$sdk_root" "$chain"
             ;;
         *)
             echo "fhevm_chain_file: unsupported chain '$chain'" >&2
@@ -106,7 +105,7 @@ resolve_chain_rpc_url() {
     local test_dir
     test_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-    local chain_defaults_file="$test_dir/fheTest/chains/chain-defaults.json"
+    local chain_defaults_file="$test_dir/chains/chain-defaults.json"
     if [[ ! -f "$chain_defaults_file" ]]; then
         echo "resolve_chain_rpc_url: chain-defaults.json not found at $chain_defaults_file" >&2
         return 1
@@ -145,7 +144,7 @@ resolve_fhetest_address() {
     if [[ -z "$chain_defaults_file" ]]; then
         local test_dir
         test_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-        chain_defaults_file="$test_dir/fheTest/chains/chain-defaults.json"
+        chain_defaults_file="$test_dir/chains/chain-defaults.json"
     fi
 
     if [[ ! -f "$chain_defaults_file" ]]; then
