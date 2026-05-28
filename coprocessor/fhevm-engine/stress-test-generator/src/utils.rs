@@ -266,7 +266,7 @@ pub async fn generate_trivial_encrypt(
         tx_depth_size: 0,
         log_index: None,
     };
-    listener_event_to_db.insert_tfhe_event(tx, &log).await?;
+    listener_event_to_db.insert_tfhe_event(tx, &log, false).await?;
     Ok(handle)
 }
 
@@ -430,7 +430,7 @@ pub async fn insert_tfhe_event(
         tx_depth_size: 0,
         log_index: None,
     };
-    listener_event_to_db.insert_tfhe_event(tx, &log).await?;
+    listener_event_to_db.insert_tfhe_event(tx, &log, false).await?;
 
     tracing::debug!(target: "tool", duration = ?started_at.elapsed(), "TFHE event, db_query");
     Ok(())

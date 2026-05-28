@@ -15,6 +15,7 @@ use sha3::Keccak256;
 use sqlx::{postgres::PgListener, PgPool};
 use sqlx::{Postgres, Transaction};
 use std::str::FromStr;
+use std::sync::atomic::{AtomicI64, Ordering};
 use tfhe::integer::ciphertext::IntegerProvenCompactCiphertextListConformanceParams;
 use tfhe::prelude::CiphertextList;
 use tfhe::ReRandomizationContext;
@@ -33,10 +34,18 @@ use tokio::time::interval;
 use tokio::{select, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 pub const MAX_CACHED_KEYS: usize = 100;
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
+
+/// Wake-up channel for GCS activation. Must stay in sync with
+/// `upgrade_controller::UPGRADE_ACTIVATED_CHANNEL`.
+const EVENT_UPGRADE_ACTIVATED: &str = "event_upgrade_activated";
+
+/// Sentinel for `start_block_state`: the GCS row in `upgrade_state` has not
+/// been observed yet. Any non-sentinel value is the real start_block.
+const GCS_NOT_ACTIVATED: i64 = -1i64;
 
 pub(crate) const RAW_CT_HASH_DOMAIN_SEPARATOR: [u8; 8] = *b"ZK-w_rct";
 pub(crate) const HANDLE_HASH_DOMAIN_SEPARATOR: [u8; 8] = *b"ZK-w_hdl";
@@ -56,6 +65,13 @@ pub struct ZkProofService {
 
     // Timestamp of the last moment the service was active
     last_active_at: Arc<RwLock<SystemTime>>,
+
+    // GCS activation state, mirrored from `upgrade_state.start_block`
+    // (stack_role='GCS') by the activation watcher. Holds `GCS_NOT_ACTIVATED`
+    // until the watcher observes a populated start_block. In BCS mode (when
+    // `conf.gcs_mode = false`) the watcher is never spawned and this value
+    // stays at the sentinel for the lifetime of the process.
+    start_block_state: Arc<AtomicI64>,
 }
 impl HealthCheckService for ZkProofService {
     async fn health_check(&self) -> HealthStatus {
@@ -106,10 +122,34 @@ impl ZkProofService {
             return None;
         };
 
+        let start_block_state = Arc::new(AtomicI64::new(GCS_NOT_ACTIVATED));
+
+        if conf.gcs_mode {
+            // Long-lived task that mirrors `upgrade_state.start_block`
+            // (stack_role='GCS') into the atomic, woken by
+            // `event_upgrade_activated`. Lives for the lifetime of the
+            // service so it survives transient DB hiccups inside workers.
+            let watcher_pool = pool_mngr.pool();
+            let watcher_state = start_block_state.clone();
+            tokio::spawn(async move {
+                loop {
+                    if let Err(err) = watch_gcs_activation(&watcher_pool, &watcher_state).await {
+                        error!(
+                            target: "zkproof_worker",
+                            error = %err,
+                            "GCS activation watcher errored; restarting in 5s"
+                        );
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                    }
+                }
+            });
+        }
+
         Some(ZkProofService {
             pool_mngr,
             conf,
             last_active_at: Arc::new(RwLock::new(SystemTime::UNIX_EPOCH)),
+            start_block_state,
         })
     }
 
@@ -122,8 +162,65 @@ impl ZkProofService {
             self.pool_mngr.clone(),
             self.conf.clone(),
             self.last_active_at.clone(),
+            self.start_block_state.clone(),
         )
         .await
+    }
+}
+
+/// LISTENs on `event_upgrade_activated` and mirrors
+/// `upgrade_state.start_block` (for `stack_role='GCS'`) into `state`. Polls
+/// once on entry so a worker started AFTER the activation notify fired still
+/// picks the value up. A 30s fallback sleep catches any missed NOTIFY (dropped
+/// connection, late start).
+async fn watch_gcs_activation(
+    pool: &PgPool,
+    state: &AtomicI64,
+) -> Result<(), ExecutionError> {
+    let mut listener = PgListener::connect_with(pool).await?;
+    listener.listen(EVENT_UPGRADE_ACTIVATED).await?;
+    info!(
+        target: "zkproof_worker",
+        channel = EVENT_UPGRADE_ACTIVATED,
+        "GCS activation watcher listening"
+    );
+
+    loop {
+        let row: Option<(Option<i64>,)> =
+            sqlx::query_as("SELECT start_block FROM upgrade_state WHERE stack_role = 'GCS'")
+                .fetch_optional(pool)
+                .await?;
+
+        if let Some((Some(start_block),)) = row {
+            let prev = state.swap(start_block, Ordering::SeqCst);
+            if prev != start_block {
+                info!(
+                    target: "zkproof_worker",
+                    start_block,
+                    prev,
+                    "GCS start_block updated from upgrade_state"
+                );
+            }
+        } else {
+            debug!(
+                target: "zkproof_worker",
+                "GCS row in upgrade_state has no start_block yet"
+            );
+        }
+
+        tokio::select! {
+            recv = listener.recv() => {
+                if let Err(err) = recv {
+                    warn!(
+                        target: "zkproof_worker",
+                        error = %err,
+                        "GCS activation listener recv error"
+                    );
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            }
+            _ = tokio::time::sleep(Duration::from_secs(30)) => {}
+        }
     }
 }
 /// Executes the main loop for handling verify_proofs requests inserted in the
@@ -132,6 +229,7 @@ pub async fn execute_verify_proofs_loop(
     pool_mngr: PostgresPoolManager,
     conf: Config,
     last_active_at: Arc<RwLock<SystemTime>>,
+    start_block_state: Arc<AtomicI64>,
 ) -> Result<(), ExecutionError> {
     let gpu_enabled = fhevm_engine_common::utils::log_backend();
     info!(gpu_enabled, conf = %conf, "Starting with config");
@@ -153,6 +251,7 @@ pub async fn execute_verify_proofs_loop(
         let db_key_cache = db_key_cache.clone();
         let last_active_at = last_active_at.clone();
         let host_chain_cache = host_chain_cache.clone();
+        let start_block_state = start_block_state.clone();
         // Spawn a ZK-proof worker
         // All workers compete for zk-proof tasks queued in the 'verify_proof' table.
         let op = move |pool: PgPool, ct: CancellationToken| {
@@ -160,6 +259,7 @@ pub async fn execute_verify_proofs_loop(
             let host_chain_cache = host_chain_cache.clone();
             let last_active_at = last_active_at.clone();
             let conf = conf.clone();
+            let start_block_state = start_block_state.clone();
             async move {
                 execute_worker(
                     conf,
@@ -168,6 +268,7 @@ pub async fn execute_verify_proofs_loop(
                     db_key_cache,
                     host_chain_cache,
                     last_active_at,
+                    start_block_state,
                 )
                 .await
                 .map_err(ServiceError::from)
@@ -196,6 +297,7 @@ async fn execute_worker(
     db_key_cache: DbKeyCache,
     host_chain_cache: Arc<HostChainsCache>,
     last_active_at: Arc<RwLock<SystemTime>>,
+    start_block_state: Arc<AtomicI64>,
 ) -> Result<(), ExecutionError> {
     update_last_active(last_active_at.clone()).await;
 
@@ -223,12 +325,18 @@ async fn execute_worker(
     loop {
         update_last_active(last_active_at.clone()).await;
 
+        // GCS is active for this iteration iff the worker was started with
+        // --gcs-mode AND the activation watcher has populated start_block.
+        let gcs_active = conf.gcs_mode
+            && start_block_state.load(Ordering::SeqCst) != GCS_NOT_ACTIVATED;
+
         execute_verify_proof_routine(
             &pool,
             latest_key.clone(),
             latest_crs.clone(),
             host_chain_cache.as_ref(),
             &conf,
+            gcs_active,
         )
         .await?;
         let count = get_remaining_tasks(&pool).await?;
@@ -266,6 +374,7 @@ async fn execute_verify_proof_routine(
     crs: Arc<Crs>,
     host_chain_cache: &HostChainsCache,
     conf: &Config,
+    gcs_active: bool,
 ) -> Result<(), ExecutionError> {
     let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
     if let Ok(row) = sqlx::query!(
@@ -356,10 +465,16 @@ async fn execute_verify_proof_routine(
                     });
                     verified = true;
                     let count = cts.len();
-                    insert_ciphertexts(&mut txn, cts, blob_hash).await?;
+                    insert_ciphertexts(&mut txn, cts, blob_hash, gcs_active).await?;
                     if let Some(bn) = block_number {
                         insert_input_handles(&mut txn, cts, bn).await?;
-                        upsert_state_hash_for_block(&mut txn, host_chain_id_raw, bn).await?;
+                        upsert_state_hash_for_block(
+                            &mut txn,
+                            host_chain_id_raw,
+                            bn,
+                            gcs_active,
+                        )
+                        .await?;
                     }
                     tracing::Span::current().record("count", count);
 
@@ -650,25 +765,34 @@ pub(crate) async fn insert_ciphertexts(
     db_txn: &mut Transaction<'_, Postgres>,
     cts: &[Ciphertext],
     blob_hash: &Vec<u8>,
+    gcs_active: bool,
 ) -> Result<(), ExecutionError> {
+    // In GCS mode (post-activation) all new ciphertexts land in the staging
+    // child table; BCS continues writing to the parent. Both tables share the
+    // same `(handle, ciphertext_version)` unique constraint, so ON CONFLICT
+    // semantics are preserved.
+    let ciphertexts_table = if gcs_active {
+        "ciphertexts_staging"
+    } else {
+        "ciphertexts"
+    };
+    let insert_sql = format!(
+        "INSERT INTO {ciphertexts_table} (
+            handle, ciphertext, ciphertext_version, ciphertext_type,
+            input_blob_hash, input_blob_index, is_input, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, TRUE, NOW())
+        ON CONFLICT (handle, ciphertext_version) DO NOTHING"
+    );
     for (i, ct) in cts.iter().enumerate() {
-        sqlx::query!(
-            r#"
-            INSERT INTO ciphertexts (
-                handle, ciphertext, ciphertext_version, ciphertext_type,
-                input_blob_hash, input_blob_index, is_input, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, TRUE, NOW())
-            ON CONFLICT (handle, ciphertext_version) DO NOTHING;
-            "#,
-            &ct.handle,
-            &ct.compressed,
-            ct.ct_version,
-            ct.ct_type,
-            &blob_hash,
-            i as i32,
-        )
-        .execute(db_txn.as_mut())
-        .await?;
+        sqlx::query(&insert_sql)
+            .bind(&ct.handle)
+            .bind(&ct.compressed)
+            .bind(ct.ct_version)
+            .bind(ct.ct_type)
+            .bind(blob_hash)
+            .bind(i as i32)
+            .execute(db_txn.as_mut())
+            .await?;
     }
 
     // Notify all workers that new ciphertext is inserted
@@ -715,15 +839,28 @@ pub(crate) async fn insert_input_handles(
 // aggregation query and insert it into `state_hash`. The query returns a NULL
 // hash unless every computation for that block is completed, so partial blocks
 // are silently skipped.
+//
+// BCS: reads `FROM ONLY ciphertexts` and writes to `state_hash`.
+// GCS (active): reads `FROM ONLY ciphertexts_staging` and writes to
+// `state_hash_staging`. GCS only produces input ciphertexts post-activation,
+// all of which land in ciphertexts_staging, so the staging hash is computed
+// exclusively over GCS-produced rows.
 pub(crate) async fn upsert_state_hash_for_block(
     db_txn: &mut Transaction<'_, Postgres>,
     chain_id: i64,
     block_number: i64,
+    gcs_active: bool,
 ) -> Result<(), ExecutionError> {
+    let (ciphertexts_source, state_hash_table) = if gcs_active {
+        ("ONLY ciphertexts_staging", "state_hash_staging")
+    } else {
+        ("ONLY ciphertexts", "state_hash")
+    };
+
     // From zkproof-worker's perspective the state at this block is the set of
     // input ciphertexts it just materialised, so the hash is computed over
     // `input_handles` for the block rather than over `computations` outputs.
-    let row: Option<(Option<String>, i64)> = sqlx::query_as(
+    let select_sql = format!(
         "SELECT
             encode(
                 sha256(
@@ -733,28 +870,31 @@ pub(crate) async fn upsert_state_hash_for_block(
             ) AS state_hash,
             COUNT(*) AS ciphertext_count
         FROM input_handles ih
-        JOIN ciphertexts ct ON ct.handle = ih.handle
-        WHERE ih.block_number = $1",
-    )
-    .bind(block_number)
-    .fetch_optional(db_txn.as_mut())
-    .await?;
+        JOIN {ciphertexts_source} ct ON ct.handle = ih.handle
+        WHERE ih.block_number = $1"
+    );
+    let row: Option<(Option<String>, i64)> = sqlx::query_as(&select_sql)
+        .bind(block_number)
+        .fetch_optional(db_txn.as_mut())
+        .await?;
 
     if let Some((Some(state_hash), _count)) = row {
-        sqlx::query(
-            "INSERT INTO state_hash (chain_id, block_number, state_hash)
+        let insert_sql = format!(
+            "INSERT INTO {state_hash_table} (chain_id, block_number, state_hash)
              VALUES ($1, $2, $3)
-             ON CONFLICT (chain_id, block_number) DO NOTHING",
-        )
-        .bind(chain_id)
-        .bind(block_number)
-        .bind(&state_hash)
-        .execute(db_txn.as_mut())
-        .await?;
+             ON CONFLICT (chain_id, block_number) DO NOTHING"
+        );
+        sqlx::query(&insert_sql)
+            .bind(chain_id)
+            .bind(block_number)
+            .bind(&state_hash)
+            .execute(db_txn.as_mut())
+            .await?;
         info!(
             chain_id,
             block_number,
             state_hash = %state_hash,
+            table = state_hash_table,
             "inserted state_hash for block"
         );
     }

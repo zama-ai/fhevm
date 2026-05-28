@@ -5,7 +5,7 @@
 //! `unanimity_consensus` channel is produced by `consensus-detector` once every
 //! operator publishes the same state commitment at the upgrade's `end_block`.
 
-use std::{fmt, str::FromStr, time::Duration};
+use std::time::Duration;
 
 use fhevm_engine_common::utils::DatabaseURL;
 use serde::Deserialize;
@@ -22,9 +22,17 @@ pub const UNANIMITY_CONSENSUS_CHANNEL: &str = "event_unanimity_consensus";
 /// names emitted by `host-listener::ingest_block_logs` and the FHE workers.
 pub const NEW_BLOCK_CHANNEL: &str = "event_new_block";
 pub const EVENT_CIPHERTEXT_COMPUTED_CHANNEL: &str = "event_ciphertext_computed";
-/// Emitted once GCS transitions to `DryRunStarted`. Consumed by the GCS-side
-/// host-listener / gw-listener to flip them out of `--paused`.
+/// Emitted once GCS transitions to `DryRunStarted`, and again from
+/// `execute_cutover` after the cutover tx commits (with `stack_role="GCS"`).
+/// Consumed by the GCS-side host-listener / gw-listener / tfhe-worker to flip
+/// them out of `--paused`.
 pub const UNPAUSE_CHANNEL: &str = "event_unpause";
+/// Emitted from `execute_cutover` after the cutover tx commits (with
+/// `stack_role="BCS"`). Consumed by the BCS-side services to stop processing.
+/// The BCS tfhe-worker also exits its cycle by observing `state='PAUSED'` on
+/// the FSM row under the shared cutover lock; this notify is the wake-up
+/// signal so listeners don't have to wait for their next FSM re-read.
+pub const PAUSE_CHANNEL: &str = "event_pause";
 
 /// Number of host-chain blocks below `start_block` whose computations must
 /// also be fully settled before GCS can leave `UpgradeActivated`. Hard-coded
@@ -38,46 +46,13 @@ const READINESS_CONFIRMATIONS: i64 = 10;
 /// recognizable in logs (`hex(0x46484556_43555456) == "FHEV" || "CUTV"`).
 pub const CUTOVER_LOCK_ID: i64 = 0x4648_4556_4355_5456;
 
-/// Which stack this service instance represents. Maps 1:1 to the
-/// `upgrade_state.stack_role` column.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum InitialMode {
-    /// "bcs" — base coprocessor stack (default)
-    #[default]
-    Bcs,
-    /// "gcs" — green coprocessor stack
-    Gcs,
-}
-
-impl InitialMode {
-    pub fn stack_role(self) -> &'static str {
-        match self {
-            InitialMode::Bcs => "BCS",
-            InitialMode::Gcs => "GCS",
-        }
-    }
-}
-
-impl fmt::Display for InitialMode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            InitialMode::Bcs => write!(f, "bcs"),
-            InitialMode::Gcs => write!(f, "gcs"),
-        }
-    }
-}
-
-impl FromStr for InitialMode {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_ascii_lowercase().as_str() {
-            "bcs" => Ok(InitialMode::Bcs),
-            "gcs" => Ok(InitialMode::Gcs),
-            other => Err(format!(
-                "invalid initial_mode '{other}', expected 'bcs' or 'gcs'"
-            )),
-        }
+/// Returns the `upgrade_state.stack_role` value for a given `gcs_mode` flag:
+/// `true` → `"GCS"` (green), `false` (default) → `"BCS"` (blue).
+pub fn stack_role(gcs_mode: bool) -> &'static str {
+    if gcs_mode {
+        "GCS"
+    } else {
+        "BCS"
     }
 }
 
@@ -86,7 +61,11 @@ pub struct Config {
     pub service_name: String,
     pub database_url: DatabaseURL,
     pub database_pool_size: u32,
-    pub initial_mode: InitialMode,
+    /// When true, the service operates as the Green Coprocessor Stack (GCS) —
+    /// it gates `execute_cutover` and runs the GCS-side dry-run readiness loop.
+    /// When false (default), it operates as the Blue Coprocessor Stack (BCS).
+    /// Mirrors the `--gcs-mode` flag used by the other coprocessor services.
+    pub gcs_mode: bool,
     pub log_level: Level,
     /// Fallback poll interval used while waiting for notifications, so a missed
     /// NOTIFY (e.g. dropped connection) still gets re-checked eventually.
@@ -99,7 +78,7 @@ impl Default for Config {
             service_name: "upgrade-controller".to_owned(),
             database_url: DatabaseURL::default(),
             database_pool_size: 4,
-            initial_mode: InitialMode::default(),
+            gcs_mode: false,
             log_level: Level::INFO,
             poll_interval: Duration::from_secs(30),
         }
@@ -172,14 +151,14 @@ fn decode_hex(s: &str) -> Result<Vec<u8>, Error> {
 pub async fn handle_upgrade_activated(
     pool: &Pool<Postgres>,
     cancel: &CancellationToken,
-    mode: InitialMode,
+    gcs_mode: bool,
     raw_payload: &str,
 ) -> Result<(), Error> {
     let payload: UpgradeActivatedPayload =
         serde_json::from_str(raw_payload).map_err(|e| Error::Payload(e.to_string()))?;
 
     let proposal_id_bytes = decode_hex(&payload.proposal_id)?;
-    let stack_role = mode.stack_role();
+    let stack_role = stack_role(gcs_mode);
 
     info!(
         stack_role,
@@ -224,7 +203,7 @@ pub async fn handle_upgrade_activated(
 
     // Only GCS gates on the pre-snapshot completeness check; BCS keeps
     // serving live traffic untouched until cutover.
-    if mode == InitialMode::Gcs {
+    if gcs_mode {
         let pool = pool.clone();
         let cancel = cancel.child_token();
         let chain_id = payload.chain_id;
@@ -364,7 +343,7 @@ async fn wait_until_dry_run_ready(
             recv = listener.recv() => {
                 match recv {
                     Ok(notification) => {
-                        debug!(channel = notification.channel(), "readiness loop trigger");
+                        info!(channel = notification.channel(), "readiness loop trigger");
                     }
                     Err(e) => {
                         warn!(error = %e, "readiness listener recv error; sleeping before retry");
@@ -450,7 +429,27 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         .bind(CUTOVER_LOCK_ID)
         .execute(&mut *tx)
         .await?;
-    info!(lock_id = CUTOVER_LOCK_ID, "cutover acquired exclusive advisory lock");
+    info!(
+        lock_id = CUTOVER_LOCK_ID,
+        "cutover acquired exclusive advisory lock"
+    );
+
+    // 0. Refuse a no-op upgrade. If `new_ciphertext_version` equals the current
+    //    `versioning.ciphertext_version`, the parent PK (tenant_id, handle,
+    //    ciphertext_version) is shared between staging and parent rows for the
+    //    same handle, and the merge would collide. A real upgrade always bumps
+    //    the version; this guard makes the failure mode loud rather than
+    //    silently overwriting parent rows.
+    let (current_ciphertext_version,): (i16,) =
+        sqlx::query_as("SELECT ciphertext_version FROM versioning WHERE singleton = TRUE")
+            .fetch_one(&mut *tx)
+            .await?;
+    if new_ciphertext_version == current_ciphertext_version {
+        return Err(Error::Payload(format!(
+            "refusing cutover: new ciphertext_version ({new_ciphertext_version}) equals \
+             current versioning.ciphertext_version — upgrades must bump the version"
+        )));
+    }
 
     // 1. Drop BCS-produced rows for post-snapshot blocks from the parent.
     //    Filter on the current (still-old) ciphertext_version in versioning.
@@ -465,7 +464,10 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     .bind(start_block)
     .execute(&mut *tx)
     .await?;
-    info!(deleted = deleted.rows_affected(), start_block, "purged BCS post-snapshot ciphertexts");
+    info!(
+        deleted = deleted.rows_affected(),
+        start_block, "purged BCS post-snapshot ciphertexts"
+    );
 
     // 2. Promote the new version BEFORE inserting staging rows so the
     //    enforce_ciphertext_version() trigger lets the new-version rows through.
@@ -484,22 +486,65 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     );
 
     // 3. Merge staging → parent for all three table families and drop staging.
+    //    `ciphertexts` re-stamps `ciphertext_version` with the upgrade target
+    //    so the `enforce_ciphertext_version` trigger accepts the rows
+    //    regardless of what the GCS worker binary's `current_ciphertext_version()`
+    //    was at write time — the `versioning` singleton is the source of truth,
+    //    not the worker. The other two tables have no version column / no trigger.
+    //
+    //    `ON CONFLICT DO UPDATE` lets staging win on PK collisions. Step 1's
+    //    DELETE only purges parent rows whose handle has a `computations` row
+    //    with `block_number >= start_block`; any staging row whose `computations`
+    //    row is missing or doesn't satisfy that predicate would otherwise
+    //    collide with a pre-existing parent row. GCS is the canonical writer
+    //    for its window, so staging wins.
+    let merged = sqlx::query(
+        "INSERT INTO ciphertexts
+             (tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type,
+              input_blob_hash, input_blob_index, created_at, ciphertext128, is_input)
+         SELECT tenant_id, handle, ciphertext, $1::smallint, ciphertext_type,
+                input_blob_hash, input_blob_index, created_at, ciphertext128, is_input
+         FROM ciphertexts_staging
+         ON CONFLICT (tenant_id, handle, ciphertext_version) DO UPDATE
+         SET ciphertext       = EXCLUDED.ciphertext,
+             ciphertext_type  = EXCLUDED.ciphertext_type,
+             input_blob_hash  = EXCLUDED.input_blob_hash,
+             input_blob_index = EXCLUDED.input_blob_index,
+             created_at       = EXCLUDED.created_at,
+             ciphertext128    = EXCLUDED.ciphertext128,
+             is_input         = EXCLUDED.is_input",
+    )
+    .bind(new_ciphertext_version)
+    .execute(&mut *tx)
+    .await?;
+    info!(
+        merged = merged.rows_affected(),
+        ciphertext_version = new_ciphertext_version,
+        "merged ciphertexts_staging into ciphertexts"
+    );
+
+    //
+    // sqlx::query("TRUNCATE TABLE ciphertexts_staging")
+    //    .execute(&mut *tx)
+    //    .await?;
+    info!("truncated staging table ciphertexts_staging");
+
     for (parent, staging) in [
-        ("ciphertexts", "ciphertexts_staging"),
         ("ciphertexts128", "ciphertexts128_staging"),
         ("state_hash", "state_hash_staging"),
     ] {
-        let merged = sqlx::query(&format!(
-            "INSERT INTO ONLY {parent} SELECT * FROM {staging}"
-        ))
-        .execute(&mut *tx)
-        .await?;
-        info!(merged = merged.rows_affected(), parent, staging, "merged staging into parent");
-
-        sqlx::query(&format!("DROP TABLE {staging}"))
+        let merged = sqlx::query(&format!("INSERT INTO {parent} SELECT * FROM {staging}"))
             .execute(&mut *tx)
             .await?;
-        info!(staging, "dropped staging table");
+        info!(
+            merged = merged.rows_affected(),
+            parent, staging, "merged staging into parent"
+        );
+
+        // TODO: sqlx::query(&format!("DROP TABLE {staging}"))
+        //    .execute(&mut *tx)
+        //   .await?;
+        // info!(staging, "dropped staging table");
     }
 
     // 4. Flip FSM rows.
@@ -518,13 +563,42 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     .execute(&mut *tx)
     .await?;
 
+    // 5. Queue pause/unpause notifies. NOTIFY messages are delivered on commit,
+    //    so this is atomic with the FSM flip — listeners only see the wake-up
+    //    if the cutover actually committed.
+    let pause_payload = serde_json::json!({
+        "stack_role": "BCS",
+        "ciphertext_version": new_ciphertext_version,
+    })
+    .to_string();
+    sqlx::query("SELECT pg_notify($1, $2)")
+        .bind(PAUSE_CHANNEL)
+        .bind(&pause_payload)
+        .execute(&mut *tx)
+        .await?;
+    let unpause_payload = serde_json::json!({
+        "stack_role": "GCS",
+        "ciphertext_version": new_ciphertext_version,
+    })
+    .to_string();
+    sqlx::query("SELECT pg_notify($1, $2)")
+        .bind(UNPAUSE_CHANNEL)
+        .bind(&unpause_payload)
+        .execute(&mut *tx)
+        .await?;
+
     tx.commit().await?;
-    info!("execute_cutover() committed");
+    info!(
+        channel_pause = PAUSE_CHANNEL,
+        channel_unpause = UNPAUSE_CHANNEL,
+        ciphertext_version = new_ciphertext_version,
+        "execute_cutover() committed; pause/unpause notifies delivered"
+    );
     Ok(())
 }
 
 /// Handle an `event_unanimity_consensus` notification. The cutover is gated on:
-///   - service started with `initial_mode = gcs`, AND
+///   - service started with `--gcs-mode` (i.e. `gcs_mode = true`), AND
 ///   - current `upgrade_state` row for stack_role='GCS' is in state
 ///     'DryRunStarted', AND
 ///   - the payload's `block_height` is within the FSM row's
@@ -536,16 +610,13 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
 /// of the notify becomes a no-op.
 pub async fn handle_unanimity_consensus(
     pool: &Pool<Postgres>,
-    mode: InitialMode,
+    gcs_mode: bool,
     raw_payload: &str,
 ) -> Result<(), Error> {
     info!("event_unanimity_consensus received — checking conditions for cutover execution");
 
-    if mode != InitialMode::Gcs {
-        debug!(
-            mode = %mode,
-            "event_unanimity_consensus: service not in gcs mode, ignoring"
-        );
+    if !gcs_mode {
+        debug!("event_unanimity_consensus: service not in gcs mode, ignoring");
         return Ok(());
     }
 
@@ -644,7 +715,7 @@ pub async fn run(
 ) -> anyhow::Result<()> {
     info!(
         service_name = %config.service_name,
-        initial_mode = %config.initial_mode,
+        gcs_mode = config.gcs_mode,
         "Starting upgrade-controller"
     );
 
@@ -676,12 +747,12 @@ pub async fn run(
 
                         let result = match channel {
                             UPGRADE_ACTIVATED_CHANNEL => {
-                                handle_upgrade_activated(&pool, &cancel, config.initial_mode, payload).await
+                                handle_upgrade_activated(&pool, &cancel, config.gcs_mode, payload).await
                             }
                             UNANIMITY_CONSENSUS_CHANNEL => {
                                 // Emitted by consensus-detector when every operator publishes
                                 // the same state commitment at the upgrade's end_block.
-                                handle_unanimity_consensus(&pool, config.initial_mode, payload).await
+                                handle_unanimity_consensus(&pool, config.gcs_mode, payload).await
                             }
                             other => {
                                 warn!(channel = other, "ignoring notification on unexpected channel");

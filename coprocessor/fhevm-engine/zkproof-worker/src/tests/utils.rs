@@ -8,6 +8,7 @@ use fhevm_engine_common::utils::{safe_deserialize_conformant, safe_serialize};
 use sha3::Digest;
 use sha3::Keccak256;
 use sqlx::Row;
+use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use test_harness::instance::{DBInstance, ImportMode};
@@ -33,6 +34,7 @@ pub async fn setup() -> anyhow::Result<(PostgresPoolManager, DBInstance)> {
         worker_thread_count: 1,
         pg_timeout: Duration::from_secs(15),
         pg_auto_explain_with_min_duration: None,
+        gcs_mode: false,
     };
 
     let pool_mngr = PostgresPoolManager::connect_pool(
@@ -54,11 +56,19 @@ pub async fn setup() -> anyhow::Result<(PostgresPoolManager, DBInstance)> {
         .unwrap();
 
     let last_active_at = Arc::new(RwLock::new(SystemTime::now()));
+    // GCS is disabled in tests; the activation watcher is never spawned and
+    // the start_block_state sentinel stays in place.
+    let start_block_state = Arc::new(AtomicI64::new(-1));
 
     tokio::spawn(async move {
-        crate::verifier::execute_verify_proofs_loop(pmngr, conf.clone(), last_active_at.clone())
-            .await
-            .unwrap();
+        crate::verifier::execute_verify_proofs_loop(
+            pmngr,
+            conf.clone(),
+            last_active_at.clone(),
+            start_block_state,
+        )
+        .await
+        .unwrap();
     });
 
     sleep(Duration::from_secs(2)).await;

@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::Future;
+use std::sync::atomic::AtomicI64;
+use std::sync::Arc;
 
 use alloy::primitives::Address;
 use alloy::rpc::types::Log;
@@ -13,6 +15,7 @@ use crate::cmd::block_history::{BlockHash, BlockSummary};
 use crate::cmd::InfiniteLogIter;
 use crate::contracts::{AclContract, KMSGeneration, TfheContract};
 use crate::database::dependence_chains::dependence_chains;
+use crate::database::gcs_activation;
 use crate::database::tfhe_event_propagate::{
     acl_result_handles, tfhe_result_handle, Chain, ChainHash, Database, LogTfhe,
 };
@@ -26,16 +29,34 @@ pub struct BlockLogs<T> {
     pub finalized: bool,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct IngestOptions {
     pub dependence_by_connexity: bool,
     pub dependence_cross_block: bool,
     pub dependent_ops_max_per_chain: u32,
-    /// When true, the listener runs in GCS mode and starts paused: only the
-    /// `UpgradeActivated` ProtocolConfig event is acted on; all TFHE / ACL /
-    /// KMS-generation events in the block are skipped. Used by the GCS stack
-    /// during the blue/green upgrade flow before cutover.
+    /// When true, the listener runs in GCS mode. Behavior depends on
+    /// `gcs_start_block`:
+    ///   - sentinel (`GCS_NOT_ACTIVATED`): the listener is paused — only the
+    ///     `UpgradeActivated` ProtocolConfig event is acted on; all TFHE /
+    ///     ACL / KMS-generation events in the block are skipped.
+    ///   - real start_block: the listener is activated — events are
+    ///     processed normally but `computations` writes are routed to
+    ///     `computations_staging` instead of the parent table.
+    /// When false (default), writes go to the parent tables.
     pub gcs_mode: bool,
+    /// Shared activation state populated by `gcs_activation::watch_gcs_activation`.
+    /// Holds `GCS_NOT_ACTIVATED` until the watcher observes a real start_block.
+    /// Unused when `gcs_mode = false`.
+    pub gcs_start_block: Arc<AtomicI64>,
+}
+
+impl IngestOptions {
+    /// Returns true iff the listener was started with `--gcs-mode` AND the
+    /// activation watcher has populated a real start_block. When true, all
+    /// new computations rows are routed to `computations_staging`.
+    pub fn gcs_active(&self) -> bool {
+        self.gcs_mode && gcs_activation::is_active(&self.gcs_start_block)
+    }
 }
 
 /// Converts a block timestamp to a UTC `PrimitiveDateTime`.
@@ -186,15 +207,17 @@ pub async fn ingest_block_logs(
         .execute(&mut *tx)
         .await?;
 
-    // GCS mode: the listener starts paused — only the ProtocolConfig
-    // `UpgradeActivated` event is acted on. TFHE/ACL/KMS events are skipped.
-    // The contract binding for `UpgradeActivated` is not yet implemented —
-    // the loop below is a placeholder that the upgrade FSM work will fill in.
-    if options.gcs_mode {
+    // GCS mode, pre-activation: the listener starts paused — only the
+    // ProtocolConfig `UpgradeActivated` event is acted on. TFHE/ACL/KMS
+    // events are skipped. Once the activation watcher populates
+    // `gcs_start_block`, this branch is skipped and the events are processed
+    // below, with writes routed to `computations_staging`.
+    let gcs_active = options.gcs_active();
+    if options.gcs_mode && !gcs_active {
         info!(
             block_number = block_logs.summary.number,
             nb_logs = block_logs.logs.len(),
-            "Listener in --gcs-mode (paused) — only UpgradeActivated will be processed"
+            "Listener in --gcs-mode (paused, not yet activated) — only UpgradeActivated will be processed"
         );
         for log in &block_logs.logs {
             // TODO(upgrade): decode ProtocolConfig::UpgradeActivated from
@@ -335,7 +358,7 @@ pub async fn ingest_block_logs(
     let slow_lane_enabled = options.dependent_ops_max_per_chain > 0;
     let mut dependent_ops_by_chain: HashMap<ChainHash, u64> = HashMap::new();
     for tfhe_log in tfhe_event_log {
-        let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
+        let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log, gcs_active).await?;
         at_least_one_insertion |= inserted;
         // Count all newly inserted ops per chain to avoid underestimating
         // pressure from producer paths that are required by downstream work.

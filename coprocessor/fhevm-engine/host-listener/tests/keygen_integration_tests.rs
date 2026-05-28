@@ -443,6 +443,7 @@ where
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
         gcs_mode: false,
+        gcs_start_block: std::sync::Arc::new(std::sync::atomic::AtomicI64::new(-1)),
     };
 
     ingest_block_logs(

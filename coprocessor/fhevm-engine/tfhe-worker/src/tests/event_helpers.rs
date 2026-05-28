@@ -129,7 +129,7 @@ pub async fn insert_event(
         tx_depth_size: 0,
         log_index: log.log_index,
     };
-    listener_db.insert_tfhe_event(tx, &event).await?;
+    listener_db.insert_tfhe_event(tx, &event, false).await?;
     Ok(())
 }
 

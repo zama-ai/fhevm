@@ -331,6 +331,7 @@ impl Database {
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
         log: &LogTfhe,
+        gcs_active: bool,
     ) -> Result<bool, SqlxError> {
         let dependencies_handles = dependencies_handles
             .iter()
@@ -344,6 +345,7 @@ impl Database {
             fhe_operation,
             scalar_byte,
             log,
+            gcs_active,
         )
         .await
     }
@@ -357,6 +359,7 @@ impl Database {
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
         log: &LogTfhe,
+        gcs_active: bool,
     ) -> Result<bool, SqlxError> {
         let dependencies =
             dependencies.iter().map(|d| d.to_vec()).collect::<Vec<_>>();
@@ -367,6 +370,7 @@ impl Database {
             fhe_operation,
             scalar_byte,
             log,
+            gcs_active,
         )
         .await
     }
@@ -380,12 +384,22 @@ impl Database {
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
         log: &LogTfhe,
+        gcs_active: bool,
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
-        let query = sqlx::query!(
+        // In GCS mode (post-activation) all new computations land in the
+        // staging child table; BCS keeps writing to the parent. Both share
+        // the same `(output_handle, transaction_id)` unique constraint so
+        // ON CONFLICT semantics are preserved.
+        let computations_table = if gcs_active {
+            "computations_staging"
+        } else {
+            "computations"
+        };
+        let sql = format!(
             r#"
-            INSERT INTO computations (
+            INSERT INTO {computations_table} (
                 output_handle,
                 dependencies,
                 fhe_operation,
@@ -401,23 +415,24 @@ impl Database {
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11)
             ON CONFLICT (output_handle, transaction_id) DO NOTHING
-            "#,
-            output_handle,
-            &dependencies,
-            fhe_operation as i16,
-            is_scalar,
-            log.dependence_chain.to_vec(),
-            log.transaction_hash.map(|txh| txh.to_vec()),
-            log.is_allowed,
-            log.block_timestamp
-                .saturating_add(TimeDuration::microseconds(
-                    log.tx_depth_size as i64
-                )),
-            !log.is_allowed,
-            self.chain_id.as_i64(),
-            log.block_number as i64
+            "#
         );
-        query
+        sqlx::query(&sql)
+            .bind(output_handle)
+            .bind(&dependencies)
+            .bind(fhe_operation as i16)
+            .bind(is_scalar)
+            .bind(log.dependence_chain.to_vec())
+            .bind(log.transaction_hash.map(|txh| txh.to_vec()))
+            .bind(log.is_allowed)
+            .bind(
+                log.block_timestamp.saturating_add(
+                    TimeDuration::microseconds(log.tx_depth_size as i64),
+                ),
+            )
+            .bind(!log.is_allowed)
+            .bind(self.chain_id.as_i64())
+            .bind(log.block_number as i64)
             .execute(tx.deref_mut())
             .await
             .map(|result| result.rows_affected() > 0)
@@ -429,6 +444,7 @@ impl Database {
         &self,
         tx: &mut Transaction<'_>,
         log: &LogTfhe,
+        gcs_active: bool,
     ) -> Result<bool, SqlxError> {
         use TfheContract as C;
         use TfheContractEvents as E;
@@ -445,10 +461,10 @@ impl Database {
             log.transaction_hash.as_ref(),
         );
         let insert_computation = |tx, result, dependencies, scalar_byte| {
-            self.insert_computation(tx, result, dependencies, fhe_operation, scalar_byte, log)
+            self.insert_computation(tx, result, dependencies, fhe_operation, scalar_byte, log, gcs_active)
         };
         let insert_computation_bytes = |tx, result, dependencies_handles, dependencies_bytes, scalar_byte| {
-            self.insert_computation_bytes(tx, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
+            self.insert_computation_bytes(tx, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log, gcs_active)
         };
 
         // Record the transaction if this is a computation event

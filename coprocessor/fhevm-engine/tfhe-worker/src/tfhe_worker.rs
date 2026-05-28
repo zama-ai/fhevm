@@ -13,7 +13,7 @@ use scheduler::dfg::types::{CompressedCiphertext, DFGTxInput, SchedulerError};
 use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp};
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
 use sqlx::types::Uuid;
-use sqlx::{postgres::PgListener, query, Acquire, Pool, Postgres};
+use sqlx::{postgres::PgListener, Acquire, Pool, Postgres};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
@@ -29,7 +29,7 @@ const EVENT_UPGRADE_ACTIVATED: &str = "event_upgrade_activated";
 /// Sentinel for `start_block_state`: the GCS row in `upgrade_state` has not
 /// been observed yet (the worker is paused). Any non-sentinel value is the
 /// real start_block.
-const GCS_NOT_ACTIVATED: i64 = i64::MIN;
+const GCS_NOT_ACTIVATED: i64 = -1i64;
 
 /// PostgreSQL advisory-lock key used to serialize cutover against in-flight
 /// BCS writes. Must match `upgrade_controller::CUTOVER_LOCK_ID`. The BCS
@@ -39,6 +39,20 @@ const CUTOVER_LOCK_ID: i64 = 0x4648_4556_4355_5456;
 
 lazy_static! {
     pub static ref TIMING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+}
+
+/// Row shape returned by the `query_for_work` SQL. Declared explicitly (rather
+/// than via `query!`) because the table name is selected at runtime — BCS
+/// reads `ONLY computations`, GCS reads `ONLY computations_staging`.
+#[derive(sqlx::FromRow)]
+struct WorkItemRow {
+    output_handle: Vec<u8>,
+    dependencies: Vec<Vec<u8>>,
+    fhe_operation: i16,
+    is_scalar: bool,
+    is_allowed: bool,
+    transaction_id: Vec<u8>,
+    schedule_order: PrimitiveDateTime,
 }
 
 lazy_static! {
@@ -114,9 +128,13 @@ pub async fn run_tfhe_worker(
 
     loop {
         // here we log the errors and make sure we retry
-        if let Err(cycle_error) =
-            tfhe_worker_cycle(&args, worker_id, start_block_state.clone(), health_check.clone())
-                .await
+        if let Err(cycle_error) = tfhe_worker_cycle(
+            &args,
+            worker_id,
+            start_block_state.clone(),
+            health_check.clone(),
+        )
+        .await
         {
             WORKER_ERRORS_COUNTER.inc();
             error!(target: "tfhe_worker", { error = cycle_error }, "Error in background worker, retrying shortly");
@@ -138,11 +156,10 @@ async fn watch_gcs_activation(
     info!(target: "tfhe_worker", channel = EVENT_UPGRADE_ACTIVATED, "GCS activation watcher listening");
 
     loop {
-        let row: Option<(Option<i64>,)> = sqlx::query_as(
-            "SELECT start_block FROM upgrade_state WHERE stack_role = 'GCS'",
-        )
-        .fetch_optional(pool)
-        .await?;
+        let row: Option<(Option<i64>,)> =
+            sqlx::query_as("SELECT start_block FROM upgrade_state WHERE stack_role = 'GCS'")
+                .fetch_optional(pool)
+                .await?;
 
         if let Some((Some(start_block),)) = row {
             let prev = state.swap(start_block, Ordering::SeqCst);
@@ -150,7 +167,7 @@ async fn watch_gcs_activation(
                 info!(
                     target: "tfhe_worker",
                     start_block,
-                    prev = if prev == GCS_NOT_ACTIVATED { i64::MIN } else { prev },
+                    prev,
                     "GCS start_block updated from upgrade_state"
                 );
             }
@@ -264,11 +281,10 @@ async fn tfhe_worker_cycle(
                 .bind(CUTOVER_LOCK_ID)
                 .execute(&mut *trx)
                 .await?;
-            let bcs_state: Option<(String,)> = sqlx::query_as(
-                "SELECT state FROM upgrade_state WHERE stack_role = 'BCS'",
-            )
-            .fetch_optional(&mut *trx)
-            .await?;
+            let bcs_state: Option<(String,)> =
+                sqlx::query_as("SELECT state FROM upgrade_state WHERE stack_role = 'BCS'")
+                    .fetch_optional(&mut *trx)
+                    .await?;
             if let Some((state,)) = bcs_state {
                 if matches!(state.as_str(), "UpgradeAuthorized" | "PAUSED") {
                     info!(target: "tfhe_worker", bcs_state = %state, "Cutover authorized or completed — BCS worker exiting cycle");
@@ -346,15 +362,14 @@ async fn tfhe_worker_cycle(
         )
         .instrument(loop_span.clone())
         .await?;
-        let has_progressed =
-            upload_transaction_graph_results(
-                &mut tx_graph,
-                &mut trx,
-                &mut dcid_mngr,
-                start_block_height,
-            )
-                .instrument(loop_span.clone())
-                .await?;
+        let has_progressed = upload_transaction_graph_results(
+            &mut tx_graph,
+            &mut trx,
+            &mut dcid_mngr,
+            start_block_height,
+        )
+        .instrument(loop_span.clone())
+        .await?;
         if has_progressed {
             no_progress_cycles = 0;
         } else {
@@ -413,14 +428,15 @@ async fn query_ciphertexts<'a>(
     // In GCS mode, collect the handles whose producing computation is strictly
     // below `start_block` (pre-snapshot, owned by BCS). Handles at or above
     // `start_block` are owned by GCS and must come from the staging table.
-    // This query should not be executed in BCS mode to avoid any overhead.
-    let pre_snapshot_handles: std::collections::HashSet<Vec<u8>> = if let Some(
-        start_block_height,
-    ) = start_block_height
+    // This query intentionally reads `FROM ONLY computations` — the BCS parent —
+    // because pre-snapshot rows live there by definition. It should not be
+    // executed in BCS mode to avoid any overhead.
+    let pre_snapshot_handles: std::collections::HashSet<Vec<u8>> = if let Some(start_block_height) =
+        start_block_height
     {
         let rows: Vec<(Vec<u8>,)> = sqlx::query_as(
                 "SELECT output_handle
-                 FROM computations
+                 FROM ONLY computations
                  WHERE output_handle = ANY($1::BYTEA[])
                    AND block_number < $2",
             )
@@ -508,25 +524,31 @@ async fn query_for_work<'a>(
     let s_work = tracing::info_span!("query_work_items", count = tracing::field::Empty);
     let transaction_batch_size = args.work_items_batch_size;
     let started_at = SystemTime::now();
-    let the_work = query!(
-        "
--- Acquire all computations from a transaction set
+    // In GCS mode the worker owns rows in `computations_staging`; BCS owns
+    // the parent. `ONLY` keeps each stack confined to its own table even
+    // though inheritance would otherwise surface the other side's rows.
+    let computations_table = if args.gcs_mode {
+        "ONLY computations_staging"
+    } else {
+        "ONLY computations"
+    };
+    let work_sql = format!(
+        "-- Acquire all computations from a transaction set
 SELECT
-  c.output_handle, 
-  c.dependencies, 
-  c.fhe_operation, 
+  c.output_handle,
+  c.dependencies,
+  c.fhe_operation,
   c.is_scalar,
-  c.is_allowed, 
-  c.dependence_chain_id,
+  c.is_allowed,
   c.transaction_id,
   c.schedule_order
-FROM computations c
+FROM {computations_table} c
 WHERE c.transaction_id IN (
     SELECT DISTINCT
       c_schedule_order.transaction_id
     FROM (
       SELECT transaction_id
-      FROM computations 
+      FROM {computations_table}
       WHERE is_completed = FALSE
         AND is_error = FALSE
         AND is_allowed = TRUE
@@ -534,18 +556,18 @@ WHERE c.transaction_id IN (
       ORDER BY schedule_order ASC
       LIMIT $2
     ) as c_schedule_order
-  )
-        ",
-        dependence_chain_id,
-        transaction_batch_size as i32,
-    )
-    .fetch_all(trx.as_mut())
-    .instrument(s_work.clone())
-    .await
-    .map_err(|err| {
-        error!(target: "tfhe_worker", { error = %err }, "error while querying work items");
-        err
-    })?;
+  )"
+    );
+    let the_work: Vec<WorkItemRow> = sqlx::query_as(&work_sql)
+        .bind(&dependence_chain_id)
+        .bind(transaction_batch_size as i32)
+        .fetch_all(trx.as_mut())
+        .instrument(s_work.clone())
+        .await
+        .map_err(|err| {
+            error!(target: "tfhe_worker", { error = %err }, "error while querying work items");
+            err
+        })?;
 
     WORK_ITEMS_QUERY_HISTOGRAM.observe(started_at.elapsed().unwrap_or_default().as_secs_f64());
     s_work.record("count", the_work.len());
@@ -583,6 +605,7 @@ WHERE c.transaction_id IN (
                             &e,
                             trx,
                             deps_chain_mngr,
+                            args.gcs_mode,
                         )
                         .await?;
                         continue;
@@ -788,6 +811,7 @@ async fn upload_transaction_graph_results<'a>(
                     &*cerr,
                     trx,
                     deps_mngr,
+                    gcs_mode_enabled,
                 )
                 .await?;
             }
@@ -796,13 +820,15 @@ async fn upload_transaction_graph_results<'a>(
     // In GCS mode, skip any result whose producing computation is strictly
     // below `start_block` — those handles are already covered by the BCS state
     // at the snapshot block and must not be re-stored into ciphertexts_staging.
+    // Reads `FROM ONLY computations` because pre-snapshot rows live only in
+    // the BCS parent table.
     if let Some(start_block_height) = start_block_height {
         if !cts_to_insert.is_empty() {
             let candidate_handles: Vec<Vec<u8>> =
                 cts_to_insert.iter().map(|(h, _)| h.clone()).collect();
             let pre_snapshot_handles: std::collections::HashSet<Vec<u8>> = sqlx::query_as(
                 "SELECT output_handle
-                 FROM computations
+                 FROM ONLY computations
                  WHERE output_handle = ANY($1::BYTEA[])
                    AND block_number < $2",
             )
@@ -861,25 +887,33 @@ async fn upload_transaction_graph_results<'a>(
 
     if !handles_to_update.is_empty() {
         let s_update = tracing::info_span!("update_computation", count = handles_to_update.len());
+        // GCS owns rows in `computations_staging`; BCS owns the parent. `ONLY`
+        // keeps each stack confined to its own table — without it, an UPDATE
+        // against the parent would cascade into the staging child via
+        // inheritance.
+        let computations_update_table = if gcs_mode_enabled {
+            "ONLY computations_staging"
+        } else {
+            "ONLY computations"
+        };
         let comp_updated = async {
             let (handles_vec, txn_ids_vec): (Vec<_>, Vec<_>) = handles_to_update.into_iter().unzip();
-            let comp_updated = query!(
-                "
-            UPDATE computations
-            SET is_completed = true, completed_at = CURRENT_TIMESTAMP
-            WHERE is_completed = false
-            AND (output_handle, transaction_id) IN (
-                SELECT * FROM unnest($1::BYTEA[], $2::BYTEA[])
-            )
-            ",
-                &handles_vec,
-                &txn_ids_vec
-            )
-            .execute(trx.as_mut())
-            .await.map_err(|err| {
-                error!(target: "tfhe_worker", { error = %err }, "error while updating computations as completed");
-                err
-            })?.rows_affected();
+            let update_sql = format!(
+                "UPDATE {computations_update_table}
+                 SET is_completed = true, completed_at = CURRENT_TIMESTAMP
+                 WHERE is_completed = false
+                   AND (output_handle, transaction_id) IN (
+                       SELECT * FROM unnest($1::BYTEA[], $2::BYTEA[])
+                   )"
+            );
+            let comp_updated = sqlx::query(&update_sql)
+                .bind(&handles_vec)
+                .bind(&txn_ids_vec)
+                .execute(trx.as_mut())
+                .await.map_err(|err| {
+                    error!(target: "tfhe_worker", { error = %err }, "error while updating computations as completed");
+                    err
+                })?.rows_affected();
 
             if comp_updated > 0 {
                 upsert_state_hash_for_completed_blocks(
@@ -919,33 +953,38 @@ async fn upsert_state_hash_for_completed_blocks<'a>(
     start_block_height: Option<i64>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let gcs_mode_enabled = start_block_height.is_some();
-    let (ciphertexts_source, state_hash_table) = if gcs_mode_enabled {
-        ("ONLY ciphertexts_staging", "state_hash_staging")
+    let (ciphertexts_source, state_hash_table, computations_source) = if gcs_mode_enabled {
+        (
+            "ONLY ciphertexts_staging",
+            "state_hash_staging",
+            "ONLY computations_staging",
+        )
     } else {
-        ("ONLY ciphertexts", "state_hash")
+        ("ONLY ciphertexts", "state_hash", "ONLY computations")
     };
 
-    let affected_blocks: Vec<(i64, i64)> = sqlx::query_as(
+    let affected_blocks_sql = format!(
         "SELECT DISTINCT host_chain_id, block_number
-         FROM computations
+         FROM {computations_source}
          WHERE (output_handle, transaction_id) IN (
              SELECT * FROM unnest($1::BYTEA[], $2::BYTEA[])
          )
-         AND block_number IS NOT NULL",
-    )
-    .bind(handles_vec)
-    .bind(txn_ids_vec)
-    .fetch_all(trx.as_mut())
-    .await
-    .map_err(|err| {
-        error!(target: "tfhe_worker", { error = %err }, "error while querying affected blocks for state_hash");
-        err
-    })?;
+         AND block_number IS NOT NULL"
+    );
+    let affected_blocks: Vec<(i64, i64)> = sqlx::query_as(&affected_blocks_sql)
+        .bind(handles_vec)
+        .bind(txn_ids_vec)
+        .fetch_all(trx.as_mut())
+        .await
+        .map_err(|err| {
+            error!(target: "tfhe_worker", { error = %err }, "error while querying affected blocks for state_hash");
+            err
+        })?;
 
     let select_sql = format!(
         "WITH block_computations AS (
             SELECT output_handle, tenant_id, is_completed
-            FROM computations
+            FROM {computations_source}
             WHERE block_number = $1
         ),
         validated AS (
@@ -1008,25 +1047,32 @@ async fn set_computation_error<'a>(
     cerr: &(dyn std::error::Error + Send + Sync),
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_mngr: &mut dependence_chain::LockMngr,
+    gcs_mode: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     WORKER_ERRORS_COUNTER.inc();
     let err_string = cerr.to_string();
     error!(target: "tfhe_worker", error = %err_string, output_handle = %format!("0x{}", hex::encode(output_handle)), "error while processing work item");
     telemetry::set_current_span_error(&err_string);
 
-    let _ = query!(
-        "
-        UPDATE computations
-        SET is_error = true, error_message = $1
-        WHERE output_handle = $2
-        AND transaction_id = $3
-        ",
-        err_string,
-        output_handle,
-        transaction_id
-    )
-    .execute(trx.as_mut())
-    .await?;
+    // `ONLY` keeps each stack confined to its own table — BCS owns rows in
+    // `computations`, GCS owns rows in `computations_staging`.
+    let computations_table = if gcs_mode {
+        "ONLY computations_staging"
+    } else {
+        "ONLY computations"
+    };
+    let update_sql = format!(
+        "UPDATE {computations_table}
+         SET is_error = true, error_message = $1
+         WHERE output_handle = $2
+           AND transaction_id = $3"
+    );
+    let _ = sqlx::query(&update_sql)
+        .bind(&err_string)
+        .bind(output_handle)
+        .bind(transaction_id)
+        .execute(trx.as_mut())
+        .await?;
 
     deps_mngr.set_processing_error(Some(err_string)).await?;
     Ok(())

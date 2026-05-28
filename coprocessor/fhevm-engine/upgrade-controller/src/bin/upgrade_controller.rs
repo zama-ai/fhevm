@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use clap::Parser;
-use upgrade_controller::{Config, InitialMode};
+use upgrade_controller::Config;
 use fhevm_engine_common::{
     database::{connect_pool_with_options, resolve_database_url_from_option},
     utils::DatabaseURL,
@@ -26,10 +26,12 @@ struct Args {
     #[arg(long, default_value_t = 4)]
     database_pool_size: u32,
 
-    /// Stack role this instance manages. `bcs` (default) or `gcs`.
-    /// `execute_cutover` is gated on this being `gcs`.
-    #[arg(long, default_value_t = InitialMode::Bcs)]
-    initial_mode: InitialMode,
+    /// When set, the service runs as the Green Coprocessor Stack (GCS): it
+    /// drives the dry-run readiness loop and gates `execute_cutover`. When
+    /// omitted (default), it runs as the Blue Coprocessor Stack (BCS).
+    /// Mirrors the `--gcs-mode` flag exposed by the other coprocessor services.
+    #[arg(long, default_value_t = false)]
+    gcs_mode: bool,
 
     /// Fallback poll interval (seconds) used while waiting for notifications.
     #[arg(long, default_value_t = 30)]
@@ -68,14 +70,14 @@ async fn main() -> anyhow::Result<()> {
         service_name: args.service_name.clone(),
         database_url: resolve_database_url_from_option(args.database_url.clone())?,
         database_pool_size: args.database_pool_size,
-        initial_mode: args.initial_mode,
+        gcs_mode: args.gcs_mode,
         log_level: args.log_level,
         poll_interval: Duration::from_secs(args.poll_interval_secs),
     };
 
     info!(
         service_name = %config.service_name,
-        initial_mode = %config.initial_mode,
+        gcs_mode = config.gcs_mode,
         pool_size = config.database_pool_size,
         "upgrade-controller starting"
     );

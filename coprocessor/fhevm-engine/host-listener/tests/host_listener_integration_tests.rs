@@ -249,6 +249,7 @@ async fn setup_with_block_time(
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
         timeout_request_websocket: 30,
+        gcs_mode: false,
     };
     let health_check_url = format!("http://127.0.0.1:{}", args.health_port);
 
@@ -354,7 +355,7 @@ async fn ingest_blocks_for_receipts(
             &acl_address,
             &tfhe_address,
             &kms_generation_address,
-            options,
+            options.clone(),
         )
         .await?;
     }
@@ -380,6 +381,7 @@ async fn ingest_dependent_burst_seeded(
             dependence_cross_block: true,
             dependent_ops_max_per_chain,
             gcs_mode: false,
+            gcs_start_block: std::sync::Arc::new(std::sync::atomic::AtomicI64::new(-1)),
         },
     )
     .await?;
@@ -700,6 +702,9 @@ async fn test_slow_lane_cross_block_sustained_below_cap_stays_fast_locally(
                 dependence_cross_block: true,
                 dependent_ops_max_per_chain: cap,
                 gcs_mode: false,
+                gcs_start_block: std::sync::Arc::new(
+                    std::sync::atomic::AtomicI64::new(-1),
+                ),
             },
         )
         .await?;
@@ -1016,6 +1021,7 @@ async fn test_only_catchup_loop_requires_negative_start_at_block(
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
         timeout_request_websocket: 30,
+        gcs_mode: false,
     };
 
     let result = main(args).await;

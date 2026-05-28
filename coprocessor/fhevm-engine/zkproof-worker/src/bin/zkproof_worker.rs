@@ -72,6 +72,14 @@ pub struct Args {
     /// Prometheus metrics: "coprocessor_zkverify_op_latency_seconds",
     #[arg(long, default_value = "0.01:2.0:0.01", value_parser = clap::value_parser!(MetricsConfig))]
     pub metric_zkverify_op_latency: MetricsConfig,
+
+    /// Used during blue/green (GCS) upgrade migrations.
+    /// When true, the worker listens for `event_upgrade_activated` and, once
+    /// activated (i.e. `upgrade_state.start_block` is populated for
+    /// `stack_role='GCS'`), routes ciphertext / state-hash writes to the
+    /// `_staging` tables. When false (default), writes go to the parent tables.
+    #[arg(long, default_value_t = false)]
+    pub gcs_mode: bool,
 }
 
 pub fn parse_args() -> Args {
@@ -108,6 +116,7 @@ async fn main() {
         worker_thread_count: args.worker_thread_count,
         pg_timeout: args.pg_timeout,
         pg_auto_explain_with_min_duration: args.pg_auto_explain_with_min_duration,
+        gcs_mode: args.gcs_mode,
     };
 
     let cancel_token = CancellationToken::new();

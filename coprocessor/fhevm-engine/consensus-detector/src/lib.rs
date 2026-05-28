@@ -149,10 +149,10 @@ async fn fetch_active_upgrade_end_block(pool: &Pool<Postgres>) -> Result<Option<
         0 => Ok(None),
         1 => {
             let (state, end_block) = &rows[0];
-            if state != "UpgradeActivated" {
+            if state != "DryRunActivated" {
                 debug!(
                     state = %state,
-                    "active upgrade row is not in UpgradeActivated — ignoring new_block"
+                    "active upgrade row is not in DryRunActivated — ignoring new_block"
                 );
                 return Ok(None);
             }
