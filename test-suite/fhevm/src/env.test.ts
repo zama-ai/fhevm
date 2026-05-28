@@ -208,14 +208,12 @@ describe("env", () => {
     expect(rendered.componentEnvs["host-node"].HOST_NODE_CHAIN_ID).toBe("543210");
     expect(rendered.componentEnvs["host-sc"].RPC_URL).toBe("http://host-node:9650");
     expect(rendered.componentEnvs["host-sc"].HOST_ADDRESS_DIR).toBe("chain-a");
-    expect(rendered.componentEnvs["host-sc"].HOST_SC_DEPLOY_KMS_GENERATION_ARGS).toBe("--with-kms-generation true");
+    expect(rendered.componentEnvs["host-sc"].HOST_SC_DEPLOY_COMMAND).toBe("npx hardhat task:deployCanonicalHost");
     expect(rendered.componentEnvs["test-suite"].CHAIN_ID_HOST).toBe("543210");
     expect(rendered.instanceEnvs["host-node-chain-b"]?.HOST_NODE_PORT).toBe("9750");
     expect(rendered.instanceEnvs["host-sc-chain-b"]?.CHAIN_ID).toBe("67890");
     expect(rendered.instanceEnvs["host-sc-chain-b"]?.HOST_ADDRESS_DIR).toBe("chain-b");
-    expect(rendered.instanceEnvs["host-sc-chain-b"]?.HOST_SC_DEPLOY_KMS_GENERATION_ARGS).toBe(
-      "--with-kms-generation false",
-    );
+    expect(rendered.instanceEnvs["host-sc-chain-b"]?.HOST_SC_DEPLOY_COMMAND).toBeUndefined();
     const legacy = {
       ...state,
       versions: { ...state.versions, env: { ...state.versions.env, HOST_VERSION: "v0.12.0" } },
@@ -226,8 +224,8 @@ describe("env", () => {
       templateEnvs,
       deriveWallet,
     );
-    expect(legacyRendered.componentEnvs["host-sc"].HOST_SC_DEPLOY_KMS_GENERATION_ARGS).toBe("");
-    expect(legacyRendered.instanceEnvs["host-sc-chain-b"]?.HOST_SC_DEPLOY_KMS_GENERATION_ARGS).toBe("");
+    expect(legacyRendered.componentEnvs["host-sc"].HOST_SC_DEPLOY_COMMAND).toBe("npx hardhat task:deployAllHostContracts");
+    expect(legacyRendered.instanceEnvs["host-sc-chain-b"]?.HOST_SC_DEPLOY_COMMAND).toBe("npx hardhat task:deployAllHostContracts");
   });
 
   test("renders final env values without self-interpolation placeholders", async () => {

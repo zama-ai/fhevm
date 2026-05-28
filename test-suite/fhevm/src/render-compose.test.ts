@@ -251,14 +251,43 @@ describe("render-compose", () => {
     });
   });
 
-  test("host-sc deploy service reads KMSGeneration args from env", async () => {
+  test("secondary host-sc-deploy passes canonical protocol config explicitly", async () => {
+    const multiChainState: State = {
+      ...state,
+      scenario: testDefaultScenario({
+        hostChains: [
+          { key: "chain-a", chainId: "12345", rpcPort: 9545 },
+          { key: "chain-b", chainId: "67890", rpcPort: 10545 },
+        ],
+      }),
+    };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("host-sc")), { recursive: true });
+      await writeFile(envPath("host-sc"), "HOST_ADDRESS_DIR=chain-a\n");
+      await writeFile(envPath("host-sc-chain-b"), "HOST_ADDRESS_DIR=chain-b\n");
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor-chain-b.0"), "\n");
+      await generateComposeOverrides(multiChainState, stackSpecForState(multiChainState));
+      const extra = YAML.parse(await readFile(composePath("host-sc-chain-b"), "utf8")) as {
+        services: Record<string, { command?: string[]; volumes?: string[]; depends_on?: Record<string, unknown> }>;
+      };
+      const secondaryDeploy = extra.services["host-sc-chain-b-deploy"];
+      const volumes = secondaryDeploy?.volumes ?? [];
+      expect(volumes.some((vol) => vol.includes("/addresses/chain-a:/canonical-addresses:ro"))).toBe(true);
+      expect(secondaryDeploy?.command?.[0]).toBe(
+        'until [ -s /canonical-addresses/.env.host ]; do sleep 1; done; source /canonical-addresses/.env.host && npx hardhat task:deploySecondaryHost --canonical-rpc-url http://host-node:9545 --canonical-protocol-config-address "$$PROTOCOL_CONFIG_CONTRACT_ADDRESS"',
+      );
+      expect(secondaryDeploy?.depends_on).not.toHaveProperty("host-sc-deploy");
+    });
+  });
+
+  test("host-sc deploy service reads full deploy command from env", async () => {
     const template = YAML.parse(
       await readFile(path.join(TEMPLATE_COMPOSE_DIR, "host-sc-docker-compose.yml"), "utf8"),
     ) as { services: Record<string, { command?: string[] }> };
 
     const cmd = (template.services["host-sc-deploy"]?.command ?? []).join(" ");
-    expect(cmd).toContain("task:deployAllHostContracts");
-    expect(cmd).toContain("$${HOST_SC_DEPLOY_KMS_GENERATION_ARGS}");
+    expect(cmd).toBe('$${HOST_SC_DEPLOY_COMMAND:?unset}');
   });
 
   test("merges instance env into list-form service environments without dropping KEY_ID", async () => {

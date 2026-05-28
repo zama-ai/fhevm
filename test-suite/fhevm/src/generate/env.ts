@@ -84,8 +84,15 @@ const applyHostScKmsEnv = (envs: Record<string, Record<string, string>>) => {
   }
 };
 
-const hostDeployKmsGenerationArgs = (plan: StackSpec, enabled: boolean) =>
-  requiresModernHostAddressArtifacts(plan) ? `--with-kms-generation ${enabled}` : "";
+const hostDeployCommand = (plan: StackSpec, isCanonical: boolean): string | undefined => {
+  if (!requiresModernHostAddressArtifacts(plan)) {
+    return "npx hardhat task:deployAllHostContracts";
+  }
+  if (isCanonical) {
+    return "npx hardhat task:deployCanonicalHost";
+  }
+  return undefined;
+};
 
 /** Applies base runtime defaults before compat or discovery-specific rewrites. */
 const applyBaseRuntimeEnv = (
@@ -286,7 +293,11 @@ export const renderEnvMaps = async (
   envs["host-node"].HOST_NODE_CHAIN_ID = defaultChain.chainId;
   envs["host-sc"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["host-sc"].HOST_ADDRESS_DIR = defaultChain.key;
-  envs["host-sc"].HOST_SC_DEPLOY_KMS_GENERATION_ARGS = hostDeployKmsGenerationArgs(plan, true);
+  const defaultHostDeployCommand = hostDeployCommand(plan, true);
+  if (!defaultHostDeployCommand) {
+    throw new Error("Missing canonical host deployment command");
+  }
+  envs["host-sc"].HOST_SC_DEPLOY_COMMAND = defaultHostDeployCommand;
   envs["coprocessor"].RPC_HTTP_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["coprocessor"].RPC_WS_URL = `ws://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
@@ -346,7 +357,12 @@ export const renderEnvMaps = async (
     hostSc.RPC_URL = hostHttp;
     hostSc.CHAIN_ID = chain.chainId;
     hostSc.HOST_ADDRESS_DIR = chain.key;
-    hostSc.HOST_SC_DEPLOY_KMS_GENERATION_ARGS = hostDeployKmsGenerationArgs(plan, false);
+    const deployCommand = hostDeployCommand(plan, false);
+    if (deployCommand) {
+      hostSc.HOST_SC_DEPLOY_COMMAND = deployCommand;
+    } else {
+      delete hostSc.HOST_SC_DEPLOY_COMMAND;
+    }
     hostSc.HOST_SC_DEPLOY_CONTAINER_NAME = `${chain.sc}-deploy`;
     hostSc.HOST_SC_PAUSERS_CONTAINER_NAME = `${chain.sc}-add-pausers`;
     hostSc.NUM_COPROCESSORS = String(plan.topology.count);

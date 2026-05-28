@@ -5,7 +5,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
 
-import { type CompatPolicy, compatPolicyForState, supportsHostListenerConsumer } from "../compat/compat";
+import {
+  type CompatPolicy,
+  compatPolicyForState,
+  requiresModernHostAddressArtifacts,
+  supportsHostListenerConsumer,
+} from "../compat/compat";
 import {
   COMPONENTS,
   COMPOSE_OUT_DIR,
@@ -502,6 +507,20 @@ const buildExtraHostScOverride = async (
       cloneService.volumes = (cloneService.volumes as string[]).map((vol: string) =>
         vol.replace("${HOST_ADDRESS_DIR:-host}", chain.key),
       );
+    }
+    if (name === "host-sc-deploy") {
+      if (requiresModernHostAddressArtifacts(plan)) {
+        const { node: canonicalNode } = hostChainNames(defaultChain.key, defaultChain.key);
+        const canonicalRpcUrl = `http://${canonicalNode}:${defaultChain.rpcPort}`;
+        const existingVolumes = Array.isArray(cloneService.volumes) ? (cloneService.volumes as string[]) : [];
+        cloneService.volumes = [
+          ...existingVolumes,
+          `\${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/${defaultChain.key}:/canonical-addresses:ro`,
+        ];
+        cloneService.command = [
+          `until [ -s /canonical-addresses/.env.host ]; do sleep 1; done; source /canonical-addresses/.env.host && npx hardhat task:deploySecondaryHost --canonical-rpc-url ${canonicalRpcUrl} --canonical-protocol-config-address "$$PROTOCOL_CONFIG_CONTRACT_ADDRESS"`,
+        ];
+      }
     }
     services[cloneName] = cloneService;
   }
