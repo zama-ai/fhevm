@@ -9,7 +9,7 @@ import type {
 import type { FhevmRuntime } from '../../../types/coreFhevmRuntime.js';
 import type { ClearValue } from '../../../types/encryptedTypes-p.js';
 import type { TkmsPrivateKey, TkmsPrivateKeyBrand } from '../../../types/tkms-p.js';
-import type { Bytes, BytesHex, BytesHexNo0x, Uint8Number } from '../../../types/primitives.js';
+import type { Bytes, BytesHex, BytesHexNo0x } from '../../../types/primitives.js';
 import type {
   DecryptAndReconstructParameters,
   DecryptAndReconstructReturnType,
@@ -243,7 +243,7 @@ export async function decryptAndReconstruct(
   // KmsEIP712Domain
   const kmsEIP712Domain: KmsEip712Domain = metadata.eip712Domain;
   const clientAddress: ChecksummedAddress = metadata.eip712SignerAddress;
-  const threshold: Uint8Number = metadata.kmsSignersContext.threshold;
+  //const threshold: Uint8Number = metadata.kmsSignersContext.threshold;
 
   // To be modified! use uint64ToBytes32 instead
   const eip712DomainWasmArg: KmsEIP712DomainWasmType = {
@@ -280,6 +280,24 @@ export async function decryptAndReconstruct(
     extra_data: remove0x(extraData),
   };
 
+  //
+  // About the process_user_decryption_resp_from_js's `threshold` argument:
+  // ======================================================================
+  // It is optional.
+  // If left `undefined` it will be automatically computed (for 13 signers -> result is 4)
+  // To get the expected value for the selected KMS context, call:
+  //
+  //     ProtocolConfig.getMpcThreshold() returns (uint256)
+  //     ProtocolConfig.getMpcThresholdForContext(uint256 kmsContextId) returns (uint256)
+  //
+  // `threshold` - Optional expected threshold/degree used during response validation.
+  // Validation requires at least `threshold + 1` matching responses, and the selected pivot
+  // response must have `degree == threshold`. If not provided, it is computed from the number
+  // of server addresses as `(n - 1) / 3`.
+  //
+  // Warning! this `theshold` differs from KMSVerifier.getThreshold()
+  //
+
   // 1. Call kms module to decrypt & reconstruct clear values
   const typedPlaintextArray: TypedPlaintextWasmType[] = kmsLib.process_user_decryption_resp_from_js(
     clientWasm, // client argument
@@ -288,7 +306,7 @@ export async function decryptAndReconstruct(
     aggRespWasmArg, // agg_resp argument
     publicEncKeyMlKem512Wasm, // enc_pk argument
     privateEncKeyMlKem512Wasm, // enc_sk argument
-    threshold, // threshold argument
+    undefined, // should be ProtocolConfig.getMpcThreshold() (!= KMSVerifier.getThreshold())
     true, // verify argument
   ) as TypedPlaintextWasmType[];
 

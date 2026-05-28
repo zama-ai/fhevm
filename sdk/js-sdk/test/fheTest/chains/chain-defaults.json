@@ -54,5 +54,10 @@
     "rpcUrl": "https://ethereum-sepolia-rpc.publicnode.com",
     "fheTestAddress": "0xD26bB032e2F06A5382902559c4EbBB82C35C6dDF",
     "fheTestVersion": "v2"
+  },
+  "polygon_amoy": {
+    "rpcUrl": "https://polygon-amoy-bor-rpc.publicnode.com",
+    "fheTestAddress": "0x7553CB9124f974Ee475E5cE45482F90d5B6076BC",
+    "fheTestVersion": "v2"
   }
 }
