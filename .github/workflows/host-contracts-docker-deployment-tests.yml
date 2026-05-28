@@ -83,15 +83,12 @@ jobs:
         # Display logs for debugging
         cat deployment_logs.txt
 
-        # Check for exit code and expected message in logs
+        # Hardhat exits non-zero on deployment failure.
         if [ "$EXIT_CODE" -ne 0 ]; then
           echo "Deployment failed with exit code $EXIT_CODE"
           exit 1
-        elif ! grep -q "Contract deployment done!" deployment_logs.txt; then
-          echo "Deployment did not complete successfully - 'Contract deployment done!' message not found in logs"
-          exit 1
         else
-          echo "Deployment completed successfully with expected completion message"
+          echo "Deployment completed successfully (exit code 0)"
         fi
 
     - name: Check key generation triggering

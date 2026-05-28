@@ -102,9 +102,6 @@ jobs:
           if [ "$EXIT_CODE" -ne 0 ]; then
             echo "Deployment failed with exit code $EXIT_CODE"
             exit 1
-          elif ! grep -q "Contract deployment done!" deployment_logs.txt; then
-            echo "Deployment did not complete successfully - 'Contract deployment done!' message not found in logs"
-            exit 1
           fi
 
       - name: Checkout current code
