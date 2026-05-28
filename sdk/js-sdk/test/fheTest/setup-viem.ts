@@ -2,10 +2,10 @@ import type { FhevmChain } from '@fhevm/sdk/chains';
 import { createPublicClient, http, type PublicClient, type Transport, type Chain } from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';
 import { mainnet as viemMainnet, sepolia as viemSepolia, anvil as viemAnvil } from 'viem/chains';
-import { prepareFheTestEnv, type FheTestBaseEnv, type FheTestChainName } from '../setupCommon.js';
+import { prepareFheTestEnv, type FheTestBaseEnv, type FheTestChainName } from './setupCommon.js';
 
 // Re-export for convenience
-export type { FheTestChainName } from '../setupCommon.js';
+export type { FheTestChainName } from './setupCommon.js';
 
 // ---------------------------------------------------------------------------
 // Types

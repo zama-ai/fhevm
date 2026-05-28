@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmBaseClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { createPublicClient, http } from 'viem';
 import { sepolia as viemSepolia } from 'viem/chains';
-import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
+import { getViemTestConfig, type FheTestViemConfig } from '../setup-viem.js';
 import { clearKeyCache, readKeyFromCache, writeKeyToCache } from '../keyCache.js';
 import { isCleartext } from '../setupCommon.js';
 

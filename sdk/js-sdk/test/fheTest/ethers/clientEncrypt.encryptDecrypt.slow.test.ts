@@ -2,7 +2,7 @@ import type { ethers } from 'ethers';
 import type { EncryptedValue } from '@fhevm/sdk/types';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmDecryptClient, createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
+import { getEthersTestConfig, type FheTestEthersConfig } from '../setup-ethers.js';
 import { clearTypeFromHandle, encryptTestCases, isBytes32Hex, isCleartext } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////

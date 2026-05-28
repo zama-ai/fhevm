@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { createFhevmCleartextDecryptClient } from '@fhevm/sdk/viem/cleartext';
-import { getViemTestConfig, type FheTestViemConfig } from '../viem/setup.js';
+import { getViemTestConfig, type FheTestViemConfig } from '../setup-viem.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
 import { createWalletClient, http } from 'viem';
 import {

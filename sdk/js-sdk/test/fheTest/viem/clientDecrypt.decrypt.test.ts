@@ -1,7 +1,7 @@
 import type { Hex } from 'viem';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmDecryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
+import { getViemTestConfig, type FheTestViemConfig } from '../setup-viem.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
 import { decryptTestCases, isCleartext, fheTypeIdFromName, clearTypeFromHandle, isV2 } from '../setupCommon.js';
 import { asEncryptedValue, type EncryptedValue, type TypedValue } from '@fhevm/sdk/types';
@@ -170,27 +170,30 @@ describe.runIf(isV2(getViemTestConfig().chainName) && !isCleartext(getViemTestCo
       // Read all handles and their expected clear values from FHETest
       const entries: {
         fheType: string;
-        handle: Hex;
+        handle: EncryptedValue;
         expectedRaw: bigint;
       }[] = [];
 
       for (const fheType of decryptTestCases) {
         const fheTypeId = fheTypeIdFromName(fheType);
-        const handle = await config.publicClient.readContract({
-          address: config.fheTestAddress as Hex,
-          abi: FHETestABI,
-          functionName: 'getHandleOf',
-          args: [config.account.address, fheTypeId],
-        });
-        expect(handle).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
+        const encryptedValue: EncryptedValue = asEncryptedValue(
+          await config.publicClient.readContract({
+            address: config.fheTestAddress as Hex,
+            abi: FHETestABI,
+            functionName: 'getHandleOf',
+            args: [config.account.address, fheTypeId],
+          }),
+        );
+        expect(encryptedValue).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
+
         const expectedRaw = await config.publicClient.readContract({
           address: config.fheTestAddress as Hex,
           abi: FHETestABI,
           functionName: 'getClearText',
-          args: [handle],
+          args: [encryptedValue],
         });
-        entries.push({ fheType, handle, expectedRaw });
-        console.log(`  ${fheType}: handle=${handle.slice(0, 20)}... expected=${expectedRaw}`);
+        entries.push({ fheType, handle: encryptedValue, expectedRaw });
+        console.log(`  ${fheType}: handle=${encryptedValue.slice(0, 20)}... expected=${expectedRaw}`);
       }
 
       // Decrypt all in a single call

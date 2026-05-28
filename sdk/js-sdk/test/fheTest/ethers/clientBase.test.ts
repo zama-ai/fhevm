@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmBaseClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { ethers } from 'ethers';
-import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
+import { getEthersTestConfig, type FheTestEthersConfig } from '../setup-ethers.js';
 import { clearKeyCache, readKeyFromCache, writeKeyToCache } from '../keyCache.js';
 import { isCleartext } from '../setupCommon.js';
 import { sepolia as fhevmSepolia } from '@fhevm/sdk/chains';

@@ -10,7 +10,7 @@ import {
   fheTypeIdFromHandle,
 } from '../setupCommon.js';
 import { asEncryptedValue } from '@fhevm/sdk/types';
-import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
+import { getEthersTestConfig, type FheTestEthersConfig } from '../setup-ethers.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //

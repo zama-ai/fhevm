@@ -1,7 +1,7 @@
 import type { EncryptedValue } from '@fhevm/sdk/types';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
+import { getViemTestConfig, type FheTestViemConfig } from '../setup-viem.js';
 import { chainIdFromHandle, clearTypeFromHandle, encryptTestCases, isBytes32Hex, isCleartext } from '../setupCommon.js';
 import { asEncryptedValue } from '@fhevm/sdk/types';
 

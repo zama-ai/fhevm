@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { isCleartext } from '../setupCommon.js';
-import { getEthersTestConfig, type FheTestEthersConfig } from '../ethers/setup.js';
+import { getEthersTestConfig, type FheTestEthersConfig } from '../setup-ethers.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
