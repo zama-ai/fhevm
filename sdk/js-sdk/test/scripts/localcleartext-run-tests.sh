@@ -275,7 +275,7 @@ run_suite() {
     echo "🧪 Running cleartext ${lib} tests..."
     (
         cd "$JS_SDK_DIR"
-        CHAIN=localcleartext npx vitest run --config "$config" "test/fheTest/cleartext-${lib}"
+        CHAIN=localcleartext npx vitest run --config "$config" "test/fheTest/${lib}-cleartext"
     )
     echo "✅ cleartext-${lib} tests passed."
 }
