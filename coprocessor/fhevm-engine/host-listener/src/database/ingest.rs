@@ -4,14 +4,19 @@ use std::future::Future;
 use alloy::primitives::Address;
 use alloy::rpc::types::Log;
 use alloy::sol_types::SolEventInterface;
+use fhevm_engine_common::bridge::chain_id_from_handle;
 use fhevm_engine_common::chain_id::ChainId;
-use fhevm_engine_common::types::Handle;
+use fhevm_engine_common::types::{
+    Handle, COMPUTED_HANDLE_INDEX_MARKER, HANDLE_VERSION,
+};
 use sqlx::types::time::{OffsetDateTime, PrimitiveDateTime};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::cmd::block_history::{BlockHash, BlockSummary};
 use crate::cmd::InfiniteLogIter;
-use crate::contracts::{AclContract, KMSGeneration, TfheContract};
+use crate::contracts::{
+    AclContract, BridgeContract, KMSGeneration, TfheContract,
+};
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
     acl_result_handles, tfhe_result_handle, Chain, ChainHash, Database, LogTfhe,
@@ -142,6 +147,50 @@ fn classify_slow_by_split_dependency_closure(
     slow_dep_chain_ids
 }
 
+fn is_valid_fallback_dst_handle(
+    dst_handle: &[u8; 32],
+    chain_id: ChainId,
+) -> bool {
+    let embedded = chain_id_from_handle(dst_handle);
+    if embedded != chain_id.as_u64() {
+        warn!(
+            dst_handle = ?dst_handle,
+            embedded_chain_id = embedded,
+            chain_id = %chain_id,
+            "Ignoring FallbackGrantedPlaintext: dstHandle chain id does not match this chain"
+        );
+        return false;
+    }
+    if dst_handle[21] != COMPUTED_HANDLE_INDEX_MARKER {
+        warn!(
+            dst_handle = ?dst_handle,
+            "Ignoring FallbackGrantedPlaintext: dstHandle is missing the computed-handle marker"
+        );
+        return false;
+    }
+    if dst_handle[31] != HANDLE_VERSION {
+        warn!(
+            dst_handle = ?dst_handle,
+            "Ignoring FallbackGrantedPlaintext: dstHandle has an unexpected handle version"
+        );
+        return false;
+    }
+    // Restrict to the same allowlist the contract
+    // enforces: Bool(0), Uint8(2), Uint16(3), Uint32(4), Uint64(5), Uint128(6),
+    // Uint160(7), Uint256(8). Anything else is rejected.
+    let to_type = dst_handle[30];
+    if !matches!(to_type, 0 | 2..=8) {
+        warn!(
+            dst_handle = ?dst_handle,
+            to_type,
+            "Ignoring FallbackGrantedPlaintext: unsupported FheType in dstHandle"
+        );
+        return false;
+    }
+    true
+}
+
+#[allow(clippy::too_many_arguments)]
 pub async fn ingest_block_logs(
     chain_id: ChainId,
     db: &mut Database,
@@ -149,10 +198,12 @@ pub async fn ingest_block_logs(
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
     kms_generation_contract_address: &Option<Address>,
+    confidential_bridge_address: &Option<Address>,
     options: IngestOptions,
 ) -> Result<(), sqlx::Error> {
     let mut tx = db.new_transaction().await?;
     let mut is_allowed = HashSet::<Handle>::new();
+    let mut seen_fallback_handles = HashSet::<Handle>::new();
     let mut tfhe_event_log = vec![];
     let mut kms_gen_events = vec![];
     let block_hash = block_logs.summary.hash;
@@ -238,12 +289,122 @@ pub async fn ingest_block_logs(
             }
         }
 
-        if is_acl_address || is_tfhe_address || is_kms_gen_address {
+        let is_bridge_address = &current_address == confidential_bridge_address;
+        if is_bridge_address {
+            if let Ok(event) =
+                BridgeContract::BridgeContractEvents::decode_log(&log.inner)
+            {
+                // A FallbackGrantedPlaintext becomes a synthetic TrivialEncrypt
+                // computation so the normal pipeline materializes the ciphertext.
+                // PBS is enqueued so its ct128/digest get computed and published.
+                if let BridgeContract::BridgeContractEvents::FallbackGrantedPlaintext(e) =
+                    &event.data
+                {
+                    let dst_handle = e.dstHandle;
+                    if !is_valid_fallback_dst_handle(&dst_handle.0, chain_id) {
+                        continue;
+                    }
+                    // The contract specifies that if multiple fallback events
+                    // are emitted for the same handle, only the first one is
+                    // the source of truth. Skip this event if the handle is
+                    // already handled: seen earlier in this block, an earlier
+                    // fallback's committed computation, or the bridge worker's
+                    // copy of the real ciphertext. That last case has no
+                    // `computations` row (the copy path writes none), so it is
+                    // detected via the associated flag on handle_bridged_events.
+                    let first_in_block =
+                        seen_fallback_handles.insert(dst_handle.to_vec());
+                    if !first_in_block
+                        || db
+                            .computation_exists(&mut tx, dst_handle.as_slice())
+                            .await?
+                        || db
+                            .is_handle_bridged_associated(
+                                &mut tx,
+                                dst_handle.as_slice(),
+                            )
+                            .await?
+                    {
+                        warn!(
+                            dst_handle = ?dst_handle,
+                            "Ignoring FallbackGrantedPlaintext: dstHandle is already materialized"
+                        );
+                        continue;
+                    }
+                    // Force the handle allowed so the synthetic computation runs.
+                    // governance ensures the handle is in the ACL.
+                    is_allowed.insert(dst_handle.to_vec());
+                    tfhe_event_log.push(LogTfhe {
+                        event: alloy::primitives::Log {
+                            address: log.inner.address,
+                            data: TfheContract::TfheContractEvents::TrivialEncrypt(
+                                TfheContract::TrivialEncrypt {
+                                    caller: Address::ZERO,
+                                    pt: e.plaintext,
+                                    toType: dst_handle.0[30],
+                                    result: dst_handle,
+                                },
+                            ),
+                        },
+                        transaction_hash: log.transaction_hash,
+                        block_number,
+                        block_timestamp,
+
+                        // This is a placeholder. The real value can't be known yet
+                        // because the is_allowed set is still being built from
+                        // the rest of the block's logs. It is recomputed for
+                        // every event in the loop right after this one.
+                        is_allowed: false,
+
+                        // Placeholders: dependence_chains() (called once the
+                        // whole block is scanned) assigns the real dependence
+                        // chain this op belongs to and its depth within it.
+                        dependence_chain: Default::default(),
+                        tx_depth_size: 0,
+
+                        log_index: log.log_index,
+                    });
+                    at_least_one_insertion |= db
+                        .insert_pbs_computations(
+                            &mut tx,
+                            &vec![dst_handle.to_vec()],
+                            log.transaction_hash.map(|h| h.to_vec()),
+                            block_number,
+                        )
+                        .await?;
+                    db.mark_handle_bridged_associated(
+                        &mut tx,
+                        dst_handle.as_slice(),
+                    )
+                    .await?;
+                } else {
+                    at_least_one_insertion |= db
+                        .handle_bridge_event(
+                            &mut tx,
+                            &event,
+                            &log.transaction_hash,
+                            block_number,
+                            &block_logs.summary.parent_hash,
+                            block_logs.summary.timestamp,
+                            acl_contract_address,
+                        )
+                        .await?;
+                }
+                continue;
+            }
+        }
+
+        if is_acl_address
+            || is_tfhe_address
+            || is_kms_gen_address
+            || is_bridge_address
+        {
             error!(
                 event_address = ?log.inner.address,
                 acl_contract_address = ?acl_contract_address,
                 tfhe_contract_address = ?tfhe_contract_address,
                 kms_generation_contract_address = ?kms_generation_contract_address,
+                confidential_bridge_address = ?confidential_bridge_address,
                 log = ?log,
                 "Cannot decode event",
             );

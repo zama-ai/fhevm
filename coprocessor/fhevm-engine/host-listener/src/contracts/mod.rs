@@ -22,3 +22,10 @@ sol!(
     KMSGeneration,
     "./../../../host-contracts/artifacts/contracts/KMSGeneration.sol/KMSGeneration.json"
 );
+
+sol!(
+    #[sol(rpc)]
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    BridgeContract,
+    "./../../../host-contracts/artifacts/contracts/bridge/BridgeEvents.sol/BridgeEvents.json"
+);

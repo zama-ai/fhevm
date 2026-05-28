@@ -4,6 +4,7 @@ use alloy_primitives::Log;
 use alloy_primitives::Uint;
 use anyhow::Result;
 use bigdecimal::BigDecimal;
+use fhevm_engine_common::bridge::{chain_id_from_handle, derive_dst_handle};
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::{
     connect_pool_with_options_and_connect_options, PoolRefreshHandle,
@@ -33,6 +34,7 @@ use tracing::warn;
 use crate::cmd::block_history::BlockHash;
 use crate::cmd::block_history::BlockSummary;
 use crate::contracts::AclContract::AclContractEvents;
+use crate::contracts::BridgeContract::BridgeContractEvents;
 use crate::contracts::TfheContract;
 use crate::contracts::TfheContract::TfheContractEvents;
 
@@ -959,6 +961,123 @@ impl Database {
         Ok(inserted)
     }
 
+    /// Handles confidential-bridge events (see RFC 008). Each event is recorded
+    /// once; re-observation is a no-op (`ON CONFLICT DO NOTHING`).
+    /// The block-number column is therefore first-seen.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn handle_bridge_event(
+        &self,
+        tx: &mut Transaction<'_>,
+        event: &Log<BridgeContractEvents>,
+        transaction_hash: &Option<Handle>,
+        block_number: u64,
+        prev_block_hash: &BlockHash,
+        block_timestamp: u64,
+        acl_contract_address: &Option<Address>,
+    ) -> Result<bool, SqlxError> {
+        let transaction_id = transaction_hash.map(|h| h.to_vec());
+        let inserted = match &event.data {
+            BridgeContractEvents::BridgeHandle(e) => {
+                // Trust anchor: the chain id embedded in srcHandle (bytes 22-29)
+                // must match the chain that emitted the event. Ignore otherwise.
+                let embedded = chain_id_from_handle(&e.srcHandle.0);
+                if embedded != self.chain_id.as_u64() {
+                    warn!(
+                        src_handle = to_hex(e.srcHandle.as_slice()),
+                        embedded_chain_id = embedded,
+                        chain_id = %self.chain_id,
+                        "Ignoring BridgeHandle: srcHandle chain id does not match source chain"
+                    );
+                    return Ok(false);
+                }
+                let Ok(dst_chain_id) = ChainId::try_from(e.dstChainId) else {
+                    warn!(
+                        src_handle = to_hex(e.srcHandle.as_slice()),
+                        dst_chain_id = e.dstChainId,
+                        "Ignoring BridgeHandle: dstChainId out of range"
+                    );
+                    return Ok(false);
+                };
+                info!(
+                    src_handle = to_hex(e.srcHandle.as_slice()),
+                    dst_chain_id = e.dstChainId,
+                    "BridgeHandle event"
+                );
+                sqlx::query!(
+                    "INSERT INTO bridge_handle_events
+                        (src_handle, dst_chain_id, src_chain_id, sender_dapp,
+                         guid, block_number, transaction_id)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7)
+                     ON CONFLICT (src_handle, dst_chain_id) DO NOTHING",
+                    e.srcHandle.as_slice(),
+                    dst_chain_id.as_i64(),
+                    self.chain_id.as_i64(),
+                    e.senderDapp.as_slice(),
+                    e.guid.as_slice(),
+                    block_number as i64,
+                    transaction_id,
+                )
+                .execute(tx.deref_mut())
+                .await?
+                .rows_affected()
+                    > 0
+            }
+            BridgeContractEvents::HandleBridged(e) => {
+                // Verify the destination handle was correctly derived and ignore the
+                // event otherwise.
+                let Some(acl) = acl_contract_address else {
+                    warn!("Cannot verify HandleBridged derivation: ACL address not configured");
+                    return Ok(false);
+                };
+                let expected = derive_dst_handle(
+                    &e.srcHandle.0,
+                    &acl.into_array(),
+                    self.chain_id.as_u64(),
+                    &prev_block_hash.0,
+                    block_timestamp,
+                );
+                if expected != e.dstHandle.0 {
+                    error!(
+                        src_handle = to_hex(e.srcHandle.as_slice()),
+                        dst_handle = to_hex(e.dstHandle.as_slice()),
+                        expected = to_hex(&expected),
+                        "Ignoring HandleBridged: destination handle derivation check failed"
+                    );
+                    return Ok(false);
+                }
+                info!(
+                    src_handle = to_hex(e.srcHandle.as_slice()),
+                    dst_handle = to_hex(e.dstHandle.as_slice()),
+                    "HandleBridged event"
+                );
+                sqlx::query!(
+                    "INSERT INTO handle_bridged_events
+                        (src_handle, dst_handle, dst_chain_id, receiver_dapp,
+                         guid, block_number, transaction_id)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7)
+                     ON CONFLICT (dst_handle) DO NOTHING",
+                    e.srcHandle.as_slice(),
+                    e.dstHandle.as_slice(),
+                    self.chain_id.as_i64(),
+                    e.receiverDapp.as_slice(),
+                    e.guid.as_slice(),
+                    block_number as i64,
+                    transaction_id,
+                )
+                .execute(tx.deref_mut())
+                .await?
+                .rows_affected()
+                    > 0
+            }
+            // `FallbackGrantedPlaintext` is converted to a synthetic TrivialEncrypt
+            // computation during ingest (see ingest.rs), so it is not handled here.
+            // Other events the coprocessor does not consume.
+            _ => false,
+        };
+        self.tick.update();
+        Ok(inserted)
+    }
+
     /// Adds handles to the pbs_computations table and alerts the SnS worker
     /// about new of PBS work.
     pub async fn insert_pbs_computations(
@@ -982,6 +1101,57 @@ impl Database {
                 query.execute(tx.deref_mut()).await?.rows_affected() > 0;
         }
         Ok(inserted)
+    }
+
+    /// Returns whether a computation producing `output_handle` already exists.
+    pub async fn computation_exists(
+        &self,
+        tx: &mut Transaction<'_>,
+        output_handle: &[u8],
+    ) -> Result<bool, SqlxError> {
+        let exists = sqlx::query_scalar!(
+            r#"SELECT EXISTS(
+                   SELECT 1 FROM computations WHERE output_handle = $1
+               ) AS "exists!""#,
+            output_handle,
+        )
+        .fetch_one(tx.deref_mut())
+        .await?;
+        Ok(exists)
+    }
+
+    /// Returns whether the destination handle's `handle_bridged_events` row is
+    /// already associated — i.e. the bridge worker copied the real source
+    /// ciphertext, or an earlier fallback marked it.
+    pub async fn is_handle_bridged_associated(
+        &self,
+        tx: &mut Transaction<'_>,
+        dst_handle: &[u8],
+    ) -> Result<bool, SqlxError> {
+        let associated = sqlx::query_scalar!(
+            r#"SELECT EXISTS(
+                   SELECT 1 FROM handle_bridged_events
+                   WHERE dst_handle = $1 AND is_associated
+               ) AS "exists!""#,
+            dst_handle,
+        )
+        .fetch_one(tx.deref_mut())
+        .await?;
+        Ok(associated)
+    }
+
+    pub async fn mark_handle_bridged_associated(
+        &self,
+        tx: &mut Transaction<'_>,
+        dst_handle: &[u8],
+    ) -> Result<(), SqlxError> {
+        sqlx::query!(
+            "UPDATE handle_bridged_events SET is_associated = true WHERE dst_handle = $1",
+            dst_handle,
+        )
+        .execute(tx.deref_mut())
+        .await?;
+        Ok(())
     }
 
     /// Add the handle to the allowed_handles table
