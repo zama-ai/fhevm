@@ -6,16 +6,13 @@ import { task, types } from 'hardhat/config';
 import type { HardhatEthersHelpers, HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 import path from 'path';
 
+import { mirrorProtocolConfigFromCanonical } from './protocolConfigMirror';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from './utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from './utils/loadVariables';
 
 const ADDRESSES_DIR = path.join(__dirname, '../addresses');
 const HOST_ENV_FILE = path.join(ADDRESSES_DIR, '.env.host');
 const HOST_ADDRESSES_FILE = path.join(ADDRESSES_DIR, 'FHEVMHostAddresses.sol');
-const LEGACY_DEPLOY_ALL_HOST_CONTRACTS_WARNING = `task:deployLegacyAllHostContracts is deprecated and will be removed after the v0.13 rollout.
-It deploys KMSGeneration and is valid only for canonical-host deployments.
-Use task:deployAllHostContracts --with-kms-generation true instead.`;
-
 export function ensureAddressesDirectoryExists() {
   fs.mkdirSync(ADDRESSES_DIR, { recursive: true });
 }
@@ -89,69 +86,70 @@ export async function assertContractMatchesVersionPrefix(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// All Host Contracts
+// Host deployment roles
 ////////////////////////////////////////////////////////////////////////////////
 
-const PROTOCOL_CONFIG_SOURCES = ['fresh', 'migration'] as const;
-type ProtocolConfigSource = (typeof PROTOCOL_CONFIG_SOURCES)[number];
+task('task:deployCanonicalHost', 'Deploys the complete canonical host stack.').setAction(async function (_, hre) {
+  await hre.run('task:deployHostSkeleton');
+  await hre.run('task:deployProtocolConfigCanonical');
+  await hre.run('task:deployKMSVerifier');
+  await hre.run('task:initializeKMSGeneration');
+});
 
-task('task:deployAllHostContracts')
+task('task:deploySecondaryHost', 'Deploys a secondary host stack without KMSGeneration.')
   .addParam(
-    'withKmsGeneration',
-    'Whether to deploy canonical-host-only KMSGeneration. Required: true for canonical host, false for non-canonical host.',
+    'canonicalRpcUrl',
+    'RPC URL of the canonical host chain to read the current ProtocolConfig state from.',
     undefined,
-    types.boolean,
+    types.string,
   )
-  .addOptionalParam(
-    'protocolConfigSource',
-    "How to initialize ProtocolConfig: 'fresh' (default) calls initializeFromEmptyProxy with env-driven KMS nodes/thresholds; 'migration' calls initializeFromMigration consuming MIGRATION_CONTEXT_ID / MIGRATION_KMS_NODES / MIGRATION_KMS_THRESHOLDS.",
-    'fresh',
+  .addParam(
+    'canonicalProtocolConfigAddress',
+    'Address of the ProtocolConfig contract on the canonical host chain.',
+    undefined,
     types.string,
   )
   .setAction(async function (
-    { withKmsGeneration, protocolConfigSource }: { withKmsGeneration: boolean; protocolConfigSource: string },
+    { canonicalRpcUrl, canonicalProtocolConfigAddress }: { canonicalRpcUrl: string; canonicalProtocolConfigAddress: string },
     hre,
   ) {
-    if (!PROTOCOL_CONFIG_SOURCES.includes(protocolConfigSource as ProtocolConfigSource)) {
-      throw new Error(
-        `Invalid --protocol-config-source "${protocolConfigSource}". Allowed values: ${PROTOCOL_CONFIG_SOURCES.join(', ')}.`,
-      );
-    }
+    await hre.run('task:deployHostSkeleton', { skipKmsGeneration: true });
+    await hre.run('task:deployProtocolConfigSecondary', {
+      canonicalRpcUrl,
+      canonicalProtocolConfigAddress,
+    });
+    await hre.run('task:deployKMSVerifier');
+  });
 
+////////////////////////////////////////////////////////////////////////////////
+// Host skeleton
+////////////////////////////////////////////////////////////////////////////////
+
+// Deploys only the shared host skeleton. Use task:deployCanonicalHost or
+// task:deploySecondaryHost for full deployments.
+task('task:deployHostSkeleton', 'Deploys the shared host skeleton only; not a full host deployment.')
+  .addFlag('skipKmsGeneration', 'Do not deploy the canonical-only KMSGeneration proxy.')
+  .setAction(async function ({ skipKmsGeneration }: TaskArguments, hre) {
     if (process.env.SOLIDITY_COVERAGE !== 'true') {
       await hre.run('clean');
     }
 
-    await hre.run('task:deployEmptyUUPSProxies', { withKmsGeneration });
+    await hre.run('task:deployHostProxyAddresses', { skipKmsGeneration });
     await hre.run('compile:specific', { contract: 'contracts/immutable' });
     await hre.run('task:deployPauserSet');
 
-    // The deployEmptyUUPSProxies task may have updated the contracts' addresses in `addresses/*.sol`.
+    // The proxy-address task may have updated the contracts' addresses in `addresses/*.sol`.
     // Thus, we must re-compile the contracts with these new addresses, otherwise the old ones will be
     // used.
     await hre.run('compile:specific', { contract: 'contracts' });
 
     await hre.run('task:deployACL');
     await hre.run('task:deployFHEVMExecutor');
-    if (protocolConfigSource === 'migration') {
-      await hre.run('task:deployProtocolConfigFromMigration');
-    } else {
-      await hre.run('task:deployProtocolConfig');
-    }
-    if (withKmsGeneration) {
-      await hre.run('task:deployKMSGeneration');
-    }
-    await hre.run('task:deployKMSVerifier');
     await hre.run('task:deployInputVerifier');
     await hre.run('task:deployHCULimit');
 
-    console.log('Contract deployment done!');
+    console.log('Host-chain contract deployment done!');
   });
-
-task('task:deployLegacyAllHostContracts').setAction(async function (_, hre) {
-  console.warn(LEGACY_DEPLOY_ALL_HOST_CONTRACTS_WARNING);
-  await hre.run('task:deployAllHostContracts', { withKmsGeneration: true });
-});
 
 ////////////////////////////////////////////////////////////////////////////////
 // UUPS
@@ -183,52 +181,38 @@ export async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: Ha
   return UUPSEmptyAddress;
 }
 
-task('task:deployEmptyUUPSProxies')
-  .addParam(
-    'withKmsGeneration',
-    'Whether to deploy the canonical-host-only KMSGeneration proxy. Required: true for canonical host, false for non-canonical host.',
-    undefined,
-    types.boolean,
-  )
-  .setAction(async function ({ withKmsGeneration }: { withKmsGeneration: boolean }, { ethers, upgrades, run }) {
-    // Compile the EmptyUUPS proxy contract for ACL
+task('task:deployHostProxyAddresses', 'Deploys empty host proxies and writes their address artifacts.')
+  // Secondary hosts skip KMSGeneration so their discovery output cannot advertise it.
+  .addFlag('skipKmsGeneration', 'Do not deploy the canonical-only KMSGeneration proxy.')
+  .setAction(async function ({ skipKmsGeneration }: TaskArguments, { ethers, upgrades, run }) {
     await run('compile:specific', { contract: 'contracts/emptyProxyACL' });
 
     const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
     const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
 
-    // Ensure the addresses directory exists
     ensureAddressesDirectoryExists();
 
-    // Set ACL Address
     const aclAddress = await deployEmptyUUPSForACL(ethers, upgrades, deployer);
     await run('task:setACLAddress', { address: aclAddress });
 
-    // Compile the EmptyUUPS proxy contract for other contracts
     await run('compile:specific', { contract: 'contracts/emptyProxy' });
 
-    // Set FHEVMExecutor Address
     const fhevmExecutorAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
     await run('task:setFHEVMExecutorAddress', { address: fhevmExecutorAddress });
 
-    // Set KMSVerifier Address
     const kmsVerifierAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
     await run('task:setKMSVerifierAddress', { address: kmsVerifierAddress });
 
-    // Set InputVerifier Address
     const inputVerifierAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
     await run('task:setInputVerifierAddress', { address: inputVerifierAddress });
 
-    // Set HCULimit Address
     const HCULimitAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
     await run('task:setHCULimitAddress', { address: HCULimitAddress });
 
-    // Set ProtocolConfig Address
     const protocolConfigAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
     await run('task:setProtocolConfigAddress', { address: protocolConfigAddress });
 
-    if (withKmsGeneration) {
-      // Set KMSGeneration Address
+    if (!skipKmsGeneration) {
       const kmsGenerationAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
       await run('task:setKMSGenerationAddress', { address: kmsGenerationAddress });
     }
@@ -272,7 +256,10 @@ task('task:deployFHEVMExecutor').setAction(async function (taskArguments: TaskAr
 // KMSVerifier
 ////////////////////////////////////////////////////////////////////////////////
 
-task('task:deployKMSVerifier').setAction(async function (_taskArguments: TaskArguments, hre) {
+task('task:deployKMSVerifier', 'Upgrades the existing KMSVerifier proxy and initializes it.').setAction(async function (
+  _taskArguments: TaskArguments,
+  hre,
+) {
   const { ethers, upgrades } = hre;
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
@@ -510,10 +497,17 @@ task('task:assertNoPendingKeyManagementRequest')
   });
 
 ////////////////////////////////////////////////////////////////////////////////
-// ProtocolConfig
+// ProtocolConfig (canonical host)
 ////////////////////////////////////////////////////////////////////////////////
 
-task('task:deployProtocolConfig').setAction(async function (_taskArguments: TaskArguments, hre) {
+// Upgrades the ProtocolConfig empty proxy on the canonical host. Seeds the first KMS context from
+// `NUM_KMS_NODES`, `KMS_TX_SENDER_ADDRESS_*`, `KMS_SIGNER_ADDRESS_*`, `KMS_NODE_STORAGE_URL_*` and
+// the four `*_THRESHOLD` env vars. The canonical ProtocolConfig is the source of truth that
+// secondary hosts mirror via task:deployProtocolConfigSecondary.
+task(
+  'task:deployProtocolConfigCanonical',
+  'Upgrades the existing ProtocolConfig proxy and seeds the canonical KMS context.',
+).setAction(async function (_taskArguments: TaskArguments, hre) {
   const { ethers, upgrades } = hre;
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
@@ -537,22 +531,71 @@ task('task:deployProtocolConfig').setAction(async function (_taskArguments: Task
 });
 
 ////////////////////////////////////////////////////////////////////////////////
-// KMSGeneration (host-side)
+// ProtocolConfig (secondary host)
 ////////////////////////////////////////////////////////////////////////////////
 
-task('task:deployKMSGeneration').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
-  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
-  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  const newImplem = await ethers.getContractFactory('KMSGeneration', deployer);
-  const parsedEnv = readHostEnv();
-  const proxyAddress = parsedEnv.KMS_GENERATION_CONTRACT_ADDRESS;
-  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-  await upgrades.upgradeProxy(proxy, newImplem, {
-    call: { fn: 'initializeFromEmptyProxy' },
+// Upgrades the ProtocolConfig empty proxy on a secondary host using a snapshot of the current
+// canonical context. Reuses `initializeFromMigration` (originally written for the Gateway →
+// Ethereum migration) to land on the canonical chain's `currentKmsContextId` rather than start a
+// fresh counter. After deployment, control of state mutations passes to whoever is set as ACL
+// owner (the bridge adapter / governance multisig that mirrors canonical rotations); ownership
+// hand-off is handled by task:transferHostOwnership.
+task(
+  'task:deployProtocolConfigSecondary',
+  'Upgrades the existing ProtocolConfig proxy from a canonical-chain snapshot.',
+)
+  .addParam(
+    'canonicalRpcUrl',
+    'RPC URL of the canonical host chain to read the current ProtocolConfig state from.',
+    undefined,
+    types.string,
+  )
+  .addParam(
+    'canonicalProtocolConfigAddress',
+    'Address of the ProtocolConfig contract on the canonical host chain.',
+    undefined,
+    types.string,
+  )
+  .setAction(async function (
+    {
+      canonicalRpcUrl,
+      canonicalProtocolConfigAddress,
+    }: { canonicalRpcUrl: string; canonicalProtocolConfigAddress: string },
+    hre,
+  ) {
+    const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
+    const parsedEnv = readHostEnv();
+    const secondaryProxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+    const { currentContextId, kmsNodes, canonicalChainId, canonicalBlockTag } = await mirrorProtocolConfigFromCanonical(
+      hre,
+      { canonicalProvider, canonicalProtocolConfigAddress, secondaryProxyAddress },
+    );
+    console.log(
+      `ProtocolConfig code set successfully at ${secondaryProxyAddress}, mirroring canonical chain ${canonicalChainId} context ${currentContextId} (block ${canonicalBlockTag}) with ${kmsNodes.length} KMS nodes.`,
+    );
   });
-  console.log('KMSGeneration code set successfully at address:', proxyAddress);
-});
+
+////////////////////////////////////////////////////////////////////////////////
+// KMSGeneration (canonical host only)
+////////////////////////////////////////////////////////////////////////////////
+
+// Canonical-host only. This upgrades and initializes the KMSGeneration proxy created by
+// task:deployHostProxyAddresses when composing a canonical host.
+task('task:initializeKMSGeneration', 'Upgrades the canonical-only KMSGeneration proxy and initializes it.').setAction(
+  async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
+    const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+    const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+    const newImplem = await ethers.getContractFactory('KMSGeneration', deployer);
+    const parsedEnv = readHostEnv();
+    const proxyAddress = parsedEnv.KMS_GENERATION_CONTRACT_ADDRESS;
+    const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+    await upgrades.upgradeProxy(proxy, newImplem, {
+      call: { fn: 'initializeFromEmptyProxy' },
+    });
+    console.log('KMSGeneration code set successfully at address:', proxyAddress);
+  },
+);
 
 ////////////////////////////////////////////////////////////////////////////////
 // Setup ACL Address

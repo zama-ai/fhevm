@@ -165,10 +165,9 @@ scDeploy:
     # =========================================================================
     # ==========================  HOST    =====================================
     # =========================================================================
-    # Deploy all host contracts, including KMSGeneration. KMSGeneration belongs
-    # only on the canonical host chain in the multi-chain model.
-    # See host-contracts/README.md#host-deployment-role.
-    - npx hardhat task:deployAllHostContracts --with-kms-generation true
+    # Deploy the complete canonical-host stack. Secondary hosts must use
+    # task:deploySecondaryHost with the canonical RPC and address artifact.
+    - npx hardhat task:deployCanonicalHost
 
     # Add pausers to the host contracts
     - npx hardhat task:addHostPausers
