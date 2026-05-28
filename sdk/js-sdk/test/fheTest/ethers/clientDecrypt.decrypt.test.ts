@@ -110,6 +110,7 @@ describe.runIf(!isCleartext(getEthersTestConfig().chainName))('Decrypt client â€
       );
       expect(encryptedValue).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
       expect(fheTypeIdFromHandle(encryptedValue)).toBe(fheTypeIdFromName(fheType));
+
       console.log(`  ${fheType}: handle=${encryptedValue.slice(0, 20)}...`);
 
       // Read expected clear value from FHETest._db
@@ -168,7 +169,7 @@ describe.runIf(!isCleartext(getEthersTestConfig().chainName))('Decrypt client â€
     // Read all handles and their expected clear values from FHETest
     const entries: {
       fheType: string;
-      handle: string;
+      encryptedValue: EncryptedValue;
       expectedRaw: bigint;
     }[] = [];
 
@@ -181,7 +182,7 @@ describe.runIf(!isCleartext(getEthersTestConfig().chainName))('Decrypt client â€
       expect(encryptedValue).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
 
       const expectedRaw: bigint = await fheTest.getClearText!(encryptedValue);
-      entries.push({ fheType, handle: encryptedValue, expectedRaw });
+      entries.push({ fheType, encryptedValue, expectedRaw });
       console.log(`  ${fheType}: handle=${encryptedValue.slice(0, 20)}... expected=${expectedRaw}`);
     }
 
@@ -202,7 +203,7 @@ describe.runIf(!isCleartext(getEthersTestConfig().chainName))('Decrypt client â€
       signer: config.signer,
     });
 
-    const encryptedValues = entries.map((e) => asEncryptedValue(e.handle));
+    const encryptedValues = entries.map((e) => asEncryptedValue(e.encryptedValue));
 
     const typedValues: readonly TypedValue[] = await client.decryptValues({
       encryptedValues,

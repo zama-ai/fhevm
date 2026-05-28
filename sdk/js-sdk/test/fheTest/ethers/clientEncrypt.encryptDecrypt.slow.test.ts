@@ -86,31 +86,31 @@ describe.runIf(!isCleartext(getEthersTestConfig().chainName))(
 
         let tx: ethers.TransactionResponse;
 
-        console.log(`setE${fheType.substring(1)}(${inputHandle})...`);
+        console.log(`setE${fheType}(${inputHandle})...`);
 
-        switch (`e${fheType}`) {
-          case 'ebool':
+        switch (fheType) {
+          case 'bool':
             tx = await fheTest.setEbool!(inputHandle, inputProof, ct, makePublic);
             break;
-          case 'euint8':
+          case 'uint8':
             tx = await fheTest.setEuint8!(inputHandle, inputProof, ct, makePublic);
             break;
-          case 'euint16':
+          case 'uint16':
             tx = await fheTest.setEuint16!(inputHandle, inputProof, ct, makePublic);
             break;
-          case 'euint32':
+          case 'uint32':
             tx = await fheTest.setEuint32!(inputHandle, inputProof, ct, makePublic);
             break;
-          case 'euint64':
+          case 'uint64':
             tx = await fheTest.setEuint64!(inputHandle, inputProof, ct, makePublic);
             break;
-          case 'euint128':
+          case 'uint128':
             tx = await fheTest.setEuint128!(inputHandle, inputProof, ct, makePublic);
             break;
-          case 'euint256':
+          case 'uint256':
             tx = await fheTest.setEuint256!(inputHandle, inputProof, ct, makePublic);
             break;
-          case 'eaddress':
+          case 'address':
             tx = await fheTest.setEaddress!(inputHandle, inputProof, ct, makePublic);
             break;
           default:

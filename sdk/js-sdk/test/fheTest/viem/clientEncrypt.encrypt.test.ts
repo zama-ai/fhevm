@@ -31,6 +31,7 @@ describe.runIf(!isCleartext(getViemTestConfig().chainName))('Encrypt', () => {
         type: 'ApiKeyHeader',
         value: config.zamaApiKey,
       },
+      moduleVersions: { tfhe: '1.5.3' }, // hardcoded for testnet protocol v0.12
     });
   });
 

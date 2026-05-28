@@ -112,6 +112,7 @@ describe.runIf(!isCleartext(getEthersTestConfig().chainName))('Base client — d
       );
       expect(encryptedValue).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
       expect(fheTypeIdFromHandle(encryptedValue)).toBe(fheTypeIdFromName(fheType));
+
       const expectedRaw: bigint = await fheTest.getClearText!(encryptedValue);
       entries.push({ encryptedValue, expectedRaw });
       console.log(`  ${fheType}: handle=${encryptedValue.slice(0, 20)}... expected=${expectedRaw}`);

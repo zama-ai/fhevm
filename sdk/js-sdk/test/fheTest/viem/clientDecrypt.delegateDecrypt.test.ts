@@ -10,9 +10,8 @@ import {
   isCleartext,
   fheTypeIdFromName,
   clearTypeFromHandle,
-  prepareFheTestEnv,
-  isV2,
   fheTypeIdFromHandle,
+  prepareFheTestEnv,
 } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -109,7 +108,7 @@ async function getUserDecryptionDelegationExpirationDate(parameters: {
   });
 }
 
-describe.runIf(isV2(getViemTestConfig().chainName) && !isCleartext(getViemTestConfig().chainName))(
+describe.runIf(!isCleartext(getViemTestConfig().chainName))(
   'Decrypt client — delegated decrypt',
   () => {
     let config: FheTestViemConfig;

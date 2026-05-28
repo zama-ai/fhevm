@@ -2,14 +2,7 @@ import type { EncryptedValue } from '@fhevm/sdk/types';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmDecryptClient, createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { getViemTestConfig, type FheTestViemConfig } from '../setup-viem.js';
-import {
-  clearTypeFromHandle,
-  encryptTestCases,
-  prepareFheTestEnv,
-  isBytes32Hex,
-  isCleartext,
-  isV2,
-} from '../setupCommon.js';
+import { clearTypeFromHandle, encryptTestCases, prepareFheTestEnv, isBytes32Hex, isCleartext } from '../setupCommon.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
 import { createWalletClient, http, type Hex } from 'viem';
 
@@ -29,7 +22,7 @@ import { createWalletClient, http, type Hex } from 'viem';
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-describe.runIf(isV2(getViemTestConfig().chainName) && !isCleartext(getViemTestConfig().chainName))(
+describe.runIf(!isCleartext(getViemTestConfig().chainName))(
   'Encrypt-Decrypt',
   () => {
     let config: FheTestViemConfig;

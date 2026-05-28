@@ -5,7 +5,6 @@ import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { createFhevmCleartextDecryptClient, createFhevmCleartextEncryptClient } from '@fhevm/sdk/ethers/cleartext';
 import { getEthersTestConfig, type FheTestEthersConfig } from '../setup-ethers.js';
 import { clearTypeFromHandle, encryptTestCases, isBytes32Hex, isCleartext } from '../setupCommon.js';
-import { asEncryptedValue } from '@fhevm/sdk/types';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -71,7 +70,7 @@ describe.runIf(isCleartext(getEthersTestConfig().chainName))(
 
       for (let i = 0; i < encryptTestCases.length; i++) {
         const enc: EncryptedValue = result.encryptedValues[i]!;
-        const clearType = clearTypeFromHandle(asEncryptedValue(enc));
+        const fheType = clearTypeFromHandle(enc);
         const ct = encryptTestCases[i]!.value;
 
         const inputHandle = enc;
@@ -80,9 +79,9 @@ describe.runIf(isCleartext(getEthersTestConfig().chainName))(
 
         let tx: ethers.TransactionResponse;
 
-        console.log(`setE${clearType}(${inputHandle})...`);
+        console.log(`setE${fheType}(${inputHandle})...`);
 
-        switch (clearType) {
+        switch (fheType) {
           case 'bool':
             tx = await fheTest.setEbool!(inputHandle, inputProof, ct, makePublic);
             break;
@@ -108,7 +107,7 @@ describe.runIf(isCleartext(getEthersTestConfig().chainName))(
             tx = await fheTest.setEaddress!(inputHandle, inputProof, ct, makePublic);
             break;
           default:
-            throw new Error(`Unsupported fheType`);
+            throw new Error(`Unsupported type: ${fheType}`);
         }
 
         const receipt = await tx.wait();
