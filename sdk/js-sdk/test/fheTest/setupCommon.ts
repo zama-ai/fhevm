@@ -11,6 +11,7 @@ import { localstack_v12 } from './chains/localstack_v12.js';
 import { localstack_v13 } from './chains/localstack_v13.js';
 import { localstack_v14 } from './chains/localstack_v14.js';
 import { devnet } from './chains/devnet.js';
+import { polygon_devnet } from './chains/polygon_devnet.js';
 import { mainnet, sepolia, sepolia as testnet } from '@fhevm/sdk/chains';
 
 // ---------------------------------------------------------------------------
@@ -28,6 +29,7 @@ export const FHE_TEST_CHAIN_NAMES = [
   'localstack_v12',
   'localstack_v13',
   'localstack_v14',
+  'polygon_devnet',
 ] as const;
 
 export type FheTestChainName = (typeof FHE_TEST_CHAIN_NAMES)[number];
@@ -371,6 +373,7 @@ export function prepareFheTestEnv(): FheTestBaseEnv {
     localstack_v13,
     localstack_v14,
     localcleartext,
+    polygon_devnet,
     sepolia,
     mainnet,
     devnet,

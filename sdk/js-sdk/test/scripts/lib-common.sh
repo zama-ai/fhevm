@@ -90,7 +90,8 @@ fhevm_chain_file() {
             # SDK file is named after the network (sepolia); testnet is an alias.
             printf '%s/src/core/chains/definitions/sepolia.ts\n' "$sdk_root"
             ;;
-        devnet|localcleartext|localstack|localstack_*)
+        )
+        devnet|polygon_devnet|localcleartext|localstack|localstack_*)
             printf '%s/test/fheTest/chains/%s.ts\n' "$sdk_root" "$chain"
             ;;
         *)

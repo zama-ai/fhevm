@@ -40,7 +40,7 @@ Usage: fhetest-deploy.sh [options]
 Options:
   --mnemonic <phrase>   BIP-39 mnemonic for the deployer key.
                         Precedence: --mnemonic flag > \$MNEMONIC env > built-in test mnemonic.
-  --chain <name>        FHEVM chain (localstack | localcleartext | devnet).
+  --chain <name>        FHEVM chain (localstack_* | localstack | localcleartext | polygon_devnet).
                         Precedence: --chain flag > \$CHAIN env > $chain_default
   --dry-run             Resolve and print all addresses + config, then exit
                         before any state-changing call (no funding, no
@@ -65,12 +65,14 @@ fhevm_mnemonic="${mnemonic_cli:-${MNEMONIC:-$fhevm_mnemonic_default}}"
 chain="${chain_cli:-${CHAIN:-$chain_default}}"
 fhevm_assert_chain "$chain"
 
-# Local-only chains. Any localstack* variant (localstack, localstack_v11,
-# localstack_v12, ...) is accepted — they share the FHETest deploy path.
+# Supported chains:
+# - localcleartext
+# - any localstack
+# - polygon_devnet
 case "$chain" in
-    localcleartext|localstack|localstack_*) ;;
+    localcleartext|localstack|localstack_*|polygon_devnet) ;;
     *)
-        echo "❌ fhetest-deploy.sh only supports local chains 'localcleartext | localstack | localstack_*'; got '$chain'" >&2
+        echo "❌ fhetest-deploy.sh only supports local chains 'localcleartext | localstack | localstack_* | polygon_devnet'; got '$chain'" >&2
         exit 1
         ;;
 esac
@@ -78,7 +80,9 @@ esac
 # Derive RPC URL from the resolved chain via fhevm-lib.
 rpc_url="$(resolve_chain_rpc_url "$chain")"
 
-assert_is_anvil ${rpc_url}
+if [[ "$chain" != "polygon_devnet" ]]; then
+    assert_is_anvil "${rpc_url}"
+fi
 
 # ==============================================================================
 # Unset CHAIN environment variable (forge)
@@ -113,6 +117,9 @@ private_key=$(cast wallet private-key --mnemonic "${fhevm_mnemonic}" --mnemonic-
 deployer_addr=$(cast wallet address --private-key "${private_key}")
 
 echo "deployer:      $deployer_addr"
+
+deployer_balance_wei="$(cast balance "$deployer_addr" --rpc-url "$rpc_url")"
+echo "balance:       ${deployer_balance_wei} wei"
 
 if [[ "$dry_run" == true ]]; then
     # Predict the FHETest CREATE address: keccak256(rlp(deployer, nonce))[12:].
