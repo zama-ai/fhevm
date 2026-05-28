@@ -464,21 +464,37 @@ const restartZkproofWorkers = async (state: Pick<State, "scenario">, reason: str
   }
 };
 
+const upsertHostChainInCoprocessorDb = async (
+  state: State,
+  chain: { key: string; chainId: string },
+  index: number,
+  logPrefix: string,
+) => {
+  const dbName = driftDatabaseName(index);
+  const chainHost = state.discovery?.hosts[chain.key] ?? {};
+  const aclAddress = chainHost.ACL_CONTRACT_ADDRESS ?? "";
+  console.log(`${logPrefix} registering ${chain.key} in ${dbName}`);
+  const result = await postgresExec(dbName, [
+    "-c",
+    `INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (${chain.chainId}, ${sqlLiteral(chain.key)}, ${sqlLiteral(aclAddress)}) ON CONFLICT (chain_id) DO UPDATE SET name = EXCLUDED.name, acl_contract_address = EXCLUDED.acl_contract_address;`,
+  ]);
+  if (result.code !== 0) {
+    throw new PreflightError(result.stderr.trim() || result.stdout.trim() || `failed to register ${chain.key} in ${dbName}`);
+  }
+};
+
+const upsertHostChainInCoprocessorDbs = async (state: State, chain: { key: string; chainId: string }, logPrefix: string) => {
+  const plan = stackSpecForState(state);
+  for (let index = 0; index < plan.topology.count; index += 1) {
+    await upsertHostChainInCoprocessorDb(state, chain, index, logPrefix);
+  }
+};
+
 /** Registers an extra host chain in all coprocessor databases and restarts zkproof-workers. */
 const registerExtraChainInCoprocessor = async (state: State, chain: { key: string; chainId: string }) => {
   const plan = stackSpecForState(state);
-  const chainHost = state.discovery?.hosts[chain.key] ?? {};
-  const aclAddress = chainHost.ACL_CONTRACT_ADDRESS ?? "";
   for (let index = 0; index < plan.topology.count; index += 1) {
-    const dbName = driftDatabaseName(index);
-    console.log(`[multi-chain] registering ${chain.key} in ${dbName}`);
-    const result = await postgresExec(dbName, [
-      "-c",
-      `INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (${chain.chainId}, ${sqlLiteral(chain.key)}, ${sqlLiteral(aclAddress)}) ON CONFLICT (chain_id) DO NOTHING;`,
-    ]);
-    if (result.code !== 0) {
-      throw new PreflightError(result.stderr.trim() || result.stdout.trim() || `failed to register ${chain.key} in ${dbName}`);
-    }
+    await upsertHostChainInCoprocessorDb(state, chain, index, "[multi-chain]");
     await restartZkproofWorker(index, `after registering ${chain.key}`);
   }
 };
@@ -649,11 +665,16 @@ export const runStep = async (state: State, step: StepName) => {
       const services = skipMigration ? coprocessorHealthContainers(state) : serviceNameList(state, "coprocessor");
       await stepComposeUp("coprocessor", state, services, { noDeps: skipMigration });
       await waitForCoprocessorServices(state, skipMigration);
-      if (!skipMigration) {
-        await timed("[coprocessor] refresh zkproof host-chain cache", () =>
-          restartZkproofWorkers(state, "after host_chains seed"),
-        );
+      const defaultChain = defaultHostChain(state);
+      if (!defaultChain) {
+        throw new PreflightError("Missing default host chain");
       }
+      await timed("[coprocessor] register default host chain", () =>
+        upsertHostChainInCoprocessorDbs(state, defaultChain, "[coprocessor]"),
+      );
+      await timed("[coprocessor] refresh zkproof host-chain cache", () =>
+        restartZkproofWorkers(state, "after host_chains seed"),
+      );
       await postBootHealthGate(coprocessorHealthContainers(state));
       for (const chain of extraHostChains(state)) {
         const suffix = chain.suffix;
