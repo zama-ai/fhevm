@@ -475,12 +475,6 @@ async fn execute_verify_proof_routine(
                     insert_ciphertexts(&mut txn, cts, blob_hash).await?;
                     if let Some(bn) = block_number {
                         insert_input_handles(&mut txn, cts, bn).await?;
-                        upsert_state_hash_for_block(
-                            &mut txn,
-                            host_chain_id_raw,
-                            bn,
-                        )
-                        .await?;
                     }
                     tracing::Span::current().record("count", count);
 
@@ -832,64 +826,6 @@ pub(crate) async fn insert_input_handles(
     .bind(block_number)
     .execute(db_txn.as_mut())
     .await?;
-    Ok(())
-}
-
-// Compute the state hash for (chain_id, block_number) using the canonical
-// aggregation query and insert it into `state_hash`. The query returns a NULL
-// hash unless every computation for that block is completed, so partial blocks
-// are silently skipped.
-//
-// Schema isolation: BCS connects with `search_path = public`, GCS with
-// `search_path = gcs,public`. Unqualified `ciphertexts` and `state_hash`
-// resolve to the stack's own schema. Pre-snapshot ciphertexts (input_handles
-// from before activation) still live in `public.ciphertexts`; the JOIN would
-// miss them under `search_path = gcs,public`. But GCS only produces input
-// ciphertexts post-activation, all of which land in `gcs.ciphertexts`, so
-// the JOIN is consistent.
-pub(crate) async fn upsert_state_hash_for_block(
-    db_txn: &mut Transaction<'_, Postgres>,
-    chain_id: i64,
-    block_number: i64,
-) -> Result<(), ExecutionError> {
-    // From zkproof-worker's perspective the state at this block is the set of
-    // input ciphertexts it just materialised, so the hash is computed over
-    // `input_handles` for the block rather than over `computations` outputs.
-    let row: Option<(Option<String>, i64)> = sqlx::query_as(
-        "SELECT
-            encode(
-                sha256(
-                    string_agg(ct.ciphertext, ''::bytea ORDER BY ct.handle, ct.ciphertext_version)
-                ),
-                'hex'
-            ) AS state_hash,
-            COUNT(*) AS ciphertext_count
-        FROM input_handles ih
-        JOIN ciphertexts ct ON ct.handle = ih.handle
-        WHERE ih.block_number = $1",
-    )
-    .bind(block_number)
-    .fetch_optional(db_txn.as_mut())
-    .await?;
-
-    if let Some((Some(state_hash), _count)) = row {
-        sqlx::query(
-            "INSERT INTO state_hash (chain_id, block_number, state_hash)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (chain_id, block_number) DO NOTHING",
-        )
-        .bind(chain_id)
-        .bind(block_number)
-        .bind(&state_hash)
-        .execute(db_txn.as_mut())
-        .await?;
-        info!(
-            chain_id,
-            block_number,
-            state_hash = %state_hash,
-            "inserted state_hash for block"
-        );
-    }
     Ok(())
 }
 

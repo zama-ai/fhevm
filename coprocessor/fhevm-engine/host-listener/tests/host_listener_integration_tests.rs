@@ -249,6 +249,7 @@ async fn setup_with_block_time(
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
         timeout_request_websocket: 30,
+        gcs_mode: false,
     };
     let health_check_url = format!("http://127.0.0.1:{}", args.health_port);
 
@@ -1020,6 +1021,7 @@ async fn test_only_catchup_loop_requires_negative_start_at_block(
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
         timeout_request_websocket: 30,
+        gcs_mode: false,
     };
 
     let result = main(args).await;

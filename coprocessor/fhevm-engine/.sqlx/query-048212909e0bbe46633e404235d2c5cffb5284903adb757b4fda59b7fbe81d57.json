@@ -72,6 +72,11 @@
         "ordinal": 13,
         "name": "transaction_id",
         "type_info": "Bytea"
+      },
+      {
+        "ordinal": 14,
+        "name": "block_number",
+        "type_info": "Int8"
       }
     ],
     "parameters": {
@@ -93,6 +98,7 @@
       true,
       false,
       false,
+      true,
       true
     ]
   },

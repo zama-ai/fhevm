@@ -39,8 +39,10 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn, Level};
 
 pub mod s3;
+pub mod state_hash;
 
 use crate::s3::S3Service;
+use crate::state_hash::state_hash_key;
 
 /// pg_notify channels this service listens on.
 pub const NEW_BLOCK_CHANNEL: &str = "event_new_block";
@@ -71,6 +73,12 @@ pub struct Config {
     /// Hard cap on how long we wait for unanimity before giving up and
     /// emitting `unanimity_consensus_timeout`.
     pub commitment_timeout: Duration,
+    /// This operator's S3 bucket. Empty disables GCS uploads (read-only).
+    pub my_bucket: String,
+    /// S3 endpoint override (e.g. `http://minio:9000`).
+    pub s3_endpoint: Option<String>,
+    /// Max pending blocks processed per state_hash sweep.
+    pub state_hash_batch_limit: i64,
 }
 
 impl Default for Config {
@@ -84,6 +92,9 @@ impl Default for Config {
             poll_interval: Duration::from_secs(30),
             commitment_poll_interval: Duration::from_secs(5),
             commitment_timeout: Duration::from_secs(60),
+            my_bucket: String::new(),
+            s3_endpoint: None,
+            state_hash_batch_limit: 256,
         }
     }
 }
@@ -116,16 +127,27 @@ pub enum Error {
     Gateway(String),
 }
 
-/// Placeholder for the per-operator state-commitment fetch. Future work will
-/// HTTP-GET each URL and return the bytes. For now it returns an empty vec
-/// per URL — never unanimous, so the polling loop always hits the timeout.
-async fn fetch_state_commitments(s3_urls: &[String]) -> Vec<Vec<u8>> {
-    // TODO: real implementation — fetch bytes from each S3 bucket URL.
-    debug!(
-        operator_count = s3_urls.len(),
-        "fetch_state_commitments (placeholder) — returning empty commitments"
-    );
-    vec![Vec::new(); s3_urls.len()]
+/// HTTP-GETs each operator's `state_hash` blob for `(chain_id, block_height)`.
+/// If any operator is missing (404 / transport error), returns an empty `Vec`
+/// so `all_identical` rejects the round.
+async fn fetch_state_commitments(
+    http: &reqwest::Client,
+    s3_urls: &[String],
+    chain_id: i64,
+    block_height: i64,
+) -> Vec<Vec<u8>> {
+    let key = state_hash_key(chain_id, block_height);
+    let mut out = Vec::with_capacity(s3_urls.len());
+    for url in s3_urls {
+        let path = format!("{}/{key}", url.trim_end_matches('/'));
+        let bytes = match http.get(&path).send().await {
+            Ok(r) if r.status().is_success() => r.bytes().await.ok().map(|b| b.to_vec()),
+            _ => None,
+        };
+        let Some(bytes) = bytes else { return vec![] };
+        out.push(bytes);
+    }
+    out
 }
 
 /// Returns true when `commitments` is non-empty and every entry is identical.
@@ -136,27 +158,30 @@ fn all_identical(commitments: &[Vec<u8>]) -> bool {
     commitments.iter().all(|c| c == first)
 }
 
-/// Look up the single in-progress upgrade. Returns the `end_block` when there
-/// is exactly one row with `status='in_progress'` and `state='UpgradeActivated'`,
+/// Look up the single in-progress upgrade. Returns `(start_block, end_block)` when there
+/// is exactly one row with `status='in_progress'` and `state='UpgradeActivated'` or `'DryRunStarted'`,
 /// `None` otherwise (no active upgrade, or in a state we shouldn't act on).
-async fn fetch_active_upgrade_end_block(pool: &Pool<Postgres>) -> Result<Option<i64>, Error> {
-    let rows: Vec<(String, Option<i64>)> =
-        sqlx::query_as("SELECT state, end_block FROM upgrade_state WHERE status = 'in_progress'")
-            .fetch_all(pool)
-            .await?;
+async fn fetch_active_upgrade_end_block(
+    pool: &Pool<Postgres>,
+) -> Result<Option<(i64, i64)>, Error> {
+    let rows: Vec<(String, Option<i64>, Option<i64>)> = sqlx::query_as(
+        "SELECT state, start_block, end_block FROM upgrade_state WHERE status = 'in_progress'",
+    )
+    .fetch_all(pool)
+    .await?;
 
     match rows.len() {
         0 => Ok(None),
         1 => {
-            let (state, end_block) = &rows[0];
-            if state != "DryRunActivated" {
+            let (state, start_block, end_block) = &rows[0];
+            if !matches!(state.as_str(), "UpgradeActivated" | "DryRunStarted") {
                 debug!(
                     state = %state,
-                    "active upgrade row is not in DryRunActivated — ignoring new_block"
+                    "active upgrade row is not in UpgradeActivated/DryRunStarted — ignoring new_block"
                 );
                 return Ok(None);
             }
-            Ok(*end_block)
+            Ok(start_block.zip(*end_block))
         }
         n => {
             // Schema invariant per upgrade procedure: only one in_progress row at a time.
@@ -173,11 +198,15 @@ async fn fetch_active_upgrade_end_block(pool: &Pool<Postgres>) -> Result<Option<
 ///
 /// Emits `unanimity_consensus` on agreement, `unanimity_consensus_timeout`
 /// after `commitment_timeout`. Returns early if the cancellation token fires.
+#[allow(clippy::too_many_arguments)]
 async fn run_unanimity_poll(
     pool: &Pool<Postgres>,
     cancel: &CancellationToken,
+    http: &reqwest::Client,
     s3_urls: &[String],
     payload: &NewBlockPayload,
+    start_block: i64,
+    end_block: i64,
     commitment_poll_interval: Duration,
     commitment_timeout: Duration,
 ) -> Result<(), Error> {
@@ -185,6 +214,8 @@ async fn run_unanimity_poll(
         chain_id = payload.chain_id,
         block_height = payload.block_height,
         block_hash = %payload.block_hash,
+        start_block,
+        end_block,
         operator_count = s3_urls.len(),
         poll_interval = ?commitment_poll_interval,
         timeout = ?commitment_timeout,
@@ -197,15 +228,26 @@ async fn run_unanimity_poll(
     ticker.tick().await;
 
     loop {
-        let commitments = fetch_state_commitments(s3_urls).await;
-        if all_identical(&commitments) {
-            info!(
-                chain_id = payload.chain_id,
-                block_height = payload.block_height,
-                block_hash = %payload.block_hash,
-                "unanimity reached — emitting unanimity_consensus"
-            );
-            return notify_unanimity(pool, UNANIMITY_CONSENSUS_CHANNEL, payload).await;
+        for block_height in start_block..=end_block {
+            let commitments =
+                fetch_state_commitments(http, s3_urls, payload.chain_id, block_height).await;
+            if all_identical(&commitments) {
+                info!(
+                    chain_id = payload.chain_id,
+                    block_height,
+                    block_hash = %payload.block_hash,
+                    "unanimity reached — emitting unanimity_consensus"
+                );
+                return notify_unanimity(
+                    pool,
+                    UNANIMITY_CONSENSUS_CHANNEL,
+                    &NewBlockPayload {
+                        block_height,
+                        ..payload.clone()
+                    },
+                )
+                .await;
+            }
         }
 
         if tokio::time::Instant::now() >= deadline {
@@ -213,6 +255,8 @@ async fn run_unanimity_poll(
                 chain_id = payload.chain_id,
                 block_height = payload.block_height,
                 block_hash = %payload.block_hash,
+                start_block,
+                end_block,
                 "unanimity poll timed out — emitting unanimity_consensus_timeout"
             );
             return notify_unanimity(pool, UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL, payload).await;
@@ -250,9 +294,11 @@ async fn notify_unanimity(
 }
 
 /// Handle a `new_block` notification.
+#[allow(clippy::too_many_arguments)]
 async fn handle_new_block<P>(
     pool: &Pool<Postgres>,
     cancel: &CancellationToken,
+    http: &reqwest::Client,
     s3_urls: &Arc<RwLock<Vec<String>>>,
     raw_payload: &str,
     commitment_poll_interval: Duration,
@@ -272,7 +318,7 @@ where
         "new_block received"
     );
 
-    let Some(end_block) = fetch_active_upgrade_end_block(pool).await? else {
+    let Some((start_block, end_block)) = fetch_active_upgrade_end_block(pool).await? else {
         info!(
             chain_id = payload.chain_id,
             block_height = payload.block_height,
@@ -297,8 +343,11 @@ where
     run_unanimity_poll(
         pool,
         cancel,
+        http,
         &urls_snapshot,
         &payload,
+        start_block,
+        end_block,
         commitment_poll_interval,
         commitment_timeout,
     )
@@ -328,6 +377,20 @@ where
     Ok(())
 }
 
+async fn build_s3_client(config: &Config) -> aws_sdk_s3::Client {
+    let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
+    if let Some(endpoint) = config.s3_endpoint.as_deref() {
+        loader = loader.endpoint_url(endpoint);
+    }
+    let sdk_config = loader.load().await;
+    let mut builder = aws_sdk_s3::config::Builder::from(&sdk_config);
+    if config.s3_endpoint.is_some() {
+        // path-style addressing is required by minio / localstack
+        builder = builder.force_path_style(true);
+    }
+    aws_sdk_s3::Client::from_conf(builder.build())
+}
+
 /// Main service loop.
 pub async fn run<P>(
     config: Config,
@@ -341,6 +404,7 @@ where
     info!(
         service_name = %config.service_name,
         gateway_config_address = %config.gateway_config_address,
+        my_bucket = %config.my_bucket,
         "starting consensus-detector"
     );
 
@@ -357,6 +421,29 @@ where
         "fetched operator S3 URLs from GatewayConfig"
     );
     let s3_urls: Arc<RwLock<Vec<String>>> = Arc::new(RwLock::new(urls));
+
+    let http = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()?;
+
+    // GCS upload only when --my-bucket is set; BCS hash compute always runs.
+    let s3 = if config.my_bucket.is_empty() {
+        info!("--my-bucket not set; GCS upload disabled");
+        None
+    } else {
+        Some(Arc::new(build_s3_client(&config).await))
+    };
+    {
+        let pool = pool.clone();
+        let cancel = cancel.child_token();
+        let bucket = config.my_bucket.clone();
+        let batch_limit = config.state_hash_batch_limit;
+        tokio::spawn(async move {
+            if let Err(e) = state_hash::run(pool, s3, bucket, batch_limit, cancel).await {
+                error!(error = %e, "state_hash worker exited with error");
+            }
+        });
+    }
 
     let mut listener = PgListener::connect_with(&pool).await?;
     listener
@@ -389,6 +476,7 @@ where
                                 handle_new_block(
                                     &pool,
                                     &cancel,
+                                    &http,
                                     &s3_urls,
                                     payload,
                                     config.commitment_poll_interval,

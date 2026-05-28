@@ -864,15 +864,6 @@ async fn upload_transaction_graph_results<'a>(
                 err
             })?.rows_affected();
 
-            if comp_updated > 0 {
-                upsert_state_hash_for_completed_blocks(
-                    &handles_vec,
-                    &txn_ids_vec,
-                    trx,
-                )
-                .await?;
-            }
-
             Ok::<u64, Box<dyn std::error::Error + Send + Sync>>(comp_updated)
         }
         .instrument(s_update)
@@ -880,96 +871,6 @@ async fn upload_transaction_graph_results<'a>(
         res |= comp_updated > 0;
     }
     Ok(res)
-}
-
-// For each (host_chain_id, block_number) touched by the just-completed
-// computations, compute the block's state hash with the canonical query and
-// upsert it into the state_hash table. The state_hash query returns a NULL
-// hash unless every computation for that block is completed, so blocks that
-// are not yet fully done are skipped.
-//
-// Schema isolation: BCS connects with `search_path = public`, GCS with
-// `search_path = gcs,public`. Unqualified `computations`, `ciphertexts`,
-// `state_hash` resolve to the stack's own schema — BCS reads/writes the
-// `public.*` copies, GCS reads/writes the `gcs.*` copies populated since
-// activation.
-#[tracing::instrument(skip_all)]
-async fn upsert_state_hash_for_completed_blocks<'a>(
-    handles_vec: &[Vec<u8>],
-    txn_ids_vec: &[Vec<u8>],
-    trx: &mut sqlx::Transaction<'a, Postgres>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let affected_blocks: Vec<(i64, i64)> = sqlx::query_as(
-        "SELECT DISTINCT host_chain_id, block_number
-         FROM computations
-         WHERE (output_handle, transaction_id) IN (
-             SELECT * FROM unnest($1::BYTEA[], $2::BYTEA[])
-         )
-         AND block_number IS NOT NULL",
-    )
-    .bind(handles_vec)
-    .bind(txn_ids_vec)
-    .fetch_all(trx.as_mut())
-    .await
-    .map_err(|err| {
-        error!(target: "tfhe_worker", { error = %err }, "error while querying affected blocks for state_hash");
-        err
-    })?;
-
-    for (chain_id, block_number) in affected_blocks {
-        let row: Option<(Option<String>, i64)> = sqlx::query_as(
-            "WITH block_computations AS (
-                SELECT output_handle, tenant_id, is_completed
-                FROM computations
-                WHERE block_number = $1
-            ),
-            validated AS (
-                SELECT 1
-                FROM block_computations
-                HAVING bool_and(is_completed)
-            )
-            SELECT
-                encode(
-                    sha256(
-                        string_agg(ct.ciphertext, ''::bytea ORDER BY ct.handle, ct.ciphertext_version)
-                    ),
-                    'hex'
-                ) AS state_hash,
-                COUNT(*) AS ciphertext_count
-            FROM validated v
-            CROSS JOIN block_computations bc
-            JOIN ciphertexts ct
-                ON ct.tenant_id = bc.tenant_id
-                AND ct.handle = bc.output_handle",
-        )
-        .bind(block_number)
-        .fetch_optional(trx.as_mut())
-        .await
-        .map_err(|err| {
-            error!(target: "tfhe_worker", { error = %err, block_number = block_number }, "error while computing state_hash for block");
-            err
-        })?;
-
-        if let Some((Some(state_hash), _count)) = row {
-            sqlx::query(
-                "INSERT INTO state_hash (chain_id, block_number, state_hash)
-                 VALUES ($1, $2, $3)
-                 ON CONFLICT (chain_id, block_number) DO NOTHING",
-            )
-            .bind(chain_id)
-            .bind(block_number)
-            .bind(&state_hash)
-            .execute(trx.as_mut())
-            .await
-            .map_err(|err| {
-                error!(target: "tfhe_worker", { error = %err, chain_id = chain_id, block_number = block_number }, "error while inserting state_hash");
-                err
-            })?;
-            info!(target: "tfhe_worker", chain_id = chain_id, block_number = block_number, state_hash = %state_hash, "inserted state_hash for block");
-        }
-    }
-
-    Ok(())
 }
 
 #[tracing::instrument(skip_all)]
