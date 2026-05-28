@@ -3,7 +3,7 @@ import { ethers } from 'ethers';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { createFhevmCleartextDecryptClient } from '@fhevm/sdk/ethers/cleartext';
-import { getEthersTestConfig, type FheTestEthersConfig } from '../ethers/setup.js';
+import { getEthersTestConfig, type FheTestEthersConfig } from '../setup-ethers.js';
 import {
   decryptTestCases,
   isCleartext,

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmDecryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { serializeTransportKeyPair, parseTransportKeyPair } from '@fhevm/sdk/actions/chain';
-import { getEthersTestConfig, type FheTestEthersConfig } from './setup.js';
+import { getEthersTestConfig, type FheTestEthersConfig } from '../setup-ethers.js';
 import { isCleartext } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -18,7 +18,7 @@ export default defineConfig({
   plugins: [localstackProxyPlugin()],
   resolve: {
     alias: {
-      // The chain configs in test/fheTest/chains/*.ts import from this
+      // The chain configs in test/chains/*.ts import from this
       // alias; the alias is normally provided by test/tsconfig.json paths,
       // which Vite does not read. Without this entry, dynamic-importing a
       // chain file from roundtrip.ts breaks at bundle time.

@@ -365,7 +365,7 @@ async function assertContractDeployed(
   if (code === '0x') {
     throw new Error(
       `${contractName} is not deployed at ${address} on ${chainTarget}. ` +
-        'Restart/redeploy the selected local test stack so test/fheTest/chains/chain-defaults.json matches the RPC state.',
+        'Restart/redeploy the selected local test stack so test/chains/chain-defaults.json matches the RPC state.',
     );
   }
 }

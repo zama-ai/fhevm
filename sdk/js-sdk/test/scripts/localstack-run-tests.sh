@@ -130,7 +130,7 @@ export CHAIN
 # First check configuration
 if ! npx vitest run --config test/fheTest/vitest.config.ts test/fheTest/viem/clientBase.chain.test.ts; then
   echo ""
-  echo "❌ ERROR: update test/fheTest/chains/${CHAIN}.ts config file ❌"
+  echo "❌ ERROR: update test/chains/${CHAIN}.ts config file ❌"
   echo ""
   exit 1
 fi

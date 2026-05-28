@@ -2,8 +2,8 @@ import type { Account, Hex, PublicClient, Transport, Chain } from 'viem';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
 import { createFhevmDecryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
-import { FHETestABI } from '../abi-v2.js';
+import { getViemTestConfig, type FheTestViemConfig } from '../setup-viem.js';
+import { FHETestABI } from '../FheTest-abi-v2.js';
 import { createWalletClient, http } from 'viem';
 import {
   decryptTestCases,

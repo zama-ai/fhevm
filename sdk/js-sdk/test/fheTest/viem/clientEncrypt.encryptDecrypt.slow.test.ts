@@ -1,7 +1,7 @@
 import type { EncryptedValue } from '@fhevm/sdk/types';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createFhevmDecryptClient, createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import { getViemTestConfig, type FheTestViemConfig } from './setup.js';
+import { getViemTestConfig, type FheTestViemConfig } from '../setup-viem.js';
 import {
   clearTypeFromHandle,
   encryptTestCases,
@@ -10,7 +10,7 @@ import {
   isCleartext,
   isV2,
 } from '../setupCommon.js';
-import { FHETestABI } from '../abi-v2.js';
+import { FHETestABI } from '../FheTest-abi-v2.js';
 import { createWalletClient, http, type Hex } from 'viem';
 
 ////////////////////////////////////////////////////////////////////////////////

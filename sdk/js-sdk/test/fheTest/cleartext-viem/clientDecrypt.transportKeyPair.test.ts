@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { createFhevmCleartextDecryptClient } from '@fhevm/sdk/viem/cleartext';
 import { serializeTransportKeyPair, parseTransportKeyPair } from '@fhevm/sdk/actions/chain';
-import { getViemTestConfig, type FheTestViemConfig } from '../viem/setup.js';
+import { getViemTestConfig, type FheTestViemConfig } from '../setup-viem.js';
 import { isCleartext } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////

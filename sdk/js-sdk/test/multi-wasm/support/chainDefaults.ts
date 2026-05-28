@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const chainDefaultsPath = resolve(import.meta.dirname, '../../fheTest/chains/chain-defaults.json');
+const chainDefaultsPath = resolve(import.meta.dirname, '../../chains/chain-defaults.json');
 const envPath = resolve(import.meta.dirname, '../../.env');
 
 export type LocalstackChainDefaults = {
