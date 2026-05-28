@@ -112,7 +112,9 @@ describe("GatewayConfig", function () {
 
   describe("Deployment", function () {
     let gatewayConfig: GatewayConfig;
+    let inputVerification: InputVerification;
     let owner: Wallet;
+    let pauser: Wallet;
     let kmsNodes: KmsNodeStruct[];
     let coprocessors: CoprocessorStruct[];
     let custodians: CustodianStruct[];
@@ -124,13 +126,16 @@ describe("GatewayConfig", function () {
     let highKmsGenThreshold: number;
     let highCoprocessorThreshold: number;
     let proxyContract: EmptyUUPSProxyGatewayConfig;
+    let oldGatewayConfigFactory: ContractFactory;
     let newGatewayConfigFactory: ContractFactory;
 
     beforeEach(async function () {
       // Load fixture data locally
       const fixtureData = await loadFixture(getInputsForDeployFixture);
       gatewayConfig = fixtureData.gatewayConfig;
+      inputVerification = fixtureData.inputVerification;
       owner = fixtureData.owner;
+      pauser = fixtureData.pauser;
       kmsNodes = fixtureData.kmsNodes;
       coprocessors = fixtureData.coprocessors;
       custodians = fixtureData.custodians;
@@ -152,8 +157,25 @@ describe("GatewayConfig", function () {
       await proxyContract.waitForDeployment();
 
       // Get the GatewayConfig contract factory
+      oldGatewayConfigFactory = await hre.ethers.getContractFactory("GatewayConfigV7Example", owner);
       newGatewayConfigFactory = await hre.ethers.getContractFactory("GatewayConfig", owner);
     });
+
+    async function deployGatewayConfigPhase1Proxy() {
+      const proxyImplementation = await hre.ethers.getContractFactory("EmptyUUPSProxyGatewayConfig", owner);
+      const proxy = await hre.upgrades.deployProxy(proxyImplementation, [owner.address], {
+        initializer: "initialize",
+        kind: "uups",
+      });
+      await proxy.waitForDeployment();
+
+      return hre.upgrades.upgradeProxy(proxy, oldGatewayConfigFactory, {
+        call: {
+          fn: "initializeV7ForTest",
+          args: [owner.address, [coprocessors[0]], 1],
+        },
+      });
+    }
 
     // This test is not here for making sure the deployment works, as all contracts are deployed in the
     // hardhat "test" pre-hook, but rather to verify that the event is emitted correctly (since it
@@ -188,7 +210,101 @@ describe("GatewayConfig", function () {
     });
 
     it("Should expose the GatewayConfig version", async function () {
-      expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.6.0");
+      expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.7.0");
+    });
+
+    it("Should set Zama as priority during the Phase 1 to Phase 2 reinitialization", async function () {
+      const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
+      const zamaTxSender = coprocessors[0].txSenderAddress;
+
+      expect(await gatewayConfigPhase1.getCoprocessorTxSenders()).to.deep.equal([zamaTxSender]);
+      expect(await gatewayConfigPhase1.getCoprocessorMajorityThreshold()).to.equal(1);
+
+      await inputVerification.connect(pauser).pause();
+
+      const upgradedGatewayConfig = await hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
+        call: {
+          fn: "reinitializeV8",
+          args: [zamaTxSender],
+        },
+      });
+
+      expect(await upgradedGatewayConfig.getPriorityCoprocessorTxSender()).to.equal(zamaTxSender);
+    });
+
+    it("Should register partners after Zama priority is active", async function () {
+      const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
+      const zamaTxSender = coprocessors[0].txSenderAddress;
+
+      await inputVerification.connect(pauser).pause();
+
+      const upgradedGatewayConfig = await hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
+        call: {
+          fn: "reinitializeV8",
+          args: [zamaTxSender],
+        },
+      });
+
+      await upgradedGatewayConfig.connect(owner).updateCoprocessors(coprocessors, coprocessorThreshold);
+
+      expect(await upgradedGatewayConfig.getCoprocessorTxSenders()).to.deep.equal(
+        coprocessors.map((coprocessor) => coprocessor.txSenderAddress),
+      );
+      expect(await upgradedGatewayConfig.getCoprocessorMajorityThreshold()).to.equal(coprocessorThreshold);
+      expect(await upgradedGatewayConfig.getPriorityCoprocessorTxSender()).to.equal(zamaTxSender);
+    });
+
+    it("Should allow reinitialization without priority while InputVerification is not paused", async function () {
+      const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
+      expect(await inputVerification.paused()).to.be.false;
+
+      const upgradedGatewayConfig = await hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
+        call: {
+          fn: "reinitializeV8",
+          args: [ZeroAddress],
+        },
+      });
+
+      expect(await upgradedGatewayConfig.getPriorityCoprocessorTxSender()).to.equal(ZeroAddress);
+    });
+
+    it("Should revert when reinitializing with priority while InputVerification is not paused", async function () {
+      const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
+      expect(await inputVerification.paused()).to.be.false;
+
+      await expect(
+        hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
+          call: {
+            fn: "reinitializeV8",
+            args: [coprocessors[0].txSenderAddress],
+          },
+        }),
+      ).to.be.revertedWithCustomError(gatewayConfig, "InputVerificationMustBePaused");
+    });
+
+    it("Should revert when reinitializing with an unregistered priority coprocessor transaction sender", async function () {
+      const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
+      await inputVerification.connect(pauser).pause();
+
+      await expect(
+        hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
+          call: {
+            fn: "reinitializeV8",
+            args: [fakeTxSender.address],
+          },
+        }),
+      )
+        .to.be.revertedWithCustomError(gatewayConfig, "PriorityCoprocessorTxSenderNotRegistered")
+        .withArgs(fakeTxSender.address);
+    });
+
+    it("Should revert when reinitializing because the sender is not the owner", async function () {
+      const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
+      const upgradedGatewayConfig = await hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory);
+
+      await expect(upgradedGatewayConfig.connect(fakeOwner).reinitializeV8(ZeroAddress))
+        .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+        .withArgs(fakeOwner.address);
     });
 
     it("Should revert because the KMS nodes list is empty", async function () {
@@ -1158,7 +1274,7 @@ describe("GatewayConfig", function () {
           await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(priorityTxSender);
 
           await expect(gatewayConfig.connect(owner).updateCoprocessors(coprocessors.slice(1), 1))
-            .to.be.revertedWithCustomError(gatewayConfig, "PriorityCoprocessorTxSenderNotRegistered")
+            .to.be.revertedWithCustomError(gatewayConfig, "PriorityCoprocessorNotInNewCoprocessors")
             .withArgs(priorityTxSender);
         });
 

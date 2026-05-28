@@ -278,6 +278,12 @@ interface IGatewayConfig {
     error PriorityCoprocessorTxSenderNotRegistered(address coprocessorTxSenderAddress);
 
     /**
+     * @notice Error emitted when a coprocessor update would remove the active priority coprocessor.
+     * @param coprocessorTxSenderAddress The active priority coprocessor transaction sender.
+     */
+    error PriorityCoprocessorNotInNewCoprocessors(address coprocessorTxSenderAddress);
+
+    /**
      * @notice Emitted when all the pausable gateway contracts are paused.
      */
     event PauseAllGatewayContracts();
@@ -344,7 +350,9 @@ interface IGatewayConfig {
     /**
      * @notice Error emitted when an admin operation requires `InputVerification` to be paused first.
      * @dev Coprocessor set, threshold, and priority updates rewrite consensus state read by every
-     *      input verification, so the contract must be paused first to drain in-flight requests.
+     *      input verification, so the contract must be paused first. The pause stops new proof
+     *      requests; operators are still responsible for draining in-flight proof responses and
+     *      ciphertext commits before changing priority.
      */
     error InputVerificationMustBePaused();
 
@@ -502,14 +510,17 @@ interface IGatewayConfig {
     /**
      * @notice Set the priority coprocessor transaction sender.
      * @dev When set, coprocessor consensus is finalized only by this registered transaction sender.
-     *      Requires `InputVerification` to be paused first.
+     *      Requires `InputVerification` to be paused first. Operators must also drain in-flight
+     *      input verification and ciphertext commit work before changing this value.
      * @param coprocessorTxSenderAddress The registered coprocessor transaction sender to prioritize.
      */
     function setPriorityCoprocessorTxSender(address coprocessorTxSenderAddress) external;
 
     /**
      * @notice Remove the priority coprocessor transaction sender.
-     * @dev Restores normal threshold-based coprocessor consensus. Requires `InputVerification` to be paused first.
+     * @dev Restores normal threshold-based coprocessor consensus. Requires `InputVerification` to be
+     *      paused first. Operators must also drain in-flight input verification and ciphertext
+     *      commit work before changing this value.
      */
     function removePriorityCoprocessorTxSender() external;
 

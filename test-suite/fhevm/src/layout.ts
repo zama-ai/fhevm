@@ -281,7 +281,6 @@ export const STANDARD_TEST_PROFILES = [
   "coprocessor-db-state-revert",
   "input-proof",
   "input-proof-compute-decrypt",
-  "priority-coprocessor",
   "user-decryption",
   "delegated-user-decryption",
   "erc20",

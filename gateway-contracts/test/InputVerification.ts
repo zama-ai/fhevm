@@ -12,6 +12,7 @@ import {
   ProtocolPayment,
   ZamaOFT,
 } from "../typechain-types";
+import { CoprocessorStruct } from "../typechain-types/contracts/interfaces/IGatewayConfig";
 import {
   EIP712,
   createAndFundRandomWallet,
@@ -201,6 +202,8 @@ describe("InputVerification", function () {
     let pauser: Wallet;
     let coprocessorTxSenders: HardhatEthersSigner[];
     let coprocessorSigners: HardhatEthersSigner[];
+    let coprocessors: CoprocessorStruct[];
+    let coprocessorS3Buckets: string[];
     let tokenFundedTxSender: Wallet;
     let contractChainId: number;
     let inputVerificationAddress: string;
@@ -215,6 +218,12 @@ describe("InputVerification", function () {
       pauser = fixture.pauser;
       coprocessorTxSenders = fixture.coprocessorTxSenders;
       coprocessorSigners = fixture.coprocessorSigners;
+      coprocessorS3Buckets = fixture.coprocessorS3Buckets;
+      coprocessors = coprocessorTxSenders.map((txSender, idx) => ({
+        txSenderAddress: txSender.address,
+        signerAddress: coprocessorSigners[idx].address,
+        s3BucketUrl: coprocessorS3Buckets[idx],
+      }));
       tokenFundedTxSender = fixture.tokenFundedTxSender;
       contractChainId = fixture.chainIds[0];
 
@@ -456,31 +465,37 @@ describe("InputVerification", function () {
       expect(proofVerificationConsensusTxSenders).to.deep.equal(expectedCoprocessorTxSenders);
     });
 
-    it("Should let only the priority coprocessor transaction sender finalize proof verification", async function () {
-      const priorityTxSender = coprocessorTxSenders[2];
+    it("Should keep proof verification consensus Zama-only after the Phase 1 to Phase 2 rollout", async function () {
+      const zamaTxSender = coprocessorTxSenders[0];
+      const partnerTxSender = coprocessorTxSenders[1];
+      const phase2ZkProofId = 2;
+
       await inputVerification.connect(pauser).pause();
-      await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(priorityTxSender.address);
+      await gatewayConfig.connect(owner).updateCoprocessors([coprocessors[0]], 1);
+      await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(zamaTxSender.address);
+      await gatewayConfig.connect(owner).updateCoprocessors(coprocessors, 2);
+      await inputVerification.connect(owner).unpause();
 
       await inputVerification
-        .connect(coprocessorTxSenders[0])
-        .verifyProofResponse(zkProofId, ctHandles, signatures[0], extraDataV0);
+        .connect(tokenFundedTxSender)
+        .verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof, extraDataV0);
 
-      const nonPriorityThresholdTx = await inputVerification
-        .connect(coprocessorTxSenders[1])
-        .verifyProofResponse(zkProofId, ctHandles, signatures[1], extraDataV0);
+      const partnerTx = await inputVerification
+        .connect(partnerTxSender)
+        .verifyProofResponse(phase2ZkProofId, ctHandles, signatures[1], extraDataV0);
 
-      await expect(nonPriorityThresholdTx).to.not.emit(inputVerification, "VerifyProofResponse");
-      expect(await inputVerification.getVerifyProofConsensusTxSenders(zkProofId)).to.deep.equal([]);
+      await expect(partnerTx).to.not.emit(inputVerification, "VerifyProofResponse");
+      expect(await inputVerification.getVerifyProofConsensusTxSenders(phase2ZkProofId)).to.deep.equal([]);
 
-      const priorityTx = await inputVerification
-        .connect(priorityTxSender)
-        .verifyProofResponse(zkProofId, ctHandles, signatures[2], extraDataV0);
+      const zamaTx = await inputVerification
+        .connect(zamaTxSender)
+        .verifyProofResponse(phase2ZkProofId, ctHandles, signatures[0], extraDataV0);
 
-      await expect(priorityTx)
+      await expect(zamaTx)
         .to.emit(inputVerification, "VerifyProofResponse")
-        .withArgs(zkProofId, ctHandles, [signatures[2]]);
-      expect(await inputVerification.getVerifyProofConsensusTxSenders(zkProofId)).to.deep.equal([
-        priorityTxSender.address,
+        .withArgs(phase2ZkProofId, ctHandles, [signatures[0]]);
+      expect(await inputVerification.getVerifyProofConsensusTxSenders(phase2ZkProofId)).to.deep.equal([
+        zamaTxSender.address,
       ]);
     });
 
@@ -623,6 +638,8 @@ describe("InputVerification", function () {
     let pauser: Wallet;
     let coprocessorTxSenders: HardhatEthersSigner[];
     let coprocessorSigners: HardhatEthersSigner[];
+    let coprocessors: CoprocessorStruct[];
+    let coprocessorS3Buckets: string[];
     let tokenFundedTxSender: Wallet;
     let contractChainId: number;
     let inputVerificationAddress: string;
@@ -635,6 +652,12 @@ describe("InputVerification", function () {
       pauser = fixture.pauser;
       coprocessorTxSenders = fixture.coprocessorTxSenders;
       coprocessorSigners = fixture.coprocessorSigners;
+      coprocessorS3Buckets = fixture.coprocessorS3Buckets;
+      coprocessors = coprocessorTxSenders.map((txSender, idx) => ({
+        txSenderAddress: txSender.address,
+        signerAddress: coprocessorSigners[idx].address,
+        s3BucketUrl: coprocessorS3Buckets[idx],
+      }));
       tokenFundedTxSender = fixture.tokenFundedTxSender;
       contractChainId = fixture.chainIds[0];
 
@@ -787,24 +810,22 @@ describe("InputVerification", function () {
       expect(proofRejectionConsensusTxSenders).to.deep.equal(expectedCoprocessorTxSenders);
     });
 
-    it("Should let only the priority coprocessor transaction sender finalize proof rejection", async function () {
-      const priorityTxSender = coprocessorTxSenders[2];
+    it("Should keep proof rejection consensus Zama-only after the Phase 1 to Phase 2 rollout", async function () {
+      const zamaTxSender = coprocessorTxSenders[0];
+      const partnerTxSender = coprocessorTxSenders[1];
+
       await inputVerification.connect(pauser).pause();
-      await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(priorityTxSender.address);
+      await gatewayConfig.connect(owner).updateCoprocessors([coprocessors[0]], 1);
+      await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(zamaTxSender.address);
+      await gatewayConfig.connect(owner).updateCoprocessors(coprocessors, 2);
 
-      await inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId, extraDataV0);
-      const nonPriorityThresholdTx = await inputVerification
-        .connect(coprocessorTxSenders[1])
-        .rejectProofResponse(zkProofId, extraDataV0);
+      const partnerTx = await inputVerification.connect(partnerTxSender).rejectProofResponse(zkProofId, extraDataV0);
+      await expect(partnerTx).to.not.emit(inputVerification, "RejectProofResponse");
 
-      await expect(nonPriorityThresholdTx).to.not.emit(inputVerification, "RejectProofResponse");
+      const zamaTx = await inputVerification.connect(zamaTxSender).rejectProofResponse(zkProofId, extraDataV0);
 
-      const priorityTx = await inputVerification.connect(priorityTxSender).rejectProofResponse(zkProofId, extraDataV0);
-
-      await expect(priorityTx).to.emit(inputVerification, "RejectProofResponse").withArgs(zkProofId);
-      expect(await inputVerification.getRejectProofConsensusTxSenders(zkProofId)).to.deep.equal([
-        priorityTxSender.address,
-      ]);
+      await expect(zamaTx).to.emit(inputVerification, "RejectProofResponse").withArgs(zkProofId);
+      expect(await inputVerification.getRejectProofConsensusTxSenders(zkProofId)).to.deep.equal([zamaTxSender.address]);
     });
 
     it("Should revert in case of invalid zkProofId in reject proof response", async function () {
