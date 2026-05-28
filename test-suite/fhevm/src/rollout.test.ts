@@ -22,6 +22,8 @@ const versionKeys = [
   "COPROCESSOR_TFHE_WORKER_VERSION",
   "COPROCESSOR_ZKPROOF_WORKER_VERSION",
   "COPROCESSOR_SNS_WORKER_VERSION",
+  "COPROCESSOR_CONSENSUS_DETECTOR_VERSION",
+  "COPROCESSOR_UPGRADE_CONTROLLER_VERSION",
   "LISTENER_CORE_VERSION",
   "CONNECTOR_DB_MIGRATION_VERSION",
   "CONNECTOR_GW_LISTENER_VERSION",
@@ -56,6 +58,8 @@ const compatTest = (): CompatTestDefinition => ({
         { name: "tfhe-worker", units: ["COPROCESSOR_TFHE_WORKER"] },
         { name: "zkproof-worker", units: ["COPROCESSOR_ZKPROOF_WORKER"] },
         { name: "sns-worker", units: ["COPROCESSOR_SNS_WORKER"] },
+        { name: "consensus-detector", units: ["COPROCESSOR_CONSENSUS_DETECTOR"] },
+        { name: "upgrade-controller", units: ["COPROCESSOR_UPGRADE_CONTROLLER"] },
       ],
     },
   ],
@@ -78,6 +82,8 @@ const compatTest = (): CompatTestDefinition => ({
     COPROCESSOR_TFHE_WORKER: ["COPROCESSOR_TFHE_WORKER_VERSION"],
     COPROCESSOR_ZKPROOF_WORKER: ["COPROCESSOR_ZKPROOF_WORKER_VERSION"],
     COPROCESSOR_SNS_WORKER: ["COPROCESSOR_SNS_WORKER_VERSION"],
+    COPROCESSOR_CONSENSUS_DETECTOR: ["COPROCESSOR_CONSENSUS_DETECTOR_VERSION"],
+    COPROCESSOR_UPGRADE_CONTROLLER: ["COPROCESSOR_UPGRADE_CONTROLLER_VERSION"],
   },
   execution: {
     scenario: "two-of-two",
@@ -155,6 +161,8 @@ describe("rollout", () => {
       "09-coprocessor-tfhe-worker.lock.json",
       "10-coprocessor-zkproof-worker.lock.json",
       "11-coprocessor-sns-worker.lock.json",
+      "12-coprocessor-consensus-detector.lock.json",
+      "13-coprocessor-upgrade-controller.lock.json",
     ]);
     expect(locks[0].env.TEST_SUITE_VERSION).toBe("to-test_suite_version");
     expect(locks[0].env.RELAYER_SDK_VERSION).toBe("0.5.0-alpha.1");
@@ -166,6 +174,7 @@ describe("rollout", () => {
     expect(locks[6].env.COPROCESSOR_HOST_LISTENER_VERSION).toBe("to-coprocessor_host_listener_version");
     expect(locks[6].env.COPROCESSOR_GW_LISTENER_VERSION).toBe("from-coprocessor_gw_listener_version");
     expect(locks[11].env.COPROCESSOR_SNS_WORKER_VERSION).toBe("to-coprocessor_sns_worker_version");
+    expect(locks[13].env.COPROCESSOR_UPGRADE_CONTROLLER_VERSION).toBe("to-coprocessor_upgrade_controller_version");
     expect(locks[2].sources).toContain("compat-from:GATEWAY_VERSION=from-gateway_version");
     expect(locks[2].sources).toContain("compat-from:HOST_VERSION=from-host_version");
   });
@@ -194,6 +203,8 @@ describe("rollout", () => {
         { step: "coprocessor-tfhe-worker", stepIndex: 9, name: "09-coprocessor-tfhe-worker" },
         { step: "coprocessor-zkproof-worker", stepIndex: 10, name: "10-coprocessor-zkproof-worker" },
         { step: "coprocessor-sns-worker", stepIndex: 11, name: "11-coprocessor-sns-worker" },
+        { step: "coprocessor-consensus-detector", stepIndex: 12, name: "12-coprocessor-consensus-detector" },
+        { step: "coprocessor-upgrade-controller", stepIndex: 13, name: "13-coprocessor-upgrade-controller" },
       ],
     });
   });
@@ -212,9 +223,9 @@ describe("rollout", () => {
       path.join(outDir, "matrix.json"),
     );
     expect(matrix.include.at(-1)).toEqual({
-      step: "coprocessor-sns-worker",
-      stepIndex: 11,
-      name: "11-coprocessor-sns-worker",
+      step: "coprocessor-upgrade-controller",
+      stepIndex: 13,
+      name: "13-coprocessor-upgrade-controller",
     });
     const mixed = await readJson<VersionBundle>(path.join(outDir, "06-coprocessor-host-listener.lock.json"));
     expect(mixed.env.RELAYER_VERSION).toBe("to-relayer_version");

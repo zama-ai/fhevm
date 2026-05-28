@@ -78,34 +78,56 @@ const buildSpec = (context: string, dockerfile: string, extra: Record<string, un
   dockerfile: resolveComposePath(dockerfile),
   ...extra,
 });
+// `local` cargo profile (opt-level=1, lto=false) so docker-driven workspace builds
+// don't OOM during the LTO link phase of the release profile.
+// TODO: Remove
+const COPROC_BUILD_ARGS = { CARGO_PROFILE: "local" } as const;
+
 const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknown>>> = {
   coprocessor: {
     "coprocessor-db-migration": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
       target: "db-migration",
+      args: COPROC_BUILD_ARGS,
     }),
     "coprocessor-host-listener": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
       target: "host-listener",
+      args: COPROC_BUILD_ARGS,
     }),
     "coprocessor-host-listener-poller": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
       target: "host-listener",
+      args: COPROC_BUILD_ARGS,
     }),
     "coprocessor-host-listener-consumer": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
       target: "host-listener",
+      args: COPROC_BUILD_ARGS,
     }),
     "coprocessor-gw-listener": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
       target: "gw-listener",
+      args: COPROC_BUILD_ARGS,
     }),
     "coprocessor-tfhe-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
       target: "tfhe-worker",
+      args: COPROC_BUILD_ARGS,
     }),
     "coprocessor-zkproof-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
       target: "zkproof-worker",
+      args: COPROC_BUILD_ARGS,
     }),
     "coprocessor-sns-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
       target: "sns-worker",
+      args: COPROC_BUILD_ARGS,
     }),
     "coprocessor-transaction-sender": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
       target: "transaction-sender",
+      args: COPROC_BUILD_ARGS,
+    }),
+    "coprocessor-consensus-detector": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+      target: "consensus-detector",
+      args: COPROC_BUILD_ARGS,
+    }),
+    "coprocessor-upgrade-controller": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+      target: "upgrade-controller",
+      args: COPROC_BUILD_ARGS,
     }),
   },
   "kms-connector": {
