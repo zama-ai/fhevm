@@ -52,7 +52,7 @@ interface IProtocolConfig {
     event NewCoprocessorContext(uint256 indexed coprocessorContextId, string softwareVersion, ChainUpgradeWindow[] chainUpgradeWindows, uint64 gwStartBlock);
     event NewKmsContext(uint256 indexed kmsContextId, KmsNode[] kmsNodes, KmsThresholds thresholds);
 
-    function defineNewCoprocessorContext(string memory softwareVersion, ChainUpgradeWindow[] memory chainUpgradeWindows, uint64 gwStartBlock) external returns (uint256 newCoprocessorContextId);
+    function defineNewCoprocessorContext(string memory softwareVersion, ChainUpgradeWindow[] memory chainUpgradeWindows, uint64 gwStartBlock) external;
     function defineNewKmsContext(KmsNode[] memory kmsNodes, KmsThresholds memory thresholds) external;
     function destroyCoprocessorContext(uint256 coprocessorContextId) external;
     function destroyKmsContext(uint256 kmsContextId) external;
@@ -120,13 +120,7 @@ interface IProtocolConfig {
         "internalType": "uint64"
       }
     ],
-    "outputs": [
-      {
-        "name": "newCoprocessorContextId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
+    "outputs": [],
     "stateMutability": "nonpayable"
   },
   {
@@ -4104,7 +4098,7 @@ event NewKmsContext(uint256 indexed kmsContextId, KmsNode[] kmsNodes, KmsThresho
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `defineNewCoprocessorContext(string,(uint64,uint64,uint64)[],uint64)` and selector `0xf76ca577`.
 ```solidity
-function defineNewCoprocessorContext(string memory softwareVersion, ChainUpgradeWindow[] memory chainUpgradeWindows, uint64 gwStartBlock) external returns (uint256 newCoprocessorContextId);
+function defineNewCoprocessorContext(string memory softwareVersion, ChainUpgradeWindow[] memory chainUpgradeWindows, uint64 gwStartBlock) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -4118,15 +4112,10 @@ function defineNewCoprocessorContext(string memory softwareVersion, ChainUpgrade
         #[allow(missing_docs)]
         pub gwStartBlock: u64,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`defineNewCoprocessorContext(string,(uint64,uint64,uint64)[],uint64)`](defineNewCoprocessorContextCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct defineNewCoprocessorContextReturn {
-        #[allow(missing_docs)]
-        pub newCoprocessorContextId: alloy::sol_types::private::primitives::aliases::U256,
-    }
+    pub struct defineNewCoprocessorContextReturn {}
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4188,11 +4177,9 @@ function defineNewCoprocessorContext(string memory softwareVersion, ChainUpgrade
         }
         {
             #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U256,
-            );
+            type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
             fn _type_assertion(
@@ -4209,7 +4196,7 @@ function defineNewCoprocessorContext(string memory softwareVersion, ChainUpgrade
             impl ::core::convert::From<defineNewCoprocessorContextReturn>
             for UnderlyingRustTuple<'_> {
                 fn from(value: defineNewCoprocessorContextReturn) -> Self {
-                    (value.newCoprocessorContextId,)
+                    ()
                 }
             }
             #[automatically_derived]
@@ -4217,10 +4204,17 @@ function defineNewCoprocessorContext(string memory softwareVersion, ChainUpgrade
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
             for defineNewCoprocessorContextReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        newCoprocessorContextId: tuple.0,
-                    }
+                    Self {}
                 }
+            }
+        }
+        impl defineNewCoprocessorContextReturn {
+            fn _tokenize(
+                &self,
+            ) -> <defineNewCoprocessorContextCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
             }
         }
         #[automatically_derived]
@@ -4233,8 +4227,8 @@ function defineNewCoprocessorContext(string memory softwareVersion, ChainUpgrade
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy::sol_types::private::primitives::aliases::U256;
-            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Return = defineNewCoprocessorContextReturn;
+            type ReturnTuple<'a> = ();
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
@@ -4262,21 +4256,14 @@ function defineNewCoprocessorContext(string memory softwareVersion, ChainUpgrade
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
-                )
+                defineNewCoprocessorContextReturn::_tokenize(ret)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
                 > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: defineNewCoprocessorContextReturn = r.into();
-                        r.newCoprocessorContextId
-                    })
+                    .map(Into::into)
             }
             #[inline]
             fn abi_decode_returns_validate(
@@ -4285,10 +4272,7 @@ function defineNewCoprocessorContext(string memory softwareVersion, ChainUpgrade
                 <Self::ReturnTuple<
                     '_,
                 > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: defineNewCoprocessorContextReturn = r.into();
-                        r.newCoprocessorContextId
-                    })
+                    .map(Into::into)
             }
         }
     };

@@ -164,13 +164,12 @@ interface IProtocolConfig {
      * @param softwareVersion Coprocessor software version (e.g. "v0.14.0").
      * @param chainUpgradeWindows Per-host-chain replay windows.
      * @param gwStartBlock Gateway block GCS's gateway-listener resumes from.
-     * @return newCoprocessorContextId The id of the newly minted coprocessor context.
      */
     function defineNewCoprocessorContext(
         string calldata softwareVersion,
         ChainUpgradeWindow[] calldata chainUpgradeWindows,
         uint64 gwStartBlock
-    ) external returns (uint256 newCoprocessorContextId);
+    ) external;
 
     /**
      * @notice Destroy a coprocessor context, marking it as superseded.

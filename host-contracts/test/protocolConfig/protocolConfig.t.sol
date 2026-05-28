@@ -665,9 +665,8 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.expectEmit(true, false, false, true, address(protocolConfig));
         emit IProtocolConfig.NewCoprocessorContext(expectedId, version, windows, gwStart);
         vm.prank(owner);
-        uint256 newId = protocolConfig.defineNewCoprocessorContext(version, windows, gwStart);
+        protocolConfig.defineNewCoprocessorContext(version, windows, gwStart);
 
-        assertEq(newId, expectedId);
         assertEq(protocolConfig.getCurrentCoprocessorContextId(), expectedId);
         assertTrue(protocolConfig.isValidCoprocessorContext(expectedId));
 
@@ -687,13 +686,15 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(3);
 
         vm.prank(owner);
-        uint256 newId = protocolConfig.defineNewCoprocessorContext(
+        protocolConfig.defineNewCoprocessorContext(
             _defaultSoftwareVersion(),
             windows,
             _defaultGwStartBlock()
         );
 
-        CoprocessorContext memory ctx = protocolConfig.getCoprocessorContext(newId);
+        CoprocessorContext memory ctx = protocolConfig.getCoprocessorContext(
+            protocolConfig.getCurrentCoprocessorContextId()
+        );
         assertEq(ctx.chainUpgradeWindows.length, 3);
         for (uint256 i = 0; i < 3; i++) {
             assertEq(ctx.chainUpgradeWindows[i].chainId, windows[i].chainId);
@@ -709,9 +710,11 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         string memory version = _defaultSoftwareVersion();
 
         vm.prank(owner);
-        uint256 firstId = protocolConfig.defineNewCoprocessorContext(version, windows, gwStart);
+        protocolConfig.defineNewCoprocessorContext(version, windows, gwStart);
+        uint256 firstId = protocolConfig.getCurrentCoprocessorContextId();
         vm.prank(owner);
-        uint256 secondId = protocolConfig.defineNewCoprocessorContext(version, windows, gwStart);
+        protocolConfig.defineNewCoprocessorContext(version, windows, gwStart);
+        uint256 secondId = protocolConfig.getCurrentCoprocessorContextId();
 
         assertEq(firstId, COPROC_CONTEXT_COUNTER_BASE + 1);
         assertEq(secondId, COPROC_CONTEXT_COUNTER_BASE + 2);
@@ -779,11 +782,12 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     function test_destroyCoprocessorContext() public {
         _setupDefault();
         vm.prank(owner);
-        uint256 id = protocolConfig.defineNewCoprocessorContext(
+        protocolConfig.defineNewCoprocessorContext(
             _defaultSoftwareVersion(),
             _makeChainUpgradeWindows(1),
             _defaultGwStartBlock()
         );
+        uint256 id = protocolConfig.getCurrentCoprocessorContextId();
 
         vm.expectEmit(true, false, false, true, address(protocolConfig));
         emit IProtocolConfig.CoprocessorContextDestroyed(id);
@@ -795,12 +799,12 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     function test_destroyCurrentCoprocessorContext_allowed() public {
         _setupDefault();
         vm.prank(owner);
-        uint256 id = protocolConfig.defineNewCoprocessorContext(
+        protocolConfig.defineNewCoprocessorContext(
             _defaultSoftwareVersion(),
             _makeChainUpgradeWindows(1),
             _defaultGwStartBlock()
         );
-        assertEq(protocolConfig.getCurrentCoprocessorContextId(), id);
+        uint256 id = protocolConfig.getCurrentCoprocessorContextId();
 
         vm.prank(owner);
         protocolConfig.destroyCoprocessorContext(id);
@@ -810,11 +814,12 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     function test_revertDestroyAlreadyDestroyedCoprocessorContext() public {
         _setupDefault();
         vm.prank(owner);
-        uint256 id = protocolConfig.defineNewCoprocessorContext(
+        protocolConfig.defineNewCoprocessorContext(
             _defaultSoftwareVersion(),
             _makeChainUpgradeWindows(1),
             _defaultGwStartBlock()
         );
+        uint256 id = protocolConfig.getCurrentCoprocessorContextId();
 
         vm.prank(owner);
         protocolConfig.destroyCoprocessorContext(id);
@@ -841,11 +846,12 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     function test_revertGetCoprocessorContext_destroyed() public {
         _setupDefault();
         vm.prank(owner);
-        uint256 id = protocolConfig.defineNewCoprocessorContext(
+        protocolConfig.defineNewCoprocessorContext(
             _defaultSoftwareVersion(),
             _makeChainUpgradeWindows(1),
             _defaultGwStartBlock()
         );
+        uint256 id = protocolConfig.getCurrentCoprocessorContextId();
 
         vm.prank(owner);
         protocolConfig.destroyCoprocessorContext(id);
@@ -861,11 +867,12 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertFalse(protocolConfig.isValidCoprocessorContext(COPROC_CONTEXT_COUNTER_BASE + 1));
 
         vm.prank(owner);
-        uint256 id = protocolConfig.defineNewCoprocessorContext(
+        protocolConfig.defineNewCoprocessorContext(
             _defaultSoftwareVersion(),
             _makeChainUpgradeWindows(1),
             _defaultGwStartBlock()
         );
+        uint256 id = protocolConfig.getCurrentCoprocessorContextId();
         assertTrue(protocolConfig.isValidCoprocessorContext(id));
 
         vm.prank(owner);
@@ -887,11 +894,12 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     function test_revertDestroyCoprocessorContextNotOwner() public {
         _setupDefault();
         vm.prank(owner);
-        uint256 id = protocolConfig.defineNewCoprocessorContext(
+        protocolConfig.defineNewCoprocessorContext(
             _defaultSoftwareVersion(),
             _makeChainUpgradeWindows(1),
             _defaultGwStartBlock()
         );
+        uint256 id = protocolConfig.getCurrentCoprocessorContextId();
 
         vm.prank(address(0x999));
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));

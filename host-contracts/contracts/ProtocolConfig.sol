@@ -176,8 +176,44 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         string calldata softwareVersion,
         ChainUpgradeWindow[] calldata chainUpgradeWindows,
         uint64 gwStartBlock
-    ) external virtual onlyACLOwner returns (uint256 newCoprocessorContextId) {
-        return _defineCoprocessorContext(softwareVersion, chainUpgradeWindows, gwStartBlock);
+    ) external virtual onlyACLOwner {
+        if (bytes(softwareVersion).length == 0) {
+            revert EmptySoftwareVersion();
+        }
+        if (chainUpgradeWindows.length == 0) {
+            revert EmptyChainUpgradeWindows();
+        }
+        if (gwStartBlock == 0) {
+            revert ZeroGwStartBlock();
+        }
+
+        for (uint256 i = 0; i < chainUpgradeWindows.length; i++) {
+            ChainUpgradeWindow calldata cw = chainUpgradeWindows[i];
+            if (cw.chainId == 0) {
+                revert ZeroChainId();
+            }
+            if (cw.startBlock > cw.endBlock) {
+                revert InvalidBlockWindow(cw.chainId, cw.startBlock, cw.endBlock);
+            }
+            for (uint256 j = 0; j < i; j++) {
+                if (chainUpgradeWindows[j].chainId == cw.chainId) {
+                    revert DuplicateChainId(cw.chainId);
+                }
+            }
+        }
+
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        uint256 newCoprocessorContextId = ++$.currentCoprocessorContextId;
+
+        CoprocessorContext storage ctx = $.coprocessorContexts[newCoprocessorContextId];
+        ctx.softwareVersion = softwareVersion;
+        ctx.gwStartBlock = gwStartBlock;
+        ctx.activatedAtBlock = uint64(block.number);
+        for (uint256 i = 0; i < chainUpgradeWindows.length; i++) {
+            ctx.chainUpgradeWindows.push(chainUpgradeWindows[i]);
+        }
+
+        emit NewCoprocessorContext(newCoprocessorContextId, softwareVersion, chainUpgradeWindows, gwStartBlock);
     }
 
     /// @inheritdoc IProtocolConfig
@@ -308,7 +344,9 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     function getCoprocessorContext(
         uint256 coprocessorContextId
     ) external view virtual returns (CoprocessorContext memory) {
-        _requireValidCoprocessorContext(coprocessorContextId);
+        if (!_isValidCoprocessorContext(coprocessorContextId)) {
+            revert InvalidCoprocessorContext(coprocessorContextId);
+        }
         return _getProtocolConfigStorage().coprocessorContexts[coprocessorContextId];
     }
 
@@ -428,54 +466,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /**
-     * @dev Creates a new coprocessor context, validates the software version and chain upgrade windows, and stores them.
-     */
-    function _defineCoprocessorContext(
-        string calldata softwareVersion,
-        ChainUpgradeWindow[] calldata chainUpgradeWindows,
-        uint64 gwStartBlock
-    ) internal virtual returns (uint256 newCoprocessorContextId) {
-        if (bytes(softwareVersion).length == 0) {
-            revert EmptySoftwareVersion();
-        }
-        if (chainUpgradeWindows.length == 0) {
-            revert EmptyChainUpgradeWindows();
-        }
-        if (gwStartBlock == 0) {
-            revert ZeroGwStartBlock();
-        }
-
-        // Pairwise duplicate-chainId check; host chain count is small (single digits in practice).
-        for (uint256 i = 0; i < chainUpgradeWindows.length; i++) {
-            ChainUpgradeWindow calldata cw = chainUpgradeWindows[i];
-            if (cw.chainId == 0) {
-                revert ZeroChainId();
-            }
-            if (cw.startBlock > cw.endBlock) {
-                revert InvalidBlockWindow(cw.chainId, cw.startBlock, cw.endBlock);
-            }
-            for (uint256 j = 0; j < i; j++) {
-                if (chainUpgradeWindows[j].chainId == cw.chainId) {
-                    revert DuplicateChainId(cw.chainId);
-                }
-            }
-        }
-
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        newCoprocessorContextId = ++$.currentCoprocessorContextId;
-
-        CoprocessorContext storage ctx = $.coprocessorContexts[newCoprocessorContextId];
-        ctx.softwareVersion = softwareVersion;
-        ctx.gwStartBlock = gwStartBlock;
-        ctx.activatedAtBlock = uint64(block.number);
-        for (uint256 i = 0; i < chainUpgradeWindows.length; i++) {
-            ctx.chainUpgradeWindows.push(chainUpgradeWindows[i]);
-        }
-
-        emit NewCoprocessorContext(newCoprocessorContextId, softwareVersion, chainUpgradeWindows, gwStartBlock);
-    }
-
-    /**
      * @dev Checks whether a coprocessor context ID is in range, has windows, and is not destroyed.
      */
     function _isValidCoprocessorContext(uint256 coprocessorContextId) internal view virtual returns (bool) {
@@ -486,12 +476,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
             coprocessorContextId <= $.currentCoprocessorContextId &&
             ctx.chainUpgradeWindows.length != 0 &&
             !ctx.destroyed;
-    }
-
-    function _requireValidCoprocessorContext(uint256 coprocessorContextId) internal view virtual {
-        if (!_isValidCoprocessorContext(coprocessorContextId)) {
-            revert InvalidCoprocessorContext(coprocessorContextId);
-        }
     }
 
     /**
