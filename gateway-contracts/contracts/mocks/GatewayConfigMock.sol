@@ -77,6 +77,10 @@ contract GatewayConfigMock {
         emit InitializeGatewayConfig(kmsContextId, metadata, thresholds, kmsNodes, coprocessors, custodians);
     }
 
+    function reinitializeV8(address coprocessorTxSenderAddress) public {
+        emit UpdatePriorityCoprocessorTxSender(coprocessorTxSenderAddress);
+    }
+
     function updateKmsContext(
         uint256 newContextId,
         KmsNode[] calldata newKmsNodes,
@@ -128,6 +132,16 @@ contract GatewayConfigMock {
 
     function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external {
         emit UpdateCoprocessorThreshold(newCoprocessorThreshold);
+    }
+
+    function setPriorityCoprocessorTxSender(address coprocessorTxSenderAddress) external {
+        emit UpdatePriorityCoprocessorTxSender(coprocessorTxSenderAddress);
+    }
+
+    function removePriorityCoprocessorTxSender() external {
+        address coprocessorTxSenderAddress;
+
+        emit UpdatePriorityCoprocessorTxSender(coprocessorTxSenderAddress);
     }
 
     function addHostChain(HostChain calldata hostChain) external {

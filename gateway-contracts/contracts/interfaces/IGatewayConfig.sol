@@ -284,6 +284,18 @@ interface IGatewayConfig {
     error PriorityCoprocessorNotInNewCoprocessors(address coprocessorTxSenderAddress);
 
     /**
+     * @notice Error emitted when a coprocessor update would rotate the active priority coprocessor signer.
+     * @param coprocessorTxSenderAddress The active priority coprocessor transaction sender.
+     * @param currentSignerAddress The currently registered signer address.
+     * @param newSignerAddress The signer address in the new coprocessor list.
+     */
+    error PriorityCoprocessorSignerChanged(
+        address coprocessorTxSenderAddress,
+        address currentSignerAddress,
+        address newSignerAddress
+    );
+
+    /**
      * @notice Emitted when all the pausable gateway contracts are paused.
      */
     event PauseAllGatewayContracts();
@@ -442,7 +454,8 @@ interface IGatewayConfig {
     /**
      * @notice Update the list of coprocessors and their threshold.
      * @dev Requires `InputVerification` to be paused first — this call rewrites the coprocessor
-     *      set, which input verification reads on every call.
+     *      set, which input verification reads on every call. If priority mode is active, the active
+     *      priority coprocessor transaction sender and signer must remain unchanged.
      * @param newCoprocessors The new coprocessors.
      * @param newCoprocessorThreshold The new coprocessor threshold.
      */
@@ -511,7 +524,9 @@ interface IGatewayConfig {
      * @notice Set the priority coprocessor transaction sender.
      * @dev When set, coprocessor consensus is finalized only by this registered transaction sender.
      *      Requires `InputVerification` to be paused first. Operators must also drain in-flight
-     *      input verification and ciphertext commit work before changing this value.
+     *      input verification and ciphertext commit work before changing this value. Every host-chain
+     *      `InputVerifier` must accept this coprocessor signer with threshold 1 before priority mode
+     *      is used for user input proofs.
      * @param coprocessorTxSenderAddress The registered coprocessor transaction sender to prioritize.
      */
     function setPriorityCoprocessorTxSender(address coprocessorTxSenderAddress) external;
@@ -520,7 +535,8 @@ interface IGatewayConfig {
      * @notice Remove the priority coprocessor transaction sender.
      * @dev Restores normal threshold-based coprocessor consensus. Requires `InputVerification` to be
      *      paused first. Operators must also drain in-flight input verification and ciphertext
-     *      commit work before changing this value.
+     *      commit work before changing this value. Every host-chain `InputVerifier` must accept the
+     *      normal gateway consensus signer set before priority mode is removed for user input proofs.
      */
     function removePriorityCoprocessorTxSender() external;
 

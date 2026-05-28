@@ -286,6 +286,18 @@ describe("Mock contracts", function () {
         .withArgs(DefaultUint256);
     });
 
+    it("Should emit UpdatePriorityCoprocessorTxSender event on set priority coprocessor call", async function () {
+      await expect(gatewayConfigMock.setPriorityCoprocessorTxSender(DefaultAddress))
+        .to.emit(gatewayConfigMock, "UpdatePriorityCoprocessorTxSender")
+        .withArgs(DefaultAddress);
+    });
+
+    it("Should emit UpdatePriorityCoprocessorTxSender event on remove priority coprocessor call", async function () {
+      await expect(gatewayConfigMock.removePriorityCoprocessorTxSender())
+        .to.emit(gatewayConfigMock, "UpdatePriorityCoprocessorTxSender")
+        .withArgs(DefaultAddress);
+    });
+
     it("Should emit AddHostChain event on add host chain call", async function () {
       await expect(gatewayConfigMock.addHostChain(DefaultHostChain))
         .to.emit(gatewayConfigMock, "AddHostChain")

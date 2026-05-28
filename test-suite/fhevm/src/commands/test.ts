@@ -809,6 +809,13 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       ? undefined
       : "multi-chain-isolation requires a multi-chain topology; rerun `fhevm-cli up --scenario multi-chain` first";
 
+  const priorityCoprocessorRequirement = () => {
+    const topology = topologyForState(state);
+    return topology.count > 1
+      ? undefined
+      : "priority-coprocessor requires a multi-coprocessor topology; rerun `fhevm-cli up --scenario two-of-three-multi-chain` first";
+  };
+
   const multiChainIsolationSkipReason = () =>
     state.scenario.hostChains.length > 1 ? undefined : "topology has fewer than 2 host chains";
 
@@ -1020,6 +1027,12 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     }
     if (name === "multi-chain-isolation") {
       const precondition = multiChainIsolationRequirement();
+      if (precondition) {
+        throw new PreflightError(precondition);
+      }
+    }
+    if (name === "priority-coprocessor") {
+      const precondition = priorityCoprocessorRequirement();
       if (precondition) {
         throw new PreflightError(precondition);
       }

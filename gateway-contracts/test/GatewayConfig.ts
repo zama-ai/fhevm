@@ -1278,6 +1278,24 @@ describe("GatewayConfig", function () {
             .withArgs(priorityTxSender);
         });
 
+        it("Should revert when rotating the active priority coprocessor signer through a coprocessor update", async function () {
+          const priorityTxSender = coprocessorTxSenders[0].address;
+          const currentPrioritySigner = coprocessorSigners[0].address;
+          const newPrioritySigner = newSignerAddress;
+          await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(priorityTxSender);
+
+          const updatedCoprocessors = [...coprocessors];
+          updatedCoprocessors[0] = {
+            txSenderAddress: priorityTxSender,
+            signerAddress: newPrioritySigner,
+            s3BucketUrl: updatedCoprocessors[0].s3BucketUrl,
+          };
+
+          await expect(gatewayConfig.connect(owner).updateCoprocessors(updatedCoprocessors, coprocessorThreshold))
+            .to.be.revertedWithCustomError(gatewayConfig, "PriorityCoprocessorSignerChanged")
+            .withArgs(priorityTxSender, currentPrioritySigner, newPrioritySigner);
+        });
+
         it("Should revert because the sender is not the owner", async function () {
           await expect(gatewayConfig.connect(fakeOwner).updateCoprocessors(emptyCoprocessors, nullCoprocessorThreshold))
             .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")

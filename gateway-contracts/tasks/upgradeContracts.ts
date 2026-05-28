@@ -42,9 +42,8 @@ function shellQuote(arg: string): string {
   return `'${arg.replace(/'/g, `'\\''`)}'`;
 }
 
-// GatewayConfig v8 is the 0.13.1 patch reinitializer. It optionally enables the
-// priority coprocessor during the upgrade so phase 2 can be configured in the
-// same proposal as the implementation upgrade.
+// GatewayConfig v8 optionally enables the priority coprocessor during the upgrade
+// so phase 2 can be configured in the same proposal as the implementation upgrade.
 function getGatewayConfigV8ReinitializeArgs(taskArgs: TaskArguments): unknown[] {
   return [taskArgs.priorityCoprocessorTxSender ?? NO_PRIORITY_COPROCESSOR_TX_SENDER];
 }
@@ -56,6 +55,27 @@ async function getGatewayConfigContract(taskArgs: TaskArguments, hre: HardhatRun
   const proxyAddress = getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS");
   const deployer = new Wallet(getRequiredEnvVar("DEPLOYER_PRIVATE_KEY")).connect(hre.ethers.provider);
   return hre.ethers.getContractAt("GatewayConfig", proxyAddress, deployer);
+}
+
+async function assertInputVerificationPausedForPriorityReinitializer(
+  taskArgs: TaskArguments,
+  hre: HardhatRuntimeEnvironment,
+) {
+  const priorityCoprocessorTxSender = hre.ethers.getAddress(
+    taskArgs.priorityCoprocessorTxSender ?? NO_PRIORITY_COPROCESSOR_TX_SENDER,
+  );
+  if (priorityCoprocessorTxSender === NO_PRIORITY_COPROCESSOR_TX_SENDER) {
+    return;
+  }
+  if (taskArgs.useInternalProxyAddress) {
+    loadGatewayAddresses();
+  }
+  const inputVerificationAddress = getRequiredEnvVar("INPUT_VERIFICATION_ADDRESS");
+  const deployer = new Wallet(getRequiredEnvVar("DEPLOYER_PRIVATE_KEY")).connect(hre.ethers.provider);
+  const inputVerification = await hre.ethers.getContractAt("InputVerification", inputVerificationAddress, deployer);
+  if (!(await inputVerification.paused())) {
+    throw new Error("InputVerification must be paused before setting priority coprocessor during GatewayConfig upgrade");
+  }
 }
 
 // Upgrades the implementation of the proxy
@@ -384,11 +404,12 @@ task("task:upgradeGatewayConfig")
   )
   .addOptionalParam(
     "priorityCoprocessorTxSender",
-    "Priority coprocessor transaction sender to set during reinitialization; zero leaves priority mode disabled",
+    "Priority coprocessor transaction sender to set during reinitialization; zero leaves priority mode disabled. Requires InputVerification paused and host InputVerifier threshold=1 for the priority signer before user inputs rely on priority mode",
     NO_PRIORITY_COPROCESSOR_TX_SENDER,
     types.string,
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
+    await assertInputVerificationPausedForPriorityReinitializer(taskArgs, hre);
     await upgradeContract(
       "GatewayConfig",
       "GATEWAY_CONFIG_ADDRESS",
@@ -421,11 +442,12 @@ task("task:prepareUpgradeGatewayConfig")
   )
   .addOptionalParam(
     "priorityCoprocessorTxSender",
-    "Priority coprocessor transaction sender to set during reinitialization; zero leaves priority mode disabled",
+    "Priority coprocessor transaction sender to set during reinitialization; zero leaves priority mode disabled. Requires InputVerification paused and host InputVerifier threshold=1 for the priority signer before user inputs rely on priority mode",
     NO_PRIORITY_COPROCESSOR_TX_SENDER,
     types.string,
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
+    await assertInputVerificationPausedForPriorityReinitializer(taskArgs, hre);
     await prepareUpgradeContract(
       "GatewayConfig",
       "GATEWAY_CONFIG_ADDRESS",
@@ -436,7 +458,10 @@ task("task:prepareUpgradeGatewayConfig")
   });
 
 task("task:setPriorityCoprocessorTxSender")
-  .addParam("priorityCoprocessorTxSender", "Registered coprocessor transaction sender to prioritize")
+  .addParam(
+    "priorityCoprocessorTxSender",
+    "Registered coprocessor transaction sender to prioritize. Requires InputVerification paused and host InputVerifier threshold=1 for the priority signer before user inputs rely on priority mode",
+  )
   .addOptionalParam(
     "useInternalProxyAddress",
     "If proxy address from the /addresses directory should be used",
@@ -451,7 +476,10 @@ task("task:setPriorityCoprocessorTxSender")
     await tx.wait();
   });
 
-task("task:removePriorityCoprocessorTxSender")
+task(
+  "task:removePriorityCoprocessorTxSender",
+  "Remove priority coprocessor mode. Requires InputVerification paused and host InputVerifier widened before user inputs rely on threshold mode again",
+)
   .addOptionalParam(
     "useInternalProxyAddress",
     "If proxy address from the /addresses directory should be used",

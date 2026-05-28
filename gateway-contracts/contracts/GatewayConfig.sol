@@ -264,18 +264,19 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice Re-initializes the contract from V7.
-     * @param initialPriorityCoprocessorTxSender The registered priority coprocessor transaction sender to set,
+     * @dev If a priority coprocessor is set here, every host-chain `InputVerifier` must accept its signer
+     *      with threshold 1 before user inputs rely on priority mode.
+     * @param coprocessorTxSenderAddress The registered priority coprocessor transaction sender to set,
      *        or zero to leave priority mode disabled.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV8(
-        address initialPriorityCoprocessorTxSender
-    ) public virtual onlyOwner reinitializer(REINITIALIZER_VERSION) {
-        if (initialPriorityCoprocessorTxSender != address(0)) {
+    function reinitializeV8(address coprocessorTxSenderAddress) public virtual onlyOwner reinitializer(REINITIALIZER_VERSION) {
+        if (coprocessorTxSenderAddress != address(0)) {
             _checkInputVerificationPaused();
-            _requireRegisteredPriorityCoprocessorTxSender(initialPriorityCoprocessorTxSender);
-            _updatePriorityCoprocessorTxSender(initialPriorityCoprocessorTxSender);
+            _requireRegisteredPriorityCoprocessorTxSender(coprocessorTxSenderAddress);
+            _setPriorityCoprocessorTxSender(coprocessorTxSenderAddress);
+            emit UpdatePriorityCoprocessorTxSender(coprocessorTxSenderAddress);
         }
     }
 
@@ -356,11 +357,22 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     ) external virtual onlyOwner whenInputVerificationPaused {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         address priorityCoprocessorTxSender = $.priorityCoprocessorTxSender;
-        if (
-            priorityCoprocessorTxSender != address(0) &&
-            !_containsCoprocessorTxSender(newCoprocessors, priorityCoprocessorTxSender)
-        ) {
-            revert PriorityCoprocessorNotInNewCoprocessors(priorityCoprocessorTxSender);
+        if (priorityCoprocessorTxSender != address(0)) {
+            (bool containsPriorityCoprocessor, address newPrioritySigner) = _findCoprocessorSigner(
+                newCoprocessors,
+                priorityCoprocessorTxSender
+            );
+            if (!containsPriorityCoprocessor) {
+                revert PriorityCoprocessorNotInNewCoprocessors(priorityCoprocessorTxSender);
+            }
+            address currentPrioritySigner = $.coprocessors[priorityCoprocessorTxSender].signerAddress;
+            if (newPrioritySigner != currentPrioritySigner) {
+                revert PriorityCoprocessorSignerChanged(
+                    priorityCoprocessorTxSender,
+                    currentPrioritySigner,
+                    newPrioritySigner
+                );
+            }
         }
 
         // Remove the old coprocessors
@@ -468,14 +480,16 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         address coprocessorTxSenderAddress
     ) external virtual onlyOwner whenInputVerificationPaused {
         _requireRegisteredPriorityCoprocessorTxSender(coprocessorTxSenderAddress);
-        _updatePriorityCoprocessorTxSender(coprocessorTxSenderAddress);
+        _setPriorityCoprocessorTxSender(coprocessorTxSenderAddress);
+        emit UpdatePriorityCoprocessorTxSender(coprocessorTxSenderAddress);
     }
 
     /**
      * @notice See {IGatewayConfig-removePriorityCoprocessorTxSender}.
      */
     function removePriorityCoprocessorTxSender() external virtual onlyOwner whenInputVerificationPaused {
-        _updatePriorityCoprocessorTxSender(address(0));
+        _setPriorityCoprocessorTxSender(address(0));
+        emit UpdatePriorityCoprocessorTxSender(address(0));
     }
 
     /**
@@ -1161,10 +1175,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * @notice Sets the priority coprocessor transaction sender.
      * @param coprocessorTxSenderAddress The priority coprocessor transaction sender, or zero to disable priority mode.
      */
-    function _updatePriorityCoprocessorTxSender(address coprocessorTxSenderAddress) internal virtual {
+    function _setPriorityCoprocessorTxSender(address coprocessorTxSenderAddress) internal virtual {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         $.priorityCoprocessorTxSender = coprocessorTxSenderAddress;
-        emit UpdatePriorityCoprocessorTxSender(coprocessorTxSenderAddress);
     }
 
     /**
@@ -1188,18 +1201,18 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice Returns whether a coprocessor transaction sender is present in a calldata coprocessor list.
+     * @notice Returns whether a coprocessor transaction sender is present in a calldata coprocessor list and its signer.
      */
-    function _containsCoprocessorTxSender(
+    function _findCoprocessorSigner(
         Coprocessor[] calldata coprocessors,
         address coprocessorTxSenderAddress
-    ) internal pure virtual returns (bool) {
+    ) internal pure virtual returns (bool, address) {
         for (uint256 i = 0; i < coprocessors.length; i++) {
             if (coprocessors[i].txSenderAddress == coprocessorTxSenderAddress) {
-                return true;
+                return (true, coprocessors[i].signerAddress);
             }
         }
-        return false;
+        return (false, address(0));
     }
 
     /**
