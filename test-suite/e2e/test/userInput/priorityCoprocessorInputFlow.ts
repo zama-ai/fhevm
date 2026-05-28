@@ -135,26 +135,28 @@ const restorePriorityMode = async (
 ) => {
   await pauseGatewayInputVerification(gatewayInputVerification);
 
-  const currentHostSigners = Array.from(await inputVerifier.getCoprocessorSigners(), (signer) =>
-    ethers.getAddress(signer),
-  );
-  const currentHostThreshold = await inputVerifier.getThreshold();
-  if (currentHostThreshold !== snapshot.hostThreshold || !sameAddresses(currentHostSigners, snapshot.hostSigners)) {
-    const restoreHostTx = await inputVerifier.defineNewContext(snapshot.hostSigners, snapshot.hostThreshold);
-    await restoreHostTx.wait();
-  }
+  try {
+    const currentHostSigners = Array.from(await inputVerifier.getCoprocessorSigners(), (signer) =>
+      ethers.getAddress(signer),
+    );
+    const currentHostThreshold = await inputVerifier.getThreshold();
+    if (currentHostThreshold !== snapshot.hostThreshold || !sameAddresses(currentHostSigners, snapshot.hostSigners)) {
+      const restoreHostTx = await inputVerifier.defineNewContext(snapshot.hostSigners, snapshot.hostThreshold);
+      await restoreHostTx.wait();
+    }
 
-  const currentPriority = await gatewayConfig.getPriorityCoprocessorTxSender();
-  if (currentPriority.toLowerCase() !== snapshot.priorityCoprocessorTxSender.toLowerCase()) {
-    const restorePriorityTx =
-      snapshot.priorityCoprocessorTxSender === ZERO_ADDRESS
-        ? await gatewayConfig.removePriorityCoprocessorTxSender()
-        : await gatewayConfig.setPriorityCoprocessorTxSender(snapshot.priorityCoprocessorTxSender);
-    await restorePriorityTx.wait();
-  }
-
-  if (!snapshot.gatewayWasPaused) {
-    await unpauseGatewayInputVerification(gatewayInputVerification);
+    const currentPriority = await gatewayConfig.getPriorityCoprocessorTxSender();
+    if (currentPriority.toLowerCase() !== snapshot.priorityCoprocessorTxSender.toLowerCase()) {
+      const restorePriorityTx =
+        snapshot.priorityCoprocessorTxSender === ZERO_ADDRESS
+          ? await gatewayConfig.removePriorityCoprocessorTxSender()
+          : await gatewayConfig.setPriorityCoprocessorTxSender(snapshot.priorityCoprocessorTxSender);
+      await restorePriorityTx.wait();
+    }
+  } finally {
+    if (!snapshot.gatewayWasPaused) {
+      await unpauseGatewayInputVerification(gatewayInputVerification);
+    }
   }
 };
 
@@ -209,6 +211,10 @@ describe('Priority coprocessor input flow', function () {
     this.instances = await createInstances(this.signers);
 
     priorityModeSnapshot = await snapshotPriorityMode(gatewayConfig, gatewayInputVerification, inputVerifier);
+    expect(priorityModeSnapshot.gatewayWasPaused).to.equal(
+      false,
+      'Priority coprocessor input flow requires gateway input verification to start unpaused',
+    );
     await configurePriorityMode(priorityModeSnapshot, gatewayConfig, gatewayInputVerification, inputVerifier);
   });
 
