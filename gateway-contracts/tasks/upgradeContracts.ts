@@ -42,7 +42,10 @@ function shellQuote(arg: string): string {
   return `'${arg.replace(/'/g, `'\\''`)}'`;
 }
 
-function getGatewayConfigReinitializeArgs(taskArgs: TaskArguments): unknown[] {
+// GatewayConfig v8 is the 0.13.1 patch reinitializer. It optionally enables the
+// priority coprocessor during the upgrade so phase 2 can be configured in the
+// same proposal as the implementation upgrade.
+function getGatewayConfigV8ReinitializeArgs(taskArgs: TaskArguments): unknown[] {
   return [taskArgs.priorityCoprocessorTxSender ?? NO_PRIORITY_COPROCESSOR_TX_SENDER];
 }
 
@@ -391,7 +394,7 @@ task("task:upgradeGatewayConfig")
       "GATEWAY_CONFIG_ADDRESS",
       taskArgs,
       hre,
-      getGatewayConfigReinitializeArgs(taskArgs),
+      getGatewayConfigV8ReinitializeArgs(taskArgs),
     );
   });
 
@@ -428,7 +431,7 @@ task("task:prepareUpgradeGatewayConfig")
       "GATEWAY_CONFIG_ADDRESS",
       taskArgs,
       hre,
-      getGatewayConfigReinitializeArgs(taskArgs),
+      getGatewayConfigV8ReinitializeArgs(taskArgs),
     );
   });
 
