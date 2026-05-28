@@ -9,6 +9,7 @@ import {
   assertSupportedBundleScenario,
   bootstrapUsesHostKmsGeneration,
   requiresGatewayKmsGenerationAddress,
+  requiresLegacyHostChainSeedShim,
   requiresMultichainAclAddress,
   requiresModernHostAddressArtifacts,
   supportsHostListenerConsumer,
@@ -490,6 +491,20 @@ const upsertHostChainInCoprocessorDbs = async (state: State, chain: { key: strin
   }
 };
 
+/** Legacy runtime shim: v0.12.x coprocessor images do not reliably seed host_chains before zkproof caches it. */
+const applyLegacyHostChainSeedShim = async (state: State) => {
+  const defaultChain = defaultHostChain(state);
+  if (!defaultChain) {
+    throw new PreflightError("Missing default host chain");
+  }
+  await timed("[compat] legacy host_chains seed shim", () =>
+    upsertHostChainInCoprocessorDbs(state, defaultChain, "[compat]"),
+  );
+  await timed("[compat] refresh zkproof host-chain cache", () =>
+    restartZkproofWorkers(state, "after legacy host_chains seed shim"),
+  );
+};
+
 /** Registers an extra host chain in all coprocessor databases and restarts zkproof-workers. */
 const registerExtraChainInCoprocessor = async (state: State, chain: { key: string; chainId: string }) => {
   const plan = stackSpecForState(state);
@@ -665,16 +680,9 @@ export const runStep = async (state: State, step: StepName) => {
       const services = skipMigration ? coprocessorHealthContainers(state) : serviceNameList(state, "coprocessor");
       await stepComposeUp("coprocessor", state, services, { noDeps: skipMigration });
       await waitForCoprocessorServices(state, skipMigration);
-      const defaultChain = defaultHostChain(state);
-      if (!defaultChain) {
-        throw new PreflightError("Missing default host chain");
+      if (requiresLegacyHostChainSeedShim(state)) {
+        await applyLegacyHostChainSeedShim(state);
       }
-      await timed("[coprocessor] register default host chain", () =>
-        upsertHostChainInCoprocessorDbs(state, defaultChain, "[coprocessor]"),
-      );
-      await timed("[coprocessor] refresh zkproof host-chain cache", () =>
-        restartZkproofWorkers(state, "after host_chains seed"),
-      );
       await postBootHealthGate(coprocessorHealthContainers(state));
       for (const chain of extraHostChains(state)) {
         const suffix = chain.suffix;

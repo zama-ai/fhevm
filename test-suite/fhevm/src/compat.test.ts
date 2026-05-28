@@ -11,6 +11,7 @@ import {
   kmsConnectorUsesHostKmsGeneration,
   requiresGatewayKmsGenerationAddress,
   requiresLegacyGatewayKmsGenerationAddress,
+  requiresLegacyHostChainSeedShim,
   requiresLegacyKmsCoreConfig,
   requiresLegacyRelayerUrl,
   requiresModernHostAddressArtifacts,
@@ -149,6 +150,38 @@ describe("compat", () => {
     });
     expect(policy.coprocessorDropFlags["host-listener"] ?? []).not.toContain("--kms-generation-address");
     expect(policy.coprocessorDropFlags["host-listener-poller"] ?? []).not.toContain("--kms-generation-address");
+  });
+
+  test("requires legacy host chain seed shim for v0.12 coprocessor images", () => {
+    expect(
+      requiresLegacyHostChainSeedShim({
+        versions: {
+          target: "latest-supported",
+          lockName: "v0.12.5.json",
+          env: {
+            COPROCESSOR_DB_MIGRATION_VERSION: "v0.12.5",
+            COPROCESSOR_ZKPROOF_WORKER_VERSION: "v0.12.5",
+          } as Record<string, string>,
+          sources: [],
+        },
+      }),
+    ).toBe(true);
+  });
+
+  test("does not require legacy host chain seed shim for v0.13 coprocessor images", () => {
+    expect(
+      requiresLegacyHostChainSeedShim({
+        versions: {
+          target: "latest-supported",
+          lockName: "v0.13.0-6.json",
+          env: {
+            COPROCESSOR_DB_MIGRATION_VERSION: "v0.13.0-6",
+            COPROCESSOR_ZKPROOF_WORKER_VERSION: "v0.13.0-6",
+          } as Record<string, string>,
+          sources: [],
+        },
+      }),
+    ).toBe(false);
   });
 
   test("treats sha-style gateway bundles as modern kms-generation sourcing", () => {

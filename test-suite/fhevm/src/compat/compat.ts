@@ -232,6 +232,15 @@ export const supportsCoprocessorDbStateRevert = (state: Pick<CompatState, "versi
     unparsed: "modern",
   });
 
+/** Detects when the test harness must seed host_chains for legacy coprocessor images. */
+export const requiresLegacyHostChainSeedShim = (state: Pick<CompatState, "versions">) =>
+  versionBeforeReleaseFamily(state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION ?? "", [0, 13, 0], {
+    unparsed: "modern",
+  }) ||
+  versionBeforeReleaseFamily(state.versions.env.COPROCESSOR_ZKPROOF_WORKER_VERSION ?? "", [0, 13, 0], {
+    unparsed: "modern",
+  });
+
 /** Detects when the resolved host-listener bundle includes the listener-core consumer topology. */
 export const supportsHostListenerConsumer = (state: Pick<CompatState, "versions">) => {
   const version = state.versions.env.COPROCESSOR_HOST_LISTENER_VERSION ?? "";
