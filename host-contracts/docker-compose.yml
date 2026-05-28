@@ -100,6 +100,8 @@ services:
     depends_on:
       fhevm-sc-deploy:
         condition: service_completed_successfully
+      trigger-keygen:
+        condition: service_completed_successfully
     # Addresses volume is used at compile time (contracts import these addresses) and at runtime
     # (--use-internal-proxy-address true reads KMS_GENERATION_CONTRACT_ADDRESS from addresses/.env.host).
     volumes:
