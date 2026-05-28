@@ -95,6 +95,7 @@ task('test', async (taskArgs, hre, runSuper) => {
 const chainIds = {
   localHostChain: 123456,
   sepolia: 11155111,
+  polygonAmoy: 80002,
   staging: 12345,
   zwsDev: 1337,
   mainnet: 1,
@@ -141,6 +142,7 @@ const config: HardhatUserConfig = {
     staging: getChainConfig('staging'),
     zwsDev: getChainConfig('zwsDev'),
     sepolia: getChainConfig('sepolia'),
+    polygonAmoy: getChainConfig('polygonAmoy'),
     localHostChain: getChainConfig('localHostChain'),
     mainnet: getChainConfig('mainnet'),
     custom: getChainConfig('custom'),

@@ -33,3 +33,6 @@ foundry.lock
 
 # Soldeer
 /dependencies
+
+# OZ artifacts
+/.openzeppelin

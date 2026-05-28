@@ -12,7 +12,6 @@ import { getRequiredEnvVar } from './utils/loadVariables';
 const ADDRESSES_DIR = path.join(__dirname, '../addresses');
 const HOST_ENV_FILE = path.join(ADDRESSES_DIR, '.env.host');
 const HOST_ADDRESSES_FILE = path.join(ADDRESSES_DIR, 'FHEVMHostAddresses.sol');
-const BRIDGE_ADDRESS_FILE = path.join(ADDRESSES_DIR, 'BridgeAddress.sol');
 const LEGACY_DEPLOY_ALL_HOST_CONTRACTS_WARNING = `task:deployLegacyAllHostContracts is deprecated and will be removed after the v0.13 rollout.
 It deploys KMSGeneration and is valid only for canonical-host deployments.
 Use task:deployAllHostContracts --with-kms-generation true instead.`;
@@ -31,16 +30,6 @@ function writeHostEnvLine(content: string, mode: 'w' | 'a') {
 
 function writeHostAddressesSol(content: string, mode: 'w' | 'a') {
   fs.writeFileSync(HOST_ADDRESSES_FILE, content, { encoding: 'utf8', flag: mode });
-}
-
-function writeBridgeAddressSol(confidentialBridge: string) {
-  const content = `// SPDX-License-Identifier: BSD-3-Clause-Clear
-
-pragma solidity ^0.8.24;
-
-address constant confidentialBridgeAdd = ${confidentialBridge};
-`;
-  fs.writeFileSync(BRIDGE_ADDRESS_FILE, content, { encoding: 'utf8', flag: 'w' });
 }
 
 export function readExistingHostEnv(): Record<string, string> {
@@ -134,6 +123,29 @@ task('task:deployAllHostContracts')
     await hre.run('task:deployInputVerifier');
     await hre.run('task:deployHCULimit');
 
+    // ConfidentialBridge upgrade is opt-in via the LZ_ENDPOINT_ADDRESS env var.
+    // When unset, the bridge stays at its empty-proxy stage and can be upgraded
+    // later by running `task:deployBridge` once LZ_ENDPOINT_ADDRESS is configured.
+    //
+    // We also skip the bridge upgrade on the in-memory `hardhat` network: the
+    // canonical LZ endpoint doesn't exist there, so initializeFromEmptyProxy →
+    // __OAppCore_init → endpoint.setDelegate(...) would revert. Test fixtures
+    // that need the bridge deploy their own proxies (see test/bridge/fixture.ts
+    // and test/bridge/Bridge.t.sol::_deployBridgeProxy).
+    if (process.env.LZ_ENDPOINT_ADDRESS && hre.network.name !== 'hardhat') {
+      await hre.run('task:deployBridge');
+    } else if (!process.env.LZ_ENDPOINT_ADDRESS) {
+      console.log(
+        '[task:deployAllHostContracts] LZ_ENDPOINT_ADDRESS not set; ' +
+          'ConfidentialBridge stays at its empty-proxy stage. Set LZ_ENDPOINT_ADDRESS and run task:deployBridge when ready.',
+      );
+    } else {
+      console.log(
+        "[task:deployAllHostContracts] Skipping bridge upgrade on the in-memory 'hardhat' network " +
+          '(no LayerZero endpoint contract exists there). Run on a real network to upgrade the bridge.',
+      );
+    }
+
     console.log('Contract deployment done!');
   });
 
@@ -222,11 +234,14 @@ task('task:deployEmptyUUPSProxies')
       await run('task:setKMSGenerationAddress', { address: kmsGenerationAddress });
     }
 
-    // Initialize bridge addresses to address(0). They are populated separately
-    // by task:deployBridge once LayerZero endpoint coordinates are known for
-    // the chain. The defaults make ACL compile cleanly even when no bridge is
-    // deployed (no allowTransient bypass beyond FHEVMExecutor in that case).
-    await run('task:initBridgeAddress');
+    // Deploy the ConfidentialBridge empty proxy too. The bridge is upgradeable
+    // and follows the same two-phase pattern as the other host contracts;
+    // putting it in this bootstrap means ACL sees the correct bridge address
+    // baked in at first compile and never needs a follow-up re-upgrade after
+    // task:deployBridge. The LayerZero endpoint is set later when the real
+    // implementation is wired in (constructor of ConfidentialBridge).
+    const confidentialBridgeAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run('task:setBridgeAddress', { address: confidentialBridgeAddress });
   });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -378,63 +393,175 @@ task('task:deployPauserSet').setAction(async function (_, hre) {
 ////////////////////////////////////////////////////////////////////////////////
 // Bridge (ConfidentialBridge)
 //
-// Deploys the unified bridge contract as an upgradeable UUPS proxy + LayerZero V2
-// OApp. ConfidentialBridge merges the source-side `HandlesSender` and
-// destination-side `HandlesReceiver` mixins into a single artifact so any chain
-// can act as source or destination through one address. Run this AFTER
-// task:deployEmptyUUPSProxies (so aclAdd is resolvable) and BEFORE task:deployACL
-// (so the ACL implementation can bake in the bridge proxy address as a
-// compile-time constant).
+// Upgrades the ConfidentialBridge empty proxy (deployed by
+// task:deployEmptyUUPSProxies) to the real `ConfidentialBridge` implementation,
+// matching how task:deployACL etc. handle the other host contracts.
 //
-// Mirrors the host-contract two-phase pattern (see task:deployACL): deploy an
-// Ownable empty UUPS proxy, then upgrade it to the real ConfidentialBridge
-// implementation while calling `initializeFromEmptyProxy`. The LayerZero
-// endpoint is set as an immutable on the implementation, so each deployment
-// uses its own implementation contract.
+// Pre-requisites:
+//   - LZ_ENDPOINT_ADDRESS env var set to the LayerZero V2 endpoint on this
+//     chain (see .env.example; canonical V2 endpoint is the same address on
+//     every chain, currently 0x6EDCE65403992e310A62460808c4b910D972f10f).
+//   - task:deployEmptyUUPSProxies must have been run (so the bridge empty proxy
+//     exists at `confidentialBridgeAdd` and `.env.host` carries
+//     `CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS`).
+//   - task:deployACL must have been run (so the ACL has a real owner; the
+//     bridge's `_authorizeUpgrade` goes through `onlyACLOwner`).
+//   - `deployer` (from `DEPLOYER_PRIVATE_KEY`) must currently be the ACL owner.
+//
+// The LayerZero endpoint is set as an immutable on the implementation, so each
+// deployment compiles its own implementation contract.
 ////////////////////////////////////////////////////////////////////////////////
 
-task('task:deployBridge')
-  .addParam('lzEndpoint', 'LayerZero V2 endpoint address on this chain')
-  .setAction(async function (taskArguments: TaskArguments, hre) {
-    const { ethers, upgrades } = hre;
+task('task:deployBridge').setAction(async function (_, { ethers, upgrades }) {
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+  const lzEndpoint = getRequiredEnvVar('LZ_ENDPOINT_ADDRESS');
+  if (!ethers.isAddress(lzEndpoint)) {
+    throw new Error(`LZ_ENDPOINT_ADDRESS is not a valid address: ${lzEndpoint}`);
+  }
+
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const newImplem = await ethers.getContractFactory('ConfidentialBridge', deployer);
+  const parsedEnv = readHostEnv();
+  const proxyAddress = parsedEnv.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS;
+  if (!proxyAddress) {
+    throw new Error(
+      'CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS not found in addresses/.env.host. ' +
+        'Run task:deployEmptyUUPSProxies first.',
+    );
+  }
+
+  // Optional dstEid → dstChainId seed lists, comma-separated and parallel.
+  // Empty / unset = no pairs seeded at init (can be added later via task:wireBridge
+  // or by calling setDstChainId directly).
+  const { dstEids, dstChainIds } = _parseBridgeDstSeed();
+  if (dstEids.length > 0) {
+    console.log(
+      `Seeding dstEid → dstChainId map at init: ${dstEids
+        .map((e, i) => `${e}→${dstChainIds[i]}`)
+        .join(', ')}`,
+    );
+  }
+
+  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+  await upgrades.upgradeProxy(proxy, newImplem, {
+    constructorArgs: [lzEndpoint],
+    // - constructor / state-variable-immutable: LayerZero's `OAppCoreUpgradeable`
+    //   stores the endpoint as an immutable in the implementation's constructor.
+    // - missing-initializer-call: `__OApp(Sender|Receiver)_init_unchained()` are no-ops
+    //   and we call them explicitly; OZ's static validator doesn't recognize the
+    //   `_unchained` variants as satisfying the `_init` requirement.
+    unsafeAllow: ['constructor', 'state-variable-immutable', 'missing-initializer-call'],
+    call: { fn: 'initializeFromEmptyProxy', args: [deployer.address, dstEids, dstChainIds] },
+  });
+  console.log(`ConfidentialBridge upgraded at ${proxyAddress} (lzEndpoint=${lzEndpoint})`);
+});
+
+/**
+ * Parses the optional BRIDGE_DST_EIDS / BRIDGE_DST_CHAIN_IDS env vars into the
+ * parallel arrays consumed by ConfidentialBridge.initializeFromEmptyProxy.
+ *
+ * Both env vars are comma-separated lists of positive integers. They must have
+ * the same length when set; either one being set without the other is rejected.
+ * Either both empty/unset (returns two empty arrays) or both well-formed.
+ */
+function _parseBridgeDstSeed(): { dstEids: number[]; dstChainIds: bigint[] } {
+  const rawEids = (process.env.BRIDGE_DST_EIDS ?? '').trim();
+  const rawChainIds = (process.env.BRIDGE_DST_CHAIN_IDS ?? '').trim();
+  if (rawEids === '' && rawChainIds === '') {
+    return { dstEids: [], dstChainIds: [] };
+  }
+  if (rawEids === '' || rawChainIds === '') {
+    throw new Error(
+      'BRIDGE_DST_EIDS and BRIDGE_DST_CHAIN_IDS must both be set or both be empty. ' +
+        `Got BRIDGE_DST_EIDS="${rawEids}", BRIDGE_DST_CHAIN_IDS="${rawChainIds}".`,
+    );
+  }
+
+  const parseEid = (s: string): number => {
+    const v = Number(s.trim());
+    if (!Number.isInteger(v) || v <= 0 || v > 0xffffffff) {
+      throw new Error(`Invalid LayerZero EID in BRIDGE_DST_EIDS: "${s.trim()}" (must be 1..2^32-1)`);
+    }
+    return v;
+  };
+  const parseChainId = (s: string): bigint => {
+    let v: bigint;
+    try {
+      v = BigInt(s.trim());
+    } catch {
+      throw new Error(`Invalid chain id in BRIDGE_DST_CHAIN_IDS: "${s.trim()}"`);
+    }
+    if (v <= 0n || v > (1n << 64n) - 1n) {
+      throw new Error(`Invalid chain id in BRIDGE_DST_CHAIN_IDS: "${s.trim()}" (must be 1..2^64-1)`);
+    }
+    return v;
+  };
+
+  const dstEids = rawEids.split(',').map(parseEid);
+  const dstChainIds = rawChainIds.split(',').map(parseChainId);
+  if (dstEids.length !== dstChainIds.length) {
+    throw new Error(
+      `BRIDGE_DST_EIDS and BRIDGE_DST_CHAIN_IDS must have the same length. ` +
+        `Got ${dstEids.length} eid(s) vs ${dstChainIds.length} chainId(s).`,
+    );
+  }
+  return { dstEids, dstChainIds };
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Bridge wiring (peer + dst chain id) for multi-chain deployments.
+//
+// After deploying ConfidentialBridge on two chains, this task wires the local
+// bridge so it can route messages to the remote bridge. Call it once per
+// direction (i.e. run with `--network <chainA>`, then run again with
+// `--network <chainB>`), passing the other chain's coordinates each time.
+//
+// Both calls are gated by the bridge's operational `onlyOwner` (set during
+// `initializeFromEmptyProxy`); the deployer wallet keyed by
+// `DEPLOYER_PRIVATE_KEY` is assumed to be that owner.
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:wireBridge', 'Wires the local bridge to a remote peer (setPeer + setDstChainId)')
+  .addParam('remoteEid', 'LayerZero V2 endpoint id of the remote chain (e.g. 40161 Sepolia, 40267 Amoy)', undefined, types.int)
+  .addParam('remoteBridge', 'Address of the ConfidentialBridge proxy on the remote chain')
+  .addParam('remoteChainId', 'EVM chain id of the remote chain (e.g. 11155111 Sepolia, 80002 Amoy)', undefined, types.int)
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
     const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
 
-    console.log('Deploying ConfidentialBridge empty proxy...');
-    // The bridge proxy uses EmptyUUPSProxy (ACLOwnable-gated upgrades), matching the
-    // pattern used by FHEVMExecutor / KMSGeneration / KMSVerifier / InputVerifier /
-    // HCULimit. The ACL must already be deployed at `aclAdd`, and `deployer` must be
-    // the current ACL owner.
-    const emptyFactory = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-    const emptyProxy = await upgrades.deployProxy(emptyFactory, [], {
-      initializer: 'initialize',
-      kind: 'uups',
-    });
-    await emptyProxy.waitForDeployment();
-    const bridgeAddress = await emptyProxy.getAddress();
-    console.log(`ConfidentialBridge proxy deployed at ${bridgeAddress}`);
+    const parsedEnv = readHostEnv();
+    const localBridgeAddress = parsedEnv.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS;
+    if (!localBridgeAddress) {
+      throw new Error(
+        'CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS not found in addresses/.env.host. Run task:deployBridge first.',
+      );
+    }
 
-    console.log('Upgrading proxy to ConfidentialBridge implementation...');
-    const bridgeFactory = await ethers.getContractFactory('ConfidentialBridge', deployer);
-    // dstEid → dstChainId entries can be seeded post-deploy via setDstChainId(...).
-    await upgrades.upgradeProxy(bridgeAddress, bridgeFactory, {
-      constructorArgs: [taskArguments.lzEndpoint],
-      // - constructor / state-variable-immutable: LayerZero's `OAppCoreUpgradeable`
-      //   stores the endpoint as an immutable in the implementation's constructor.
-      // - missing-initializer-call: `__OApp(Sender|Receiver)_init_unchained()` are no-ops
-      //   and we call them explicitly; OZ's static validator doesn't recognize the
-      //   `_unchained` variants as satisfying the `_init` requirement.
-      unsafeAllow: ['constructor', 'state-variable-immutable', 'missing-initializer-call'],
-      call: { fn: 'initializeFromEmptyProxy', args: [deployer.address, [], []] },
-    });
+    if (!ethers.isAddress(taskArguments.remoteBridge)) {
+      throw new Error(`Invalid --remote-bridge address: ${taskArguments.remoteBridge}`);
+    }
 
-    await hre.run('task:setBridgeAddress', {
-      confidentialBridge: bridgeAddress,
-    });
+    const bridge = await ethers.getContractAt('ConfidentialBridge', localBridgeAddress, deployer);
+    const remoteEid: number = taskArguments.remoteEid;
+    const remoteChainId: bigint = BigInt(taskArguments.remoteChainId);
+    const remoteBridgeAsBytes32 = ethers.zeroPadValue(taskArguments.remoteBridge, 32);
 
     console.log(
-      'Bridge deployment done. Re-compile and re-upgrade ACL (task:deployACL) so the new bridge address is picked up as a compile-time constant.',
+      `Wiring local bridge ${localBridgeAddress} → remote { eid=${remoteEid}, addr=${taskArguments.remoteBridge}, chainId=${remoteChainId} }`,
     );
+
+    console.log('  setPeer...');
+    const tx1 = await bridge.setPeer(remoteEid, remoteBridgeAsBytes32);
+    console.log(`    tx ${tx1.hash}`);
+    await tx1.wait();
+
+    console.log('  setDstChainId...');
+    const tx2 = await bridge.setDstChainId(remoteEid, remoteChainId);
+    console.log(`    tx ${tx2.hash}`);
+    await tx2.wait();
+
+    console.log('Bridge wiring done.');
   });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -805,30 +932,35 @@ address constant protocolConfigAdd = ${taskArguments.address};\n`;
   });
 
 ////////////////////////////////////////////////////////////////////////////////
-// Bridge address (ConfidentialBridge)
+// Setup ConfidentialBridge Address
 //
-// The bridge address lives in addresses/BridgeAddress.sol, written as a single
-// file (not appended). It defaults to address(0) when no bridge is deployed.
-// The task:deployBridge task deploys the upgradeable ConfidentialBridge proxy and
-// rewrites the file with the proxy address. ACL and other contracts then need to
-// be re-compiled and the ACL proxy re-upgraded for the new address to take
-// effect.
+// Appends `confidentialBridgeAdd` into `addresses/FHEVMHostAddresses.sol` (and
+// the matching `CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS` env line). Bridge is now a
+// regular host contract whose proxy is deployed by `task:deployEmptyUUPSProxies`
+// alongside the others — so ACL bakes in the correct bridge address at first
+// compile and never needs a follow-up re-upgrade.
 ////////////////////////////////////////////////////////////////////////////////
 
-task('task:initBridgeAddress').setAction(async function () {
-  ensureAddressesDirectoryExists();
-  writeBridgeAddressSol('address(0)');
-  console.log(`${BRIDGE_ADDRESS_FILE} initialized with address(0) default`);
-});
-
 task('task:setBridgeAddress')
-  .addParam('confidentialBridge', 'Address of the ConfidentialBridge contract')
+  .addParam('address', 'The address of the contract')
   .setAction(async function (taskArguments: TaskArguments) {
     ensureAddressesDirectoryExists();
-    const envLines = `CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS=${taskArguments.confidentialBridge}\n`;
-    writeHostEnvLine(envLines, 'a');
-    writeBridgeAddressSol(taskArguments.confidentialBridge);
-    console.log(`Bridge address written: confidentialBridge=${taskArguments.confidentialBridge}`);
+    const content = `CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    try {
+      writeHostEnvLine(content, 'a');
+      console.log(`ConfidentialBridge address ${taskArguments.address} written successfully!`);
+    } catch (err) {
+      throw new Error(`Failed to write ConfidentialBridge address: ${String(err)}`);
+    }
+
+    const solidityTemplate = `
+address constant confidentialBridgeAdd = ${taskArguments.address};\n`;
+    try {
+      writeHostAddressesSol(solidityTemplate, 'a');
+      console.log(`${HOST_ADDRESSES_FILE} appended with confidentialBridgeAdd successfully!`);
+    } catch (error) {
+      throw new Error(`Failed to write ${HOST_ADDRESSES_FILE}: ${String(error)}`);
+    }
   });
 
 ////////////////////////////////////////////////////////////////////////////////

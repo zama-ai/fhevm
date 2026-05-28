@@ -6,8 +6,7 @@ import {MulticallUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/Mu
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import {fhevmExecutorAdd, pauserSetAdd} from "../addresses/FHEVMHostAddresses.sol";
-import {confidentialBridgeAdd} from "../addresses/BridgeAddress.sol";
+import {confidentialBridgeAdd, fhevmExecutorAdd, pauserSetAdd} from "../addresses/FHEVMHostAddresses.sol";
 import {IPauserSet} from "./interfaces/IPauserSet.sol";
 
 import {ACLEvents} from "./ACLEvents.sol";

@@ -14,7 +14,7 @@ import {ConfidentialBridge} from "../../contracts/bridge/ConfidentialBridge.sol"
 import {HandlesSender} from "../../contracts/bridge/HandlesSender.sol";
 import {HandlesReceiver} from "../../contracts/bridge/HandlesReceiver.sol";
 import {BridgeEvents} from "../../contracts/bridge/BridgeEvents.sol";
-import {aclAdd, fhevmExecutorAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {aclAdd, confidentialBridgeAdd, fhevmExecutorAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 import {MockDstApp} from "./mocks/MockDstApp.sol";
 
@@ -448,15 +448,17 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
     // verify the address-aligned bypass.
     ////////////////////////////////////////////////////////////////////////////////
 
-    function test_ACL_BridgeAddressDefaultsToZero() public view {
-        // Sanity: the test environment has not been bridge-deployed.
-        assertEq(acl.getConfidentialBridgeAddress(), address(0));
+    function test_ACL_BridgeAddressMatchesCompileTimeConstant() public view {
+        // Sanity: ACL exposes the same bridge address that was baked in at compile
+        // time from `addresses/FHEVMHostAddresses.sol`.
+        assertEq(acl.getConfidentialBridgeAddress(), confidentialBridgeAdd);
     }
 
-    function test_ACL_AllowTransientBypass_OffWhenAddressIsZero() public {
-        // The runtime-deployed bridge is NOT the address baked into ACL (which is
-        // address(0)), so it gets no bypass and the regular isAllowed path is
-        // enforced.
+    function test_ACL_AllowTransientBypass_OffForNonCanonicalBridge() public {
+        // The runtime-deployed `dstBridge` is at a fresh proxy address, NOT the
+        // canonical `confidentialBridgeAdd` baked into ACL — so it gets no bypass
+        // and the regular isAllowed path is enforced.
+        assertTrue(address(dstBridge) != acl.getConfidentialBridgeAddress());
         bytes32 fresh = _makeHandle(999);
         vm.prank(address(dstBridge));
         vm.expectRevert();
