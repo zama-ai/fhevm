@@ -3,9 +3,6 @@ import { ethers } from 'ethers';
 import { FHETestABI } from './FheTest-abi-v2.js';
 import { prepareFheTestEnv, type FheTestBaseEnv, type FheTestChainName } from './setupCommon.js';
 
-// Re-export for convenience
-export type { FheTestChainName } from './setupCommon.js';
-
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
