@@ -91,6 +91,7 @@ task('task:deployCanonicalHost', 'Deploys the complete canonical host stack.').s
   await hre.run('task:deployProtocolConfigCanonical');
   await hre.run('task:deployKMSVerifier');
   await hre.run('task:initializeKMSGeneration');
+  console.log('Contract deployment done!');
 });
 
 task('task:deploySecondaryHost', 'Deploys a secondary host stack without KMSGeneration.')
@@ -113,6 +114,7 @@ task('task:deploySecondaryHost', 'Deploys a secondary host stack without KMSGene
       canonicalProtocolConfigAddress,
     });
     await hre.run('task:deployKMSVerifier');
+    console.log('Contract deployment done!');
   });
 
 ////////////////////////////////////////////////////////////////////////////////
