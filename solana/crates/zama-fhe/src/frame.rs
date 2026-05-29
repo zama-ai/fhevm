@@ -6,6 +6,9 @@ use zama_host::{
     FheFrameStep, FheOpcode, FheOperand,
 };
 
+/// FHE type tag for `Uint64` (mirrors EVM `FheType::Uint64`).
+const UINT64_FHE_TYPE: u8 = 5;
+
 #[derive(Clone)]
 pub struct EncryptedValue<'info> {
     pub handle: [u8; 32],
@@ -107,7 +110,6 @@ impl<'a, 'info> Builder<'a, 'info> {
     }
 
     pub fn rand_u64(&mut self) -> Result<FrameValue> {
-        const UINT64_FHE_TYPE: u8 = 5;
         let index = self.steps.len();
         self.steps.push(FheFrameStep::Rand {
             fhe_type: UINT64_FHE_TYPE,
@@ -124,7 +126,6 @@ impl<'a, 'info> Builder<'a, 'info> {
         app_account: Pubkey,
         proof: [u8; 32],
     ) -> Result<FrameValue> {
-        const UINT64_FHE_TYPE: u8 = 5;
         let index = self.steps.len();
         self.steps.push(FheFrameStep::Input {
             input_handle,
@@ -224,19 +225,10 @@ impl<'a, 'info> Builder<'a, 'info> {
     }
 
     fn submit(self, ctx: Context<'_, 'info>) -> Result<()> {
-        let signer_seed_bytes = [vec![
-            b"fhe-compute".to_vec(),
-            ctx.acl_domain_key.to_bytes().to_vec(),
-            vec![ctx.compute_signer_bump],
-        ]];
-        let signer_seed_slices = signer_seed_bytes
-            .iter()
-            .map(|seed_set| seed_set.iter().map(Vec::as_slice).collect::<Vec<_>>())
-            .collect::<Vec<_>>();
-        let signer_seeds = signer_seed_slices
-            .iter()
-            .map(Vec::as_slice)
-            .collect::<Vec<_>>();
+        let domain_key = ctx.acl_domain_key.to_bytes();
+        let bump = [ctx.compute_signer_bump];
+        let seeds: &[&[u8]] = &[b"fhe-compute", domain_key.as_ref(), &bump];
+        let signer_seeds: &[&[&[u8]]] = &[seeds];
 
         cpi::execute_frame(
             CpiContext::new_with_signer(
@@ -249,7 +241,7 @@ impl<'a, 'info> Builder<'a, 'info> {
                     event_authority: ctx.event_authority.to_account_info(),
                     program: ctx.zama_program.to_account_info(),
                 },
-                &signer_seeds,
+                signer_seeds,
             )
             .with_remaining_accounts(self.remaining_accounts),
             self.authorized_app_accounts,

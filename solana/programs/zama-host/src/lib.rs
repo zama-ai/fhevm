@@ -22,6 +22,8 @@ pub const MAX_FRAME_STEPS: usize = 16;
 pub const MAX_FRAME_ACTIONS: usize = 16;
 pub const MAX_FRAME_RESULTS: usize = 16;
 pub const MAX_FRAME_TRANSIENT_ALLOWS: usize = 32;
+/// One authorized app account per durable `Allow` action is the upper bound.
+pub const MAX_AUTHORIZED_APP_ACCOUNTS: usize = MAX_FRAME_ACTIONS;
 pub const SOLANA_POC_CHAIN_ID: u64 = 12345;
 
 #[program]
@@ -105,7 +107,7 @@ pub mod zama_host {
             ZamaHostError::FrameLimitExceeded
         );
         require!(
-            authorized_app_accounts.len() <= MAX_FRAME_ACTIONS,
+            authorized_app_accounts.len() <= MAX_AUTHORIZED_APP_ACCOUNTS,
             ZamaHostError::FrameLimitExceeded
         );
 
@@ -313,44 +315,6 @@ pub enum FheOpcode {
     Sum,
     IsIn,
     MulDiv,
-}
-
-impl FheOpcode {
-    pub fn as_u8(self) -> u8 {
-        match self {
-            Self::Add => 0,
-            Self::Sub => 1,
-            Self::Mul => 2,
-            Self::Div => 3,
-            Self::Rem => 4,
-            Self::BitAnd => 5,
-            Self::BitOr => 6,
-            Self::BitXor => 7,
-            Self::Shl => 8,
-            Self::Shr => 9,
-            Self::Rotl => 10,
-            Self::Rotr => 11,
-            Self::Eq => 12,
-            Self::Ne => 13,
-            Self::Ge => 14,
-            Self::Gt => 15,
-            Self::Le => 16,
-            Self::Lt => 17,
-            Self::Min => 18,
-            Self::Max => 19,
-            Self::Neg => 20,
-            Self::Not => 21,
-            Self::VerifyInput => 22,
-            Self::Cast => 23,
-            Self::TrivialEncrypt => 24,
-            Self::IfThenElse => 25,
-            Self::Rand => 26,
-            Self::RandBounded => 27,
-            Self::Sum => 28,
-            Self::IsIn => 29,
-            Self::MulDiv => 30,
-        }
-    }
 }
 
 impl TryFrom<FheOpcode> for FheBinaryOpCode {

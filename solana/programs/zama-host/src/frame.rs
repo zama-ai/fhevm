@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 
 use crate::acl::{
     assert_canonical_acl_record_data, assert_output_acl_metadata, assert_record_allows_handle,
-    create_acl_record_account, deserialize_acl_record, serialize_acl_record, write_acl_record_data,
+    create_acl_record_account, deserialize_acl_record, serialize_acl_record, write_acl_record,
 };
 use crate::handles;
 use crate::{
@@ -12,15 +12,10 @@ use crate::{
     MAX_FRAME_TRANSIENT_ALLOWS, SOLANA_POC_CHAIN_ID,
 };
 
-#[derive(Clone, Copy)]
-struct FrameResult {
-    handle: [u8; 32],
-}
-
 struct ExecutionFrame {
     subject: Pubkey,
-    results: Vec<FrameResult>,
-    transient_allows: Vec<([u8; 32], Pubkey)>,
+    results: Vec<[u8; 32]>,
+    transient_allows: Vec<[u8; 32]>,
     events: Vec<FrameEvent>,
 }
 
@@ -49,13 +44,13 @@ impl ExecutionFrame {
         }
     }
 
-    fn push_result(&mut self, result: FrameResult) -> Result<()> {
+    fn push_result(&mut self, handle: [u8; 32]) -> Result<()> {
         require!(
             self.results.len() < MAX_FRAME_RESULTS,
             ZamaHostError::FrameLimitExceeded
         );
-        self.results.push(result);
-        self.allow_transient(result.handle)
+        self.results.push(handle);
+        self.allow_transient(handle)
     }
 
     fn allow_transient(&mut self, handle: [u8; 32]) -> Result<()> {
@@ -63,16 +58,14 @@ impl ExecutionFrame {
             self.transient_allows.len() < MAX_FRAME_TRANSIENT_ALLOWS,
             ZamaHostError::FrameLimitExceeded
         );
-        self.transient_allows.push((handle, self.subject));
+        // A frame has a single compute subject, so every transient allow is for
+        // `self.subject`; we only track which result handles are frame-local.
+        self.transient_allows.push(handle);
         Ok(())
     }
 
-    fn transient_allows(&self, handle: [u8; 32], subject: Pubkey) -> bool {
-        self.transient_allows
-            .iter()
-            .any(|(allowed_handle, allowed_subject)| {
-                *allowed_handle == handle && *allowed_subject == subject
-            })
+    fn is_transiently_allowed(&self, handle: [u8; 32]) -> bool {
+        self.transient_allows.contains(&handle)
     }
 }
 
@@ -141,9 +134,7 @@ fn execute_frame_step<'info>(
                 SOLANA_POC_CHAIN_ID,
             );
             require!(proof == expected, ZamaHostError::InvalidInputProof);
-            frame.push_result(FrameResult {
-                handle: input_handle,
-            })?;
+            frame.push_result(input_handle)?;
             frame
                 .events
                 .push(FrameEvent::InputVerified(InputVerifiedEvent {
@@ -183,7 +174,7 @@ fn execute_frame_step<'info>(
                 previous_bank_hash,
                 unix_timestamp,
             );
-            frame.push_result(FrameResult { handle: result })?;
+            frame.push_result(result)?;
             frame
                 .events
                 .push(FrameEvent::TrivialEncrypt(TrivialEncryptEvent {
@@ -208,7 +199,7 @@ fn execute_frame_step<'info>(
                 .checked_add(1)
                 .ok_or(ZamaHostError::RandCounterOverflow)?;
             let result = handles::computed_rand_handle(fhe_type, seed, SOLANA_POC_CHAIN_ID);
-            frame.push_result(FrameResult { handle: result })?;
+            frame.push_result(result)?;
             frame.events.push(FrameEvent::Rand(FheRandEvent {
                 version: EVENT_VERSION,
                 subject: frame.subject.to_bytes(),
@@ -252,7 +243,7 @@ fn execute_operation_step<'info>(
         previous_bank_hash,
         unix_timestamp,
     );
-    frame.push_result(FrameResult { handle: result })?;
+    frame.push_result(result)?;
     frame.events.push(FrameEvent::BinaryOp(FheBinaryOpEvent {
         version: EVENT_VERSION,
         op: binary_op,
@@ -303,15 +294,16 @@ fn apply_frame_action<'info>(
                 &subjects,
             )?;
             let output_acl_record = account_by_pubkey(remaining_accounts, output_acl_record)?;
-            create_acl_record_account(
+            let bump = create_acl_record_account(
                 &payer,
                 &output_acl_record,
                 &system_program,
                 nonce_key,
                 nonce_sequence,
             )?;
-            write_acl_record_data(
+            write_acl_record(
                 &output_acl_record,
+                bump,
                 nonce_key,
                 nonce_sequence,
                 acl_domain_key,
@@ -371,16 +363,16 @@ fn resolve_operand<'info>(
             })
         }
         FheOperand::PreviousResult { index } => {
-            let result = frame
+            let handle = *frame
                 .results
                 .get(*index as usize)
                 .ok_or_else(|| error!(ZamaHostError::FrameResultIndexOutOfRange))?;
             require!(
-                frame.transient_allows(result.handle, frame.subject),
+                frame.is_transiently_allowed(handle),
                 ZamaHostError::AclSubjectMismatch
             );
             Ok(ResolvedOperand {
-                value: result.handle,
+                value: handle,
                 is_scalar: false,
             })
         }

@@ -1,6 +1,6 @@
 // Anchor macros generate framework-shaped code that trips rustc/Clippy checks.
 #![allow(unexpected_cfgs)]
-#![allow(clippy::diverging_sub_expression, clippy::too_many_arguments)]
+#![allow(clippy::diverging_sub_expression)]
 
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self as spl_token, Mint as SplMint, Token, TokenAccount, TransferChecked};
@@ -49,20 +49,42 @@ pub mod confidential_token {
             ConfidentialTokenError::ComputeSignerMismatch
         );
         let acl_record = ctx.accounts.acl_record.key();
-        let balance_handle = trivial_encrypt_balance_acl(
-            &ctx.accounts.owner,
-            &ctx.accounts.mint,
-            &ctx.accounts.compute_signer,
-            &ctx.accounts.token_account,
-            ctx.accounts.acl_record.to_account_info(),
-            &ctx.accounts.zama_event_authority,
-            &ctx.accounts.zama_program,
-            &ctx.accounts.zama_rand_counter,
-            &ctx.accounts.system_program,
-            ctx.bumps.compute_signer,
-            0,
-            initial_balance,
+        let acl_record_info = ctx.accounts.acl_record.to_account_info();
+        fhe::execute(
+            fhe_context(
+                &ctx.accounts.owner,
+                &ctx.accounts.zama_event_authority,
+                &ctx.accounts.zama_program,
+                &ctx.accounts.compute_signer,
+                &ctx.accounts.zama_rand_counter,
+                ctx.accounts.mint.key(),
+                ctx.bumps.compute_signer,
+                &ctx.accounts.system_program,
+            ),
+            |fhe| {
+                let balance = fhe.trivial_encrypt_u64(initial_balance, BALANCE_FHE_TYPE)?;
+                fhe.allow(
+                    &balance,
+                    fhe::DurableAllow {
+                        acl_record: acl_record_info.clone(),
+                        app_account: token_app_account(ctx.accounts.token_account.to_account_info()),
+                        nonce_key: balance_nonce_key(
+                            ctx.accounts.mint.key(),
+                            ctx.accounts.token_account.key(),
+                        ),
+                        nonce_sequence: 0,
+                        encrypted_value_label: balance_label(),
+                        subjects: balance_acl_subjects(
+                            ctx.accounts.owner.key(),
+                            ctx.accounts.compute_signer.key(),
+                        ),
+                        public_decrypt: false,
+                    },
+                )?;
+                Ok(())
+            },
         )?;
+        let balance_handle = durable_acl_handle(&acl_record_info)?;
         let token_account = &mut ctx.accounts.token_account;
         token_account.balance_handle = balance_handle;
         token_account.balance_acl_record = acl_record;
@@ -629,6 +651,9 @@ pub enum ConfidentialTokenError {
     CurrentAclRecordMismatch,
 }
 
+// Shared constructor for `fhe::Context`; it forwards the host accounts each
+// instruction must pass, so the argument count is inherent, not accidental.
+#[allow(clippy::too_many_arguments)]
 fn fhe_context<'a, 'info>(
     payer: &'a Signer<'info>,
     zama_event_authority: &'a UncheckedAccount<'info>,
@@ -663,52 +688,6 @@ fn token_app_account<'info>(account: AccountInfo<'info>) -> fhe::AuthorizedAppAc
     fhe::AuthorizedAppAccount::new(account)
 }
 
-fn trivial_encrypt_balance_acl<'info>(
-    payer: &Signer<'info>,
-    mint: &Account<'info, ConfidentialMint>,
-    compute_signer: &UncheckedAccount<'info>,
-    token_account: &Account<'info, ConfidentialTokenAccount>,
-    acl_record: AccountInfo<'info>,
-    zama_event_authority: &UncheckedAccount<'info>,
-    zama_program: &Program<'info, ZamaHost>,
-    zama_rand_counter: &UncheckedAccount<'info>,
-    system_program: &Program<'info, System>,
-    compute_signer_bump: u8,
-    nonce_sequence: u64,
-    plaintext: u64,
-) -> Result<[u8; 32]> {
-    let acl_record_info = acl_record.clone();
-    fhe::execute(
-        fhe_context(
-            payer,
-            zama_event_authority,
-            zama_program,
-            compute_signer,
-            zama_rand_counter,
-            mint.key(),
-            compute_signer_bump,
-            system_program,
-        ),
-        |fhe| {
-            let balance = fhe.trivial_encrypt_u64(plaintext, BALANCE_FHE_TYPE)?;
-            fhe.allow(
-                &balance,
-                fhe::DurableAllow {
-                    acl_record: acl_record_info.clone(),
-                    app_account: token_app_account(token_account.to_account_info()),
-                    nonce_key: balance_nonce_key(mint.key(), token_account.key()),
-                    nonce_sequence,
-                    encrypted_value_label: balance_label(),
-                    subjects: balance_acl_subjects(token_account.owner, compute_signer.key()),
-                    public_decrypt: false,
-                },
-            )?;
-            Ok(())
-        },
-    )?;
-    durable_acl_handle(&acl_record_info)
-}
-
 fn balance_acl_subjects(owner: Pubkey, compute_signer: Pubkey) -> Vec<AclSubjectEntry> {
     vec![
         AclSubjectEntry { pubkey: owner },
@@ -736,10 +715,6 @@ pub fn rand_label() -> [u8; 32] {
 
 pub fn rand_nonce_key(acl_domain_key: Pubkey, app_account: Pubkey) -> [u8; 32] {
     nonce_key(acl_domain_key, app_account, rand_label())
-}
-
-pub fn wrap_amount_label() -> [u8; 32] {
-    *b"wrap_amount_____________________"
 }
 
 pub fn nonce_key(

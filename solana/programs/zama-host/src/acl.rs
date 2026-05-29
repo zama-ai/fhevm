@@ -157,13 +157,15 @@ pub(crate) fn assert_output_acl_metadata(
     Ok(())
 }
 
+/// Creates the canonical ACL record account and returns its PDA bump so the
+/// caller can write the record without re-deriving the address.
 pub(crate) fn create_acl_record_account<'info>(
     payer: &AccountInfo<'info>,
     output_acl_record: &AccountInfo<'info>,
     system_program: &AccountInfo<'info>,
     nonce_key: [u8; 32],
     nonce_sequence: u64,
-) -> Result<()> {
+) -> Result<u8> {
     require!(
         output_acl_record.data_is_empty() && output_acl_record.lamports() == 0,
         ZamaHostError::FrameOutputAccountAlreadyInitialized
@@ -205,11 +207,12 @@ pub(crate) fn create_acl_record_account<'info>(
         ],
         &[seeds],
     )?;
-    Ok(())
+    Ok(bump)
 }
 
-pub(crate) fn write_acl_record_data<'info>(
+pub(crate) fn write_acl_record<'info>(
     record_info: &AccountInfo<'info>,
+    bump: u8,
     nonce_key: [u8; 32],
     nonce_sequence: u64,
     acl_domain_key: Pubkey,
@@ -219,37 +222,21 @@ pub(crate) fn write_acl_record_data<'info>(
     subjects: &[AclSubjectEntry],
     public_decrypt: bool,
 ) -> Result<()> {
-    let (_, bump) = Pubkey::find_program_address(
-        &[
-            b"acl-record",
-            nonce_key.as_ref(),
-            &nonce_sequence.to_le_bytes(),
-        ],
-        &crate::ID,
-    );
     let mut record = AclRecord {
-        handle: [0; 32],
-        nonce_key: [0; 32],
-        nonce_sequence: 0,
-        acl_domain_key: Pubkey::default(),
-        app_account: Pubkey::default(),
-        encrypted_value_label: [0; 32],
-        subjects: [Pubkey::default(); MAX_ACL_SUBJECTS],
-        subject_count: 0,
-        public_decrypt: false,
-        bump,
-    };
-    write_acl_record_fields(
-        &mut record,
+        handle,
         nonce_key,
         nonce_sequence,
         acl_domain_key,
         app_account,
         encrypted_value_label,
-        handle,
-        subjects,
+        subjects: [Pubkey::default(); MAX_ACL_SUBJECTS],
+        subject_count: subjects.len() as u8,
         public_decrypt,
-    );
+        bump,
+    };
+    for (index, subject) in subjects.iter().enumerate() {
+        record.subjects[index] = subject.pubkey;
+    }
     serialize_acl_record(record_info, &record)
 }
 
@@ -272,32 +259,6 @@ pub(crate) fn serialize_acl_record<'info>(
     let mut data_slice: &mut [u8] = &mut data;
     record.try_serialize(&mut data_slice)?;
     Ok(())
-}
-
-fn write_acl_record_fields(
-    record: &mut AclRecord,
-    nonce_key: [u8; 32],
-    nonce_sequence: u64,
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-    handle: [u8; 32],
-    subjects: &[AclSubjectEntry],
-    public_decrypt: bool,
-) {
-    record.handle = handle;
-    record.nonce_key = nonce_key;
-    record.nonce_sequence = nonce_sequence;
-    record.acl_domain_key = acl_domain_key;
-    record.app_account = app_account;
-    record.encrypted_value_label = encrypted_value_label;
-    record.subjects = [Pubkey::default(); MAX_ACL_SUBJECTS];
-    record.subject_count = subjects.len() as u8;
-    record.public_decrypt = public_decrypt;
-
-    for (index, subject) in subjects.iter().enumerate() {
-        record.subjects[index] = subject.pubkey;
-    }
 }
 
 fn assert_nonce_key_matches_fields(
