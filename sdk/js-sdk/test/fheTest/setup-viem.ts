@@ -2,7 +2,7 @@ import type { FhevmChain } from '@fhevm/sdk/chains';
 import { createPublicClient, http, type PublicClient, type Transport, type Chain } from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';
 import { mainnet as viemMainnet, sepolia as viemSepolia, anvil as viemAnvil } from 'viem/chains';
-import { prepareFheTestEnv, type FheTestBaseEnv, type FheTestChainName } from './setupCommon.js';
+import { isCleartext, prepareChains, type FheTestBaseEnv, type FheTestChainName } from './setupCommon.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -23,13 +23,21 @@ export type FheTestViemConfig = {
   readonly fheTestAddress: string;
 };
 
+export type CreateViemClientFn = (params: {
+  chain: FheTestViemConfig['fhevmChain'];
+  publicClient: FheTestViemConfig['publicClient'];
+}) => any;
+
 // ---------------------------------------------------------------------------
 // Build config
 // ---------------------------------------------------------------------------
 
-function buildConfig(): FheTestViemConfig {
-  const env: FheTestBaseEnv = prepareFheTestEnv();
+function _buildConfigs(): FheTestViemConfig[] {
+  const envs: FheTestBaseEnv[] = prepareChains();
+  return envs.map(_buildConfig);
+}
 
+function _buildConfig(env: FheTestBaseEnv): FheTestViemConfig {
   const viemChain =
     env.chainName === 'mainnet'
       ? viemMainnet
@@ -69,11 +77,23 @@ function buildConfig(): FheTestViemConfig {
 // Singleton — built once, shared across all test files
 // ---------------------------------------------------------------------------
 
-let _config: FheTestViemConfig | undefined;
+let _configs: FheTestViemConfig[] | undefined;
+
+export function getViemTestConfigs(): FheTestViemConfig[] {
+  if (_configs === undefined) {
+    _configs = _buildConfigs();
+  }
+  return _configs;
+}
 
 export function getViemTestConfig(): FheTestViemConfig {
-  if (_config === undefined) {
-    _config = buildConfig();
-  }
-  return _config;
+  return getViemTestConfigs()[0]!;
+}
+
+export function areAllViemTestConfigsCleartext(): boolean {
+  return getViemTestConfigs().every((config) => isCleartext(config.chainName));
+}
+
+export function isMultichain(): boolean {
+  return getViemTestConfigs().length > 1;
 }

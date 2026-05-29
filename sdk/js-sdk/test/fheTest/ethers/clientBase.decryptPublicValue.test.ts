@@ -3,6 +3,13 @@ import { getEthersTestConfig } from '../setup-ethers.js';
 import { isCleartext } from '../setupCommon.js';
 import { defineClientBaseDecryptPublicValueTests } from '../ethers-common/clientBase.decryptPublicValue.tests.js';
 
-defineClientBaseDecryptPublicValueTests(!isCleartext(getEthersTestConfig().chainName), (params) =>
-  createFhevmBaseClient(params),
-);
+////////////////////////////////////////////////////////////////////////////////
+//
+// CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.decryptPublicValue.test.ts
+//
+////////////////////////////////////////////////////////////////////////////////
+
+defineClientBaseDecryptPublicValueTests({
+  runIf: !isCleartext(getEthersTestConfig().chainName),
+  createFhevmBaseClient: (params) => createFhevmBaseClient(params),
+});

@@ -50,10 +50,6 @@ export type FheTestBaseEnv = {
 // FHETest contract version
 // ---------------------------------------------------------------------------
 
-export function isV2(chainName: FheTestChainName) {
-  return loadChainDefaults()[chainName]?.fheTestVersion === 'v2';
-}
-
 export function isCleartext(chainName: FheTestChainName) {
   return chainName === 'localcleartext';
 }
@@ -92,14 +88,28 @@ function parseEnvFile(filePath: string): Record<string, string> {
 // Resolve chain
 // ---------------------------------------------------------------------------
 
-function resolveChainName(): FheTestChainName {
-  const chain = process.env.CHAIN ?? 'sepolia';
-  if (!(FHE_TEST_CHAIN_NAMES as readonly string[]).includes(chain)) {
+function resolveChainNames(): FheTestChainName[] {
+  const raw = process.env.CHAIN ?? 'sepolia';
+  const known = FHE_TEST_CHAIN_NAMES as readonly string[];
+
+  const entries = raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
+  if (entries.length === 0) {
+    throw new Error(`Invalid CHAIN env var: "${raw}". Expected one or more comma-separated chain names.`);
+  }
+
+  const invalid = entries.filter((entry) => !known.includes(entry));
+  if (invalid.length > 0) {
     throw new Error(
-      `Invalid CHAIN env var: "${chain}". Expected one of: ${FHE_TEST_CHAIN_NAMES.map((c) => `"${c}"`).join(', ')}.`,
+      `Invalid CHAIN env var: ${invalid.map((c) => `"${c}"`).join(', ')}. ` +
+        `Expected one of: ${FHE_TEST_CHAIN_NAMES.map((c) => `"${c}"`).join(', ')}.`,
     );
   }
-  return chain as FheTestChainName;
+
+  return Array.from(new Set(entries)) as FheTestChainName[];
 }
 
 // ---------------------------------------------------------------------------
@@ -327,13 +337,24 @@ export function runPreliminaryFheTestSetup(
   initAliceFheTestHandlesIfNeeded(fheTestAddress, alice.address, mnemonic, rpcUrl);
 }
 
-export function prepareFheTestEnv(): FheTestBaseEnv {
-  if (_baseEnv !== undefined) {
-    return _baseEnv;
+export function prepareSingleChain(): FheTestBaseEnv {
+  return prepareChains()[0]!;
+}
+
+export function prepareChains(): FheTestBaseEnv[] {
+  const chainNames: FheTestChainName[] = resolveChainNames();
+
+  const chains: FheTestBaseEnv[] = [];
+  for (let i = 0; i < chainNames.length; ++i) {
+    const c = _prepareChain(chainNames[i]!);
+    chains.push(c);
   }
 
+  return chains;
+}
+
+function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
   const testDir = resolve(__dirname, '..');
-  const chainName: FheTestChainName = resolveChainName();
   const isLocalstack = chainName.startsWith('localstack');
   const envFilename = isLocalstack ? '.env.localstack' : `.env.${chainName}`;
 
@@ -401,6 +422,83 @@ export function prepareFheTestEnv(): FheTestBaseEnv {
 
   return _baseEnv;
 }
+
+// export function prepareFheTestEnv(): FheTestBaseEnv {
+//   if (_baseEnv !== undefined) {
+//     return _baseEnv;
+//   }
+
+//   const chainNames: FheTestChainName[] = resolveChainNames();
+//   const chainName: FheTestChainName = chainNames[0]!;
+
+//   const testDir = resolve(__dirname, '..');
+//   const isLocalstack = chainName.startsWith('localstack');
+//   const envFilename = isLocalstack ? '.env.localstack' : `.env.${chainName}`;
+
+//   // Load shared secrets
+//   const sharedEnv = parseEnvFile(resolve(testDir, '.env'));
+//   // Load chain-specific env
+//   const chainEnv = parseEnvFile(resolve(testDir, envFilename));
+
+//   const defaults = loadChainDefaults()[chainName];
+
+//   const mnemonic = sharedEnv.MNEMONIC ?? process.env.MNEMONIC ?? defaults?.mnemonic;
+//   if (!mnemonic) {
+//     throw new Error(
+//       `MNEMONIC is missing for "${chainName}". Set it in test/.env, as the MNEMONIC env var, or add a mnemonic to test/chains/chain-defaults.json.`,
+//     );
+//   }
+
+//   const zamaApiKey = sharedEnv.ZAMA_FHEVM_API_KEY ?? process.env.ZAMA_FHEVM_API_KEY;
+//   if (!zamaApiKey) {
+//     throw new Error('ZAMA_FHEVM_API_KEY is missing. Set it in test/.env or as an environment variable.');
+//   }
+
+//   const rpcUrl = chainEnv.RPC_URL ?? process.env.RPC_URL ?? defaults?.rpcUrl;
+//   if (!rpcUrl) {
+//     throw new Error(
+//       `RPC_URL is missing for "${chainName}". Set it in test/${envFilename}, as the RPC_URL env var, or add an entry to test/chains/chain-defaults.json.`,
+//     );
+//   }
+
+//   const fheTestAddress = resolveFHETestAddress(chainName);
+//   const fheTestVersion = resolveFHETestVersion(chainName);
+
+//   const chainMap: Record<FheTestChainName, FhevmChain> = {
+//     localstack,
+//     localstack_v11,
+//     localstack_v12,
+//     localstack_v13,
+//     localstack_v14,
+//     localcleartext,
+//     polygon_devnet,
+//     sepolia,
+//     mainnet,
+//     devnet,
+//     testnet,
+//   };
+//   const fhevmChain = chainMap[chainName];
+//   if (!fhevmChain) {
+//     const valid = Object.keys(chainMap)
+//       .map((k) => `"${k}"`)
+//       .join(', ');
+//     throw new Error(`Unsupported chain: "${chainName}". Expected one of ${valid}.`);
+//   }
+
+//   runPreliminaryFheTestSetup(chainName, mnemonic, rpcUrl, fheTestAddress);
+
+//   _baseEnv = {
+//     chainName,
+//     fhevmChain,
+//     rpcUrl,
+//     mnemonic,
+//     zamaApiKey,
+//     fheTestAddress,
+//     fheTestVersion,
+//   };
+
+//   return _baseEnv;
+// }
 
 // ---------------------------------------------------------------------------
 // JSON.stringify with bigint support

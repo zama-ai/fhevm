@@ -2,25 +2,18 @@ import type { ethers } from 'ethers';
 import type { EncryptedValue } from '@fhevm/sdk/types';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import { getEthersTestConfig, type FheTestEthersConfig } from '../setup-ethers.js';
+import { getEthersTestConfig, type CreateEthersClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
 import { clearTypeFromHandle, encryptTestCases, isBytes32Hex } from '../setupCommon.js';
-
-type ClientFactory = (params: {
-  chain: FheTestEthersConfig['fhevmChain'];
-  provider: FheTestEthersConfig['provider'];
-}) => any;
 
 type ModuleVersions = Parameters<typeof setFhevmRuntimeConfig>[0]['moduleVersions'];
 
-export function defineClientEncryptDecryptSlowTests(
-  runIf: boolean,
-  options: {
-    createEncryptClient: ClientFactory;
-    createDecryptClient: ClientFactory;
-    moduleVersions?: ModuleVersions;
-  },
-): void {
-  describe.runIf(runIf)(
+export function defineClientEncryptDecryptSlowTests(parameters: {
+  readonly runIf: boolean;
+  readonly createFhevmEncryptClient: CreateEthersClientFn;
+  readonly createFhevmDecryptClient: CreateEthersClientFn;
+  readonly moduleVersions?: ModuleVersions;
+}): void {
+  describe.runIf(parameters.runIf)(
     'Encrypt-Decrypt',
     () => {
       let config: FheTestEthersConfig;
@@ -36,7 +29,7 @@ export function defineClientEncryptDecryptSlowTests(
             debug: (message: string) => console.log(message),
             error: (message: string) => console.log(message),
           },
-          moduleVersions: options.moduleVersions,
+          moduleVersions: parameters.moduleVersions,
         });
       });
 
@@ -45,7 +38,7 @@ export function defineClientEncryptDecryptSlowTests(
         // │  Phase 1: ENCRYPT                                                   │
         // │  Client-side encryption of all FHE types into external handles      │
         // └─────────────────────────────────────────────────────────────────────┘
-        const client = options.createEncryptClient({
+        const client = parameters.createFhevmEncryptClient({
           chain: config.fhevmChain,
           provider: config.provider,
         });
@@ -125,7 +118,7 @@ export function defineClientEncryptDecryptSlowTests(
         // │  Phase 3: PRIVATE DECRYPT                                           │
         // │  Decrypt via signed permit + e2e transport key pair                  │
         // └─────────────────────────────────────────────────────────────────────┘
-        const decryptClient = options.createDecryptClient({
+        const decryptClient = parameters.createFhevmDecryptClient({
           chain: config.fhevmChain,
           provider: config.provider,
         });

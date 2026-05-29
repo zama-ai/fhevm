@@ -1,18 +1,22 @@
 import type { Hex } from 'viem';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import { getViemTestConfig, type FheTestViemConfig } from '../setup-viem.js';
+import { getViemTestConfig, type CreateViemClientFn, type FheTestViemConfig } from '../setup-viem.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
 import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle, fheTypeIdFromHandle } from '../setupCommon.js';
 import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
 
-type ClientFactory = (params: {
-  chain: FheTestViemConfig['fhevmChain'];
-  publicClient: FheTestViemConfig['publicClient'];
-}) => any;
+////////////////////////////////////////////////////////////////////////////////
+//
+// CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.decryptPublicValue.test.ts
+//
+////////////////////////////////////////////////////////////////////////////////
 
-export function defineClientBaseDecryptPublicValueTests(runIf: boolean, createClient: ClientFactory): void {
-  describe.runIf(runIf)('Base client — decryptPublicValue', () => {
+export function defineClientBaseDecryptPublicValueTests(parameters: {
+  readonly runIf: boolean;
+  createFhevmBaseClient: CreateViemClientFn;
+}): void {
+  describe.runIf(parameters.runIf)('Base client — decryptPublicValue', () => {
     let config: FheTestViemConfig;
 
     beforeAll(() => {
@@ -60,7 +64,7 @@ export function defineClientBaseDecryptPublicValueTests(runIf: boolean, createCl
         console.log(`  ${fheType}: handle=${encryptedValue.slice(0, 20)}... expected=${expectedRaw}`);
 
         // Public decrypt via SDK
-        const client = createClient({
+        const client = parameters.createFhevmBaseClient({
           chain: config.fhevmChain,
           publicClient: config.publicClient,
         });
@@ -119,7 +123,7 @@ export function defineClientBaseDecryptPublicValueTests(runIf: boolean, createCl
       }
 
       // Public decrypt all in a single call
-      const client = createClient({
+      const client = parameters.createFhevmBaseClient({
         chain: config.fhevmChain,
         publicClient: config.publicClient,
       });

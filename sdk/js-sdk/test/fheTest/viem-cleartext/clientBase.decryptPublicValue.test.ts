@@ -3,6 +3,13 @@ import { getViemTestConfig } from '../setup-viem.js';
 import { isCleartext } from '../setupCommon.js';
 import { defineClientBaseDecryptPublicValueTests } from '../viem-common/clientBase.decryptPublicValue.tests.js';
 
-defineClientBaseDecryptPublicValueTests(isCleartext(getViemTestConfig().chainName), (params) =>
-  createFhevmCleartextBaseClient(params),
-);
+////////////////////////////////////////////////////////////////////////////////
+//
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/clientBase.decryptPublicValue.test.ts
+//
+////////////////////////////////////////////////////////////////////////////////
+
+defineClientBaseDecryptPublicValueTests({
+  runIf: isCleartext(getViemTestConfig().chainName),
+  createFhevmBaseClient: (params) => createFhevmCleartextBaseClient(params),
+});

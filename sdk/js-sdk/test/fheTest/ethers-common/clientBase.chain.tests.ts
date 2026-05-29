@@ -1,16 +1,14 @@
 import { resolveFhevmConfig } from '@fhevm/sdk/actions/host';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { type FheTestEthersConfig, getEthersTestConfig } from '../setup-ethers.js';
+import { type CreateEthersClientFn, type FheTestEthersConfig, getEthersTestConfig } from '../setup-ethers.js';
 import { safeJSONstringify } from '../setupCommon.js';
 
-type ClientFactory = (params: {
-  chain: FheTestEthersConfig['fhevmChain'];
-  provider: FheTestEthersConfig['provider'];
-}) => any;
-
-export function defineClientBaseChainTests(runIf: boolean, createClient: ClientFactory): void {
-  describe.runIf(runIf)('Base client — chain resolution', () => {
+export function defineClientBaseChainTests(parameters: {
+  readonly runIf: boolean;
+  readonly createFhevmBaseClient: CreateEthersClientFn;
+}): void {
+  describe.runIf(parameters.runIf)('Base client — chain resolution', () => {
     let config: FheTestEthersConfig;
 
     beforeAll(() => {
@@ -25,7 +23,7 @@ export function defineClientBaseChainTests(runIf: boolean, createClient: ClientF
 
     it('should resolve full FHEVM config from on-chain data', async () => {
       const chain = config.fhevmChain;
-      const client = createClient({
+      const client = parameters.createFhevmBaseClient({
         chain,
         provider: config.provider,
       });

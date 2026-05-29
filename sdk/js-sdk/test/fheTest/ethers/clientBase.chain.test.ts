@@ -3,4 +3,7 @@ import { getEthersTestConfig } from '../setup-ethers.js';
 import { isCleartext } from '../setupCommon.js';
 import { defineClientBaseChainTests } from '../ethers-common/clientBase.chain.tests.js';
 
-defineClientBaseChainTests(!isCleartext(getEthersTestConfig().chainName), (params) => createFhevmBaseClient(params));
+defineClientBaseChainTests({
+  runIf: !isCleartext(getEthersTestConfig().chainName),
+  createFhevmBaseClient: (params) => createFhevmBaseClient(params),
+});

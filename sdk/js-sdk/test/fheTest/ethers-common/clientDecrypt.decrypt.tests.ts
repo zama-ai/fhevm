@@ -4,15 +4,13 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle, fheTypeIdFromHandle } from '../setupCommon.js';
 import { asEncryptedValue } from '@fhevm/sdk/types';
-import { getEthersTestConfig, type FheTestEthersConfig } from '../setup-ethers.js';
+import { getEthersTestConfig, type CreateEthersClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
 
-type DecryptClientFactory = (params: {
-  chain: FheTestEthersConfig['fhevmChain'];
-  provider: FheTestEthersConfig['provider'];
-}) => any;
-
-export function defineClientDecryptDecryptTests(runIf: boolean, createClient: DecryptClientFactory): void {
-  describe.runIf(runIf)('Decrypt client — user decrypt', () => {
+export function defineClientDecryptDecryptTests(parameters: {
+  readonly runIf: boolean;
+  createFhevmDecryptClient: CreateEthersClientFn;
+}): void {
+  describe.runIf(parameters.runIf)('Decrypt client — user decrypt', () => {
     let config: FheTestEthersConfig;
 
     beforeAll(() => {
@@ -30,7 +28,7 @@ export function defineClientDecryptDecryptTests(runIf: boolean, createClient: De
     });
 
     it('should create a decrypt client', () => {
-      const client = createClient({
+      const client = parameters.createFhevmDecryptClient({
         chain: config.fhevmChain,
         provider: config.provider,
       });
@@ -43,7 +41,7 @@ export function defineClientDecryptDecryptTests(runIf: boolean, createClient: De
     });
 
     it('should generate an e2e transport key pair', async () => {
-      const client = createClient({
+      const client = parameters.createFhevmDecryptClient({
         chain: config.fhevmChain,
         provider: config.provider,
       });
@@ -54,7 +52,7 @@ export function defineClientDecryptDecryptTests(runIf: boolean, createClient: De
     });
 
     it('should sign a self decryption permit', async () => {
-      const client = createClient({
+      const client = parameters.createFhevmDecryptClient({
         chain: config.fhevmChain,
         provider: config.provider,
       });
@@ -101,7 +99,7 @@ export function defineClientDecryptDecryptTests(runIf: boolean, createClient: De
         const expectedRaw: bigint = await fheTest.getClearText!(encryptedValue);
 
         // Decrypt via SDK
-        const client = createClient({
+        const client = parameters.createFhevmDecryptClient({
           chain: config.fhevmChain,
           provider: config.provider,
         });
@@ -171,7 +169,7 @@ export function defineClientDecryptDecryptTests(runIf: boolean, createClient: De
       }
 
       // Decrypt all in a single call
-      const client = createClient({
+      const client = parameters.createFhevmDecryptClient({
         chain: config.fhevmChain,
         provider: config.provider,
       });

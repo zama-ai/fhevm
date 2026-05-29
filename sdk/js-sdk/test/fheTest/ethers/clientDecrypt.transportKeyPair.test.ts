@@ -3,6 +3,7 @@ import { getEthersTestConfig } from '../setup-ethers.js';
 import { isCleartext } from '../setupCommon.js';
 import { defineClientDecryptTransportKeyPairTests } from '../ethers-common/clientDecrypt.transportKeyPair.tests.js';
 
-defineClientDecryptTransportKeyPairTests(!isCleartext(getEthersTestConfig().chainName), (params) =>
-  createFhevmDecryptClient(params),
-);
+defineClientDecryptTransportKeyPairTests({
+  runIf: !isCleartext(getEthersTestConfig().chainName),
+  createFhevmDecryptClient: (params) => createFhevmDecryptClient(params),
+});
