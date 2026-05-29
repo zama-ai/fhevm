@@ -158,40 +158,25 @@ fn all_identical(commitments: &[Vec<u8>]) -> bool {
     commitments.iter().all(|c| c == first)
 }
 
-/// Look up the single in-progress upgrade. Returns `(start_block, end_block)` when there
-/// is exactly one row with `status='in_progress'` and `state='UpgradeActivated'` or `'DryRunStarted'`,
-/// `None` otherwise (no active upgrade, or in a state we shouldn't act on).
+/// Returns `(start_block, end_block)` for the GCS dry-run when it's active.
+/// `None` otherwise. Scoped to `stack_role = 'GCS'` because BCS also stays
+/// `status='in_progress'` during the upgrade and doesn't own the replay window.
 async fn fetch_active_upgrade_end_block(
     pool: &Pool<Postgres>,
 ) -> Result<Option<(i64, i64)>, Error> {
-    let rows: Vec<(String, Option<i64>, Option<i64>)> = sqlx::query_as(
-        "SELECT state, start_block, end_block FROM upgrade_state WHERE status = 'in_progress'",
+    let row: Option<(String, Option<i64>, Option<i64>)> = sqlx::query_as(
+        "SELECT state, start_block, end_block FROM upgrade_state
+          WHERE stack_role = 'GCS' AND status = 'in_progress'",
     )
-    .fetch_all(pool)
+    .fetch_optional(pool)
     .await?;
 
-    match rows.len() {
-        0 => Ok(None),
-        1 => {
-            let (state, start_block, end_block) = &rows[0];
-            if !matches!(state.as_str(), "UpgradeActivated" | "DryRunStarted") {
-                debug!(
-                    state = %state,
-                    "active upgrade row is not in UpgradeActivated/DryRunStarted — ignoring new_block"
-                );
-                return Ok(None);
-            }
-            Ok(start_block.zip(*end_block))
-        }
-        n => {
-            // Schema invariant per upgrade procedure: only one in_progress row at a time.
-            warn!(
-                count = n,
-                "found multiple in_progress upgrade_state rows — refusing to act"
-            );
-            Ok(None)
-        }
+    let Some((state, start_block, end_block)) = row else { return Ok(None) };
+    if !matches!(state.as_str(), "UpgradeActivated" | "DryRunStarted") {
+        debug!(state = %state, "GCS not in UpgradeActivated/DryRunStarted — ignoring");
+        return Ok(None);
     }
+    Ok(start_block.zip(end_block))
 }
 
 /// Run the polling loop for one `(chain_id, block_height, block_hash)` event.

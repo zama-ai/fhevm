@@ -587,7 +587,9 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     );
 
     // 5. Drop the gcs schema (and everything in it) now that its data has been
-    //    merged back into public.
+    //    merged back into public. `gcs.state_hash` is dropped here too — by
+    //    this point every row consensus required has been uploaded to S3 and
+    //    consumed by the unanimity poll, so the table is no longer needed.
     sqlx::query("DROP SCHEMA gcs CASCADE")
         .execute(&mut *tx)
         .await?;
