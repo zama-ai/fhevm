@@ -49,6 +49,7 @@ task('test', async (taskArgs, hre, runSuper) => {
     await hre.run('task:deployTFHEExecutor', {
       privateKey: privKeyFhevmDeployer,
     });
+    await hre.run('task:deployProtocolConfigCanonical');
     await hre.run('task:deployKMSVerifier', {
       privateKey: privKeyFhevmDeployer,
     });
