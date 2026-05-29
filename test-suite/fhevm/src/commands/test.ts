@@ -10,6 +10,7 @@ import { hostReachableRpcUrl } from "../utils/fs";
 import { run, runWithHeartbeat } from "../utils/process";
 import { loadState } from "../state/state";
 import { topologyForState } from "../stack-spec/stack-spec";
+import { runSingleSignerSoak } from "./single-signer-soak";
 import {
   COPROCESSOR_DB_CONTAINER,
   DEFAULT_CHAIN_ID,
@@ -29,7 +30,7 @@ import type { State, TestOptions } from "../types";
 
 const DRIFT_WARNING = '"message":"Drift detected: observed multiple digest variants for handle"';
 const DRIFT_HANDLE = /"handle":"0x([0-9a-f]+)"/i;
-const DB_REVERT_CONTAINERS = [
+export const DB_REVERT_CONTAINERS = [
   "host-listener",
   "host-listener-poller",
   "gw-listener",
@@ -56,6 +57,7 @@ const TEST_PROFILE_NAMES = [
   "heavy",
   "light",
   "rollout-standard",
+  "single-signer-soak",
   "standard",
 ].sort();
 const ZERO_TESTS_RE = /\b0 passing\b/;
@@ -91,6 +93,8 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "ciphertext-drift-auto-recovery":
     "Run ciphertext drift auto-recovery checks — services self-recover (requires 2+ coprocessors).",
   "coprocessor-db-state-revert": "Run coprocessor DB state revert checks.",
+  "single-signer-soak":
+    "Assert coprocessors excluded by a gateway single-signer cutover stop retrying while the Zama signer stays healthy (requires 2+ coprocessors).",
 };
 
 /** Validates whether a named profile supports an extra grep narrowing expression. */
@@ -132,7 +136,7 @@ const ciphertextDriftNetworkRequirement = (network: string) =>
     : undefined;
 
 /** Logs pass/fail timing around one test task. */
-const runLogged = async <T>(label: string, started: number, task: () => Promise<T>) => {
+export const runLogged = async <T>(label: string, started: number, task: () => Promise<T>) => {
   try {
     const result = await task();
     console.log(`[pass] ${timedLabel(label, started)}`);
@@ -398,7 +402,7 @@ export const buildTestContainerArgs = (tail: string[], extraExecArgs: string[] =
 ];
 
 /** Builds the run-tests.sh argv for the current CLI options. */
-const runTestsArgs = (
+export const runTestsArgs = (
   options: Pick<TestOptions, "network" | "verbose" | "parallel" | "noHardhatCompile"> & { grep: string },
 ) => [
   "./run-tests.sh",
@@ -417,7 +421,7 @@ const runTestsCommand = (
 ) => runTestsArgs(options).map(shellEscape).join(" ");
 
 /** Runs a narrow e2e grep inside the test-suite container. */
-const assertMatchedTests = (output: string, label: string) => {
+export const assertMatchedTests = (output: string, label: string) => {
   if (ZERO_TESTS_RE.test(output) && !SOME_PENDING_RE.test(output)) {
     throw new PreflightError(`${label} matched zero tests`);
   }
@@ -504,7 +508,7 @@ const setContainersRunning = async (containers: string[], action: "start" | "sto
 };
 
 /** Reads a one-line postgres query result as trimmed text. */
-const scalarQuery = async (
+export const scalarQuery = async (
   dbName: string,
   sql: string,
   options: {
@@ -514,7 +518,7 @@ const scalarQuery = async (
   },
 ) => psql(dbName, ["-t", "-A", "-c", sql], options);
 
-const postgresRuntime = () => ({
+export const postgresRuntime = () => ({
   postgresContainer: process.env.POSTGRES_CONTAINER ?? COPROCESSOR_DB_CONTAINER,
   postgresUser: process.env.POSTGRES_USER ?? DEFAULT_POSTGRES_USER,
   postgresPassword: process.env.POSTGRES_PASSWORD ?? DEFAULT_POSTGRES_PASSWORD,
@@ -647,6 +651,7 @@ const localDbMigrationImageRef = (state: Pick<State, "overrides" | "builtImages"
   state.overrides.some((override) => override.group === "coprocessor")
     ? state.builtImages?.find((image) => image.group === "coprocessor" && image.ref.includes("/coprocessor/db-migration:"))?.ref
     : undefined;
+
 
 /** Runs the coprocessor DB state revert e2e flow against the active stack. */
 const runDbStateRevert = async (
@@ -833,6 +838,9 @@ export const test = async (testName: string | undefined, options: TestOptions) =
   const runProfile = async (name: string) => {
     if (name === "coprocessor-db-state-revert") {
       return runDbStateRevert(state, options);
+    }
+    if (name === "single-signer-soak") {
+      return runSingleSignerSoak(state, options);
     }
     if (name === "ciphertext-drift") {
       console.log("[test] ciphertext-drift");
