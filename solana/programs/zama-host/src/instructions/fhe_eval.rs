@@ -45,7 +45,10 @@ pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -
     let subject = ctx.accounts.compute_subject.key();
     let session_authority = ctx.accounts.app_account_authority.key();
     let clock = Clock::get()?;
-    let previous_bank_hash = previous_bank_hash(clock.slot)?;
+    let previous_bank_hash = previous_bank_hash_with_test_fallback(
+        clock.slot,
+        ctx.accounts.host_config.zero_birth_entropy_allowed(),
+    )?;
     let mut produced = Vec::with_capacity(args.ops.len());
     let mut binary_events = Vec::with_capacity(args.ops.len());
     let mut remaining_accounts_used = vec![false; ctx.remaining_accounts.len()];

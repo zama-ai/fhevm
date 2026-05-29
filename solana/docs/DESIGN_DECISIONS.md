@@ -263,6 +263,15 @@ Consequences:
 Operator-scoped amount input authority is only an input-use bridge into the token compute signer.
 The transferred amount output still grants durable roles according to token semantics.
 
+Divergence from ERC7984 (recorded, not a bug): ERC7984 `transferFrom` ends with
+`FHE.allowTransient(transferred, msg.sender)` so the operator can read the *actually transferred*
+amount in the same transaction. The PoC does **not** grant the operator that handle: the transferred
+output's subjects are the `from`/`to` owners plus the compute signer, and operator continuation flows
+read the `sent` handle plus the `ConfidentialTransfer` event, not a separately operator-allowed
+transferred handle. No current flow needs operator visibility of the transferred handle. If a future
+operator flow does, the host already has the one-shot transient-session primitive (DD-008) to grant it
+narrowly; wiring that is the tracked alternative rather than adding the operator as a durable subject.
+
 ## DD-010: Token Disclosure Paths Are Label-Scoped
 
 Status: adopted
@@ -365,9 +374,115 @@ Consequences:
 Tests should cover both positive Solana witness acceptance and negative cases where EVM-shaped
 checks are unavailable or inappropriate.
 
+## DD-014: Local-PoC Relaxations Are Chain-Id Confined
+
+Status: adopted
+
+Context:
+
+Two relaxations exist for local testing: the zero birth-entropy fallback (used when the LiteSVM
+slot-hash sysvar is empty) and the `mock_input_verified_and_bind` short-circuit for the real signed
+input-verifier path. Both were gated only by admin-toggled `HostConfig` flags
+(`test_shims_enabled`, `mock_input_enabled`). `test_shims_enabled` also gates the `test_emit_*` event
+shims, so enabling test events silently also re-opened the zero-entropy hole, and nothing bound either
+relaxation to a non-production chain.
+
+Decision:
+
+Gate both relaxations at the consumption site on the local PoC chain id, via
+`HostConfig::zero_birth_entropy_allowed()` (`test_shims_enabled && chain_id == SOLANA_POC_CHAIN_ID`)
+and `HostConfig::mock_input_allowed()` (`mock_input_enabled && chain_id == SOLANA_POC_CHAIN_ID`). A
+deployed (non-PoC) chain always takes the production branch — handle birth fails closed with
+`PreviousBankHashUnavailable`, and the mock bind rejects — regardless of any admin flag.
+
+Rationale:
+
+The security boundary belongs at the point of use, not only at the setter, so the property holds even
+if a future config path forgets a guard. Confining to the PoC sentinel chain id also decouples the
+birth-entropy fallback from the `test_emit_*` shim concern on real chains: toggling test events can no
+longer degrade entropy.
+
+Consequences:
+
+The host and app (`confidential-token`) derive the same gate from the same `HostConfig`, so
+app-precomputed and host-verified handles stay in agreement. The `PreviousBankHashUnavailable`
+negative test runs on the PoC chain with `test_shims_enabled = false` to exercise fail-closed birth.
+`test_emit_*` event shims (no state mutation) remain the only test gate not chain-confined and should
+still be compiled out for mainnet.
+
+## DD-015: Handle Birth Entropy Is PoC Bank-Hash-Seeded; Native-v0 Is Deterministic
+
+Status: product-open
+
+Context:
+
+Computed handles currently mix `previous_bank_hash` and `clock.unix_timestamp` into the digest, so the
+same operation over the same inputs yields different handles across slots. The native-v0
+`BirthContextV0` model is the opposite: a purely structural, deterministic commitment (chain id,
+config/program ids, executor authority, record seed hash, operation id, input-handle hash, output ACL
+record account, fhe type, handle version) with no bank hash and no timestamp, and birth is idempotent.
+
+Decision:
+
+Keep the entropy-seeded derivation for the PoC, but record that the production direction is
+deterministic `BirthContextV0` birth. The output handle is already bound to
+`(output_nonce_key, output_nonce_sequence)` (DD-001), which alone provides per-output uniqueness, so
+the runtime entropy is redundant for uniqueness and is the sole source of the fail-closed
+`PreviousBankHashUnavailable` surface (DD-014).
+
+Rationale:
+
+Deterministic birth removes a fail-prone runtime dependency and matches the native-v0 spec's
+idempotent-birth and KMS-trust model. Switching now would change every handle value and break the test
+handle-predictors, so it is deferred to the native-v0 encoding freeze rather than changed unilaterally.
+
+Consequences:
+
+When the native-v0 encoding is frozen, drop bank-hash/timestamp from the digest in favor of the
+structural `BirthContextV0` fields, and fold the resolved output ACL record pubkey into the digest
+(rather than binding indirectly through the PDA seeds) so a connector can reconstruct it without
+re-running `find_program_address`.
+
+## DD-016: Confidential Balances Use The Immediate-Available-Balance Profile
+
+Status: product-open
+
+Context:
+
+`acl_storage_rationale.md` Part 5 describes two Solana token profiles: a staged inbound-credit profile
+(recommended default for public-receivable tokens, where the recipient applies pending funds under
+their own transaction timing) and an immediate available-balance profile (EVM-style, where the sender
+updates the recipient's balance directly). The latter lets a sender/operator force a write into the
+recipient's balance handle and ACL record, which can invalidate a transaction the recipient already
+built against their prior balance record.
+
+Decision:
+
+The PoC uses the immediate available-balance profile: `execute_transfer` credits the recipient by
+rotating `to.balance_handle` / `to.balance_acl_record` and advancing `to.next_balance_nonce_sequence`
+inside the sender's transaction, with no recipient participation in the base transfer.
+
+Rationale:
+
+It is the closest analog to ERC7984 `_update` and keeps the PoC's confidential-balance logic explicit
+and EVM-parity-checkable. The stale-transaction / forced-inbound-write hazard is accepted for the PoC.
+
+Consequences:
+
+This is an explicitly accepted tradeoff, not the recommended production default. A production
+public-receivable token should evaluate the staged inbound-credit profile (pending → available under
+recipient timing) or otherwise predeclare/lock the recipient's next balance ACL sequence so the
+inbound-write surface is bounded.
+
 ## Open Product Decisions
 
 These are not settled by the PoC design decisions above:
+
+- Whether to converge handle birth to deterministic `BirthContextV0` (DD-015) at the native-v0 freeze.
+- Whether confidential balances move to the staged inbound-credit profile (DD-016).
+- `HostConfig` versioning (a native-v0 `config_version` field and rotation semantics are not yet modeled).
+- Whether operator flows ever need same-transaction visibility of the transferred handle (DD-009).
+- Compiling out (not just chain-confining) the remaining `test_emit_*` shim for mainnet builds.
 
 - External input verifier service integration, threshold policy, and real proof/transciphering.
 - Live native-v0 KMS Core dispatch and protobuf/API shape.

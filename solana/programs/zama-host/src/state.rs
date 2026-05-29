@@ -136,6 +136,38 @@ pub struct HostConfig {
 
 impl HostConfig {
     pub const SPACE: usize = 32 + 8 + 32 + 32 + 32 + 1 + 1 + 1 + 1 + 8 + 1;
+
+    /// True only for the local PoC sentinel chain id.
+    ///
+    /// Local-only relaxations (the zero birth-entropy fallback and the mock
+    /// encrypted-input bind path) are confined to this chain. A real host chain
+    /// always takes the production branch regardless of admin-toggled flags, so
+    /// an operator cannot enable PoC short-circuits on a deployed chain. See
+    /// `DESIGN_DECISIONS.md` DD-014.
+    pub fn is_local_poc_chain(&self) -> bool {
+        self.chain_id == SOLANA_POC_CHAIN_ID
+    }
+
+    /// True when handle birth may substitute the zero bank hash for an
+    /// unavailable prior bank hash.
+    ///
+    /// This is a local-PoC-only relaxation: production chains always fail closed
+    /// with [`ZamaHostError::PreviousBankHashUnavailable`] when the prior bank
+    /// hash is unavailable, so toggling `test_shims_enabled` on a deployed chain
+    /// can never degrade birth entropy. This intentionally decouples the
+    /// birth-entropy fallback from the `test_emit_*` shim gate on real chains.
+    pub fn zero_birth_entropy_allowed(&self) -> bool {
+        self.test_shims_enabled && self.is_local_poc_chain()
+    }
+
+    /// True when the mock encrypted-input bind path may run.
+    ///
+    /// Mock input is a PoC short-circuit for the real signed input-verifier
+    /// path and is confined to the local PoC chain even when `mock_input_enabled`
+    /// is set, so it cannot become a generic ACL-minting path on a deployed chain.
+    pub fn mock_input_allowed(&self) -> bool {
+        self.mock_input_enabled && self.is_local_poc_chain()
+    }
 }
 
 /// Pubkey plus role flags stored inline or in an overflow permission PDA.
@@ -734,10 +766,7 @@ pub fn assert_binary_operand_types(
 ) -> Result<()> {
     assert_supported_binary_output_type(op, output_fhe_type)?;
     let lhs_type = handle_fhe_type(lhs);
-    require!(
-        matches!(lhs_type, 2..=6),
-        ZamaHostError::UnsupportedFheType
-    );
+    require!(matches!(lhs_type, 2..=6), ZamaHostError::UnsupportedFheType);
     if matches!(op, FheBinaryOpCode::Add | FheBinaryOpCode::Sub) {
         require!(
             lhs_type == output_fhe_type,
@@ -1013,8 +1042,24 @@ pub fn computed_binary_handle_for_current_slot_with_chain_id(
     fhe_type: u8,
     chain_id: u64,
 ) -> Result<[u8; 32]> {
+    computed_binary_handle_for_current_slot_with_chain_id_and_test_fallback(
+        op, lhs, rhs, scalar, fhe_type, chain_id, false,
+    )
+}
+
+/// Derives an unbound binary-op handle, optionally using the local-test zero
+/// fallback when explicitly allowed by host config.
+pub fn computed_binary_handle_for_current_slot_with_chain_id_and_test_fallback(
+    op: FheBinaryOpCode,
+    lhs: [u8; 32],
+    rhs: [u8; 32],
+    scalar: bool,
+    fhe_type: u8,
+    chain_id: u64,
+    allow_test_zero: bool,
+) -> Result<[u8; 32]> {
     let clock = Clock::get()?;
-    let previous_bank_hash = previous_bank_hash(clock.slot)?;
+    let previous_bank_hash = previous_bank_hash_with_test_fallback(clock.slot, allow_test_zero)?;
     Ok(computed_binary_handle(
         op,
         lhs,
@@ -1064,8 +1109,35 @@ pub fn computed_bound_binary_handle_for_current_slot_with_chain_id(
     output_nonce_key: [u8; 32],
     output_nonce_sequence: u64,
 ) -> Result<[u8; 32]> {
+    computed_bound_binary_handle_for_current_slot_with_chain_id_and_test_fallback(
+        op,
+        lhs,
+        rhs,
+        scalar,
+        fhe_type,
+        chain_id,
+        output_nonce_key,
+        output_nonce_sequence,
+        false,
+    )
+}
+
+/// Derives a nonce-bound binary-op output handle, optionally using the
+/// local-test zero fallback when explicitly allowed by host config.
+#[allow(clippy::too_many_arguments)]
+pub fn computed_bound_binary_handle_for_current_slot_with_chain_id_and_test_fallback(
+    op: FheBinaryOpCode,
+    lhs: [u8; 32],
+    rhs: [u8; 32],
+    scalar: bool,
+    fhe_type: u8,
+    chain_id: u64,
+    output_nonce_key: [u8; 32],
+    output_nonce_sequence: u64,
+    allow_test_zero: bool,
+) -> Result<[u8; 32]> {
     let clock = Clock::get()?;
-    let previous_bank_hash = previous_bank_hash(clock.slot)?;
+    let previous_bank_hash = previous_bank_hash_with_test_fallback(clock.slot, allow_test_zero)?;
     Ok(computed_bound_binary_handle(
         op,
         lhs,
@@ -1091,8 +1163,35 @@ pub fn computed_bound_ternary_handle_for_current_slot_with_chain_id(
     output_nonce_key: [u8; 32],
     output_nonce_sequence: u64,
 ) -> Result<[u8; 32]> {
+    computed_bound_ternary_handle_for_current_slot_with_chain_id_and_test_fallback(
+        op,
+        control,
+        if_true,
+        if_false,
+        fhe_type,
+        chain_id,
+        output_nonce_key,
+        output_nonce_sequence,
+        false,
+    )
+}
+
+/// Derives a nonce-bound ternary-op output handle, optionally using the
+/// local-test zero fallback when explicitly allowed by host config.
+#[allow(clippy::too_many_arguments)]
+pub fn computed_bound_ternary_handle_for_current_slot_with_chain_id_and_test_fallback(
+    op: FheTernaryOpCode,
+    control: [u8; 32],
+    if_true: [u8; 32],
+    if_false: [u8; 32],
+    fhe_type: u8,
+    chain_id: u64,
+    output_nonce_key: [u8; 32],
+    output_nonce_sequence: u64,
+    allow_test_zero: bool,
+) -> Result<[u8; 32]> {
     let clock = Clock::get()?;
-    let previous_bank_hash = previous_bank_hash(clock.slot)?;
+    let previous_bank_hash = previous_bank_hash_with_test_fallback(clock.slot, allow_test_zero)?;
     Ok(computed_bound_ternary_handle(
         op,
         control,
@@ -1143,8 +1242,27 @@ pub fn computed_eval_handle_for_current_slot_with_chain_id(
     context_id: [u8; 32],
     op_index: u16,
 ) -> Result<[u8; 32]> {
+    computed_eval_handle_for_current_slot_with_chain_id_and_test_fallback(
+        op, lhs, rhs, scalar, fhe_type, chain_id, context_id, op_index, false,
+    )
+}
+
+/// Derives an instruction-local eval handle, optionally using the local-test
+/// zero fallback when explicitly allowed by host config.
+#[allow(clippy::too_many_arguments)]
+pub fn computed_eval_handle_for_current_slot_with_chain_id_and_test_fallback(
+    op: FheBinaryOpCode,
+    lhs: [u8; 32],
+    rhs: [u8; 32],
+    scalar: bool,
+    fhe_type: u8,
+    chain_id: u64,
+    context_id: [u8; 32],
+    op_index: u16,
+    allow_test_zero: bool,
+) -> Result<[u8; 32]> {
     let clock = Clock::get()?;
-    let previous_bank_hash = previous_bank_hash(clock.slot)?;
+    let previous_bank_hash = previous_bank_hash_with_test_fallback(clock.slot, allow_test_zero)?;
     Ok(computed_eval_handle(
         op,
         lhs,
@@ -1202,8 +1320,39 @@ pub fn computed_bound_eval_handle_for_current_slot_with_chain_id(
     output_nonce_key: [u8; 32],
     output_nonce_sequence: u64,
 ) -> Result<[u8; 32]> {
+    computed_bound_eval_handle_for_current_slot_with_chain_id_and_test_fallback(
+        op,
+        lhs,
+        rhs,
+        scalar,
+        fhe_type,
+        chain_id,
+        context_id,
+        op_index,
+        output_nonce_key,
+        output_nonce_sequence,
+        false,
+    )
+}
+
+/// Derives a nonce-bound eval output handle, optionally using the local-test
+/// zero fallback when explicitly allowed by host config.
+#[allow(clippy::too_many_arguments)]
+pub fn computed_bound_eval_handle_for_current_slot_with_chain_id_and_test_fallback(
+    op: FheBinaryOpCode,
+    lhs: [u8; 32],
+    rhs: [u8; 32],
+    scalar: bool,
+    fhe_type: u8,
+    chain_id: u64,
+    context_id: [u8; 32],
+    op_index: u16,
+    output_nonce_key: [u8; 32],
+    output_nonce_sequence: u64,
+    allow_test_zero: bool,
+) -> Result<[u8; 32]> {
     let clock = Clock::get()?;
-    let previous_bank_hash = previous_bank_hash(clock.slot)?;
+    let previous_bank_hash = previous_bank_hash_with_test_fallback(clock.slot, allow_test_zero)?;
     Ok(computed_bound_eval_handle(
         op,
         lhs,
@@ -1561,29 +1710,107 @@ pub fn computed_rand_bounded_handle(
     result
 }
 
-/// Returns the previous slot hash, or zero in the initial local-test slot.
+/// Returns the latest prior bank hash.
 ///
-/// The zero fallback is test glue for LiteSVM bootstrap behavior. Real cluster
-/// execution is expected to use the slot-hash sysvar branch.
+/// Handle derivation must fail closed when the runtime cannot provide the
+/// prior bank hash. Solana can skip slots, so this uses the most recent
+/// `SlotHashes` entry below `current_slot` rather than requiring
+/// `current_slot - 1` to exist.
 pub fn previous_bank_hash(current_slot: u64) -> Result<[u8; 32]> {
-    let Some(previous_slot) = current_slot.checked_sub(1) else {
-        return Ok([0; 32]);
-    };
+    if current_slot == 0 {
+        return Err(error!(ZamaHostError::PreviousBankHashUnavailable));
+    }
     let slot_hashes =
         PodSlotHashes::fetch().map_err(|_| error!(ZamaHostError::PreviousBankHashUnavailable))?;
-    if let Some(hash) = slot_hashes
-        .get(&previous_slot)
+    let entries = slot_hashes
+        .as_slice()
         .map_err(|_| error!(ZamaHostError::PreviousBankHashUnavailable))?
-    {
-        return Ok(hash.to_bytes());
-    }
+        .iter()
+        .map(|slot_hash| (slot_hash.slot, slot_hash.hash.to_bytes()));
+    latest_prior_bank_hash_from_entries(current_slot, entries)
+        .ok_or_else(|| error!(ZamaHostError::PreviousBankHashUnavailable))
+}
 
-    // LiteSVM starts from an empty slot-hash history in these PoC tests.
-    // Real cluster execution should take the branch above.
-    Ok([0; 32])
+/// Returns the previous slot hash, allowing a zero-hash fallback only for local
+/// test configurations that explicitly enable test shims.
+pub fn previous_bank_hash_with_test_fallback(
+    current_slot: u64,
+    allow_test_zero: bool,
+) -> Result<[u8; 32]> {
+    if allow_test_zero {
+        return Ok([0; 32]);
+    }
+    previous_bank_hash(current_slot)
+}
+
+fn latest_prior_bank_hash_from_entries<I>(current_slot: u64, entries: I) -> Option<[u8; 32]>
+where
+    I: IntoIterator<Item = (u64, [u8; 32])>,
+{
+    entries
+        .into_iter()
+        .find_map(|(slot, hash)| (slot < current_slot).then_some(hash))
 }
 
 /// Returns true when an ACL record grants the base use role to an inline subject.
 pub fn record_allows(record: &AclRecord, subject: Pubkey) -> bool {
     record.inline_subject_has_role(subject, ACL_ROLE_USE)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn latest_prior_bank_hash_tolerates_skipped_slots() {
+        let entries = vec![(8, [8; 32]), (6, [6; 32]), (3, [3; 32])];
+
+        assert_eq!(
+            latest_prior_bank_hash_from_entries(10, entries.clone()),
+            Some([8; 32])
+        );
+        assert_eq!(
+            latest_prior_bank_hash_from_entries(8, entries.clone()),
+            Some([6; 32])
+        );
+        assert_eq!(latest_prior_bank_hash_from_entries(3, entries), None);
+    }
+
+    fn host_config_with(chain_id: u64, test_shims_enabled: bool, mock_input_enabled: bool) -> HostConfig {
+        HostConfig {
+            admin: Pubkey::default(),
+            chain_id,
+            input_verifier_authority: Pubkey::default(),
+            material_authority: Pubkey::default(),
+            test_authority: Pubkey::default(),
+            paused: false,
+            mock_input_enabled,
+            test_shims_enabled,
+            grant_deny_list_enabled: false,
+            updated_slot: 0,
+            bump: 0,
+        }
+    }
+
+    #[test]
+    fn zero_birth_entropy_requires_poc_chain_and_test_shims() {
+        // Local PoC chain with the shim flag: relaxation allowed.
+        assert!(host_config_with(SOLANA_POC_CHAIN_ID, true, false).zero_birth_entropy_allowed());
+        // Local PoC chain without the shim flag: fails closed (drives the
+        // PreviousBankHashUnavailable negative test).
+        assert!(!host_config_with(SOLANA_POC_CHAIN_ID, false, false).zero_birth_entropy_allowed());
+        // A deployed chain can NEVER zero birth entropy, even with the shim flag
+        // toggled on by an admin — this is the security boundary.
+        assert!(!host_config_with(101, true, false).zero_birth_entropy_allowed());
+        assert!(!host_config_with(1, true, false).zero_birth_entropy_allowed());
+    }
+
+    #[test]
+    fn mock_input_requires_poc_chain() {
+        assert!(host_config_with(SOLANA_POC_CHAIN_ID, false, true).mock_input_allowed());
+        assert!(!host_config_with(SOLANA_POC_CHAIN_ID, false, false).mock_input_allowed());
+        // A deployed chain can never run the mock input bind path, even if an
+        // admin sets mock_input_enabled.
+        assert!(!host_config_with(101, false, true).mock_input_allowed());
+    }
 }

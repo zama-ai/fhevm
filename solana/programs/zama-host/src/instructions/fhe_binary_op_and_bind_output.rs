@@ -158,7 +158,10 @@ pub fn fhe_binary_op_and_bind_output(
     }
 
     let clock = Clock::get()?;
-    let previous_bank_hash = previous_bank_hash(clock.slot)?;
+    let previous_bank_hash = previous_bank_hash_with_test_fallback(
+        clock.slot,
+        ctx.accounts.host_config.zero_birth_entropy_allowed(),
+    )?;
     let expected_result = computed_bound_binary_handle(
         op,
         lhs,

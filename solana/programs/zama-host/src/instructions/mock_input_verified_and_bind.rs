@@ -59,7 +59,7 @@ pub fn mock_input_verified_and_bind(
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_not_paused(&ctx.accounts.host_config)?;
     require!(
-        ctx.accounts.host_config.mock_input_enabled,
+        ctx.accounts.host_config.mock_input_allowed(),
         ZamaHostError::MockInputDisabled
     );
     require_keys_eq!(

@@ -143,8 +143,12 @@ connector's canonical-PDA + material-binding verification.
    coprocessor EIP-712 threshold. Compromise forges any input. The multisig/threshold path is unbuilt
    (PRODUCT-OPEN, DD-007).
 2. **Test/mock bypass gates** (`mock_input_verified_and_bind`, `set_test_shims_enabled`,
-   `set_mock_input_enabled`, `test_emit_*`): if ever enabled in production they bind inputs / emit
-   protocol events with no proof. Must be forced-off (ideally compiled-out) for mainnet.
+   `set_mock_input_enabled`, `test_emit_*`). The two that can mint/relax authorization are now
+   **chain-id confined**: `mock_input_verified_and_bind` and the zero birth-entropy fallback only run
+   on `SOLANA_POC_CHAIN_ID` (`HostConfig::mock_input_allowed` / `zero_birth_entropy_allowed`), so an
+   admin cannot enable them on a deployed chain regardless of the flags (DD-014). The residual is
+   `test_emit_*`, which only emits events and mutates no state; it should still be forced-off (ideally
+   compiled-out) for mainnet.
 3. **No on-chain HCU / complexity metering** (the EVM `HCULimit` plane has no analogue). Off-chain
    workers get no on-chain cost signal beyond the CU budget + op-count/collection caps. Largest
    semantic gap by surface area; relevant to DoS/cost-bounding.
@@ -156,8 +160,12 @@ connector's canonical-PDA + material-binding verification.
 6. **Hand-mirrored, version-pinned ABI across repos with no compile-time link** (connector decoders +
    vendored coprocessor IDL). Lengths are checked, but a same-length field reorder in `AclRecord`
    would not be caught at build time. `EVENT_VERSION=0` / `MAX_ACL_SUBJECTS=8` hardcoded in two places.
-7. **`previous_bank_hash` zero-fallback** weakens handle entropy if the slot-hash sysvar entry is
-   ever absent on a real cluster (intended only for LiteSVM bootstrap).
+7. **`previous_bank_hash` is fail-closed on real chains.** When the prior bank hash is unavailable,
+   handle birth returns `PreviousBankHashUnavailable` rather than substituting a zero hash. The
+   zero-hash fallback (intended only for LiteSVM bootstrap) is confined to `SOLANA_POC_CHAIN_ID` via
+   `HostConfig::zero_birth_entropy_allowed`, so it cannot weaken birth entropy on a deployed chain
+   (DD-014). Note bank-hash + timestamp entropy is itself a PoC choice; native-v0's deterministic
+   `BirthContextV0` removes this surface entirely (DD-015).
 8. **Material commitment is one-shot/irreversible** with single-authority blast radius — a wrong seal
    permanently bricks a handle's decryptability (matches EVM "no delete" but without consensus).
 9. **Transient capability `max_uses`/`max_entries` are silently pinned to 1** though the ABI advertises

@@ -138,6 +138,21 @@ pub fn ge<'info>(request: BinaryOp<'_, 'info>) -> Result<[u8; 32]> {
     binary_op(FheBinaryOpCode::Ge, request)
 }
 
+fn host_cpi_entropy(host_config: &HostConfig) -> Result<([u8; 32], i64)> {
+    let clock = Clock::get()?;
+    let previous_bank_hash = if host_config.zero_birth_entropy_allowed() {
+        // Local SBF harnesses do not expose SlotHashes consistently through
+        // app-program CPI wrappers, so the local PoC chain substitutes the zero
+        // hash. This is gated on the PoC chain id (not just `test_shims_enabled`),
+        // so a deployed host chain always takes the fail-closed branch below and
+        // app- and host-side derivation stay in agreement.
+        [0; 32]
+    } else {
+        zama_host::previous_bank_hash(clock.slot)?
+    };
+    Ok((previous_bank_hash, clock.unix_timestamp))
+}
+
 fn binary_op<'info>(op: FheBinaryOpCode, request: BinaryOp<'_, 'info>) -> Result<[u8; 32]> {
     let compute_bump = [request.compute_signer_bump];
     let app_account_bump = [request.app_account_authority.bump];
@@ -153,16 +168,19 @@ fn binary_op<'info>(op: FheBinaryOpCode, request: BinaryOp<'_, 'info>) -> Result
         &app_account_bump,
     ];
     let signer_seeds: &[&[&[u8]]] = &[compute_signer_seeds, app_account_seeds];
-    let result = zama_host::computed_bound_binary_handle_for_current_slot_with_chain_id(
+    let (previous_bank_hash, unix_timestamp) = host_cpi_entropy(request.host_config)?;
+    let result = zama_host::computed_bound_binary_handle(
         op,
         request.lhs,
         request.rhs,
         request.scalar,
         request.output_fhe_type,
         request.host_config.chain_id,
+        previous_bank_hash,
+        unix_timestamp,
         request.output_nonce_key,
         request.output_nonce_sequence,
-    )?;
+    );
 
     cpi::fhe_binary_op_and_bind_output(
         CpiContext::new_with_signer(
@@ -212,16 +230,19 @@ fn binary_op_with_app_pda<'info>(
         &compute_bump,
     ];
     let signer_seeds: &[&[&[u8]]] = &[compute_signer_seeds, request.app_signer_seeds];
-    let result = zama_host::computed_bound_binary_handle_for_current_slot_with_chain_id(
+    let (previous_bank_hash, unix_timestamp) = host_cpi_entropy(request.host_config)?;
+    let result = zama_host::computed_bound_binary_handle(
         op,
         request.lhs,
         request.rhs,
         request.scalar,
         request.output_fhe_type,
         request.host_config.chain_id,
+        previous_bank_hash,
+        unix_timestamp,
         request.output_nonce_key,
         request.output_nonce_sequence,
-    )?;
+    );
 
     cpi::fhe_binary_op_and_bind_output(
         CpiContext::new_with_signer(
@@ -324,16 +345,19 @@ pub fn if_then_else<'info>(request: TernaryOp<'_, 'info>) -> Result<[u8; 32]> {
         &app_account_bump,
     ];
     let signer_seeds: &[&[&[u8]]] = &[compute_signer_seeds, app_account_seeds];
-    let result = zama_host::computed_bound_ternary_handle_for_current_slot_with_chain_id(
+    let (previous_bank_hash, unix_timestamp) = host_cpi_entropy(request.host_config)?;
+    let result = zama_host::computed_bound_ternary_handle(
         FheTernaryOpCode::IfThenElse,
         request.control,
         request.if_true,
         request.if_false,
         request.output_fhe_type,
         request.host_config.chain_id,
+        previous_bank_hash,
+        unix_timestamp,
         request.output_nonce_key,
         request.output_nonce_sequence,
-    )?;
+    );
 
     cpi::fhe_ternary_op_and_bind_output(
         CpiContext::new_with_signer(

@@ -150,12 +150,15 @@ fn fhe_rand_and_bind_creates_acl_record_and_emits_seeded_event() {
     let program_id = host::id();
     let mut svm = svm_with_program(program_id, host_program_so_path());
     let payer = svm.create_funded_account(1_000_000_000).unwrap();
-    let host_config = seed_host_config(
+    let host_config = seed_host_config_with_flags(
         &mut svm,
         program_id,
         payer.pubkey(),
         payer.pubkey(),
         payer.pubkey(),
+        true,
+        true,
+        false,
     );
 
     let acl_domain_key = Pubkey::new_unique();
@@ -519,6 +522,47 @@ fn trivial_encrypt_and_bind_rejects_unsupported_output_type() {
     );
 
     assert!(try_send(&mut svm, &payer, ix).is_err());
+    assert!(read_acl_record(&svm, output_acl_record).is_none());
+}
+
+#[test]
+fn trivial_encrypt_and_bind_fails_when_previous_bank_hash_unavailable() {
+    let program_id = host::id();
+    let mut svm =
+        svm_with_programs_without_previous_slot_hash(&[(program_id, host_program_so_path())]);
+    let payer = svm.create_funded_account(1_000_000_000).unwrap();
+    let host_config = seed_host_config_with_flags(
+        &mut svm,
+        program_id,
+        payer.pubkey(),
+        payer.pubkey(),
+        payer.pubkey(),
+        true,
+        false,
+        false,
+    );
+    let acl_domain_key = Pubkey::new_unique();
+    let app_account = payer.pubkey();
+    let encrypted_value_label = label("trivial-no-bank-hash");
+    let nonce_key = token::nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let output_acl_record = acl_record_address(program_id, nonce_key, 0);
+    let ix = trivial_encrypt_and_bind_ix(
+        program_id,
+        payer.pubkey(),
+        host_config,
+        output_acl_record,
+        acl_domain_key,
+        app_account,
+        encrypted_value_label,
+        nonce_key,
+        0,
+        7,
+    );
+
+    assert_transaction_custom_error(
+        try_send(&mut svm, &payer, ix),
+        6000 + host::ZamaHostError::PreviousBankHashUnavailable as u32,
+    );
     assert!(read_acl_record(&svm, output_acl_record).is_none());
 }
 
@@ -11233,6 +11277,10 @@ fn svm_with_program(program_id: Pubkey, program_path: PathBuf) -> LiteSVM {
 }
 
 fn svm_with_programs(programs: &[(Pubkey, PathBuf)]) -> LiteSVM {
+    svm_with_programs_without_previous_slot_hash(programs)
+}
+
+fn svm_with_programs_without_previous_slot_hash(programs: &[(Pubkey, PathBuf)]) -> LiteSVM {
     for (_, path) in programs {
         assert!(
             path.exists(),
@@ -14754,6 +14802,15 @@ where
             decode_anchor_log_event::<T>(&data)
         })
         .collect()
+}
+
+fn assert_transaction_custom_error(result: TransactionResult, code: u32) {
+    let debug = format!("{result:?}");
+    assert!(result.is_err(), "expected custom error {code}, got success");
+    assert!(
+        debug.contains(&format!("Custom({code})")),
+        "expected custom error {code}, got {debug}",
+    );
 }
 
 fn decode_anchor_log_event<T>(data: &[u8]) -> Option<T>

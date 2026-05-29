@@ -67,7 +67,10 @@ pub fn trivial_encrypt_and_bind(
     assert_public_decrypt_not_set_at_birth(output_public_decrypt)?;
 
     let clock = Clock::get()?;
-    let previous_bank_hash = previous_bank_hash(clock.slot)?;
+    let previous_bank_hash = previous_bank_hash_with_test_fallback(
+        clock.slot,
+        ctx.accounts.host_config.zero_birth_entropy_allowed(),
+    )?;
     let result = computed_trivial_handle(
         plaintext,
         fhe_type,

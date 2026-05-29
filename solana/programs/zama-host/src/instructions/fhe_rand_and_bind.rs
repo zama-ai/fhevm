@@ -61,7 +61,10 @@ pub fn fhe_rand_and_bind(
     assert_public_decrypt_not_set_at_birth(output_public_decrypt)?;
 
     let clock = Clock::get()?;
-    let previous_bank_hash = previous_bank_hash(clock.slot)?;
+    let previous_bank_hash = previous_bank_hash_with_test_fallback(
+        clock.slot,
+        ctx.accounts.host_config.zero_birth_entropy_allowed(),
+    )?;
     let seed = computed_rand_seed(
         ctx.accounts.host_config.chain_id,
         previous_bank_hash,
