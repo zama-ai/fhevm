@@ -13,11 +13,59 @@
 # The chart is shared between gateway and host deployments
 
 # -----------------------------------------------------------------------------
-# Smart Contract Deployment
+# Smart Contracts Jobs
+# -----------------------------------------------------------------------------
+# Declare one entry per Job to run. Each entry produces a uniquely-named Job
+# (`<release>-<kind>-<name>-<tagSlug>`) so re-installs with a new image tag
+# don't collide with prior runs. The legacy scDeploy / scUpgrade blocks below
+# are still honored for back-compat, synthesized into a single default entry
+# of kind=deploy or kind=upgrade.
+#
+# Entry schema:
+#   enabled:         bool, default true; set to false to skip the entry
+#   name:            short slug identifying the job
+#   kind:            deploy | upgrade | task
+#   image:           { name, tag } container image and version
+#   oldImage:        { name, tag } source for old contracts (kind=upgrade only)
+#   env:             list of env entries passed to the container
+#   commands:        shell commands run in order
+#   verifyContracts: bool, runs `hardhat verify:verify` after a deploy
+#
+# Each Job records `<contract>.address` (immutable, skipped if already set)
+# and, for deploy/upgrade kinds, `<contract>.version=<image.tag>` (overwritten
+# on each run) in the configmap named below.
+scJobs: []
+# Example:
+#   - name: protocol-payment
+#     kind: deploy
+#     image:
+#       name: ghcr.io/zama-ai/fhevm/gateway-contracts
+#       tag: v0.10.0
+#     env:
+#       - name: DEPLOYER_PRIVATE_KEY
+#         value: ""
+#       - name: ZAMA_OFT_ADDRESS
+#         value: ""
+#     commands:
+#       - npx hardhat task:setPaymentBridgingContractAddresses
+#       - npx hardhat task:deploySingleContract --name ProtocolPayment
+#   - name: add-pausers
+#     kind: task
+#     image:
+#       name: ghcr.io/zama-ai/fhevm/host-contracts
+#       tag: v0.13.0
+#     env:
+#       - name: DEPLOYER_PRIVATE_KEY
+#         value: ""
+#     commands:
+#       - npx hardhat task:addHostPausers
+
+# -----------------------------------------------------------------------------
+# Smart Contract Deployment (legacy, prefer scJobs)
 # -----------------------------------------------------------------------------
 # Handles initial deployment of all required smart contracts
 scDeploy:
-  enabled: true
+  enabled: false
 
   # Prevent redeployment if already done for current version
   # preventRedeployment: false
@@ -177,7 +225,7 @@ scDeploy:
   verifyContracts: false
 
 # -----------------------------------------------------------------------------
-# Smart Contract Upgrade
+# Smart Contract Upgrade (legacy, prefer scJobs)
 # -----------------------------------------------------------------------------
 # Handles upgrades of existing smart contracts
 scUpgrade:
@@ -242,6 +290,16 @@ scUpgrade:
 scDebug:
   enabled: false
   nameOverride:
+
+  # How the debug pod consumes the deploy PVC:
+  #   readOnly  (default): mount the PVC read-only so the debug pod always
+  #     sees the current state without being able to mutate it.
+  #   readWrite          : mount the PVC read-write. Use sparingly: only when
+  #     you need to edit the PVC contents by hand.
+  # Both modes share the same node-level ReadWriteOnce lock; a contract Job
+  # scheduled to a different node will still wait for the debug pod's node
+  # attachment.
+  mountMode: readOnly
 
 # -----------------------------------------------------------------------------
 # Persistent Storage Configuration
