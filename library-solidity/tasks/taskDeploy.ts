@@ -52,6 +52,7 @@ task('task:deployCanonicalHost', 'Deploys the complete canonical host stack.').s
   await hre.run('task:deployProtocolConfigCanonical');
   await hre.run('task:deployKMSVerifier');
   await hre.run('task:initializeKMSGeneration');
+  console.log('Contract deployment done!');
 });
 
 ////////////////////////////////////////////////////////////////////////////////
