@@ -55,6 +55,7 @@ interface IDecryption {
     error EmptyCtHandles();
     error EmptyHandles();
     error InvalidExtraDataLength(uint256 length, uint256 minimumLength);
+    error InvalidNullContextId();
     error InvalidNullDurationDays();
     error InvalidNullDurationSeconds();
     error InvalidUserSignature(bytes signature);
@@ -1175,6 +1176,11 @@ interface IDecryption {
         "internalType": "uint256"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidNullContextId",
+    "inputs": []
   },
   {
     "type": "error",
@@ -4428,6 +4434,79 @@ error InvalidExtraDataLength(uint256 length, uint256 minimumLength);
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.minimumLength),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `InvalidNullContextId()` and selector `0xcb17b7a5`.
+```solidity
+error InvalidNullContextId();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct InvalidNullContextId;
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<InvalidNullContextId> for UnderlyingRustTuple<'_> {
+            fn from(value: InvalidNullContextId) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for InvalidNullContextId {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for InvalidNullContextId {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "InvalidNullContextId()";
+            const SELECTOR: [u8; 4] = [203u8, 23u8, 183u8, 165u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
@@ -9685,6 +9764,8 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         #[allow(missing_docs)]
         InvalidExtraDataLength(InvalidExtraDataLength),
         #[allow(missing_docs)]
+        InvalidNullContextId(InvalidNullContextId),
+        #[allow(missing_docs)]
         InvalidNullDurationDays(InvalidNullDurationDays),
         #[allow(missing_docs)]
         InvalidNullDurationSeconds(InvalidNullDurationSeconds),
@@ -9736,6 +9817,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             [174u8, 82u8, 235u8, 18u8],
             [175u8, 31u8, 4u8, 149u8],
             [195u8, 68u8, 106u8, 199u8],
+            [203u8, 23u8, 183u8, 165u8],
             [207u8, 174u8, 146u8, 31u8],
             [212u8, 138u8, 249u8, 66u8],
             [220u8, 77u8, 120u8, 177u8],
@@ -9748,7 +9830,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
     impl alloy_sol_types::SolInterface for IDecryptionErrors {
         const NAME: &'static str = "IDecryptionErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 24usize;
+        const COUNT: usize = 25usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -9787,6 +9869,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::InvalidExtraDataLength(_) => {
                     <InvalidExtraDataLength as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::InvalidNullContextId(_) => {
+                    <InvalidNullContextId as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::InvalidNullDurationDays(_) => {
                     <InvalidNullDurationDays as alloy_sol_types::SolError>::SELECTOR
@@ -10040,6 +10125,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                             .map(IDecryptionErrors::DelegatorAddressInContractAddresses)
                     }
                     DelegatorAddressInContractAddresses
+                },
+                {
+                    fn InvalidNullContextId(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <InvalidNullContextId as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IDecryptionErrors::InvalidNullContextId)
+                    }
+                    InvalidNullContextId
                 },
                 {
                     fn DifferentKeyIdsNotAllowed(
@@ -10328,6 +10424,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     DelegatorAddressInContractAddresses
                 },
                 {
+                    fn InvalidNullContextId(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <InvalidNullContextId as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IDecryptionErrors::InvalidNullContextId)
+                    }
+                    InvalidNullContextId
+                },
+                {
                     fn DifferentKeyIdsNotAllowed(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IDecryptionErrors> {
@@ -10465,6 +10572,11 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                         inner,
                     )
                 }
+                Self::InvalidNullContextId(inner) => {
+                    <InvalidNullContextId as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::InvalidNullDurationDays(inner) => {
                     <InvalidNullDurationDays as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -10598,6 +10710,12 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::InvalidExtraDataLength(inner) => {
                     <InvalidExtraDataLength as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::InvalidNullContextId(inner) => {
+                    <InvalidNullContextId as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
