@@ -233,18 +233,138 @@ async fn upload_pending_state_hashes(
     Ok(())
 }
 
+/// Gateway BCS path: hash `input_handles → ONLY ciphertexts` per Gateway block, write under `gw_chain_id`.
+async fn compute_and_insert_bcs_gateway(
+    pool: &Pool<Postgres>,
+    gw_chain_id: i64,
+    batch_limit: i64,
+) -> anyhow::Result<()> {
+    let pending = sqlx::query!(
+        r#"
+        SELECT DISTINCT ih.block_number AS "block_number!"
+          FROM input_handles ih
+         WHERE NOT EXISTS (
+             SELECT 1 FROM state_hash sh
+              WHERE sh.chain_id = $1 AND sh.block_number = ih.block_number)
+         ORDER BY ih.block_number
+         LIMIT $2
+        "#,
+        gw_chain_id,
+        batch_limit,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for row in pending {
+        let block_number = row.block_number;
+        let hashed = sqlx::query!(
+            r#"
+            SELECT encode(
+                sha256(string_agg(ct.ciphertext, ''::bytea
+                                  ORDER BY ct.handle, ct.ciphertext_version)),
+                'hex'
+            ) AS state_hash
+              FROM input_handles ih
+              JOIN ONLY ciphertexts ct ON ct.handle = ih.handle
+             WHERE ih.block_number = $1
+            "#,
+            block_number
+        )
+        .fetch_optional(pool)
+        .await?
+        .and_then(|r| r.state_hash);
+        let Some(hash) = hashed else { continue };
+        let affected = sqlx::query!(
+            "INSERT INTO state_hash (chain_id, block_number, state_hash) VALUES ($1, $2, $3)
+             ON CONFLICT (chain_id, block_number) DO NOTHING",
+            gw_chain_id,
+            block_number,
+            hash,
+        )
+        .execute(pool)
+        .await?
+        .rows_affected();
+        if affected > 0 {
+            info!(chain_id = gw_chain_id, block_number, "gateway state_hash inserted");
+        }
+    }
+    Ok(())
+}
+
+/// Gateway GCS path: same as BCS but joins `ONLY ciphertexts_staging` → `state_hash_staging`.
+async fn compute_and_insert_gcs_gateway(
+    pool: &Pool<Postgres>,
+    gw_chain_id: i64,
+    batch_limit: i64,
+) -> anyhow::Result<()> {
+    let pending = sqlx::query!(
+        r#"
+        SELECT DISTINCT ih.block_number AS "block_number!"
+          FROM input_handles ih
+         WHERE NOT EXISTS (
+             SELECT 1 FROM state_hash_staging sh
+              WHERE sh.chain_id = $1 AND sh.block_number = ih.block_number)
+         ORDER BY ih.block_number
+         LIMIT $2
+        "#,
+        gw_chain_id,
+        batch_limit,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for row in pending {
+        let block_number = row.block_number;
+        let hashed = sqlx::query!(
+            r#"
+            SELECT encode(
+                sha256(string_agg(ct.ciphertext, ''::bytea
+                                  ORDER BY ct.handle, ct.ciphertext_version)),
+                'hex'
+            ) AS state_hash
+              FROM input_handles ih
+              JOIN ONLY ciphertexts_staging ct ON ct.handle = ih.handle
+             WHERE ih.block_number = $1
+            "#,
+            block_number
+        )
+        .fetch_optional(pool)
+        .await?
+        .and_then(|r| r.state_hash);
+        let Some(hash) = hashed else { continue };
+        let affected = sqlx::query!(
+            "INSERT INTO state_hash_staging (chain_id, block_number, state_hash)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (chain_id, block_number) DO NOTHING",
+            gw_chain_id,
+            block_number,
+            hash,
+        )
+        .execute(pool)
+        .await?
+        .rows_affected();
+        if affected > 0 {
+            info!(chain_id = gw_chain_id, block_number, "gateway state_hash_staging inserted");
+        }
+    }
+    Ok(())
+}
+
 async fn sweep(
     pool: &Pool<Postgres>,
     s3: Option<&aws_sdk_s3::Client>,
     my_bucket: &str,
+    gw_chain_id: i64,
     batch_limit: i64,
 ) -> anyhow::Result<()> {
     // BCS path: always runs.
     compute_and_insert_bcs(pool, batch_limit).await?;
+    compute_and_insert_bcs_gateway(pool, gw_chain_id, batch_limit).await?;
 
     // GCS path: only during an active upgrade window.
     if let Some((start, end)) = active_window(pool).await? {
         compute_and_insert_gcs(pool, start, end, batch_limit).await?;
+        compute_and_insert_gcs_gateway(pool, gw_chain_id, batch_limit).await?;
     }
 
     // S3 upload: drains pending rows; runs every sweep so failed PUTs retry.
@@ -259,15 +379,16 @@ pub async fn run(
     pool: Pool<Postgres>,
     s3: Option<Arc<aws_sdk_s3::Client>>,
     my_bucket: String,
+    gw_chain_id: i64,
     batch_limit: i64,
     cancel: CancellationToken,
 ) -> anyhow::Result<()> {
-    info!(batch_limit, bucket = %my_bucket, "starting state_hash worker");
+    info!(batch_limit, bucket = %my_bucket, gw_chain_id, "starting state_hash worker");
 
     let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen(EVENT_CIPHERTEXT_COMPUTED).await?;
 
-    if let Err(e) = sweep(&pool, s3.as_deref(), &my_bucket, batch_limit).await {
+    if let Err(e) = sweep(&pool, s3.as_deref(), &my_bucket, gw_chain_id, batch_limit).await {
         warn!(error = %e, "initial sweep failed");
     }
     loop {
@@ -276,7 +397,7 @@ pub async fn run(
             recv = listener.recv() => match recv {
                 Ok(_) => {
                     debug!("event_ciphertext_computed received");
-                    if let Err(e) = sweep(&pool, s3.as_deref(), &my_bucket, batch_limit).await {
+                    if let Err(e) = sweep(&pool, s3.as_deref(), &my_bucket, gw_chain_id, batch_limit).await {
                         warn!(error = %e, "sweep failed");
                     }
                 }

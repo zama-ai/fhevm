@@ -408,6 +408,14 @@ where
         "starting consensus-detector"
     );
 
+    let gw_chain_id: i64 = provider
+        .get_chain_id()
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to fetch Gateway chain id: {e}"))?
+        .try_into()
+        .map_err(|e| anyhow::anyhow!("Gateway chain id does not fit in i64: {e}"))?;
+    info!(gw_chain_id, "resolved Gateway chain id from provider");
+
     let s3_service = S3Service::new(provider, config.gateway_config_address);
     let urls = s3_service.refresh_signer_urls().await?;
     if urls.is_empty() {
@@ -439,7 +447,7 @@ where
         let bucket = config.my_bucket.clone();
         let batch_limit = config.state_hash_batch_limit;
         tokio::spawn(async move {
-            if let Err(e) = state_hash::run(pool, s3, bucket, batch_limit, cancel).await {
+            if let Err(e) = state_hash::run(pool, s3, bucket, gw_chain_id, batch_limit, cancel).await {
                 error!(error = %e, "state_hash worker exited with error");
             }
         });

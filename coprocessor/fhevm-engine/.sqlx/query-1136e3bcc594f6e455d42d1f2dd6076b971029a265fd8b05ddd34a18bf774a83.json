@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT ih.block_number AS \"block_number!\"\n          FROM input_handles ih\n         WHERE NOT EXISTS (\n             SELECT 1 FROM state_hash sh\n              WHERE sh.chain_id = $1 AND sh.block_number = ih.block_number)\n         ORDER BY ih.block_number\n         LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "block_number!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1136e3bcc594f6e455d42d1f2dd6076b971029a265fd8b05ddd34a18bf774a83"
+}
