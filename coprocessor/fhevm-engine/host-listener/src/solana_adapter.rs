@@ -1,12 +1,11 @@
 use std::collections::HashSet;
 
-use alloy_primitives::{Address, FixedBytes, Log};
+use alloy_primitives::{hex, Address, FixedBytes, Log};
 use fhevm_engine_common::types::AllowEvents;
 use sha2::{Digest, Sha256};
 use sqlx::Error as SqlxError;
 
 use crate::generated::{
-    decode_anchor_cpi_event as decode_zama_host_anchor_cpi_event,
     FheBinaryOpCode, FheBinaryOpEvent, FheRandEvent, TrivialEncryptEvent,
     ZamaHostEvent,
 };
@@ -24,20 +23,6 @@ pub struct SolanaAclAllowedEvent {
     pub handle: Handle,
     pub subject: String,
     pub event_type: AllowEvents,
-}
-
-#[derive(Clone, Debug)]
-pub enum SolanaHostEvent {
-    FheBinaryOp(FheBinaryOpEvent),
-    TrivialEncrypt(TrivialEncryptEvent),
-    FheRand(FheRandEvent),
-    AclAllowed(SolanaAclAllowedEvent),
-}
-
-#[derive(Clone, Debug)]
-pub enum SolanaMappedEvent {
-    Tfhe(Log<TfheContractEvents>),
-    AclAllowed(SolanaAclAllowedEvent),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,52 +43,26 @@ pub fn solana_transaction_id(signature_bytes: &[u8]) -> TransactionHash {
     TransactionHash::from(digest)
 }
 
-pub fn decode_anchor_cpi_event(data: &[u8]) -> Option<SolanaHostEvent> {
-    match decode_zama_host_anchor_cpi_event(data)? {
-        ZamaHostEvent::FheBinaryOp(event) => {
-            Some(SolanaHostEvent::FheBinaryOp(event))
-        }
-        ZamaHostEvent::TrivialEncrypt(event) => {
-            Some(SolanaHostEvent::TrivialEncrypt(event))
-        }
-        ZamaHostEvent::FheRand(event) => Some(SolanaHostEvent::FheRand(event)),
-        ZamaHostEvent::AclAllowed(event) => {
-            Some(SolanaHostEvent::AclAllowed(SolanaAclAllowedEvent {
-                handle: Handle::from(event.handle),
-                subject: format!("0x{}", encode_hex(&event.subject)),
-                event_type: AllowEvents::AllowedAccount,
-            }))
-        }
-        ZamaHostEvent::AclPublicDecryptAllowed(event) => {
-            Some(SolanaHostEvent::AclAllowed(SolanaAclAllowedEvent {
-                handle: Handle::from(event.handle),
-                subject: format!("0x{}", encode_hex(&event.subject)),
-                event_type: AllowEvents::AllowedForDecryption,
-            }))
-        }
-        ZamaHostEvent::InputVerified(_) => None,
+fn solana_acl_event(
+    handle: [u8; 32],
+    subject: [u8; 32],
+    event_type: AllowEvents,
+) -> SolanaAclAllowedEvent {
+    SolanaAclAllowedEvent {
+        handle: Handle::from(handle),
+        subject: format!("0x{}", hex::encode(subject)),
+        event_type,
     }
 }
 
-pub fn map_solana_event(event: SolanaHostEvent) -> SolanaMappedEvent {
-    match event {
-        SolanaHostEvent::FheBinaryOp(event) => {
-            SolanaMappedEvent::Tfhe(to_tfhe_event(event))
-        }
-        SolanaHostEvent::TrivialEncrypt(event) => {
-            SolanaMappedEvent::Tfhe(to_trivial_encrypt_event(event))
-        }
-        SolanaHostEvent::FheRand(event) => {
-            SolanaMappedEvent::Tfhe(to_fhe_rand_event(event))
-        }
-        SolanaHostEvent::AclAllowed(event) => {
-            SolanaMappedEvent::AclAllowed(event)
-        }
-    }
-}
-
+/// Maps decoded ZamaHost CPI events into the existing coprocessor DB model.
+///
+/// TFHE events become `LogTfhe` rows; ACL allow events become allowance rows and
+/// mark any matching TFHE result handle as allowed in the same transaction.
+/// `InputVerified` carries no DB work (input ciphertext material is registered
+/// out of band) and is dropped before the remaining events are indexed.
 pub fn normalize_solana_events_for_db(
-    events: impl IntoIterator<Item = SolanaHostEvent>,
+    events: impl IntoIterator<Item = ZamaHostEvent>,
     transaction_id: TransactionHash,
     block: SolanaBlockMeta,
 ) -> (Vec<LogTfhe>, Vec<SolanaAclAllowedEvent>) {
@@ -111,20 +70,46 @@ pub fn normalize_solana_events_for_db(
     let mut tfhe_logs = Vec::new();
     let mut acl_events = Vec::new();
 
-    for (index, event) in events.into_iter().enumerate() {
-        match map_solana_event(event) {
-            SolanaMappedEvent::Tfhe(event) => tfhe_logs.push(to_log_tfhe(
-                event,
-                transaction_id,
-                block,
-                false,
-                index as u64,
-            )),
-            SolanaMappedEvent::AclAllowed(event) => {
-                allowed_handles.insert(event.handle);
-                acl_events.push(event);
+    let host_events = events
+        .into_iter()
+        .filter(|event| !matches!(event, ZamaHostEvent::InputVerified(_)));
+
+    for (index, event) in host_events.enumerate() {
+        let tfhe_event = match event {
+            ZamaHostEvent::FheBinaryOp(event) => to_tfhe_event(event),
+            ZamaHostEvent::TrivialEncrypt(event) => {
+                to_trivial_encrypt_event(event)
             }
-        }
+            ZamaHostEvent::FheRand(event) => to_fhe_rand_event(event),
+            ZamaHostEvent::AclAllowed(event) => {
+                let acl = solana_acl_event(
+                    event.handle,
+                    event.subject,
+                    AllowEvents::AllowedAccount,
+                );
+                allowed_handles.insert(acl.handle);
+                acl_events.push(acl);
+                continue;
+            }
+            ZamaHostEvent::AclPublicDecryptAllowed(event) => {
+                let acl = solana_acl_event(
+                    event.handle,
+                    event.subject,
+                    AllowEvents::AllowedForDecryption,
+                );
+                allowed_handles.insert(acl.handle);
+                acl_events.push(acl);
+                continue;
+            }
+            ZamaHostEvent::InputVerified(_) => continue,
+        };
+        tfhe_logs.push(to_log_tfhe(
+            tfhe_event,
+            transaction_id,
+            block,
+            false,
+            index as u64,
+        ));
     }
 
     for log in &mut tfhe_logs {
@@ -139,7 +124,7 @@ pub fn normalize_solana_events_for_db(
 pub async fn insert_solana_events(
     db: &Database,
     tx: &mut Transaction<'_>,
-    events: impl IntoIterator<Item = SolanaHostEvent>,
+    events: impl IntoIterator<Item = ZamaHostEvent>,
     transaction_id: TransactionHash,
     block: SolanaBlockMeta,
 ) -> Result<SolanaIngestStats, SqlxError> {
@@ -190,16 +175,6 @@ pub async fn insert_solana_events(
     })
 }
 
-fn encode_hex(bytes: &[u8; 32]) -> String {
-    const ALPHABET: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(64);
-    for byte in bytes {
-        out.push(ALPHABET[(byte >> 4) as usize] as char);
-        out.push(ALPHABET[(byte & 0x0f) as usize] as char);
-    }
-    out
-}
-
 pub fn to_log_tfhe(
     event: Log<TfheContractEvents>,
     transaction_id: TransactionHash,
@@ -227,24 +202,27 @@ pub fn to_log_tfhe(
 /// computation scheduler and worker unchanged.
 pub fn to_tfhe_event(event: FheBinaryOpEvent) -> Log<TfheContractEvents> {
     let caller = Address::ZERO;
+    let lhs = Handle::from(event.lhs);
+    let rhs = Handle::from(event.rhs);
+    let result = Handle::from(event.result);
     let scalar_byte = FixedBytes::<1>::from([u8::from(event.scalar)]);
     let data = match event.op {
         FheBinaryOpCode::Add => {
             TfheContractEvents::FheAdd(TfheContract::FheAdd {
                 caller,
-                lhs: Handle::from(event.lhs),
-                rhs: Handle::from(event.rhs),
+                lhs,
+                rhs,
                 scalarByte: scalar_byte,
-                result: Handle::from(event.result),
+                result,
             })
         }
         FheBinaryOpCode::Sub => {
             TfheContractEvents::FheSub(TfheContract::FheSub {
                 caller,
-                lhs: Handle::from(event.lhs),
-                rhs: Handle::from(event.rhs),
+                lhs,
+                rhs,
                 scalarByte: scalar_byte,
-                result: Handle::from(event.result),
+                result,
             })
         }
     };
@@ -289,12 +267,23 @@ pub fn to_fhe_rand_event(event: FheRandEvent) -> Log<TfheContractEvents> {
 mod tests {
     use super::*;
     use crate::generated::{
-        anchor_event_discriminator, ANCHOR_EVENT_IX_TAG_LE, EVENT_VERSION,
+        anchor_event_discriminator, decode_anchor_cpi_event, AclAllowedEvent,
+        ANCHOR_EVENT_IX_TAG_LE, EVENT_VERSION,
     };
     use time::{Date, Month, PrimitiveDateTime, Time};
 
     fn handle(byte: u8) -> Handle {
         Handle::from([byte; 32])
+    }
+
+    fn test_block() -> SolanaBlockMeta {
+        SolanaBlockMeta {
+            block_number: 42,
+            block_timestamp: PrimitiveDateTime::new(
+                Date::from_calendar_date(2026, Month::May, 9).unwrap(),
+                Time::MIDNIGHT,
+            ),
+        }
     }
 
     #[test]
@@ -304,11 +293,13 @@ mod tests {
             binary_op_payload(1, [9; 32], [1; 32], [2; 32], false, [3; 32]),
         );
 
-        let decoded = decode_anchor_cpi_event(&encoded)
-            .expect("expected binary op event");
-        let SolanaMappedEvent::Tfhe(mapped) = map_solana_event(decoded) else {
-            panic!("expected mapped TFHE event");
+        let ZamaHostEvent::FheBinaryOp(event) =
+            decode_anchor_cpi_event(&encoded)
+                .expect("expected binary op event")
+        else {
+            panic!("expected binary op event");
         };
+        let mapped = to_tfhe_event(event);
 
         assert!(matches!(
             mapped.data,
@@ -337,11 +328,12 @@ mod tests {
             payload
         });
 
-        let decoded =
-            decode_anchor_cpi_event(&encoded).expect("expected trivial event");
-        let SolanaMappedEvent::Tfhe(mapped) = map_solana_event(decoded) else {
-            panic!("expected mapped TFHE event");
+        let ZamaHostEvent::TrivialEncrypt(event) =
+            decode_anchor_cpi_event(&encoded).expect("expected trivial event")
+        else {
+            panic!("expected trivial encrypt event");
         };
+        let mapped = to_trivial_encrypt_event(event);
 
         assert!(matches!(
             mapped.data,
@@ -365,19 +357,22 @@ mod tests {
             payload
         });
 
-        let SolanaHostEvent::AclAllowed(decoded) =
-            decode_anchor_cpi_event(&encoded).expect("expected ACL event")
-        else {
-            panic!("expected ACL event");
-        };
+        let decoded =
+            decode_anchor_cpi_event(&encoded).expect("expected ACL event");
+        let (_, acl_events) = normalize_solana_events_for_db(
+            [decoded],
+            solana_transaction_id(&[0; 64]),
+            test_block(),
+        );
 
-        assert_eq!(decoded.handle, handle(7));
+        assert_eq!(acl_events.len(), 1);
+        assert_eq!(acl_events[0].handle, handle(7));
         assert_eq!(
-            decoded.subject,
+            acl_events[0].subject,
             "0x0808080808080808080808080808080808080808080808080808080808080808"
         );
         assert_eq!(
-            decoded.event_type as i16,
+            acl_events[0].event_type as i16,
             AllowEvents::AllowedAccount as i16
         );
     }
@@ -391,16 +386,18 @@ mod tests {
             payload
         });
 
-        let SolanaHostEvent::AclAllowed(decoded) =
-            decode_anchor_cpi_event(&encoded)
-                .expect("expected public decrypt ACL event")
-        else {
-            panic!("expected ACL event");
-        };
+        let decoded = decode_anchor_cpi_event(&encoded)
+            .expect("expected public decrypt ACL event");
+        let (_, acl_events) = normalize_solana_events_for_db(
+            [decoded],
+            solana_transaction_id(&[0; 64]),
+            test_block(),
+        );
 
-        assert_eq!(decoded.handle, handle(7));
+        assert_eq!(acl_events.len(), 1);
+        assert_eq!(acl_events[0].handle, handle(7));
         assert_eq!(
-            decoded.event_type as i16,
+            acl_events[0].event_type as i16,
             AllowEvents::AllowedForDecryption as i16
         );
     }
@@ -471,26 +468,24 @@ mod tests {
     }
 
     #[test]
-    fn keeps_acl_allowance_outside_evm_address_shape() {
-        let event = SolanaAclAllowedEvent {
-            handle: handle(9),
-            subject: "6tc9KsnQ1nRGqGX97AQvCNnuhZ5SpQe68LiiFbG88kM5".to_owned(),
-            event_type: AllowEvents::AllowedAccount,
-        };
-
-        let SolanaMappedEvent::AclAllowed(mapped) =
-            map_solana_event(SolanaHostEvent::AclAllowed(event))
-        else {
-            panic!("expected ACL allowance event");
-        };
-
-        assert_eq!(mapped.handle, handle(9));
-        assert_eq!(
-            mapped.subject,
-            "6tc9KsnQ1nRGqGX97AQvCNnuhZ5SpQe68LiiFbG88kM5"
+    fn normalizes_acl_subject_as_full_32_byte_hex() {
+        let (_, acl_events) = normalize_solana_events_for_db(
+            [ZamaHostEvent::AclAllowed(AclAllowedEvent {
+                version: EVENT_VERSION,
+                handle: [9; 32],
+                subject: [0xab; 32],
+            })],
+            solana_transaction_id(&[0; 64]),
+            test_block(),
         );
+
+        assert_eq!(acl_events.len(), 1);
+        assert_eq!(acl_events[0].handle, handle(9));
+        // Full 32-byte Solana pubkey hex (0x + 64 chars), not a 20-byte EVM address.
+        assert_eq!(acl_events[0].subject, format!("0x{}", "ab".repeat(32)));
+        assert_eq!(acl_events[0].subject.len(), 66);
         assert_eq!(
-            mapped.event_type as i16,
+            acl_events[0].event_type as i16,
             AllowEvents::AllowedAccount as i16
         );
     }
@@ -544,14 +539,10 @@ mod tests {
     #[test]
     fn normalizes_same_transaction_acl_into_allowed_tfhe_log() {
         let tx_id = solana_transaction_id(&[2_u8; 64]);
-        let block_timestamp = PrimitiveDateTime::new(
-            Date::from_calendar_date(2026, Month::May, 9).unwrap(),
-            Time::MIDNIGHT,
-        );
 
         let (tfhe_logs, acl_events) = normalize_solana_events_for_db(
             [
-                SolanaHostEvent::FheBinaryOp(FheBinaryOpEvent {
+                ZamaHostEvent::FheBinaryOp(FheBinaryOpEvent {
                     version: EVENT_VERSION,
                     op: FheBinaryOpCode::Add,
                     subject: [0; 32],
@@ -560,19 +551,14 @@ mod tests {
                     scalar: false,
                     result: [3; 32],
                 }),
-                SolanaHostEvent::AclAllowed(SolanaAclAllowedEvent {
-                    handle: handle(3),
-                    subject:
-                        "0x0404040404040404040404040404040404040404040404040404040404040404"
-                            .to_owned(),
-                    event_type: AllowEvents::AllowedAccount,
+                ZamaHostEvent::AclAllowed(AclAllowedEvent {
+                    version: EVENT_VERSION,
+                    handle: [3; 32],
+                    subject: [4; 32],
                 }),
             ],
             tx_id,
-            SolanaBlockMeta {
-                block_number: 42,
-                block_timestamp,
-            },
+            test_block(),
         );
 
         assert_eq!(acl_events.len(), 1);
@@ -586,14 +572,10 @@ mod tests {
     #[test]
     fn leaves_unallowed_tfhe_result_pending() {
         let tx_id = solana_transaction_id(&[3_u8; 64]);
-        let block_timestamp = PrimitiveDateTime::new(
-            Date::from_calendar_date(2026, Month::May, 9).unwrap(),
-            Time::MIDNIGHT,
-        );
 
         let (tfhe_logs, acl_events) = normalize_solana_events_for_db(
             [
-                SolanaHostEvent::FheBinaryOp(FheBinaryOpEvent {
+                ZamaHostEvent::FheBinaryOp(FheBinaryOpEvent {
                     version: EVENT_VERSION,
                     op: FheBinaryOpCode::Sub,
                     subject: [0; 32],
@@ -602,19 +584,14 @@ mod tests {
                     scalar: false,
                     result: [3; 32],
                 }),
-                SolanaHostEvent::AclAllowed(SolanaAclAllowedEvent {
-                    handle: handle(9),
-                    subject:
-                        "0x0404040404040404040404040404040404040404040404040404040404040404"
-                            .to_owned(),
-                    event_type: AllowEvents::AllowedAccount,
+                ZamaHostEvent::AclAllowed(AclAllowedEvent {
+                    version: EVENT_VERSION,
+                    handle: [9; 32],
+                    subject: [4; 32],
                 }),
             ],
             tx_id,
-            SolanaBlockMeta {
-                block_number: 42,
-                block_timestamp,
-            },
+            test_block(),
         );
 
         assert_eq!(acl_events.len(), 1);
@@ -629,9 +606,9 @@ mod tests {
             rand_event_payload([9; 32], [0xAB; 16], 5, [8; 32]),
         );
 
-        let decoded =
-            decode_anchor_cpi_event(&encoded).expect("expected rand event");
-        let SolanaHostEvent::FheRand(event) = decoded else {
+        let ZamaHostEvent::FheRand(event) =
+            decode_anchor_cpi_event(&encoded).expect("expected rand event")
+        else {
             panic!("expected rand event");
         };
 

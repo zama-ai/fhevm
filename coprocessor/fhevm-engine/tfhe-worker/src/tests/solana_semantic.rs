@@ -3,15 +3,11 @@
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheCiphertexts};
 use host_listener::{
     database::tfhe_event_propagate::Handle,
-    solana_adapter::{
-        decode_anchor_cpi_event, insert_solana_events, solana_transaction_id, SolanaBlockMeta,
-        SolanaHostEvent,
-    },
+    solana_adapter::{insert_solana_events, solana_transaction_id, SolanaBlockMeta},
 };
-use litesvm::types::TransactionMetadata;
 use tfhe::prelude::FheTryEncrypt;
 use time::{Date, Month, PrimitiveDateTime, Time};
-use zama_solana_tests::{collect_cpi_events, TransferScenario, BALANCE_FHE_TYPE};
+use zama_solana_tests::{collect_zama_host_events, TransferScenario, BALANCE_FHE_TYPE};
 
 use crate::tests::{
     event_helpers::{decrypt_handles, setup_event_harness, wait_until_computed, EventHarness},
@@ -44,7 +40,7 @@ impl WorkerSemanticBackend {
         &mut self,
         scenario: &TransferScenario,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let events = collect_listener_host_events(
+        let events = collect_zama_host_events(
             &scenario.meta,
             &scenario.account_keys,
             scenario.host_program_id,
@@ -107,14 +103,6 @@ pub async fn assert_transfer_worker(
     let bob = backend.decrypt_u64(scenario.new_bob_handle).await?;
     assert_transfer_semantics(alice, bob, expect);
     Ok(())
-}
-
-fn collect_listener_host_events(
-    meta: &TransactionMetadata,
-    account_keys: &[solana_sdk::pubkey::Pubkey],
-    program_id: solana_sdk::pubkey::Pubkey,
-) -> Vec<SolanaHostEvent> {
-    collect_cpi_events(meta, account_keys, program_id, decode_anchor_cpi_event)
 }
 
 async fn seed_balance_ciphertext(

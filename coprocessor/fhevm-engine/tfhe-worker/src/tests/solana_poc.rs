@@ -1,12 +1,8 @@
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheCiphertexts};
 use host_listener::{
     database::tfhe_event_propagate::Handle,
-    solana_adapter::{
-        decode_anchor_cpi_event, insert_solana_events, solana_transaction_id, SolanaBlockMeta,
-        SolanaHostEvent,
-    },
+    solana_adapter::{insert_solana_events, solana_transaction_id, SolanaBlockMeta},
 };
-use litesvm::types::TransactionMetadata;
 use serial_test::serial;
 use solana_sdk::{
     pubkey::Pubkey,
@@ -16,12 +12,13 @@ use tfhe::prelude::FheTryEncrypt;
 use time::{Date, Month, PrimitiveDateTime, Time};
 use zama_host::{AclSubjectEntry, FheFrameAction, FheFrameStep, FheOperand};
 use zama_solana_tests::{
-    acl_record_address, cleartext_rand_value, collect_cpi_events, execute_frame_ix,
-    external_input_handle, fhe_rand_events, kms_like_user_decrypt_check, label, read_acl_record,
-    run_transfer_scenario, send_with_meta, send_with_meta_and_signature, set_previous_slot_hash,
-    signed_user_decrypt_request_with_domains, token_fixture, transfer_ix, transfer_output_accounts,
-    TransferExpect, TransferSetup, UserDecryptHandleEntry, BALANCE_FHE_TYPE,
-    DEFAULT_INPUT_NONCE_SEQUENCE, DEFAULT_TEST_PREVIOUS_BANK_HASH,
+    acl_record_address, cleartext_rand_value, collect_zama_host_events, count_acl_allowed_events,
+    count_tfhe_host_events, execute_frame_ix, external_input_handle, fhe_rand_events,
+    kms_like_user_decrypt_check, label, read_acl_record, run_transfer_scenario, send_with_meta,
+    send_with_meta_and_signature, set_previous_slot_hash, signed_user_decrypt_request_with_domains,
+    token_fixture, transfer_ix, transfer_output_accounts, TransferExpect, TransferSetup,
+    UserDecryptHandleEntry, ZamaHostEvent, BALANCE_FHE_TYPE, DEFAULT_INPUT_NONCE_SEQUENCE,
+    DEFAULT_TEST_PREVIOUS_BANK_HASH,
 };
 
 use crate::tests::{
@@ -45,13 +42,13 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
     };
     let scenario = run_transfer_scenario(&mut fixture, setup);
 
-    let host_events = collect_listener_host_events(
+    let host_events = collect_zama_host_events(
         &scenario.meta,
         &scenario.account_keys,
         scenario.host_program_id,
     );
-    assert_eq!(count_tfhe_events(&host_events), 2);
-    assert_eq!(count_acl_events(&host_events), 4);
+    assert_eq!(count_tfhe_host_events(&host_events), 2);
+    assert_eq!(count_acl_allowed_events(&host_events), 4);
 
     assert_transfer_worker(
         &scenario,
@@ -123,10 +120,9 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
     let new_bob_handle = read_acl_record(&fixture.svm, output.bob)
         .expect("expected Bob output ACL")
         .handle;
-    let transfer_events =
-        collect_listener_host_events(&meta, &account_keys, fixture.host_program_id);
-    assert_eq!(count_tfhe_events(&transfer_events), 2);
-    assert_eq!(count_acl_events(&transfer_events), 4);
+    let transfer_events = collect_zama_host_events(&meta, &account_keys, fixture.host_program_id);
+    assert_eq!(count_tfhe_host_events(&transfer_events), 2);
+    assert_eq!(count_acl_allowed_events(&transfer_events), 4);
 
     insert_host_events(&harness.listener_db, transfer_events, signature, 2).await?;
     wait_until_computed(&harness.app).await?;
@@ -218,9 +214,9 @@ async fn solana_fhe_rand_creates_ciphertext_and_decrypts() -> Result<(), Box<dyn
     assert_eq!(rand_events.len(), 1);
     let rand_handle = rand_events[0].result;
 
-    let host_events = collect_listener_host_events(&meta, &account_keys, program_id);
-    assert_eq!(count_tfhe_events(&host_events), 1);
-    assert_eq!(count_acl_events(&host_events), 1);
+    let host_events = collect_zama_host_events(&meta, &account_keys, program_id);
+    assert_eq!(count_tfhe_host_events(&host_events), 1);
+    assert_eq!(count_acl_allowed_events(&host_events), 1);
 
     insert_host_events(&harness.listener_db, host_events, signature, 1).await?;
     wait_until_computed(&harness.app).await?;
@@ -363,7 +359,7 @@ async fn seed_real_fast_ciphertexts(
 
 async fn insert_host_events(
     listener_db: &host_listener::database::tfhe_event_propagate::Database,
-    host_events: Vec<SolanaHostEvent>,
+    host_events: Vec<ZamaHostEvent>,
     signature: Signature,
     block_number: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -379,33 +375,4 @@ async fn insert_host_events(
     insert_solana_events(listener_db, &mut db_tx, host_events, transaction_id, block).await?;
     db_tx.commit().await?;
     Ok(())
-}
-
-fn collect_listener_host_events(
-    meta: &TransactionMetadata,
-    account_keys: &[solana_sdk::pubkey::Pubkey],
-    program_id: solana_sdk::pubkey::Pubkey,
-) -> Vec<SolanaHostEvent> {
-    collect_cpi_events(meta, account_keys, program_id, decode_anchor_cpi_event)
-}
-
-fn count_tfhe_events(events: &[SolanaHostEvent]) -> usize {
-    events
-        .iter()
-        .filter(|event| {
-            matches!(
-                event,
-                SolanaHostEvent::FheBinaryOp(_)
-                    | SolanaHostEvent::TrivialEncrypt(_)
-                    | SolanaHostEvent::FheRand(_)
-            )
-        })
-        .count()
-}
-
-fn count_acl_events(events: &[SolanaHostEvent]) -> usize {
-    events
-        .iter()
-        .filter(|event| matches!(event, SolanaHostEvent::AclAllowed(_)))
-        .count()
 }
