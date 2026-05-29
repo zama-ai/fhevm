@@ -66,6 +66,10 @@ commonConfig:
   kmsGenerationContractAddress: {}  # required — e.g. 0x...
   protocolConfigContractAddress: {} # required — e.g. 0x...
 
+  # Ethereum host chain id. Only the host-listener whose own chain id matches
+  # this value decodes ProtocolConfig.NewCoprocessorContext events.
+  ethereumChainId: ""
+
   # Gateway chain configuration. Consumed by gwListener and txSender.
   # Each field accepts either a literal `value` or a `valueFrom` block
   # (secretKeyRef or configMapKeyRef). Leave unset to inject nothing.

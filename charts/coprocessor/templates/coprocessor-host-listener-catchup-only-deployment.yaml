@@ -207,6 +207,10 @@ spec:
                 {{- toYaml $chain.protocolConfigContractAddressValueFrom | nindent 16 }}
               {{- end }}
             {{- end }}
+            {{- with $.Values.commonConfig.ethereumChainId }}
+            - name: ETHEREUM_CHAIN_ID
+              value: {{ . | quote }}
+            {{- end }}
           {{- if default $.Values.commonConfig.tracing.enabled $.Values.hostListenerCatchupOnlyShared.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ $.Values.commonConfig.tracing.endpoint | quote }}

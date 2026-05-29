@@ -71,6 +71,13 @@ pub struct Args {
 
     #[arg(
         long,
+        env = "ETHEREUM_CHAIN_ID",
+        help = "Ethereum host chain id; only the listener on this chain decodes ProtocolConfig events."
+    )]
+    pub ethereum_chain_id: u64,
+
+    #[arg(
+        long,
         default_value = "postgresql://postgres:postgres@localhost:5432/coprocessor"
     )]
     pub database_url: DatabaseURL,
@@ -990,6 +997,7 @@ async fn db_insert_block(
                 dependence_by_connexity: args.dependence_by_connexity,
                 dependence_cross_block: args.dependence_cross_block,
                 dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
+                ethereum_chain_id: args.ethereum_chain_id,
             },
         )
         .await;

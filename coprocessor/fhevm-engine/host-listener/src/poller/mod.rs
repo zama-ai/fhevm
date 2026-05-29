@@ -96,6 +96,7 @@ pub struct PollerConfig {
     pub dependence_cross_block: bool,
     pub dependent_ops_max_per_chain: u32,
     pub gcs_mode: bool,
+    pub ethereum_chain_id: u64,
 }
 
 pub async fn run_poller(config: PollerConfig) -> Result<()> {
@@ -345,6 +346,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 dependence_by_connexity: config.dependence_by_connexity,
                 dependence_cross_block: config.dependence_cross_block,
                 dependent_ops_max_per_chain: config.dependent_ops_max_per_chain,
+                ethereum_chain_id: config.ethereum_chain_id,
             };
             match ingest_with_retry(
                 chain_id,

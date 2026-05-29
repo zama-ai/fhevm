@@ -47,6 +47,7 @@ pub struct ConsumerConfig {
     pub dependent_ops_max_per_chain: u32,
     pub chain_id: String,
     pub gcs_mode: bool,
+    pub ethereum_chain_id: u64,
 }
 
 pub fn collect_logs(payload: &BlockPayload) -> Vec<Log> {
@@ -250,6 +251,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         dependence_by_connexity: config.dependence_by_connexity,
         dependence_cross_block: config.dependence_cross_block,
         dependent_ops_max_per_chain: config.dependent_ops_max_per_chain,
+        ethereum_chain_id: config.ethereum_chain_id,
     };
 
     // Runtime stack mode + `event_stack_version_upgraded` listener: at cutover

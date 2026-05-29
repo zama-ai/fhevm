@@ -35,6 +35,13 @@ struct Args {
     #[arg(long, help = "ProtocolConfig contract address to monitor")]
     pub protocol_config_address: Address,
 
+    #[arg(
+        long,
+        env = "ETHEREUM_CHAIN_ID",
+        help = "Ethereum host chain id; only the listener on this chain decodes ProtocolConfig events."
+    )]
+    pub ethereum_chain_id: u64,
+
     #[arg(long, help = "PostgreSQL connection URL")]
     database_url: DatabaseURL,
 
@@ -179,6 +186,7 @@ async fn main() -> anyhow::Result<()> {
         dependence_cross_block: args.dependence_cross_block,
         dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
         gcs_mode,
+        ethereum_chain_id: args.ethereum_chain_id,
     };
 
     run_poller(config).await
