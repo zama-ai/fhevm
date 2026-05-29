@@ -11,7 +11,7 @@ import {IDstApp} from "../../../contracts/bridge/interfaces/IDstApp.sol";
 contract MockDstApp is IDstApp {
     struct LastCall {
         uint32 srcEid;
-        address srcApp;
+        bytes32 srcApp;
         bytes payload;
         bytes32[] srcHandleList;
         bytes32[] dstHandleList;
@@ -27,7 +27,7 @@ contract MockDstApp is IDstApp {
 
     function onReceive(
         uint32 srcEid,
-        address srcApp,
+        bytes32 srcApp,
         bytes calldata payload,
         bytes32[] calldata srcHandleList,
         bytes32[] calldata dstHandleList

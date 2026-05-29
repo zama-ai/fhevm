@@ -565,6 +565,196 @@ task('task:wireBridge', 'Wires the local bridge to a remote peer (setPeer + setD
   });
 
 ////////////////////////////////////////////////////////////////////////////////
+// Bridge wiring — PRODUCTION (full LayerZero V2 pathway config).
+//
+// For production wiring (libraries + DVN + Executor + confirmations on top of
+// the peer/dstChainId pair above), use the official LayerZero CLI from the
+// dedicated `lz-wiring/` subproject:
+//
+//     cd lz-wiring && pnpm install --ignore-workspace
+//     SEPOLIA_BRIDGE_ADDRESS=… POLYGON_AMOY_BRIDGE_ADDRESS=… pnpm wire
+//
+// That subproject is isolated from this one (it pins ethers v5 to match the
+// LZ devtools stack, which can't be loaded alongside our ethers-v6-based
+// hardhat config). See `lz-wiring/README.md` and `addresses/BRIDGE_DEPLOYMENT.md`
+// §3.2 for the full flow.
+////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////
+// ConfidentialOFT (example app riding the bridge)
+//
+// ConfidentialOFT is a non-upgradeable reference cross-chain token. Each chain
+// gets its own instance, both pointing at the local ConfidentialBridge proxy.
+// After deployment, the owner authorises each remote peer with `setTrustedPeer`.
+//
+// Pre-requisites:
+//   - `task:deployBridge` has run on this chain (so the bridge address is in
+//     addresses/.env.host).
+//   - `DEPLOYER_PRIVATE_KEY` is funded on this chain.
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:deployConfidentialOFT').setAction(async function (_, hre) {
+  const { ethers } = hre;
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+
+  const parsedEnv = readHostEnv();
+  const bridgeAddress = parsedEnv.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS;
+  if (!bridgeAddress) {
+    throw new Error(
+      'CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS not found in addresses/.env.host. Run task:deployBridge first.',
+    );
+  }
+
+  console.log(`Deploying ConfidentialOFT (bridge=${bridgeAddress}, owner=${deployer.address})...`);
+  const oftFactory = await ethers.getContractFactory('ConfidentialOFT', deployer);
+  const oft = await oftFactory.deploy(bridgeAddress, deployer.address);
+  await oft.waitForDeployment();
+  const oftAddress = await oft.getAddress();
+  console.log(`ConfidentialOFT deployed at ${oftAddress} (tx ${oft.deploymentTransaction()?.hash})`);
+
+  await hre.run('task:setConfidentialOFTAddress', { address: oftAddress });
+});
+
+task('task:setConfidentialOFTAddress')
+  .addParam('address', 'The address of the deployed ConfidentialOFT instance')
+  .setAction(async function (taskArguments: TaskArguments) {
+    ensureAddressesDirectoryExists();
+    const content = `CONFIDENTIAL_OFT_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    try {
+      writeHostEnvLine(content, 'a');
+      console.log(`ConfidentialOFT address ${taskArguments.address} written successfully!`);
+    } catch (err) {
+      throw new Error(`Failed to write ConfidentialOFT address: ${String(err)}`);
+    }
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// ConfidentialOFT wiring (trust a remote peer OFT)
+//
+// `setTrustedPeer(srcEid, srcApp, true)` whitelists a remote ConfidentialOFT on
+// the local instance so its `onReceive`-via-lzCompose calls aren't rejected.
+// Must be run once per direction. Gated by `Ownable.onlyOwner` — the deployer
+// wallet (DEPLOYER_PRIVATE_KEY) is the owner by default (set in the
+// constructor via `Ownable(_owner)`).
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:wireConfidentialOFT', 'Trusts a remote ConfidentialOFT peer (setTrustedPeer)')
+  .addParam('remoteEid', 'LayerZero V2 endpoint id of the remote chain', undefined, types.int)
+  .addParam('remoteOft', 'Address of the ConfidentialOFT on the remote chain')
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+
+    const parsedEnv = readHostEnv();
+    const localOftAddress = parsedEnv.CONFIDENTIAL_OFT_CONTRACT_ADDRESS;
+    if (!localOftAddress) {
+      throw new Error(
+        'CONFIDENTIAL_OFT_CONTRACT_ADDRESS not found in addresses/.env.host. Run task:deployConfidentialOFT first.',
+      );
+    }
+    if (!ethers.isAddress(taskArguments.remoteOft)) {
+      throw new Error(`Invalid --remote-oft address: ${taskArguments.remoteOft}`);
+    }
+
+    const oft = await ethers.getContractAt('ConfidentialOFT', localOftAddress, deployer);
+    const remoteEid: number = taskArguments.remoteEid;
+    // ConfidentialOFT.setTrustedPeer takes bytes32 (forward-compat with non-EVM
+    // peers). The CLI accepts a regular EVM address for convenience; we pad
+    // here to the on-chain bytes32 type.
+    const remoteOftBytes32 = ethers.zeroPadValue(taskArguments.remoteOft, 32);
+
+    console.log(
+      `Wiring local OFT ${localOftAddress} → trusting remote { eid=${remoteEid}, oft=${taskArguments.remoteOft} (bytes32=${remoteOftBytes32}) }`,
+    );
+    const tx = await oft.setTrustedPeer(remoteEid, remoteOftBytes32, true);
+    console.log(`  tx ${tx.hash}`);
+    await tx.wait();
+    console.log('ConfidentialOFT wiring done.');
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// FHECounter (mock-coprocessor smoke test contract)
+//
+// A minimal `trivialEncrypt + add` example deployed per chain to exercise the
+// mock coprocessor service end-to-end. See scripts/mock-coprocessor/README.md.
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:deployFHECounter').setAction(async function (_, hre) {
+  const { ethers } = hre;
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+
+  console.log(`Deploying FHECounter (owner=${deployer.address})...`);
+  const factory = await ethers.getContractFactory('FHECounter', deployer);
+  const counter = await factory.deploy();
+  await counter.waitForDeployment();
+  const address = await counter.getAddress();
+  console.log(`FHECounter deployed at ${address} (tx ${counter.deploymentTransaction()?.hash})`);
+
+  await hre.run('task:setFHECounterAddress', { address });
+});
+
+task('task:setFHECounterAddress')
+  .addParam('address', 'The address of the deployed FHECounter instance')
+  .setAction(async function (taskArguments: TaskArguments) {
+    ensureAddressesDirectoryExists();
+    const content = `FHE_COUNTER_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    try {
+      writeHostEnvLine(content, 'a');
+      console.log(`FHECounter address ${taskArguments.address} written successfully!`);
+    } catch (err) {
+      throw new Error(`Failed to write FHECounter address: ${String(err)}`);
+    }
+  });
+
+/**
+ * Calls `add(amount)` on the local FHECounter `times` times, then reads the
+ * current handle from `get()`. The mock coprocessor daemon (running in a
+ * separate process) will derive the plaintext for that handle a few seconds
+ * later — you can verify with `pnpm mock:query <handle>`.
+ */
+task('task:runFHECounterDemo', 'Exercises the local FHECounter (trivialEncrypt + add) to feed the mock coprocessor')
+  .addOptionalParam('amount', 'Amount added on each call', '7', types.string)
+  .addOptionalParam('times', 'Number of add() calls', '3', types.string)
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+    const parsedEnv = readHostEnv();
+    const counterAddress = parsedEnv.FHE_COUNTER_CONTRACT_ADDRESS;
+    if (!counterAddress) {
+      throw new Error(
+        'FHE_COUNTER_CONTRACT_ADDRESS not found in addresses/.env.host. Run task:deployFHECounter first.',
+      );
+    }
+
+    const amount = BigInt(taskArguments.amount);
+    const times = Number(taskArguments.times);
+    if (!Number.isInteger(times) || times <= 0) {
+      throw new Error(`--times must be a positive integer (got ${taskArguments.times})`);
+    }
+
+    const counter = await ethers.getContractAt('FHECounter', counterAddress, deployer);
+    console.log(`FHECounter at ${counterAddress} — running ${times} × add(${amount})`);
+    for (let i = 0; i < times; i++) {
+      const tx = await counter.add(amount);
+      const receipt = await tx.wait();
+      console.log(`  call ${i + 1}/${times}: tx ${tx.hash} (block ${receipt?.blockNumber})`);
+    }
+
+    const handle = await counter.get();
+    const handleHex = ethers.toBeHex(handle, 32);
+    const expected = amount * BigInt(times);
+    console.log(`\nCurrent encrypted value handle: ${handleHex}`);
+    console.log(`Expected plaintext (= ${times} × ${amount}): ${expected}`);
+    console.log(
+      `Verify via the mock coprocessor once it catches up:\n` +
+        `  pnpm mock:query ${handleHex}\n` +
+        `(should print: ${expected})`,
+    );
+  });
+
+////////////////////////////////////////////////////////////////////////////////
 // ProtocolConfig helpers
 ////////////////////////////////////////////////////////////////////////////////
 

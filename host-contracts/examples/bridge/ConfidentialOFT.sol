@@ -30,6 +30,8 @@ contract ConfidentialOFT is Ownable2Step, IDstApp {
     /// @param srcApp Source peer as bytes32 — for EVM peers this is a left-zero-padded address.
     event Received(uint32 indexed srcEid, bytes32 indexed srcApp, address indexed recipient);
     event TrustedPeerSet(uint32 indexed srcEid, bytes32 indexed srcApp, bool trusted);
+    /// @notice Emitted by `mint` once the encrypted amount has been credited to `to`.
+    event Minted(address indexed to);
 
     error UntrustedPeer(uint32 srcEid, bytes32 srcApp);
     error OnlyConfidentialBridge(address caller);
@@ -129,6 +131,25 @@ contract ConfidentialOFT is Ownable2Step, IDstApp {
     function setTrustedPeer(uint32 srcEid, bytes32 srcApp, bool trusted) external onlyOwner {
         _trustedPeers[srcEid][srcApp] = trusted;
         emit TrustedPeerSet(srcEid, srcApp, trusted);
+    }
+
+    /**
+     * @notice Owner-gated mint of an encrypted `amount` to `to`. Intended for testing /
+     *         bootstrap of an initial supply on each chain (the production token economy
+     *         is governed by the burn-and-mint bridge flow).
+     * @dev    `encryptedAmount` + `inputProof` are produced off-chain by the relayer
+     *         (or by the mock-coprocessor's `mock:encrypt` CLI for local/testnet
+     *         testing) and are bound to `(this contract, msg.sender)` by the on-chain
+     *         InputVerifier via EIP-712 — so the owner wallet must be the same one
+     *         that requested the encryption.
+     *
+     *         The new balance handle is granted persistent ACL allowance to both `this`
+     *         (for future burns) and `to` (for client-side decryption); see `_mint`.
+     */
+    function mint(address to, externalEuint64 encryptedAmount, bytes calldata inputProof) external onlyOwner {
+        euint64 amount = FHE.fromExternal(encryptedAmount, inputProof);
+        _mint(to, amount);
+        emit Minted(to);
     }
 
     /// @notice Returns the encrypted balance handle for `holder`.

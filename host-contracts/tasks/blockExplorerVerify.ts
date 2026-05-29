@@ -209,6 +209,30 @@ task('task:verifyBridge')
     });
   });
 
+task('task:verifyConfidentialOFT')
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If addresses from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ useInternalProxyAddress }, { ethers, run }) {
+    if (useInternalProxyAddress) {
+      loadHostAddresses();
+    }
+    // ConfidentialOFT is non-upgradeable, so there is no proxy/impl split here
+    // — verify the deployed contract directly. Constructor args mirror the
+    // call in task:deployConfidentialOFT: (bridgeAddress, deployerAddress).
+    const oftAddress = getRequiredEnvVar('CONFIDENTIAL_OFT_CONTRACT_ADDRESS');
+    const bridgeAddress = getRequiredEnvVar('CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS');
+    const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const deployerAddress = new ethers.Wallet(deployerPrivateKey).address;
+    await run('verify:verify', {
+      address: oftAddress,
+      constructorArguments: [bridgeAddress, deployerAddress],
+    });
+  });
+
 task('task:verifyAllHostContracts')
   .addOptionalParam(
     'useInternalProxyAddress',

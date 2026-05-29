@@ -36,3 +36,19 @@ foundry.lock
 
 # OZ artifacts
 /.openzeppelin
+
+# LayerZero wiring subproject build artifacts (the project itself is committed,
+# but its node_modules + hardhat outputs are not — it is a self-contained
+# pnpm workspace, see lz-wiring/README.md).
+lz-wiring/node_modules
+lz-wiring/cache
+lz-wiring/artifacts
+lz-wiring/dist
+
+# Mock coprocessor persistent state (committed source, ignored runtime DB).
+scripts/mock-coprocessor/*.db
+scripts/mock-coprocessor/*.db-journal
+
+addresses-amoy
+addresses-sepolia
+enc.out

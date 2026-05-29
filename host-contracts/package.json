@@ -20,16 +20,22 @@
     "codegen:overloads": "../library-solidity/codegen/codegen.mjs overloads --config ./codegen.config.json --verbose --force",
     "test:gas": "hardhat test --grep Gas",
     "test:forge": "forge test",
-    "forge:soldeer": "forge soldeer install"
+    "forge:soldeer": "forge soldeer install",
+    "mock:daemon": "ts-node --transpile-only scripts/mock-coprocessor/index.ts daemon",
+    "mock:query": "ts-node --transpile-only scripts/mock-coprocessor/index.ts query",
+    "mock:encrypt": "ts-node --transpile-only scripts/mock-coprocessor/index.ts encrypt",
+    "mock:reset": "rm -f scripts/mock-coprocessor/mock-coprocessor.db && echo 'mock-coprocessor.db wiped'"
   },
   "author": "",
   "license": "BSD-3-Clause-Clear",
   "devDependencies": {
     "@fhevm/solidity": "*",
+    "@layerzerolabs/lz-definitions": "^3.1.2",
     "@layerzerolabs/lz-evm-messagelib-v2": "^3.0.168",
     "@layerzerolabs/lz-evm-oapp-v2": "^3.0.0",
     "@layerzerolabs/lz-evm-protocol-v2": "^3.0.0",
     "@layerzerolabs/lz-evm-v1-0.7": "^3.0.168",
+    "@layerzerolabs/lz-v2-utilities": "^3.0.168",
     "@layerzerolabs/oapp-evm": "^0.4.1",
     "@layerzerolabs/oapp-evm-upgradeable": "^0.1.3",
     "@layerzerolabs/test-devtools-evm-foundry": "^8.0.1",
