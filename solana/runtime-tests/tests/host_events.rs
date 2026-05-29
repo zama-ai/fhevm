@@ -10473,6 +10473,174 @@ fn transfer_receiver_hook_accepts_active_operator_after_transfer_from() {
 }
 
 #[test]
+fn transfer_receiver_hook_rejects_operator_transfer_for_direct_hook() {
+    let mut fixture = token_fixture();
+    let operator = fixture.svm.create_funded_account(1_000_000_000).unwrap();
+    let operator_record = token::operator_record_address(fixture.alice_token, operator.pubkey()).0;
+    let expiration_slot = current_slot(&fixture.svm) + 100;
+    let set_operator = set_operator_ix(
+        &fixture,
+        operator.pubkey(),
+        operator_record,
+        expiration_slot,
+    );
+    send(&mut fixture.svm, &fixture.alice, set_operator);
+
+    let amount_handle = input_handle_for_chain(72);
+    let callback_success_handle = input_handle_for_chain_with_type(73, 0);
+    authorize_transfer_amount_compute_acl_for_signer(
+        &mut fixture,
+        &operator,
+        amount_handle,
+        DEFAULT_INPUT_NONCE_SEQUENCE,
+    );
+    let amount_acl = input_compute_acl_address_for_authority(
+        &fixture,
+        operator.pubkey(),
+        DEFAULT_INPUT_NONCE_SEQUENCE,
+    );
+    authorize_callback_success_acl(
+        &mut fixture,
+        callback_success_handle,
+        DEFAULT_INPUT_NONCE_SEQUENCE,
+    );
+    let callback_success_acl = callback_success_acl_address(&fixture, DEFAULT_INPUT_NONCE_SEQUENCE);
+
+    let predicted_sent_handle = predicted_transfer_sent_handle(&fixture, amount_handle);
+    let transfer_output = transfer_output_accounts(&fixture, 1);
+    let transfer = transfer_from_ix_with_amount_acl(
+        &fixture,
+        operator.pubkey(),
+        operator_record,
+        amount_acl,
+        transfer_output,
+        amount_handle,
+    );
+    let receiver_data = token::instruction::TestReceiverReturnCallback {
+        mint: fixture.mint.pubkey(),
+        from_token_account: fixture.alice_token,
+        to_token_account: fixture.bob_token,
+        sent_handle: predicted_sent_handle,
+        sent_acl_record: transfer_output.transferred,
+        callback_success_handle,
+        callback_success_acl_record: callback_success_acl,
+    }
+    .data();
+    let hook_ix = call_transfer_receiver_ix(
+        &fixture,
+        transfer_output.transferred,
+        predicted_sent_handle,
+        callback_success_acl,
+        callback_success_handle,
+        fixture.token_program_id,
+        receiver_data,
+    );
+
+    assert!(send_many_with_signers(
+        &mut fixture.svm,
+        &fixture.alice.pubkey(),
+        vec![transfer, hook_ix],
+        &[&fixture.alice, &operator],
+    )
+    .is_err());
+    assert!(read_transfer_receiver_hook_call(
+        &fixture.svm,
+        token::transfer_receiver_hook_address(fixture.mint.pubkey(), predicted_sent_handle).0,
+    )
+    .is_none());
+}
+
+#[test]
+fn transfer_receiver_hook_from_rejects_different_operator_than_previous_transfer() {
+    let mut fixture = token_fixture();
+    let operator = fixture.svm.create_funded_account(1_000_000_000).unwrap();
+    let other_operator = fixture.svm.create_funded_account(1_000_000_000).unwrap();
+    let operator_record = token::operator_record_address(fixture.alice_token, operator.pubkey()).0;
+    let other_operator_record =
+        token::operator_record_address(fixture.alice_token, other_operator.pubkey()).0;
+    let expiration_slot = current_slot(&fixture.svm) + 100;
+    let set_operator = set_operator_ix(
+        &fixture,
+        operator.pubkey(),
+        operator_record,
+        expiration_slot,
+    );
+    let set_other_operator = set_operator_ix(
+        &fixture,
+        other_operator.pubkey(),
+        other_operator_record,
+        expiration_slot,
+    );
+    send(&mut fixture.svm, &fixture.alice, set_operator);
+    send(&mut fixture.svm, &fixture.alice, set_other_operator);
+
+    let amount_handle = input_handle_for_chain(74);
+    let callback_success_handle = input_handle_for_chain_with_type(75, 0);
+    authorize_transfer_amount_compute_acl_for_signer(
+        &mut fixture,
+        &operator,
+        amount_handle,
+        DEFAULT_INPUT_NONCE_SEQUENCE,
+    );
+    let amount_acl = input_compute_acl_address_for_authority(
+        &fixture,
+        operator.pubkey(),
+        DEFAULT_INPUT_NONCE_SEQUENCE,
+    );
+    authorize_callback_success_acl(
+        &mut fixture,
+        callback_success_handle,
+        DEFAULT_INPUT_NONCE_SEQUENCE,
+    );
+    let callback_success_acl = callback_success_acl_address(&fixture, DEFAULT_INPUT_NONCE_SEQUENCE);
+
+    let predicted_sent_handle = predicted_transfer_sent_handle(&fixture, amount_handle);
+    let transfer_output = transfer_output_accounts(&fixture, 1);
+    let transfer = transfer_from_ix_with_amount_acl(
+        &fixture,
+        operator.pubkey(),
+        operator_record,
+        amount_acl,
+        transfer_output,
+        amount_handle,
+    );
+    let receiver_data = token::instruction::TestReceiverReturnCallback {
+        mint: fixture.mint.pubkey(),
+        from_token_account: fixture.alice_token,
+        to_token_account: fixture.bob_token,
+        sent_handle: predicted_sent_handle,
+        sent_acl_record: transfer_output.transferred,
+        callback_success_handle,
+        callback_success_acl_record: callback_success_acl,
+    }
+    .data();
+    let hook_ix = call_transfer_receiver_from_ix(
+        &fixture,
+        other_operator.pubkey(),
+        other_operator_record,
+        transfer_output.transferred,
+        predicted_sent_handle,
+        callback_success_acl,
+        callback_success_handle,
+        fixture.token_program_id,
+        receiver_data,
+    );
+
+    assert!(send_many_with_signers(
+        &mut fixture.svm,
+        &operator.pubkey(),
+        vec![transfer, hook_ix],
+        &[&operator, &other_operator],
+    )
+    .is_err());
+    assert!(read_transfer_receiver_hook_call(
+        &fixture.svm,
+        token::transfer_receiver_hook_address(fixture.mint.pubkey(), predicted_sent_handle).0,
+    )
+    .is_none());
+}
+
+#[test]
 fn transfer_receiver_hook_rejects_revoked_operator() {
     let mut fixture = token_fixture();
     let operator = fixture.svm.create_funded_account(1_000_000_000).unwrap();

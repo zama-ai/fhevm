@@ -34,7 +34,7 @@ pub use state::*;
 
 use instructions::*;
 
-declare_id!("EMhXFu68v61bQV4GrF6ZhZhWNVbH6bHPnTdLtXK8meqn");
+declare_id!("7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE");
 
 /// Anchor entrypoint module generated into the ZamaHost IDL.
 #[program]

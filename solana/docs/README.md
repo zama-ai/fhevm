@@ -1,28 +1,28 @@
-# Solana PoC Permanent Docs
+# Solana PoC Docs
 
-This directory holds stable design rationale for the Solana FHEVM PoC.
-
-Use these files for decisions that future implementers, reviewers, SDK authors, or product owners
-need to understand after the development issue ledger has been pruned.
+Durable documentation for the Solana FHEVM PoC — the design, how it maps to the EVM side, how it
+was built, and how to test it. These are the files that stay useful after the day-to-day scratch
+notes are gone.
 
 ```text
 DESIGN_DECISIONS.md
-  Stable decision index. Read this before changing ACL, KMS, event transport, decrypt, or token
-  transfer behavior.
+  The stable *why* (DD-001..DD-013) + open product decisions. Read this before changing ACL, KMS,
+  event transport, decrypt, or token-transfer behavior.
+
+EVM_PARITY.md
+  Capability-by-capability EVM->Solana parity map (ERC7984 + host-contracts + gateway-contracts)
+  and a critical solid-vs-fragile assessment.
 
 TRANSIENT_ALLOW.md
-  Detailed rationale for the Solana equivalent of EVM transient allowance.
+  The Solana equivalent of EVM transient allowance, in depth.
+
+DEVELOPMENT_HISTORY.md
+  How the PoC was built: the hardening story, the ~176-issue catalog, and an honest status
+  snapshot (solid / PoC-scope / product-open).
+
+TESTING.md
+  Test layout, Mollusk vs LiteSVM, how to run the suites, and the traps.
 ```
 
-The temporal files are still useful, but they are not the source of durable product rationale:
-
-```text
-../DEVELOPMENT_LOGBOOK.md
-  Resume protocol, current audit state, and short-lived development notes.
-
-../DEVELOPMENT_ISSUES.md
-  Rolling issue ledger, recent failures, fixes, verification commands, and open follow-up items.
-```
-
-When a development issue changes the intended architecture, update `DESIGN_DECISIONS.md` or a
-focused document in this directory before treating the work as ready for handoff.
+When a change alters the intended architecture, update `DESIGN_DECISIONS.md` (or a focused doc
+here) before treating the work as ready for handoff.
