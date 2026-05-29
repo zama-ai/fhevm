@@ -120,7 +120,7 @@ Use this order when picking up the branch:
 ```text
 1. Run it
    cd solana
-   NO_DNA=1 anchor build --ignore-keys
+   bash scripts/check-zama-host-idl.sh
    cargo test --workspace
    cargo doc --no-deps -p zama-host -p confidential-token
 
@@ -1605,8 +1605,15 @@ Solana program build and runtime tests:
 
 ```bash
 cd solana
-NO_DNA=1 anchor build --ignore-keys
+bash scripts/check-zama-host-idl.sh
 cargo test --workspace
+```
+
+If the ZamaHost Anchor IDL intentionally changes, refresh the listener snapshot first:
+
+```bash
+cd solana
+bash scripts/sync-zama-host-idl.sh
 ```
 
 Rustdoc check for the two PoC programs:

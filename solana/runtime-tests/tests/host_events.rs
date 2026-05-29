@@ -2599,7 +2599,8 @@ fn assert_acl_record_rejects_malformed_subject_slots() {
         payer.pubkey(),
     );
 
-    let cases: [(u64, &str, fn(&mut AclRecord)); 4] = [
+    type AclRecordMutation = fn(&mut AclRecord);
+    let cases: [(u64, &str, AclRecordMutation); 4] = [
         (50, "bad-count", invalid_subject_count),
         (51, "dup-subject", duplicate_active_subject),
         (52, "unused-subject", nonzero_unused_subject),

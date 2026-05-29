@@ -1519,11 +1519,10 @@ fn mollusk_acl_grant_deny_list_allows_absent_or_clear_authority_witness() {
     let clear_record = read_acl_record(&clear_context, acl_record).expect("expected ACL record");
     assert!(clear_record.inline_subject_has_role(clear_subject, host::ACL_ROLE_USE));
     assert!(clear_record.inline_subject_has_role(denied_new_subject, host::ACL_ROLE_USE));
-    assert_eq!(
+    assert!(
         read_deny_subject_record(&clear_context, denied_new_subject_record)
             .expect("expected new-subject deny record")
-            .denied,
-        true
+            .denied
     );
 }
 

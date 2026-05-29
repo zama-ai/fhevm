@@ -5233,6 +5233,7 @@ fn transfer_receiver_hook_call_exists(
         && token::TransferReceiverHookCall::try_deserialize(&mut account.data.as_slice()).is_ok()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn assert_acl_record(
     record: &host::AclRecord,
     nonce_key: [u8; 32],

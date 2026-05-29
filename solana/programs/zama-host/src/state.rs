@@ -717,7 +717,7 @@ pub fn assert_supported_fhe_type(fhe_type: u8) -> Result<()> {
 pub fn assert_supported_binary_output_type(op: FheBinaryOpCode, fhe_type: u8) -> Result<()> {
     assert_supported_fhe_type(fhe_type)?;
     let valid = match op {
-        FheBinaryOpCode::Add | FheBinaryOpCode::Sub => matches!(fhe_type, 2 | 3 | 4 | 5 | 6),
+        FheBinaryOpCode::Add | FheBinaryOpCode::Sub => matches!(fhe_type, 2..=6),
         FheBinaryOpCode::Ge => fhe_type == 0,
     };
     require!(valid, ZamaHostError::UnsupportedFheType);
@@ -735,7 +735,7 @@ pub fn assert_binary_operand_types(
     assert_supported_binary_output_type(op, output_fhe_type)?;
     let lhs_type = handle_fhe_type(lhs);
     require!(
-        matches!(lhs_type, 2 | 3 | 4 | 5 | 6),
+        matches!(lhs_type, 2..=6),
         ZamaHostError::UnsupportedFheType
     );
     if matches!(op, FheBinaryOpCode::Add | FheBinaryOpCode::Sub) {

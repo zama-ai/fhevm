@@ -558,44 +558,6 @@ pub(super) fn is_absent_deny_record(info: &AccountInfo) -> Result<bool> {
     Ok(false)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn absent_deny_record_accepts_non_executable_system_empty_account() {
-        let key = Pubkey::new_unique();
-        let owner = System::id();
-        let mut lamports = 0;
-        let mut data = Vec::new();
-        let info = AccountInfo::new(&key, false, false, &mut lamports, &mut data, &owner, false);
-
-        assert!(is_absent_deny_record(&info).unwrap());
-    }
-
-    #[test]
-    fn absent_deny_record_rejects_executable_system_empty_account() {
-        let key = Pubkey::new_unique();
-        let owner = System::id();
-        let mut lamports = 0;
-        let mut data = Vec::new();
-        let info = AccountInfo::new(&key, false, false, &mut lamports, &mut data, &owner, true);
-
-        assert!(is_absent_deny_record(&info).is_err());
-    }
-
-    #[test]
-    fn absent_deny_record_ignores_non_system_empty_account() {
-        let key = Pubkey::new_unique();
-        let owner = crate::ID;
-        let mut lamports = 0;
-        let mut data = Vec::new();
-        let info = AccountInfo::new(&key, false, false, &mut lamports, &mut data, &owner, false);
-
-        assert!(!is_absent_deny_record(&info).unwrap());
-    }
-}
-
 pub(super) fn assert_transient_session_data(
     session_key: Pubkey,
     session: &TransientSession,
@@ -1073,4 +1035,42 @@ pub(super) fn emit_subject_event(
         inline_index: u8::MAX,
         updated_slot,
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn absent_deny_record_accepts_non_executable_system_empty_account() {
+        let key = Pubkey::new_unique();
+        let owner = System::id();
+        let mut lamports = 0;
+        let mut data = Vec::new();
+        let info = AccountInfo::new(&key, false, false, &mut lamports, &mut data, &owner, false);
+
+        assert!(is_absent_deny_record(&info).unwrap());
+    }
+
+    #[test]
+    fn absent_deny_record_rejects_executable_system_empty_account() {
+        let key = Pubkey::new_unique();
+        let owner = System::id();
+        let mut lamports = 0;
+        let mut data = Vec::new();
+        let info = AccountInfo::new(&key, false, false, &mut lamports, &mut data, &owner, true);
+
+        assert!(is_absent_deny_record(&info).is_err());
+    }
+
+    #[test]
+    fn absent_deny_record_ignores_non_system_empty_account() {
+        let key = Pubkey::new_unique();
+        let owner = crate::ID;
+        let mut lamports = 0;
+        let mut data = Vec::new();
+        let info = AccountInfo::new(&key, false, false, &mut lamports, &mut data, &owner, false);
+
+        assert!(!is_absent_deny_record(&info).unwrap());
+    }
 }

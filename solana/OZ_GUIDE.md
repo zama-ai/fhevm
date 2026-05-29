@@ -140,7 +140,9 @@ Host listener consumes only generic ZamaHost events:
   InputVerifiedEvent
 
 Those event decoders are generated at host-listener build time from the checked-in ZamaHost Anchor
-IDL snapshot. The listener must not parse confidential-token events.
+IDL snapshot. Use `solana/scripts/check-zama-host-idl.sh` to catch drift and
+`solana/scripts/sync-zama-host-idl.sh` when a ZamaHost IDL change is intentional. The listener must
+not parse confidential-token events.
 
 Solana events are discovery and indexing signals, not authorization evidence. Unlike the EVM-style
 listener flow, production Solana decrypt authorization must be checked against host-owned
@@ -267,7 +269,7 @@ demo flow.
 
 ```bash
 cd solana
-NO_DNA=1 anchor build --ignore-keys
+bash scripts/check-zama-host-idl.sh
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
