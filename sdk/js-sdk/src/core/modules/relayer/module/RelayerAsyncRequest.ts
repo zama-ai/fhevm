@@ -37,7 +37,7 @@ import { sdkName, version } from '../../../_version.js';
 import { setAuth } from '../../../base/auth.js';
 import { InvalidPropertyError } from '../../../base/errors/InvalidPropertyError.js';
 import { assertNever } from '../../../base/errors/utils.js';
-import { formatFetchErrorMetaMessages } from '../../../base/fetch.js';
+import { formatFetchErrorMetaMessages, normalizeHeaders } from '../../../base/fetch.js';
 import { isNonEmptyString, safeJSONstringify } from '../../../base/string.js';
 import { isUint } from '../../../base/uint.js';
 import { RelayerAbortError } from '../../../errors/RelayerAbortError.js';
@@ -139,6 +139,7 @@ export class RelayerAsyncRequest {
   private readonly _url: string;
   private readonly _payload: Record<string, unknown>;
   private readonly _fhevmAuth: Auth | undefined;
+  private readonly _customHeaders: Record<string, string> | undefined;
   private _retryAfterTimeoutPromiseFuncReject?: ((reason?: unknown) => void) | undefined;
   private readonly _onProgress?:
     | ((
@@ -206,6 +207,7 @@ export class RelayerAsyncRequest {
     this._payload = params.payload;
     this._debug = params.options?.debug === true;
     this._fhevmAuth = params.options?.auth;
+    this._customHeaders = normalizeHeaders(params.options?.headers);
     this._onProgress = params.options?.onProgress as typeof this._onProgress;
     this._state = {
       aborted: false,
@@ -1197,9 +1199,10 @@ export class RelayerAsyncRequest {
       {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'ZAMA-SDK-VERSION': version,
-          'ZAMA-SDK-NAME': sdkName,
+          ...this._customHeaders,
+          'content-type': 'application/json',
+          'zama-sdk-version': version,
+          'zama-sdk-name': sdkName,
         },
         body: JSON.stringify(this._payload),
         ...(this._internalAbortSignal ? { signal: this._internalAbortSignal } : {}),
@@ -1269,8 +1272,9 @@ export class RelayerAsyncRequest {
       {
         method: 'GET',
         headers: {
-          'ZAMA-SDK-VERSION': version,
-          'ZAMA-SDK-NAME': sdkName,
+          ...this._customHeaders,
+          'zama-sdk-version': version,
+          'zama-sdk-name': sdkName,
         },
         ...(this._internalAbortSignal ? { signal: this._internalAbortSignal } : {}),
       } satisfies RequestInit,
