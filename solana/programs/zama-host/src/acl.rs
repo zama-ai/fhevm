@@ -80,12 +80,9 @@ pub(crate) fn assert_record(
     handle: [u8; 32],
     subject: Pubkey,
 ) -> Result<()> {
-    assert_nonce_key_matches_fields(
-        nonce_key,
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-    )?;
+    // `assert_canonical_acl_record` proves record.nonce_key == H(record fields),
+    // and the field-equality checks below prove the record fields equal the passed
+    // fields, so the passed nonce_key is validated transitively — no extra hash.
     assert_canonical_acl_record(record_info, record)?;
     require!(
         record.nonce_key == nonce_key,

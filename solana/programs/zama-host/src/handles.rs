@@ -12,6 +12,16 @@ pub(crate) const COMPUTED_HANDLE_MARKER: u8 = 0xff;
 pub(crate) const HANDLE_VERSION: u8 = 0;
 const POC_INPUT_PROOF_DOMAIN_SEPARATOR: &[u8] = b"zama-solana-poc-input-v0";
 
+/// Stamp the canonical computed-handle tail: marker byte, chain id, FHE type,
+/// and handle version. Shared by every computed-handle derivation.
+fn stamp_computed_handle_tail(result: &mut [u8; 32], chain_id: u64, fhe_type: u8) {
+    result[21..32].fill(0);
+    result[21] = COMPUTED_HANDLE_MARKER;
+    result[22..30].copy_from_slice(&chain_id.to_be_bytes());
+    result[30] = fhe_type;
+    result[31] = HANDLE_VERSION;
+}
+
 pub fn computed_binary_handle(
     op: FheBinaryOpCode,
     lhs: [u8; 32],
@@ -39,11 +49,7 @@ pub fn computed_binary_handle(
     ])
     .to_bytes();
 
-    result[21..32].fill(0);
-    result[21] = COMPUTED_HANDLE_MARKER;
-    result[22..30].copy_from_slice(&chain_id_bytes);
-    result[30] = fhe_type;
-    result[31] = HANDLE_VERSION;
+    stamp_computed_handle_tail(&mut result, chain_id, fhe_type);
     result
 }
 
@@ -100,11 +106,7 @@ pub fn computed_rand_handle(fhe_type: u8, seed: [u8; 16], chain_id: u64) -> [u8;
     ])
     .to_bytes();
 
-    result[21..32].fill(0);
-    result[21] = COMPUTED_HANDLE_MARKER;
-    result[22..30].copy_from_slice(&chain_id.to_be_bytes());
-    result[30] = fhe_type;
-    result[31] = HANDLE_VERSION;
+    stamp_computed_handle_tail(&mut result, chain_id, fhe_type);
     result
 }
 
@@ -130,11 +132,7 @@ pub fn computed_trivial_handle(
     ])
     .to_bytes();
 
-    result[21..32].fill(0);
-    result[21] = COMPUTED_HANDLE_MARKER;
-    result[22..30].copy_from_slice(&chain_id_bytes);
-    result[30] = fhe_type;
-    result[31] = HANDLE_VERSION;
+    stamp_computed_handle_tail(&mut result, chain_id, fhe_type);
     result
 }
 
