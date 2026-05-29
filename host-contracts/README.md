@@ -113,8 +113,8 @@ Use the role-level tasks for normal deployments.
 |---|---|---:|---|
 | `task:deployCanonicalHost` | canonical | yes | Deploys the complete canonical host stack. |
 | `task:deploySecondaryHost` | secondary | yes | Deploys a secondary host without `KMSGeneration`. |
-| `task:deployHostSkeleton` | shared | no | Deploys only the shared host skeleton: proxy addresses, PauserSet, ACL, FHEVMExecutor, InputVerifier, and HCULimit. |
-| `task:deployHostProxyAddresses` | shared | no | Deploys empty UUPS proxies and writes address artifacts. Use `--skip-kms-generation` only when composing a secondary host. |
+| `task:deployHostSkeleton` | shared | no | Deploys only the shared host skeleton: empty UUPS proxies, PauserSet, ACL, FHEVMExecutor, InputVerifier, and HCULimit. |
+| `task:deployEmptyUUPSProxies` | shared | no | Deploys empty UUPS proxies and writes address artifacts. Use `--skip-kms-generation` only when composing a secondary host. |
 | `task:deployProtocolConfigCanonical` | canonical | no | Upgrades the local `ProtocolConfig` proxy and seeds the first KMS context from env vars. |
 | `task:deployProtocolConfigSecondary` | secondary | no | Upgrades the local `ProtocolConfig` proxy from a pinned canonical snapshot. |
 | `task:deployKMSVerifier` | both | no | Upgrades the local `KMSVerifier` proxy. Requires local `ProtocolConfig` to be ready first. |
@@ -155,11 +155,11 @@ npx hardhat task:deploySecondaryHost \
   --canonical-protocol-config-address <CANONICAL_PROTOCOL_CONFIG_ADDRESS>
 ```
 
-This deploys the shared host skeleton with `--skip-kms-generation`, mirrors the
-canonical `ProtocolConfig` snapshot via `initializeFromMigration`, and deploys
-`KMSVerifier`. Secondary host discovery must not contain
-`KMS_GENERATION_CONTRACT_ADDRESS`. Later canonical rotations (`defineNewKmsContext`,
-`destroyKmsContext`) must be mirrored by the secondary ACL owner.
+This deploys the shared host skeleton without `KMSGeneration`, mirrors the canonical
+`ProtocolConfig` snapshot via `initializeFromMigration`, and deploys `KMSVerifier`.
+Secondary host discovery must not contain `KMS_GENERATION_CONTRACT_ADDRESS`. Later
+canonical rotations (`defineNewKmsContext`, `destroyKmsContext`) must be mirrored by the
+secondary ACL owner.
 
 ### Ownership hand-off
 

@@ -129,11 +129,11 @@ task('task:deployHostSkeleton', 'Deploys the shared host skeleton only; not a fu
       await hre.run('clean');
     }
 
-    await hre.run('task:deployHostProxyAddresses', { skipKmsGeneration });
+    await hre.run('task:deployEmptyUUPSProxies', { skipKmsGeneration });
     await hre.run('compile:specific', { contract: 'contracts/immutable' });
     await hre.run('task:deployPauserSet');
 
-    // The proxy-address task may have updated the contracts' addresses in `addresses/*.sol`.
+    // The empty-proxy task may have updated the contracts' addresses in `addresses/*.sol`.
     // Thus, we must re-compile the contracts with these new addresses, otherwise the old ones will be
     // used.
     await hre.run('compile:specific', { contract: 'contracts' });
@@ -176,7 +176,7 @@ export async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: Ha
   return UUPSEmptyAddress;
 }
 
-task('task:deployHostProxyAddresses', 'Deploys empty host proxies and writes their address artifacts.')
+task('task:deployEmptyUUPSProxies', 'Deploys empty host proxies and writes their address artifacts.')
   // Secondary hosts skip KMSGeneration so their discovery output cannot advertise it.
   .addFlag('skipKmsGeneration', 'Do not deploy the canonical-only KMSGeneration proxy.')
   .setAction(async function ({ skipKmsGeneration }: TaskArguments, { ethers, upgrades, run }) {
@@ -571,7 +571,7 @@ task(
 ////////////////////////////////////////////////////////////////////////////////
 
 // Canonical-host only. This upgrades and initializes the KMSGeneration proxy created by
-// task:deployHostProxyAddresses when composing a canonical host.
+// task:deployEmptyUUPSProxies when composing a canonical host.
 task('task:initializeKMSGeneration', 'Upgrades the canonical-only KMSGeneration proxy and initializes it.').setAction(
   async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
     const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
