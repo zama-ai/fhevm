@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT chain_id AS \"chain_id!\", block_number AS \"block_number!\",\n               state_hash AS \"state_hash!\"\n          FROM state_hash_staging\n         WHERE s3_uploaded_at IS NULL\n         ORDER BY chain_id, block_number\n         LIMIT $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "chain_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "block_number!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "state_hash!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "54edd8637c71ebfa42cfe9696a639d27052b2c68d0be55535db02bb63aeb5262"
+}

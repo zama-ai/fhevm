@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE state_hash_staging SET s3_uploaded_at = NOW()\n                      WHERE chain_id = $1 AND block_number = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a88fd5935ac36747869153df88c3106690c7098093c335176015e1898382a0e7"
+}

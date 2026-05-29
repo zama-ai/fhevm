@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH bc AS (\n                SELECT output_handle, tenant_id, is_completed\n                  FROM computations\n                 WHERE host_chain_id = $1 AND block_number = $2\n            ),\n            v AS (SELECT 1 FROM bc HAVING bool_and(is_completed))\n            SELECT encode(\n                sha256(string_agg(ct.ciphertext, ''::bytea\n                                  ORDER BY ct.handle, ct.ciphertext_version)),\n                'hex'\n            ) AS state_hash\n              FROM v CROSS JOIN bc\n              JOIN ONLY ciphertexts ct\n                ON ct.tenant_id = bc.tenant_id AND ct.handle = bc.output_handle\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state_hash",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d2e97c3a25acf716d3a21cfa434e28f28ef1a0052f39b17f3542dbbf28c012ef"
+}

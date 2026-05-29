@@ -65,7 +65,8 @@ async fn compute_and_insert_bcs(pool: &Pool<Postgres>, batch_limit: i64) -> anyh
             r#"
             WITH bc AS (
                 SELECT output_handle, tenant_id, is_completed
-                  FROM computations WHERE block_number = $1
+                  FROM computations
+                 WHERE host_chain_id = $1 AND block_number = $2
             ),
             v AS (SELECT 1 FROM bc HAVING bool_and(is_completed))
             SELECT encode(
@@ -77,6 +78,7 @@ async fn compute_and_insert_bcs(pool: &Pool<Postgres>, batch_limit: i64) -> anyh
               JOIN ONLY ciphertexts ct
                 ON ct.tenant_id = bc.tenant_id AND ct.handle = bc.output_handle
             "#,
+            chain_id,
             block_number
         )
         .fetch_optional(pool)
@@ -100,22 +102,25 @@ async fn compute_and_insert_bcs(pool: &Pool<Postgres>, batch_limit: i64) -> anyh
     Ok(())
 }
 
-/// GCS path: compute hashes from `ONLY ciphertexts_staging`, insert into
-/// `state_hash_staging`, return inserted rows for S3 upload.
+/// GCS path: compute hashes from `gcs.ciphertexts`, insert into `gcs.state_hash`
+/// with `s3_uploaded_at = NULL`. Upload is done by `upload_pending_state_hashes`
+/// so failed PUTs retry from durable state. Schema is qualified explicitly
+/// because the consensus-detector connects with the default `public` search_path
+/// and operates on both stacks from a single pool.
 async fn compute_and_insert_gcs(
     pool: &Pool<Postgres>,
     start: i64,
     end: i64,
     batch_limit: i64,
-) -> anyhow::Result<Vec<(i64, i64, String)>> {
+) -> anyhow::Result<()> {
     let pending = sqlx::query!(
         r#"
         SELECT c.host_chain_id AS "host_chain_id!", c.block_number AS "block_number!"
-          FROM computations c
+          FROM gcs.computations c
          WHERE c.is_completed = true
            AND c.block_number BETWEEN $2 AND $3
            AND NOT EXISTS (
-               SELECT 1 FROM state_hash_staging sh
+               SELECT 1 FROM gcs.state_hash sh
                 WHERE sh.chain_id = c.host_chain_id AND sh.block_number = c.block_number)
          GROUP BY c.host_chain_id, c.block_number
          ORDER BY c.block_number
@@ -128,7 +133,6 @@ async fn compute_and_insert_gcs(
     .fetch_all(pool)
     .await?;
 
-    let mut inserted = Vec::new();
     for row in pending {
         let chain_id = row.host_chain_id;
         let block_number = row.block_number;
@@ -136,7 +140,8 @@ async fn compute_and_insert_gcs(
             r#"
             WITH bc AS (
                 SELECT output_handle, tenant_id, is_completed
-                  FROM computations WHERE block_number = $1
+                  FROM gcs.computations
+                 WHERE host_chain_id = $1 AND block_number = $2
             ),
             v AS (SELECT 1 FROM bc HAVING bool_and(is_completed))
             SELECT encode(
@@ -145,9 +150,10 @@ async fn compute_and_insert_gcs(
                 'hex'
             ) AS state_hash
               FROM v CROSS JOIN bc
-              JOIN ONLY ciphertexts_staging ct
+              JOIN gcs.ciphertexts ct
                 ON ct.tenant_id = bc.tenant_id AND ct.handle = bc.output_handle
             "#,
+            chain_id,
             block_number
         )
         .fetch_optional(pool)
@@ -155,7 +161,7 @@ async fn compute_and_insert_gcs(
         .and_then(|r| r.state_hash);
         let Some(hash) = hashed else { continue };
         let affected = sqlx::query!(
-            "INSERT INTO state_hash_staging (chain_id, block_number, state_hash)
+            "INSERT INTO gcs.state_hash (chain_id, block_number, state_hash)
              VALUES ($1, $2, $3)
              ON CONFLICT (chain_id, block_number) DO NOTHING",
             chain_id,
@@ -166,11 +172,65 @@ async fn compute_and_insert_gcs(
         .await?
         .rows_affected();
         if affected > 0 {
-            info!(chain_id, block_number, "state_hash_staging inserted");
-            inserted.push((chain_id, block_number, hash));
+            info!(chain_id, block_number, "gcs.state_hash inserted");
         }
     }
-    Ok(inserted)
+    Ok(())
+}
+
+/// Uploads `gcs.state_hash` rows with `s3_uploaded_at IS NULL`.
+/// Stamps `NOW()` on success; failures stay NULL and retry next sweep.
+async fn upload_pending_state_hashes(
+    pool: &Pool<Postgres>,
+    s3: &aws_sdk_s3::Client,
+    my_bucket: &str,
+    batch_limit: i64,
+) -> anyhow::Result<()> {
+    let pending = sqlx::query!(
+        r#"
+        SELECT chain_id AS "chain_id!", block_number AS "block_number!",
+               state_hash AS "state_hash!"
+          FROM gcs.state_hash
+         WHERE s3_uploaded_at IS NULL
+         ORDER BY chain_id, block_number
+         LIMIT $1
+        "#,
+        batch_limit,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for row in pending {
+        let chain_id = row.chain_id;
+        let block_number = row.block_number;
+        let bytes = hex::decode(&row.state_hash)
+            .with_context(|| format!("decode state_hash for ({chain_id}, {block_number})"))?;
+        let key = state_hash_key(chain_id, block_number);
+        match s3
+            .put_object()
+            .bucket(my_bucket)
+            .key(&key)
+            .body(ByteStream::from(bytes))
+            .send()
+            .await
+        {
+            Ok(_) => {
+                sqlx::query!(
+                    "UPDATE gcs.state_hash SET s3_uploaded_at = NOW()
+                      WHERE chain_id = $1 AND block_number = $2",
+                    chain_id,
+                    block_number,
+                )
+                .execute(pool)
+                .await?;
+                info!(chain_id, block_number, bucket = my_bucket, "state_hash uploaded");
+            }
+            Err(e) => {
+                warn!(chain_id, block_number, error = %e, "state_hash upload failed; will retry");
+            }
+        }
+    }
+    Ok(())
 }
 
 async fn sweep(
@@ -182,27 +242,14 @@ async fn sweep(
     // BCS path: always runs.
     compute_and_insert_bcs(pool, batch_limit).await?;
 
-    // GCS path: only during an active upgrade window with a configured bucket.
-    let (Some(s3), Some((start, end))) = (s3, active_window(pool).await?) else {
-        return Ok(());
-    };
-    let inserted = compute_and_insert_gcs(pool, start, end, batch_limit).await?;
-    for (chain_id, block_number, hex_hash) in inserted {
-        let bytes = hex::decode(&hex_hash)
-            .with_context(|| format!("decode state_hash for {block_number}"))?;
-        let key = state_hash_key(chain_id, block_number);
-        if let Err(e) = s3
-            .put_object()
-            .bucket(my_bucket)
-            .key(&key)
-            .body(ByteStream::from(bytes))
-            .send()
-            .await
-        {
-            warn!(chain_id, block_number, error = %e, "state_hash upload failed");
-        } else {
-            info!(chain_id, block_number, bucket = my_bucket, "state_hash uploaded");
-        }
+    // GCS path: only during an active upgrade window.
+    if let Some((start, end)) = active_window(pool).await? {
+        compute_and_insert_gcs(pool, start, end, batch_limit).await?;
+    }
+
+    // S3 upload: drains pending rows; runs every sweep so failed PUTs retry.
+    if let Some(s3) = s3 {
+        upload_pending_state_hashes(pool, s3, my_bucket, batch_limit).await?;
     }
     Ok(())
 }
