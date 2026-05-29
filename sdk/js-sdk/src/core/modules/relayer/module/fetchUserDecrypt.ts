@@ -2,8 +2,9 @@ import type { KmsSigncryptedShare } from '../../../types/kms-p.js';
 import type { FetchUserDecryptPayload } from '../../../types/relayer-p.js';
 import type { FetchUserDecryptResult } from '../../../types/relayer.js';
 import type { FetchUserDecryptParameters, FetchUserDecryptReturnType, RelayerClientWithRuntime } from '../types.js';
-import { remove0x, removeSuffix } from '../../../base/string.js';
+import { remove0x } from '../../../base/string.js';
 import { RelayerAsyncRequest } from './RelayerAsyncRequest.js';
+import { buildRelayerUrlString, validateRelayerBaseUrl } from './relayerUrl.js';
 
 //////////////////////////////////////////////////////////////////////////////
 // fetchUserDecrypt
@@ -42,9 +43,13 @@ export async function fetchUserDecrypt(
     publicKey: remove0x(payload.kmsDecryptEip712Message.publicKey),
   };
 
+  const hasAuth: boolean = options?.auth !== undefined;
+  const relayerBaseUrl: URL = validateRelayerBaseUrl(relayerClient.chain.fhevm.relayerUrl, hasAuth);
+  const url = buildRelayerUrlString(relayerBaseUrl, 'v2/user-decrypt');
+
   const request = new RelayerAsyncRequest({
     relayerOperation: 'USER_DECRYPT',
-    url: `${removeSuffix(relayerClient.chain.fhevm.relayerUrl, '/')}/v2/user-decrypt`,
+    url,
     payload: relayerPayload,
     options,
   });
