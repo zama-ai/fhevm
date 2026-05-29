@@ -30,10 +30,7 @@ pub fn send_with_meta(
     payer: &Keypair,
     ix: Instruction,
 ) -> (litesvm::types::TransactionMetadata, Vec<Pubkey>) {
-    let message =
-        Message::new_with_blockhash(&[ix], Some(&payer.pubkey()), &svm.latest_blockhash());
-    let account_keys = message.account_keys.clone();
-    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(message), &[payer]).unwrap();
+    let (tx, account_keys) = build_legacy_tx(svm, &payer.pubkey(), &[ix], &[payer]);
     (svm.send_transaction(tx).unwrap(), account_keys)
 }
 
@@ -46,13 +43,9 @@ pub fn send_with_meta_and_signature(
     Vec<Pubkey>,
     solana_sdk::signature::Signature,
 ) {
-    let message =
-        Message::new_with_blockhash(&[ix], Some(&payer.pubkey()), &svm.latest_blockhash());
-    let account_keys = message.account_keys.clone();
-    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(message), &[payer]).unwrap();
+    let (tx, account_keys) = build_legacy_tx(svm, &payer.pubkey(), &[ix], &[payer]);
     let signature = tx.signatures[0];
-    let meta = svm.send_transaction(tx).unwrap();
-    (meta, account_keys, signature)
+    (svm.send_transaction(tx).unwrap(), account_keys, signature)
 }
 
 pub fn try_send(
@@ -68,10 +61,7 @@ pub fn try_send_with_meta(
     payer: &Keypair,
     ix: Instruction,
 ) -> (litesvm::types::TransactionResult, Vec<Pubkey>) {
-    let message =
-        Message::new_with_blockhash(&[ix], Some(&payer.pubkey()), &svm.latest_blockhash());
-    let account_keys = message.account_keys.clone();
-    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(message), &[payer]).unwrap();
+    let (tx, account_keys) = build_legacy_tx(svm, &payer.pubkey(), &[ix], &[payer]);
     (svm.send_transaction(tx), account_keys)
 }
 
@@ -81,8 +71,7 @@ pub fn send_with_signers(
     ix: Instruction,
     signers: &[&Keypair],
 ) -> litesvm::types::TransactionResult {
-    let message = Message::new_with_blockhash(&[ix], Some(payer), &svm.latest_blockhash());
-    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(message), signers).unwrap();
+    let (tx, _) = build_legacy_tx(svm, payer, &[ix], signers);
     svm.send_transaction(tx)
 }
 
@@ -92,7 +81,19 @@ pub fn send_many_with_signers(
     ixs: Vec<Instruction>,
     signers: &[&Keypair],
 ) -> litesvm::types::TransactionResult {
-    let message = Message::new_with_blockhash(&ixs, Some(payer), &svm.latest_blockhash());
-    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(message), signers).unwrap();
+    let (tx, _) = build_legacy_tx(svm, payer, &ixs, signers);
     svm.send_transaction(tx)
+}
+
+/// Build a signed legacy transaction and capture its account keys.
+fn build_legacy_tx(
+    svm: &LiteSVM,
+    payer: &Pubkey,
+    ixs: &[Instruction],
+    signers: &[&Keypair],
+) -> (VersionedTransaction, Vec<Pubkey>) {
+    let message = Message::new_with_blockhash(ixs, Some(payer), &svm.latest_blockhash());
+    let account_keys = message.account_keys.clone();
+    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(message), signers).unwrap();
+    (tx, account_keys)
 }

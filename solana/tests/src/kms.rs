@@ -40,21 +40,7 @@ pub fn signed_user_decrypt_request(
     signer: &Keypair,
     handles: Vec<UserDecryptHandleEntry>,
 ) -> UserDecryptRequest {
-    let authorization = UserDecryptAuthorizationPayload {
-        user: signer.pubkey(),
-        reencryption_public_key: [7; 32],
-        allowed_acl_domain_keys: vec![fixture.mint.pubkey()],
-        start_timestamp: 1,
-        duration_seconds: 300,
-        extra_data: b"zama-solana-poc".to_vec(),
-    };
-    let signature = signer.sign_message(&authorization_payload_bytes(&authorization));
-
-    UserDecryptRequest {
-        authorization,
-        signature,
-        handles,
-    }
+    signed_user_decrypt_request_with_domains(signer, vec![fixture.mint.pubkey()], handles)
 }
 
 pub fn signed_user_decrypt_request_with_domains(
@@ -128,6 +114,29 @@ pub fn authorization_payload_bytes(authorization: &UserDecryptAuthorizationPaylo
     bytes
 }
 
+/// Load a ZamaHost-owned ACL record and verify it is the canonical PDA for its
+/// own fields. Returns the deserialized record, or `None` if missing, foreign,
+/// undeserializable, or non-canonical.
+fn load_canonical_acl_record(
+    svm: &litesvm::LiteSVM,
+    acl_record: Pubkey,
+) -> Option<host::AclRecord> {
+    let raw_account = svm.get_account(&acl_record)?;
+    if raw_account.owner != host::id() {
+        return None;
+    }
+    let mut data = raw_account.data.as_slice();
+    let record = host::AclRecord::try_deserialize(&mut data).ok()?;
+    let expected_nonce_key = token::nonce_key(
+        record.acl_domain_key,
+        record.app_account,
+        record.encrypted_value_label,
+    );
+    let expected_acl_record =
+        acl_record_address(host::id(), expected_nonce_key, record.nonce_sequence);
+    (record.nonce_key == expected_nonce_key && acl_record == expected_acl_record).then_some(record)
+}
+
 pub fn kms_like_user_decrypt_check(svm: &litesvm::LiteSVM, request: &UserDecryptRequest) -> bool {
     let authorization = &request.authorization;
     let signed_payload = authorization_payload_bytes(authorization);
@@ -147,32 +156,13 @@ pub fn kms_like_user_decrypt_check(svm: &litesvm::LiteSVM, request: &UserDecrypt
         if authorization.user != entry.owner {
             return false;
         }
-
-        let Some(raw_account) = svm.get_account(&entry.acl_record) else {
+        let Some(record) = load_canonical_acl_record(svm, entry.acl_record) else {
             return false;
         };
-        if raw_account.owner != host::id() {
-            return false;
-        }
-
-        let mut data = raw_account.data.as_slice();
-        let Ok(record) = host::AclRecord::try_deserialize(&mut data) else {
-            return false;
-        };
-        let expected_nonce_key = token::nonce_key(
-            record.acl_domain_key,
-            record.app_account,
-            record.encrypted_value_label,
-        );
-        let expected_acl_record =
-            acl_record_address(host::id(), expected_nonce_key, record.nonce_sequence);
-
         authorization
             .allowed_acl_domain_keys
             .contains(&record.acl_domain_key)
             && record.handle == entry.handle
-            && record.nonce_key == expected_nonce_key
-            && entry.acl_record == expected_acl_record
             && record_subjects(&record).contains(&authorization.user)
     })
 }
@@ -192,28 +182,9 @@ pub fn kms_like_public_decrypt_check(
     }
 
     entries.iter().all(|entry| {
-        let Some(raw_account) = svm.get_account(&entry.acl_record) else {
+        let Some(record) = load_canonical_acl_record(svm, entry.acl_record) else {
             return false;
         };
-        if raw_account.owner != host::id() {
-            return false;
-        }
-
-        let mut data = raw_account.data.as_slice();
-        let Ok(record) = host::AclRecord::try_deserialize(&mut data) else {
-            return false;
-        };
-        let expected_nonce_key = token::nonce_key(
-            record.acl_domain_key,
-            record.app_account,
-            record.encrypted_value_label,
-        );
-        let expected_acl_record =
-            acl_record_address(host::id(), expected_nonce_key, record.nonce_sequence);
-
-        record.handle == entry.handle
-            && record.nonce_key == expected_nonce_key
-            && entry.acl_record == expected_acl_record
-            && record.public_decrypt
+        record.handle == entry.handle && record.public_decrypt
     })
 }

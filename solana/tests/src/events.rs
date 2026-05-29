@@ -35,89 +35,36 @@ pub fn collect_zama_host_events(
     collect_cpi_events(meta, account_keys, program_id, decode_anchor_cpi_event)
 }
 
-pub fn binary_op_events(
-    meta: &TransactionMetadata,
-    account_keys: &[Pubkey],
-    program_id: Pubkey,
-) -> Vec<FheBinaryOpEvent> {
-    collect_zama_host_events(meta, account_keys, program_id)
-        .into_iter()
-        .filter_map(|event| match event {
-            ZamaHostEvent::FheBinaryOp(event) => Some(event),
-            _ => None,
-        })
-        .collect()
+/// Generates a `<name>(meta, account_keys, program_id) -> Vec<$ty>` that returns
+/// the ZamaHost CPI events of one variant. The fn names stay greppable.
+macro_rules! zama_host_event_filter {
+    ($name:ident, $variant:ident, $ty:ty) => {
+        pub fn $name(
+            meta: &TransactionMetadata,
+            account_keys: &[Pubkey],
+            program_id: Pubkey,
+        ) -> Vec<$ty> {
+            collect_zama_host_events(meta, account_keys, program_id)
+                .into_iter()
+                .filter_map(|event| match event {
+                    ZamaHostEvent::$variant(event) => Some(event),
+                    _ => None,
+                })
+                .collect()
+        }
+    };
 }
 
-pub fn trivial_encrypt_events(
-    meta: &TransactionMetadata,
-    account_keys: &[Pubkey],
-    program_id: Pubkey,
-) -> Vec<TrivialEncryptEvent> {
-    collect_zama_host_events(meta, account_keys, program_id)
-        .into_iter()
-        .filter_map(|event| match event {
-            ZamaHostEvent::TrivialEncrypt(event) => Some(event),
-            _ => None,
-        })
-        .collect()
-}
-
-pub fn fhe_rand_events(
-    meta: &TransactionMetadata,
-    account_keys: &[Pubkey],
-    program_id: Pubkey,
-) -> Vec<FheRandEvent> {
-    collect_zama_host_events(meta, account_keys, program_id)
-        .into_iter()
-        .filter_map(|event| match event {
-            ZamaHostEvent::FheRand(event) => Some(event),
-            _ => None,
-        })
-        .collect()
-}
-
-pub fn acl_allowed_events(
-    meta: &TransactionMetadata,
-    account_keys: &[Pubkey],
-    program_id: Pubkey,
-) -> Vec<AclAllowedEvent> {
-    collect_zama_host_events(meta, account_keys, program_id)
-        .into_iter()
-        .filter_map(|event| match event {
-            ZamaHostEvent::AclAllowed(event) => Some(event),
-            _ => None,
-        })
-        .collect()
-}
-
-pub fn acl_public_decrypt_allowed_events(
-    meta: &TransactionMetadata,
-    account_keys: &[Pubkey],
-    program_id: Pubkey,
-) -> Vec<AclPublicDecryptAllowedEvent> {
-    collect_zama_host_events(meta, account_keys, program_id)
-        .into_iter()
-        .filter_map(|event| match event {
-            ZamaHostEvent::AclPublicDecryptAllowed(event) => Some(event),
-            _ => None,
-        })
-        .collect()
-}
-
-pub fn input_verified_events(
-    meta: &TransactionMetadata,
-    account_keys: &[Pubkey],
-    program_id: Pubkey,
-) -> Vec<InputVerifiedEvent> {
-    collect_zama_host_events(meta, account_keys, program_id)
-        .into_iter()
-        .filter_map(|event| match event {
-            ZamaHostEvent::InputVerified(event) => Some(event),
-            _ => None,
-        })
-        .collect()
-}
+zama_host_event_filter!(binary_op_events, FheBinaryOp, FheBinaryOpEvent);
+zama_host_event_filter!(trivial_encrypt_events, TrivialEncrypt, TrivialEncryptEvent);
+zama_host_event_filter!(fhe_rand_events, FheRand, FheRandEvent);
+zama_host_event_filter!(acl_allowed_events, AclAllowed, AclAllowedEvent);
+zama_host_event_filter!(
+    acl_public_decrypt_allowed_events,
+    AclPublicDecryptAllowed,
+    AclPublicDecryptAllowedEvent
+);
+zama_host_event_filter!(input_verified_events, InputVerified, InputVerifiedEvent);
 
 pub fn count_tfhe_host_events(events: &[ZamaHostEvent]) -> usize {
     events
