@@ -1,6 +1,7 @@
 import { task, types } from 'hardhat/config';
 import type { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 
+import { formatError } from './utils/formatError';
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 
 task('task:verifyACL')
@@ -200,18 +201,49 @@ type HostVerifyTaskName =
   | (typeof SHARED_HOST_VERIFY_TASKS)[number][0]
   | (typeof CANONICAL_ONLY_VERIFY_TASKS)[number][0];
 
+type HostVerifyResult = {
+  label: string;
+  ok: boolean;
+  error?: string;
+};
+
+// Verification is best-effort: a re-run legitimately hits "already verified", so a single failure
+// must not abort the rest of the batch. We capture each outcome instead of swallowing it, so the
+// end-of-run summary can show the operator exactly which contracts failed and the raw error.
 async function runVerifyTask(
   hre: HardhatRuntimeEnvironment,
   taskName: HostVerifyTaskName,
   label: string,
   args: TaskArguments,
-): Promise<void> {
+): Promise<HostVerifyResult> {
   try {
     console.log(`Verify ${label} contract:`);
     await hre.run(taskName, args);
+    return { label, ok: true };
   } catch (error) {
-    console.error('An error occurred:', error);
+    const message = formatError(error);
+    console.error(`Verification of ${label} failed: ${message}`);
+    return { label, ok: false, error: message };
   }
+}
+
+// Prints a per-contract pass/fail summary so the operator can triage at a glance. The raw error is
+// repeated for each failure to settle why it failed: "already verified" is benign, explorer/network/
+// rate-limit errors are usually transient and safe to retry, anything else warrants investigation.
+function printHostVerifySummary(scope: string, results: HostVerifyResult[]): void {
+  const failed = results.filter((result) => !result.ok);
+  console.log(`\n${scope} contract verification summary (${results.length - failed.length}/${results.length} ok):`);
+  for (const result of results) {
+    console.log(result.ok ? `  [ok]     ${result.label}` : `  [FAILED] ${result.label}: ${result.error}`);
+  }
+  if (failed.length === 0) {
+    console.log('All contracts verified successfully.');
+    return;
+  }
+  console.log(
+    `${failed.length} verification(s) failed: ${failed.map((result) => result.label).join(', ')}. ` +
+      `Review the errors above — "already verified" is safe to ignore; transient explorer/network errors can be retried.`,
+  );
 }
 
 task('task:verifySecondaryHost')
@@ -223,10 +255,11 @@ task('task:verifySecondaryHost')
   )
   .setAction(async function ({ useInternalProxyAddress }, hre) {
     const args = { useInternalProxyAddress };
+    const results: HostVerifyResult[] = [];
     for (const [taskName, label] of SHARED_HOST_VERIFY_TASKS) {
-      await runVerifyTask(hre, taskName, label, args);
+      results.push(await runVerifyTask(hre, taskName, label, args));
     }
-    console.log('Secondary host contract verification done!');
+    printHostVerifySummary('Secondary host', results);
   });
 
 task('task:verifyCanonicalHost')
@@ -238,8 +271,9 @@ task('task:verifyCanonicalHost')
   )
   .setAction(async function ({ useInternalProxyAddress }, hre) {
     const args = { useInternalProxyAddress };
+    const results: HostVerifyResult[] = [];
     for (const [taskName, label] of [...SHARED_HOST_VERIFY_TASKS, ...CANONICAL_ONLY_VERIFY_TASKS]) {
-      await runVerifyTask(hre, taskName, label, args);
+      results.push(await runVerifyTask(hre, taskName, label, args));
     }
-    console.log('Canonical host contract verification done!');
+    printHostVerifySummary('Canonical host', results);
   });
