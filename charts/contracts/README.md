@@ -59,6 +59,10 @@ ArgoCD considerations:
   `scJobs` keeps the historical Job in the cluster. Note: this only protects
   against source-driven deletion. A manual `kubectl delete job …` will still
   be re-applied by the next sync.
+- Jobs are also rendered with `argocd.argoproj.io/sync-wave: <index>` derived
+  from their position in `scJobs`. ArgoCD applies each wave and waits for the
+  Job to Succeed before starting the next, giving sequential execution within
+  a sync.
 
 ## Debugging
 

@@ -1,6 +1,6 @@
 {{- $jobs := fromYamlArray (include "scAllJobs" .) -}}
 {{- if gt (len $jobs) 0 -}}
-{{- range $job := $jobs }}
+{{- range $index, $job := $jobs }}
 {{- $jobName := include "scJobResourceName" (dict "ctx" $ "job" $job) }}
 {{- $scriptKey := include "scJobScriptKey" (dict "job" $job) }}
 ---
@@ -13,9 +13,11 @@ metadata:
     fhevm.zama.ai/job-kind: {{ $job.kind }}
     fhevm.zama.ai/contracts-version: {{ include "scSlug" $job.image.tag }}
   annotations:
-    # Keep historical Jobs alive in the cluster even if their entry is later
-    # removed from scJobs. See chart README for the full ArgoCD story.
+    # Keep completed Jobs alive even if their entry is later removed from scJobs.
     argocd.argoproj.io/sync-options: Prune=false
+    # ArgoCD applies Jobs in wave order, waiting for each to become
+    # Healthy (Job Succeeded) before moving to the next.
+    argocd.argoproj.io/sync-wave: {{ $index | quote }}
   name: {{ $jobName }}
 spec:
   backoffLimit: 0
