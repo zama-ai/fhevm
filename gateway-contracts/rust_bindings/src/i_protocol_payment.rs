@@ -296,7 +296,6 @@ error SenderNotDecryptionContract(address sender);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -379,7 +378,6 @@ error SenderNotInputVerificationContract(address sender);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -915,7 +913,6 @@ function collectInputVerificationFee(address txSender) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -949,7 +946,6 @@ function collectInputVerificationFee(address txSender) external;
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -1065,7 +1061,6 @@ function collectPublicDecryptionFee(address txSender) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -1099,7 +1094,6 @@ function collectPublicDecryptionFee(address txSender) external;
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -1215,7 +1209,6 @@ function collectUserDecryptionFee(address txSender) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -1249,7 +1242,6 @@ function collectUserDecryptionFee(address txSender) external;
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -1367,7 +1359,6 @@ function getInputVerificationPrice() external view returns (uint256);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -1401,7 +1392,6 @@ function getInputVerificationPrice() external view returns (uint256);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -1518,7 +1508,6 @@ function getPublicDecryptionPrice() external view returns (uint256);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -1552,7 +1541,6 @@ function getPublicDecryptionPrice() external view returns (uint256);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -1669,7 +1657,6 @@ function getUserDecryptionPrice() external view returns (uint256);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -1703,7 +1690,6 @@ function getUserDecryptionPrice() external view returns (uint256);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -1820,7 +1806,6 @@ function getVersion() external pure returns (string memory);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -1852,7 +1837,6 @@ function getVersion() external pure returns (string memory);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::String,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
@@ -1963,7 +1947,6 @@ function setInputVerificationPrice(uint256 price) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -1999,7 +1982,6 @@ function setInputVerificationPrice(uint256 price) external;
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -2115,7 +2097,6 @@ function setPublicDecryptionPrice(uint256 price) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -2151,7 +2132,6 @@ function setPublicDecryptionPrice(uint256 price) external;
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -2267,7 +2247,6 @@ function setUserDecryptionPrice(uint256 price) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -2303,7 +2282,6 @@ function setUserDecryptionPrice(uint256 price) external;
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -2394,7 +2372,6 @@ function setUserDecryptionPrice(uint256 price) external;
         }
     };
     ///Container for all the [`IProtocolPayment`](self) function calls.
-    #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive()]
     pub enum IProtocolPaymentCalls {
@@ -2419,6 +2396,7 @@ function setUserDecryptionPrice(uint256 price) external;
         #[allow(missing_docs)]
         setUserDecryptionPrice(setUserDecryptionPriceCall),
     }
+    #[automatically_derived]
     impl IProtocolPaymentCalls {
         /// All the selectors of this enum.
         ///
@@ -2438,52 +2416,6 @@ function setUserDecryptionPrice(uint256 price) external;
             [152u8, 138u8, 45u8, 45u8],
             [211u8, 36u8, 8u8, 242u8],
         ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(getVersion),
-            ::core::stringify!(getInputVerificationPrice),
-            ::core::stringify!(setUserDecryptionPrice),
-            ::core::stringify!(getPublicDecryptionPrice),
-            ::core::stringify!(setInputVerificationPrice),
-            ::core::stringify!(collectInputVerificationFee),
-            ::core::stringify!(collectPublicDecryptionFee),
-            ::core::stringify!(setPublicDecryptionPrice),
-            ::core::stringify!(collectUserDecryptionFee),
-            ::core::stringify!(getUserDecryptionPrice),
-        ];
-        /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] = &[
-            <getVersionCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <getInputVerificationPriceCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <setUserDecryptionPriceCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <getPublicDecryptionPriceCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <setInputVerificationPriceCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <collectInputVerificationFeeCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <collectPublicDecryptionFeeCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <setPublicDecryptionPriceCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <collectUserDecryptionFeeCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <getUserDecryptionPriceCall as alloy_sol_types::SolCall>::SIGNATURE,
-        ];
-        /// Returns the signature for the given selector, if known.
-        #[inline]
-        pub fn signature_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
-            match Self::SELECTORS.binary_search(&selector) {
-                ::core::result::Result::Ok(idx) => {
-                    ::core::option::Option::Some(Self::SIGNATURES[idx])
-                }
-                ::core::result::Result::Err(_) => ::core::option::Option::None,
-            }
-        }
-        /// Returns the enum variant name for the given selector, if known.
-        #[inline]
-        pub fn name_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
-            let sig = Self::signature_by_selector(selector)?;
-            sig.split_once('(').map(|(name, _)| name)
-        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for IProtocolPaymentCalls {
@@ -2913,7 +2845,6 @@ function setUserDecryptionPrice(uint256 price) external;
         }
     }
     ///Container for all the [`IProtocolPayment`](self) custom errors.
-    #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IProtocolPaymentErrors {
@@ -2922,6 +2853,7 @@ function setUserDecryptionPrice(uint256 price) external;
         #[allow(missing_docs)]
         SenderNotInputVerificationContract(SenderNotInputVerificationContract),
     }
+    #[automatically_derived]
     impl IProtocolPaymentErrors {
         /// All the selectors of this enum.
         ///
@@ -2933,36 +2865,6 @@ function setUserDecryptionPrice(uint256 price) external;
             [33u8, 198u8, 17u8, 95u8],
             [125u8, 251u8, 146u8, 184u8],
         ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(SenderNotDecryptionContract),
-            ::core::stringify!(SenderNotInputVerificationContract),
-        ];
-        /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] = &[
-            <SenderNotDecryptionContract as alloy_sol_types::SolError>::SIGNATURE,
-            <SenderNotInputVerificationContract as alloy_sol_types::SolError>::SIGNATURE,
-        ];
-        /// Returns the signature for the given selector, if known.
-        #[inline]
-        pub fn signature_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
-            match Self::SELECTORS.binary_search(&selector) {
-                ::core::result::Result::Ok(idx) => {
-                    ::core::option::Option::Some(Self::SIGNATURES[idx])
-                }
-                ::core::result::Result::Err(_) => ::core::option::Option::None,
-            }
-        }
-        /// Returns the enum variant name for the given selector, if known.
-        #[inline]
-        pub fn name_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
-            let sig = Self::signature_by_selector(selector)?;
-            sig.split_once('(').map(|(name, _)| name)
-        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for IProtocolPaymentErrors {
@@ -3110,7 +3012,6 @@ function setUserDecryptionPrice(uint256 price) external;
         }
     }
     ///Container for all the [`IProtocolPayment`](self) events.
-    #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IProtocolPaymentEvents {
@@ -3123,6 +3024,7 @@ function setUserDecryptionPrice(uint256 price) external;
         #[allow(missing_docs)]
         NewUserDecryptionPrice(NewUserDecryptionPrice),
     }
+    #[automatically_derived]
     impl IProtocolPaymentEvents {
         /// All the selectors of this enum.
         ///
@@ -3152,40 +3054,6 @@ function setUserDecryptionPrice(uint256 price) external;
                 204u8, 50u8, 1u8, 246u8, 20u8, 189u8, 77u8, 53u8, 40u8, 213u8,
             ],
         ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(NewUserDecryptionPrice),
-            ::core::stringify!(NewInputVerificationPrice),
-            ::core::stringify!(InitializeProtocolPayment),
-            ::core::stringify!(NewPublicDecryptionPrice),
-        ];
-        /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] = &[
-            <NewUserDecryptionPrice as alloy_sol_types::SolEvent>::SIGNATURE,
-            <NewInputVerificationPrice as alloy_sol_types::SolEvent>::SIGNATURE,
-            <InitializeProtocolPayment as alloy_sol_types::SolEvent>::SIGNATURE,
-            <NewPublicDecryptionPrice as alloy_sol_types::SolEvent>::SIGNATURE,
-        ];
-        /// Returns the signature for the given selector, if known.
-        #[inline]
-        pub fn signature_by_selector(
-            selector: [u8; 32usize],
-        ) -> ::core::option::Option<&'static str> {
-            match Self::SELECTORS.binary_search(&selector) {
-                ::core::result::Result::Ok(idx) => {
-                    ::core::option::Option::Some(Self::SIGNATURES[idx])
-                }
-                ::core::result::Result::Err(_) => ::core::option::Option::None,
-            }
-        }
-        /// Returns the enum variant name for the given selector, if known.
-        #[inline]
-        pub fn name_by_selector(
-            selector: [u8; 32usize],
-        ) -> ::core::option::Option<&'static str> {
-            let sig = Self::signature_by_selector(selector)?;
-            sig.split_once('(').map(|(name, _)| name)
-        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for IProtocolPaymentEvents {
@@ -3291,9 +3159,9 @@ See the [wrapper's documentation](`IProtocolPaymentInstance`) for more details.*
         N: alloy_contract::private::Network,
     >(
         address: alloy_sol_types::private::Address,
-        __provider: P,
+        provider: P,
     ) -> IProtocolPaymentInstance<P, N> {
-        IProtocolPaymentInstance::<P, N>::new(address, __provider)
+        IProtocolPaymentInstance::<P, N>::new(address, provider)
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
@@ -3305,11 +3173,11 @@ For more fine-grained control over the deployment process, use [`deploy_builder`
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
-        __provider: P,
+        provider: P,
     ) -> impl ::core::future::Future<
         Output = alloy_contract::Result<IProtocolPaymentInstance<P, N>>,
     > {
-        IProtocolPaymentInstance::<P, N>::deploy(__provider)
+        IProtocolPaymentInstance::<P, N>::deploy(provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
 and constructor arguments, if any.
@@ -3320,8 +3188,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        IProtocolPaymentInstance::<P, N>::deploy_builder(__provider)
+    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        IProtocolPaymentInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`IProtocolPayment`](self) instance.
 
@@ -3348,6 +3216,7 @@ See the [module-level documentation](self) for all the available methods.*/
         }
     }
     /// Instantiation and getters/setters.
+    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
@@ -3358,11 +3227,11 @@ See the [wrapper's documentation](`IProtocolPaymentInstance`) for more details.*
         #[inline]
         pub const fn new(
             address: alloy_sol_types::private::Address,
-            __provider: P,
+            provider: P,
         ) -> Self {
             Self {
                 address,
-                provider: __provider,
+                provider,
                 _network: ::core::marker::PhantomData,
             }
         }
@@ -3373,9 +3242,9 @@ Returns a new instance of the contract, if the deployment was successful.
 For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
-            __provider: P,
+            provider: P,
         ) -> alloy_contract::Result<IProtocolPaymentInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
+            let call_builder = Self::deploy_builder(provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
@@ -3385,9 +3254,9 @@ and constructor arguments, if any.
 This is a simple wrapper around creating a `RawCallBuilder` with the data set to
 the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
+                provider,
                 ::core::clone::Clone::clone(&BYTECODE),
             )
         }
@@ -3424,6 +3293,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Function calls.
+    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
@@ -3530,6 +3400,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Event filters.
+    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
