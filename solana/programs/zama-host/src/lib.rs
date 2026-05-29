@@ -14,7 +14,7 @@ pub use handles::{
     poc_external_input_proof,
 };
 
-declare_id!("EMhXFu68v61bQV4GrF6ZhZhWNVbH6bHPnTdLtXK8meqn");
+declare_id!("4TU1nKdM6cfPRctp5ziwCfDB2VRLaV6yGGgR6KpZGc7C");
 
 pub const EVENT_VERSION: u8 = 0;
 pub const MAX_ACL_SUBJECTS: usize = 8;
@@ -135,6 +135,7 @@ pub mod zama_host {
                 frame::FrameEvent::AclAllowed(event) => emit_cpi!(event),
                 frame::FrameEvent::AclPublicDecryptAllowed(event) => emit_cpi!(event),
                 frame::FrameEvent::InputVerified(event) => emit_cpi!(event),
+                frame::FrameEvent::TernaryOp(event) => emit_cpi!(event),
             }
         }
 
@@ -225,6 +226,17 @@ pub struct FheBinaryOpEvent {
 }
 
 #[event]
+pub struct FheTernaryOpEvent {
+    pub version: u8,
+    pub op: FheTernaryOpCode,
+    pub subject: [u8; 32],
+    pub ls: [u8; 32],
+    pub ms: [u8; 32],
+    pub rs: [u8; 32],
+    pub result: [u8; 32],
+}
+
+#[event]
 pub struct TrivialEncryptEvent {
     pub version: u8,
     pub subject: [u8; 32],
@@ -271,6 +283,7 @@ pub struct InputVerifiedEvent {
 pub enum FheBinaryOpCode {
     Add,
     Sub,
+    Ge
 }
 
 impl FheBinaryOpCode {
@@ -278,6 +291,20 @@ impl FheBinaryOpCode {
         match self {
             Self::Add => 0,
             Self::Sub => 1,
+            Self::Ge => 14,
+        }
+    }
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FheTernaryOpCode {
+    IfThenElse
+}
+
+impl FheTernaryOpCode {
+    pub fn as_u8(self) -> u8 {
+        match self {
+            Self::IfThenElse => 25
         }
     }
 }
@@ -324,6 +351,18 @@ impl TryFrom<FheOpcode> for FheBinaryOpCode {
         match value {
             FheOpcode::Add => Ok(Self::Add),
             FheOpcode::Sub => Ok(Self::Sub),
+            FheOpcode::Ge  => Ok(Self::Ge),
+            _ => err!(ZamaHostError::UnsupportedFrameOpcode),
+        }
+    }
+}
+
+impl TryFrom<FheOpcode> for FheTernaryOpCode {
+    type Error = Error;
+
+    fn try_from(value: FheOpcode) -> Result<Self> {
+        match value {
+            FheOpcode::IfThenElse => Ok(Self::IfThenElse),
             _ => err!(ZamaHostError::UnsupportedFrameOpcode),
         }
     }

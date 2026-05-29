@@ -7,13 +7,15 @@ use crate::semantic::{BackendError, SemanticBackend};
 use litesvm::types::TransactionMetadata;
 use solana_keccak_hasher::hashv;
 use solana_sdk::pubkey::Pubkey;
-use zama_host_events::{FheBinaryOpCode, FheBinaryOpEvent, FheRandEvent, ZamaHostEvent};
+use zama_host_events::{FheBinaryOpCode, FheBinaryOpEvent, FheTernaryOpEvent, FheTernaryOpCode, FheRandEvent, ZamaHostEvent};
 
 pub type Handle = [u8; 32];
+const FHE_TYPE_BOOL: u8 = 0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ClearValue {
     Uint(u128),
+    Bool(bool)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -65,6 +67,7 @@ impl FheBackend for CleartextBackend {
     fn ingest_zama_host_event(&mut self, event: &ZamaHostEvent) -> Result<(), String> {
         match event {
             ZamaHostEvent::FheBinaryOp(event) => self.ingest_binary_op(event),
+            ZamaHostEvent::FheTernaryOp(event) => self.ingest_ternary_op(event),
             ZamaHostEvent::TrivialEncrypt(event) => {
                 let value = TypedClearValue {
                     fhe_type: event.fhe_type,
@@ -100,6 +103,33 @@ impl CleartextBackend {
         Ok(())
     }
 
+    fn ingest_ternary_op(&mut self, event: &FheTernaryOpEvent) -> Result<(), String> {
+        let ms = self.values.get(&event.ms).copied().ok_or_else(|| "missing ms cleartext value".to_string())?;
+        let rs= self.values.get(&event.rs).copied().ok_or_else(|| "missing rs cleartext value".to_string())?;
+        let ls = self.values.get(&event.ls).copied().ok_or_else(|| "missing ls cleartext value".to_string())?;
+        let value = match event.op {
+            FheTernaryOpCode::IfThenElse => {
+                if ls.fhe_type != FHE_TYPE_BOOL || ms.fhe_type != rs.fhe_type {
+                    return Err("cleartext operand type mismatch".to_string());
+                }
+                let ClearValue::Bool(control) = ls.value else {
+                    return Err("control must be bool".to_string());
+                };
+                
+                if control {
+                    ms
+                } else {
+                    rs
+                }
+            }
+        };
+        self.values.insert(
+            event.result,
+            value,
+        );
+        Ok(())
+    }
+
     fn ingest_binary_op(&mut self, event: &FheBinaryOpEvent) -> Result<(), String> {
         let lhs = self
             .values
@@ -122,23 +152,40 @@ impl CleartextBackend {
             return Err("cleartext operand type mismatch".to_string());
         }
 
-        let ClearValue::Uint(lhs_value) = lhs.value;
-        let ClearValue::Uint(rhs_value) = rhs.value;
-        let result = match event.op {
-            FheBinaryOpCode::Add => lhs_value
-                .checked_add(rhs_value)
-                .ok_or_else(|| "cleartext add overflow".to_string())?,
-            FheBinaryOpCode::Sub => lhs_value
+        let (ClearValue::Uint(lhs_value), ClearValue::Uint(rhs_value)) = (lhs.value, rhs.value) else {
+            return Err("disallowed for arithmetic ops".to_string());
+        };
+        let value = match event.op {
+            FheBinaryOpCode::Add => {
+                let result = lhs_value
+                    .checked_add(rhs_value)
+                    .ok_or_else(|| "cleartext add overflow".to_string())?;
+                TypedClearValue {
+                    fhe_type: lhs.fhe_type,
+                    value: ClearValue::Uint(result),
+                }
+            }
+            FheBinaryOpCode::Sub => {
+                let result = lhs_value
                 .checked_sub(rhs_value)
-                .ok_or_else(|| "cleartext sub underflow".to_string())?,
+                .ok_or_else(|| "cleartext sub underflow".to_string())?;
+                TypedClearValue {
+                    fhe_type: lhs.fhe_type,
+                    value: ClearValue::Uint(result),
+                }
+            }
+            FheBinaryOpCode::Ge => {
+                let result = lhs_value.ge(&rhs_value);
+                TypedClearValue {
+                    fhe_type: 0,
+                    value: ClearValue::Bool(result)
+                }
+            }
         };
 
         self.values.insert(
             event.result,
-            TypedClearValue {
-                fhe_type: lhs.fhe_type,
-                value: ClearValue::Uint(result),
-            },
+            value,
         );
         Ok(())
     }
@@ -193,7 +240,10 @@ impl SemanticBackend for CleartextBackend {
         let Some(value) = self.decrypt_cleartext(handle) else {
             return Err(BackendError::MissingHandle { handle });
         };
-        let ClearValue::Uint(raw) = value.value;
+        let raw = match value.value {
+            ClearValue::Uint(raw) => raw,
+            ClearValue::Bool(_) => return Err(BackendError::UnexpectedType { handle })
+        };
         u64::try_from(raw).map_err(|_| BackendError::UnexpectedType { handle })
     }
 }

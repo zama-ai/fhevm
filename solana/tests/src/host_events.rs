@@ -12,13 +12,14 @@ use crate::{
     host_program_so_path, input_verified_events, kms_like_public_decrypt_check,
     kms_like_user_decrypt_check, label, max_cpi_depth, previous_bank_hash_from_sysvar,
     read_acl_record, read_rand_counter, record_subjects, run_rand_demo_scenario,
-    run_transfer_scenario, run_wrap_scenario, seed_authorizing_acl_record,
+    run_transfer_scenario, run_wrap_scenario, seed_authorizing_acl_record, request_unwrap_usdc_ix,
     seed_transfer_inputs, self_transfer_ix, send, send_many_with_signers, send_with_meta,
     set_previous_slot_hash, signed_confidential_rand_user_decrypt_request,
     signed_current_balance_user_decrypt_request, signed_user_decrypt_request, spl_token_amount,
     svm_with_program, token_account, token_fixture, transfer_ix, transfer_ix_with_amount_proof,
     transfer_ix_with_current_acl, transfer_output_accounts, trivial_encrypt_events, try_send,
-    try_send_with_meta, wrap_output_accounts, wrap_usdc_ix, CleartextBackend, FheBackend,
+    ternary_op_events, try_send_with_meta, withdrawal_requested_events, wrap_output_accounts,
+    wrap_usdc_ix, CleartextBackend, FheBackend,
     FheBinaryOpCode, PublicDecryptHandleEntry, SemanticBackend, TransferExpect,
     TransferOutputAccounts, TransferSetup, TypedClearValue, UserDecryptHandleEntry, WrapSetup,
     DEFAULT_INPUT_NONCE_SEQUENCE, DEFAULT_TEST_PREVIOUS_BANK_HASH,
@@ -26,6 +27,7 @@ use crate::{
 use anchor_lang::AccountSerialize;
 use anchor_litesvm::TestHelpers;
 use confidential_token::{self as token, BalanceHandleUpdateReason};
+use zama_host_events::FheTernaryOpCode;
 use solana_sdk::{
     account::Account,
     pubkey::Pubkey,
@@ -1129,7 +1131,7 @@ fn confidential_transfer_rotates_balance_handles_and_binds_output_acl() {
     assert_balance_acl(
         &fixture.svm,
         output.alice,
-        fixture.mint.pubkey(),
+        fixture.mint,
         fixture.alice_token,
         1,
         new_alice,
@@ -1138,7 +1140,7 @@ fn confidential_transfer_rotates_balance_handles_and_binds_output_acl() {
     assert_balance_acl(
         &fixture.svm,
         output.bob,
-        fixture.mint.pubkey(),
+        fixture.mint,
         fixture.bob_token,
         1,
         new_bob,
@@ -1341,7 +1343,7 @@ fn fhe_execute_wrapper_initialize_creates_balance_acl_via_execute_frame() {
     assert_balance_acl(
         &fixture.svm,
         fixture.alice_current_compute_acl,
-        fixture.mint.pubkey(),
+        fixture.mint,
         fixture.alice_token,
         0,
         fixture.alice_initial,
@@ -1439,12 +1441,75 @@ fn wrap_usdc_escrows_spl_tokens_and_rotates_confidential_balance() {
     assert_balance_acl(
         &fixture.svm,
         output.balance,
-        fixture.mint.pubkey(),
+        fixture.mint,
         fixture.alice_token,
         1,
         new_alice,
         &[fixture.alice.pubkey(), fixture.compute_signer],
     );
+}
+
+/// Production-style `request_unwrap_usdc`: invoke the real instruction and
+/// assert it stages an approved withdrawal (`ge` -> `if_then_else`, publicly
+/// decryptable) without touching the balance.
+#[test]
+fn request_unwrap_usdc_stages_pending_withdrawal() {
+    let mut fixture = token_fixture();
+    let mut cleartext = CleartextBackend::default();
+    // Alice starts with a confidential balance of 125 (seeded by the fixture).
+    cleartext.seed_cleartext(fixture.alice_initial, TypedClearValue::uint64(125));
+
+    // The withdrawal ACL is written at the post-init balance nonce (1) under the
+    // withdrawal label.
+    let nonce_sequence = 1;
+    let amount = 100;
+    let output_acl = acl_record_address(
+        fixture.host_program_id,
+        token::withdrawal_nonce_key(fixture.mint, fixture.alice_token),
+        nonce_sequence,
+    );
+
+    let before = token_account(&fixture.svm, fixture.alice_token);
+    let ix = request_unwrap_usdc_ix(&fixture, output_acl, amount);
+    let (meta, account_keys) = send_with_meta(&mut fixture.svm, &fixture.alice, ix);
+    cleartext
+        .ingest_transaction(&meta, &account_keys, fixture.host_program_id)
+        .unwrap();
+
+    // 1. The affordability check ran as a Ge over the encrypted balance.
+    let binary = binary_op_events(&meta, &account_keys, fixture.host_program_id);
+    assert_eq!(binary.len(), 1);
+    assert_eq!(binary[0].op, FheBinaryOpCode::Ge);
+    assert_eq!(binary[0].lhs, fixture.alice_initial);
+
+    // 2. The approved withdrawal was produced by IfThenElse and written to the
+    //    withdrawal ACL, which is publicly decryptable.
+    let ternary = ternary_op_events(&meta, &account_keys, fixture.host_program_id);
+    assert_eq!(ternary.len(), 1);
+    assert_eq!(ternary[0].op, FheTernaryOpCode::IfThenElse);
+    let withdrawal_record = read_acl_record(&fixture.svm, output_acl).expect("withdrawal ACL");
+    assert_eq!(ternary[0].result, withdrawal_record.handle);
+    assert!(withdrawal_record.public_decrypt);
+
+    // 3. Since 125 >= 100, the approved amount equals the requested amount.
+    assert_eq!(
+        cleartext.decrypt_cleartext(withdrawal_record.handle),
+        Some(TypedClearValue::uint64(amount))
+    );
+
+    // 4. The withdrawal is recorded as pending and the balance is untouched.
+    let after = token_account(&fixture.svm, fixture.alice_token);
+    assert_eq!(after.pending_withdrawal_handle, withdrawal_record.handle);
+    assert_eq!(after.pending_withdrawal_acl_record, output_acl);
+    assert_eq!(after.balance_handle, before.balance_handle);
+    assert_eq!(after.balance_acl_record, before.balance_acl_record);
+
+    // 5. A WithdrawalRequestedEvent is emitted for the relayer / coprocessor.
+    let requested = withdrawal_requested_events(&meta, &account_keys, fixture.token_program_id);
+    assert_eq!(requested.len(), 1);
+    assert_eq!(requested[0].withdrawal_handle, withdrawal_record.handle);
+    assert_eq!(requested[0].withdrawal_acl_record, output_acl);
+    assert_eq!(requested[0].token_account, fixture.alice_token);
 }
 
 #[test]
@@ -1470,7 +1535,7 @@ fn confidential_token_e2e_wrap_transfer_and_decrypts_current_and_historical_bala
     assert_balance_acl(
         &fixture.svm,
         wrap_output.balance,
-        fixture.mint.pubkey(),
+        fixture.mint,
         fixture.alice_token,
         1,
         alice_after_wrap,
@@ -1484,13 +1549,13 @@ fn confidential_token_e2e_wrap_transfer_and_decrypts_current_and_historical_bala
     let transfer_output = TransferOutputAccounts {
         alice: balance_acl_record_address(
             fixture.host_program_id,
-            fixture.mint.pubkey(),
+            fixture.mint,
             fixture.alice_token,
             2,
         ),
         bob: balance_acl_record_address(
             fixture.host_program_id,
-            fixture.mint.pubkey(),
+            fixture.mint,
             fixture.bob_token,
             1,
         ),
@@ -1715,7 +1780,7 @@ fn confidential_transfer_rejects_amount_proof_bound_to_other_context() {
         amount_handle,
         fixture.alice.pubkey(),
         fixture.bob_token,
-        fixture.mint.pubkey(),
+        fixture.mint,
         5,
         zama_host::SOLANA_POC_CHAIN_ID,
     );
@@ -1771,7 +1836,7 @@ fn confidential_transfer_rejects_reused_output_acl_record() {
         alice: fixture.alice_current_compute_acl,
         bob: balance_acl_record_address(
             fixture.host_program_id,
-            fixture.mint.pubkey(),
+            fixture.mint,
             fixture.bob_token,
             1,
         ),
@@ -1968,7 +2033,7 @@ fn confidential_token_e2e_rand_demo_encrypt_compute_and_user_decrypt_request() {
     assert_acl_record(
         &fixture.svm,
         scenario.acl_record,
-        fixture.mint.pubkey(),
+        fixture.mint,
         fixture.alice_token,
         token::rand_label(),
         RAND_NONCE_SEQUENCE,
@@ -2002,7 +2067,7 @@ fn confidential_token_e2e_rand_demo_encrypt_compute_and_user_decrypt_request() {
     assert_eq!(decrypt_request.authorization.user, fixture.alice.pubkey());
     assert_eq!(
         decrypt_request.authorization.allowed_acl_domain_keys,
-        vec![fixture.mint.pubkey()]
+        vec![fixture.mint]
     );
     assert!(kms_like_user_decrypt_check(&fixture.svm, &decrypt_request));
 

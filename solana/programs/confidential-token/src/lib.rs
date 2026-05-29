@@ -7,7 +7,13 @@ use anchor_spl::token::{self as spl_token, Mint as SplMint, Token, TokenAccount,
 use zama_fhe as fhe;
 use zama_host::{self, program::ZamaHost, AclSubjectEntry};
 
-declare_id!("5GKzUSfqBSNjoVW83w3xPtTnAe84srZcDTBstpSoBCR4");
+mod instructions;
+mod constant;
+
+pub use instructions::*;
+use constant::{CONFIDENTIAL_MINT, CONFIDENTIAL_TOKEN_ACCOUNT};
+
+declare_id!("AYevU3R9B94fYWRkiyeecWahoRZwv6jorZsizyheiU7k");
 
 const BALANCE_FHE_TYPE: u8 = 5;
 const APP_EVENT_VERSION: u8 = 0;
@@ -37,6 +43,8 @@ pub mod confidential_token {
         token_account.balance_handle = [0; 32];
         token_account.balance_acl_record = Pubkey::default();
         token_account.next_balance_nonce_sequence = 1;
+        token_account.pending_withdrawal_handle = [0; 32];
+        token_account.pending_withdrawal_acl_record = Pubkey::default();
         token_account.bump = ctx.bumps.token_account;
         require_keys_eq!(
             ctx.accounts.mint.acl_domain_key,
@@ -347,6 +355,14 @@ pub mod confidential_token {
         Ok(())
     }
 
+    pub fn request_unwrap_usdc(ctx: Context<RequestUnwrapUsdc>, amount: u64) -> Result<()> {
+        instructions::request_unwrap_usdc(ctx, amount)
+    }
+
+    pub fn finalize_unwrap_usdc(ctx: Context<FinalizeUnwrapUsdc>, amount: u64) -> Result<()> {
+        instructions::finalize_unwrap_usdc(ctx, amount)
+    }
+
     /// PoC demo: birth an encrypted random u64 via `fheRand`, durable-allow it for the owner,
     /// and emit an app event the frontend/indexer can consume for a user-decrypt request.
     pub fn poc_demo_confidential_rand(
@@ -418,7 +434,13 @@ pub mod confidential_token {
 pub struct InitializeMint<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
-    #[account(init, payer = authority, space = 8 + ConfidentialMint::SPACE)]
+    #[account(
+        init, 
+        payer = authority, 
+        space = 8 + ConfidentialMint::SPACE, 
+        seeds = [CONFIDENTIAL_MINT, underlying_mint.key().as_ref()], 
+        bump
+    )]
     pub mint: Account<'info, ConfidentialMint>,
     pub underlying_mint: Account<'info, SplMint>,
     pub system_program: Program<'info, System>,
@@ -429,7 +451,9 @@ pub struct InitializeMint<'info> {
 pub struct InitializeTokenAccount<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
+    #[account(seeds = [CONFIDENTIAL_MINT, underlying_mint.key().as_ref()], bump)]
     pub mint: Account<'info, ConfidentialMint>,
+    pub underlying_mint: Account<'info, SplMint>,
     /// CHECK: Program-controlled compute signer PDA.
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
@@ -463,8 +487,13 @@ pub struct InitializeTokenAccount<'info> {
 pub struct WrapUsdc<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
+    #[account(seeds = [CONFIDENTIAL_MINT, underlying_mint.key().as_ref()], bump)]
     pub mint: Box<Account<'info, ConfidentialMint>>,
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [CONFIDENTIAL_TOKEN_ACCOUNT, mint.key().as_ref(), owner.key().as_ref()],
+        bump
+    )]
     pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
     pub underlying_mint: Box<Account<'info, SplMint>>,
     #[account(
@@ -592,6 +621,10 @@ pub struct ConfidentialTokenAccount {
     pub balance_handle: [u8; 32],
     pub balance_acl_record: Pubkey,
     pub next_balance_nonce_sequence: u64,
+    /// Pending unwrap: the approved-withdrawal handle awaiting coprocessor
+    /// public decryption, consumed by `finalize_unwrap_usdc`. Zeroed when none.
+    pub pending_withdrawal_handle: [u8; 32],
+    pub pending_withdrawal_acl_record: Pubkey,
     pub bump: u8,
 }
 
@@ -619,16 +652,33 @@ pub struct BalanceHandleUpdatedEvent {
     pub reason: BalanceHandleUpdateReason,
 }
 
+/// Emitted by `request_unwrap_usdc`: the approved-withdrawal handle is now
+/// pending coprocessor public decryption. The balance is unchanged at this
+/// point; it is debited in `finalize_unwrap_usdc`.
+#[event]
+pub struct WithdrawalRequestedEvent {
+    pub version: u8,
+    pub mint: Pubkey,
+    pub owner: Pubkey,
+    pub token_account: Pubkey,
+    pub withdrawal_handle: [u8; 32],
+    pub withdrawal_acl_record: Pubkey,
+    pub nonce_sequence: u64,
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BalanceHandleUpdateReason {
     Initialize,
     Wrap,
+    Unwrap,
     TransferDebit,
     TransferCredit,
 }
 
 impl ConfidentialTokenAccount {
-    pub const SPACE: usize = 32 + 32 + 32 + 32 + 8 + 1;
+    // owner + mint + balance_handle + balance_acl_record + next_balance_nonce_sequence
+    // + pending_withdrawal_handle + pending_withdrawal_acl_record + bump
+    pub const SPACE: usize = 32 + 32 + 32 + 32 + 8 + 32 + 32 + 1;
 }
 
 #[error_code]
@@ -649,6 +699,10 @@ pub enum ConfidentialTokenError {
     ComputeSignerMismatch,
     #[msg("current ACL record does not match token account state")]
     CurrentAclRecordMismatch,
+    #[msg("no pending withdrawal to finalize")]
+    NoPendingWithdrawal,
+    #[msg("withdrawal ACL record does not match the pending withdrawal")]
+    PendingWithdrawalMismatch,
 }
 
 // Shared constructor for `fhe::Context`; it forwards the host accounts each
@@ -705,8 +759,16 @@ pub fn balance_nonce_key(acl_domain_key: Pubkey, app_account: Pubkey) -> [u8; 32
     nonce_key(acl_domain_key, app_account, balance_label())
 }
 
+pub fn boolean_nonce_key(acl_domain_key: Pubkey, app_account: Pubkey) -> [u8; 32] {
+    nonce_key(acl_domain_key, app_account, boolean_label())
+}
+
 pub fn balance_label() -> [u8; 32] {
     *b"balance_________________________"
+}
+
+pub fn boolean_label() -> [u8; 32] {
+    *b"boolean_________________________"
 }
 
 pub fn rand_label() -> [u8; 32] {
@@ -715,6 +777,18 @@ pub fn rand_label() -> [u8; 32] {
 
 pub fn rand_nonce_key(acl_domain_key: Pubkey, app_account: Pubkey) -> [u8; 32] {
     nonce_key(acl_domain_key, app_account, rand_label())
+}
+
+pub fn wrap_amount_label() -> [u8; 32] {
+    *b"wrap_amount_____________________"
+}
+
+pub fn withdrawal_label() -> [u8; 32] {
+    *b"withdrawal______________________"
+}
+
+pub fn withdrawal_nonce_key(acl_domain_key: Pubkey, app_account: Pubkey) -> [u8; 32] {
+    nonce_key(acl_domain_key, app_account, withdrawal_label())
 }
 
 pub fn nonce_key(

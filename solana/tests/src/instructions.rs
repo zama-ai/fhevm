@@ -18,7 +18,7 @@ pub fn poc_demo_confidential_rand_ix(
 ) -> (Instruction, Pubkey) {
     let output_acl = rand_acl_record_address(
         fixture.host_program_id,
-        fixture.mint.pubkey(),
+        fixture.mint,
         fixture.alice_token,
         nonce_sequence,
     );
@@ -26,7 +26,7 @@ pub fn poc_demo_confidential_rand_ix(
         fixture.token_program_id,
         token::accounts::PocDemoConfidentialRand {
             owner: fixture.alice.pubkey(),
-            mint: fixture.mint.pubkey(),
+            mint: fixture.mint,
             token_account: fixture.alice_token,
             compute_signer: fixture.compute_signer,
             output_acl,
@@ -49,13 +49,13 @@ pub fn transfer_output_accounts(
     TransferOutputAccounts {
         alice: balance_acl_record_address(
             fixture.host_program_id,
-            fixture.mint.pubkey(),
+            fixture.mint,
             fixture.alice_token,
             nonce_sequence,
         ),
         bob: balance_acl_record_address(
             fixture.host_program_id,
-            fixture.mint.pubkey(),
+            fixture.mint,
             fixture.bob_token,
             nonce_sequence,
         ),
@@ -66,7 +66,7 @@ pub fn wrap_output_accounts(fixture: &TokenFixture, nonce_sequence: u64) -> Wrap
     WrapOutputAccounts {
         balance: balance_acl_record_address(
             fixture.host_program_id,
-            fixture.mint.pubkey(),
+            fixture.mint,
             fixture.alice_token,
             nonce_sequence,
         ),
@@ -92,7 +92,7 @@ pub fn external_input_handle(fixture: &TokenFixture, value: u64, nonce: u64) -> 
         &value.to_be_bytes(),
         fixture.alice.pubkey().as_ref(),
         fixture.alice_token.as_ref(),
-        fixture.mint.pubkey().as_ref(),
+        fixture.mint.as_ref(),
         &nonce.to_be_bytes(),
     ])
     .to_bytes();
@@ -109,7 +109,7 @@ pub fn input_proof(fixture: &TokenFixture, input_handle: [u8; 32]) -> [u8; 32] {
         input_handle.as_ref(),
         fixture.alice.pubkey().as_ref(),
         fixture.alice_token.as_ref(),
-        fixture.mint.pubkey().as_ref(),
+        fixture.mint.as_ref(),
         &[5],
         &zama_host::SOLANA_POC_CHAIN_ID.to_be_bytes(),
     ])
@@ -125,7 +125,7 @@ pub fn self_transfer_ix(
         fixture.token_program_id,
         token::accounts::ConfidentialTransfer {
             owner: fixture.alice.pubkey(),
-            mint: fixture.mint.pubkey(),
+            mint: fixture.mint,
             from_account: fixture.alice_token,
             to_account: fixture.alice_token,
             compute_signer: fixture.compute_signer,
@@ -192,7 +192,7 @@ pub fn transfer_ix_with_amount_proof_and_current_acl(
         fixture.token_program_id,
         token::accounts::ConfidentialTransfer {
             owner: fixture.alice.pubkey(),
-            mint: fixture.mint.pubkey(),
+            mint: fixture.mint,
             from_account: fixture.alice_token,
             to_account: fixture.bob_token,
             compute_signer: fixture.compute_signer,
@@ -225,14 +225,14 @@ pub fn wrap_usdc_ix(
         fixture.token_program_id,
         token::accounts::WrapUsdc {
             owner: fixture.alice.pubkey(),
-            mint: fixture.mint.pubkey(),
+            mint: fixture.mint,
             token_account: fixture.alice_token,
             underlying_mint: fixture.underlying_mint.pubkey(),
             user_usdc: fixture.alice_usdc,
             vault_usdc: fixture.vault_usdc,
             vault_authority: vault_authority_address(
                 fixture.token_program_id,
-                fixture.mint.pubkey(),
+                fixture.mint,
             ),
             compute_signer: fixture.compute_signer,
             current_compute_acl: fixture.alice_current_compute_acl,
@@ -246,5 +246,38 @@ pub fn wrap_usdc_ix(
             program: fixture.token_program_id,
         },
         token::instruction::WrapUsdc { amount },
+    )
+}
+
+pub fn request_unwrap_usdc_ix(
+    fixture: &TokenFixture,
+    output_acl: Pubkey,
+    amount: u64,
+) -> Instruction {
+    use crate::acl::vault_authority_address;
+
+    anchor_ix(
+        fixture.token_program_id,
+        token::accounts::RequestUnwrapUsdc {
+            owner: fixture.alice.pubkey(),
+            mint: fixture.mint,
+            token_account: fixture.alice_token,
+            underlying_mint: fixture.underlying_mint.pubkey(),
+            vault_authority: vault_authority_address(
+                fixture.token_program_id,
+                fixture.mint,
+            ),
+            compute_signer: fixture.compute_signer,
+            current_compute_acl: fixture.alice_current_compute_acl,
+            output_acl,
+            zama_rand_counter: rand_counter_address(fixture.host_program_id),
+            zama_event_authority: event_authority(fixture.host_program_id),
+            zama_program: fixture.host_program_id,
+            token_program: anchor_spl::token::spl_token::id(),
+            system_program: system_program::ID,
+            event_authority: event_authority(fixture.token_program_id),
+            program: fixture.token_program_id,
+        },
+        token::instruction::RequestUnwrapUsdc { amount },
     )
 }

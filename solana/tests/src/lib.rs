@@ -24,9 +24,9 @@ mod util;
 
 pub use acl::{
     acl_record_address, assert_acl_record, assert_balance_acl, balance_acl_record_address,
-    created_acl_count, event_authority, rand_acl_record_address, rand_counter_address,
-    read_acl_record, read_rand_counter, record_subjects, seed_authorizing_acl_record,
-    token_account_address, vault_authority_address,
+    confidential_mint_address, created_acl_count, event_authority, rand_acl_record_address,
+    rand_counter_address, read_acl_record, read_rand_counter, record_subjects,
+    seed_authorizing_acl_record, token_account_address, vault_authority_address,
 };
 pub use cleartext::{
     cleartext_rand_value, ClearValue, CleartextBackend, FheBackend, Handle, TypedClearValue,
@@ -34,10 +34,10 @@ pub use cleartext::{
 pub use events::{
     acl_allowed_events, acl_public_decrypt_allowed_events, balance_handle_updated_events,
     binary_op_events, collect_cpi_events, collect_zama_host_events, count_acl_allowed_events,
-    count_tfhe_host_events, decode_token_cpi_event, fhe_rand_events,
-    input_verified_events, max_cpi_depth, trivial_encrypt_events, AclAllowedEvent,
-    AclPublicDecryptAllowedEvent, FheBinaryOpEvent, FheRandEvent, InputVerifiedEvent,
-    TrivialEncryptEvent, ZamaHostEvent, ANCHOR_EVENT_IX_TAG_LE,
+    count_tfhe_host_events, decode_token_cpi_event, fhe_rand_events, input_verified_events,
+    max_cpi_depth, ternary_op_events, trivial_encrypt_events, withdrawal_requested_events,
+    AclAllowedEvent, AclPublicDecryptAllowedEvent, FheBinaryOpEvent, FheRandEvent,
+    InputVerifiedEvent, TrivialEncryptEvent, ZamaHostEvent, ANCHOR_EVENT_IX_TAG_LE,
 };
 pub use fixture::{
     create_spl_token_account, spl_token_amount, token_account, token_fixture, TokenFixture,
@@ -45,9 +45,9 @@ pub use fixture::{
 };
 pub use host_ix::{allow_for_decryption_ix, execute_frame_ix, label};
 pub use instructions::{
-    external_input_handle, poc_demo_confidential_rand_ix, self_transfer_ix, transfer_ix,
-    transfer_ix_with_amount_proof, transfer_ix_with_current_acl, transfer_output_accounts,
-    wrap_output_accounts, wrap_usdc_ix,
+    external_input_handle, poc_demo_confidential_rand_ix, request_unwrap_usdc_ix, self_transfer_ix,
+    transfer_ix, transfer_ix_with_amount_proof, transfer_ix_with_current_acl,
+    transfer_output_accounts, wrap_output_accounts, wrap_usdc_ix,
 };
 pub use invariants::{
     assert_balance_acl_subjects, assert_no_zama_host_events_on_failure, assert_tfhe_event_count,

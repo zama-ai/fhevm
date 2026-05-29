@@ -12,8 +12,8 @@ use solana_sdk::{
 
 use crate::{
     acl::{
-        balance_acl_record_address, event_authority, rand_counter_address, read_acl_record,
-        token_account_address, vault_authority_address,
+        balance_acl_record_address, confidential_mint_address, event_authority,
+        rand_counter_address, read_acl_record, token_account_address, vault_authority_address,
     },
     programs::{host_program_so_path, svm_with_programs, token_program_so_path},
     transaction::{anchor_ix, send, send_many_with_signers, send_with_signers},
@@ -28,7 +28,7 @@ pub struct TokenFixture {
     pub token_program_id: Pubkey,
     pub alice: Keypair,
     pub bob: Keypair,
-    pub mint: Keypair,
+    pub mint: Pubkey,
     pub underlying_mint: Keypair,
     pub compute_signer: Pubkey,
     pub alice_token: Pubkey,
@@ -62,10 +62,11 @@ pub fn token_fixture() -> TokenFixture {
 
     let alice = svm.create_funded_account(2_000_000_000).unwrap();
     let bob = svm.create_funded_account(1_000_000_000).unwrap();
-    let mint = Keypair::new();
     let underlying_mint = svm.create_token_mint(&alice, 6).unwrap();
+    // The confidential mint is a PDA derived from the underlying SPL mint.
+    let mint = confidential_mint_address(token_program_id, underlying_mint.pubkey());
 
-    let vault_authority = vault_authority_address(token_program_id, mint.pubkey());
+    let vault_authority = vault_authority_address(token_program_id, mint);
     let alice_usdc = svm
         .create_token_account(&underlying_mint.pubkey(), &alice)
         .unwrap();
@@ -92,30 +93,31 @@ pub fn token_fixture() -> TokenFixture {
             token_program_id,
             token::accounts::InitializeMint {
                 authority: alice.pubkey(),
-                mint: mint.pubkey(),
+                mint,
                 underlying_mint: underlying_mint.pubkey(),
                 system_program: system_program::ID,
             },
             token::instruction::InitializeMint {},
         ),
-        &[&alice, &mint],
+        &[&alice],
     )
     .unwrap();
 
-    let compute_signer = token::compute_signer_address(mint.pubkey()).0;
-    let alice_token = token_account_address(token_program_id, mint.pubkey(), alice.pubkey());
-    let bob_token = token_account_address(token_program_id, mint.pubkey(), bob.pubkey());
+    let compute_signer = token::compute_signer_address(mint).0;
+    let alice_token = token_account_address(token_program_id, mint, alice.pubkey());
+    let bob_token = token_account_address(token_program_id, mint, bob.pubkey());
     let alice_current_compute_acl =
-        balance_acl_record_address(host_program_id, mint.pubkey(), alice_token, 0);
+        balance_acl_record_address(host_program_id, mint, alice_token, 0);
     let bob_current_compute_acl =
-        balance_acl_record_address(host_program_id, mint.pubkey(), bob_token, 0);
+        balance_acl_record_address(host_program_id, mint, bob_token, 0);
 
     initialize_confidential_token_account(
         &mut svm,
         token_program_id,
         host_program_id,
         &alice,
-        mint.pubkey(),
+        mint,
+        underlying_mint.pubkey(),
         alice_token,
         compute_signer,
         alice_current_compute_acl,
@@ -126,7 +128,8 @@ pub fn token_fixture() -> TokenFixture {
         token_program_id,
         host_program_id,
         &bob,
-        mint.pubkey(),
+        mint,
+        underlying_mint.pubkey(),
         bob_token,
         compute_signer,
         bob_current_compute_acl,
@@ -165,6 +168,7 @@ fn initialize_confidential_token_account(
     host_program_id: Pubkey,
     owner: &Keypair,
     mint: Pubkey,
+    underlying_mint: Pubkey,
     token_account: Pubkey,
     compute_signer: Pubkey,
     acl_record: Pubkey,
@@ -178,6 +182,7 @@ fn initialize_confidential_token_account(
             token::accounts::InitializeTokenAccount {
                 owner: owner.pubkey(),
                 mint,
+                underlying_mint,
                 compute_signer,
                 token_account,
                 acl_record,

@@ -342,6 +342,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b8005eef3a48a9a8cb21b126ae3bb252647e353afe6ef7f19e545177801c841"
 dependencies = [
  "anchor-lang",
+ "spl-associated-token-account-interface",
  "spl-token-2022-interface",
  "spl-token-interface",
 ]

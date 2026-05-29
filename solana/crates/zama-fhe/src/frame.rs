@@ -158,6 +158,14 @@ impl<'a, 'info> Builder<'a, 'info> {
         self.binary_op(FheOpcode::Sub, lhs, rhs, output_fhe_type)
     }
 
+    pub fn ge(&mut self, lhs: FrameValue, rhs: FrameValue) -> Result<FrameValue> {
+        self.binary_op(FheOpcode::Ge, lhs, rhs, 0)
+    }
+
+    pub fn if_then_else(&mut self, control: FrameValue, th: FrameValue, el: FrameValue, output_fhe_type: u8) -> Result<FrameValue> {
+        self.ternary_op(FheOpcode::IfThenElse, control, th, el, output_fhe_type)
+    }
+
     pub fn allow(&mut self, value: &FrameValue, allow: DurableAllow<'info>) -> Result<()> {
         let app_account = allow.app_account.key();
         self.authorize_app_account(allow.app_account)?;
@@ -206,6 +214,24 @@ impl<'a, 'info> Builder<'a, 'info> {
         Ok(FrameValue {
             operand: FheOperand::PreviousResult { index: index as u8 },
         })
+    }
+
+    fn ternary_op(
+        &mut self,
+        opcode: FheOpcode,
+        ls: FrameValue,
+        ms: FrameValue,
+        rs: FrameValue,
+        output_fhe_type: u8
+    ) -> Result<FrameValue> {
+        let index = self.steps.len();
+        self.steps.push(FheFrameStep::Operation { 
+            opcode, 
+            operands: vec![ls.operand, ms.operand, rs.operand], 
+            scalar_byte: 0, 
+            output_fhe_type 
+        });
+        Ok(FrameValue { operand: FheOperand::PreviousResult { index: index as u8 } })
     }
 
     fn push_account(&mut self, account: AccountInfo<'info>) -> Result<Pubkey> {

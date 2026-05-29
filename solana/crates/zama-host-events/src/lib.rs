@@ -8,6 +8,15 @@ impl FheBinaryOpCode {
         match self {
             Self::Add => 0,
             Self::Sub => 1,
+            Self::Ge  => 14
+        }
+    }
+}
+
+impl FheTernaryOpCode {
+    pub const fn as_u8(self) -> u8 {
+        match self {
+            Self::IfThenElse => 25
         }
     }
 }

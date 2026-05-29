@@ -6,14 +6,11 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-confidential_token = "5GKzUSfqBSNjoVW83w3xPtTnAe84srZcDTBstpSoBCR4"
-zama_host = "EMhXFu68v61bQV4GrF6ZhZhWNVbH6bHPnTdLtXK8meqn"
-
-[registry]
-url = "https://api.apr.dev"
+confidential_token = "AYevU3R9B94fYWRkiyeecWahoRZwv6jorZsizyheiU7k"
+zama_host = "4TU1nKdM6cfPRctp5ziwCfDB2VRLaV6yGGgR6KpZGc7C"
 
 [provider]
-cluster = "Localnet"
+cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
