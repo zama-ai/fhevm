@@ -3,6 +3,7 @@ services:
   kms-core:
     container_name: kms-core
     image: ghcr.io/zama-ai/kms/core-service:${CORE_VERSION}
+    user: root
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/core.env
     entrypoint:
@@ -10,14 +11,20 @@ services:
       - -c
       - |
         set -e
-        export AWS_ACCESS_KEY_ID=$$(cat /minio_secrets/access_key)
-        export AWS_SECRET_ACCESS_KEY=$$(cat /minio_secrets/secret_key)
-        echo '=================GENERATING SIGNING KEYS================='
-        kms-gen-keys --public-storage s3 --public-s3-bucket "$$KMS_CORE__PUBLIC_VAULT__STORAGE__S3__BUCKET" --public-s3-prefix "$$KMS_CORE__PUBLIC_VAULT__STORAGE__S3__PREFIX" --aws-s3-endpoint "$$S3_ENDPOINT" --aws-region "$$S3_REGION" --private-storage file --private-file-path "$$KMS_CORE__PRIVATE_VAULT__STORAGE__FILE__PATH" --cmd signing-keys centralized
-        echo '=================STARTING KMS SERVICE================='
-        kms-server --config-file config/config.toml
+        mkdir -p "$$KMS_CORE__PRIVATE_VAULT__STORAGE__FILE__PATH"
+        chown -R kms:kms "$$KMS_CORE__PRIVATE_VAULT__STORAGE__FILE__PATH"
+        exec su kms -s /bin/sh -c '
+          set -e
+          export AWS_ACCESS_KEY_ID=$$(cat /minio_secrets/access_key)
+          export AWS_SECRET_ACCESS_KEY=$$(cat /minio_secrets/secret_key)
+          echo "=================GENERATING SIGNING KEYS================="
+          kms-gen-keys --public-storage s3 --public-s3-bucket "$$KMS_CORE__PUBLIC_VAULT__STORAGE__S3__BUCKET" --public-s3-prefix "$$KMS_CORE__PUBLIC_VAULT__STORAGE__S3__PREFIX" --aws-s3-endpoint "$$S3_ENDPOINT" --aws-region "$$S3_REGION" --private-storage file --private-file-path "$$KMS_CORE__PRIVATE_VAULT__STORAGE__FILE__PATH" --cmd signing-keys centralized
+          echo "=================STARTING KMS SERVICE================="
+          kms-server --config-file config/config.toml
+        '
     volumes:
       - fhevm_minio_secrets:/minio_secrets
+      - fhevm_kms_core_keys:/app/kms/core/service/keys
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/config/kms-core.toml:/app/kms/core/service/config/config.toml
     ports:
       - "50051:50051"
@@ -27,3 +34,4 @@ services:
 volumes:
   fhevm_minio_secrets:
     external: true
+  fhevm_kms_core_keys:

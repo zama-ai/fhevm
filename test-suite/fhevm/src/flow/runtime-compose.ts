@@ -93,25 +93,38 @@ const refsAlreadyBuilt = async (state: State, refs: string[]) =>
   )).every(Boolean);
 
 /** Starts one compose component, optionally limiting it to selected services. */
+export const isDockerRegistryTransient = (message: string) =>
+  /(Client\.Timeout exceeded|context deadline exceeded|TLS handshake timeout|request canceled|i\/o timeout|unexpected EOF)/i.test(
+    message,
+  ) && /(ghcr\.io|quay\.io|cgr\.dev|registry|manifest|token|\/v2\/)/i.test(message);
+
 export const composeUp = async (
   component: string,
   services: string[] = [],
   options: { noDeps?: boolean; forceRecreate?: boolean; env?: Record<string, string> } = {},
 ) => {
-  try {
-    await runStreaming(
-      [
-        ...dockerArgs(component),
-        "up",
-        "-d",
-        ...(options.noDeps ? ["--no-deps"] : []),
-        ...(options.forceRecreate ? ["--force-recreate"] : []),
-        ...services,
-      ],
-      { env: await composeEnv(component, options.env) },
-    );
-  } catch (error) {
-    throw new ContainerStartError(component, error instanceof Error ? error.message : String(error));
+  const argv = [
+    ...dockerArgs(component),
+    "up",
+    "-d",
+    ...(options.noDeps ? ["--no-deps"] : []),
+    ...(options.forceRecreate ? ["--force-recreate"] : []),
+    ...services,
+  ];
+  const env = await composeEnv(component, options.env);
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await runStreaming(argv, { env });
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (attempt < 3 && isDockerRegistryTransient(message)) {
+        console.log(`[warn] docker compose ${component} hit a registry timeout; retrying (${attempt}/2)`);
+        await Bun.sleep(5_000);
+        continue;
+      }
+      throw new ContainerStartError(component, message);
+    }
   }
 };
 
