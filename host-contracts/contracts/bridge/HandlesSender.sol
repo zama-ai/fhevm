@@ -92,8 +92,12 @@ abstract contract HandlesSender is OAppSenderUpgradeable, BridgeEvents {
      * @notice Bridge `payload` and the handles it references to `dstEid`.
      *
      * @param dstEid         LayerZero endpoint id of the destination chain.
-     * @param dstApp         Destination app address that should receive `payload` in its
-     *                       `onReceive` callback.
+     * @param dstApp         Destination app on the destination chain that should receive
+     *                       `payload` in its `onReceive` callback. Bytes32 (rather than
+     *                       `address`) so non-EVM destinations (e.g. Solana, which uses
+     *                       32-byte program IDs) can be addressed without a future
+     *                       protocol change. EVM callers pass
+     *                       `bytes32(uint256(uint160(dstAppAddress)))`.
      * @param payload        Opaque app-level payload; encoding is fully app-defined.
      * @param handleList     Source-chain handles referenced by `payload`. Order is
      *                       preserved on the destination, so apps can index into
@@ -112,7 +116,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, BridgeEvents {
      */
     function send(
         uint32 dstEid,
-        address dstApp,
+        bytes32 dstApp,
         bytes calldata payload,
         bytes32[] calldata handleList,
         uint128 lzComposeGas,
@@ -151,16 +155,23 @@ abstract contract HandlesSender is OAppSenderUpgradeable, BridgeEvents {
     ///      `finalOptions`, and `fee` into the event-emission phase. `msg.sender` is
     ///      preserved across internal calls and used as the source app in the encoded
     ///      message and as the native-fee refund address.
+    ///
+    ///      The wire-format `srcApp` field is bytes32 (declared so on the receive side
+    ///      too) for forward-compat with non-EVM source chains. For EVM sources the
+    ///      `bytes32(uint256(uint160(msg.sender)))` cast produces byte-identical
+    ///      output to encoding as `address`, so this is purely a type-level signal
+    ///      preserving the upper 12 bytes for chains that need them.
     function _dispatch(
         uint32 dstEid,
-        address dstApp,
+        bytes32 dstApp,
         bytes calldata payload,
         bytes32[] calldata handleList,
         uint128 lzComposeGas,
         bytes calldata options
     ) private returns (MessagingReceipt memory receipt) {
         bytes memory finalOptions = _resolveOptions(options, handleList.length, lzComposeGas);
-        bytes memory message = abi.encode(msg.sender, dstApp, payload, handleList);
+        bytes32 srcApp = bytes32(uint256(uint160(msg.sender)));
+        bytes memory message = abi.encode(srcApp, dstApp, payload, handleList);
         MessagingFee memory fee = _quote(dstEid, message, finalOptions, false);
         receipt = _lzSend(dstEid, message, finalOptions, fee, payable(msg.sender));
     }
@@ -178,10 +189,15 @@ abstract contract HandlesSender is OAppSenderUpgradeable, BridgeEvents {
      * @notice Quote the native fee for a `send` call without sending.
      * @dev    Useful for callers wishing to compute msg.value before invoking `send`.
      */
+    /// @param srcApp        The source app paying the fee (kept as `address` for caller
+    ///                       convenience — quote is an EVM-side view). Padded internally
+    ///                       to match the bytes32 wire format used by `send`.
+    /// @param dstApp        Destination app on the destination chain, as bytes32. See
+    ///                       {send} for the encoding convention.
     function quote(
         uint32 dstEid,
         address srcApp,
-        address dstApp,
+        bytes32 dstApp,
         bytes calldata payload,
         bytes32[] calldata handleList,
         uint128 lzComposeGas,
@@ -190,7 +206,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, BridgeEvents {
         if (_getHandlesSenderStorage().dstChainIdForEid[dstEid] == 0) revert UnknownDstEid(dstEid);
 
         bytes memory finalOptions = _resolveOptions(options, handleList.length, lzComposeGas);
-        bytes memory message = abi.encode(srcApp, dstApp, payload, handleList);
+        bytes memory message = abi.encode(bytes32(uint256(uint160(srcApp))), dstApp, payload, handleList);
         fee = _quote(dstEid, message, finalOptions, false);
     }
 

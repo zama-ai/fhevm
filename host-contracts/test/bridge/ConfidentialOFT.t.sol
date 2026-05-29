@@ -108,19 +108,22 @@ contract ConfidentialOFTTest is TestHelperOz5, HostContractsDeployerTestUtils {
     // setTrustedPeer
     ////////////////////////////////////////////////////////////////////////////////
 
+    /// @dev EVM peer encoded as bytes32 for the new bytes32-based peer registry.
+    bytes32 private constant SRC_PEER_BEEF = bytes32(uint256(0xBEEF));
+
     function test_SetTrustedPeer_OnlyOwner() public {
         vm.expectRevert();
-        oft.setTrustedPeer(SRC_EID, address(0xBEEF), true);
+        oft.setTrustedPeer(SRC_EID, SRC_PEER_BEEF, true);
     }
 
     function test_SetTrustedPeer_TogglesState() public {
-        assertFalse(oft.isTrustedPeer(SRC_EID, address(0xBEEF)));
+        assertFalse(oft.isTrustedPeer(SRC_EID, SRC_PEER_BEEF));
         vm.prank(owner);
-        oft.setTrustedPeer(SRC_EID, address(0xBEEF), true);
-        assertTrue(oft.isTrustedPeer(SRC_EID, address(0xBEEF)));
+        oft.setTrustedPeer(SRC_EID, SRC_PEER_BEEF, true);
+        assertTrue(oft.isTrustedPeer(SRC_EID, SRC_PEER_BEEF));
         vm.prank(owner);
-        oft.setTrustedPeer(SRC_EID, address(0xBEEF), false);
-        assertFalse(oft.isTrustedPeer(SRC_EID, address(0xBEEF)));
+        oft.setTrustedPeer(SRC_EID, SRC_PEER_BEEF, false);
+        assertFalse(oft.isTrustedPeer(SRC_EID, SRC_PEER_BEEF));
     }
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -130,14 +133,14 @@ contract ConfidentialOFTTest is TestHelperOz5, HostContractsDeployerTestUtils {
     function test_OnReceive_RevertsIfCallerNotBridge() public {
         bytes32[] memory empty = new bytes32[](0);
         vm.expectRevert(abi.encodeWithSelector(ConfidentialOFT.OnlyConfidentialBridge.selector, address(this)));
-        oft.onReceive(SRC_EID, address(0xBEEF), abi.encode(bob, bytes32(0)), empty, empty);
+        oft.onReceive(SRC_EID, SRC_PEER_BEEF, abi.encode(bob, bytes32(0)), empty, empty);
     }
 
     function test_OnReceive_RevertsIfPeerUntrusted() public {
         bytes32[] memory empty = new bytes32[](0);
         vm.prank(address(dstBridge));
-        vm.expectRevert(abi.encodeWithSelector(ConfidentialOFT.UntrustedPeer.selector, SRC_EID, address(0xBEEF)));
-        oft.onReceive(SRC_EID, address(0xBEEF), abi.encode(bob, bytes32(0)), empty, empty);
+        vm.expectRevert(abi.encodeWithSelector(ConfidentialOFT.UntrustedPeer.selector, SRC_EID, SRC_PEER_BEEF));
+        oft.onReceive(SRC_EID, SRC_PEER_BEEF, abi.encode(bob, bytes32(0)), empty, empty);
     }
 
     /// @dev When the peer is trusted, onReceive proceeds past authentication and runs
@@ -153,12 +156,12 @@ contract ConfidentialOFTTest is TestHelperOz5, HostContractsDeployerTestUtils {
         dstList[0] = dst;
 
         vm.prank(owner);
-        oft.setTrustedPeer(SRC_EID, address(0xBEEF), true);
+        oft.setTrustedPeer(SRC_EID, SRC_PEER_BEEF, true);
 
         // Authentication should NOT revert with OnlyConfidentialBridge / UntrustedPeer.
         // If a revert happens, it must come from a later FHE.* call, not auth.
         vm.prank(address(dstBridge));
-        try oft.onReceive(SRC_EID, address(0xBEEF), abi.encode(bob, dst), srcList, dstList) {
+        try oft.onReceive(SRC_EID, SRC_PEER_BEEF, abi.encode(bob, dst), srcList, dstList) {
             // Mint succeeded — pass.
         } catch (bytes memory reason) {
             // If we hit one of our auth errors, the test fails.
@@ -180,6 +183,6 @@ contract ConfidentialOFTTest is TestHelperOz5, HostContractsDeployerTestUtils {
         // The fresh handle is unknown to the ACL, so isSenderAllowed fails.
         vm.prank(alice);
         vm.expectRevert();
-        oft.send{value: 1 ether}(DST_EID, address(0xBEEF), euint64.wrap(_makeHandle(0)), bob, uint128(150_000));
+        oft.send{value: 1 ether}(DST_EID, SRC_PEER_BEEF, euint64.wrap(_makeHandle(0)), bob, uint128(150_000));
     }
 }

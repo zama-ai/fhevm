@@ -24,7 +24,10 @@ describe('ConfidentialOFT', function () {
 
   describe('governance', function () {
     it('owner can toggle a trusted peer', async function () {
-      const peer = this.signers.bob.address;
+      // setTrustedPeer takes bytes32 (forward-compat with non-EVM peers). For EVM
+      // peers, pad the address to 32 bytes.
+      const peerAddr = this.signers.bob.address;
+      const peer = ethers.zeroPadValue(peerAddr, 32);
       expect(await this.oft.isTrustedPeer(SRC_EID, peer)).to.equal(false);
 
       await expect(this.oft.connect(this.fx.owner).setTrustedPeer(SRC_EID, peer, true))
@@ -38,7 +41,9 @@ describe('ConfidentialOFT', function () {
 
     it('non-owner cannot setTrustedPeer', async function () {
       await expect(
-        this.oft.connect(this.signers.bob).setTrustedPeer(SRC_EID, this.signers.bob.address, true),
+        this.oft
+          .connect(this.signers.bob)
+          .setTrustedPeer(SRC_EID, ethers.zeroPadValue(this.signers.bob.address, 32), true),
       ).to.be.reverted;
     });
   });
@@ -51,7 +56,7 @@ describe('ConfidentialOFT', function () {
           .connect(this.signers.bob)
           .onReceive(
             SRC_EID,
-            this.signers.alice.address,
+            ethers.zeroPadValue(this.signers.alice.address, 32),
             ethers.AbiCoder.defaultAbiCoder().encode(['address', 'bytes32'], [this.signers.alice.address, ethers.ZeroHash]),
             [],
             [],
@@ -67,19 +72,20 @@ describe('ConfidentialOFT', function () {
       await fundAddress(bridgeAddr);
       const bridgeSigner = await ethers.getSigner(bridgeAddr);
 
+      const untrustedPeer = ethers.zeroPadValue(this.signers.bob.address, 32);
       await expect(
         this.oft
           .connect(bridgeSigner)
           .onReceive(
             SRC_EID,
-            this.signers.bob.address,
+            untrustedPeer,
             ethers.AbiCoder.defaultAbiCoder().encode(['address', 'bytes32'], [this.signers.alice.address, ethers.ZeroHash]),
             [],
             [],
           ),
       )
         .to.be.revertedWithCustomError(this.oft, 'UntrustedPeer')
-        .withArgs(SRC_EID, this.signers.bob.address);
+        .withArgs(SRC_EID, untrustedPeer);
       await stopImpersonating(bridgeAddr);
     });
   });
@@ -92,9 +98,14 @@ describe('ConfidentialOFT', function () {
       await expect(
         this.oft
           .connect(this.signers.alice)
-          .send(DST_EID, this.signers.alice.address, fakeAmount, this.signers.bob.address, 200_000n, {
-            value: ethers.parseEther('1'),
-          }),
+          .send(
+            DST_EID,
+            ethers.zeroPadValue(this.signers.alice.address, 32),
+            fakeAmount,
+            this.signers.bob.address,
+            200_000n,
+            { value: ethers.parseEther('1') },
+          ),
       ).to.be.reverted;
     });
   });

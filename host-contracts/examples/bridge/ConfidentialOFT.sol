@@ -27,10 +27,11 @@ import {IDstApp} from "../../contracts/bridge/interfaces/IDstApp.sol";
  */
 contract ConfidentialOFT is Ownable2Step, IDstApp {
     event Bridged(address indexed from, uint32 indexed dstEid, address indexed recipient);
-    event Received(uint32 indexed srcEid, address indexed srcApp, address indexed recipient);
-    event TrustedPeerSet(uint32 indexed srcEid, address indexed srcApp, bool trusted);
+    /// @param srcApp Source peer as bytes32 — for EVM peers this is a left-zero-padded address.
+    event Received(uint32 indexed srcEid, bytes32 indexed srcApp, address indexed recipient);
+    event TrustedPeerSet(uint32 indexed srcEid, bytes32 indexed srcApp, bool trusted);
 
-    error UntrustedPeer(uint32 srcEid, address srcApp);
+    error UntrustedPeer(uint32 srcEid, bytes32 srcApp);
     error OnlyConfidentialBridge(address caller);
 
     /// @notice ConfidentialBridge on this chain. Used both to dispatch outbound sends and
@@ -43,7 +44,11 @@ contract ConfidentialOFT is Ownable2Step, IDstApp {
     ///      pair is rejected in `onReceive`. The recipient's destination balance handle
     ///      ends up associated with no ciphertext from a compromised chain otherwise —
     ///      a targeted DoS — so apps choose what they trust (RFC 008 §Example).
-    mapping(uint32 srcEid => mapping(address srcApp => bool trusted)) private _trustedPeers;
+    ///
+    ///      Keyed by `bytes32 srcApp` rather than `address` to support non-EVM peers
+    ///      (e.g. Solana program IDs). For EVM peers, pass
+    ///      `bytes32(uint256(uint160(remoteEvmAddress)))`.
+    mapping(uint32 srcEid => mapping(bytes32 srcApp => bool trusted)) private _trustedPeers;
 
     /// @dev Encrypted balance per holder.
     mapping(address holder => euint64 balance) private _balances;
@@ -59,14 +64,16 @@ contract ConfidentialOFT is Ownable2Step, IDstApp {
      *         `msg.value` to cover the LayerZero native fee — query
      *         `ConfidentialBridge.quote(...)` from off-chain.
      * @param dstEid           LayerZero endpoint id of the destination chain.
-     * @param dstApp           Peer ConfidentialOFT address on the destination chain.
+     * @param dstApp           Peer ConfidentialOFT on the destination chain as bytes32.
+     *                         For EVM destinations pass
+     *                         `bytes32(uint256(uint160(remoteOftAddress)))`.
      * @param amount           Encrypted amount handle to burn-and-send.
      * @param recipient        Recipient on the destination chain.
      * @param mintComposeGas   Gas budget for destination-side lzCompose (the `onReceive`).
      */
     function send(
         uint32 dstEid,
-        address dstApp,
+        bytes32 dstApp,
         euint64 amount,
         address recipient,
         uint128 mintComposeGas
@@ -99,7 +106,7 @@ contract ConfidentialOFT is Ownable2Step, IDstApp {
      */
     function onReceive(
         uint32 srcEid,
-        address srcApp,
+        bytes32 srcApp,
         bytes calldata payload,
         bytes32[] calldata /* srcHandleList */,
         bytes32[] calldata dstHandleList
@@ -117,7 +124,9 @@ contract ConfidentialOFT is Ownable2Step, IDstApp {
 
     /// @notice Configure a per-chain trusted peer app. Must be set before that peer
     ///         can mint into this contract via the bridge.
-    function setTrustedPeer(uint32 srcEid, address srcApp, bool trusted) external onlyOwner {
+    /// @param srcApp Peer app on the source chain as bytes32. EVM peers: pass
+    ///        `bytes32(uint256(uint160(remoteAddress)))`.
+    function setTrustedPeer(uint32 srcEid, bytes32 srcApp, bool trusted) external onlyOwner {
         _trustedPeers[srcEid][srcApp] = trusted;
         emit TrustedPeerSet(srcEid, srcApp, trusted);
     }
@@ -128,7 +137,7 @@ contract ConfidentialOFT is Ownable2Step, IDstApp {
     }
 
     /// @notice Returns whether `(srcEid, srcApp)` is a trusted bridging peer.
-    function isTrustedPeer(uint32 srcEid, address srcApp) external view returns (bool) {
+    function isTrustedPeer(uint32 srcEid, bytes32 srcApp) external view returns (bool) {
         return _trustedPeers[srcEid][srcApp];
     }
 

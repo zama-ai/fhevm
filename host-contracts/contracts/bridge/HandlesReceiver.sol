@@ -169,21 +169,27 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
         if (msg.sender != address(endpoint)) revert NotLzEndpoint(msg.sender);
         if (from != address(this)) revert UnexpectedComposeOrigin(from);
 
+        // Wire format: both srcApp and dstApp are bytes32 (see HandlesSender._dispatch
+        // for the rationale). On EVM, srcApp is a zero-padded address; dstApp must
+        // also fit in 20 bytes for the local IDstApp dispatch — non-EVM destinations
+        // never reach this lzCompose path because they run their own (non-Solidity)
+        // bridge implementation.
         (
             uint32 srcEid,
-            address srcApp,
-            address dstApp,
+            bytes32 srcApp,
+            bytes32 dstApp,
             bytes memory payload,
             bytes32[] memory srcHandleList,
             bytes32[] memory dstHandleList
-        ) = abi.decode(message, (uint32, address, address, bytes, bytes32[], bytes32[]));
+        ) = abi.decode(message, (uint32, bytes32, bytes32, bytes, bytes32[], bytes32[]));
 
+        address dstAppEvm = address(uint160(uint256(dstApp)));
         uint256 nHandles = dstHandleList.length;
         for (uint256 i = 0; i < nHandles; i++) {
-            ACL_CONTRACT.allowTransient(dstHandleList[i], dstApp);
+            ACL_CONTRACT.allowTransient(dstHandleList[i], dstAppEvm);
         }
 
-        IDstApp(dstApp).onReceive(srcEid, srcApp, payload, srcHandleList, dstHandleList);
+        IDstApp(dstAppEvm).onReceive(srcEid, srcApp, payload, srcHandleList, dstHandleList);
     }
 
     /**
@@ -197,9 +203,6 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
         address /* executor */,
         bytes calldata /* extraData */
     ) internal override {
-        // Thin forwarder so `_lzReceive`'s frame holds only the three primitives needed
-        // by the inbound handler. Inlining the decode + sendCompose here trips
-        // stack-too-deep when compiling without --via-ir.
         _handleInbound(origin.srcEid, guid, message);
     }
 
@@ -208,9 +211,10 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
      *      dispatch compose-to-self with the augmented payload.
      */
     function _handleInbound(uint32 srcEid, bytes32 guid, bytes calldata message) private {
-        (address srcApp, address dstApp, bytes memory payload, bytes32[] memory srcHandleList) = abi.decode(
+        // Wire format mirrors HandlesSender._dispatch: srcApp+dstApp as bytes32.
+        (bytes32 srcApp, bytes32 dstApp, bytes memory payload, bytes32[] memory srcHandleList) = abi.decode(
             message,
-            (address, address, bytes, bytes32[])
+            (bytes32, bytes32, bytes, bytes32[])
         );
 
         bytes32[] memory dstHandleList = _deriveAndEmit(dstApp, srcHandleList, guid);
@@ -231,24 +235,26 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
      *      build trips stack-too-deep when this is inlined).
      */
     function _deriveAndEmit(
-        address dstApp,
+        bytes32 dstApp,
         bytes32[] memory srcHandleList,
         bytes32 guid
     ) private returns (bytes32[] memory dstHandleList) {
         uint256 n = srcHandleList.length;
         dstHandleList = new bytes32[](n);
         bytes32 prevBlockHash = blockhash(block.number - 1);
+        // HandleBridged.receiverDapp is an EVM-local address (the event fires on this
+        // chain). Convert from the bytes32 wire field for the emit.
+        address dstAppEvm = address(uint160(uint256(dstApp)));
         for (uint256 i = 0; i < n; i++) {
             bytes32 srcHandle = srcHandleList[i];
-            bytes32 dstHandle = _deriveDstHandle(srcHandle, prevBlockHash, guid);
+            bytes32 dstHandle = _deriveDstHandle(srcHandle, prevBlockHash);
             dstHandleList[i] = dstHandle;
-            emit HandleBridged(dstApp, srcHandle, dstHandle, guid);
+            emit HandleBridged(dstAppEvm, srcHandle, dstHandle, guid);
         }
     }
 
     /**
-     * @dev Derives the destination handle as
-     *      Hash(BRIDGE_DERIVATION_DOMAIN_SEPARATOR, srcHandle, dstChainId, prevBlockHash, guid),
+     * @dev Derives the destination handle
      *      then embeds metadata: chain id (this chain) in bytes 22-29, FheType from the
      *      source handle in byte 30 (so the handle type is preserved across the bridge),
      *      and HANDLE_VERSION in byte 31.
@@ -257,16 +263,11 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
      *      verification (matches the FHEVMExecutor's computation-handle convention),
      *      distinguishing bridged handles from user-input handles on this chain.
      */
-    function _deriveDstHandle(
-        bytes32 srcHandle,
-        bytes32 prevBlockHash,
-        bytes32 guid
-    ) internal view returns (bytes32 result) {
+    function _deriveDstHandle(bytes32 srcHandle, bytes32 prevBlockHash) internal view returns (bytes32 result) {
         result = keccak256(
             abi.encodePacked(
                 BRIDGE_DERIVATION_DOMAIN_SEPARATOR,
                 srcHandle,
-                guid,
                 ACL_CONTRACT,
                 block.chainid,
                 prevBlockHash,

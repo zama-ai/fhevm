@@ -166,7 +166,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         handleList[0] = _makeHandle(0);
         vm.prank(srcApp);
         vm.expectRevert(abi.encodeWithSelector(HandlesSender.UnknownDstEid.selector, uint32(99)));
-        srcBridge.send{value: 0}(uint32(99), address(dstApp), "", handleList, uint128(0), "");
+        srcBridge.send{value: 0}(uint32(99), _addressToBytes32(address(dstApp)), "", handleList, uint128(0), "");
     }
 
     function test_Send_RevertsAboveMaxHandles() public {
@@ -175,7 +175,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         for (uint256 i = 0; i < handleList.length; i++) handleList[i] = _makeHandle(i);
         vm.prank(srcApp);
         vm.expectRevert(abi.encodeWithSelector(HandlesSender.TooManyHandles.selector, cap + 1, cap));
-        srcBridge.send{value: 0}(DST_EID, address(dstApp), "", handleList, uint128(0), "");
+        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint128(0), "");
     }
 
     function test_Send_RevertsOnHandleNotAllowed() public {
@@ -184,7 +184,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         handleList[0] = h;
         vm.prank(srcApp);
         vm.expectRevert(abi.encodeWithSelector(HandlesSender.HandleNotAllowed.selector, h, srcApp));
-        srcBridge.send{value: 0}(DST_EID, address(dstApp), "", handleList, uint128(0), "");
+        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint128(0), "");
     }
 
     function test_Send_RevertsOnComposeGasWithRawOptions() public {
@@ -196,7 +196,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         bytes memory rawOpts = hex"00030100110100000000000000000000000000000186a0"; // arbitrary non-empty
         vm.prank(srcApp);
         vm.expectRevert(HandlesSender.ComposeGasMustBeZeroWithRawOptions.selector);
-        srcBridge.send{value: 1 ether}(DST_EID, address(dstApp), "", handleList, uint128(50_000), rawOpts);
+        srcBridge.send{value: 1 ether}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint128(50_000), rawOpts);
     }
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -218,7 +218,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         MessagingFee memory fee = srcBridge.quote(
             DST_EID,
             srcApp,
-            address(dstApp),
+            _addressToBytes32(address(dstApp)),
             payload,
             handleList,
             uint128(200_000),
@@ -229,7 +229,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         vm.prank(srcApp);
         MessagingReceipt memory receipt = srcBridge.send{value: fee.nativeFee}(
             DST_EID,
-            address(dstApp),
+            _addressToBytes32(address(dstApp)),
             payload,
             handleList,
             uint128(200_000),
@@ -271,7 +271,13 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         handleList[1] = h1;
 
         bytes32 guid = keccak256("fake-guid");
-        bytes memory message = abi.encode(srcApp, address(dstApp), bytes("payload"), handleList);
+        // Bridge wire format: srcApp and dstApp are both bytes32 (zero-padded EVM addrs).
+        bytes memory message = abi.encode(
+            _addressToBytes32(srcApp),
+            _addressToBytes32(address(dstApp)),
+            bytes("payload"),
+            handleList
+        );
 
         // Build an Origin matching our peer config.
         Origin memory origin = Origin({srcEid: SRC_EID, sender: _addressToBytes32(address(srcBridge)), nonce: 1});
@@ -297,16 +303,18 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
     /// @dev Re-implements HandlesReceiver's `_deriveDstHandle` for assertions. Must
     ///      match exactly — domain sep + field ordering matter and are part of the
     ///      spec contract with the coprocessor.
+    /// @dev `guid` is accepted as a parameter for call-site symmetry with the
+    ///      contract's `_deriveAndEmit` (which threads it through) but is no
+    ///      longer part of the hash itself.
     function _expectedDstHandle(
         bytes32 srcHandle,
         bytes32 prevBlockHash,
-        bytes32 guid
+        bytes32 /* guid */
     ) internal view returns (bytes32 result) {
         result = keccak256(
             abi.encodePacked(
                 bytes8("FHE_brdg"),
                 srcHandle,
-                guid,
                 aclAdd,
                 block.chainid,
                 prevBlockHash,
@@ -346,8 +354,8 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
     function test_LzCompose_RevertsIfNotEndpoint() public {
         bytes memory composeMsg = abi.encode(
             SRC_EID,
-            srcApp,
-            address(dstApp),
+            _addressToBytes32(srcApp),
+            _addressToBytes32(address(dstApp)),
             bytes(""),
             new bytes32[](0),
             new bytes32[](0)
@@ -359,8 +367,8 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
     function test_LzCompose_RevertsIfFromNotSelf() public {
         bytes memory composeMsg = abi.encode(
             SRC_EID,
-            srcApp,
-            address(dstApp),
+            _addressToBytes32(srcApp),
+            _addressToBytes32(address(dstApp)),
             bytes(""),
             new bytes32[](0),
             new bytes32[](0)
@@ -381,7 +389,14 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         dstHandleList[1] = dstH1;
         bytes memory payload = abi.encode("payload-body");
 
-        bytes memory composeMsg = abi.encode(SRC_EID, srcApp, address(dstApp), payload, srcHandleList, dstHandleList);
+        bytes memory composeMsg = abi.encode(
+            SRC_EID,
+            _addressToBytes32(srcApp),
+            _addressToBytes32(address(dstApp)),
+            payload,
+            srcHandleList,
+            dstHandleList
+        );
 
         // In a real deployment the ACL bypasses sender checks for the canonical
         // ConfidentialBridge address. In this forge fixture the ACL's compile-time
@@ -399,7 +414,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         MockDstApp.LastCall memory lc = dstApp.lastCall();
         assertTrue(lc.wasCalled, "onReceive should have fired");
         assertEq(lc.srcEid, SRC_EID);
-        assertEq(lc.srcApp, srcApp);
+        assertEq(lc.srcApp, _addressToBytes32(srcApp));
         assertEq(keccak256(lc.payload), keccak256(payload));
         assertEq(lc.srcHandleList.length, 2);
         assertEq(lc.dstHandleList[0], dstH0);
@@ -410,7 +425,14 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         dstApp.setShouldRevert(true);
 
         bytes32[] memory empty = new bytes32[](0);
-        bytes memory composeMsg = abi.encode(SRC_EID, srcApp, address(dstApp), bytes(""), empty, empty);
+        bytes memory composeMsg = abi.encode(
+            SRC_EID,
+            _addressToBytes32(srcApp),
+            _addressToBytes32(address(dstApp)),
+            bytes(""),
+            empty,
+            empty
+        );
 
         vm.prank(address(endpoints[DST_EID]));
         vm.expectRevert();

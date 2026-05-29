@@ -14,7 +14,11 @@ interface IDstApp {
     /**
      * @notice Receive a bridged payload from a source chain.
      * @param srcEid          The LayerZero endpoint id of the source chain.
-     * @param srcApp          The source app that initiated the bridge on the source chain.
+     * @param srcApp          The source app that initiated the bridge on the source chain,
+     *                        as bytes32. For EVM source chains this is a left-zero-padded
+     *                        20-byte address (`address(uint160(uint256(srcApp)))` to
+     *                        convert). For non-EVM source chains (e.g. Solana) this carries
+     *                        the full 32-byte native program/account identifier.
      * @param payload         The opaque app-level payload (as encoded by the source app).
      * @param srcHandleList   The list of source-chain handles, in the order the source app
      *                        passed them to `HandlesSender.send`. Treat as opaque bytes32.
@@ -30,7 +34,7 @@ interface IDstApp {
      */
     function onReceive(
         uint32 srcEid,
-        address srcApp,
+        bytes32 srcApp,
         bytes calldata payload,
         bytes32[] calldata srcHandleList,
         bytes32[] calldata dstHandleList

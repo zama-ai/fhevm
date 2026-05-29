@@ -58,7 +58,7 @@ describe('Bridge', function () {
     it('reverts UnknownDstEid for an unregistered endpoint id', async function () {
       const handleList = [makeHandle(0)];
       const unknownEid = 99;
-      await expect(this.srcBridge.send(unknownEid, ethers.ZeroAddress, '0x', handleList, 0, '0x'))
+      await expect(this.srcBridge.send(unknownEid, ethers.ZeroHash, '0x', handleList, 0, '0x'))
         .to.be.revertedWithCustomError(this.srcBridge, 'UnknownDstEid')
         .withArgs(unknownEid);
     });
@@ -66,7 +66,7 @@ describe('Bridge', function () {
     it('reverts TooManyHandles when length exceeds the cap', async function () {
       const max = Number(await this.srcBridge.MAX_HANDLES());
       const handleList = Array.from({ length: max + 1 }, (_, i) => makeHandle(i));
-      await expect(this.srcBridge.send(DST_EID, ethers.ZeroAddress, '0x', handleList, 0, '0x'))
+      await expect(this.srcBridge.send(DST_EID, ethers.ZeroHash, '0x', handleList, 0, '0x'))
         .to.be.revertedWithCustomError(this.srcBridge, 'TooManyHandles')
         .withArgs(max + 1, max);
     });
@@ -76,7 +76,7 @@ describe('Bridge', function () {
       // signers.bob has no ACL allowance on this fresh handle.
       const bob = this.signers.bob;
       await expect(
-        this.srcBridge.connect(bob).send(DST_EID, ethers.ZeroAddress, '0x', handleList, 0, '0x'),
+        this.srcBridge.connect(bob).send(DST_EID, ethers.ZeroHash, '0x', handleList, 0, '0x'),
       ).to.be.revertedWithCustomError(this.srcBridge, 'HandleNotAllowed');
     });
 
@@ -99,7 +99,7 @@ describe('Bridge', function () {
       await expect(
         this.srcBridge
           .connect(this.signers.alice)
-          .send(DST_EID, ethers.ZeroAddress, '0x', [handle], 50_000n, rawOpts, { value: ethers.parseEther('1') }),
+          .send(DST_EID, ethers.ZeroHash, '0x', [handle], 50_000n, rawOpts, { value: ethers.parseEther('1') }),
       ).to.be.revertedWithCustomError(this.srcBridge, 'ComposeGasMustBeZeroWithRawOptions');
     });
   });
@@ -132,8 +132,15 @@ describe('Bridge', function () {
   describe('ConfidentialBridge: lzCompose authentication', function () {
     it('rejects calls from a non-endpoint caller', async function () {
       const composeMsg = ethers.AbiCoder.defaultAbiCoder().encode(
-        ['uint32', 'address', 'address', 'bytes', 'bytes32[]', 'bytes32[]'],
-        [SRC_EID, this.signers.alice.address, this.signers.bob.address, '0x', [], []],
+        ['uint32', 'bytes32', 'bytes32', 'bytes', 'bytes32[]', 'bytes32[]'],
+        [
+          SRC_EID,
+          ethers.zeroPadValue(this.signers.alice.address, 32),
+          ethers.zeroPadValue(this.signers.bob.address, 32),
+          '0x',
+          [],
+          [],
+        ],
       );
       await expect(
         this.dstBridge
@@ -151,8 +158,15 @@ describe('Bridge', function () {
     it('rejects compose messages whose `from` is not the bridge itself', async function () {
       const endpointAddr = await this.fx.dstEndpoint.getAddress();
       const composeMsg = ethers.AbiCoder.defaultAbiCoder().encode(
-        ['uint32', 'address', 'address', 'bytes', 'bytes32[]', 'bytes32[]'],
-        [SRC_EID, this.signers.alice.address, this.signers.bob.address, '0x', [], []],
+        ['uint32', 'bytes32', 'bytes32', 'bytes', 'bytes32[]', 'bytes32[]'],
+        [
+          SRC_EID,
+          ethers.zeroPadValue(this.signers.alice.address, 32),
+          ethers.zeroPadValue(this.signers.bob.address, 32),
+          '0x',
+          [],
+          [],
+        ],
       );
       await impersonate(endpointAddr);
       await fundAddress(endpointAddr);
