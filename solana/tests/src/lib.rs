@@ -34,7 +34,7 @@ pub use cleartext::{
 pub use events::{
     acl_allowed_events, acl_public_decrypt_allowed_events, balance_handle_updated_events,
     binary_op_events, collect_cpi_events, collect_zama_host_events, count_acl_allowed_events,
-    count_tfhe_host_events, decode_token_cpi_event, decode_zama_host_cpi_event, fhe_rand_events,
+    count_tfhe_host_events, decode_token_cpi_event, fhe_rand_events,
     input_verified_events, max_cpi_depth, trivial_encrypt_events, AclAllowedEvent,
     AclPublicDecryptAllowedEvent, FheBinaryOpEvent, FheRandEvent, InputVerifiedEvent,
     TrivialEncryptEvent, ZamaHostEvent, ANCHOR_EVENT_IX_TAG_LE,
@@ -45,9 +45,9 @@ pub use fixture::{
 };
 pub use host_ix::{allow_for_decryption_ix, execute_frame_ix, label};
 pub use instructions::{
-    external_input_handle, poc_demo_confidential_rand, poc_demo_confidential_rand_ix,
-    self_transfer_ix, transfer_ix, transfer_ix_with_amount_proof, transfer_ix_with_current_acl,
-    transfer_output_accounts, wrap_output_accounts, wrap_usdc_ix,
+    external_input_handle, poc_demo_confidential_rand_ix, self_transfer_ix, transfer_ix,
+    transfer_ix_with_amount_proof, transfer_ix_with_current_acl, transfer_output_accounts,
+    wrap_output_accounts, wrap_usdc_ix,
 };
 pub use invariants::{
     assert_balance_acl_subjects, assert_no_zama_host_events_on_failure, assert_tfhe_event_count,
@@ -64,8 +64,8 @@ pub use programs::{
     host_program_so_path, svm_with_program, svm_with_programs, token_program_so_path,
 };
 pub use scenarios::{
-    run_rand_demo_scenario, run_transfer_scenario, run_transfer_scenario_meta, run_wrap_scenario,
-    RandDemoScenario, TransferScenario, TransferSetup, WrapScenario, WrapSetup, BALANCE_FHE_TYPE,
+    run_rand_demo_scenario, run_transfer_scenario, run_wrap_scenario, RandDemoScenario,
+    TransferScenario, TransferSetup, WrapScenario, WrapSetup, BALANCE_FHE_TYPE,
 };
 pub use semantic::{
     assert_transfer_cleartext, assert_transfer_semantics, compute_backend_kind_from_env,

@@ -35,10 +35,6 @@ pub fn collect_zama_host_events(
     collect_cpi_events(meta, account_keys, program_id, decode_anchor_cpi_event)
 }
 
-pub fn decode_zama_host_cpi_event(data: &[u8]) -> Option<ZamaHostEvent> {
-    decode_anchor_cpi_event(data)
-}
-
 pub fn binary_op_events(
     meta: &TransactionMetadata,
     account_keys: &[Pubkey],

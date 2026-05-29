@@ -7,7 +7,7 @@ use crate::{
         balance_acl_record_address, event_authority, rand_acl_record_address, rand_counter_address,
     },
     fixture::{TokenFixture, TransferOutputAccounts, WrapOutputAccounts},
-    transaction::{anchor_ix, send},
+    transaction::anchor_ix,
 };
 
 use confidential_token as token;
@@ -40,12 +40,6 @@ pub fn poc_demo_confidential_rand_ix(
         token::instruction::PocDemoConfidentialRand { nonce_sequence },
     );
     (ix, output_acl)
-}
-
-pub fn poc_demo_confidential_rand(fixture: &mut TokenFixture, nonce_sequence: u64) -> Pubkey {
-    let (ix, output_acl) = poc_demo_confidential_rand_ix(fixture, nonce_sequence);
-    send(&mut fixture.svm, &fixture.alice, ix);
-    output_acl
 }
 
 pub fn transfer_output_accounts(

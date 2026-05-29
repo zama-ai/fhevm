@@ -12,7 +12,7 @@ use crate::{
     host_program_so_path, input_verified_events, kms_like_public_decrypt_check,
     kms_like_user_decrypt_check, label, max_cpi_depth, previous_bank_hash_from_sysvar,
     read_acl_record, read_rand_counter, record_subjects, run_rand_demo_scenario,
-    run_transfer_scenario_meta, run_wrap_scenario, seed_authorizing_acl_record,
+    run_transfer_scenario, run_wrap_scenario, seed_authorizing_acl_record,
     seed_transfer_inputs, self_transfer_ix, send, send_many_with_signers, send_with_meta,
     set_previous_slot_hash, signed_confidential_rand_user_decrypt_request,
     signed_current_balance_user_decrypt_request, signed_user_decrypt_request, spl_token_amount,
@@ -1047,7 +1047,7 @@ fn transfer_scenario_cleartext_backend() {
 fn confidential_transfer_rotates_balance_handles_and_binds_output_acl() {
     let mut fixture = token_fixture();
     let setup = TransferSetup::default();
-    let (scenario, _) = run_transfer_scenario_meta(&mut fixture, setup);
+    let scenario = run_transfer_scenario(&mut fixture, setup);
     let mut cleartext = CleartextBackend::default();
     seed_transfer_inputs(&mut cleartext, &scenario, 125, 20, setup.amount);
     cleartext

@@ -112,41 +112,6 @@ pub fn run_transfer_scenario(fixture: &mut TokenFixture, setup: TransferSetup) -
     }
 }
 
-/// Same transfer without capturing a signature (legacy tests that only need metadata).
-pub fn run_transfer_scenario_meta(
-    fixture: &mut TokenFixture,
-    setup: TransferSetup,
-) -> (TransferScenario, bool) {
-    let alice_before = fixture.alice_initial;
-    let bob_before = fixture.bob_initial;
-    let amount_handle = external_input_handle(fixture, setup.amount, setup.input_nonce_sequence);
-    let output = transfer_output_accounts(fixture, setup.output_nonce_sequence);
-    let transfer_ix = transfer_ix(fixture, output, amount_handle);
-    let (meta, account_keys) = send_with_meta(&mut fixture.svm, &fixture.alice, transfer_ix);
-    let new_alice_handle = read_acl_record(&fixture.svm, output.alice)
-        .expect("expected Alice output ACL")
-        .handle;
-    let new_bob_handle = read_acl_record(&fixture.svm, output.bob)
-        .expect("expected Bob output ACL")
-        .handle;
-
-    (
-        TransferScenario {
-            meta,
-            account_keys,
-            signature: Signature::default(),
-            host_program_id: fixture.host_program_id,
-            amount_handle,
-            alice_before,
-            bob_before,
-            output,
-            new_alice_handle,
-            new_bob_handle,
-        },
-        false,
-    )
-}
-
 #[derive(Clone, Copy, Debug)]
 pub struct WrapSetup {
     pub amount: u64,
