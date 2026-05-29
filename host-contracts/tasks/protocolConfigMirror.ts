@@ -24,6 +24,8 @@ export type KmsThresholds = {
   mpc: bigint;
 };
 
+// Upgrades the secondary ProtocolConfig proxy and initializes it from the
+// canonical host's current KMS context snapshot.
 export async function mirrorProtocolConfigFromCanonical(
   hre: HardhatRuntimeEnvironment,
   options: {

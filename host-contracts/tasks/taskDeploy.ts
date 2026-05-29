@@ -119,8 +119,9 @@ task('task:deploySecondaryHost', 'Deploys a secondary host stack without KMSGene
 // Host skeleton
 ////////////////////////////////////////////////////////////////////////////////
 
-// Deploys only the shared host skeleton. Use task:deployCanonicalHost or
-// task:deploySecondaryHost for full deployments.
+// Deploys the host components shared by canonical and secondary chains: proxy addresses,
+// PauserSet, ACL, FHEVMExecutor, InputVerifier, and HCULimit. ProtocolConfig,
+// KMSVerifier, and KMSGeneration are handled by the full deployment roles.
 task('task:deployHostSkeleton', 'Deploys the shared host skeleton only; not a full host deployment.')
   .addFlag('skipKmsGeneration', 'Do not deploy the canonical-only KMSGeneration proxy.')
   .setAction(async function ({ skipKmsGeneration }: TaskArguments, hre) {
