@@ -1759,21 +1759,29 @@ mod tests {
         }
     }
 
-    fn delegation() -> UserDecryptionDelegationWitness {
+    fn delegation_for_app(app_account: SolanaPubkeyBytes) -> UserDecryptionDelegationWitness {
         let (account_key, bump) =
-            user_decryption_delegation_address(HOST_PROGRAM_ID, OWNER, DELEGATE, APP_ACCOUNT);
+            user_decryption_delegation_address(HOST_PROGRAM_ID, OWNER, DELEGATE, app_account);
         UserDecryptionDelegationWitness {
             account_key,
             owner: HOST_PROGRAM_ID,
             delegator: OWNER,
             delegate: DELEGATE,
-            app_account: APP_ACCOUNT,
+            app_account,
             expiration_slot: OBSERVED_SLOT + 20,
             delegation_counter: 9,
             last_update_slot: OBSERVED_SLOT - 1,
             revoked: false,
             bump,
         }
+    }
+
+    fn delegation() -> UserDecryptionDelegationWitness {
+        delegation_for_app(APP_ACCOUNT)
+    }
+
+    fn wildcard_delegation() -> UserDecryptionDelegationWitness {
+        delegation_for_app(WILDCARD_APP_CONTEXT)
     }
 
     fn encode_acl_record(record: &AclRecordWitness) -> Vec<u8> {
@@ -1873,6 +1881,18 @@ mod tests {
                         Some(delegation),
                     )
                 }
+                SOLANA_NATIVE_REQUEST_MODE_DELEGATED_WILDCARD_SCOPED => {
+                    let delegation = wildcard_delegation();
+                    (
+                        [0; 32],
+                        OWNER,
+                        DELEGATE,
+                        APP_ACCOUNT,
+                        delegation.account_key,
+                        delegation.delegation_counter,
+                        Some(delegation),
+                    )
+                }
                 _ => unreachable!("unsupported test mode"),
             };
 
@@ -1928,7 +1948,8 @@ mod tests {
         let request_signer_pubkey = match mode {
             SOLANA_NATIVE_REQUEST_MODE_PUBLIC => [0; 32],
             SOLANA_NATIVE_REQUEST_MODE_DIRECT_SCOPED => OWNER,
-            SOLANA_NATIVE_REQUEST_MODE_DELEGATED_SCOPED => DELEGATE,
+            SOLANA_NATIVE_REQUEST_MODE_DELEGATED_SCOPED
+            | SOLANA_NATIVE_REQUEST_MODE_DELEGATED_WILDCARD_SCOPED => DELEGATE,
             _ => unreachable!("unsupported test mode"),
         };
         let nonce = if mode == SOLANA_NATIVE_REQUEST_MODE_PUBLIC {
@@ -1966,6 +1987,16 @@ mod tests {
             raw_extra_data,
             user_reencryption_public_key,
         }
+    }
+
+    fn replace_native_delegation(
+        request: &mut SolanaNativeDecryptionRequestV0,
+        delegation: UserDecryptionDelegationWitness,
+    ) {
+        request.entries[0].delegation_record_account = delegation.account_key;
+        request.entries[0].expected_delegation_counter = delegation.delegation_counter;
+        request.entries[0].delegation = Some(delegation);
+        request.payload.entries_hash = solana_native_entries_hash(&request.entries);
     }
 
     #[test]
@@ -2613,6 +2644,73 @@ mod tests {
     }
 
     #[test]
+    fn verifies_native_v0_delegated_wildcard_request() {
+        let verifier = SolanaAclVerifier::new(HOST_PROGRAM_ID);
+        let request = native_request(SOLANA_NATIVE_REQUEST_MODE_DELEGATED_WILDCARD_SCOPED);
+
+        assert_eq!(request.entries[0].app_context_pubkey, APP_ACCOUNT);
+        assert_eq!(
+            request.entries[0].delegation.as_ref().unwrap().app_account,
+            WILDCARD_APP_CONTEXT
+        );
+
+        let accepted = verifier
+            .verify_native_v0_request(
+                &request,
+                OBSERVED_SLOT,
+                SolanaNativeRequestLimits::default(),
+            )
+            .unwrap();
+
+        assert_eq!(
+            accepted.replay_key,
+            Some(SolanaNativeReplayKeyV0 {
+                host_chain_id: request.payload.host_chain_id,
+                solana_cluster_id: request.payload.solana_cluster_id,
+                kms_context_id: request.payload.kms_context_id,
+                request_signer_pubkey: DELEGATE,
+                nonce: [77; 32],
+            })
+        );
+    }
+
+    #[test]
+    fn native_v0_wildcard_request_rejects_scoped_delegation_record() {
+        let verifier = SolanaAclVerifier::new(HOST_PROGRAM_ID);
+        let mut request = native_request(SOLANA_NATIVE_REQUEST_MODE_DELEGATED_WILDCARD_SCOPED);
+        replace_native_delegation(&mut request, delegation());
+
+        assert_eq!(
+            verifier.verify_native_v0_request(
+                &request,
+                OBSERVED_SLOT,
+                SolanaNativeRequestLimits::default()
+            ),
+            Err(SolanaNativeRequestError::Acl(
+                SolanaAclVerificationError::DelegationMismatch
+            ))
+        );
+    }
+
+    #[test]
+    fn native_v0_scoped_request_rejects_wildcard_delegation_record() {
+        let verifier = SolanaAclVerifier::new(HOST_PROGRAM_ID);
+        let mut request = native_request(SOLANA_NATIVE_REQUEST_MODE_DELEGATED_SCOPED);
+        replace_native_delegation(&mut request, wildcard_delegation());
+
+        assert_eq!(
+            verifier.verify_native_v0_request(
+                &request,
+                OBSERVED_SLOT,
+                SolanaNativeRequestLimits::default()
+            ),
+            Err(SolanaNativeRequestError::Acl(
+                SolanaAclVerificationError::DelegationMismatch
+            ))
+        );
+    }
+
+    #[test]
     fn native_v0_rejects_wildcard_delegate_pubkey() {
         let verifier = SolanaAclVerifier::new(HOST_PROGRAM_ID);
         let mut request = native_request(SOLANA_NATIVE_REQUEST_MODE_DELEGATED_SCOPED);
@@ -2762,6 +2860,38 @@ mod tests {
             ),
             Err(SolanaNativeRequestError::InvalidKeyId)
         );
+    }
+
+    #[test]
+    fn native_v0_rejects_material_entry_binding_mismatches() {
+        let verifier = SolanaAclVerifier::new(HOST_PROGRAM_ID);
+        let cases: [(&str, fn(&mut SolanaNativeDecryptionRequestV0)); 3] = [
+            ("material account", |request| {
+                request.entries[0].material_commitment_account = [31; 32];
+            }),
+            ("material hash", |request| {
+                request.entries[0].material_commitment_hash = [32; 32];
+            }),
+            ("key id", |request| {
+                request.entries[0].expected_key_id = [33; 32];
+            }),
+        ];
+
+        for (case, mutate) in cases {
+            let mut request = native_request(SOLANA_NATIVE_REQUEST_MODE_DIRECT_SCOPED);
+            mutate(&mut request);
+            request.payload.entries_hash = solana_native_entries_hash(&request.entries);
+
+            assert_eq!(
+                verifier.verify_native_v0_request(
+                    &request,
+                    OBSERVED_SLOT,
+                    SolanaNativeRequestLimits::default()
+                ),
+                Err(SolanaNativeRequestError::WitnessAccountMismatch),
+                "{case}"
+            );
+        }
     }
 
     #[test]
