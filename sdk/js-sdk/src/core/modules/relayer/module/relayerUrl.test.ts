@@ -102,7 +102,7 @@ describe('validateRelayerBaseUrl', () => {
     { name: 'null', input: null, hasAuth: false, errorMatch: /non-empty string/ },
     { name: 'empty string', input: '', hasAuth: false, errorMatch: /non-empty string/ },
     { name: 'number', input: 42, hasAuth: false, errorMatch: /non-empty string/ },
-    { name: 'unparseable', input: 'not a url', hasAuth: false, errorMatch: /cannot parse/ },
+    { name: 'unparsable', input: 'not a url', hasAuth: false, errorMatch: /cannot parse/ },
     { name: 'ftp protocol', input: 'ftp://relayer.example.com/', hasAuth: false, errorMatch: /protocol.*ftp:/ },
     { name: 'file protocol', input: 'file:///tmp/x', hasAuth: false, errorMatch: /protocol.*file:/ },
     { name: 'has username', input: 'https://user@relayer.example.com/', hasAuth: false, errorMatch: /credentials/ },
