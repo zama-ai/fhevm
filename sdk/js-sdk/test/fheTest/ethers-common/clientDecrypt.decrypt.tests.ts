@@ -8,7 +8,7 @@ import { getEthersTestConfig, type CreateEthersClientFn, type FheTestEthersConfi
 
 export function defineClientDecryptDecryptTests(parameters: {
   readonly runIf: boolean;
-  createFhevmDecryptClient: CreateEthersClientFn;
+  readonly createFhevmDecryptClient: CreateEthersClientFn;
 }): void {
   describe.runIf(parameters.runIf)('Decrypt client — user decrypt', () => {
     let config: FheTestEthersConfig;

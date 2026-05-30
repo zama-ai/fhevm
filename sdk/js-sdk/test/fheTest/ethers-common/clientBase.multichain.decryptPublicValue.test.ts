@@ -15,7 +15,7 @@ import { asEncryptedValue } from '@fhevm/sdk/types';
 
 export function defineClientBaseMultichainDecryptPublicValueTests(parameters: {
   readonly runIf: boolean;
-  createFhevmBaseClient: CreateEthersClientFn;
+  readonly createFhevmBaseClient: CreateEthersClientFn;
 }): void {
   describe.runIf(parameters.runIf)('Base client — decryptPublicValue', () => {
     let configs: FheTestEthersConfig[];

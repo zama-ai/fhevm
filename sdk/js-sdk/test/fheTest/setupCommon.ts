@@ -1,5 +1,6 @@
 import type { FhevmChain } from '@fhevm/sdk/chains';
 import type { EncryptedValue, TypedValue } from '@fhevm/sdk/types';
+import type { WasmModuleVersions } from '../../src/core/types/coreFhevmRuntime.js';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -44,6 +45,7 @@ export type FheTestBaseEnv = {
   readonly zamaApiKey: string;
   readonly fheTestAddress: string;
   readonly fheTestVersion: FheTestVersion;
+  readonly moduleVersions?: WasmModuleVersions | undefined;
 };
 
 // ---------------------------------------------------------------------------
@@ -52,6 +54,31 @@ export type FheTestBaseEnv = {
 
 export function isCleartext(chainName: FheTestChainName) {
   return chainName === 'localcleartext';
+}
+
+// ---------------------------------------------------------------------------
+// TFHE wasm version per chain
+// ---------------------------------------------------------------------------
+
+export type TfheVersion = '1.5.3' | '1.6.1';
+
+const TFHE_VERSION_BY_CHAIN: Readonly<Record<FheTestChainName, TfheVersion | undefined>> = {
+  sepolia: '1.5.3',
+  testnet: '1.5.3', // alias for sepolia
+  mainnet: '1.5.3',
+  localstack_v11: '1.5.3',
+  localstack_v12: '1.5.3',
+  devnet: '1.6.1',
+  polygon_devnet: '1.6.1',
+  localstack: '1.6.1',
+  localstack_v13: '1.6.1',
+  localstack_v14: '1.6.1',
+  localcleartext: undefined,
+};
+
+/** Returns the TFHE wasm version for a given test chain, or `undefined` for cleartext chains. */
+export function getTfheVersion(chainName: FheTestChainName): TfheVersion | undefined {
+  return TFHE_VERSION_BY_CHAIN[chainName];
 }
 
 // ---------------------------------------------------------------------------
@@ -418,6 +445,9 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
     zamaApiKey,
     fheTestAddress,
     fheTestVersion,
+    moduleVersions: {
+      tfhe: getTfheVersion(chainName),
+    },
   };
 
   return _baseEnv;

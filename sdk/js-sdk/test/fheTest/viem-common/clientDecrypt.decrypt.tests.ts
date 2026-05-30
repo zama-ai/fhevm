@@ -24,6 +24,7 @@ export function defineClientDecryptDecryptTests(parameters: {
           debug: (message: string) => console.log(message),
           error: (message: string) => console.log(message),
         },
+        moduleVersions: config.moduleVersions,
       });
     });
 

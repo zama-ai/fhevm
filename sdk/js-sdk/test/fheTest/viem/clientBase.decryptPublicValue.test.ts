@@ -5,6 +5,8 @@ import { defineClientBaseDecryptPublicValueTests } from '../viem-common/clientBa
 
 ////////////////////////////////////////////////////////////////////////////////
 //
+// CHAIN=testnet npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.decryptPublicValue.test.ts
+// CHAIN=devnet npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.decryptPublicValue.test.ts
 // CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.decryptPublicValue.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////

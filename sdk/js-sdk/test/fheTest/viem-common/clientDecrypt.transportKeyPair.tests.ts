@@ -17,6 +17,7 @@ export function defineClientDecryptTransportKeyPairTests(parameters: {
           type: 'ApiKeyHeader',
           value: config.zamaApiKey,
         },
+        moduleVersions: config.moduleVersions,
       });
     });
 

@@ -5,6 +5,14 @@ import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { getEthersTestConfig, type CreateEthersClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
 import { clearTypeFromHandle, encryptTestCases, isBytes32Hex } from '../setupCommon.js';
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// CHAIN=testnet npx vitest run --config test/fheTest/vitest.config.ts ethers/clientEncrypt.encryptDecrypt.slow.test.ts
+// CHAIN=devnet npx vitest run --config test/fheTest/vitest.config.ts ethers/clientEncrypt.encryptDecrypt.slow.test.ts
+// CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts ethers/clientEncrypt.encryptDecrypt.slow.test.ts
+//
+////////////////////////////////////////////////////////////////////////////////
+
 type ModuleVersions = Parameters<typeof setFhevmRuntimeConfig>[0]['moduleVersions'];
 
 export function defineClientEncryptDecryptSlowTests(parameters: {

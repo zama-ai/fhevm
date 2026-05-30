@@ -106,6 +106,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
             type: 'ApiKeyHeader',
             value: config.zamaApiKey,
           },
+          moduleVersions: config.moduleVersions,
         });
         console.log(`  Alice: ${config.alice.account.address}`);
         console.log(`  Bob:   ${config.bob.account.address}`);

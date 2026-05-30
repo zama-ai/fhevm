@@ -5,7 +5,7 @@ import { getEthersTestConfig, type CreateEthersClientFn, type FheTestEthersConfi
 
 export function defineClientDecryptTransportKeyPairTests(parameters: {
   readonly runIf: boolean;
-  createFhevmDecryptClient: CreateEthersClientFn;
+  readonly createFhevmDecryptClient: CreateEthersClientFn;
 }): void {
   describe.runIf(parameters.runIf)('Decrypt client — e2e transport key pair', () => {
     let config: FheTestEthersConfig;

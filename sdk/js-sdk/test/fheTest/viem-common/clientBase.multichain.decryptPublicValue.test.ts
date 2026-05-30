@@ -16,7 +16,7 @@ import { asEncryptedValue } from '@fhevm/sdk/types';
 
 export function defineClientBaseMultichainDecryptPublicValueTests(parameters: {
   readonly runIf: boolean;
-  createFhevmBaseClient: CreateViemClientFn;
+  readonly createFhevmBaseClient: CreateViemClientFn;
 }): void {
   describe.runIf(parameters.runIf)('Base client — decryptPublicValue', () => {
     let configs: FheTestViemConfig[];
@@ -28,6 +28,7 @@ export function defineClientBaseMultichainDecryptPublicValueTests(parameters: {
           type: 'ApiKeyHeader',
           value: configs[0]!.zamaApiKey,
         },
+        moduleVersions: configs[0]!.moduleVersions,
       });
     });
 

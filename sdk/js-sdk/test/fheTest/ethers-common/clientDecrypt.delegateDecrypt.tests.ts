@@ -78,7 +78,7 @@ async function getUserDecryptionDelegationExpirationDate(parameters: {
 
 export function defineClientDecryptDelegateDecryptTests(parameters: {
   readonly runIf: boolean;
-  createFhevmDecryptClient: CreateEthersClientFn;
+  readonly createFhevmDecryptClient: CreateEthersClientFn;
 }): void {
   describe.runIf(parameters.runIf)(
     'Decrypt client — delegated decrypt',

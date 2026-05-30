@@ -22,7 +22,7 @@ export function defineClientEncryptEncryptTests(parameters: {
           type: 'ApiKeyHeader',
           value: config.zamaApiKey,
         },
-        moduleVersions: parameters.moduleVersions,
+        moduleVersions: parameters.moduleVersions ?? config.moduleVersions,
       });
     });
 

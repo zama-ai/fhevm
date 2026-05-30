@@ -1,7 +1,9 @@
 import type { FhevmChain } from '@fhevm/sdk/chains';
+import type { WasmModuleVersions } from '../../src/core/types/coreFhevmRuntime.js';
+import type { FheTestBaseEnv, FheTestChainName } from './setupCommon.js';
 import { ethers } from 'ethers';
 import { FHETestABI } from './FheTest-abi-v2.js';
-import { isCleartext, prepareChains, type FheTestBaseEnv, type FheTestChainName } from './setupCommon.js';
+import { isCleartext, prepareChains } from './setupCommon.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -24,6 +26,7 @@ export type FheTestEthersConfig = {
   readonly zamaApiKey: string;
   readonly fheTestAddress: string;
   readonly fheTestContract: ethers.Contract;
+  readonly moduleVersions?: WasmModuleVersions | undefined;
 };
 
 export type CreateEthersClientFn = (params: {
@@ -71,6 +74,7 @@ function _buildConfig(env: FheTestBaseEnv): FheTestEthersConfig {
     zamaApiKey: env.zamaApiKey,
     fheTestAddress: env.fheTestAddress,
     fheTestContract,
+    moduleVersions: env.moduleVersions,
   };
 }
 

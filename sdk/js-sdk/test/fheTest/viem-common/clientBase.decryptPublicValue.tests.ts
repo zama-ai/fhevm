@@ -8,13 +8,15 @@ import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
+// CHAIN=testnet npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.decryptPublicValue.test.ts
+// CHAIN=devnet npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.decryptPublicValue.test.ts
 // CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.decryptPublicValue.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 
 export function defineClientBaseDecryptPublicValueTests(parameters: {
   readonly runIf: boolean;
-  createFhevmBaseClient: CreateViemClientFn;
+  readonly createFhevmBaseClient: CreateViemClientFn;
 }): void {
   describe.runIf(parameters.runIf)('Base client — decryptPublicValue', () => {
     let config: FheTestViemConfig;
@@ -26,6 +28,7 @@ export function defineClientBaseDecryptPublicValueTests(parameters: {
           type: 'ApiKeyHeader',
           value: config.zamaApiKey,
         },
+        moduleVersions: config.moduleVersions,
       });
     });
 
