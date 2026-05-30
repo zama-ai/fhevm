@@ -7,7 +7,7 @@ type TkmsModuleVersionConfig = {
   readonly moduleVersions?:
     | 'auto'
     | {
-        readonly kms?: TkmsVersion | 'auto';
+        readonly kms?: TkmsVersion | 'auto' | undefined;
       }
     | undefined;
 };

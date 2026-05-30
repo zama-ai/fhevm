@@ -7,7 +7,7 @@ type TfheModuleVersionConfig = {
   readonly moduleVersions?:
     | 'auto'
     | {
-        readonly tfhe?: TfheVersion | 'auto';
+        readonly tfhe?: TfheVersion | 'auto' | undefined;
       }
     | undefined;
 };
