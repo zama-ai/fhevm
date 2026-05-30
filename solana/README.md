@@ -1076,9 +1076,16 @@ layout:
 
 The token program decodes the same fixed layout with `TransferReceiverReturn::decode` and rejects
 wrong length, wrong magic, wrong return program, or any mismatched field. The callback-success ACL
-must already be scoped to the recipient owner and allow the compute signer to use the encrypted bool;
-the hook return data proves that the receiver accepted that exact callback witness for the prior
-transfer. A successful hook call creates a `TransferReceiverHookCall` PDA keyed by `(mint,
+must already be scoped to the recipient owner and allow the compute signer to use the encrypted bool.
+The hook return data proves only that the named receiver program *ran* and echoed back the exact
+callback witness it was handed; in this PoC the sample receiver does **not** compute or attest the
+encrypted success bit — it returns the caller-supplied `callback_success_handle` unchanged, so the
+refund outcome is effectively chosen by whoever drives the call leg, not proven by the receiver's own
+logic. This intentionally diverges from EVM `ERC7984._transferAndCall`, where `success` is derived by
+`checkOnTransferReceived` actually evaluating the transfer. A production receiver must instead birth
+or cryptographically attest the success bit itself (e.g. compute it via FHE in its own CPI to
+ZamaHost) rather than echo it; the current sample receiver is a wiring stub, not a security model.
+A successful hook call creates a `TransferReceiverHookCall` PDA keyed by `(mint,
 sent_handle)`, so a repeated hook attempt for the same transferred handle fails before the external
 receiver CPI is invoked. `confidential_prepare_transfer_callback` requires that marker and checks it
 against the sent amount and callback-success witness before computing any refund. The later

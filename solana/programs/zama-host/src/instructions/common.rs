@@ -88,7 +88,15 @@ pub(super) fn assert_test_shim_authority(
     authority: Pubkey,
 ) -> Result<()> {
     assert_not_paused(config)?;
-    require!(config.test_shims_enabled, ZamaHostError::TestShimsDisabled);
+    // Confine the `test_emit_*` event shims to the local PoC chain, matching the
+    // confinement already applied to mock input and the zero birth-entropy
+    // fallback (state.rs `mock_input_allowed`/`zero_birth_entropy_allowed`). This
+    // prevents an admin on a deployed chain from emitting forged protocol events
+    // that a downstream host-listener/indexer could ingest as genuine.
+    require!(
+        config.test_shims_enabled && config.is_local_poc_chain(),
+        ZamaHostError::TestShimsDisabled
+    );
     require_keys_eq!(
         config.test_authority,
         authority,
@@ -795,6 +803,15 @@ fn assert_current_receiver_program(
     Ok(())
 }
 
+/// Position of the `session` account in the `create_transient_session`
+/// instruction's account list (payer, authority, session, host_config,
+/// system_program). The same-transaction proof matches this slot against the
+/// session PDA being consumed; keep in sync with `CreateTransientSession` in
+/// `create_transient_session.rs`. A mismatch here only yields a false negative
+/// (`TransientSessionCreationMissing`), never a false accept, because the
+/// session PDA is independently validated before consume.
+const CREATE_TRANSIENT_SESSION_SESSION_ACCOUNT_INDEX: usize = 2;
+
 fn assert_transient_session_created_in_current_transaction(
     instructions_sysvar: &AccountInfo,
     session_key: Pubkey,
@@ -810,7 +827,10 @@ fn assert_transient_session_created_in_current_transaction(
         if instruction.data[..8] != discriminator {
             continue;
         }
-        let Some(session_meta) = instruction.accounts.get(2) else {
+        let Some(session_meta) = instruction
+            .accounts
+            .get(CREATE_TRANSIENT_SESSION_SESSION_ACCOUNT_INDEX)
+        else {
             continue;
         };
         if session_meta.pubkey == session_key {

@@ -407,8 +407,10 @@ Consequences:
 The host and app (`confidential-token`) derive the same gate from the same `HostConfig`, so
 app-precomputed and host-verified handles stay in agreement. The `PreviousBankHashUnavailable`
 negative test runs on the PoC chain with `test_shims_enabled = false` to exercise fail-closed birth.
-`test_emit_*` event shims (no state mutation) remain the only test gate not chain-confined and should
-still be compiled out for mainnet.
+`test_emit_*` event shims (no state mutation) are now also chain-confined via
+`assert_test_shim_authority` (`test_shims_enabled && is_local_poc_chain()`), so an admin flag alone
+cannot enable them on a deployed chain; they should still be compiled out for mainnet as defense in
+depth.
 
 ## DD-015: Handle Birth Entropy Is PoC Bank-Hash-Seeded; Native-v0 Is Deterministic
 
@@ -474,12 +476,89 @@ public-receivable token should evaluate the staged inbound-credit profile (pendi
 recipient timing) or otherwise predeclare/lock the recipient's next balance ACL sequence so the
 inbound-write surface is bounded.
 
+## DD-017: Per-Op Binding Instructions With A Validated app_account_authority Signer Supersede The RFC-024 execute_frame Frame
+
+Status: adopted
+
+Context:
+
+RFC-024 sketched one batched `execute_frame(authorized_app_accounts[], steps[], actions[])` entry
+point and recorded removing an earlier `app_account_authority` signer that "was never validated by the
+host." The implementation diverged from that sketch and the reversal was not previously recorded here.
+
+Decision:
+
+The host exposes per-handle-class binding instructions — `fhe_binary_op_and_bind_output`,
+`fhe_ternary_op_and_bind_output`, `trivial_encrypt_and_bind`, `fhe_rand_and_bind`,
+`fhe_rand_bounded_and_bind`, `verify_input_and_bind`, `mock_input_verified_and_bind` — plus one batched
+`fhe_eval` for composed binary-op plans (the actual successor to `execute_frame`). Every durable-output
+path takes an `app_account_authority: Signer` that the host validates with
+`require_keys_eq!(app_account_authority, output_app_account)` in `assert_output_acl_metadata`
+(`instructions/common.rs`). This reinstates and now enforces the signer the RFC had removed.
+
+Rationale:
+
+A validated `app_account_authority == output_app_account` signer makes the app account that receives
+durable ACL output prove control via a Solana signature, rather than trusting an unsigned
+`authorized_app_accounts[]` declaration. Per-class instructions keep each handle-birth path type-gated
+and individually testable instead of multiplexed through one frame opcode; `fhe_eval` still provides
+batched multi-op composition with transient/durable outputs when a single CPI is required.
+
+Consequences:
+
+This contradicts the RFC-024 `execute_frame` section and its "app_account_authority removed" note;
+RFC-024 should be re-synced to the per-op + validated-signer model. Multi-account atomic effects (e.g.
+ERC7984 transfer crediting both sender and receiver) are expressed as multiple binding instructions /
+`fhe_eval` durable outputs rather than one frame with `authorized_app_accounts[]`.
+
+## DD-018: Transfer-And-Call Refund Finalize Is Recoverable, Not Atomic With Prepare
+
+Status: adopted (atomicity hardening product-open)
+
+Context:
+
+`confidential_prepare_transfer_callback` debits the recipient's refund and records a `PREPARED`
+settlement; `confidential_finalize_transfer_callback` credits the sender from the durable
+`refund_handle` snapshot and flips the settlement to `FINALIZED`. The two are separate instructions
+with no same-transaction binding.
+
+Decision:
+
+Finalize does not require the recipient's live balance to still equal the prepare-time snapshot. It
+credits the sender from the durable refund snapshot and is permissionless, so the credit is always
+recoverable by anyone after prepare. An earlier `to.balance_handle == settlement.to_balance_handle`
+guard was removed because it was unused by the credit math and would permanently strand the refund if
+the recipient performed any balance op between prepare and finalize.
+
+Rationale:
+
+The refund is a sender credit; the recipient's balance after prepare is irrelevant to it. Pinning
+settlement identity through the `(mint, sent_handle)` PDA seeds plus the `status` flip prevents double
+finalize without coupling the credit to a frozen recipient balance.
+
+Consequences:
+
+Between prepare and finalize the system is in a temporary, recoverable imbalance (recipient debited,
+sender not yet credited) rather than atomic. A future hardening may fuse prepare+finalize into one
+instruction (CU/account budget permitting) or add an instructions-sysvar same-transaction binding; this
+is tracked under Open Product Decisions.
+
 ## Open Product Decisions
 
 These are not settled by the PoC design decisions above:
 
 - Whether to converge handle birth to deterministic `BirthContextV0` (DD-015) at the native-v0 freeze.
 - Whether confidential balances move to the staged inbound-credit profile (DD-016).
+- Fusing or same-transaction-binding transfer-and-call prepare/finalize (DD-018).
+- Reclaiming rent for superseded durable `AclRecord` PDAs: there is no `close_acl_record` instruction
+  today, and one plain transfer binds five durable records (two of which — the `ge` success and the
+  `sub` debit candidate — are pure scratch). A binary-only `fhe_eval` frame cannot fold the two scratch
+  ops because their consumer is the ternary `select`; reducing the durable count needs either ternary
+  `fhe_eval` support plus an on-chain eval driver, or a host close/refund instruction.
+- Rejecting the PoC sentinel `chain_id` (`SOLANA_POC_CHAIN_ID = 12345`) in production builds. The
+  relaxations already fail closed on every non-sentinel chain id; a compile-time `poc` cargo feature
+  that both refuses 12345 at init and compiles out the mock/zero-entropy/`test_emit_*` paths would
+  remove the residual misconfiguration risk entirely.
 - `HostConfig` versioning (a native-v0 `config_version` field and rotation semantics are not yet modeled).
 - Whether operator flows ever need same-transaction visibility of the transferred handle (DD-009).
 - Compiling out (not just chain-confining) the remaining `test_emit_*` shim for mainnet builds.

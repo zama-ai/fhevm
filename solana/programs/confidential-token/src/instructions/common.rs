@@ -1065,15 +1065,18 @@ pub(crate) fn finalize_transfer_callback_settlement<'info>(
         from,
         mint_key,
     )?;
-    require_keys_eq!(
-        to.balance_acl_record,
-        accounts.settlement_record.to_balance_acl_record,
-        ConfidentialTokenError::CallbackSettlementMismatch
-    );
-    require!(
-        to.balance_handle == accounts.settlement_record.to_balance_handle,
-        ConfidentialTokenError::CallbackSettlementMismatch
-    );
+    // Intentionally do NOT require the recipient's live balance to still equal
+    // the prepare-time snapshot (`settlement_record.to_balance_handle` /
+    // `to_balance_acl_record`). Finalize credits the *sender* from the durable
+    // `refund_handle` recorded at prepare time and never reads the recipient's
+    // balance for the credit math. Requiring an unchanged recipient balance here
+    // would let any ordinary recipient balance op between prepare and finalize
+    // permanently strand the refund (the recipient keeps the over-debit and the
+    // sender is never credited). Because finalize is permissionless and the
+    // refund is snapshotted durably, dropping the snapshot-equality guard makes
+    // the credit always recoverable; the `status == PREPARED -> FINALIZED` flip
+    // still prevents double finalize. The recipient token account is still bound
+    // by the key/owner/mint/shape checks above. See DD-018.
     require_keys_eq!(
         accounts.sent_amount_acl.key(),
         accounts.settlement_record.sent_acl_record,
