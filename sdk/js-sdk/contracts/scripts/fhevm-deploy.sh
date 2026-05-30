@@ -318,11 +318,14 @@ fi
 echo
 echo "🚚  Deploying Cleartext FHEVM Host Constracts ..."
 
+# Sometimes the deploy script get stuck forever. The exact reason is not clear.
+# Try to use --slow flag to avoid potential race (foundry is running tx in parallel)
 env "${FORGE_ENV[@]}" forge script \
     scripts/${host_contracts_version}/DeployCleartextFHEVMHost.s.sol:Deploy \
     --non-interactive \
     --rpc-url "${rpc_url}" \
-    --broadcast
+    --broadcast \
+    --slow
 
 # ==============================================================================
 #
