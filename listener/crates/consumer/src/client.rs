@@ -125,6 +125,36 @@ impl ListenerConsumer {
         }
     }
 
+    /// Build a full-block (wildcard) filter command for this consumer.
+    ///
+    /// All address fields are `None`, which the listener interprets as
+    /// "broadcast the entire block": every transaction with every log is
+    /// delivered, letting the consumer parse the chain dynamically.
+    pub fn create_full_block_filter(&self) -> FilterCommand {
+        FilterCommand {
+            consumer_id: self.consumer_id.clone(),
+            from: None,
+            to: None,
+            log_address: None,
+        }
+    }
+
+    /// Register a full-block (wildcard) subscription for this consumer.
+    ///
+    /// After this call the consumer receives the complete [`BlockPayload`]
+    /// (all transactions, all logs) for every block on the chain. Registering
+    /// the same full-block filter again is a no-op on the listener side
+    /// (deduplicated silently).
+    pub async fn register_full_block(&self) -> Result<(), ConsumerError> {
+        self.register_filter(&self.create_full_block_filter()).await
+    }
+
+    /// Remove this consumer's full-block (wildcard) subscription.
+    pub async fn unregister_full_block(&self) -> Result<(), ConsumerError> {
+        self.unregister_filter(&self.create_full_block_filter())
+            .await
+    }
+
     /// Publish a filter removal command to the unwatch topic.
     pub async fn unregister_filter(&self, command: &FilterCommand) -> Result<(), ConsumerError> {
         self.publish_filter_command(command, routing::UNWATCH).await
@@ -505,6 +535,25 @@ mod tests {
             routing::consumer_new_event_routing(consumer_id.into()),
             "catchup and new-event routings must not collide",
         );
+    }
+
+    /// A full-block filter carries no address fields and validates as a
+    /// wildcard subscription tied to this consumer's id. `build()` does not
+    /// open a connection, so this runs without Docker.
+    #[tokio::test]
+    async fn create_full_block_filter_is_wildcard_and_valid() {
+        let broker = Broker::amqp("amqp://user:pass@localhost:5672")
+            .build()
+            .await
+            .unwrap();
+        let consumer = ListenerConsumer::new(&broker, 1, "copro-1-host-eth");
+
+        let mut cmd = consumer.create_full_block_filter();
+        assert_eq!(cmd.consumer_id, "copro-1-host-eth");
+        assert!(cmd.from.is_none());
+        assert!(cmd.to.is_none());
+        assert!(cmd.log_address.is_none());
+        cmd.validate().expect("full-block filter must validate");
     }
 
     /// Locks in the parent/child cancellation contract that `ListenerConsumer`
