@@ -161,7 +161,7 @@ fn all_identical(commitments: &[Vec<u8>]) -> bool {
 /// Returns `(start_block, end_block)` for the GCS dry-run when it's active.
 /// `None` otherwise. Scoped to `stack_role = 'GCS'` because BCS also stays
 /// `status='in_progress'` during the upgrade and doesn't own the replay window.
-async fn fetch_active_upgrade_end_block(
+pub(crate) async fn active_upgrade_window(
     pool: &Pool<Postgres>,
 ) -> Result<Option<(i64, i64)>, Error> {
     let row: Option<(String, Option<i64>, Option<i64>)> = sqlx::query_as(
@@ -212,27 +212,40 @@ async fn run_unanimity_poll(
     // First tick fires immediately — we want to attempt straight away.
     ticker.tick().await;
 
+    // Require unanimity on every block in [start_block, end_block]; cache matches.
+    let window_size = end_block.saturating_sub(start_block) as usize + 1;
+    let mut confirmed: std::collections::HashSet<i64> =
+        std::collections::HashSet::with_capacity(window_size);
+
     loop {
         for block_height in start_block..=end_block {
+            if confirmed.contains(&block_height) {
+                continue;
+            }
             let commitments =
                 fetch_state_commitments(http, s3_urls, payload.chain_id, block_height).await;
             if all_identical(&commitments) {
-                info!(
-                    chain_id = payload.chain_id,
-                    block_height,
-                    block_hash = %payload.block_hash,
-                    "unanimity reached — emitting unanimity_consensus"
-                );
-                return notify_unanimity(
-                    pool,
-                    UNANIMITY_CONSENSUS_CHANNEL,
-                    &NewBlockPayload {
-                        block_height,
-                        ..payload.clone()
-                    },
-                )
-                .await;
+                confirmed.insert(block_height);
             }
+        }
+
+        if confirmed.len() == window_size {
+            info!(
+                chain_id = payload.chain_id,
+                start_block,
+                end_block,
+                block_hash = %payload.block_hash,
+                "unanimity reached for the whole window — emitting unanimity_consensus"
+            );
+            return notify_unanimity(
+                pool,
+                UNANIMITY_CONSENSUS_CHANNEL,
+                &NewBlockPayload {
+                    block_height: end_block,
+                    ..payload.clone()
+                },
+            )
+            .await;
         }
 
         if tokio::time::Instant::now() >= deadline {
@@ -242,6 +255,8 @@ async fn run_unanimity_poll(
                 block_hash = %payload.block_hash,
                 start_block,
                 end_block,
+                confirmed = confirmed.len(),
+                window_size,
                 "unanimity poll timed out — emitting unanimity_consensus_timeout"
             );
             return notify_unanimity(pool, UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL, payload).await;
@@ -303,7 +318,7 @@ where
         "new_block received"
     );
 
-    let Some((start_block, end_block)) = fetch_active_upgrade_end_block(pool).await? else {
+    let Some((start_block, end_block)) = active_upgrade_window(pool).await? else {
         info!(
             chain_id = payload.chain_id,
             block_height = payload.block_height,

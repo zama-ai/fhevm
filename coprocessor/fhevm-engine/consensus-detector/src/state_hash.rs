@@ -21,23 +21,6 @@ pub fn state_hash_key(chain_id: i64, block_number: i64) -> String {
     format!("state_hash/chain={chain_id}/block={block_number}.bin")
 }
 
-async fn active_window(pool: &Pool<Postgres>) -> sqlx::Result<Option<(i64, i64)>> {
-    let row: Option<(String, Option<i64>, Option<i64>)> = sqlx::query_as(
-        "SELECT state, start_block, end_block FROM upgrade_state
-          WHERE stack_role = 'GCS' AND status = 'in_progress'",
-    )
-    .fetch_optional(pool)
-    .await?;
-    Ok(match row {
-        Some((s, Some(start), Some(end)))
-            if matches!(s.as_str(), "UpgradeActivated" | "DryRunStarted") =>
-        {
-            Some((start, end))
-        }
-        _ => None,
-    })
-}
-
 /// BCS path: compute hashes from `ONLY ciphertexts`, insert into `state_hash`.
 async fn compute_and_insert_bcs(pool: &Pool<Postgres>, batch_limit: i64) -> anyhow::Result<()> {
     let pending = sqlx::query!(
@@ -45,6 +28,7 @@ async fn compute_and_insert_bcs(pool: &Pool<Postgres>, batch_limit: i64) -> anyh
         SELECT c.host_chain_id AS "host_chain_id!", c.block_number AS "block_number!"
           FROM computations c
          WHERE c.is_completed = true
+           AND c.is_error = false
            AND c.block_number IS NOT NULL
            AND NOT EXISTS (
                SELECT 1 FROM state_hash sh
@@ -61,12 +45,14 @@ async fn compute_and_insert_bcs(pool: &Pool<Postgres>, batch_limit: i64) -> anyh
     for row in pending {
         let chain_id = row.host_chain_id;
         let block_number = row.block_number;
+        // Errored computations are excluded so operators that classify errors
+        // differently still produce stable hashes for the successful subset.
         let hashed = sqlx::query!(
             r#"
             WITH bc AS (
                 SELECT output_handle, tenant_id, is_completed
                   FROM computations
-                 WHERE host_chain_id = $1 AND block_number = $2
+                 WHERE host_chain_id = $1 AND block_number = $2 AND is_error = false
             ),
             v AS (SELECT 1 FROM bc HAVING bool_and(is_completed))
             SELECT encode(
@@ -118,6 +104,7 @@ async fn compute_and_insert_gcs(
         SELECT c.host_chain_id AS "host_chain_id!", c.block_number AS "block_number!"
           FROM gcs.computations c
          WHERE c.is_completed = true
+           AND c.is_error = false
            AND c.block_number BETWEEN $2 AND $3
            AND NOT EXISTS (
                SELECT 1 FROM gcs.state_hash sh
@@ -141,7 +128,7 @@ async fn compute_and_insert_gcs(
             WITH bc AS (
                 SELECT output_handle, tenant_id, is_completed
                   FROM gcs.computations
-                 WHERE host_chain_id = $1 AND block_number = $2
+                 WHERE host_chain_id = $1 AND block_number = $2 AND is_error = false
             ),
             v AS (SELECT 1 FROM bc HAVING bool_and(is_completed))
             SELECT encode(
@@ -291,65 +278,6 @@ async fn compute_and_insert_bcs_gateway(
     Ok(())
 }
 
-/// Gateway GCS path: same as BCS but joins `ONLY ciphertexts_staging` → `state_hash_staging`.
-async fn compute_and_insert_gcs_gateway(
-    pool: &Pool<Postgres>,
-    gw_chain_id: i64,
-    batch_limit: i64,
-) -> anyhow::Result<()> {
-    let pending = sqlx::query!(
-        r#"
-        SELECT DISTINCT ih.block_number AS "block_number!"
-          FROM input_handles ih
-         WHERE NOT EXISTS (
-             SELECT 1 FROM state_hash_staging sh
-              WHERE sh.chain_id = $1 AND sh.block_number = ih.block_number)
-         ORDER BY ih.block_number
-         LIMIT $2
-        "#,
-        gw_chain_id,
-        batch_limit,
-    )
-    .fetch_all(pool)
-    .await?;
-
-    for row in pending {
-        let block_number = row.block_number;
-        let hashed = sqlx::query!(
-            r#"
-            SELECT encode(
-                sha256(string_agg(ct.ciphertext, ''::bytea
-                                  ORDER BY ct.handle, ct.ciphertext_version)),
-                'hex'
-            ) AS state_hash
-              FROM input_handles ih
-              JOIN ONLY ciphertexts_staging ct ON ct.handle = ih.handle
-             WHERE ih.block_number = $1
-            "#,
-            block_number
-        )
-        .fetch_optional(pool)
-        .await?
-        .and_then(|r| r.state_hash);
-        let Some(hash) = hashed else { continue };
-        let affected = sqlx::query!(
-            "INSERT INTO state_hash_staging (chain_id, block_number, state_hash)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (chain_id, block_number) DO NOTHING",
-            gw_chain_id,
-            block_number,
-            hash,
-        )
-        .execute(pool)
-        .await?
-        .rows_affected();
-        if affected > 0 {
-            info!(chain_id = gw_chain_id, block_number, "gateway state_hash_staging inserted");
-        }
-    }
-    Ok(())
-}
-
 async fn sweep(
     pool: &Pool<Postgres>,
     s3: Option<&aws_sdk_s3::Client>,
@@ -361,10 +289,13 @@ async fn sweep(
     compute_and_insert_bcs(pool, batch_limit).await?;
     compute_and_insert_bcs_gateway(pool, gw_chain_id, batch_limit).await?;
 
-    // GCS path: only during an active upgrade window.
-    if let Some((start, end)) = active_window(pool).await? {
+    // GCS path: only during an active upgrade window. The Gateway-side GCS
+    // path is intentionally absent until `zkproof-worker` is GCS-aware and
+    // writes inputs to `ciphertexts_staging`; without it, a sweep over
+    // `ONLY ciphertexts_staging` joined with `input_handles` would always
+    // be empty.
+    if let Some((start, end)) = crate::active_upgrade_window(pool).await? {
         compute_and_insert_gcs(pool, start, end, batch_limit).await?;
-        compute_and_insert_gcs_gateway(pool, gw_chain_id, batch_limit).await?;
     }
 
     // S3 upload: drains pending rows; runs every sweep so failed PUTs retry.
