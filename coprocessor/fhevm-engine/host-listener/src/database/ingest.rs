@@ -189,9 +189,9 @@ pub async fn ingest_block_logs(
         .execute(&mut *tx)
         .await?;
 
-    // `NewCoprocessorContext` is only authoritative on the configured Ethereum
-    // host chain; every other listener skips the channel.
-    let is_protocol_config_authority = options.ethereum_chain_id == chain_id.as_u64();
+    // Only the listener watching the configured Ethereum host chain decodes
+    // `NewCoprocessorContext`; every other listener skips the channel.
+    let is_protocol_config_listener = options.ethereum_chain_id == chain_id.as_u64();
 
     let mut is_allowed = HashSet::<Handle>::new();
     let mut tfhe_event_log = vec![];
@@ -285,7 +285,7 @@ pub async fn ingest_block_logs(
             }
         }
 
-        let is_protocol_config_address = is_protocol_config_authority
+        let is_protocol_config_address = is_protocol_config_listener
             && protocol_config_contract_address
                 .as_ref()
                 .is_some_and(|addr| &log.inner.address == addr);

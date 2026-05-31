@@ -1101,6 +1101,15 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     let chain_id = log_iter.get_chain_id().await?;
 
     info!(chain_id = %chain_id, "Chain ID");
+    if args.ethereum_chain_id == chain_id.as_u64()
+        && protocol_config_address.is_none()
+    {
+        warn!(
+            chain_id = %chain_id,
+            "ProtocolConfig listener has no --protocol-config-address; \
+             ProtocolConfig.NewCoprocessorContext events will not be decoded"
+        );
+    }
     if args.database_url.as_str().is_empty() {
         error!("Database URL is required");
         panic!("Database URL is required");

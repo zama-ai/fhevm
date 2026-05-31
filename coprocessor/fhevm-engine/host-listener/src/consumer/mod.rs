@@ -308,6 +308,15 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 ingest_options.dependent_ops_max_per_chain,
             )
             .await;
+            if payload.chain_id != chain_id.as_u64() {
+                error!(
+                    payload_chain_id = payload.chain_id,
+                    configured_chain_id = chain_id.as_u64(),
+                    block_number = payload.block_number,
+                    "Block delivered for wrong chain — broker routing misconfigured; dropping"
+                );
+                return Ok(AckDecision::Ack);
+            }
             let block_summary = BlockSummary {
                 number: payload.block_number,
                 hash: payload.block_hash,
