@@ -1,3 +1,7 @@
+host_chains:
+  - chain_id: 12345
+    url: "http://host-node:8545"
+    acl_address: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
 
 gateway:
   blockchain_rpc:
@@ -48,7 +52,9 @@ gateway:
       - type: subscription
         url: "ws://gateway-node:8546"
   tx_engine:
-    private_key: 0xcb97ef45d352446a6adf810cf8f63c73ada027160c271da9bb8cfcb3d944d257
+    signer:
+      type: "private_key"
+      private_key: "0xcb97ef45d352446a6adf810cf8f63c73ada027160c271da9bb8cfcb3d944d257"
     max_concurrency: 100
     retry:
       max_attempts: 100
@@ -66,13 +72,15 @@ gateway:
         per_seconds: 20
         capacity: 11000
         safety_margin: 1000
-    tx_throttler_per_secs: 20
-    tx_throttler_capacity: 11000 # To allow actual capacity of 10k, after accounting for safety margin.
-    tx_throttler_safety_margin: 1000
   readiness_checker:
-    retry:
-      max_attempts: 30
-      retry_interval_ms: 2000
+    host_acl_check:
+      retry:
+        max_attempts: 3
+        retry_interval_ms: 1000
+    gw_ciphertext_check:
+      retry:
+        max_attempts: 15
+        retry_interval_ms: 2000
     public_decrypt:
       max_concurrency: 250
       capacity: 11000
@@ -86,8 +94,8 @@ gateway:
       capacity: 11000
       safety_margin: 1000
   contracts:
-    decryption_address: "0x35760912360E875DA50D40a74305575c23D55783"
-    input_verification_address: "0x1ceFA8E3F3271358218B52c33929Cf76078004c1"
+    decryption_address: "0xF0bFB159C7381F7CB332586004d8247252C5b816"
+    input_verification_address: "0x3b12Fc766Eb598b285998877e8E90F3e43a1F8d2"
     user_decrypt_shares_threshold: 1 # KMS centralized mode
 log:
 
@@ -107,13 +115,8 @@ keyurl:
 
 http:
   endpoint: "0.0.0.0:3000"
-  rate_limit_post_endpoints:
-    requests_per_second: 30
-    burst_size: 30
-    retry_after_seconds: 5
-    jitter_max_ms: 2000
   metrics:
-    histogram_buckets: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 40]
+    histogram_buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
   api_retry_after_seconds: 4
   # Dynamic retry-after configuration for V2 handlers
   # Computes Retry-After based on queue size, drain rate, and processing stage
@@ -161,7 +164,6 @@ http:
 metrics:
   endpoint: "0.0.0.0:9898"
   query_duration_histogram_bucket: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
-  pool_wait_duration_seconds_histogram_bucket: [0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 3.0]
   request_status_duration_histogram_bucket: [0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 300.0, 600.0, 1800.0, 3600.0]
   transaction_duration_secs_histogram_bucket: [0.01, 0.1, 0.25, 0.50, 0.75, 1.0, 1.25, 1.5, 2.0, 5.0, 10.0]
   retry_after_raw_eta_histogram_bucket: [1, 2, 5, 10, 20, 30, 60, 120, 300, 600, 1200, 2400]
@@ -182,14 +184,20 @@ storage:
     max_lifetime_secs: 1800
   sql_health_check_timeout_secs: 5
   cron:
-    # 60s for interval check
+    # Duration units: d, h, m, s, ms
+
+    # --- Timeout worker (always enabled) ---
+    # Marks requests for which responses are not received within this duration as timed out.
     timeout_cron_interval: "60s"
-    # 30 mins timeout logic
     public_decrypt_timeout: "30m"
     user_decrypt_timeout: "30m"
     input_proof_timeout: "30m"
-    # 1 hour interval for cleanup check
+
+    # --- Expiry worker (opt-in) ---
+    # Deletes resolved requests (completed or failed) once the configured retention duration has passed.
+    expiry_enabled: true
     expiry_cron_interval: "5m"
+
     # Retention Policies
     public_decrypt_expiry: "365d" # 1 year
     user_decrypt_expiry: "7d"

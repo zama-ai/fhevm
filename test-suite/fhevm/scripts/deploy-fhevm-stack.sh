@@ -33,10 +33,10 @@ DEPLOYMENT_STEPS=(
     "host-node"
     "gateway-node"
     "coprocessor"
-    "kms-connector"
     "gateway-mocked-payment"
-    "gateway-sc"
     "host-sc"
+    "kms-connector"
+    "gateway-sc"
     "relayer"
     "test-suite"
 )
@@ -99,6 +99,10 @@ RESUME_STEP=""
 ONLY_STEP=""
 RESUME_FLAG_DETECTED=false
 ONLY_FLAG_DETECTED=false
+COPROCESSOR_COUNT=1
+COPROCESSOR_THRESHOLD_OVERRIDE=""
+COPROCESSOR_COUNT_FLAG_DETECTED=false
+COPROCESSOR_THRESHOLD_FLAG_DETECTED=false
 NEW_ARGS=()
 
 for arg in "$@"; do
@@ -112,6 +116,10 @@ for arg in "$@"; do
     RESUME_FLAG_DETECTED=true
   elif [[ "$arg" == "--only" ]]; then
     ONLY_FLAG_DETECTED=true
+  elif [[ "$arg" == "--coprocessors" ]]; then
+    COPROCESSOR_COUNT_FLAG_DETECTED=true
+  elif [[ "$arg" == "--coprocessor-threshold" ]]; then
+    COPROCESSOR_THRESHOLD_FLAG_DETECTED=true
   elif [[ "$RESUME_FLAG_DETECTED" == true ]]; then
     RESUME_STEP="$arg"
     RESUME_FLAG_DETECTED=false
@@ -132,6 +140,20 @@ for arg in "$@"; do
       exit 1
     fi
     log_info "Only mode: deploying only step '$ONLY_STEP'"
+  elif [[ "$COPROCESSOR_COUNT_FLAG_DETECTED" == true ]]; then
+    COPROCESSOR_COUNT="$arg"
+    COPROCESSOR_COUNT_FLAG_DETECTED=false
+    if ! [[ "$COPROCESSOR_COUNT" =~ ^[0-9]+$ ]] || [[ "$COPROCESSOR_COUNT" -lt 1 ]]; then
+      log_error "--coprocessors expects a positive integer"
+      exit 1
+    fi
+  elif [[ "$COPROCESSOR_THRESHOLD_FLAG_DETECTED" == true ]]; then
+    COPROCESSOR_THRESHOLD_OVERRIDE="$arg"
+    COPROCESSOR_THRESHOLD_FLAG_DETECTED=false
+    if ! [[ "$COPROCESSOR_THRESHOLD_OVERRIDE" =~ ^[0-9]+$ ]] || [[ "$COPROCESSOR_THRESHOLD_OVERRIDE" -lt 1 ]]; then
+      log_error "--coprocessor-threshold expects a positive integer"
+      exit 1
+    fi
   else
     NEW_ARGS+=("$arg")
   fi
@@ -150,9 +172,29 @@ if [[ "$ONLY_FLAG_DETECTED" == true ]]; then
   exit 1
 fi
 
+if [[ "$COPROCESSOR_COUNT_FLAG_DETECTED" == true ]]; then
+  log_error "--coprocessors requires a value"
+  exit 1
+fi
+
+if [[ "$COPROCESSOR_THRESHOLD_FLAG_DETECTED" == true ]]; then
+  log_error "--coprocessor-threshold requires a value"
+  exit 1
+fi
+
 # Check for conflicting flags
 if [[ -n "$RESUME_STEP" && -n "$ONLY_STEP" ]]; then
   log_error "Cannot use --resume and --only together"
+  exit 1
+fi
+
+if [[ -n "$COPROCESSOR_THRESHOLD_OVERRIDE" ]] && [[ "$COPROCESSOR_THRESHOLD_OVERRIDE" -gt "$COPROCESSOR_COUNT" ]]; then
+  log_error "Invalid coprocessor threshold: $COPROCESSOR_THRESHOLD_OVERRIDE (must be <= --coprocessors $COPROCESSOR_COUNT)"
+  exit 1
+fi
+
+if [[ "$COPROCESSOR_COUNT" -gt 5 ]]; then
+  log_error "This local multicoprocessor mode currently supports up to 5 coprocessors"
   exit 1
 fi
 
@@ -215,6 +257,15 @@ if [ "$LOCAL_BUILD" = true ]; then
 fi
 
 # Function to check if services are ready based on expected state
+log_contains() {
+    local pattern=$1
+    if command -v rg >/dev/null 2>&1; then
+        rg -q "$pattern"
+    else
+        grep -q "$pattern"
+    fi
+}
+
 wait_for_service() {
     local compose_file=$1
     local service_name=$2
@@ -241,6 +292,17 @@ wait_for_service() {
         local status=$(docker inspect --format "{{.State.Status}}" "$container_id")
         local exit_code=$(docker inspect --format "{{.State.ExitCode}}" "$container_id")
 
+        # Some one-shot jobs may complete their work but keep a process alive.
+        # For host-sc-deploy, treat the deployment completion log as success and stop it.
+        if [[ "$expect_running" == "false" && "$service_name" == "host-sc-deploy" && "$status" == "running" ]]; then
+            if docker logs "$container_id" 2>&1 | log_contains "Contract deployment done!"; then
+                log_warn "$service_name reported completion marker while still running; stopping container to unblock flow"
+                docker stop "$container_id" >/dev/null 2>&1 || true
+                status=$(docker inspect --format "{{.State.Status}}" "$container_id")
+                exit_code=$(docker inspect --format "{{.State.ExitCode}}" "$container_id")
+            fi
+        fi
+
         # Check if service meets the expected state
         if [[ "$expect_running" == "true" && "$status" == "running" ]]; then
             log_info "$service_name is now running"
@@ -265,11 +327,41 @@ wait_for_service() {
         fi
     done
 }
+
+wait_for_relayer_ready() {
+    local max_retries=24
+    local retry_interval=5
+    local container_name="${PROJECT}-relayer"
+
+    log_info "Waiting for $container_name readiness signal..."
+
+    for ((i=1; i<=max_retries; i++)); do
+        if docker logs --since=10m "$container_name" 2>&1 | log_contains "All servers are ready and responding"; then
+            log_info "$container_name reported ready"
+            return 0
+        fi
+
+        if [ "$i" -lt "$max_retries" ]; then
+            log_warn "$container_name not ready yet, waiting ${retry_interval}s... (${i}/${max_retries})"
+            sleep "$retry_interval"
+        else
+            log_error "$container_name did not report ready within expected time"
+            docker logs --tail 200 "$container_name" || true
+            return 1
+        fi
+    done
+}
 # Function to prepare the local environment file for a component
 prepare_local_env_file() {
     local component=$1
     local base_env_file="$SCRIPT_DIR/../env/staging/.env.$component"
     local local_env_file="$SCRIPT_DIR/../env/staging/.env.$component.local"
+    local preserved_otlp_endpoint=""
+
+    # Keep locally overridden OTLP endpoint across deploy regenerations.
+    if [[ "$component" == "coprocessor" && -f "$local_env_file" ]]; then
+        preserved_otlp_endpoint=$(awk -F= '$1 == "OTEL_EXPORTER_OTLP_ENDPOINT" {print substr($0, index($0, "=") + 1); exit}' "$local_env_file")
+    fi
 
     if [[ ! -f "$base_env_file" ]]; then
         echo -e "${RED}[ERROR]${NC} Base environment file for $component not found: $base_env_file" >&2
@@ -277,6 +369,15 @@ prepare_local_env_file() {
     else
         echo -e "${GREEN}[INFO]${NC} Creating/updating local environment file for $component..." >&2
         cp "$base_env_file" "$local_env_file"
+    fi
+
+    if [[ "$component" == "coprocessor" ]]; then
+        local otlp_endpoint="${preserved_otlp_endpoint:-http://jaeger:4317}"
+        if grep -q '^OTEL_EXPORTER_OTLP_ENDPOINT=' "$local_env_file"; then
+            sed -i.bak "s|^OTEL_EXPORTER_OTLP_ENDPOINT=.*|OTEL_EXPORTER_OTLP_ENDPOINT=${otlp_endpoint}|" "$local_env_file"
+        else
+            printf '\nOTEL_EXPORTER_OTLP_ENDPOINT=%s\n' "$otlp_endpoint" >> "$local_env_file"
+        fi
     fi
 
     printf "%s" "$local_env_file"
@@ -309,6 +410,148 @@ prepare_all_env_files() {
     done
 
     log_info "All local environment files prepared successfully"
+}
+
+get_env_value() {
+    local file=$1
+    local key=$2
+    awk -F= -v k="$key" '$1 == k {print substr($0, index($0, "=") + 1); exit}' "$file"
+}
+
+set_env_value() {
+    local file=$1
+    local key=$2
+    local value=$3
+    local escaped_value
+    escaped_value=$(printf '%s' "$value" | sed 's/[\/&]/\\&/g')
+    if grep -q "^${key}=" "$file"; then
+        sed -i.bak "s|^${key}=.*|${key}=${escaped_value}|" "$file"
+    else
+        printf '%s=%s\n' "$key" "$value" >> "$file"
+    fi
+}
+
+# Build effective n/t topology config and per-instance coprocessor env files.
+configure_multicoprocessor_envs() {
+    local gateway_env="$SCRIPT_DIR/../env/staging/.env.gateway-sc.local"
+    local host_env="$SCRIPT_DIR/../env/staging/.env.host-sc.local"
+    local coprocessor_env="$SCRIPT_DIR/../env/staging/.env.coprocessor.local"
+
+    local configured_threshold
+    configured_threshold=$(get_env_value "$gateway_env" "COPROCESSOR_THRESHOLD")
+    if [[ -z "$configured_threshold" ]]; then
+        configured_threshold=1
+    fi
+    if [[ -n "$COPROCESSOR_THRESHOLD_OVERRIDE" ]]; then
+        configured_threshold="$COPROCESSOR_THRESHOLD_OVERRIDE"
+    fi
+
+    if [[ "$configured_threshold" -gt "$COPROCESSOR_COUNT" ]]; then
+        log_error "Configured coprocessor threshold ($configured_threshold) cannot exceed number of coprocessors ($COPROCESSOR_COUNT)"
+        exit 1
+    fi
+
+    set_env_value "$gateway_env" "NUM_COPROCESSORS" "$COPROCESSOR_COUNT"
+    set_env_value "$gateway_env" "COPROCESSOR_THRESHOLD" "$configured_threshold"
+    set_env_value "$host_env" "NUM_COPROCESSORS" "$COPROCESSOR_COUNT"
+    set_env_value "$host_env" "COPROCESSOR_THRESHOLD" "$configured_threshold"
+
+    # Default 1/1 topology does not require deriving extra coprocessor keys.
+    if [[ "$COPROCESSOR_COUNT" -eq 1 ]]; then
+        return 0
+    fi
+
+    local gateway_mnemonic
+    gateway_mnemonic=$(get_env_value "$gateway_env" "MNEMONIC")
+    if [[ -z "$gateway_mnemonic" ]]; then
+        log_error "Missing MNEMONIC in $gateway_env; cannot derive coprocessor accounts"
+        exit 1
+    fi
+
+    if ! command -v cast >/dev/null 2>&1; then
+        log_error "cast is required to derive coprocessor accounts from mnemonic"
+        exit 1
+    fi
+
+    local -a account_indices=(5 8 9 10 11)
+    if [[ "$COPROCESSOR_COUNT" -gt "${#account_indices[@]}" ]]; then
+        log_error "Not enough predefined account indices for $COPROCESSOR_COUNT coprocessors"
+        exit 1
+    fi
+
+    for ((idx=0; idx<COPROCESSOR_COUNT; idx++)); do
+        local account_index="${account_indices[$idx]}"
+        local cp_address
+        local cp_private_key
+
+        cp_address=$(cast wallet address --mnemonic "$gateway_mnemonic" --mnemonic-index "$account_index")
+        cp_private_key=$(cast wallet private-key --mnemonic "$gateway_mnemonic" --mnemonic-index "$account_index")
+
+        set_env_value "$gateway_env" "COPROCESSOR_TX_SENDER_ADDRESS_${idx}" "$cp_address"
+        set_env_value "$gateway_env" "COPROCESSOR_SIGNER_ADDRESS_${idx}" "$cp_address"
+        set_env_value "$gateway_env" "COPROCESSOR_S3_BUCKET_URL_${idx}" "http://minio:9000/ct128"
+        set_env_value "$host_env" "COPROCESSOR_SIGNER_ADDRESS_${idx}" "$cp_address"
+
+        if [[ "$idx" -eq 0 ]]; then
+            set_env_value "$coprocessor_env" "TX_SENDER_PRIVATE_KEY" "$cp_private_key"
+            continue
+        fi
+
+        local coprocessor_instance_env="$SCRIPT_DIR/../env/staging/.env.coprocessor.${idx}.local"
+        cp "$coprocessor_env" "$coprocessor_instance_env"
+        set_env_value "$coprocessor_instance_env" "DATABASE_URL" "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/coprocessor_${idx}"
+        set_env_value "$coprocessor_instance_env" "TX_SENDER_PRIVATE_KEY" "$cp_private_key"
+    done
+}
+
+# Start one extra coprocessor instance (db-migration first, then runtime services).
+run_additional_coprocessor_instance() {
+    local instance_idx=$1
+    local env_file="$SCRIPT_DIR/../env/staging/.env.coprocessor.${instance_idx}.local"
+    local source_compose="$SCRIPT_DIR/../docker-compose/coprocessor-docker-compose.yml"
+    local temp_compose
+    temp_compose=$(mktemp "$SCRIPT_DIR/../docker-compose/coprocessor-${instance_idx}.generated.XXXXXX")
+
+    sed -e "s#../env/staging/.env.coprocessor.local#../env/staging/.env.coprocessor.${instance_idx}.local#g" \
+        -e "s/coprocessor-/coprocessor${instance_idx}-/g" \
+        -e "s/--coprocessor${instance_idx}-fhe-threads/--coprocessor-fhe-threads/g" \
+        "$source_compose" > "$temp_compose"
+
+    local db_migration_service="coprocessor${instance_idx}-db-migration"
+    local runtime_services=(
+        "coprocessor${instance_idx}-host-listener"
+        "coprocessor${instance_idx}-host-listener-poller"
+        "coprocessor${instance_idx}-gw-listener"
+        "coprocessor${instance_idx}-tfhe-worker"
+        "coprocessor${instance_idx}-zkproof-worker"
+        "coprocessor${instance_idx}-sns-worker"
+        "coprocessor${instance_idx}-transaction-sender"
+    )
+
+    log_info "Starting additional coprocessor instance #$instance_idx (db migration phase)"
+    if [[ "$FORCE_BUILD" == true ]]; then
+        docker compose -p "${PROJECT}" --env-file "$env_file" -f "$temp_compose" up --build -d "$db_migration_service"
+    else
+        docker compose -p "${PROJECT}" --env-file "$env_file" -f "$temp_compose" up -d "$db_migration_service"
+    fi
+
+    wait_for_service "$temp_compose" "$db_migration_service" "false"
+
+    log_info "Starting additional coprocessor instance #$instance_idx (runtime phase)"
+    if [[ "$FORCE_BUILD" == true ]]; then
+        docker compose -p "${PROJECT}" --env-file "$env_file" -f "$temp_compose" up --build --no-deps -d "${runtime_services[@]}"
+    else
+        docker compose -p "${PROJECT}" --env-file "$env_file" -f "$temp_compose" up --no-deps -d "${runtime_services[@]}"
+    fi
+
+    wait_for_service "$temp_compose" "coprocessor${instance_idx}-host-listener" "true"
+    wait_for_service "$temp_compose" "coprocessor${instance_idx}-gw-listener" "true"
+    wait_for_service "$temp_compose" "coprocessor${instance_idx}-tfhe-worker" "true"
+    wait_for_service "$temp_compose" "coprocessor${instance_idx}-zkproof-worker" "true"
+    wait_for_service "$temp_compose" "coprocessor${instance_idx}-sns-worker" "true"
+    wait_for_service "$temp_compose" "coprocessor${instance_idx}-transaction-sender" "true"
+
+    rm -f "$temp_compose"
 }
 
 # Function to start an entire docker-compose file and wait for specified services
@@ -405,12 +648,19 @@ get_minio_ip() {
     local minio_container_name=$1
     local minio_ip
     minio_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$minio_container_name")
-    local coprocessor_file="$SCRIPT_DIR/../env/staging/.env.coprocessor.local"
     if [ -n "$minio_ip" ]; then
     echo "Found $minio_container_name container IP: $minio_ip"
-    sed -i.bak "s|AWS_ENDPOINT_URL=http://[^:]*:9000|AWS_ENDPOINT_URL=http://$minio_ip:9000|" \
-            "$coprocessor_file"
-    echo "Updated AWS_ENDPOINT_URL to http://$minio_ip:9000"
+    local coprocessor_files=("$SCRIPT_DIR/../env/staging/.env.coprocessor.local")
+    for ((idx=1; idx<COPROCESSOR_COUNT; idx++)); do
+        coprocessor_files+=("$SCRIPT_DIR/../env/staging/.env.coprocessor.${idx}.local")
+    done
+    for coprocessor_file in "${coprocessor_files[@]}"; do
+        if [[ -f "$coprocessor_file" ]]; then
+            sed -i.bak "s|AWS_ENDPOINT_URL=http://[^:]*:9000|AWS_ENDPOINT_URL=http://$minio_ip:9000|" \
+                "$coprocessor_file"
+        fi
+    done
+    echo "Updated AWS_ENDPOINT_URL to http://$minio_ip:9000 for ${#coprocessor_files[@]} coprocessor env file(s)"
     else
     echo "Error: Could not find IP address for $minio_container_name container"
     exit 1
@@ -505,8 +755,10 @@ fi
 
 prepare_all_env_files
 prepare_local_config_relayer
+configure_multicoprocessor_envs
 
 log_info "Deploying FHEVM Stack..."
+log_info "Coprocessor topology: n=$COPROCESSOR_COUNT threshold=${COPROCESSOR_THRESHOLD_OVERRIDE:-auto}"
 
 BUILD_TAG=""
 if [ "$FORCE_BUILD" = true ]; then
@@ -604,11 +856,30 @@ if ! should_skip_step "coprocessor"; then
         "coprocessor-zkproof-worker:running" \
         "coprocessor-sns-worker:running" \
         "coprocessor-transaction-sender:running"
+    for ((idx=1; idx<COPROCESSOR_COUNT; idx++)); do
+        run_additional_coprocessor_instance "$idx"
+    done
 else
     log_info "Skipping step: coprocessor (resuming from $RESUME_STEP)"
 fi
 
-# Step 8: kms-connector
+# Step 8: gateway-mocked-payment
+if ! should_skip_step "gateway-mocked-payment"; then
+    ${RUN_COMPOSE} "gateway-mocked-payment" "Gateway mocked payment" \
+        "gateway-deploy-mocked-zama-oft:complete" \
+        "gateway-set-relayer-mocked-payment:complete"
+else
+    log_info "Skipping step: gateway-mocked-payment (resuming from $RESUME_STEP)"
+fi
+
+# Step 9: host-sc
+if ! should_skip_step "host-sc"; then
+    ${RUN_COMPOSE} "host-sc" "Host contracts" "host-sc-deploy:complete" "host-sc-add-pausers:complete"
+else
+    log_info "Skipping step: host-sc (resuming from $RESUME_STEP)"
+fi
+
+# Step 10: kms-connector
 if ! should_skip_step "kms-connector"; then
     ${RUN_COMPOSE} "kms-connector" "KMS Connector Services" \
         "coprocessor-and-kms-db:running" \
@@ -620,16 +891,7 @@ else
     log_info "Skipping step: kms-connector (resuming from $RESUME_STEP)"
 fi
 
-# Step 9: gateway-mocked-payment
-if ! should_skip_step "gateway-mocked-payment"; then
-    ${RUN_COMPOSE} "gateway-mocked-payment" "Gateway mocked payment" \
-        "gateway-deploy-mocked-zama-oft:complete" \
-        "gateway-set-relayer-mocked-payment:complete"
-else
-    log_info "Skipping step: gateway-mocked-payment (resuming from $RESUME_STEP)"
-fi
-
-# Step 10: gateway-sc
+# Step 11: gateway-sc
 # Setup Gateway contracts, which will trigger the KMS materials generation. Note
 # that the key generation may take a few seconds to complete, meaning that executing
 # the e2e tests too soon may fail if the materials are not ready. Hence, the following
@@ -645,17 +907,11 @@ else
     log_info "Skipping step: gateway-sc (resuming from $RESUME_STEP)"
 fi
 
-# Step 11: host-sc
-if ! should_skip_step "host-sc"; then
-    ${RUN_COMPOSE} "host-sc" "Host contracts" "host-sc-deploy:complete" "host-sc-add-pausers:complete"
-else
-    log_info "Skipping step: host-sc (resuming from $RESUME_STEP)"
-fi
-
 # Step 12: relayer
 if ! should_skip_step "relayer"; then
     ${RUN_COMPOSE} "relayer" "Relayer Services" \
         "${PROJECT}-relayer:running"
+    wait_for_relayer_ready
 else
     log_info "Skipping step: relayer (resuming from $RESUME_STEP)"
 fi
