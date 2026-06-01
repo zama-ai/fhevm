@@ -9,14 +9,16 @@ use crate::core::event::UserDecryptRequest;
 use crate::host::handle_chain_id::extract_chain_id_from_u256;
 use alloy::primitives::{Address, U256};
 use alloy::providers::{ProviderBuilder, RootProvider};
+use fhevm_gateway_bindings::decryption::IDecryption::{
+    RequestValiditySeconds as SolRequestValiditySeconds, UserDecryptionRequestPayload,
+};
 use reqwest::Url;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::time::Duration;
 use tracing::warn;
 use user_decryption_signature::{
-    compute_user_decrypt_digest_from_parts, default_user_decrypt_domain, verify_signature,
-    Erc1271Error,
+    compute_user_decrypt_digest, default_user_decrypt_domain, verify_signature, Erc1271Error,
 };
 
 /// Outcome of a failed pre-check.
@@ -98,15 +100,18 @@ impl UserDecryptSignaturePreChecker {
         })?;
 
         let domain = default_user_decrypt_domain(chain_id, self.decryption_contract);
-        let digest = compute_user_decrypt_digest_from_parts(
-            user_address,
-            public_key,
-            allowed_contracts,
-            request_validity.start_timestamp,
-            request_validity.duration_seconds,
-            extra_data,
-            &domain,
-        );
+        let payload = UserDecryptionRequestPayload {
+            userAddress: user_address,
+            publicKey: public_key.clone(),
+            allowedContracts: allowed_contracts.clone(),
+            requestValidity: SolRequestValiditySeconds {
+                startTimestamp: request_validity.start_timestamp,
+                durationSeconds: request_validity.duration_seconds,
+            },
+            extraData: extra_data.clone(),
+            signature: signature.clone(),
+        };
+        let digest = compute_user_decrypt_digest(&payload, &domain);
 
         let max_attempts = self.retry.max_attempts.max(1);
         let interval = Duration::from_millis(self.retry.retry_interval_ms);

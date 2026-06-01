@@ -12,6 +12,9 @@ use fhevm_relayer::tracing::init_tracing_once;
 use alloy::primitives::{Address, Bytes, U256};
 use alloy::signers::{local::PrivateKeySigner, SignerSync};
 use alloy::sol_types::{SolCall, SolValue};
+use fhevm_gateway_bindings::decryption::IDecryption::{
+    RequestValiditySeconds, UserDecryptionRequestPayload,
+};
 use fhevm_host_bindings::acl::ACL;
 use rand::{rng, RngExt};
 use std::str::FromStr;
@@ -19,9 +22,7 @@ use tempfile::TempDir;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
-use user_decryption_signature::{
-    compute_user_decrypt_digest_from_parts, default_user_decrypt_domain,
-};
+use user_decryption_signature::{compute_user_decrypt_digest, default_user_decrypt_domain};
 
 use super::test_schema::TestSchema;
 
@@ -654,15 +655,18 @@ pub fn sign_v3_user_decrypt_envelope(payload: &mut serde_json::Value, signer: &P
         chain_id,
         Address::from_str(TEST_DECRYPTION_ADDRESS).unwrap(),
     );
-    let digest = compute_user_decrypt_digest_from_parts(
-        user_address,
-        &public_key,
-        &allowed_contracts,
-        start,
-        duration,
-        &extra_data,
-        &domain,
-    );
+    let request = UserDecryptionRequestPayload {
+        userAddress: user_address,
+        publicKey: public_key,
+        allowedContracts: allowed_contracts,
+        requestValidity: RequestValiditySeconds {
+            startTimestamp: start,
+            durationSeconds: duration,
+        },
+        extraData: extra_data,
+        signature: Bytes::new(),
+    };
+    let digest = compute_user_decrypt_digest(&request, &domain);
     let signature = signer.sign_hash_sync(&digest).unwrap();
     payload["signature"] =
         serde_json::Value::String(format!("0x{}", hex::encode(signature.as_bytes())));
