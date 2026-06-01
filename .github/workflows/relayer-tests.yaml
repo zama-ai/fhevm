@@ -64,9 +64,7 @@ jobs:
 
       - name: Format
         working-directory: relayer
-        # `make fmt` checks the relayer and the rpc-mock test-support crate without `--all`,
-        # which would otherwise descend into path deps (e.g. the in-tree generated
-        # `rust_bindings`) that are formatted by their own component, not the relayer.
+        # Use the Makefile target so local and CI run the exact same check.
         run: make fmt
 
       - name: Build for tests (no rpc mock)
@@ -106,8 +104,7 @@ jobs:
 
       - name: Clippy
         working-directory: relayer
-        # `make clippy` lints all targets/features and the rpc-mock test-support crate, keeping
-        # CI in sync with the local check (single source of truth in the Makefile).
+        # Use the Makefile target so local and CI run the exact same check.
         run: make clippy
 
   integration-test:
