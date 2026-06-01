@@ -31,7 +31,10 @@ const previousContractsSnapshotPath = "/app/previous-contracts-snapshot";
 const previousContractsWorkPath = "/app/previous-contracts";
 export const previousContractsMountArgs = (surface: ContractSurface, present: boolean) =>
   present ? ["--volume", `${previousContractsDir(surface)}:${previousContractsSnapshotPath}:ro`] : [];
-const previousContractsVolume = async (component: "host-sc" | "gateway-sc") => {
+const previousContractsVolume = async (component: "host-sc" | "gateway-sc", enabled: boolean) => {
+  if (!enabled) {
+    return [];
+  }
   const surface = componentSurface(component);
   return previousContractsMountArgs(surface, await exists(previousContractsDir(surface)));
 };
@@ -65,7 +68,7 @@ export const runContractTask = async (
   component: "host-sc" | "gateway-sc",
   service: "host-sc-deploy" | "gateway-sc-deploy",
   command: string,
-  options: { env?: Record<string, string> } = {},
+  options: { env?: Record<string, string>; usePreviousContracts?: boolean } = {},
 ) => {
   const state = await loadState();
   if (!state) {
@@ -81,12 +84,12 @@ export const runContractTask = async (
     "--rm",
     "--no-deps",
     ...contractTaskEnvArgs(options.env),
-    ...(await previousContractsVolume(component)),
+    ...(await previousContractsVolume(component, options.usePreviousContracts === true)),
     "--entrypoint",
     "sh",
     service,
     "-lc",
-    withPreviousContractsSnapshot(command),
+    options.usePreviousContracts ? withPreviousContractsSnapshot(command) : command,
   ];
   const env = { ...resolvedComposeEnv(runningState), ...(await readEnvFileIfExists(envPath(component))), ...options.env };
   await runStreaming(argv, { env });

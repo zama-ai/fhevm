@@ -2,8 +2,6 @@
  * Orchestrates fhevm stack lifecycle commands such as up, down, resume, clean, upgrade, status, and logs.
  */
 
-import path from "node:path";
-
 import { ensureLockSnapshot, previewBundle, resolveBundle } from "../resolve/bundle-store";
 import {
   assertSupportedBundleScenario,
@@ -19,7 +17,7 @@ import { driftDatabaseName } from "../drift";
 import { serviceNameList } from "../generate/compose";
 import { generateRuntime } from "../generate";
 import { resolveScenarioForOptions, stackSpecForState, topologyForState } from "../stack-spec/stack-spec";
-import { effectiveOverrides, hasLocalCoprocessorInstance, listScenarioSummaries } from "../scenario/resolve";
+import { effectiveOverrides, listScenarioSummaries } from "../scenario/resolve";
 import { run, runStreaming } from "../utils/process";
 import { loadState, markStep, saveState } from "../state/state";
 import {
@@ -34,7 +32,6 @@ import {
   ProbeTimeout,
   ResumeError,
   RpcError,
-  SchemaGuardError,
 } from "../errors";
 import { describeBundle, REPO_KEYS } from "../resolve/target";
 import {
@@ -51,7 +48,6 @@ import {
   DEFAULT_POSTGRES_USER,
   ENV_DIR,
   GENERATED_CONFIG_DIR,
-  GROUP_BUILD_COMPONENTS,
   KEYGEN_ID_SELECTOR,
   KMS_CORE_CONTAINER,
   LOCK_DIR,
@@ -61,10 +57,8 @@ import {
   MINIO_INTERNAL_URL,
   PORTS,
   PROJECT,
-  REPO_ROOT,
   SCHEMA_COUPLED_GROUPS,
   STATE_DIR,
-  TEST_SUITE_CONTAINER,
   coprocessorHostKey,
   dockerArgs,
   envPath,
@@ -76,7 +70,6 @@ import type {
   CleanOptions,
   Discovery,
   LocalOverride,
-  OverrideGroup,
   State,
   StepName,
   UpOptions,
@@ -90,7 +83,6 @@ import {
   hostReachableRpcUrl,
   predictedCrsId,
   predictedKeyId,
-  readJson,
   readEnvFile,
   remove,
   toServiceName,
@@ -111,7 +103,6 @@ import {
   probeBootstrap,
   waitForBootstrap,
   waitForContainer,
-  waitForCoprocessor,
   waitForCoprocessorServices,
   waitForKmsConnector,
   waitForLog,
@@ -127,16 +118,21 @@ import {
   runtimeArtifactPaths,
 } from "./artifacts";
 import {
-  multiChainCoprocessorUpgradeTargets,
-  resolveUpgradePlan,
   resumeRepairStep,
-  type UpgradeGroup,
 } from "./repair";
+import { assertSchemaCompatibility } from "./schema";
+import {
+  assertVersionLockChanges,
+  applyVersionLock,
+  changedVersionKeys,
+  refreshDiscovery,
+  removeRuntimeUpgradeOverrides,
+  upgradeRuntimeGroup,
+} from "./upgrade";
+import { multiChainCoprocessorUpgradeTargets, resolveUpgradePlan } from "./upgrade-plan";
 import {
   composeDown,
-  composeUp,
   inspectImageId,
-  maybeBuild,
   multiChainComposeDown,
   multiChainComposeTask,
   multiChainComposeUp,
@@ -149,7 +145,10 @@ import {
 import { pause, runContractTask, unpause } from "./contracts";
 
 export {
+  applyVersionLock,
+  assertVersionLockChanges,
   castBool,
+  changedVersionKeys,
   createDiscovery,
   defaultEndpoints,
   discoverContracts,
@@ -162,10 +161,13 @@ export {
   pause,
   postBootHealthGate,
   probeBootstrap,
+  refreshDiscovery,
+  removeRuntimeUpgradeOverrides,
   resolveUpgradePlan,
   resumeRepairStep,
   runtimeArtifactPaths,
   unpause,
+  upgradeRuntimeGroup,
   validateDiscovery,
   waitForBootstrap,
   waitForContainer,
@@ -173,18 +175,6 @@ export {
   waitForRpc,
 };
 
-const SCHEMA_GUARDS = {
-  coprocessor: {
-    versionKey: "COPROCESSOR_DB_MIGRATION_VERSION",
-    repoPath: "coprocessor/fhevm-engine/db-migration/migrations",
-  },
-  "kms-connector": {
-    versionKey: "CONNECTOR_DB_MIGRATION_VERSION",
-    repoPath: "kms-connector/connector-db/migrations",
-  },
-} as const satisfies Partial<Record<OverrideGroup, { versionKey: string; repoPath: string }>>;
-
-const SCHEMA_GUARD_TARGETS = new Set<VersionBundle["target"]>(["latest-supported", "latest-main", "sha"]);
 export const preflightPorts = (state: Pick<State, "scenario">) =>
   [...new Set([...PORTS, ...state.scenario.hostChains.map((chain) => chain.rpcPort)])];
 
@@ -321,14 +311,6 @@ const printPlan = (state: Pick<State, "target" | "overrides" | "scenario">, from
 /** Quotes a shell argument for safe inclusion in a `sh -lc` command. */
 export const shellEscape = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
 
-/** Filters overrides that may diverge from a shared database schema. */
-const partialSchemaOverrides = (overrides: LocalOverride[]) =>
-  overrides.filter(
-    (item): item is LocalOverride & { services: string[] } =>
-      !!item.services?.length && SCHEMA_COUPLED_GROUPS.includes(item.group),
-  );
-
-
 /** Verifies required local tooling and port availability before boot. */
 export const preflight = async (state: State, strictPorts = true, needsGitHub = true) => {
   const requiredCommands = ["bun", "docker", "cast", ...(needsGitHub ? ["gh"] : [])];
@@ -374,69 +356,6 @@ export const preflight = async (state: State, strictPorts = true, needsGitHub = 
       }
       console.log(`[preflight] warning: ${message}`);
     }
-  }
-};
-
-const assertSchemaRepoStable = async (
-  group: OverrideGroup,
-  bundle: VersionBundle,
-  missingRefMessage: (ref: string) => string,
-  mismatchMessage: (ref: string) => string,
-) => {
-  const guard = SCHEMA_GUARDS[group as keyof typeof SCHEMA_GUARDS];
-  if (!guard || !SCHEMA_GUARD_TARGETS.has(bundle.target)) {
-    return;
-  }
-  const ref = bundle.env[guard.versionKey];
-  if (!ref) {
-    return;
-  }
-  const verified = await run(["git", "rev-parse", "-q", "--verify", `${ref}^{commit}`], {
-    cwd: REPO_ROOT,
-    allowFailure: true,
-  });
-  if (verified.code !== 0) {
-    throw new SchemaGuardError(group, missingRefMessage(ref));
-  }
-  const untracked = await run(
-    ["git", "ls-files", "--others", "--exclude-standard", "--", guard.repoPath],
-    { cwd: REPO_ROOT, allowFailure: true },
-  );
-  if (untracked.code !== 0) {
-    throw new SchemaGuardError(group, `Failed to inspect local ${group} migrations`);
-  }
-  if (untracked.stdout.trim()) {
-    throw new SchemaGuardError(group, mismatchMessage(ref));
-  }
-  const diff = await run(["git", "diff", "--quiet", "--exit-code", ref, "--", guard.repoPath], {
-    cwd: REPO_ROOT,
-    allowFailure: true,
-  });
-  if (diff.code === 1) {
-    throw new SchemaGuardError(group, mismatchMessage(ref));
-  }
-  if (diff.code !== 0 && diff.code !== 1) {
-    throw new SchemaGuardError(group, `Failed to compare local ${group} migrations against ${ref}`);
-  }
-};
-
-const assertSchemaCompatibility = async (
-  bundle: VersionBundle,
-  overrides: LocalOverride[],
-  scenario: State["scenario"],
-  allowSchemaMismatch: boolean,
-) => {
-  if (allowSchemaMismatch || !SCHEMA_GUARD_TARGETS.has(bundle.target)) {
-    return;
-  }
-  for (const item of partialSchemaOverrides(effectiveOverrides(overrides, scenario))) {
-    await assertSchemaRepoStable(
-      item.group,
-      bundle,
-      (ref) => `Cannot compare local ${item.group} migrations against ${ref}; local git ref is missing. Run \`git fetch --tags\` or pass --allow-schema-mismatch.`,
-      (ref) =>
-        `${item.group}: local DB migrations diverge from ${ref}. Use --override ${item.group} or pass --allow-schema-mismatch if you know this service remains compatible.`,
-    );
   }
 };
 
@@ -1241,235 +1160,6 @@ export const listScenarios = async () => {
     if (scenario.description) {
       console.log(`  ${scenario.description}`);
     }
-  }
-};
-
-type UpgradeOptions = {
-  lockFile?: string;
-};
-
-export const changedVersionKeys = (current: VersionBundle, next: VersionBundle) =>
-  [...new Set([...Object.keys(current.env), ...Object.keys(next.env)])]
-    .filter((key) => (current.env[key] ?? "") !== (next.env[key] ?? ""))
-    .sort();
-
-export const assertVersionLockChanges = (label: string, allowedVersionKeys: readonly string[], changedKeys: string[]) => {
-  const disallowed = changedKeys.filter((key) => !allowedVersionKeys.includes(key));
-  if (disallowed.length) {
-    throw new PreflightError(
-      `${label} lock changes unrelated version keys: ${disallowed.join(", ")}. Allowed: ${allowedVersionKeys.join(", ")}`,
-    );
-  }
-};
-
-const isOverrideGroup = (group: string): group is OverrideGroup =>
-  OVERRIDE_GROUPS.includes(group as OverrideGroup);
-
-export const runtimeUpgradeOverrideGroups = (group: UpgradeGroup): OverrideGroup[] => {
-  if (group === "kms") {
-    return ["kms-connector"];
-  }
-  if (group === "kms-core") {
-    return [];
-  }
-  return isOverrideGroup(group) ? [group] : [];
-};
-
-export const removeRuntimeUpgradeOverrides = (overrides: LocalOverride[], group: UpgradeGroup) => {
-  const upgraded = new Set(runtimeUpgradeOverrideGroups(group));
-  return overrides.filter((override) => !upgraded.has(override.group));
-};
-
-const mergeLocalOverrides = (current: LocalOverride[], additions: LocalOverride[] = []) => {
-  // JSON-encoded identity dedupes structurally equal overrides regardless of key order.
-  const seen = new Set(current.map((override) => JSON.stringify(override)));
-  const next = [...current];
-  for (const override of additions) {
-    const key = JSON.stringify(override);
-    if (!seen.has(key)) {
-      seen.add(key);
-      next.push(override);
-    }
-  }
-  return next;
-};
-
-const buildLockedState = async (
-  label: string,
-  state: State,
-  lockFile: string,
-  allowedVersionKeys: readonly string[],
-  nextOverrides: LocalOverride[],
-) => {
-  const lockPath = path.resolve(lockFile);
-  const next = await readJson<VersionBundle>(lockPath);
-  if (!next.env || typeof next.env !== "object") {
-    throw new PreflightError(`Invalid ${label} lock ${lockFile}: missing env map`);
-  }
-  const changedKeys = changedVersionKeys(state.versions, next);
-  assertVersionLockChanges(label, allowedVersionKeys, changedKeys);
-  const nextState = {
-    ...state,
-    target: next.target,
-    lockPath,
-    requiresGitHub: targetNeedsGitHub({ target: next.target, lockFile }),
-    overrides: nextOverrides,
-    versions: next,
-    updatedAt: new Date().toISOString(),
-  } satisfies State;
-  assertSupportedTargetScenario(nextState.target, nextState.scenario);
-  assertSupportedBundleScenario({
-    versions: nextState.versions,
-    overrides: nextState.overrides,
-    scenario: nextState.scenario,
-  });
-  const incompatibilities = validateBundleCompatibility(nextState);
-  if (incompatibilities.length) {
-    throw new IncompatibleVersions(incompatibilities.map((item) => item.message));
-  }
-  return { changedKeys, state: nextState };
-};
-
-const applyRuntimeUpgradeLock = (
-  state: State,
-  group: UpgradeGroup,
-  allowedVersionKeys: readonly string[],
-  lockFile: string,
-) =>
-  buildLockedState(
-    `upgrade ${group}`,
-    state,
-    lockFile,
-    allowedVersionKeys,
-    removeRuntimeUpgradeOverrides(state.overrides, group),
-  );
-
-/** Applies an ordered rollout version lock without restarting runtime services. */
-export const applyVersionLock = async (
-  label: string,
-  lockFile: string,
-  allowedVersionKeys: readonly string[],
-  options: { overrides?: LocalOverride[] } = {},
-) => {
-  const state = await loadState();
-  if (!state || !(await projectContainers()).length) {
-    throw new PreflightError("Stack is not running; start one with `fhevm-cli up` first");
-  }
-  await ensureRuntimeArtifacts(state, "rollout version lock");
-  const { changedKeys, state: nextState } = await buildLockedState(
-    label,
-    state,
-    lockFile,
-    allowedVersionKeys,
-    mergeLocalOverrides(state.overrides, options.overrides),
-  );
-  await assertSchemaCompatibility(nextState.versions, nextState.overrides, nextState.scenario, false);
-  await saveState(nextState);
-  await generateRuntime(nextState, stackSpecForState(nextState));
-  console.log(`[rollout] ${label} versions=${changedKeys.join(", ") || "(none)"}`);
-};
-
-/** Re-reads deployed contract addresses after contract runbook tasks mutate proxies. */
-export const refreshDiscovery = async () => {
-  const state = await loadState();
-  if (!state || !(await projectContainers()).length) {
-    throw new PreflightError("Stack is not running; start one with `fhevm-cli up` first");
-  }
-  await ensureRuntimeArtifacts(state, "rollout discovery");
-  const contracts = await discoverContracts(state);
-  const discovery = await ensureDiscovery(state);
-  discovery.gateway = contracts.gateway;
-  discovery.hosts = { ...discovery.hosts, ...contracts.hosts };
-  validateDiscovery(state);
-  await saveState(state);
-  await generateRuntime(state, stackSpecForState(state));
-  console.log("[rollout] discovery refreshed");
-};
-
-const waitForRelayer = async () => {
-  await waitForContainer("fhevm-relayer-db", "healthy");
-  await waitForContainer("fhevm-relayer", "running");
-  await waitForLog("fhevm-relayer", /All servers are ready and responding/);
-};
-
-const waitForUpgrade = async (state: State, group: UpgradeGroup, runtimeServices: string[]) => {
-  if (group === "coprocessor") {
-    const extraTargets = multiChainCoprocessorUpgradeTargets(state, runtimeServices);
-    for (const target of extraTargets) {
-      if (target.services.length) {
-        await multiChainComposeUp(target.compose, target.services);
-      }
-      await waitForStableChainListeners(state, target.chainKey);
-    }
-    await waitForCoprocessor(state);
-    await postBootHealthGate([...coprocessorHealthContainers(state), ...extraTargets.flatMap((target) => target.services)]);
-    return;
-  }
-  if (group === "kms-connector" || group === "kms") {
-    await waitForContainer(KMS_CORE_CONTAINER, "running");
-    await waitForKmsConnector(state);
-    await postBootHealthGate(KMS_CONNECTOR_HEALTH_CONTAINERS);
-    return;
-  }
-  if (group === "kms-core") {
-    await waitForContainer(KMS_CORE_CONTAINER, "running");
-    return;
-  }
-  if (group === "listener-core") {
-    await waitForContainer("listener-redis", "running");
-    await waitForContainer("listener-publisher-for-anvil", "running");
-    return;
-  }
-  if (group === "relayer") {
-    await waitForRelayer();
-    return;
-  }
-  await waitForTestSuite();
-};
-
-/** Upgrades one runtime group in place, including allowed migrations and optional version-lock application. */
-export const upgradeRuntimeGroup = async (groupValue: string | undefined, options: UpgradeOptions = {}) => {
-  const state = await loadState();
-  if (!state || !(await projectContainers()).length) {
-    throw new PreflightError(
-      "Stack is not running; start one with `fhevm-cli up --override ...` or `fhevm-cli up --scenario ...` first",
-    );
-  }
-  await ensureRuntimeArtifacts(state, "upgrade");
-  const plan = resolveUpgradePlan(state, groupValue, { lockFile: !!options.lockFile });
-  for (const step of plan.steps) {
-    if (!state.completedSteps.includes(step)) {
-      throw new PreflightError(`upgrade requires a stack that has completed the ${step} step`);
-    }
-  }
-  const nextState = options.lockFile
-    ? (await applyRuntimeUpgradeLock(state, plan.group, plan.versionKeys, options.lockFile)).state
-    : state;
-  await assertSchemaCompatibility(nextState.versions, nextState.overrides, nextState.scenario, false);
-  console.log(`[upgrade] ${plan.group}`);
-  await saveState(nextState);
-  await generateRuntime(nextState, stackSpecForState(nextState));
-  if (plan.group === "listener-core") {
-    await postgresExec("", ["-c", "CREATE DATABASE listener;"]);
-  }
-  for (const component of plan.components) {
-    await maybeBuild(component.component, nextState, { force: true });
-  }
-  for (const component of plan.components) {
-    if (!component.migrationServices.length) {
-      continue;
-    }
-    await composeUp(component.component, component.migrationServices, { forceRecreate: true });
-    for (const service of component.migrationServices) {
-      await waitForContainer(service, "complete");
-    }
-  }
-  for (const component of plan.components) {
-    await composeUp(component.component, component.runtimeServices, { noDeps: true });
-  }
-  await waitForUpgrade(nextState, plan.group, plan.runtimeServices);
-  for (const step of plan.steps) {
-    await markStep(nextState, step);
   }
 };
 

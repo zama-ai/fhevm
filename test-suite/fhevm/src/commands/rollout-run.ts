@@ -106,13 +106,13 @@ export const createRolloutContext = (receipt: RolloutReceipt = createRolloutRece
     await receipt.record("refresh-discovery", "refreshed runtime addresses");
   },
   async runGatewayContractTask(command, options = {}) {
-    await runContractTask("gateway-sc", "gateway-sc-deploy", command, options);
+    await runContractTask("gateway-sc", "gateway-sc-deploy", command, { ...options, usePreviousContracts: true });
     await receipt.record("gateway-contract-task", command, {
       details: { envKeys: Object.keys(options.env ?? {}).sort() },
     });
   },
   async runHostContractTask(command, options = {}) {
-    await runContractTask("host-sc", "host-sc-deploy", command, options);
+    await runContractTask("host-sc", "host-sc-deploy", command, { ...options, usePreviousContracts: true });
     await receipt.record("host-contract-task", command, {
       details: { envKeys: Object.keys(options.env ?? {}).sort() },
     });
