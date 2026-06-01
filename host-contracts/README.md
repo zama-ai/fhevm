@@ -118,7 +118,7 @@ Use the role-level tasks for normal deployments.
 | `task:deployProtocolConfigCanonical` | canonical | no | Upgrades the local `ProtocolConfig` proxy and seeds the first KMS context from env vars. |
 | `task:deployProtocolConfigSecondary` | secondary | no | Upgrades the local `ProtocolConfig` proxy from a pinned canonical snapshot. |
 | `task:deployKMSVerifier` | both | no | Upgrades the local `KMSVerifier` proxy. Requires local `ProtocolConfig` to be ready first. |
-| `task:initializeKMSGeneration` | canonical | no | Upgrades the canonical-only `KMSGeneration` proxy and initializes it. Never run this on a secondary host. |
+| `task:deployKMSGeneration` | canonical | no | Upgrades the canonical-only `KMSGeneration` proxy and initializes it. Never run this on a secondary host. |
 
 ### Env vars by task
 
@@ -131,7 +131,7 @@ Use the role-level tasks for normal deployments.
 | `task:deployProtocolConfigSecondary` | adds **none**: reads everything from canonical via RPC. Takes `--canonical-rpc-url` and `--canonical-protocol-config-address` as task arguments. |
 | `task:deployProtocolConfigFromMigration` | adds `MIGRATION_CONTEXT_ID`, `MIGRATION_KMS_NODES`, `MIGRATION_KMS_THRESHOLDS` (used only for the Gateway-to-Ethereum migration, see below) |
 | `task:deployKMSVerifier` | adds `DECRYPTION_ADDRESS` (and reuses `CHAIN_ID_GATEWAY`) |
-| `task:initializeKMSGeneration` | adds none beyond `DEPLOYER_PRIVATE_KEY` |
+| `task:deployKMSGeneration` | adds none beyond `DEPLOYER_PRIVATE_KEY` |
 | `task:addHostPausers` | adds `NUM_PAUSERS`, `PAUSER_ADDRESS_0..N-1` |
 
 Secondary chains need no KMS-node env vars. `task:deployProtocolConfigSecondary` mirrors
