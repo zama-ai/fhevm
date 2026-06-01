@@ -3,6 +3,25 @@
 kms: https://github.com/zama-ai/kms
 tfhe-rs: https://github.com/zama-ai/tfhe-rs
 
+## Limitations
+
+There is no on-chain or relayer-side signal that tells the SDK the minimum `tfhe.wasm` version required to deserialize a given PubKey/CRS pair, and the format is not forward-compatible across minor versions:
+
+- `tfhe.wasm@v1.5.3` cannot parse a PubKey/CRS produced by `tfhe.wasm@v1.6.1`.
+
+## Heuristic
+
+Lacking a direct signal, the SDK derives the right `tfhe.wasm` version from the on-chain `ACL` contract version:
+
+1. Read `ACL.version` on the host chain.
+2. Map it to a wasm version:
+   - `ACL.version < 0.4.0` (Protocol ≤ `v0.12.0`) → `tfhe.wasm@v1.5.3`
+   - `ACL.version ≥ 0.4.0` (Protocol ≥ `v0.13.0`) → `tfhe.wasm@v1.6.1`
+
+This works as long as every protocol release bumps at least one host-contract version. See [the open question on this assumption](#open-question) below if it ever breaks.
+
+**In the future: add view functions in InputVerifier.sol and KMSVerifier.sol or ProtocolConfig.sol**
+
 ## KMS
 
 KMS releases pin an exact `tfhe` crate version via `tfhe = "=X.Y.Z"` in the workspace `Cargo.toml`.
@@ -33,7 +52,7 @@ kms `0.12.7` generated the PubKey/CRS in December 2025
 | `0.11.0` | `0.2.0` | `0.2.0`       | `0.1.0`     | `0.2.0`       | `0.1.0`  | `0.1.0`   | `1.5.1`         | `0.13.3`    |
 | `0.12.0` | `0.3.0` | `0.3.0`       | `0.2.0`     | `0.2.0`       | `0.2.0`  | `0.1.0`   | `1.5.4`         | `0.13.10`   |
 | `0.13.0` | `0.4.0` | `0.4.0`       | `0.3.0`     | `0.2.0`       | `0.3.0`  | `0.1.0`   | `1.6.1`         | `0.13.20-0` |
-| `0.14.0` | `0.x.0` | `0.x.0`       | `0.x.0`     | `0.x.0`       | `0.x.0`  | `0.x.0`   | ?               | ?           |
+| `0.14.0` | ?       | ?             | ?           | ?             | ?        | ?         | ?               | ?           |
 
 ## TFHE
 
