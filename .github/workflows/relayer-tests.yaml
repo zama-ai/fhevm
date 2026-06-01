@@ -64,7 +64,10 @@ jobs:
 
       - name: Format
         working-directory: relayer
-        run: cargo fmt --all -- --check
+        # `make fmt` checks the relayer and the rpc-mock test-support crate without `--all`,
+        # which would otherwise descend into path deps (e.g. the in-tree generated
+        # `rust_bindings`) that are formatted by their own component, not the relayer.
+        run: make fmt
 
       - name: Build for tests (no rpc mock)
         working-directory: relayer
