@@ -94,6 +94,30 @@ pub fn compute_user_decrypt_digest(
     UserDecryptRequestVerification::from(payload).eip712_signing_hash(domain)
 }
 
+/// Same as [`compute_user_decrypt_digest`] but takes individual request fields, for callers that
+/// don't hold a [`UserDecryptionRequestPayload`] (e.g. the relayer pre-check). Maps onto the same
+/// [`UserDecryptRequestVerification`] struct, so both paths hash identically.
+#[allow(clippy::too_many_arguments)]
+pub fn compute_user_decrypt_digest_from_parts(
+    user_address: Address,
+    public_key: &Bytes,
+    allowed_contracts: &[Address],
+    start_timestamp: U256,
+    duration_seconds: U256,
+    extra_data: &Bytes,
+    domain: &Eip712Domain,
+) -> B256 {
+    UserDecryptRequestVerification {
+        userAddress: user_address,
+        publicKey: public_key.clone(),
+        allowedContracts: allowed_contracts.to_vec(),
+        startTimestamp: start_timestamp,
+        durationSeconds: duration_seconds,
+        extraData: extra_data.clone(),
+    }
+    .eip712_signing_hash(domain)
+}
+
 /// Try to recover the EOA signer address from a 65-byte signature. Returns `None` for any
 /// other length or unparsable signature so the caller can fall through to ERC-1271.
 fn try_ecrecover(digest: &B256, signature: &[u8]) -> Option<Address> {
@@ -266,6 +290,28 @@ mod tests {
         ProviderBuilder::new()
             .disable_recommended_fillers()
             .connect_mocked_client(asserter)
+    }
+
+    #[test]
+    fn digest_from_parts_matches_payload() {
+        // The relayer feeds individual fields; the KMS Connector feeds a `UserDecryptionRequestPayload`.
+        // Both must produce the identical EIP-712 digest or the two checks would disagree.
+        let gateway = Address::from([0xCA; 20]);
+        let payload = dummy_payload(Address::from([0x11; 20]));
+        let domain = default_user_decrypt_domain(TEST_CHAIN_ID, gateway);
+
+        let from_payload = compute_user_decrypt_digest(&payload, &domain);
+        let from_parts = compute_user_decrypt_digest_from_parts(
+            payload.userAddress,
+            &payload.publicKey,
+            &payload.allowedContracts,
+            payload.requestValidity.startTimestamp,
+            payload.requestValidity.durationSeconds,
+            &payload.extraData,
+            &domain,
+        );
+
+        assert_eq!(from_payload, from_parts);
     }
 
     #[tokio::test]

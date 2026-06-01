@@ -58,6 +58,8 @@ rustls = { version = "0.23.36", features = [
 fhevm_gateway_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "4d6867ef081ea8620186414b198b2d336f608372", default-features = false }
 # Use a pinned version of fhevm host bindings contract as the feature branch is still unmerged.
 fhevm_host_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "2a6cf820b", default-features = false }
+# Shared RFC-012 ecrecover → ERC-1271 verification, also used by the KMS Connector.
+user-decryption-signature = { path = "../shared/user-decryption-signature" }
 utoipa = { version = "5.4.0", features = ["axum_extras", "preserve_path_order"] }
 utoipa-redoc = { version = "6.0.0", features = ["axum"] }
 validator = { version = "0.20.0", features = ["derive"] }
@@ -86,6 +88,9 @@ built = { version = "0.8", features = [
 
 
 [dev-dependencies]
+# `signer-local` (PrivateKeySigner) is needed to forge EOA signatures in pre-check tests;
+# the mock provider used there is already available via the `json-rpc` feature above.
+alloy = { version = "1.7.3", features = ["signer-local"] }
 tempfile = "3.25.0"
 rand = "0.10.0"
 rstest = "0.26.1"
