@@ -68,7 +68,7 @@ export const runContractTask = async (
   component: "host-sc" | "gateway-sc",
   service: "host-sc-deploy" | "gateway-sc-deploy",
   command: string,
-  options: { env?: Record<string, string>; usePreviousContracts?: boolean } = {},
+  options: { env?: Record<string, string>; withPreviousContractsSnapshot?: boolean } = {},
 ) => {
   const state = await loadState();
   if (!state) {
@@ -84,12 +84,12 @@ export const runContractTask = async (
     "--rm",
     "--no-deps",
     ...contractTaskEnvArgs(options.env),
-    ...(await previousContractsVolume(component, options.usePreviousContracts === true)),
+    ...(await previousContractsVolume(component, options.withPreviousContractsSnapshot === true)),
     "--entrypoint",
     "sh",
     service,
     "-lc",
-    options.usePreviousContracts ? withPreviousContractsSnapshot(command) : command,
+    options.withPreviousContractsSnapshot ? withPreviousContractsSnapshot(command) : command,
   ];
   const env = { ...resolvedComposeEnv(runningState), ...(await readEnvFileIfExists(envPath(component))), ...options.env };
   await runStreaming(argv, { env });
