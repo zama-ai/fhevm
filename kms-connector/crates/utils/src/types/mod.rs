@@ -8,8 +8,8 @@ pub mod kms_response;
 pub use event::{ProtocolEvent, ProtocolEventKind};
 pub use grpc::{KmsGrpcRequest, KmsGrpcResponse};
 pub use kms_response::{
-    CrsgenResponse, KeygenResponse, KmsResponse, KmsResponseKind, PrepKeygenResponse,
-    PublicDecryptionResponse, UserDecryptionResponse,
+    CrsgenResponse, EpochResultResponse, KeygenResponse, KmsResponse, KmsResponseKind,
+    NewKmsContextResponse, PrepKeygenResponse, PublicDecryptionResponse, UserDecryptionResponse,
 };
 
 use alloy::{
@@ -18,6 +18,11 @@ use alloy::{
 };
 use anyhow::anyhow;
 use kms_grpc::kms::v1::RequestId;
+
+/// Mirrors `KMS_CONTEXT_COUNTER_BASE` from `host-contracts/contracts/shared/Constants.sol`.
+pub const KMS_CONTEXT_COUNTER_BASE: U256 = U256::from_be_bytes([
+    7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+]);
 
 pub fn u256_to_u32(integer: U256) -> anyhow::Result<u32> {
     // Get integer's least significant bits

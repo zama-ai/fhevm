@@ -2,9 +2,9 @@ use crate::types::request_id_to_u256;
 use alloy::primitives::U256;
 use anyhow::anyhow;
 use kms_grpc::kms::v1::{
-    CrsGenRequest, CrsGenResult, KeyGenPreprocRequest, KeyGenPreprocResult, KeyGenRequest,
-    KeyGenResult, PublicDecryptionRequest, PublicDecryptionResponse, RequestId,
-    UserDecryptionRequest, UserDecryptionResponse,
+    CrsGenRequest, CrsGenResult, EpochResultResponse, KeyGenPreprocRequest, KeyGenPreprocResult,
+    KeyGenRequest, KeyGenResult, NewMpcContextRequest, NewMpcEpochRequest, PublicDecryptionRequest,
+    PublicDecryptionResponse, RequestId, UserDecryptionRequest, UserDecryptionResponse,
 };
 use tonic::Response;
 
@@ -16,6 +16,11 @@ pub enum KmsGrpcRequest {
     PrepKeygen(KeyGenPreprocRequest),
     Keygen(KeyGenRequest),
     Crsgen(CrsGenRequest),
+    NewMpcContext {
+        old: NewMpcContextRequest,
+        new: NewMpcContextRequest,
+    },
+    NewMpcEpoch(NewMpcEpochRequest),
 }
 
 impl From<PublicDecryptionRequest> for KmsGrpcRequest {
@@ -44,6 +49,14 @@ pub enum KmsGrpcResponse {
     PrepKeygen(KeyGenPreprocResult),
     Keygen(KeyGenResult),
     Crsgen(CrsGenResult),
+    NewKmsContext {
+        context_id: U256,
+    },
+    EpochResult {
+        context_id: U256,
+        epoch_id: U256,
+        grpc_response: EpochResultResponse,
+    },
     NoResponseExpected,
 }
 

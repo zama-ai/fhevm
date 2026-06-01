@@ -96,6 +96,14 @@ pub fn parse_extra_data(extra_data: &[u8]) -> anyhow::Result<ExtraData> {
     }
 }
 
+pub fn extra_data_v2_payload(context_id: U256, epoch_id: U256) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(EXTRA_DATA_V2_LENGTH);
+    payload.push(EXTRA_DATA_V2_VERSION);
+    payload.extend_from_slice(&context_id.to_be_bytes::<32>());
+    payload.extend_from_slice(&epoch_id.to_be_bytes::<32>());
+    payload
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -195,6 +203,22 @@ mod tests {
         assert!(
             err.to_string().contains("extra_data too short for v1"),
             "Unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn v2_payload_roundtrips_through_parse() {
+        let context_id = U256::from(69u64);
+        let epoch_id = U256::from(7u64);
+
+        let payload = extra_data_v2_payload(context_id, epoch_id);
+        assert_eq!(payload.len(), EXTRA_DATA_V2_LENGTH);
+        assert_eq!(
+            parse_extra_data(&payload).unwrap(),
+            ExtraData {
+                context_id: Some(context_id),
+                epoch_id: Some(epoch_id),
+            }
         );
     }
 
