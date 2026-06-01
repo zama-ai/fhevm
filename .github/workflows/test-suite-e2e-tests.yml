@@ -7,7 +7,6 @@ on:
       - synchronize
       - reopened
       - labeled
-      - unlabeled
   workflow_dispatch:
     inputs: &shared_inputs
       orchestrated:
@@ -125,10 +124,15 @@ jobs:
   fhevm-e2e-test:
     name: fhevm-e2e-test
     # Run on manual/reusable invocations. For direct PRs, require the `e2e` label.
-    if:
-      ${{ github.event_name != 'pull_request' || inputs.orchestrated || (github.event.pull_request.head.repo.full_name
-      == github.repository && !startsWith(github.head_ref, 'mergify/merge-queue/') &&
-      contains(github.event.pull_request.labels.*.name, 'e2e')) }}
+    if: |
+      github.event_name != 'pull_request' ||
+      inputs.orchestrated ||
+      (
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        !startsWith(github.head_ref, 'mergify/merge-queue/') &&
+        contains(github.event.pull_request.labels.*.name, 'e2e') &&
+        (github.event.action != 'labeled' || github.event.label.name == 'e2e')
+      )
     permissions:
       contents: "read" # Required to checkout repository code
       id-token: "write" # Required for OIDC authentication
