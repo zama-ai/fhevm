@@ -74,7 +74,7 @@ _check-cast:
 
 _check-sqlx-cli:
 	@command -v cargo-sqlx >/dev/null 2>&1 || { \
-		echo "$(RED)Error: sqlx-cli not installed. Run: cargo install sqlx-cli --no-default-features --features postgres,rustls$(RESET)"; exit 1; }
+		echo "$(RED)Error: sqlx-cli not installed. Run: cargo install sqlx-cli --version 0.8.6 --no-default-features --features postgres,rustls$(RESET)"; exit 1; }
 
 # Validate that a network config exists and has a non-empty private key.
 # Usage: $(MAKE) _check-network-config NET_CONFIG=config/local.testnet.yaml NET_NAME=Testnet
