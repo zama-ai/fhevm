@@ -1,4 +1,7 @@
-use connector_utils::tests::{db::responses::insert_rand_response, setup::TestInstanceBuilder};
+use connector_utils::tests::{
+    db::responses::{TestResponseType, insert_rand_response},
+    setup::TestInstanceBuilder,
+};
 use rstest::rstest;
 use sqlx::{Pool, Postgres};
 use std::time::Duration;
@@ -6,51 +9,28 @@ use tracing::info;
 use tx_sender::core::{Config, DbKmsResponsePicker, KmsResponsePicker};
 
 #[rstest]
+#[case::public_decryption(TestResponseType::PublicDecryption)]
+#[case::user_decryption(TestResponseType::UserDecryption)]
+#[case::prep_keygen(TestResponseType::PrepKeygen)]
+#[case::keygen(TestResponseType::Keygen)]
+#[case::crsgen(TestResponseType::Crsgen)]
+#[case::new_kms_context(TestResponseType::NewKmsContext)]
+#[case::epoch_result(TestResponseType::EpochResult)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_pick_public_decryption_with_pg_notif() -> anyhow::Result<()> {
-    test_pick_response_with_pg_notif("PublicDecryptionResponse").await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_pick_user_decryption_with_pg_notif() -> anyhow::Result<()> {
-    test_pick_response_with_pg_notif("UserDecryptionResponse").await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_pick_prep_keygen_with_pg_notif() -> anyhow::Result<()> {
-    test_pick_response_with_pg_notif("PrepKeygenResponse").await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_pick_keygen_with_pg_notif() -> anyhow::Result<()> {
-    test_pick_response_with_pg_notif("KeygenResponse").await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_pick_crsgen_with_pg_notif() -> anyhow::Result<()> {
-    test_pick_response_with_pg_notif("CrsgenResponse").await
-}
-
-async fn test_pick_response_with_pg_notif(response_str: &str) -> anyhow::Result<()> {
+async fn test_pick_response_with_pg_notif(
+    #[case] response_type: TestResponseType,
+) -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_setup().await?;
     let mut response_picker = init_response_picker(test_instance.db().clone()).await?;
 
-    info!("Triggering Postgres notification with CrsgenResponse insertion...");
+    info!("Triggering Postgres notification with {response_type} insertion...");
     let inserted_response =
-        insert_rand_response(test_instance.db(), response_str, None, None).await?;
-    info!("Picking {response_str}...");
+        insert_rand_response(test_instance.db(), response_type, None, None).await?;
+    info!("Picking {response_type}...");
     let responses = response_picker.pick_responses().await?;
 
-    info!("Checking {response_str} data...");
+    info!("Checking {response_type} data...");
     assert_eq!(responses[0].kind, inserted_response);
     info!("Data OK!");
     Ok(())

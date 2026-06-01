@@ -12,8 +12,9 @@ use connector_utils::{
     },
 };
 use kms_grpc::kms::v1::{
-    CrsGenResult, KeyDigest, KeyGenPreprocResult, KeyGenResult, PublicDecryptionResponse,
-    PublicDecryptionResponsePayload, UserDecryptionResponse, UserDecryptionResponsePayload,
+    CrsGenResult, EpochResultResponse as GrpcEpochResultResponse, KeyDigest, KeyGenPreprocResult,
+    KeyGenResult, PublicDecryptionResponse, PublicDecryptionResponsePayload,
+    UserDecryptionResponse, UserDecryptionResponsePayload,
 };
 use kms_worker::core::{DbKmsResponsePublisher, KmsResponsePublisher};
 use sqlx::Row;
@@ -223,6 +224,70 @@ async fn test_publish_crsgen_response() -> anyhow::Result<()> {
     assert_eq!(crs_id, rand_crs_id);
     assert_eq!(crs_digest, rand_crs_digest);
     assert_eq!(signature, rand_signature);
+    info!("Response successfully stored!");
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_publish_new_kms_context_response() -> anyhow::Result<()> {
+    let test_instance = TestInstanceBuilder::db_setup().await?;
+    let publisher = DbKmsResponsePublisher::new(test_instance.db().clone());
+
+    info!("Mocking NewKmsContextResponse from KMS Core...");
+    let rand_context_id = rand_u256();
+    let grpc_response = KmsGrpcResponse::NewKmsContext {
+        context_id: rand_context_id,
+    };
+    let response = KmsResponse::new(
+        KmsResponseKind::process(grpc_response)?,
+        PropagationContext::empty(),
+    );
+
+    publisher.publish_response(response).await?;
+    info!("NewKmsContextResponse successfully published!");
+
+    info!("Checking NewKmsContextResponse is stored in DB...");
+    let row = sqlx::query("SELECT context_id FROM new_kms_context_responses")
+        .fetch_one(test_instance.db())
+        .await?;
+
+    let context_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("context_id")?);
+    assert_eq!(context_id, rand_context_id);
+    info!("Response successfully stored!");
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_publish_epoch_result_response() -> anyhow::Result<()> {
+    let test_instance = TestInstanceBuilder::db_setup().await?;
+    let publisher = DbKmsResponsePublisher::new(test_instance.db().clone());
+
+    info!("Mocking EpochResultResponse from KMS Core...");
+    let rand_context_id = rand_u256();
+    let rand_epoch_id = rand_u256();
+    let grpc_response = KmsGrpcResponse::EpochResult {
+        context_id: rand_context_id,
+        epoch_id: rand_epoch_id,
+        grpc_response: GrpcEpochResultResponse::default(),
+    };
+    let response = KmsResponse::new(
+        KmsResponseKind::process(grpc_response)?,
+        PropagationContext::empty(),
+    );
+
+    publisher.publish_response(response).await?;
+    info!("EpochResultResponse successfully published!");
+
+    info!("Checking EpochResultResponse is stored in DB...");
+    let row =
+        sqlx::query("SELECT context_id, epoch_id, keys, crs_list FROM epoch_result_responses")
+            .fetch_one(test_instance.db())
+            .await?;
+
+    let context_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("context_id")?);
+    let epoch_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("epoch_id")?);
+    assert_eq!(context_id, rand_context_id);
+    assert_eq!(epoch_id, rand_epoch_id);
     info!("Response successfully stored!");
     Ok(())
 }

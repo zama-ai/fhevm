@@ -59,10 +59,10 @@ async fn test_decryption_context_not_found(
         }
     }
 
-    let gateway_mock_provider = ProviderBuilder::new()
+    let mock_provider = ProviderBuilder::new()
         .disable_recommended_fillers()
         .connect_mocked_client(asserter);
-    info!("Gateway mock started!");
+    info!("Gateway + Ethereum mock started!");
 
     // Mocking Host chain ACL to ALLOW decryption.
     // Per attempt: Public → 1 bool; Legacy user → 2 bools;
@@ -101,7 +101,7 @@ async fn test_decryption_context_not_found(
     };
     let kms_worker = init_kms_worker(
         config,
-        gateway_mock_provider,
+        mock_provider,
         acl_contracts_mock,
         test_instance.db(),
     )
@@ -171,10 +171,10 @@ async fn test_decryption_context_invalid(#[case] event_type: TestEventType) -> a
         _ => panic!("Unexpected event kind"),
     };
 
-    let gateway_mock_provider = ProviderBuilder::new()
+    let mock_provider = ProviderBuilder::new()
         .disable_recommended_fillers()
         .connect_mocked_client(asserter);
-    info!("Gateway mock started!");
+    info!("Gateway + Ethereum mock started!");
 
     // Mocking Host chain ACL to ALLOW decryption (1 attempt only, irrecoverable error).
     // Per attempt: Public → 1 bool; Legacy user → 2 bools;
@@ -204,7 +204,7 @@ async fn test_decryption_context_invalid(#[case] event_type: TestEventType) -> a
     };
     let kms_worker = init_kms_worker(
         config,
-        gateway_mock_provider,
+        mock_provider,
         acl_contracts_mock,
         test_instance.db(),
     )

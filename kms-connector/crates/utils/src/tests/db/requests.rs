@@ -13,6 +13,7 @@ use crate::{
 use alloy::{
     hex,
     primitives::{FixedBytes, U256},
+    sol_types::SolValue,
 };
 use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::{
@@ -23,8 +24,12 @@ use fhevm_gateway_bindings::decryption::{
     },
     IDecryption::{RequestValiditySeconds, UserDecryptionRequestPayload},
 };
-use fhevm_host_bindings::kms_generation::KMSGeneration::{
-    CrsgenRequest, KeygenRequest, PrepKeygenRequest,
+use fhevm_host_bindings::{
+    kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
+    protocol_config::{
+        IProtocolConfig::{KmsThresholds, PreviousCrsInfo, PreviousKeyInfo},
+        ProtocolConfig::{KmsNodeParams, NewKmsContext, NewKmsEpoch, PcrValues},
+    },
 };
 use sqlx::{Pool, Postgres, types::chrono::Utc};
 use std::fmt::Display;
@@ -42,6 +47,8 @@ pub enum TestEventType {
     PrepKeygen,
     Keygen,
     Crsgen,
+    NewKmsContext,
+    NewKmsEpoch,
 }
 
 impl TestEventType {
@@ -52,6 +59,8 @@ impl TestEventType {
             Self::PrepKeygen => EventType::PrepKeygenRequest,
             Self::Keygen => EventType::KeygenRequest,
             Self::Crsgen => EventType::CrsgenRequest,
+            Self::NewKmsContext => EventType::NewKmsContext,
+            Self::NewKmsEpoch => EventType::NewKmsEpoch,
         }
     }
 }
@@ -83,6 +92,8 @@ pub async fn insert_rand_request(
         TestEventType::PrepKeygen => insert_rand_prep_keygen_request(db, options).await?.into(),
         TestEventType::Keygen => insert_rand_keygen_request(db, options).await?.into(),
         TestEventType::Crsgen => insert_rand_crsgen_request(db, options).await?.into(),
+        TestEventType::NewKmsContext => insert_rand_new_kms_context(db, options).await?.into(),
+        TestEventType::NewKmsEpoch => insert_rand_new_kms_epoch(db, options).await?.into(),
     };
     Ok(inserted_response)
 }
@@ -389,6 +400,102 @@ pub async fn insert_rand_crsgen_request(
     })
 }
 
+pub async fn insert_rand_new_kms_context(
+    db: &Pool<Postgres>,
+    options: InsertRequestOptions,
+) -> anyhow::Result<NewKmsContext> {
+    let context_id = options
+        .id
+        .or(options.context_id)
+        .unwrap_or(TESTING_KMS_CONTEXT);
+    let previous_context_id = rand_u256();
+    let status = options.status.unwrap_or(OperationStatus::Pending);
+
+    let kms_node_params: Vec<KmsNodeParams> = vec![];
+    let pcr_values: Vec<PcrValues> = vec![];
+    let thresholds = KmsThresholds {
+        publicDecryption: U256::ONE,
+        userDecryption: U256::ONE,
+        kmsGen: U256::ONE,
+        mpc: U256::ONE,
+    };
+    let software_version = "v1".to_string();
+
+    sqlx::query!(
+        "INSERT INTO new_kms_context(\
+            context_id, previous_context_id, kms_node_params, thresholds, software_version, \
+            pcr_values, tx_hash, created_at, otlp_context, already_sent, status\
+        ) \
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT DO NOTHING",
+        context_id.as_le_slice(),
+        previous_context_id.as_le_slice(),
+        kms_node_params.abi_encode(),
+        thresholds.abi_encode(),
+        software_version.clone(),
+        pcr_values.abi_encode(),
+        options.tx_hash.map(|h| h.to_vec()),
+        Utc::now(),
+        bc2wrap::serialize(&PropagationContext::empty())?,
+        options.already_sent,
+        status as OperationStatus,
+    )
+    .execute(db)
+    .await?;
+
+    Ok(NewKmsContext {
+        contextId: context_id,
+        previousContextId: previous_context_id,
+        kmsNodeParams: kms_node_params,
+        thresholds,
+        softwareVersion: software_version,
+        pcrValues: pcr_values,
+    })
+}
+
+pub async fn insert_rand_new_kms_epoch(
+    db: &Pool<Postgres>,
+    options: InsertRequestOptions,
+) -> anyhow::Result<NewKmsEpoch> {
+    let context_id = options.context_id.unwrap_or(TESTING_KMS_CONTEXT);
+    let previous_context_id = rand_u256();
+    let epoch_id = options.id.or(options.epoch_id).unwrap_or(TESTING_KMS_EPOCH);
+    let previous_epoch_id = rand_u256();
+    let status = options.status.unwrap_or(OperationStatus::Pending);
+
+    let keys: Vec<PreviousKeyInfo> = vec![];
+    let crs_list: Vec<PreviousCrsInfo> = vec![];
+
+    sqlx::query!(
+        "INSERT INTO new_kms_epoch(\
+            context_id, previous_context_id, epoch_id, previous_epoch_id, keys, crs_list, \
+            tx_hash, created_at, otlp_context, already_sent, status\
+        ) \
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT DO NOTHING",
+        context_id.as_le_slice(),
+        previous_context_id.as_le_slice(),
+        epoch_id.as_le_slice(),
+        previous_epoch_id.as_le_slice(),
+        keys.abi_encode(),
+        crs_list.abi_encode(),
+        options.tx_hash.map(|h| h.to_vec()),
+        Utc::now(),
+        bc2wrap::serialize(&PropagationContext::empty())?,
+        options.already_sent,
+        status as OperationStatus,
+    )
+    .execute(db)
+    .await?;
+
+    Ok(NewKmsEpoch {
+        kmsContextId: context_id,
+        previousContextId: previous_context_id,
+        epochId: epoch_id,
+        previousEpochId: previous_epoch_id,
+        keys,
+        crsList: crs_list,
+    })
+}
+
 pub async fn check_no_uncompleted_request_in_db(
     db: &Pool<Postgres>,
     kind: TestEventType,
@@ -412,6 +519,13 @@ pub async fn check_no_uncompleted_request_in_db(
         }
         EventType::CrsgenRequest => {
             "SELECT COUNT(crs_id) FROM crsgen_requests WHERE status NOT IN ('completed', 'failed')"
+        }
+        EventType::NewKmsContext => {
+            "SELECT COUNT(context_id) FROM new_kms_context \
+            WHERE status NOT IN ('completed', 'failed')"
+        }
+        EventType::NewKmsEpoch => {
+            "SELECT COUNT(epoch_id) FROM new_kms_epoch WHERE status NOT IN ('completed', 'failed')"
         }
     };
     let count: i64 = sqlx::query_scalar(query).fetch_one(db).await?;
@@ -444,6 +558,10 @@ pub async fn check_request_failed_in_db(
         EventType::CrsgenRequest => {
             "SELECT COUNT(crs_id) FROM crsgen_requests WHERE status = 'failed'"
         }
+        EventType::NewKmsContext => {
+            "SELECT COUNT(context_id) FROM new_kms_context WHERE status = 'failed'"
+        }
+        EventType::NewKmsEpoch => "SELECT COUNT(*) FROM new_kms_epoch WHERE status = 'failed'",
     };
     let count: i64 = sqlx::query_scalar(query).fetch_one(db).await?;
     if count > 0 {

@@ -18,7 +18,7 @@ use tokio_util::sync::CancellationToken;
 #[timeout(Duration::from_secs(300))]
 #[tokio::test]
 async fn test_healthcheck_endpoints() -> anyhow::Result<()> {
-    let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let mut test_instance = TestInstanceBuilder::db_bc_setup().await?;
     let state = State::new(
         test_instance.db().clone(),
         test_instance.provider().clone(),

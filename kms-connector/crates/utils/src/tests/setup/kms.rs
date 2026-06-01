@@ -28,8 +28,7 @@ impl KmsInstance {
         let cmd = format!(
             "kms-gen-keys --public-storage s3 --public-s3-bucket '{KMS_PUBLIC_VAULT_URL}' \\
             --aws-s3-endpoint '{s3_internal_url}' --private-storage file --private-file-path \\
-            '{KMS_PRIVATE_VAULT_URL}' --cmd signing-keys centralized &&
-            kms-server --config-file config/config.toml"
+            '{KMS_PRIVATE_VAULT_URL}' centralized && kms-server --config-file config/config.toml"
         );
         let version = ROOT_CARGO_TOML.get_kms_grpc_version();
         let container = GenericImage::new("ghcr.io/zama-ai/kms/core-service", &version)
