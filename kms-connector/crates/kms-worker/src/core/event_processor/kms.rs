@@ -51,7 +51,7 @@ where
         if let Some(context_id) = parsed_extra_data.context_id {
             self.context_manager.validate_context(context_id).await?;
         }
-        // TODO: validation of epoch_id during RFC-005 implementation
+        // TODO: validation of epoch_id (https://github.com/zama-ai/fhevm-internal/issues/1467)
 
         Ok(KmsGrpcRequest::PrepKeygen(KeyGenPreprocRequest {
             request_id: Some(u256_to_request_id(prep_keygen_request.prepKeygenId)),
@@ -74,7 +74,7 @@ where
         if let Some(context_id) = parsed_extra_data.context_id {
             self.context_manager.validate_context(context_id).await?;
         }
-        // TODO: validation of epoch_id during RFC-005 implementation
+        // TODO: validation of epoch_id (https://github.com/zama-ai/fhevm-internal/issues/1467)
 
         Ok(KmsGrpcRequest::Keygen(KeyGenRequest {
             request_id: Some(u256_to_request_id(keygen_request.keyId)),
@@ -99,7 +99,7 @@ where
         if let Some(context_id) = parsed_extra_data.context_id {
             self.context_manager.validate_context(context_id).await?;
         }
-        // TODO: validation of epoch_id during RFC-005 implementation
+        // TODO: validation of epoch_id (https://github.com/zama-ai/fhevm-internal/issues/1467)
 
         let max_num_bits = crsgen_request
             .maxBitLength

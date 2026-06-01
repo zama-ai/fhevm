@@ -1,8 +1,9 @@
 use connector_utils::{
     monitoring::otlp::PropagationContext,
     types::{
-        CrsgenResponse, KeygenResponse, KmsResponse, KmsResponseKind, PrepKeygenResponse,
-        ProtocolEvent, PublicDecryptionResponse, UserDecryptionResponse, db::KeyDigestDbItem,
+        CrsgenResponse, EpochResultResponse, KeygenResponse, KmsResponse, KmsResponseKind,
+        NewKmsContextResponse, PrepKeygenResponse, ProtocolEvent, PublicDecryptionResponse,
+        UserDecryptionResponse, db::KeyDigestDbItem,
     },
 };
 use sqlx::{
@@ -54,6 +55,14 @@ impl KmsResponsePublisher for DbKmsResponsePublisher {
             }
             KmsResponseKind::Keygen(r) => self.publish_keygen(r, created_at, otlp_context).await?,
             KmsResponseKind::Crsgen(r) => self.publish_crsgen(r, created_at, otlp_context).await?,
+            KmsResponseKind::NewKmsContext(r) => {
+                self.publish_new_kms_context(r, created_at, otlp_context)
+                    .await?
+            }
+            KmsResponseKind::EpochResult(r) => {
+                self.publish_epoch_result(r, created_at, otlp_context)
+                    .await?
+            }
         };
 
         if query_result.rows_affected() == 1 {
@@ -166,6 +175,49 @@ impl DbKmsResponsePublisher {
             response.crs_id.as_le_slice(),
             response.crs_digest,
             response.signature,
+            created_at,
+            bc2wrap::serialize(&otlp_ctx)?
+        )
+        .execute(&self.db_pool)
+        .await
+        .map_err(anyhow::Error::from)
+    }
+
+    async fn publish_new_kms_context(
+        &self,
+        response: NewKmsContextResponse,
+        created_at: DateTime<Utc>,
+        otlp_ctx: PropagationContext,
+    ) -> anyhow::Result<PgQueryResult> {
+        sqlx::query!(
+            "INSERT INTO new_kms_context_responses(\
+                context_id, created_at, otlp_context\
+            ) \
+            VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+            response.context_id.as_le_slice(),
+            created_at,
+            bc2wrap::serialize(&otlp_ctx)?
+        )
+        .execute(&self.db_pool)
+        .await
+        .map_err(anyhow::Error::from)
+    }
+
+    async fn publish_epoch_result(
+        &self,
+        response: EpochResultResponse,
+        created_at: DateTime<Utc>,
+        otlp_ctx: PropagationContext,
+    ) -> anyhow::Result<PgQueryResult> {
+        sqlx::query!(
+            "INSERT INTO epoch_result_responses(\
+                context_id, epoch_id, keys, crs_list, created_at, otlp_context\
+            ) \
+            VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+            response.context_id.as_le_slice(),
+            response.epoch_id.as_le_slice(),
+            response.keys,
+            response.crs_list,
             created_at,
             bc2wrap::serialize(&otlp_ctx)?
         )

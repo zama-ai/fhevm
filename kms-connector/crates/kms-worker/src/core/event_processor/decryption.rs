@@ -542,7 +542,7 @@ where
         if let Some(context_id) = parsed_extra_data.context_id {
             self.context_manager.validate_context(context_id).await?;
         }
-        // TODO: validation of epoch_id during RFC-005 implementation
+        // TODO: validation of epoch_id (https://github.com/zama-ai/fhevm-internal/issues/1467)
 
         let ciphertexts = self.prepare_ciphertexts(&key_id, sns_materials).await?;
 

@@ -3,6 +3,7 @@ use crate::core::event_processor::{
     context::ContextManager,
     decryption::{DecryptionProcessor, UserDecryptionExtraData},
     kms::KMSGenerationProcessor,
+    protocol_config::ProtocolConfigProcessor,
 };
 use alloy::providers::Provider;
 use anyhow::anyhow;
@@ -36,6 +37,9 @@ pub struct DbEventProcessor<GP: Provider, HP: Provider, C> {
 
     /// The entity used to process key management requests.
     kms_generation_processor: KMSGenerationProcessor<C>,
+
+    /// The entity used to build `ProtocolConfig` event requests (context/epoch lifecycle).
+    protocol_config_processor: ProtocolConfigProcessor<HP>,
 
     /// The maximum number of decryption attempts.
     max_decryption_attempts: u16,
@@ -118,6 +122,7 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
         kms_client: KmsClient,
         decryption_processor: DecryptionProcessor<GP, HP, C>,
         kms_generation_processor: KMSGenerationProcessor<C>,
+        protocol_config_processor: ProtocolConfigProcessor<HP>,
         max_decryption_attempts: u16,
         db_pool: Pool<Postgres>,
     ) -> Self {
@@ -125,6 +130,7 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
             kms_client,
             decryption_processor,
             kms_generation_processor,
+            protocol_config_processor,
             max_decryption_attempts,
             db_pool,
         }
@@ -214,6 +220,14 @@ impl<GP: Provider, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> 
                     .prepare_crsgen_request(req)
                     .await
             }
+            ProtocolEventKind::NewKmsContext(req) => {
+                self.protocol_config_processor
+                    .prepare_new_kms_context_request(req)
+                    .await
+            }
+            ProtocolEventKind::NewKmsEpoch(req) => self
+                .protocol_config_processor
+                .prepare_new_kms_epoch_request(req),
         }
     }
 
