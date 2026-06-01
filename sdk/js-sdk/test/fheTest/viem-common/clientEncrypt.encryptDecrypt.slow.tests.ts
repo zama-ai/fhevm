@@ -1,27 +1,28 @@
 import type { EncryptedValue } from '@fhevm/sdk/types';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import { getViemTestConfig, type FheTestViemConfig } from '../setup-viem.js';
-import { clearTypeFromHandle, encryptTestCases, prepareFheTestEnv, isBytes32Hex } from '../setupCommon.js';
+import { getViemTestConfig, type CreateViemClientFn, type FheTestViemConfig } from '../setup-viem.js';
+import { clearTypeFromHandle, encryptTestCases, prepareSingleChain, isBytes32Hex } from '../setupCommon.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
 import { createWalletClient, http, type Hex } from 'viem';
 
-type ClientFactory = (params: {
-  chain: FheTestViemConfig['fhevmChain'];
-  publicClient: FheTestViemConfig['publicClient'];
-}) => any;
+////////////////////////////////////////////////////////////////////////////////
+//
+// CHAIN=testnet npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encryptDecrypt.slow.test.ts
+// CHAIN=devnet npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encryptDecrypt.slow.test.ts
+// CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encryptDecrypt.slow.test.ts
+//
+////////////////////////////////////////////////////////////////////////////////
 
 type ModuleVersions = Parameters<typeof setFhevmRuntimeConfig>[0]['moduleVersions'];
 
-export function defineClientEncryptDecryptSlowTests(
-  runIf: boolean,
-  options: {
-    createEncryptClient: ClientFactory;
-    createDecryptClient: ClientFactory;
-    moduleVersions?: ModuleVersions;
-  },
-): void {
-  describe.runIf(runIf)(
+export function defineClientEncryptDecryptSlowTests(parameters: {
+  readonly runIf: boolean;
+  readonly createFhevmEncryptClient: CreateViemClientFn;
+  readonly createFhevmDecryptClient: CreateViemClientFn;
+  readonly moduleVersions?: ModuleVersions;
+}): void {
+  describe.runIf(parameters.runIf)(
     'Encrypt-Decrypt',
     () => {
       let config: FheTestViemConfig;
@@ -37,7 +38,7 @@ export function defineClientEncryptDecryptSlowTests(
             debug: (message: string) => console.log(message),
             error: (message: string) => console.log(message),
           },
-          moduleVersions: options.moduleVersions,
+          moduleVersions: parameters.moduleVersions ?? config.moduleVersions,
         });
       });
 
@@ -46,7 +47,7 @@ export function defineClientEncryptDecryptSlowTests(
         // │  Phase 1: ENCRYPT                                                   │
         // │  Client-side encryption of all FHE types into external handles      │
         // └─────────────────────────────────────────────────────────────────────┘
-        const client = options.createEncryptClient({
+        const client = parameters.createFhevmEncryptClient({
           chain: config.fhevmChain,
           publicClient: config.publicClient,
         });
@@ -77,7 +78,7 @@ export function defineClientEncryptDecryptSlowTests(
         const walletClient = createWalletClient({
           account: config.account,
           chain: config.publicClient.chain,
-          transport: http(prepareFheTestEnv().rpcUrl),
+          transport: http(prepareSingleChain().rpcUrl),
         });
 
         for (let i = 0; i < encryptTestCases.length; i++) {
@@ -119,7 +120,7 @@ export function defineClientEncryptDecryptSlowTests(
         // │  Phase 3: PRIVATE DECRYPT                                           │
         // │  Decrypt via signed permit + e2e transport key pair                 │
         // └─────────────────────────────────────────────────────────────────────┘
-        const decryptClient = options.createDecryptClient({
+        const decryptClient = parameters.createFhevmDecryptClient({
           chain: config.fhevmChain,
           publicClient: config.publicClient,
         });

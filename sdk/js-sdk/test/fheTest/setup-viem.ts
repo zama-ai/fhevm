@@ -1,8 +1,15 @@
 import type { FhevmChain } from '@fhevm/sdk/chains';
+import type { WasmModuleVersions } from '../../src/core/types/coreFhevmRuntime.js';
+import type { FheTestBaseEnv, FheTestChainName } from './setupCommon.js';
 import { createPublicClient, http, type PublicClient, type Transport, type Chain } from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';
-import { mainnet as viemMainnet, sepolia as viemSepolia, anvil as viemAnvil } from 'viem/chains';
-import { prepareFheTestEnv, type FheTestBaseEnv, type FheTestChainName } from './setupCommon.js';
+import {
+  mainnet as viemMainnet,
+  sepolia as viemSepolia,
+  anvil as viemAnvil,
+  polygonAmoy as viemPolygonAmoy,
+} from 'viem/chains';
+import { isCleartext, prepareChains } from './setupCommon.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -21,23 +28,34 @@ export type FheTestViemConfig = {
   };
   readonly zamaApiKey: string;
   readonly fheTestAddress: string;
+  readonly moduleVersions?: WasmModuleVersions | undefined;
 };
+
+export type CreateViemClientFn = (params: {
+  chain: FheTestViemConfig['fhevmChain'];
+  publicClient: FheTestViemConfig['publicClient'];
+}) => any;
 
 // ---------------------------------------------------------------------------
 // Build config
 // ---------------------------------------------------------------------------
 
-function buildConfig(): FheTestViemConfig {
-  const env: FheTestBaseEnv = prepareFheTestEnv();
+function _buildConfigs(): FheTestViemConfig[] {
+  const envs: FheTestBaseEnv[] = prepareChains();
+  return envs.map(_buildConfig);
+}
 
+function _buildConfig(env: FheTestBaseEnv): FheTestViemConfig {
   const viemChain =
     env.chainName === 'mainnet'
       ? viemMainnet
       : env.chainName === 'sepolia' || env.chainName === 'devnet' || env.chainName === 'testnet'
         ? viemSepolia
-        : env.chainName.startsWith('localstack')
-          ? { ...viemAnvil, id: env.fhevmChain.id }
-          : viemAnvil;
+        : env.chainName === 'polygon_devnet'
+          ? viemPolygonAmoy
+          : env.chainName.startsWith('localstack')
+            ? { ...viemAnvil, id: env.fhevmChain.id }
+            : viemAnvil;
 
   const account = mnemonicToAccount(env.mnemonic);
   const bobAccount = mnemonicToAccount(env.mnemonic, {
@@ -62,6 +80,7 @@ function buildConfig(): FheTestViemConfig {
     },
     zamaApiKey: env.zamaApiKey,
     fheTestAddress: env.fheTestAddress,
+    moduleVersions: env.moduleVersions,
   };
 }
 
@@ -69,11 +88,23 @@ function buildConfig(): FheTestViemConfig {
 // Singleton — built once, shared across all test files
 // ---------------------------------------------------------------------------
 
-let _config: FheTestViemConfig | undefined;
+let _configs: FheTestViemConfig[] | undefined;
+
+export function getViemTestConfigs(): FheTestViemConfig[] {
+  if (_configs === undefined) {
+    _configs = _buildConfigs();
+  }
+  return _configs;
+}
 
 export function getViemTestConfig(): FheTestViemConfig {
-  if (_config === undefined) {
-    _config = buildConfig();
-  }
-  return _config;
+  return getViemTestConfigs()[0]!;
+}
+
+export function areAllViemTestConfigsCleartext(): boolean {
+  return getViemTestConfigs().every((config) => isCleartext(config.chainName));
+}
+
+export function isMultichain(): boolean {
+  return getViemTestConfigs().length > 1;
 }

@@ -1,16 +1,14 @@
 import { resolveFhevmConfig } from '@fhevm/sdk/actions/host';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { type FheTestViemConfig, getViemTestConfig } from '../setup-viem.js';
+import { type CreateViemClientFn, type FheTestViemConfig, getViemTestConfig } from '../setup-viem.js';
 import { safeJSONstringify } from '../setupCommon.js';
 
-type ClientFactory = (params: {
-  chain: FheTestViemConfig['fhevmChain'];
-  publicClient: FheTestViemConfig['publicClient'];
-}) => any;
-
-export function defineClientBaseChainTests(runIf: boolean, createClient: ClientFactory): void {
-  describe.runIf(runIf)('Base client — chain resolution', () => {
+export function defineClientBaseChainTests(parameters: {
+  readonly runIf: boolean;
+  readonly createFhevmBaseClient: CreateViemClientFn;
+}): void {
+  describe.runIf(parameters.runIf)('Base client — chain resolution', () => {
     let config: FheTestViemConfig;
 
     beforeAll(() => {
@@ -20,12 +18,13 @@ export function defineClientBaseChainTests(runIf: boolean, createClient: ClientF
           type: 'ApiKeyHeader',
           value: config.zamaApiKey,
         },
+        moduleVersions: config.moduleVersions,
       });
     });
 
     it('should resolve full FHEVM config from on-chain data', async () => {
       const chain = config.fhevmChain;
-      const client = createClient({
+      const client = parameters.createFhevmBaseClient({
         chain,
         publicClient: config.publicClient,
       });

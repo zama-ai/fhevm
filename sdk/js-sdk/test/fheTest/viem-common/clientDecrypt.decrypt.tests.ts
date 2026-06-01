@@ -1,18 +1,16 @@
 import type { Hex } from 'viem';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import { getViemTestConfig, type FheTestViemConfig } from '../setup-viem.js';
+import { getViemTestConfig, type CreateViemClientFn, type FheTestViemConfig } from '../setup-viem.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
 import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle } from '../setupCommon.js';
 import { asEncryptedValue, type EncryptedValue, type TypedValue } from '@fhevm/sdk/types';
 
-type DecryptClientFactory = (params: {
-  chain: FheTestViemConfig['fhevmChain'];
-  publicClient: FheTestViemConfig['publicClient'];
-}) => any;
-
-export function defineClientDecryptDecryptTests(runIf: boolean, createClient: DecryptClientFactory): void {
-  describe.runIf(runIf)('Decrypt client — user decrypt', () => {
+export function defineClientDecryptDecryptTests(parameters: {
+  readonly runIf: boolean;
+  createFhevmDecryptClient: CreateViemClientFn;
+}): void {
+  describe.runIf(parameters.runIf)('Decrypt client — user decrypt', () => {
     let config: FheTestViemConfig;
 
     beforeAll(() => {
@@ -26,11 +24,12 @@ export function defineClientDecryptDecryptTests(runIf: boolean, createClient: De
           debug: (message: string) => console.log(message),
           error: (message: string) => console.log(message),
         },
+        moduleVersions: config.moduleVersions,
       });
     });
 
     it('should create a decrypt client', () => {
-      const client = createClient({
+      const client = parameters.createFhevmDecryptClient({
         chain: config.fhevmChain,
         publicClient: config.publicClient,
       });
@@ -43,7 +42,7 @@ export function defineClientDecryptDecryptTests(runIf: boolean, createClient: De
     });
 
     it('should generate an e2e transport key pair', async () => {
-      const client = createClient({
+      const client = parameters.createFhevmDecryptClient({
         chain: config.fhevmChain,
         publicClient: config.publicClient,
       });
@@ -54,7 +53,7 @@ export function defineClientDecryptDecryptTests(runIf: boolean, createClient: De
     });
 
     it('should sign a self decryption permit', async () => {
-      const client = createClient({
+      const client = parameters.createFhevmDecryptClient({
         chain: config.fhevmChain,
         publicClient: config.publicClient,
       });
@@ -108,7 +107,7 @@ export function defineClientDecryptDecryptTests(runIf: boolean, createClient: De
         });
 
         // Decrypt via SDK
-        const client = createClient({
+        const client = parameters.createFhevmDecryptClient({
           chain: config.fhevmChain,
           publicClient: config.publicClient,
         });
@@ -185,7 +184,7 @@ export function defineClientDecryptDecryptTests(runIf: boolean, createClient: De
       }
 
       // Decrypt all in a single call
-      const client = createClient({
+      const client = parameters.createFhevmDecryptClient({
         chain: config.fhevmChain,
         publicClient: config.publicClient,
       });

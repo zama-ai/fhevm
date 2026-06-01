@@ -52,7 +52,7 @@
   },
   "devnet": {
     "rpcUrl": "https://ethereum-sepolia-rpc.publicnode.com",
-    "fheTestAddress": "0xD26bB032e2F06A5382902559c4EbBB82C35C6dDF",
+    "fheTestAddress": "0xf56a7990E63a63eC75aD9Aa07De8cB6bF7baa805",
     "fheTestVersion": "v2"
   },
   "polygon_devnet": {

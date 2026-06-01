@@ -1,15 +1,13 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { serializeTransportKeyPair, parseTransportKeyPair } from '@fhevm/sdk/actions/chain';
-import { getViemTestConfig, type FheTestViemConfig } from '../setup-viem.js';
+import { getViemTestConfig, type CreateViemClientFn, type FheTestViemConfig } from '../setup-viem.js';
 
-type DecryptClientFactory = (params: {
-  chain: FheTestViemConfig['fhevmChain'];
-  publicClient: FheTestViemConfig['publicClient'];
-}) => any;
-
-export function defineClientDecryptTransportKeyPairTests(runIf: boolean, createClient: DecryptClientFactory): void {
-  describe.runIf(runIf)('Decrypt client — e2e transport key pair', () => {
+export function defineClientDecryptTransportKeyPairTests(parameters: {
+  readonly runIf: boolean;
+  createFhevmDecryptClient: CreateViemClientFn;
+}): void {
+  describe.runIf(parameters.runIf)('Decrypt client — e2e transport key pair', () => {
     let config: FheTestViemConfig;
 
     beforeAll(() => {
@@ -19,12 +17,13 @@ export function defineClientDecryptTransportKeyPairTests(runIf: boolean, createC
           type: 'ApiKeyHeader',
           value: config.zamaApiKey,
         },
+        moduleVersions: config.moduleVersions,
       });
     });
 
     it('should generate an e2e transport key pair', async () => {
       const chain = config.fhevmChain;
-      const client = createClient({
+      const client = parameters.createFhevmDecryptClient({
         chain,
         publicClient: config.publicClient,
       });
@@ -36,7 +35,7 @@ export function defineClientDecryptTransportKeyPairTests(runIf: boolean, createC
 
     it('should serialize a key pair to hex strings', async () => {
       const chain = config.fhevmChain;
-      const client = createClient({
+      const client = parameters.createFhevmDecryptClient({
         chain,
         publicClient: config.publicClient,
       });
@@ -60,7 +59,7 @@ export function defineClientDecryptTransportKeyPairTests(runIf: boolean, createC
 
     it('should round-trip: generate → serialize → parse', async () => {
       const chain = config.fhevmChain;
-      const client = createClient({
+      const client = parameters.createFhevmDecryptClient({
         chain,
         publicClient: config.publicClient,
       });

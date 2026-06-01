@@ -1,25 +1,18 @@
 import type { EncryptedValue } from '@fhevm/sdk/types';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import { getEthersTestConfig, type FheTestEthersConfig } from '../setup-ethers.js';
+import { getEthersTestConfig, type CreateEthersClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
 import { chainIdFromHandle, clearTypeFromHandle, encryptTestCases, isBytes32Hex } from '../setupCommon.js';
 import { asEncryptedValue } from '@fhevm/sdk/types';
 
-type EncryptClientFactory = (params: {
-  chain: FheTestEthersConfig['fhevmChain'];
-  provider: FheTestEthersConfig['provider'];
-}) => any;
-
 type ModuleVersions = Parameters<typeof setFhevmRuntimeConfig>[0]['moduleVersions'];
 
-export function defineClientEncryptEncryptTests(
-  runIf: boolean,
-  options: {
-    createClient: EncryptClientFactory;
-    moduleVersions?: ModuleVersions;
-  },
-): void {
-  describe.runIf(runIf)('Encrypt', () => {
+export function defineClientEncryptEncryptTests(parameters: {
+  readonly runIf: boolean;
+  readonly createFhevmEncryptClient: CreateEthersClientFn;
+  readonly moduleVersions?: ModuleVersions;
+}): void {
+  describe.runIf(parameters.runIf)('Encrypt', () => {
     let config: FheTestEthersConfig;
 
     beforeAll(() => {
@@ -29,7 +22,7 @@ export function defineClientEncryptEncryptTests(
           type: 'ApiKeyHeader',
           value: config.zamaApiKey,
         },
-        moduleVersions: options.moduleVersions,
+        moduleVersions: parameters.moduleVersions,
       });
     });
 
@@ -39,7 +32,7 @@ export function defineClientEncryptEncryptTests(
     // └─────────────────────────────────────────────────────────────────────┘
 
     it('should encrypt all types in a single call', async () => {
-      const client = options.createClient({
+      const client = parameters.createFhevmEncryptClient({
         chain: config.fhevmChain,
         provider: config.provider,
       });
@@ -74,7 +67,7 @@ export function defineClientEncryptEncryptTests(
 
     for (const tc of encryptTestCases) {
       it(`should encrypt ${tc.type}`, async () => {
-        const client = options.createClient({
+        const client = parameters.createFhevmEncryptClient({
           chain: config.fhevmChain,
           provider: config.provider,
         });

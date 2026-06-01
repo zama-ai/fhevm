@@ -2,7 +2,7 @@ import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
 import { ethers } from 'ethers';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import { getEthersTestConfig, type FheTestEthersConfig } from '../setup-ethers.js';
+import { getEthersTestConfig, type CreateEthersClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
 import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle, fheTypeIdFromHandle } from '../setupCommon.js';
 
 // Alice (config.alice) — owns the handles, delegates to Bob
@@ -76,13 +76,11 @@ async function getUserDecryptionDelegationExpirationDate(parameters: {
   );
 }
 
-type DecryptClientFactory = (params: {
-  chain: FheTestEthersConfig['fhevmChain'];
-  provider: FheTestEthersConfig['provider'];
-}) => any;
-
-export function defineClientDecryptDelegateDecryptTests(runIf: boolean, createClient: DecryptClientFactory): void {
-  describe.runIf(runIf)(
+export function defineClientDecryptDelegateDecryptTests(parameters: {
+  readonly runIf: boolean;
+  readonly createFhevmDecryptClient: CreateEthersClientFn;
+}): void {
+  describe.runIf(parameters.runIf)(
     'Decrypt client — delegated decrypt',
     () => {
       let config: FheTestEthersConfig;
@@ -131,7 +129,7 @@ export function defineClientDecryptDelegateDecryptTests(runIf: boolean, createCl
       });
 
       it('should sign a delegated decryption permit', async () => {
-        const client = createClient({
+        const client = parameters.createFhevmDecryptClient({
           chain: config.fhevmChain,
           provider: config.provider,
         });
@@ -181,7 +179,7 @@ export function defineClientDecryptDelegateDecryptTests(runIf: boolean, createCl
           console.log(`  ${fheType}: handle=${aliceHandle.slice(0, 20)}... expected=${expectedRaw}`);
 
           // Bob decrypts Alice's handle via delegated permit
-          const client = createClient({
+          const client = parameters.createFhevmDecryptClient({
             chain: config.fhevmChain,
             provider: config.provider,
           });
@@ -247,7 +245,7 @@ export function defineClientDecryptDelegateDecryptTests(runIf: boolean, createCl
         }
 
         // Bob decrypts all of Alice's handles in a single call
-        const bobClient = createClient({
+        const bobClient = parameters.createFhevmDecryptClient({
           chain: config.fhevmChain,
           provider: config.provider,
         });

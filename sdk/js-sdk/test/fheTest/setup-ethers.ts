@@ -1,7 +1,9 @@
 import type { FhevmChain } from '@fhevm/sdk/chains';
+import type { WasmModuleVersions } from '../../src/core/types/coreFhevmRuntime.js';
+import type { FheTestBaseEnv, FheTestChainName } from './setupCommon.js';
 import { ethers } from 'ethers';
 import { FHETestABI } from './FheTest-abi-v2.js';
-import { prepareFheTestEnv, type FheTestBaseEnv, type FheTestChainName } from './setupCommon.js';
+import { isCleartext, prepareChains } from './setupCommon.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -24,15 +26,24 @@ export type FheTestEthersConfig = {
   readonly zamaApiKey: string;
   readonly fheTestAddress: string;
   readonly fheTestContract: ethers.Contract;
+  readonly moduleVersions?: WasmModuleVersions | undefined;
 };
+
+export type CreateEthersClientFn = (params: {
+  chain: FheTestEthersConfig['fhevmChain'];
+  provider: FheTestEthersConfig['provider'];
+}) => any;
 
 // ---------------------------------------------------------------------------
 // Build config
 // ---------------------------------------------------------------------------
 
-function buildConfig(): FheTestEthersConfig {
-  const env: FheTestBaseEnv = prepareFheTestEnv();
+function _buildConfigs(): FheTestEthersConfig[] {
+  const envs: FheTestBaseEnv[] = prepareChains();
+  return envs.map(_buildConfig);
+}
 
+function _buildConfig(env: FheTestBaseEnv): FheTestEthersConfig {
   const provider = new ethers.JsonRpcProvider(env.rpcUrl);
   const wallet = ethers.HDNodeWallet.fromMnemonic(ethers.Mnemonic.fromPhrase(env.mnemonic));
 
@@ -63,6 +74,7 @@ function buildConfig(): FheTestEthersConfig {
     zamaApiKey: env.zamaApiKey,
     fheTestAddress: env.fheTestAddress,
     fheTestContract,
+    moduleVersions: env.moduleVersions,
   };
 }
 
@@ -70,11 +82,23 @@ function buildConfig(): FheTestEthersConfig {
 // Singleton — built once, shared across all test files
 // ---------------------------------------------------------------------------
 
-let _config: FheTestEthersConfig | undefined;
+let _configs: FheTestEthersConfig[] | undefined;
+
+export function getEthersTestConfigs(): FheTestEthersConfig[] {
+  if (_configs === undefined) {
+    _configs = _buildConfigs();
+  }
+  return _configs;
+}
 
 export function getEthersTestConfig(): FheTestEthersConfig {
-  if (_config === undefined) {
-    _config = buildConfig();
-  }
-  return _config;
+  return getEthersTestConfigs()[0]!;
+}
+
+export function areAllEthersTestConfigsCleartext(): boolean {
+  return getEthersTestConfigs().every((config) => isCleartext(config.chainName));
+}
+
+export function isMultichain(): boolean {
+  return getEthersTestConfigs().length > 1;
 }

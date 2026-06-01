@@ -3,6 +3,13 @@ import { getEthersTestConfig } from '../setup-ethers.js';
 import { isCleartext } from '../setupCommon.js';
 import { defineClientDecryptDecryptTests } from '../ethers-common/clientDecrypt.decrypt.tests.js';
 
-defineClientDecryptDecryptTests(!isCleartext(getEthersTestConfig().chainName), (params) =>
-  createFhevmDecryptClient(params),
-);
+////////////////////////////////////////////////////////////////////////////////
+//
+// CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.decrypt.test.ts
+//
+////////////////////////////////////////////////////////////////////////////////
+
+defineClientDecryptDecryptTests({
+  runIf: !isCleartext(getEthersTestConfig().chainName),
+  createFhevmDecryptClient: (params) => createFhevmDecryptClient(params),
+});

@@ -19,9 +19,9 @@ export type WasmAssetLoadMode =
 export type WasmModuleVersions =
   | 'auto'
   | {
-      readonly tfhe?: TfheVersion | 'auto';
-      readonly kms?: TkmsVersion | 'auto';
-      readonly checkCompatibility?: 'throw' | 'warn' | 'off';
+      readonly tfhe?: TfheVersion | 'auto' | undefined;
+      readonly kms?: TkmsVersion | 'auto' | undefined;
+      readonly checkCompatibility?: 'throw' | 'warn' | 'off' | undefined;
     };
 
 export type FhevmRuntimeConfig = {

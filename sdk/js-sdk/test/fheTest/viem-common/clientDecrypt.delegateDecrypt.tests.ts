@@ -2,7 +2,7 @@ import type { Account, Hex, PublicClient, Transport, Chain } from 'viem';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import { getViemTestConfig, type FheTestViemConfig } from '../setup-viem.js';
+import { getViemTestConfig, type CreateViemClientFn, type FheTestViemConfig } from '../setup-viem.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
 import { createWalletClient, http } from 'viem';
 import {
@@ -10,7 +10,7 @@ import {
   fheTypeIdFromName,
   clearTypeFromHandle,
   fheTypeIdFromHandle,
-  prepareFheTestEnv,
+  prepareSingleChain,
 } from '../setupCommon.js';
 
 // Alice (config.alice) — owns the handles, delegates to Bob
@@ -56,7 +56,7 @@ async function delegateForUserDecryption(parameters: {
   const walletClient = createWalletClient({
     account: parameters.delegatorAccount,
     chain: parameters.publicClient.chain,
-    transport: http(prepareFheTestEnv().rpcUrl),
+    transport: http(prepareSingleChain().rpcUrl),
   });
 
   const expirationDate = BigInt(Math.floor(Date.now() / 1000) + parameters.durationSeconds);
@@ -90,13 +90,11 @@ async function getUserDecryptionDelegationExpirationDate(parameters: {
   });
 }
 
-type DecryptClientFactory = (params: {
-  chain: FheTestViemConfig['fhevmChain'];
-  publicClient: FheTestViemConfig['publicClient'];
-}) => any;
-
-export function defineClientDecryptDelegateDecryptTests(runIf: boolean, createClient: DecryptClientFactory): void {
-  describe.runIf(runIf)(
+export function defineClientDecryptDelegateDecryptTests(parameters: {
+  readonly runIf: boolean;
+  createFhevmDecryptClient: CreateViemClientFn;
+}): void {
+  describe.runIf(parameters.runIf)(
     'Decrypt client — delegated decrypt',
     () => {
       let config: FheTestViemConfig;
@@ -108,6 +106,7 @@ export function defineClientDecryptDelegateDecryptTests(runIf: boolean, createCl
             type: 'ApiKeyHeader',
             value: config.zamaApiKey,
           },
+          moduleVersions: config.moduleVersions,
         });
         console.log(`  Alice: ${config.alice.account.address}`);
         console.log(`  Bob:   ${config.bob.account.address}`);
@@ -147,7 +146,7 @@ export function defineClientDecryptDelegateDecryptTests(runIf: boolean, createCl
       });
 
       it('should sign a delegated decryption permit', async () => {
-        const client = createClient({
+        const client = parameters.createFhevmDecryptClient({
           chain: config.fhevmChain,
           publicClient: config.publicClient,
         });
@@ -206,7 +205,7 @@ export function defineClientDecryptDelegateDecryptTests(runIf: boolean, createCl
           console.log(`  ${fheType}: handle=${aliceHandle.slice(0, 20)}... expected=${expectedRaw}`);
 
           // Bob decrypts Alice's handle via delegated permit
-          const client = createClient({
+          const client = parameters.createFhevmDecryptClient({
             chain: config.fhevmChain,
             publicClient: config.publicClient,
           });
@@ -280,7 +279,7 @@ export function defineClientDecryptDelegateDecryptTests(runIf: boolean, createCl
         }
 
         // Bob decrypts all of Alice's handles in a single call
-        const bobClient = createClient({
+        const bobClient = parameters.createFhevmDecryptClient({
           chain: config.fhevmChain,
           publicClient: config.publicClient,
         });

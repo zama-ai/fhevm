@@ -27,6 +27,7 @@ export function defineClientBaseTests(
           type: 'ApiKeyHeader',
           value: config.zamaApiKey,
         },
+        moduleVersions: config.moduleVersions,
       });
     });
 

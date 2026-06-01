@@ -1,5 +1,6 @@
 import type { FhevmChain } from '@fhevm/sdk/chains';
 import type { EncryptedValue, TypedValue } from '@fhevm/sdk/types';
+import type { WasmModuleVersions } from '../../src/core/types/coreFhevmRuntime.js';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -44,18 +45,40 @@ export type FheTestBaseEnv = {
   readonly zamaApiKey: string;
   readonly fheTestAddress: string;
   readonly fheTestVersion: FheTestVersion;
+  readonly moduleVersions?: WasmModuleVersions | undefined;
 };
 
 // ---------------------------------------------------------------------------
 // FHETest contract version
 // ---------------------------------------------------------------------------
 
-export function isV2(chainName: FheTestChainName) {
-  return loadChainDefaults()[chainName]?.fheTestVersion === 'v2';
-}
-
 export function isCleartext(chainName: FheTestChainName) {
   return chainName === 'localcleartext';
+}
+
+// ---------------------------------------------------------------------------
+// TFHE wasm version per chain
+// ---------------------------------------------------------------------------
+
+export type TfheVersion = '1.5.3' | '1.6.1';
+
+const TFHE_VERSION_BY_CHAIN: Readonly<Record<FheTestChainName, TfheVersion | undefined>> = {
+  sepolia: '1.5.3',
+  testnet: '1.5.3', // alias for sepolia
+  mainnet: '1.5.3',
+  localstack_v11: '1.5.3',
+  localstack_v12: '1.5.3',
+  devnet: '1.6.1',
+  polygon_devnet: '1.6.1',
+  localstack: '1.6.1',
+  localstack_v13: '1.6.1',
+  localstack_v14: '1.6.1',
+  localcleartext: undefined,
+};
+
+/** Returns the TFHE wasm version for a given test chain, or `undefined` for cleartext chains. */
+export function getTfheVersion(chainName: FheTestChainName): TfheVersion | undefined {
+  return TFHE_VERSION_BY_CHAIN[chainName];
 }
 
 // ---------------------------------------------------------------------------
@@ -92,14 +115,28 @@ function parseEnvFile(filePath: string): Record<string, string> {
 // Resolve chain
 // ---------------------------------------------------------------------------
 
-function resolveChainName(): FheTestChainName {
-  const chain = process.env.CHAIN ?? 'sepolia';
-  if (!(FHE_TEST_CHAIN_NAMES as readonly string[]).includes(chain)) {
+function resolveChainNames(): FheTestChainName[] {
+  const raw = process.env.CHAIN ?? 'sepolia';
+  const known = FHE_TEST_CHAIN_NAMES as readonly string[];
+
+  const entries = raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
+  if (entries.length === 0) {
+    throw new Error(`Invalid CHAIN env var: "${raw}". Expected one or more comma-separated chain names.`);
+  }
+
+  const invalid = entries.filter((entry) => !known.includes(entry));
+  if (invalid.length > 0) {
     throw new Error(
-      `Invalid CHAIN env var: "${chain}". Expected one of: ${FHE_TEST_CHAIN_NAMES.map((c) => `"${c}"`).join(', ')}.`,
+      `Invalid CHAIN env var: ${invalid.map((c) => `"${c}"`).join(', ')}. ` +
+        `Expected one of: ${FHE_TEST_CHAIN_NAMES.map((c) => `"${c}"`).join(', ')}.`,
     );
   }
-  return chain as FheTestChainName;
+
+  return Array.from(new Set(entries)) as FheTestChainName[];
 }
 
 // ---------------------------------------------------------------------------
@@ -327,13 +364,24 @@ export function runPreliminaryFheTestSetup(
   initAliceFheTestHandlesIfNeeded(fheTestAddress, alice.address, mnemonic, rpcUrl);
 }
 
-export function prepareFheTestEnv(): FheTestBaseEnv {
-  if (_baseEnv !== undefined) {
-    return _baseEnv;
+export function prepareSingleChain(): FheTestBaseEnv {
+  return prepareChains()[0]!;
+}
+
+export function prepareChains(): FheTestBaseEnv[] {
+  const chainNames: FheTestChainName[] = resolveChainNames();
+
+  const chains: FheTestBaseEnv[] = [];
+  for (let i = 0; i < chainNames.length; ++i) {
+    const c = _prepareChain(chainNames[i]!);
+    chains.push(c);
   }
 
+  return chains;
+}
+
+function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
   const testDir = resolve(__dirname, '..');
-  const chainName: FheTestChainName = resolveChainName();
   const isLocalstack = chainName.startsWith('localstack');
   const envFilename = isLocalstack ? '.env.localstack' : `.env.${chainName}`;
 
@@ -397,14 +445,13 @@ export function prepareFheTestEnv(): FheTestBaseEnv {
     zamaApiKey,
     fheTestAddress,
     fheTestVersion,
+    moduleVersions: {
+      tfhe: getTfheVersion(chainName),
+    },
   };
 
   return _baseEnv;
 }
-
-// ---------------------------------------------------------------------------
-// JSON.stringify with bigint support
-// ---------------------------------------------------------------------------
 
 export function safeJSONstringify(o: unknown, space?: string | number): string {
   try {
