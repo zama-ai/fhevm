@@ -8,6 +8,10 @@ license.workspace = true
 name = "example"
 path = "src/main.rs"
 
+[[bin]]
+name = "full_block"
+path = "src/full_block.rs"
+
 [dependencies]
 alloy            = { workspace = true }
 alloy-primitives = { workspace = true }
