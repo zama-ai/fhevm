@@ -32,15 +32,22 @@ pub use utils::{
     // Validation functions (most commonly used)
     validate_blockchain_address,
     validate_blockchain_addresses,
+    validate_blockchain_addresses_allow_empty,
     validate_chain_id_string,
     validate_extra_data_field_decryption,
     validate_extra_data_field_input_proof,
     validate_handle_contract_pairs,
+    validate_handle_entries,
     validate_no_0x_hex,
     validate_request_validity,
+    validate_request_validity_seconds,
     validate_timestamp,
     validate_u32_string,
     validate_u64_string,
+    // v3 unified EIP-712 validators
+    validate_v3_attestation_type,
+    validate_v3_payload_type,
+    validate_v3_version,
     // Validation messages
     validation_messages,
     ApiError,
