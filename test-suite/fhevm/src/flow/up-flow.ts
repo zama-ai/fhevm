@@ -127,13 +127,11 @@ import {
   runtimeArtifactPaths,
 } from "./artifacts";
 import {
-  resumeRepairStep,
-} from "./repair";
-import {
   multiChainCoprocessorUpgradeTargets,
   resolveUpgradePlan,
+  resumeRepairStep,
   type UpgradeGroup,
-} from "./upgrade-plan";
+} from "./repair";
 import {
   composeDown,
   composeUp,
