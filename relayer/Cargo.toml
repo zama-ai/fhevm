@@ -52,8 +52,10 @@ clap = { version = "4.5.60", features = ["derive"] }
 rustls = { version = "0.23.36", features = [
   "aws-lc-rs",
 ], default-features = false }
-# Use a pinned version of fhevm gateway bindings contract as the feature branch is still unmerged.
-fhevm_gateway_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "aa25e2e089da3651f59b8c68a3d32865301ea6bf", default-features = false }
+# Pinned to a commit for now; switch to a release tag once the unified
+# userDecryptionRequest(HandleEntry[], …) overload ships in a tagged
+# fhevm release.
+fhevm_gateway_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "4d6867ef081ea8620186414b198b2d336f608372", default-features = false }
 # Use a pinned version of fhevm host bindings contract as the feature branch is still unmerged.
 fhevm_host_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "2a6cf820b", default-features = false }
 utoipa = { version = "5.4.0", features = ["axum_extras", "preserve_path_order"] }
