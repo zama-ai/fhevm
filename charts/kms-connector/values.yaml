@@ -37,7 +37,7 @@ commonConfig:
 
   # Ethereum smart contract addresses
   ethereumContractAddresses:
-    kmsVerifier: "0x0000000000000000000000000000000000000000"
+    protocolConfig: "0x0000000000000000000000000000000000000000"
 
   # Distributed tracing configuration
   tracing:

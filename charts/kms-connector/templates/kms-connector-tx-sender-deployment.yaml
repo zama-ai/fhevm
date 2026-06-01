@@ -72,8 +72,8 @@ spec:
               value: {{ .Values.commonConfig.ethereumUrl | quote }}
             - name: KMS_CONNECTOR_ETHEREUM_CHAIN_ID
               value: {{ .Values.commonConfig.ethereumChainId | quote }}
-            - name: KMS_CONNECTOR_KMS_VERIFIER_ADDRESS
-              value: {{ .Values.commonConfig.ethereumContractAddresses.kmsVerifier | quote }}
+            - name: KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS
+              value: {{ .Values.commonConfig.ethereumContractAddresses.protocolConfig | quote }}
             {{- if .Values.kmsConnectorTxSender.wallet.awsKms.enabled }}
             - name: KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID
               valueFrom:
