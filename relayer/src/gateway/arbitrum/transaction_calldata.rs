@@ -2,15 +2,7 @@ use crate::core::{
     errors::EventProcessingError,
     event::{HandleContractPair, UserDecryptRequest},
 };
-use crate::gateway::arbitrum::bindings::{
-    Decryption,
-    Decryption::{CtHandleContractPair, HandleEntry as SolHandleEntry},
-    IDecryption::{
-        ContractsInfo, DelegationAccounts, RequestValidity as SolRequestValidity,
-        RequestValiditySeconds as SolRequestValiditySeconds,
-    },
-    InputVerification,
-};
+use crate::gateway::arbitrum::bindings::{Decryption, IDecryption, InputVerification};
 use alloy::{
     hex,
     primitives::{Address, Bytes, FixedBytes, U256},
@@ -60,12 +52,12 @@ impl ComputeCalldata {
                 public_key,
                 extra_data,
             } => {
-                let pairs = sol_ct_handle_contract_pairs(&ct_handle_contract_pairs);
-                let contracts_info = ContractsInfo {
+                let pairs = encode_ct_handle_contract_pairs(&ct_handle_contract_pairs);
+                let contracts_info = IDecryption::ContractsInfo {
                     addresses: contract_addresses,
                     chainId: U256::from(contracts_chain_id),
                 };
-                let validity = SolRequestValidity {
+                let validity = IDecryption::RequestValidity {
                     startTimestamp: request_validity.start_timestamp,
                     durationDays: request_validity.duration_days,
                 };
@@ -91,16 +83,16 @@ impl ComputeCalldata {
                 public_key,
                 extra_data,
             } => {
-                let pairs = sol_ct_handle_contract_pairs(&ct_handle_contract_pairs);
-                let contracts_info = ContractsInfo {
+                let pairs = encode_ct_handle_contract_pairs(&ct_handle_contract_pairs);
+                let contracts_info = IDecryption::ContractsInfo {
                     addresses: contract_addresses,
                     chainId: U256::from(contracts_chain_id),
                 };
-                let validity = SolRequestValidity {
+                let validity = IDecryption::RequestValidity {
                     startTimestamp: request_validity.start_timestamp,
                     durationDays: request_validity.duration_days,
                 };
-                let delegation_accounts = DelegationAccounts {
+                let delegation_accounts = IDecryption::DelegationAccounts {
                     delegatorAddress: delegator_address,
                     delegateAddress: delegate_address,
                 };
@@ -124,20 +116,20 @@ impl ComputeCalldata {
                 public_key,
                 extra_data,
             } => {
-                let sol_handles: Vec<SolHandleEntry> = handles
+                let handle_entries: Vec<Decryption::HandleEntry> = handles
                     .iter()
-                    .map(|h| SolHandleEntry {
+                    .map(|h| Decryption::HandleEntry {
                         handle: h.ct_handle.into(),
                         contractAddress: h.contract_address,
                         ownerAddress: h.owner_address,
                     })
                     .collect();
-                let validity = SolRequestValiditySeconds {
+                let validity = IDecryption::RequestValiditySeconds {
                     startTimestamp: request_validity.start_timestamp,
                     durationSeconds: request_validity.duration_seconds,
                 };
                 let call = Decryption::userDecryptionRequest_0Call::new((
-                    sol_handles,
+                    handle_entries,
                     user_address,
                     public_key,
                     allowed_contracts,
@@ -180,10 +172,12 @@ impl ComputeCalldata {
     }
 }
 
-fn sol_ct_handle_contract_pairs(pairs: &[HandleContractPair]) -> Vec<CtHandleContractPair> {
+fn encode_ct_handle_contract_pairs(
+    pairs: &[HandleContractPair],
+) -> Vec<Decryption::CtHandleContractPair> {
     pairs
         .iter()
-        .map(|d| CtHandleContractPair {
+        .map(|d| Decryption::CtHandleContractPair {
             ctHandle: d.ct_handle.into(),
             contractAddress: d.contract_address,
         })
