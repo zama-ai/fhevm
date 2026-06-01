@@ -1,8 +1,9 @@
-import { assert, expect } from 'chai';
+import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
+import { runAdd42InputAndDecrypt } from './runAdd42InputAndDecrypt';
 
 const GATEWAY_CONFIG_ABI = [
   'function getCoprocessor(address coprocessorTxSenderAddress) view returns (tuple(address txSenderAddress, address signerAddress, string s3BucketUrl))',
@@ -158,29 +159,6 @@ const restorePriorityMode = async (
       await unpauseGatewayInputVerification(gatewayInputVerification);
     }
   }
-};
-
-const runAdd42InputAndDecrypt = async function (this: Mocha.Context) {
-  const encryptedInput = await this.instances.alice.encryptUint64({
-    value: 7n,
-    contractAddress: this.contractAddress,
-    userAddress: this.signers.alice.address,
-  });
-
-  const tx = await this.contract.add42ToInput64(encryptedInput.handles[0], encryptedInput.inputProof);
-  const receipt = await tx.wait();
-  expect(receipt.status).to.equal(1);
-
-  const handle = await this.contract.resUint64();
-  const decryptedValue = await this.instances.alice.userDecryptSingleHandle({
-    handle,
-    contractAddress: this.contractAddress,
-    signer: this.signers.alice,
-  });
-  expect(decryptedValue).to.equal(49n);
-
-  const res = await this.instances.alice.publicDecrypt([handle]);
-  assert.deepEqual(res.clearValues, { [handle]: 49n });
 };
 
 describe('Priority coprocessor input flow', function () {
