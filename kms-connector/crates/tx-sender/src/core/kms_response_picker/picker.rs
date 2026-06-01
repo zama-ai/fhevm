@@ -104,6 +104,8 @@ impl DbKmsResponsePicker {
             KmsResponseNotification::PrepKeygen => self.pick_prep_keygen_responses().await,
             KmsResponseNotification::Keygen => self.pick_keygen_responses().await,
             KmsResponseNotification::Crsgen => self.pick_crsgen_responses().await,
+            KmsResponseNotification::NewKmsContext => self.pick_new_kms_context_responses().await,
+            KmsResponseNotification::EpochResult => self.pick_epoch_result_responses().await,
         }
     }
 
@@ -221,6 +223,52 @@ impl DbKmsResponsePicker {
         .await?
         .iter()
         .map(kms_response::from_crsgen_row)
+        .collect()
+    }
+
+    async fn pick_new_kms_context_responses(&self) -> anyhow::Result<Vec<KmsResponse>> {
+        sqlx::query(
+            "
+                UPDATE new_kms_context_responses
+                SET status = 'under_process'
+                FROM (
+                    SELECT context_id
+                    FROM new_kms_context_responses
+                    WHERE status = 'pending'
+                    LIMIT $1 FOR UPDATE SKIP LOCKED
+                ) AS resp
+                WHERE new_kms_context_responses.context_id = resp.context_id
+                RETURNING resp.context_id, created_at, otlp_context
+            ",
+        )
+        .bind(self.responses_batch_size as i16)
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(kms_response::from_new_kms_context_response_row)
+        .collect()
+    }
+
+    async fn pick_epoch_result_responses(&self) -> anyhow::Result<Vec<KmsResponse>> {
+        sqlx::query(
+            "
+                UPDATE epoch_result_responses
+                SET status = 'under_process'
+                FROM (
+                    SELECT context_id, epoch_id
+                    FROM epoch_result_responses
+                    WHERE status = 'pending'
+                    LIMIT $1 FOR UPDATE SKIP LOCKED
+                ) AS resp
+                WHERE epoch_result_responses.epoch_id = resp.epoch_id
+                RETURNING resp.context_id, resp.epoch_id, keys, crs_list, created_at, otlp_context
+            ",
+        )
+        .bind(self.responses_batch_size as i16)
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(kms_response::from_epoch_result_row)
         .collect()
     }
 }

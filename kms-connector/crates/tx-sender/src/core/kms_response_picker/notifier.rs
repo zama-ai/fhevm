@@ -1,8 +1,9 @@
 use crate::core::Config;
 use anyhow::anyhow;
 use connector_utils::types::kms_response::{
-    CRSGEN_RESPONSE_STR, KEYGEN_RESPONSE_STR, PREP_KEYGEN_RESPONSE_STR,
-    PUBLIC_DECRYPTION_RESPONSE_STR, USER_DECRYPTION_RESPONSE_STR,
+    CRSGEN_RESPONSE_STR, EPOCH_RESULT_RESPONSE_STR, KEYGEN_RESPONSE_STR,
+    NEW_KMS_CONTEXT_RESPONSE_STR, PREP_KEYGEN_RESPONSE_STR, PUBLIC_DECRYPTION_RESPONSE_STR,
+    USER_DECRYPTION_RESPONSE_STR,
 };
 use sqlx::{
     Pool, Postgres,
@@ -66,7 +67,11 @@ impl DbKmsResponseNotifier {
         self.db_listener.listen(USER_DECRYPT_NOTIFICATION).await?;
         self.db_listener.listen(PREP_KEYGEN_NOTIFICATION).await?;
         self.db_listener.listen(KEYGEN_NOTIFICATION).await?;
-        self.db_listener.listen(CRSGEN_NOTIFICATION).await
+        self.db_listener.listen(CRSGEN_NOTIFICATION).await?;
+        self.db_listener
+            .listen(NEW_KMS_CONTEXT_NOTIFICATION)
+            .await?;
+        self.db_listener.listen(EPOCH_RESULT_NOTIFICATION).await
     }
 
     /// Starts the `DbKmsResponseNotifier`.
@@ -85,6 +90,10 @@ impl DbKmsResponseNotifier {
             KmsResponseTicker::new(self.db_polling, KmsResponseNotification::Keygen);
         let mut crsgen_ticker =
             KmsResponseTicker::new(self.db_polling, KmsResponseNotification::Crsgen);
+        let mut new_kms_context_ticker =
+            KmsResponseTicker::new(self.db_polling, KmsResponseNotification::NewKmsContext);
+        let mut epoch_result_ticker =
+            KmsResponseTicker::new(self.db_polling, KmsResponseNotification::EpochResult);
 
         loop {
             let notification = select! {
@@ -93,6 +102,8 @@ impl DbKmsResponseNotifier {
                 _ = prep_keygen_ticker.tick() => prep_keygen_ticker.deliver(),
                 _ = keygen_ticker.tick() => keygen_ticker.deliver(),
                 _ = crsgen_ticker.tick() => crsgen_ticker.deliver(),
+                _ = new_kms_context_ticker.tick() => new_kms_context_ticker.deliver(),
+                _ = epoch_result_ticker.tick() => epoch_result_ticker.deliver(),
                 result = self.db_listener.recv() => match result.map(KmsResponseNotification::try_from) {
                     Err(e) => {
                         warn!("Error while listening for Postgres notification: {e}");
@@ -111,6 +122,8 @@ impl DbKmsResponseNotifier {
                             KmsResponseNotification::PrepKeygen => prep_keygen_ticker.reset(),
                             KmsResponseNotification::Keygen => keygen_ticker.reset(),
                             KmsResponseNotification::Crsgen => crsgen_ticker.reset(),
+                            KmsResponseNotification::NewKmsContext => new_kms_context_ticker.reset(),
+                            KmsResponseNotification::EpochResult => epoch_result_ticker.reset(),
                         }
 
                         notif
@@ -134,6 +147,8 @@ pub enum KmsResponseNotification {
     PrepKeygen,
     Keygen,
     Crsgen,
+    NewKmsContext,
+    EpochResult,
 }
 
 impl TryFrom<PgNotification> for KmsResponseNotification {
@@ -154,6 +169,8 @@ impl FromStr for KmsResponseNotification {
             PREP_KEYGEN_NOTIFICATION => Ok(Self::PrepKeygen),
             KEYGEN_NOTIFICATION => Ok(Self::Keygen),
             CRSGEN_NOTIFICATION => Ok(Self::Crsgen),
+            NEW_KMS_CONTEXT_NOTIFICATION => Ok(Self::NewKmsContext),
+            EPOCH_RESULT_NOTIFICATION => Ok(Self::EpochResult),
             s => Err(anyhow!("Unknown notification channel: {s}")),
         }
     }
@@ -167,6 +184,8 @@ impl KmsResponseNotification {
             KmsResponseNotification::PrepKeygen => PREP_KEYGEN_NOTIFICATION,
             KmsResponseNotification::Keygen => KEYGEN_NOTIFICATION,
             KmsResponseNotification::Crsgen => CRSGEN_NOTIFICATION,
+            KmsResponseNotification::NewKmsContext => NEW_KMS_CONTEXT_NOTIFICATION,
+            KmsResponseNotification::EpochResult => EPOCH_RESULT_NOTIFICATION,
         }
     }
 
@@ -177,6 +196,8 @@ impl KmsResponseNotification {
             KmsResponseNotification::PrepKeygen => PREP_KEYGEN_RESPONSE_STR,
             KmsResponseNotification::Keygen => KEYGEN_RESPONSE_STR,
             KmsResponseNotification::Crsgen => CRSGEN_RESPONSE_STR,
+            KmsResponseNotification::NewKmsContext => NEW_KMS_CONTEXT_RESPONSE_STR,
+            KmsResponseNotification::EpochResult => EPOCH_RESULT_RESPONSE_STR,
         }
     }
 }
@@ -189,6 +210,8 @@ impl Display for KmsResponseNotification {
             KmsResponseNotification::PrepKeygen => write!(f, "PrepKeygenResponse"),
             KmsResponseNotification::Keygen => write!(f, "KeygenResponse"),
             KmsResponseNotification::Crsgen => write!(f, "CrsgenResponse"),
+            KmsResponseNotification::NewKmsContext => write!(f, "NewKmsContextResponse"),
+            KmsResponseNotification::EpochResult => write!(f, "EpochResultResponse"),
         }
     }
 }
@@ -233,3 +256,5 @@ const USER_DECRYPT_NOTIFICATION: &str = "user_decryption_response_available";
 const PREP_KEYGEN_NOTIFICATION: &str = "prep_keygen_response_available";
 const KEYGEN_NOTIFICATION: &str = "keygen_response_available";
 const CRSGEN_NOTIFICATION: &str = "crsgen_response_available";
+const NEW_KMS_CONTEXT_NOTIFICATION: &str = "new_kms_context_response_available";
+const EPOCH_RESULT_NOTIFICATION: &str = "epoch_result_response_available";

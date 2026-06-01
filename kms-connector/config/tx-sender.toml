@@ -120,6 +120,19 @@ address = "0x0000000000000000000000000000000000000000"
 # ENV: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__DOMAIN_VERSION
 # domain_version = "1"
 
+# Configuration of the ProtocolConfig contract on Ethereum (required)
+[protocol_config_contract]
+# Address of the ProtocolConfig contract on Ethereum
+# Format: hex string with 0x prefix
+# ENV: KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS
+address = "0x0000000000000000000000000000000000000000"
+# EIP-712 domain name for ProtocolConfig contract (optional, defaults to "ProtocolConfig")
+# ENV: KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__DOMAIN_NAME
+# domain_name = "ProtocolConfig"
+# EIP-712 domain version for ProtocolConfig contract (optional, defaults to "1")
+# ENV: KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__DOMAIN_VERSION
+# domain_version = "1"
+
 # AWS KMS configuration (optional if `private_key` is configured)
 # [aws_kms_config]
 # AWS KMS key ID for signing

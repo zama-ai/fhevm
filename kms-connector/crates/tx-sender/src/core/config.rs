@@ -4,7 +4,9 @@ use connector_utils::{
         AwsKmsConfig, ContractConfig, DeserializeConfig, Error, KmsWallet,
         contract::{
             default_decryption_contract_config, default_kms_generation_contract_config,
-            deserialize_decryption_contract_config, deserialize_kms_generation_contract_config,
+            default_protocol_config_contract_config, deserialize_decryption_contract_config,
+            deserialize_kms_generation_contract_config,
+            deserialize_protocol_config_contract_config,
         },
         default_database_pool_size, deserialize_pg_interval, serialize_pg_interval,
     },
@@ -52,6 +54,9 @@ pub struct Config {
     /// The `KMSGeneration` contract configuration (on Ethereum).
     #[serde(deserialize_with = "deserialize_kms_generation_contract_config")]
     pub kms_generation_contract: ContractConfig,
+    /// The `ProtocolConfig` contract configuration (on Ethereum).
+    #[serde(deserialize_with = "deserialize_protocol_config_contract_config")]
+    pub protocol_config_contract: ContractConfig,
 
     /// The private key of the `TransactionSender`'s wallet.
     pub private_key: Option<String>,
@@ -219,6 +224,7 @@ impl Default for Config {
             ethereum_tx_required_confirmations: default_ethereum_tx_required_confirmations(),
             ethereum_tx_get_receipt_timeout: default_ethereum_tx_get_receipt_timeout(),
             kms_generation_contract: default_kms_generation_contract_config(),
+            protocol_config_contract: default_protocol_config_contract_config(),
             service_name: default_service_name(),
             private_key: Some(
                 "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774".to_string(),
@@ -259,6 +265,7 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_PRIVATE_KEY");
             env::remove_var("KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS");
+            env::remove_var("KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
             env::remove_var("KMS_CONNECTOR_RESPONSES_BATCH_SIZE");
             env::remove_var("KMS_CONNECTOR_TX_RETRIES");
@@ -310,6 +317,10 @@ mod tests {
                 "KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS",
                 "0x0000000000000000000000000000000000000002",
             );
+            env::set_var(
+                "KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS",
+                "0x0000000000000000000000000000000000000003",
+            );
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
             env::set_var("KMS_CONNECTOR_RESPONSES_BATCH_SIZE", "20");
             env::set_var("KMS_CONNECTOR_TX_RETRIES", "5");
@@ -348,6 +359,10 @@ mod tests {
         assert_eq!(
             config.kms_generation_contract.address,
             address!("0x0000000000000000000000000000000000000002")
+        );
+        assert_eq!(
+            config.protocol_config_contract.address,
+            address!("0x0000000000000000000000000000000000000003")
         );
         assert_eq!(config.service_name, "kms-connector-test");
         assert_eq!(config.responses_batch_size, 20);
