@@ -106,7 +106,9 @@ jobs:
 
       - name: Clippy
         working-directory: relayer
-        run: cargo clippy -- -D warnings
+        # `make clippy` lints all targets/features and the rpc-mock test-support crate, keeping
+        # CI in sync with the local check (single source of truth in the Makefile).
+        run: make clippy
 
   integration-test:
     name: relayer-test/integration-test (bpr)
