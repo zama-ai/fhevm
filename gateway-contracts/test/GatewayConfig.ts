@@ -298,13 +298,21 @@ describe("GatewayConfig", function () {
         .withArgs(fakeTxSender.address);
     });
 
-    it("Should revert when reinitializing because the sender is not the owner", async function () {
+    it("Should revert when reinitializing a second time (reinitializer guard)", async function () {
       const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
-      const upgradedGatewayConfig = await hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory);
+      const upgradedGatewayConfig = await hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
+        call: {
+          fn: "reinitializeV8",
+          args: [ZeroAddress],
+        },
+      });
 
-      await expect(upgradedGatewayConfig.connect(fakeOwner).reinitializeV8(ZeroAddress))
-        .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
-        .withArgs(fakeOwner.address);
+      // reinitializeV8 is no longer owner-gated: the atomic upgradeToAndCall is authorized by
+      // _authorizeUpgrade, and the reinitializer guard prevents any later re-invocation.
+      await expect(upgradedGatewayConfig.connect(owner).reinitializeV8(ZeroAddress)).to.be.revertedWithCustomError(
+        gatewayConfig,
+        "InvalidInitialization",
+      );
     });
 
     it("Should revert because the KMS nodes list is empty", async function () {

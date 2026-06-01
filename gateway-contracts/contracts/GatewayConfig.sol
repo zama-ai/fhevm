@@ -266,12 +266,14 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * @notice Re-initializes the contract from V7.
      * @dev If a priority coprocessor is set here, every host-chain `InputVerifier` must accept its signer
      *      with threshold 1 before user inputs rely on priority mode.
+     * @dev Intended to run atomically as the `call` of a UUPS `upgradeToAndCall`, whose `_authorizeUpgrade`
+     *      already enforces owner authorization; the `reinitializer` guard then prevents any later re-entry.
      * @param coprocessorTxSenderAddress The registered priority coprocessor transaction sender to set,
      *        or zero to leave priority mode disabled.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV8(address coprocessorTxSenderAddress) public virtual onlyOwner reinitializer(REINITIALIZER_VERSION) {
+    function reinitializeV8(address coprocessorTxSenderAddress) public virtual reinitializer(REINITIALIZER_VERSION) {
         if (coprocessorTxSenderAddress != address(0)) {
             _checkInputVerificationPaused();
             _requireRegisteredPriorityCoprocessorTxSender(coprocessorTxSenderAddress);
