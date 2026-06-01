@@ -1,5 +1,8 @@
 use crate::{
-    core::{Config, publish::publish_batch},
+    core::{
+        Config,
+        publish::{ChainName, publish_batch},
+    },
     monitoring::metrics::{EVENT_LISTENING_ERRORS, EVENT_RECEIVED_COUNTER},
 };
 use alloy::{
@@ -95,7 +98,7 @@ where
             .address(contract_address)
             .event_signature(event_signatures);
 
-        let mut from_block = self.get_start_block(from_block_config, event_types).await?;
+        let mut from_block = self.get_start_block(from_block_config).await?;
         info!("Started Decryption polling from block {from_block}");
 
         let mut ticker = tokio::time::interval(poll_interval);
@@ -104,7 +107,7 @@ where
         loop {
             ticker.tick().await;
             match self
-                .fetch_and_publish(base_filter.clone(), event_types, from_block)
+                .fetch_and_publish(base_filter.clone(), from_block)
                 .await
             {
                 Ok((new_from_block, has_more)) => {
@@ -134,7 +137,6 @@ where
     async fn fetch_and_publish(
         &self,
         base_filter: Filter,
-        event_types: &[EventType],
         from_block: u64,
     ) -> anyhow::Result<(u64, bool)> {
         let current_block = self.provider.get_block_number().await?;
@@ -152,7 +154,7 @@ where
 
         let logs = self.provider.get_logs(&filter).await?;
         let events = Self::prepare_events(logs)?;
-        publish_batch(&self.db_pool, events, event_types, to_block).await?;
+        publish_batch(&self.db_pool, events, ChainName::Gateway, to_block).await?;
 
         Ok((to_block.saturating_add(1), to_block < current_block))
     }
@@ -181,25 +183,22 @@ where
     }
 
     /// Determines the block to start event listening from.
-    async fn get_start_block(
-        &self,
-        from_block_config: Option<u64>,
-        event_types: &[EventType],
-    ) -> anyhow::Result<u64> {
+    async fn get_start_block(&self, from_block_config: Option<u64>) -> anyhow::Result<u64> {
         if let Some(from_block) = from_block_config {
             info!("Found configured from_block_number ({from_block}) for polling");
             return Ok(from_block);
         }
 
-        info!("Fetching min last block polled from DB for {event_types:?}...");
-        let min_block = sqlx::query_scalar!(
-            "SELECT MIN(block_number) FROM last_block_polled WHERE event_type = ANY($1::event_type[])",
-            event_types as &[EventType],
+        let chain = ChainName::Gateway.as_str();
+        info!("Fetching last block polled from DB for chain {chain}...");
+        let last_block = sqlx::query_scalar!(
+            "SELECT block_number FROM last_block_polled_by_chain WHERE chain_name = $1",
+            chain,
         )
         .fetch_one(&self.db_pool)
         .await?;
 
-        match min_block {
+        match last_block {
             Some(last_block_polled) => Ok(last_block_polled as u64 + 1),
             None => {
                 info!("No block polled yet. Listening from latest block number instead...");
