@@ -14,14 +14,14 @@ use alloy::signers::{local::PrivateKeySigner, SignerSync};
 use alloy::sol_types::{SolCall, SolValue};
 use fhevm_host_bindings::acl::ACL;
 use rand::{rng, RngExt};
-use user_decryption_signature::{
-    compute_user_decrypt_digest_from_parts, default_user_decrypt_domain,
-};
 use std::str::FromStr;
 use tempfile::TempDir;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+use user_decryption_signature::{
+    compute_user_decrypt_digest_from_parts, default_user_decrypt_domain,
+};
 
 use super::test_schema::TestSchema;
 
@@ -620,10 +620,8 @@ pub const TEST_DECRYPTION_ADDRESS: &str = "0xB8Ae44365c45A7C5256b14F607CaE23BC04
 /// Fixed EOA used to sign v3 user-decryption requests in tests.
 #[allow(dead_code)]
 pub fn user_decrypt_test_signer() -> PrivateKeySigner {
-    PrivateKeySigner::from_str(
-        "0x1111111111111111111111111111111111111111111111111111111111111111",
-    )
-    .expect("valid test private key")
+    PrivateKeySigner::from_str("0x1111111111111111111111111111111111111111111111111111111111111111")
+        .expect("valid test private key")
 }
 
 /// Sign a v3 unified user-decryption envelope in place: recompute the EIP-712 digest from the
@@ -652,8 +650,10 @@ pub fn sign_v3_user_decrypt_envelope(payload: &mut serde_json::Value, signer: &P
     let handle_bytes = hex::decode(handle_hex.strip_prefix("0x").unwrap_or(handle_hex)).unwrap();
     let chain_id = u64::from_be_bytes(handle_bytes[22..30].try_into().unwrap());
 
-    let domain =
-        default_user_decrypt_domain(chain_id, Address::from_str(TEST_DECRYPTION_ADDRESS).unwrap());
+    let domain = default_user_decrypt_domain(
+        chain_id,
+        Address::from_str(TEST_DECRYPTION_ADDRESS).unwrap(),
+    );
     let digest = compute_user_decrypt_digest_from_parts(
         user_address,
         &public_key,

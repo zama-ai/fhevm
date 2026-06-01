@@ -16,8 +16,8 @@ use std::str::FromStr;
 use std::time::Duration;
 use tracing::warn;
 use user_decryption_signature::{
-    Erc1271Error, compute_user_decrypt_digest_from_parts, default_user_decrypt_domain,
-    verify_signature,
+    compute_user_decrypt_digest_from_parts, default_user_decrypt_domain, verify_signature,
+    Erc1271Error,
 };
 
 /// Outcome of a failed pre-check.
@@ -211,7 +211,7 @@ mod tests {
     use super::*;
     use crate::core::event::{HandleEntry, RequestValiditySeconds};
     use alloy::providers::mock::Asserter;
-    use alloy::signers::{SignerSync, local::PrivateKeySigner};
+    use alloy::signers::{local::PrivateKeySigner, SignerSync};
     use user_decryption_signature::ERC1271_MAGIC_VALUE;
 
     const TEST_CHAIN_ID: u64 = 8009;
@@ -249,15 +249,7 @@ mod tests {
     fn signed_request(
         signer: &PrivateKeySigner,
         owner: Address,
-    ) -> (
-        Address,
-        Bytes,
-        Vec<Address>,
-        U256,
-        U256,
-        Bytes,
-        Bytes,
-    ) {
+    ) -> (Address, Bytes, Vec<Address>, U256, U256, Bytes, Bytes) {
         let user_address = signer.address();
         let public_key = Bytes::from(vec![1, 2, 3, 4]);
         let allowed_contracts = vec![Address::from([0xAB; 20])];

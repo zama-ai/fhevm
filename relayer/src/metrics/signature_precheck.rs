@@ -52,7 +52,9 @@ pub fn init_signature_precheck_metrics(registry: &Registry) {
     });
 
     // Initialize all outcomes to 0 so the rejection rate is computable from the first scrape.
-    let metrics = METRICS.get().expect("Signature pre-check metrics not initialized");
+    let metrics = METRICS
+        .get()
+        .expect("Signature pre-check metrics not initialized");
     for outcome in SignaturePreCheckOutcome::all() {
         metrics
             .outcomes_total

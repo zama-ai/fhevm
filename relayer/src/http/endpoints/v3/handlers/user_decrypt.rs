@@ -196,7 +196,11 @@ impl UserDecryptHandler {
         // Signature pre-check: reject detectably-bad signatures here so the SDK caller gets
         // early feedback instead of waiting for the gateway/KMS round-trip. The KMS Connector
         // remains the authoritative verifier.
-        match self.signature_prechecker.verify(&user_decrypt_request).await {
+        match self
+            .signature_prechecker
+            .verify(&user_decrypt_request)
+            .await
+        {
             Ok(()) => observe_signature_precheck(SignaturePreCheckOutcome::Accepted),
             Err(SigPreCheckError::Invalid { signer, reason }) => {
                 warn!(
