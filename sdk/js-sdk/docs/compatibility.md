@@ -3,6 +3,25 @@
 kms: https://github.com/zama-ai/kms
 tfhe-rs: https://github.com/zama-ai/tfhe-rs
 
+## Limitations
+
+There is no on-chain or relayer-side signal that tells the SDK the minimum `tfhe.wasm` version required to deserialize a given PubKey/CRS pair, and the format is not forward-compatible across minor versions:
+
+- `tfhe.wasm@v1.5.3` cannot parse a PubKey/CRS produced by `tfhe.wasm@v1.6.1`.
+
+## Heuristic
+
+Lacking a direct signal, the SDK derives the right `tfhe.wasm` version from the on-chain `ACL` contract version:
+
+1. Read `ACL.version` on the host chain.
+2. Map it to a wasm version:
+   - `ACL.version < 0.4.0` (Protocol ≤ `v0.12.0`) → `tfhe.wasm@v1.5.3`
+   - `ACL.version ≥ 0.4.0` (Protocol ≥ `v0.13.0`) → `tfhe.wasm@v1.6.1`
+
+This works as long as every protocol release bumps at least one host-contract version. See [the open question on this assumption](#open-question) below if it ever breaks.
+
+**In the future: add view functions in InputVerifier.sol and KMSVerifier.sol or ProtocolConfig.sol**
+
 ## KMS
 
 KMS releases pin an exact `tfhe` crate version via `tfhe = "=X.Y.Z"` in the workspace `Cargo.toml`.
@@ -33,7 +52,7 @@ kms `0.12.7` generated the PubKey/CRS in December 2025
 | `0.11.0` | `0.2.0` | `0.2.0`       | `0.1.0`     | `0.2.0`       | `0.1.0`  | `0.1.0`   | `1.5.1`         | `0.13.3`    |
 | `0.12.0` | `0.3.0` | `0.3.0`       | `0.2.0`     | `0.2.0`       | `0.2.0`  | `0.1.0`   | `1.5.4`         | `0.13.10`   |
 | `0.13.0` | `0.4.0` | `0.4.0`       | `0.3.0`     | `0.2.0`       | `0.3.0`  | `0.1.0`   | `1.6.1`         | `0.13.20-0` |
-| `0.14.0` | `0.x.0` | `0.x.0`       | `0.x.0`     | `0.x.0`       | `0.x.0`  | `0.x.0`   | ?               | ?           |
+| `0.14.0` | ?       | ?             | ?           | ?             | ?        | ?         | ?               | ?           |
 
 ## TFHE
 
@@ -54,9 +73,9 @@ kms `0.12.7` generated the PubKey/CRS in December 2025
 
 ## TFHE API
 
-| Protocol                                             | TFHE                 | Types                                                                                                                                                      | Functions                                                                      |
-| ---------------------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `v0.11.0`<br>`v0.12.0`<br>`v0.13.0`<br>`v0.14.0`<br> | `v1.5.3`<br>`v1.6.1` | `CompactCiphertextList`<br>`CompactCiphertextListBuilder`<br>`CompactPkeCrs`<br>`ProvenCompactCiphertextList`<br>`TfheCompactPublicKey`<br>`ZkComputeLoad` | `init_panic_hook`<br>`initThreadPool`<br>`setWorkerUrlConfig`<br>`getWasmInfo` |
+| Protocol                                             | TFHE                 | Types                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Functions                                                                      |
+| ---------------------------------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `v0.11.0`<br>`v0.12.0`<br>`v0.13.0`<br>`v0.14.0`<br> | `v1.5.3`<br>`v1.6.1` | `CompactCiphertextList.builder`<br>`CompactCiphertextListBuilder.push_boolean`<br>`CompactCiphertextListBuilder.push_u8`<br>`CompactCiphertextListBuilder.push_u16`<br>`CompactCiphertextListBuilder.push_u32`<br>`CompactCiphertextListBuilder.push_u64`<br>`CompactCiphertextListBuilder.push_u128`<br>`CompactCiphertextListBuilder.push_u160`<br>`CompactCiphertextListBuilder.push_u256`<br>`CompactCiphertextListBuilder.build_with_proof_packed`<br>`CompactCiphertextListBuilder.free`<br>`CompactPkeCrs.safe_serialize`<br>`CompactPkeCrs.safe_deserialize`<br>`ProvenCompactCiphertextList.safe_serialize`<br>`ProvenCompactCiphertextList.safe_deserialize`<br>`ProvenCompactCiphertextList.free`<br>`ProvenCompactCiphertextList.len`<br>`ProvenCompactCiphertextList.get_kind_of`<br>`TfheCompactPublicKey.safe_serialize`<br>`TfheCompactPublicKey.safe_deserialize`<br>`ZkComputeLoad` | `init_panic_hook`<br>`initThreadPool`<br>`setWorkerUrlConfig`<br>`getWasmInfo` |
 
 ## KMS API
 
