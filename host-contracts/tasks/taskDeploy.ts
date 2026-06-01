@@ -90,7 +90,7 @@ task('task:deployCanonicalHost', 'Deploys the complete canonical host stack.').s
   await hre.run('task:deployHostSkeleton');
   await hre.run('task:deployProtocolConfigCanonical');
   await hre.run('task:deployKMSVerifier');
-  await hre.run('task:initializeKMSGeneration');
+  await hre.run('task:deployKMSGeneration');
   console.log('Contract deployment done!');
 });
 
@@ -574,7 +574,7 @@ task(
 
 // Canonical-host only. This upgrades and initializes the KMSGeneration proxy created by
 // task:deployEmptyUUPSProxies when composing a canonical host.
-task('task:initializeKMSGeneration', 'Upgrades the canonical-only KMSGeneration proxy and initializes it.').setAction(
+task('task:deployKMSGeneration', 'Upgrades the canonical-only KMSGeneration proxy and initializes it.').setAction(
   async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
     const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
     const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
