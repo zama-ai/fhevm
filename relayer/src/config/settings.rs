@@ -545,20 +545,7 @@ pub struct ContractConfig {
 /// User-decryption signature check configuration.
 #[derive(Debug, Deserialize, Clone)]
 pub struct UserDecryptSignatureCheckConfig {
-    #[serde(default = "default_erc1271_gas_limit")]
     pub erc1271_gas_limit: u64,
-}
-
-fn default_erc1271_gas_limit() -> u64 {
-    100_000
-}
-
-impl Default for UserDecryptSignatureCheckConfig {
-    fn default() -> Self {
-        Self {
-            erc1271_gas_limit: default_erc1271_gas_limit(),
-        }
-    }
 }
 
 impl ContractConfig {
@@ -621,7 +608,6 @@ pub struct Settings {
     /// ProtocolConfig contract settings for dynamic threshold resolution
     pub protocol_config: ProtocolConfigSettings,
     /// User-decryption signature check configuration
-    #[serde(default)]
     pub user_decrypt_signature_check: UserDecryptSignatureCheckConfig,
 }
 

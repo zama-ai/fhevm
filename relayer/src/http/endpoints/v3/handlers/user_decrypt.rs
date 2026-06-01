@@ -203,7 +203,7 @@ impl UserDecryptHandler {
         {
             Ok(()) => observe_signature_precheck(SignaturePreCheckOutcome::Accepted),
             Err(SigPreCheckError::Invalid { signer, reason }) => {
-                warn!(
+                info!(
                     signer = %signer,
                     reason = %reason,
                     request_id = %request_id,

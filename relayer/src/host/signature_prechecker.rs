@@ -1,9 +1,8 @@
-//! Optional RFC-012 signature pre-check on v3 user-decryption forwarding.
+//! Signature pre-check on v3 user-decryption forwarding.
 //!
-//! Recomputes the unified EIP-712 digest and runs the shared `ecrecover` → ERC-1271 fallback
-//! (`user_decryption_signature::verify_signature`) — the same library the KMS Connector uses —
-//! so detectably-bad signatures are rejected before the request reaches the gateway. The
-//! Connector stays the authoritative verifier; this is a best-effort early reject.
+//! Recomputes the unified EIP-712 digest and runs the shared verifier
+//! (`user_decryption_signature::verify_signature`) to detect bad signatures before forwarding,
+//! returning a specific error to the caller instead of letting the request fail downstream.
 
 use crate::config::settings::{HostChainConfig, RetrySettings};
 use crate::core::event::UserDecryptRequest;
