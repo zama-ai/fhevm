@@ -261,7 +261,7 @@ async fn setup_with_block_time(
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
         timeout_request_websocket: 30,
-        gcs_mode: false,
+        ethereum_chain_id: node_chain_id.unwrap_or(12345),
     };
     let health_check_url = format!("http://127.0.0.1:{}", args.health_port);
 
@@ -396,6 +396,7 @@ async fn ingest_dependent_burst_seeded(
             dependence_by_connexity: false,
             dependence_cross_block: true,
             dependent_ops_max_per_chain,
+            ethereum_chain_id: setup.chain_id.as_u64(),
         },
     )
     .await?;
@@ -715,6 +716,7 @@ async fn test_slow_lane_cross_block_sustained_below_cap_stays_fast_locally(
                 dependence_by_connexity: false,
                 dependence_cross_block: true,
                 dependent_ops_max_per_chain: cap,
+                ethereum_chain_id: setup.chain_id.as_u64(),
             },
         )
         .await?;
@@ -1032,7 +1034,7 @@ async fn test_only_catchup_loop_requires_negative_start_at_block(
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
         timeout_request_websocket: 30,
-        gcs_mode: false,
+        ethereum_chain_id: 0,
     };
 
     let result = main(args).await;

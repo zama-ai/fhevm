@@ -442,6 +442,7 @@ where
         dependence_by_connexity: false,
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
+        ethereum_chain_id: TEST_CHAIN_ID,
     };
 
     ingest_block_logs(
