@@ -82,6 +82,11 @@
         "ordinal": 15,
         "name": "key_id_gw",
         "type_info": "Bytea"
+      },
+      {
+        "ordinal": 16,
+        "name": "s3_format_version",
+        "type_info": "Int2"
       }
     ],
     "parameters": {
@@ -105,7 +110,8 @@
       true,
       false,
       false,
-      false
+      false,
+      true
     ]
   },
   "hash": "22d4192be3d4af374ffb6b6d39b842b5d0d56e548e90b3b9387f94eb4dc17fa2"

@@ -142,6 +142,13 @@ pub struct LogTfhe {
 
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StatsForConsumer {
+    pub number_of_new_gaps: i64,
+    pub total_new_gap_size: i64,
+    pub number_of_duplicated_inserts: i64,
+}
+
 impl Database {
     pub async fn new(
         url: &DatabaseURL,
@@ -592,6 +599,100 @@ impl Database {
             .await?;
         }
         Ok(())
+    }
+
+    pub async fn mark_block_as_seen_by_consumer(
+        &self,
+        block_summary: &BlockSummary,
+        catchup: bool,
+    ) -> Result<(), SqlxError> {
+        let duplicate_count_increase = if catchup { 0 } else { 1 };
+        let pool = self.pool().await;
+        sqlx::query!(
+            r#"
+            INSERT INTO host_chain_consumer_blocks (
+                chain_id,
+                block_hash,
+                block_number
+            )
+            VALUES ($1, $2, $3)
+            ON CONFLICT (chain_id, block_hash) DO UPDATE
+            SET duplicate_count =
+                host_chain_consumer_blocks.duplicate_count + $4
+            "#,
+            self.chain_id.as_i64(),
+            block_summary.hash.to_vec(),
+            block_summary.number as i64,
+            duplicate_count_increase
+        )
+        .execute(&pool)
+        .await?;
+
+        Ok(())
+    }
+
+    // /// Called at regular interval
+    pub async fn detect_gap_seen_by_consumer(
+        &self,
+        finalization_margin: i64,
+    ) -> Result<StatsForConsumer, SqlxError> {
+        let pool = self.pool().await;
+        let row = sqlx::query!(
+            r#"
+            WITH last_block_number AS (
+                SELECT MAX(block_number) AS last_block_number
+                FROM host_chain_consumer_blocks
+                WHERE chain_id = $1
+            ),
+            eligible_blocks AS (
+                SELECT
+                    c.block_number,
+                    c.duplicate_count,
+                    LAG(c.block_number) OVER (ORDER BY c.block_number) AS prev_block
+                FROM host_chain_consumer_blocks c
+                CROSS JOIN last_block_number l
+                WHERE c.stats_processed = FALSE
+                AND c.chain_id = $1
+                AND c.block_number < l.last_block_number - $2::bigint
+            ),
+            gaps AS (
+                SELECT
+                    (block_number - prev_block - 1) AS gap_size
+                FROM eligible_blocks
+                WHERE prev_block IS NOT NULL
+                AND block_number > prev_block + 1
+            ),
+            stats AS (
+                SELECT
+                    COALESCE((SELECT COUNT(*) FROM gaps), 0) AS number_of_new_gaps,
+                    COALESCE((SELECT SUM(gap_size) FROM gaps), 0) AS total_new_gap_size,
+                    COALESCE(SUM(duplicate_count), 0) AS number_of_duplicated_inserts
+                FROM eligible_blocks
+            ),
+            mark_processed AS (
+                UPDATE host_chain_consumer_blocks
+                SET stats_processed = TRUE
+                FROM last_block_number l
+                WHERE stats_processed = FALSE
+                AND chain_id = $1
+                AND block_number < l.last_block_number - $2::bigint
+            )
+            SELECT
+                COALESCE((SELECT number_of_new_gaps FROM stats), 0)::bigint AS "number_of_new_gaps!",
+                COALESCE((SELECT total_new_gap_size FROM stats), 0)::bigint AS "total_new_gap_size!",
+                COALESCE((SELECT number_of_duplicated_inserts FROM stats), 0)::bigint AS "number_of_duplicated_inserts!"
+            "#,
+            self.chain_id.as_i64(),
+            finalization_margin,
+        )
+        .fetch_one(&pool)
+        .await?;
+
+        Ok(StatsForConsumer {
+            number_of_new_gaps: row.number_of_new_gaps,
+            total_new_gap_size: row.total_new_gap_size,
+            number_of_duplicated_inserts: row.number_of_duplicated_inserts,
+        })
     }
 
     pub async fn get_finalized_blocks_number(
