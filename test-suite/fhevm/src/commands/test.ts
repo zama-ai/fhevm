@@ -351,7 +351,7 @@ const waitForComputationsCatchup = async (
 /** Polls drift_revert_signal until the latest row reaches a given status. */
 const waitForDriftRevertStatus = async (
   options: DriftRevertDbOptions & {
-    targetStatus: "reverting" | "done";
+    targetStatus: "pending" | "reverting" | "done";
     timeoutSeconds: number;
     pollIntervalSeconds: number;
   },
@@ -971,6 +971,16 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           postgresPassword: postgres.postgresPassword,
         };
         const hostChainId = process.env.CHAIN_ID ?? "12345";
+
+        // The peer-submission drift warning only proves that some listener
+        // observed divergent submissions. Auto-revert starts when the faulty
+        // coprocessor records drift_revert_signal after its local digest check.
+        await waitForDriftRevertStatus({
+          ...dbOptions,
+          targetStatus: "pending",
+          timeoutSeconds: driftAlertTimeoutSeconds,
+          pollIntervalSeconds: driftAlertPollIntervalSeconds,
+        });
 
         // Snapshot row counts before the revert runs. The gw-listener is
         // still in the grace period (pending status), so this is stable.
