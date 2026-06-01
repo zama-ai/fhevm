@@ -126,6 +126,13 @@ contract Decryption is
     uint16 internal constant MAX_USER_DECRYPT_DURATION_DAYS = 365;
 
     /**
+     * @notice The maximum allowed tolerance (in seconds) for the start timestamp of a user decryption
+     * request. This accounts for potential lag between the RPC node's block.timestamp during
+     * gas estimation and the actual wall-clock time.
+     */
+    uint256 internal constant TIMESTAMP_TOLERANCE = 120;
+
+    /**
      * @notice The maximum number of contracts that can request for user decryption at once.
      */
     uint8 internal constant MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10;
@@ -200,7 +207,7 @@ contract Decryption is
      */
     string private constant CONTRACT_NAME = "Decryption";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 4;
+    uint256 private constant MINOR_VERSION = 5;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -209,7 +216,7 @@ contract Decryption is
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 5;
+    uint64 private constant REINITIALIZER_VERSION = 6;
 
     /**
      * @notice The contract's variable storage struct (@dev see ERC-7201)
@@ -289,11 +296,11 @@ contract Decryption is
     }
 
     /**
-     * @notice Re-initializes the contract from V3.
+     * @notice Re-initializes the contract from V4.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV5() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IDecryption-publicDecryptionRequest}.
@@ -1112,10 +1119,11 @@ contract Decryption is
             revert MaxDurationDaysExceeded(MAX_USER_DECRYPT_DURATION_DAYS, requestValidity.durationDays);
         }
 
-        // Check the start timestamp is not set in the future. This is to prevent a user
+        // Check the start timestamp is not set too far in the future. This is to prevent a user
         // from bypassing the durationDays limit of 365 days by setting a start timestamp
-        // far in the future.
-        if (requestValidity.startTimestamp > block.timestamp) {
+        // far in the future. A small tolerance is allowed to account for RPC node block.timestamp
+        // lag during gas estimation.
+        if (requestValidity.startTimestamp > block.timestamp + TIMESTAMP_TOLERANCE) {
             revert StartTimestampInFuture(block.timestamp, requestValidity.startTimestamp);
         }
 
