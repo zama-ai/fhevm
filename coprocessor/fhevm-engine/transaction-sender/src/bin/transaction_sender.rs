@@ -13,7 +13,10 @@ use alloy::{
 use anyhow::Context;
 use aws_config::BehaviorVersion;
 use clap::{Parser, ValueEnum};
-use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
+use fhevm_engine_common::database::{
+    apply_gcs_mode_search_path, connect_pool_with_options_and_connect_options,
+    resolve_database_url_from_option,
+};
 use fhevm_engine_common::drift_revert;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
@@ -149,6 +152,7 @@ struct Conf {
 
     #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u64).range(1..))]
     pub gauge_update_interval_secs: u64,
+
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -298,7 +302,7 @@ async fn main() -> anyhow::Result<()> {
     let gateway_provider =
         NonceManagedProvider::new(gateway_provider, Some(wallet.default_signer().address()));
 
-    let config = ConfigSettings {
+    let mut config = ConfigSettings {
         verify_proof_resp_db_channel: conf.verify_proof_resp_database_channel,
         add_ciphertexts_db_channel: conf.add_ciphertexts_database_channel,
         verify_proof_resp_batch_limit: conf.verify_proof_resp_batch_limit,
@@ -315,13 +319,33 @@ async fn main() -> anyhow::Result<()> {
         health_check_timeout: conf.health_check_timeout,
         gas_limit_overprovision_percent: conf.gas_limit_overprovision_percent,
         graceful_shutdown_timeout: conf.graceful_shutdown_timeout,
+        // Auto-detected from the versioning table below; the CLI flag is ignored.
+        gcs_mode: false,
     };
 
     let database_url = resolve_database_url_from_option(conf.database_url)?;
-    let (db_pool, _pool_refresh_handle) = connect_pool_with_options(
+
+    let gcs_mode = match fhevm_engine_common::versioning::resolve_gcs_mode(database_url.as_str())
+        .await
+    {
+        Ok(gcs_mode) => gcs_mode,
+        Err(err) => {
+            tracing::error!(error = %err, "Failed to resolve gcs_mode from versioning table");
+            std::process::exit(1);
+        }
+    };
+    config.gcs_mode = gcs_mode;
+
+    // In GCS mode the pool is pinned to `search_path = gcs,public` so
+    // unqualified writes (`verify_proofs`, `ciphertext_digest`,
+    // `ciphertexts128`) land in the `gcs` schema; shared/control-plane
+    // reads (drift_revert_signal, upgrade_state, …) still resolve from
+    // `public` via fallback.
+    let (db_pool, _pool_refresh_handle) = connect_pool_with_options_and_connect_options(
         &database_url,
         sqlx::postgres::PgPoolOptions::new().max_connections(conf.database_pool_size),
         Some(&cancel_token),
+        apply_gcs_mode_search_path(config.gcs_mode),
     )
     .await?;
 

@@ -31,6 +31,15 @@ pub struct ConfigSettings {
     pub gas_limit_overprovision_percent: u32,
 
     pub graceful_shutdown_timeout: Duration,
+
+    /// Used during blue/green (GCS) upgrade migrations.
+    /// When true, the txn-sender starts paused and waits for
+    /// `event_upgrade_activated` to populate `upgrade_state.start_block` (for
+    /// `stack_role='GCS'`). Once activated, writes (`verify_proofs`,
+    /// `ciphertext_digest`, `ciphertexts128`) are routed to the `gcs` schema
+    /// via the connection's `search_path = gcs,public`. When false (default),
+    /// writes go to the `public` schema (BCS).
+    pub gcs_mode: bool,
 }
 
 impl Default for ConfigSettings {
@@ -52,6 +61,7 @@ impl Default for ConfigSettings {
             health_check_timeout: Duration::from_secs(4),
             gas_limit_overprovision_percent: DEFAULT_GAS_LIMIT_OVERPROVISION_PERCENT,
             graceful_shutdown_timeout: Duration::from_secs(8),
+            gcs_mode: false,
         }
     }
 }

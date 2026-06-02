@@ -1,15 +1,25 @@
 use alloy::{network::Ethereum, primitives::Address, providers::Provider};
 use futures_util::FutureExt;
 use sqlx::{postgres::PgListener, Pool, Postgres};
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::{sync::Arc, time::Duration};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     is_backend_gone, nonce_managed_provider::NonceManagedProvider, ops, AbstractSigner,
     ConfigSettings, HealthStatus,
 };
+
+/// Wake-up channel for GCS activation. Must stay in sync with
+/// `upgrade_controller::UPGRADE_ACTIVATED_CHANNEL`.
+const EVENT_UPGRADE_ACTIVATED: &str = "event_upgrade_activated";
+
+/// Sentinel for the activation atomic: the GCS row in `upgrade_state` has
+/// not been observed yet (the sender is paused). Any non-sentinel value is
+/// the real start_block.
+const GCS_NOT_ACTIVATED: i64 = -1;
 
 #[derive(Clone)]
 pub struct TransactionSender<P>
@@ -77,6 +87,43 @@ where
             ciphertext_commits_address = %self.ciphertext_commits_address,
             "Starting Transaction Sender"
         );
+
+        // GCS gating: spawn a long-lived watcher that mirrors
+        // `upgrade_state.start_block` (stack_role='GCS') into a shared atomic,
+        // then block here until the watcher has observed activation. Once
+        // activated, the sender proceeds normally; its writes resolve to
+        // `gcs.*` via the connection's `search_path = gcs,public`. In BCS
+        // mode this branch is a no-op.
+        if self.conf.gcs_mode {
+            let start_block_state = Arc::new(AtomicI64::new(GCS_NOT_ACTIVATED));
+            let watcher_pool = self.db_pool.clone();
+            let watcher_state = start_block_state.clone();
+            tokio::spawn(async move {
+                loop {
+                    if let Err(err) =
+                        watch_gcs_activation(&watcher_pool, &watcher_state).await
+                    {
+                        error!(error = %err, "GCS activation watcher errored; restarting in 5s");
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                    }
+                }
+            });
+
+            info!("Transaction sender in --gcs-mode (paused, not yet activated). Waiting for event_upgrade_activated.");
+            loop {
+                if self.cancel_token.is_cancelled() {
+                    return Ok(());
+                }
+                if start_block_state.load(Ordering::SeqCst) != GCS_NOT_ACTIVATED {
+                    break;
+                }
+                tokio::select! {
+                    _ = self.cancel_token.cancelled() => return Ok(()),
+                    _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+                }
+            }
+            info!("Transaction sender observed GCS activation; resuming.");
+        }
 
         let mut join_set = JoinSet::new();
 
@@ -263,6 +310,52 @@ where
                 blockchain_connected,
                 error_details.join("; "),
             )
+        }
+    }
+}
+
+/// LISTENs on `event_upgrade_activated` and mirrors
+/// `upgrade_state.start_block` (for `stack_role='GCS'`) into `state`. Polls
+/// once on entry so a sender started AFTER the activation notify fired still
+/// picks the value up. A 30s fallback sleep catches any missed NOTIFY.
+async fn watch_gcs_activation(
+    pool: &Pool<Postgres>,
+    state: &AtomicI64,
+) -> Result<(), sqlx::Error> {
+    let mut listener = PgListener::connect_with(pool).await?;
+    listener.listen(EVENT_UPGRADE_ACTIVATED).await?;
+    info!(
+        channel = EVENT_UPGRADE_ACTIVATED,
+        "GCS activation watcher listening"
+    );
+
+    loop {
+        let row: Option<(Option<i64>,)> = sqlx::query_as(
+            "SELECT start_block FROM upgrade_state WHERE stack_role = 'GCS'",
+        )
+        .fetch_optional(pool)
+        .await?;q
+
+        if let Some((Some(start_block),)) = row {
+            let prev = state.swap(start_block, Ordering::SeqCst);
+            if prev != start_block {
+                info!(
+                    start_block,
+                    prev, "GCS start_block updated from upgrade_state"
+                );
+            }
+        } else {
+            debug!("GCS row in upgrade_state has no start_block yet");
+        }
+
+        tokio::select! {
+            recv = listener.recv() => {
+                if let Err(err) = recv {
+                    warn!(error = %err, "GCS activation listener recv error");
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            }
+            _ = tokio::time::sleep(Duration::from_secs(30)) => {}
         }
     }
 }
