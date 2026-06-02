@@ -115,16 +115,6 @@ pub struct Args {
     #[arg(long, default_value = "0.2:5.0:0.05", value_parser = clap::value_parser!(MetricsConfig))]
     pub metric_fhe_batch_latency: MetricsConfig,
 
-    /// Used during blue/green (GCS) upgrade migrations.
-    /// When true, the worker starts paused and waits for
-    /// `event_upgrade_activated` to populate `upgrade_state.start_block` (for
-    /// `stack_role='GCS'`). Once activated, the worker processes computations
-    /// from blocks `>= start_block` and ciphertext queries read from the
-    /// inherited tables (`FROM ciphertexts`). When false (default), the worker
-    /// runs in BCS mode and queries use `FROM ONLY ciphertexts`.
-    #[arg(long, default_value_t = false)]
-    pub gcs_mode: bool,
-
     /// Not exposed via CLI — `#[arg(skip)]` initializes the field to `WatcherTimeouts::default()`
     /// on `Args::parse()`.
     #[arg(skip)]

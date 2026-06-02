@@ -226,7 +226,7 @@ pub async fn insert_tfhe_event(
         tx_depth_size: 0,
         log_index: log.log_index,
     };
-    db.insert_tfhe_event(tx, &event, false).await
+    db.insert_tfhe_event(tx, &event).await
 }
 
 pub async fn allow_handle(

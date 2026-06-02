@@ -1,6 +1,9 @@
 use crate::dependence_chain::{self};
 use crate::types::CoprocessorError;
-use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
+use fhevm_engine_common::database::{
+    apply_gcs_mode_search_path, connect_pool_with_options,
+    connect_pool_with_options_and_connect_options, resolve_database_url_from_option,
+};
 use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
@@ -13,7 +16,7 @@ use scheduler::dfg::types::{CompressedCiphertext, DFGTxInput, SchedulerError};
 use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp};
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
 use sqlx::types::Uuid;
-use sqlx::{postgres::PgListener, Acquire, Pool, Postgres};
+use sqlx::{postgres::PgListener, query, Acquire, Pool, Postgres};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
@@ -39,20 +42,6 @@ const CUTOVER_LOCK_ID: i64 = 0x4648_4556_4355_5456;
 
 lazy_static! {
     pub static ref TIMING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-}
-
-/// Row shape returned by the `query_for_work` SQL. Declared explicitly (rather
-/// than via `query!`) because the table name is selected at runtime — BCS
-/// reads `ONLY computations`, GCS reads `ONLY computations_staging`.
-#[derive(sqlx::FromRow)]
-struct WorkItemRow {
-    output_handle: Vec<u8>,
-    dependencies: Vec<Vec<u8>>,
-    fhe_operation: i16,
-    is_scalar: bool,
-    is_allowed: bool,
-    transaction_id: Vec<u8>,
-    schedule_order: PrimitiveDateTime,
 }
 
 lazy_static! {
@@ -98,17 +87,28 @@ pub async fn run_tfhe_worker(
     // Determine worker ID to use for the lifetime of this process
     // In case of a failure in tfhe_worker_cycle, the same id must be reused to quickly unlock any held locks
     let worker_id = args.worker_id.unwrap_or(Uuid::new_v4());
-    info!(target: "tfhe_worker", worker_id = %worker_id, gcs_mode = args.gcs_mode, "Starting tfhe-worker service");
+
+    // GCS mode is auto-detected at startup by comparing this binary's
+    // compiled-in `STACK_VERSION` against the live `versioning.stack_version`
+    // row.
+    let db_url = resolve_database_url_from_option(args.database_url.clone())?;
+    let gcs_mode = fhevm_engine_common::versioning::resolve_gcs_mode(db_url.as_str())
+        .await
+        .map_err(|err| {
+            error!(target: "tfhe_worker", error = %err, "Failed to resolve gcs_mode from versioning table");
+            err
+        })?;
+
+    info!(target: "tfhe_worker", worker_id = %worker_id, gcs_mode = gcs_mode, "Starting tfhe-worker service");
 
     // Shared GCS activation state. `GCS_NOT_ACTIVATED` means the worker is
     // paused (BCS mode keeps this value for the lifetime of the process).
     let start_block_state = Arc::new(AtomicI64::new(GCS_NOT_ACTIVATED));
 
-    if args.gcs_mode {
+    if gcs_mode {
         // Long-lived task that mirrors `upgrade_state.start_block` (stack_role
         // = 'GCS') into the atomic, woken by `event_upgrade_activated`. Lives
         // outside the cycle loop so it survives `tfhe_worker_cycle` restarts.
-        let db_url = resolve_database_url_from_option(args.database_url.clone())?;
         let (watcher_pool, _refresh) = connect_pool_with_options(
             &db_url,
             sqlx::postgres::PgPoolOptions::new().max_connections(2),
@@ -131,6 +131,7 @@ pub async fn run_tfhe_worker(
         if let Err(cycle_error) = tfhe_worker_cycle(
             &args,
             worker_id,
+            gcs_mode,
             start_block_state.clone(),
             health_check.clone(),
         )
@@ -191,14 +192,20 @@ async fn watch_gcs_activation(
 async fn tfhe_worker_cycle(
     args: &crate::daemon_cli::Args,
     worker_id: Uuid,
+    gcs_mode: bool,
     start_block_state: Arc<AtomicI64>,
     health_check: crate::health_check::HealthCheck,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let db_url = resolve_database_url_from_option(args.database_url.clone())?;
-    let (pool, _pool_refresh_handle) = connect_pool_with_options(
+    // In --gcs-mode, every connection in the data-plane pool is pinned to
+    // `search_path = gcs,public` so unqualified writes land in `gcs.*` and
+    // shared read-only tables (keys, crs, host_chains, upgrade_state, …)
+    // still resolve from `public` via fallback.
+    let (pool, _pool_refresh_handle) = connect_pool_with_options_and_connect_options(
         &db_url,
         sqlx::postgres::PgPoolOptions::new().max_connections(args.pg_pool_max_connections),
         None,
+        apply_gcs_mode_search_path(gcs_mode),
     )
     .await?;
 
@@ -228,22 +235,22 @@ async fn tfhe_worker_cycle(
     let mut no_progress_cycles = 0;
     loop {
         // GCS gating: skip the iteration entirely until the activation
-        // watcher has populated `start_block` from `upgrade_state` for
-        // `stack_role='GCS'`. In BCS mode this branch is a no-op.
-        let start_block_height: Option<i64> = if args.gcs_mode {
-            let v = start_block_state.load(Ordering::SeqCst);
-            if v == GCS_NOT_ACTIVATED {
-                debug!(target: "tfhe_worker", "GCS not yet activated; sleeping before re-check");
-                tokio::time::sleep(tokio::time::Duration::from_millis(
-                    args.worker_polling_interval_ms,
-                ))
-                .await;
-                continue;
-            }
-            Some(v)
-        } else {
-            None
-        };
+        // watcher has populated `start_block` in `upgrade_state` for
+        // `stack_role='GCS'`. Once that's observed, the schema-isolated
+        // `search_path = gcs,public` on this pool's connections routes all
+        // writes to `gcs.*` automatically — we no longer need the actual
+        // start_block value inside the cycle. In BCS mode this branch is a
+        // no-op.
+        if gcs_mode
+            && start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED
+        {
+            debug!(target: "tfhe_worker", "GCS not yet activated; sleeping before re-check");
+            tokio::time::sleep(tokio::time::Duration::from_millis(
+                args.worker_polling_interval_ms,
+            ))
+            .await;
+            continue;
+        }
 
         // only if previous iteration had no work done do the wait
         if !immediately_poll_more_work {
@@ -276,7 +283,7 @@ async fn tfhe_worker_cycle(
         // post-cutover state and the worker exits the cycle cleanly. GCS
         // workers write to staging tables, which are not the cutover target,
         // so this gate does not apply to them.
-        if !args.gcs_mode {
+        if !gcs_mode {
             sqlx::query("SELECT pg_advisory_xact_lock_shared($1)")
                 .bind(CUTOVER_LOCK_ID)
                 .execute(&mut *trx)
@@ -358,7 +365,7 @@ async fn tfhe_worker_cycle(
             &health_check,
             &mut trx,
             &dcid_mngr,
-            start_block_height,
+            gcs_mode,
         )
         .instrument(loop_span.clone())
         .await?;
@@ -366,7 +373,6 @@ async fn tfhe_worker_cycle(
             &mut tx_graph,
             &mut trx,
             &mut dcid_mngr,
-            start_block_height,
         )
         .instrument(loop_span.clone())
         .await?;
@@ -403,72 +409,64 @@ async fn tfhe_worker_cycle(
 async fn query_ciphertexts<'a>(
     cts_to_query: &[Vec<u8>],
     trx: &mut sqlx::Transaction<'a, Postgres>,
-    start_block_height: Option<i64>,
+    gcs_mode: bool,
 ) -> Result<HashMap<Vec<u8>, (i16, Vec<u8>)>, Box<dyn std::error::Error + Send + Sync>> {
-    // The BCS queries ciphertexts ONLY from the parent table,
-    // while the GCS queries ciphertexts from both the parent and the child table (PG inheritance).
-    // During the upgrade period, we want to make sure we query the correct table based on the mode the worker is running in.
+    // BCS: the connection's `search_path = public`, so the unqualified
+    // `ciphertexts` resolves to `public.ciphertexts` directly. Done in one
+    // query.
+    //
+    // GCS: the connection's `search_path = gcs,public`, so unqualified
+    // `ciphertexts` resolves to `gcs.ciphertexts` — the GCS-owned table
+    // populated post-activation. Pre-snapshot ciphertexts (produced by BCS
+    // before activation) still live in `public.ciphertexts` and must be
+    // fetched explicitly. We do this as a two-step query: try GCS first,
+    // then fetch the missing handles from `public.ciphertexts`.
+    let mut ciphertext_map: HashMap<Vec<u8>, (i16, Vec<u8>)> =
+        HashMap::with_capacity(cts_to_query.len());
 
-    let gcs_mode_enabled = start_block_height.is_some();
-    let only = if gcs_mode_enabled { "" } else { "ONLY " };
-    let sql = format!(
-        "SELECT tableoid::regclass::text, handle, ciphertext, ciphertext_type
-         FROM {only}ciphertexts
-         WHERE handle = ANY($1::BYTEA[])"
-    );
-    let ciphertexts_rows: Vec<(String, Vec<u8>, Vec<u8>, i16)> = sqlx::query_as(&sql)
-        .bind(cts_to_query)
-        .fetch_all(trx.as_mut())
-        .await
-        .map_err(|err| {
-            error!(target: "tfhe_worker", { error = %err }, "error while querying ciphertexts");
-            err
-        })?;
+    let rows: Vec<(Vec<u8>, Vec<u8>, i16)> = sqlx::query_as(
+        "SELECT handle, ciphertext, ciphertext_type
+         FROM ciphertexts
+         WHERE handle = ANY($1::BYTEA[])",
+    )
+    .bind(cts_to_query)
+    .fetch_all(trx.as_mut())
+    .await
+    .map_err(|err| {
+        error!(target: "tfhe_worker", { error = %err }, "error while querying ciphertexts");
+        err
+    })?;
+    for (handle, ciphertext, ciphertext_type) in rows {
+        let _ = ciphertext_map.insert(handle, (ciphertext_type, ciphertext));
+    }
 
-    // In GCS mode, collect the handles whose producing computation is strictly
-    // below `start_block` (pre-snapshot, owned by BCS). Handles at or above
-    // `start_block` are owned by GCS and must come from the staging table.
-    // This query intentionally reads `FROM ONLY computations` — the BCS parent —
-    // because pre-snapshot rows live there by definition. It should not be
-    // executed in BCS mode to avoid any overhead.
-    let pre_snapshot_handles: std::collections::HashSet<Vec<u8>> = if let Some(start_block_height) =
-        start_block_height
-    {
-        let rows: Vec<(Vec<u8>,)> = sqlx::query_as(
-                "SELECT output_handle
-                 FROM ONLY computations
-                 WHERE output_handle = ANY($1::BYTEA[])
-                   AND block_number < $2",
+    if gcs_mode {
+        let missing: Vec<Vec<u8>> = cts_to_query
+            .iter()
+            .filter(|h| !ciphertext_map.contains_key(*h))
+            .cloned()
+            .collect();
+        if !missing.is_empty() {
+            // Fully qualified — bypass search_path so this read is unambiguous
+            // even if the connection's search_path changes.
+            let rows: Vec<(Vec<u8>, Vec<u8>, i16)> = sqlx::query_as(
+                "SELECT handle, ciphertext, ciphertext_type
+                 FROM public.ciphertexts
+                 WHERE handle = ANY($1::BYTEA[])",
             )
-            .bind(cts_to_query)
-            .bind(start_block_height)
+            .bind(&missing)
             .fetch_all(trx.as_mut())
             .await
             .map_err(|err| {
-                error!(target: "tfhe_worker", { error = %err }, "error while querying computations block_number");
+                error!(target: "tfhe_worker", { error = %err }, "error while querying public.ciphertexts for pre-snapshot handles");
                 err
             })?;
-        rows.into_iter().map(|(h,)| h).collect()
-    } else {
-        std::collections::HashSet::new()
-    };
-
-    // index ciphertexts in hashmap
-    let mut ciphertext_map: HashMap<Vec<u8>, (i16, Vec<u8>)> =
-        HashMap::with_capacity(ciphertexts_rows.len());
-    for (tableoid, handle, ciphertext, ciphertext_type) in ciphertexts_rows {
-        if gcs_mode_enabled {
-            // handle < start_block  THEN accept the ciphertext (pre-snapshot, BCS-owned)
-            // handle >= start_block AND handle is from GCS staging table THEN accept the ciphertext
-            // handle >= start_block AND handle is from BCS parent table THEN ignore the ciphertext
-            if !pre_snapshot_handles.contains(&handle) && tableoid == "ciphertexts" {
-                // Ignoring all ciphertexts that were produced after the snapshot block by the BCS
-                continue;
+            for (handle, ciphertext, ciphertext_type) in rows {
+                let _ = ciphertext_map.insert(handle, (ciphertext_type, ciphertext));
             }
         }
-
-        let _ = ciphertext_map.insert(handle, (ciphertext_type, ciphertext));
     }
+
     Ok(ciphertext_map)
 }
 
@@ -524,31 +522,28 @@ async fn query_for_work<'a>(
     let s_work = tracing::info_span!("query_work_items", count = tracing::field::Empty);
     let transaction_batch_size = args.work_items_batch_size;
     let started_at = SystemTime::now();
-    // In GCS mode the worker owns rows in `computations_staging`; BCS owns
-    // the parent. `ONLY` keeps each stack confined to its own table even
-    // though inheritance would otherwise surface the other side's rows.
-    let computations_table = if args.gcs_mode {
-        "ONLY computations_staging"
-    } else {
-        "ONLY computations"
-    };
-    let work_sql = format!(
-        "-- Acquire all computations from a transaction set
+    // Schema isolation: BCS connects with `search_path = public`, GCS with
+    // `search_path = gcs,public`. Unqualified `computations` therefore
+    // resolves to the stack's own schema. No table-name swaps needed in code.
+    let the_work = query!(
+        "
+-- Acquire all computations from a transaction set
 SELECT
   c.output_handle,
   c.dependencies,
   c.fhe_operation,
   c.is_scalar,
   c.is_allowed,
+  c.dependence_chain_id,
   c.transaction_id,
   c.schedule_order
-FROM {computations_table} c
+FROM computations c
 WHERE c.transaction_id IN (
     SELECT DISTINCT
       c_schedule_order.transaction_id
     FROM (
       SELECT transaction_id
-      FROM {computations_table}
+      FROM computations
       WHERE is_completed = FALSE
         AND is_error = FALSE
         AND is_allowed = TRUE
@@ -556,18 +551,18 @@ WHERE c.transaction_id IN (
       ORDER BY schedule_order ASC
       LIMIT $2
     ) as c_schedule_order
-  )"
-    );
-    let the_work: Vec<WorkItemRow> = sqlx::query_as(&work_sql)
-        .bind(&dependence_chain_id)
-        .bind(transaction_batch_size as i32)
-        .fetch_all(trx.as_mut())
-        .instrument(s_work.clone())
-        .await
-        .map_err(|err| {
-            error!(target: "tfhe_worker", { error = %err }, "error while querying work items");
-            err
-        })?;
+  )
+        ",
+        dependence_chain_id,
+        transaction_batch_size as i32,
+    )
+    .fetch_all(trx.as_mut())
+    .instrument(s_work.clone())
+    .await
+    .map_err(|err| {
+        error!(target: "tfhe_worker", { error = %err }, "error while querying work items");
+        err
+    })?;
 
     WORK_ITEMS_QUERY_HISTOGRAM.observe(started_at.elapsed().unwrap_or_default().as_secs_f64());
     s_work.record("count", the_work.len());
@@ -605,7 +600,6 @@ WHERE c.transaction_id IN (
                             &e,
                             trx,
                             deps_chain_mngr,
-                            args.gcs_mode,
                         )
                         .await?;
                         continue;
@@ -659,7 +653,7 @@ async fn build_transaction_graph_and_execute<'a>(
     health_check: &crate::health_check::HealthCheck,
     trx: &mut sqlx::Transaction<'a, Postgres>,
     dcid_mngr: &dependence_chain::LockMngr,
-    start_block_height: Option<i64>,
+    gcs_mode: bool,
 ) -> Result<DFComponentGraph, Box<dyn std::error::Error + Send + Sync>> {
     let mut tx_graph = DFComponentGraph::default();
     if let Err(e) = tx_graph.build(txs) {
@@ -670,7 +664,7 @@ async fn build_transaction_graph_and_execute<'a>(
         return Ok(tx_graph);
     }
     let cts_to_query = tx_graph.needed_map.keys().cloned().collect::<Vec<_>>();
-    let ciphertext_map = query_ciphertexts(&cts_to_query, trx, start_block_height).await?;
+    let ciphertext_map = query_ciphertexts(&cts_to_query, trx, gcs_mode).await?;
     let fetched_handles: std::collections::HashSet<_> = ciphertext_map.keys().cloned().collect();
     if cts_to_query.len() != fetched_handles.len() {
         if let Some(dcid_lock) = dcid_mngr.get_current_lock() {
@@ -738,14 +732,12 @@ async fn upload_transaction_graph_results<'a>(
     tx_graph: &mut DFComponentGraph,
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_mngr: &mut dependence_chain::LockMngr,
-    start_block_height: Option<i64>,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-    let gcs_mode_enabled = start_block_height.is_some();
-    let ciphertexts_table = if gcs_mode_enabled {
-        "ciphertexts_staging"
-    } else {
-        "ciphertexts"
-    };
+    // Schema isolation: the connection's `search_path` already routes
+    // unqualified writes to the stack's own schema (`public` for BCS,
+    // `gcs` for GCS post-activation). The two-step ciphertext read in
+    // `query_ciphertexts` is the only place where the cross-schema fallback
+    // is explicit.
     // Get computation results
     let graph_results = tx_graph.get_results();
     let mut handles_to_update = vec![];
@@ -811,45 +803,11 @@ async fn upload_transaction_graph_results<'a>(
                     &*cerr,
                     trx,
                     deps_mngr,
-                    gcs_mode_enabled,
                 )
                 .await?;
             }
         }
     }
-    // In GCS mode, skip any result whose producing computation is strictly
-    // below `start_block` — those handles are already covered by the BCS state
-    // at the snapshot block and must not be re-stored into ciphertexts_staging.
-    // Reads `FROM ONLY computations` because pre-snapshot rows live only in
-    // the BCS parent table.
-    if let Some(start_block_height) = start_block_height {
-        if !cts_to_insert.is_empty() {
-            let candidate_handles: Vec<Vec<u8>> =
-                cts_to_insert.iter().map(|(h, _)| h.clone()).collect();
-            let pre_snapshot_handles: std::collections::HashSet<Vec<u8>> = sqlx::query_as(
-                "SELECT output_handle
-                 FROM ONLY computations
-                 WHERE output_handle = ANY($1::BYTEA[])
-                   AND block_number < $2",
-            )
-            .bind(&candidate_handles)
-            .bind(start_block_height)
-            .fetch_all(trx.as_mut())
-            .await
-            .map_err(|err| {
-                error!(target: "tfhe_worker", { error = %err }, "error while querying computations block_number for insert filtering");
-                err
-            })?
-            .into_iter()
-            .map(|(h,): (Vec<u8>,)| h)
-            .collect();
-            if !pre_snapshot_handles.is_empty() {
-                cts_to_insert.retain(|(h, _)| !pre_snapshot_handles.contains(h));
-                handles_to_update.retain(|(h, _)| !pre_snapshot_handles.contains(h));
-            }
-        }
-    }
-
     if !cts_to_insert.is_empty() {
         let s_insert = tracing::info_span!("insert_ct_into_db", count = cts_to_insert.len());
         let cts_inserted = async {
@@ -858,21 +816,20 @@ async fn upload_transaction_graph_results<'a>(
                 Vec<_>,
                 (Vec<_>, (Vec<_>, Vec<_>)),
             ) = cts_to_insert.into_iter().unzip();
-            let insert_sql = format!(
-                "INSERT INTO {ciphertexts_table}(handle, ciphertext, ciphertext_version, ciphertext_type)
+            let cts_inserted = sqlx::query!(
+                "INSERT INTO ciphertexts(handle, ciphertext, ciphertext_version, ciphertext_type)
                  SELECT * FROM UNNEST($1::BYTEA[], $2::BYTEA[], $3::SMALLINT[], $4::SMALLINT[])
-                 ON CONFLICT (handle, ciphertext_version) DO NOTHING"
-            );
-            let cts_inserted = sqlx::query(&insert_sql)
-                .bind(&handles)
-                .bind(&ciphertexts)
-                .bind(&ciphertext_versions)
-                .bind(&ciphertext_types)
-                .execute(trx.as_mut())
-                .await.map_err(|err| {
-                    error!(target: "tfhe_worker", { error = %err }, "error while inserting new ciphertexts");
-                    err
-                })?.rows_affected();
+                 ON CONFLICT (handle, ciphertext_version) DO NOTHING",
+                &handles,
+                &ciphertexts,
+                &ciphertext_versions,
+                &ciphertext_types,
+            )
+            .execute(trx.as_mut())
+            .await.map_err(|err| {
+                error!(target: "tfhe_worker", { error = %err }, "error while inserting new ciphertexts");
+                err
+            })?.rows_affected();
             // Notify all workers that new ciphertext is inserted
             // For now, it's only the SnS workers that are listening for these events
             let _ = sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXT_COMPUTED)
@@ -887,40 +844,31 @@ async fn upload_transaction_graph_results<'a>(
 
     if !handles_to_update.is_empty() {
         let s_update = tracing::info_span!("update_computation", count = handles_to_update.len());
-        // GCS owns rows in `computations_staging`; BCS owns the parent. `ONLY`
-        // keeps each stack confined to its own table — without it, an UPDATE
-        // against the parent would cascade into the staging child via
-        // inheritance.
-        let computations_update_table = if gcs_mode_enabled {
-            "ONLY computations_staging"
-        } else {
-            "ONLY computations"
-        };
         let comp_updated = async {
             let (handles_vec, txn_ids_vec): (Vec<_>, Vec<_>) = handles_to_update.into_iter().unzip();
-            let update_sql = format!(
-                "UPDATE {computations_update_table}
-                 SET is_completed = true, completed_at = CURRENT_TIMESTAMP
-                 WHERE is_completed = false
-                   AND (output_handle, transaction_id) IN (
-                       SELECT * FROM unnest($1::BYTEA[], $2::BYTEA[])
-                   )"
-            );
-            let comp_updated = sqlx::query(&update_sql)
-                .bind(&handles_vec)
-                .bind(&txn_ids_vec)
-                .execute(trx.as_mut())
-                .await.map_err(|err| {
-                    error!(target: "tfhe_worker", { error = %err }, "error while updating computations as completed");
-                    err
-                })?.rows_affected();
+            let comp_updated = query!(
+                "
+            UPDATE computations
+            SET is_completed = true, completed_at = CURRENT_TIMESTAMP
+            WHERE is_completed = false
+            AND (output_handle, transaction_id) IN (
+                SELECT * FROM unnest($1::BYTEA[], $2::BYTEA[])
+            )
+            ",
+                &handles_vec,
+                &txn_ids_vec
+            )
+            .execute(trx.as_mut())
+            .await.map_err(|err| {
+                error!(target: "tfhe_worker", { error = %err }, "error while updating computations as completed");
+                err
+            })?.rows_affected();
 
             if comp_updated > 0 {
                 upsert_state_hash_for_completed_blocks(
                     &handles_vec,
                     &txn_ids_vec,
                     trx,
-                    start_block_height,
                 )
                 .await?;
             }
@@ -940,100 +888,84 @@ async fn upload_transaction_graph_results<'a>(
 // hash unless every computation for that block is completed, so blocks that
 // are not yet fully done are skipped.
 //
-// BCS: reads `FROM ONLY ciphertexts` and writes to `state_hash`.
-// GCS: reads `FROM ONLY ciphertexts_staging` (its own write target) and
-//      writes to `state_hash_staging`. GCS only produces output ciphertexts
-//      for post-snapshot blocks, all of which land in ciphertexts_staging,
-//      so the staging hash is computed exclusively over GCS-produced rows.
+// Schema isolation: BCS connects with `search_path = public`, GCS with
+// `search_path = gcs,public`. Unqualified `computations`, `ciphertexts`,
+// `state_hash` resolve to the stack's own schema — BCS reads/writes the
+// `public.*` copies, GCS reads/writes the `gcs.*` copies populated since
+// activation.
 #[tracing::instrument(skip_all)]
 async fn upsert_state_hash_for_completed_blocks<'a>(
     handles_vec: &[Vec<u8>],
     txn_ids_vec: &[Vec<u8>],
     trx: &mut sqlx::Transaction<'a, Postgres>,
-    start_block_height: Option<i64>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let gcs_mode_enabled = start_block_height.is_some();
-    let (ciphertexts_source, state_hash_table, computations_source) = if gcs_mode_enabled {
-        (
-            "ONLY ciphertexts_staging",
-            "state_hash_staging",
-            "ONLY computations_staging",
-        )
-    } else {
-        ("ONLY ciphertexts", "state_hash", "ONLY computations")
-    };
-
-    let affected_blocks_sql = format!(
+    let affected_blocks: Vec<(i64, i64)> = sqlx::query_as(
         "SELECT DISTINCT host_chain_id, block_number
-         FROM {computations_source}
+         FROM computations
          WHERE (output_handle, transaction_id) IN (
              SELECT * FROM unnest($1::BYTEA[], $2::BYTEA[])
          )
-         AND block_number IS NOT NULL"
-    );
-    let affected_blocks: Vec<(i64, i64)> = sqlx::query_as(&affected_blocks_sql)
-        .bind(handles_vec)
-        .bind(txn_ids_vec)
-        .fetch_all(trx.as_mut())
+         AND block_number IS NOT NULL",
+    )
+    .bind(handles_vec)
+    .bind(txn_ids_vec)
+    .fetch_all(trx.as_mut())
+    .await
+    .map_err(|err| {
+        error!(target: "tfhe_worker", { error = %err }, "error while querying affected blocks for state_hash");
+        err
+    })?;
+
+    for (chain_id, block_number) in affected_blocks {
+        let row: Option<(Option<String>, i64)> = sqlx::query_as(
+            "WITH block_computations AS (
+                SELECT output_handle, tenant_id, is_completed
+                FROM computations
+                WHERE block_number = $1
+            ),
+            validated AS (
+                SELECT 1
+                FROM block_computations
+                HAVING bool_and(is_completed)
+            )
+            SELECT
+                encode(
+                    sha256(
+                        string_agg(ct.ciphertext, ''::bytea ORDER BY ct.handle, ct.ciphertext_version)
+                    ),
+                    'hex'
+                ) AS state_hash,
+                COUNT(*) AS ciphertext_count
+            FROM validated v
+            CROSS JOIN block_computations bc
+            JOIN ciphertexts ct
+                ON ct.tenant_id = bc.tenant_id
+                AND ct.handle = bc.output_handle",
+        )
+        .bind(block_number)
+        .fetch_optional(trx.as_mut())
         .await
         .map_err(|err| {
-            error!(target: "tfhe_worker", { error = %err }, "error while querying affected blocks for state_hash");
+            error!(target: "tfhe_worker", { error = %err, block_number = block_number }, "error while computing state_hash for block");
             err
         })?;
 
-    let select_sql = format!(
-        "WITH block_computations AS (
-            SELECT output_handle, tenant_id, is_completed
-            FROM {computations_source}
-            WHERE block_number = $1
-        ),
-        validated AS (
-            SELECT 1
-            FROM block_computations
-            HAVING bool_and(is_completed)
-        )
-        SELECT
-            encode(
-                sha256(
-                    string_agg(ct.ciphertext, ''::bytea ORDER BY ct.handle, ct.ciphertext_version)
-                ),
-                'hex'
-            ) AS state_hash,
-            COUNT(*) AS ciphertext_count
-        FROM validated v
-        CROSS JOIN block_computations bc
-        JOIN {ciphertexts_source} ct
-            ON ct.tenant_id = bc.tenant_id
-            AND ct.handle = bc.output_handle"
-    );
-    let insert_sql = format!(
-        "INSERT INTO {state_hash_table} (chain_id, block_number, state_hash)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (chain_id, block_number) DO NOTHING"
-    );
-
-    for (chain_id, block_number) in affected_blocks {
-        let row: Option<(Option<String>, i64)> = sqlx::query_as(&select_sql)
+        if let Some((Some(state_hash), _count)) = row {
+            sqlx::query(
+                "INSERT INTO state_hash (chain_id, block_number, state_hash)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (chain_id, block_number) DO NOTHING",
+            )
+            .bind(chain_id)
             .bind(block_number)
-            .fetch_optional(trx.as_mut())
+            .bind(&state_hash)
+            .execute(trx.as_mut())
             .await
             .map_err(|err| {
-                error!(target: "tfhe_worker", { error = %err, block_number = block_number }, "error while computing state_hash for block");
+                error!(target: "tfhe_worker", { error = %err, chain_id = chain_id, block_number = block_number }, "error while inserting state_hash");
                 err
             })?;
-
-        if let Some((Some(state_hash), _count)) = row {
-            sqlx::query(&insert_sql)
-                .bind(chain_id)
-                .bind(block_number)
-                .bind(&state_hash)
-                .execute(trx.as_mut())
-                .await
-                .map_err(|err| {
-                    error!(target: "tfhe_worker", { error = %err, chain_id = chain_id, block_number = block_number }, "error while inserting state_hash");
-                    err
-                })?;
-            info!(target: "tfhe_worker", chain_id = chain_id, block_number = block_number, state_hash = %state_hash, table = state_hash_table, "inserted state_hash for block");
+            info!(target: "tfhe_worker", chain_id = chain_id, block_number = block_number, state_hash = %state_hash, "inserted state_hash for block");
         }
     }
 
@@ -1047,32 +979,25 @@ async fn set_computation_error<'a>(
     cerr: &(dyn std::error::Error + Send + Sync),
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_mngr: &mut dependence_chain::LockMngr,
-    gcs_mode: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     WORKER_ERRORS_COUNTER.inc();
     let err_string = cerr.to_string();
     error!(target: "tfhe_worker", error = %err_string, output_handle = %format!("0x{}", hex::encode(output_handle)), "error while processing work item");
     telemetry::set_current_span_error(&err_string);
 
-    // `ONLY` keeps each stack confined to its own table — BCS owns rows in
-    // `computations`, GCS owns rows in `computations_staging`.
-    let computations_table = if gcs_mode {
-        "ONLY computations_staging"
-    } else {
-        "ONLY computations"
-    };
-    let update_sql = format!(
-        "UPDATE {computations_table}
-         SET is_error = true, error_message = $1
-         WHERE output_handle = $2
-           AND transaction_id = $3"
-    );
-    let _ = sqlx::query(&update_sql)
-        .bind(&err_string)
-        .bind(output_handle)
-        .bind(transaction_id)
-        .execute(trx.as_mut())
-        .await?;
+    let _ = query!(
+        "
+        UPDATE computations
+        SET is_error = true, error_message = $1
+        WHERE output_handle = $2
+        AND transaction_id = $3
+        ",
+        err_string,
+        output_handle,
+        transaction_id
+    )
+    .execute(trx.as_mut())
+    .await?;
 
     deps_mngr.set_processing_error(Some(err_string)).await?;
     Ok(())
