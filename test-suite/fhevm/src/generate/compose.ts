@@ -521,7 +521,7 @@ const buildExtraHostScOverride = async (
           `\${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/${defaultChain.key}:/canonical-addresses:ro`,
         ];
         cloneService.command = [
-          `until [ -s /canonical-addresses/.env.host ]; do sleep 1; done; source /canonical-addresses/.env.host && npx hardhat task:deploySecondaryHost --canonical-rpc-url ${canonicalRpcUrl} --canonical-protocol-config-address "$$PROTOCOL_CONFIG_CONTRACT_ADDRESS"`,
+          `until grep -q '^PROTOCOL_CONFIG_CONTRACT_ADDRESS=.' /canonical-addresses/.env.host 2>/dev/null; do sleep 1; done; source /canonical-addresses/.env.host && npx hardhat task:deploySecondaryHost --canonical-rpc-url ${canonicalRpcUrl} --canonical-protocol-config-address "$$PROTOCOL_CONFIG_CONTRACT_ADDRESS"`,
         ];
       }
     }
