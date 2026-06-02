@@ -1,0 +1,9 @@
+[profile.default]
+src = 'contracts'
+solc = '0.8.28'
+# The RFC016 userDecryptionRequest overload has enough dynamic calldata parameters (12 stack slots)
+# that the legacy codegen hits the EVM 16-slot limit. via_ir routes through the Yul IR pipeline
+# which handles deep stacks. Optimizer enabled because via_ir without it is very slow.
+via_ir = true
+optimizer = true
+optimizer_runs = 200
