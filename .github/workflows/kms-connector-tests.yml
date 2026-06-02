@@ -66,7 +66,11 @@ jobs:
           persist-credentials: 'false'
 
       - name: Setup common environment variables
+        env:
+          GH_WORKSPACE: ${{ github.workspace }}
         run: |
+          version="$(grep 'channel' "$GH_WORKSPACE/rust-toolchain.toml" | awk -F' = ' '{print $2}' | tr -d '"')"
+          echo "RUST_IMAGE_VERSION=$version" >> "$GITHUB_ENV"
           echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "${GITHUB_ENV}"
 
       - name: Login to GitHub Container Registry
@@ -81,6 +85,8 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${RUST_IMAGE_VERSION}
 
       - name: Install Protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
