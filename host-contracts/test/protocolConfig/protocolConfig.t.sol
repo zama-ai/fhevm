@@ -643,6 +643,10 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         return 8421337;
     }
 
+    function _defaultCiphertextVersion() internal pure returns (uint16) {
+        return 1;
+    }
+
     function test_initSeedsCoprocessorContextCounter() public {
         _setupDefault();
         assertEq(protocolConfig.getCurrentCoprocessorContextId(), COPROC_CONTEXT_COUNTER_BASE);
@@ -663,9 +667,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 expectedId = COPROC_CONTEXT_COUNTER_BASE + 1;
 
         vm.expectEmit(true, false, false, true, address(protocolConfig));
-        emit IProtocolConfig.NewCoprocessorContext(expectedId, version, windows, gwStart);
+        emit IProtocolConfig.NewCoprocessorContext(expectedId, version, windows, gwStart, _defaultCiphertextVersion());
         vm.prank(owner);
-        protocolConfig.defineNewCoprocessorContext(version, windows, gwStart);
+        protocolConfig.defineNewCoprocessorContext(version, windows, gwStart, _defaultCiphertextVersion());
 
         assertEq(protocolConfig.getCurrentCoprocessorContextId(), expectedId);
         assertTrue(protocolConfig.isValidCoprocessorContext(expectedId));
@@ -679,9 +683,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 expectedId = COPROC_CONTEXT_COUNTER_BASE + 1;
 
         vm.expectEmit(true, false, false, true, address(protocolConfig));
-        emit IProtocolConfig.NewCoprocessorContext(expectedId, version, windows, gwStart);
+        emit IProtocolConfig.NewCoprocessorContext(expectedId, version, windows, gwStart, _defaultCiphertextVersion());
         vm.prank(owner);
-        protocolConfig.defineNewCoprocessorContext(version, windows, gwStart);
+        protocolConfig.defineNewCoprocessorContext(version, windows, gwStart, _defaultCiphertextVersion());
 
         assertTrue(protocolConfig.isValidCoprocessorContext(expectedId));
     }
@@ -693,10 +697,10 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         string memory version = _defaultSoftwareVersion();
 
         vm.prank(owner);
-        protocolConfig.defineNewCoprocessorContext(version, windows, gwStart);
+        protocolConfig.defineNewCoprocessorContext(version, windows, gwStart, _defaultCiphertextVersion());
         uint256 firstId = protocolConfig.getCurrentCoprocessorContextId();
         vm.prank(owner);
-        protocolConfig.defineNewCoprocessorContext(version, windows, gwStart);
+        protocolConfig.defineNewCoprocessorContext(version, windows, gwStart, _defaultCiphertextVersion());
         uint256 secondId = protocolConfig.getCurrentCoprocessorContextId();
 
         assertEq(firstId, COPROC_CONTEXT_COUNTER_BASE + 1);
@@ -709,7 +713,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _setupDefault();
         vm.prank(owner);
         vm.expectRevert(IProtocolConfig.EmptySoftwareVersion.selector);
-        protocolConfig.defineNewCoprocessorContext("", _makeChainUpgradeWindows(1), _defaultGwStartBlock());
+        protocolConfig.defineNewCoprocessorContext("", _makeChainUpgradeWindows(1), _defaultGwStartBlock(), _defaultCiphertextVersion());
     }
 
     function test_revertCoprocessor_EmptyChainUpgradeWindows() public {
@@ -717,7 +721,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         ChainUpgradeWindow[] memory windows = new ChainUpgradeWindow[](0);
         vm.prank(owner);
         vm.expectRevert(IProtocolConfig.EmptyChainUpgradeWindows.selector);
-        protocolConfig.defineNewCoprocessorContext(_defaultSoftwareVersion(), windows, _defaultGwStartBlock());
+        protocolConfig.defineNewCoprocessorContext(_defaultSoftwareVersion(), windows, _defaultGwStartBlock(), _defaultCiphertextVersion());
     }
 
     function test_revertCoprocessor_ZeroChainId() public {
@@ -726,7 +730,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         windows[0].chainId = 0;
         vm.prank(owner);
         vm.expectRevert(IProtocolConfig.ZeroChainId.selector);
-        protocolConfig.defineNewCoprocessorContext(_defaultSoftwareVersion(), windows, _defaultGwStartBlock());
+        protocolConfig.defineNewCoprocessorContext(_defaultSoftwareVersion(), windows, _defaultGwStartBlock(), _defaultCiphertextVersion());
     }
 
     function test_revertCoprocessor_DuplicateChainId() public {
@@ -735,7 +739,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         windows[1].chainId = windows[0].chainId;
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.DuplicateChainId.selector, windows[0].chainId));
-        protocolConfig.defineNewCoprocessorContext(_defaultSoftwareVersion(), windows, _defaultGwStartBlock());
+        protocolConfig.defineNewCoprocessorContext(_defaultSoftwareVersion(), windows, _defaultGwStartBlock(), _defaultCiphertextVersion());
     }
 
     function test_revertCoprocessor_InvalidBlockWindow() public {
@@ -752,14 +756,27 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
                 uint64(100)
             )
         );
-        protocolConfig.defineNewCoprocessorContext(_defaultSoftwareVersion(), windows, _defaultGwStartBlock());
+        protocolConfig.defineNewCoprocessorContext(_defaultSoftwareVersion(), windows, _defaultGwStartBlock(), _defaultCiphertextVersion());
     }
 
     function test_revertCoprocessor_ZeroGwStartBlock() public {
         _setupDefault();
         vm.prank(owner);
         vm.expectRevert(IProtocolConfig.ZeroGwStartBlock.selector);
-        protocolConfig.defineNewCoprocessorContext(_defaultSoftwareVersion(), _makeChainUpgradeWindows(1), 0);
+        protocolConfig.defineNewCoprocessorContext(_defaultSoftwareVersion(), _makeChainUpgradeWindows(1), 0, _defaultCiphertextVersion());
+    }
+
+    function test_revertCoprocessor_CiphertextVersionTooLarge() public {
+        _setupDefault();
+        uint16 tooLarge = uint16(type(int16).max) + 1; // 32768 — overflows int16
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.CiphertextVersionTooLarge.selector, tooLarge));
+        protocolConfig.defineNewCoprocessorContext(
+            _defaultSoftwareVersion(),
+            _makeChainUpgradeWindows(1),
+            _defaultGwStartBlock(),
+            tooLarge
+        );
     }
 
     function test_destroyCoprocessorContext() public {
@@ -768,7 +785,8 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.defineNewCoprocessorContext(
             _defaultSoftwareVersion(),
             _makeChainUpgradeWindows(1),
-            _defaultGwStartBlock()
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
         );
         uint256 id = protocolConfig.getCurrentCoprocessorContextId();
 
@@ -785,7 +803,8 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.defineNewCoprocessorContext(
             _defaultSoftwareVersion(),
             _makeChainUpgradeWindows(1),
-            _defaultGwStartBlock()
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
         );
         uint256 id = protocolConfig.getCurrentCoprocessorContextId();
 
@@ -800,7 +819,8 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.defineNewCoprocessorContext(
             _defaultSoftwareVersion(),
             _makeChainUpgradeWindows(1),
-            _defaultGwStartBlock()
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
         );
         uint256 id = protocolConfig.getCurrentCoprocessorContextId();
 
@@ -829,7 +849,8 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.defineNewCoprocessorContext(
             _defaultSoftwareVersion(),
             _makeChainUpgradeWindows(1),
-            _defaultGwStartBlock()
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
         );
         uint256 id = protocolConfig.getCurrentCoprocessorContextId();
         assertTrue(protocolConfig.isValidCoprocessorContext(id));
@@ -846,7 +867,8 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.defineNewCoprocessorContext(
             _defaultSoftwareVersion(),
             _makeChainUpgradeWindows(1),
-            _defaultGwStartBlock()
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
         );
     }
 
@@ -856,7 +878,8 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.defineNewCoprocessorContext(
             _defaultSoftwareVersion(),
             _makeChainUpgradeWindows(1),
-            _defaultGwStartBlock()
+            _defaultGwStartBlock(),
+            _defaultCiphertextVersion()
         );
         uint256 id = protocolConfig.getCurrentCoprocessorContextId();
 

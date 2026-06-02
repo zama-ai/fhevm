@@ -21,6 +21,7 @@ interface IProtocolConfig {
         uint256 mpc;
     }
 
+    error CiphertextVersionTooLarge(uint16 ciphertextVersion);
     error CurrentKmsContextCannotBeDestroyed(uint256 kmsContextId);
     error DuplicateChainId(uint64 chainId);
     error EmptyChainUpgradeWindows();
@@ -42,10 +43,10 @@ interface IProtocolConfig {
 
     event CoprocessorContextDestroyed(uint256 indexed coprocessorContextId);
     event KmsContextDestroyed(uint256 indexed kmsContextId);
-    event NewCoprocessorContext(uint256 indexed coprocessorContextId, string softwareVersion, ChainUpgradeWindow[] chainUpgradeWindows, uint64 gwStartBlock);
+    event NewCoprocessorContext(uint256 indexed coprocessorContextId, string softwareVersion, ChainUpgradeWindow[] chainUpgradeWindows, uint64 gwStartBlock, uint16 ciphertextVersion);
     event NewKmsContext(uint256 indexed kmsContextId, KmsNode[] kmsNodes, KmsThresholds thresholds);
 
-    function defineNewCoprocessorContext(string memory softwareVersion, ChainUpgradeWindow[] memory chainUpgradeWindows, uint64 gwStartBlock) external;
+    function defineNewCoprocessorContext(string memory softwareVersion, ChainUpgradeWindow[] memory chainUpgradeWindows, uint64 gwStartBlock, uint16 ciphertextVersion) external;
     function defineNewKmsContext(KmsNode[] memory kmsNodes, KmsThresholds memory thresholds) external;
     function destroyCoprocessorContext(uint256 coprocessorContextId) external;
     function destroyKmsContext(uint256 kmsContextId) external;
@@ -110,6 +111,11 @@ interface IProtocolConfig {
         "name": "gwStartBlock",
         "type": "uint64",
         "internalType": "uint64"
+      },
+      {
+        "name": "ciphertextVersion",
+        "type": "uint16",
+        "internalType": "uint16"
       }
     ],
     "outputs": [],
@@ -664,6 +670,12 @@ interface IProtocolConfig {
         "type": "uint64",
         "indexed": false,
         "internalType": "uint64"
+      },
+      {
+        "name": "ciphertextVersion",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
       }
     ],
     "anonymous": false
@@ -736,6 +748,17 @@ interface IProtocolConfig {
       }
     ],
     "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "CiphertextVersionTooLarge",
+    "inputs": [
+      {
+        "name": "ciphertextVersion",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ]
   },
   {
     "type": "error",
@@ -1740,6 +1763,88 @@ struct KmsThresholds { uint256 publicDecryption; uint256 userDecryption; uint256
                 alloy_sol_types::abi::token::WordToken(
                     alloy_sol_types::private::keccak256(out),
                 )
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `CiphertextVersionTooLarge(uint16)` and selector `0x21a47401`.
+```solidity
+error CiphertextVersionTooLarge(uint16 ciphertextVersion);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct CiphertextVersionTooLarge {
+        #[allow(missing_docs)]
+        pub ciphertextVersion: u16,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<16>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (u16,);
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<CiphertextVersionTooLarge>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: CiphertextVersionTooLarge) -> Self {
+                (value.ciphertextVersion,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for CiphertextVersionTooLarge {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { ciphertextVersion: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for CiphertextVersionTooLarge {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "CiphertextVersionTooLarge(uint16)";
+            const SELECTOR: [u8; 4] = [33u8, 164u8, 116u8, 1u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.ciphertextVersion),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -3454,9 +3559,9 @@ event KmsContextDestroyed(uint256 indexed kmsContextId);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `NewCoprocessorContext(uint256,string,(uint64,uint64,uint64)[],uint64)` and selector `0x595d10949fcf822de17e89ebc302566ed150171ff414fe14d92b78a6d3aecce8`.
+    /**Event with signature `NewCoprocessorContext(uint256,string,(uint64,uint64,uint64)[],uint64,uint16)` and selector `0x9ecaa3508c7af218881ba7c774773521a2c92e3cd724c2ddb4d2f0e14165d693`.
 ```solidity
-event NewCoprocessorContext(uint256 indexed coprocessorContextId, string softwareVersion, ChainUpgradeWindow[] chainUpgradeWindows, uint64 gwStartBlock);
+event NewCoprocessorContext(uint256 indexed coprocessorContextId, string softwareVersion, ChainUpgradeWindow[] chainUpgradeWindows, uint64 gwStartBlock, uint16 ciphertextVersion);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -3476,6 +3581,8 @@ event NewCoprocessorContext(uint256 indexed coprocessorContextId, string softwar
         >,
         #[allow(missing_docs)]
         pub gwStartBlock: u64,
+        #[allow(missing_docs)]
+        pub ciphertextVersion: u16,
     }
     #[allow(
         non_camel_case_types,
@@ -3491,6 +3598,7 @@ event NewCoprocessorContext(uint256 indexed coprocessorContextId, string softwar
                 alloy::sol_types::sol_data::String,
                 alloy::sol_types::sol_data::Array<ChainUpgradeWindow>,
                 alloy::sol_types::sol_data::Uint<64>,
+                alloy::sol_types::sol_data::Uint<16>,
             );
             type DataToken<'a> = <Self::DataTuple<
                 'a,
@@ -3499,11 +3607,11 @@ event NewCoprocessorContext(uint256 indexed coprocessorContextId, string softwar
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<256>,
             );
-            const SIGNATURE: &'static str = "NewCoprocessorContext(uint256,string,(uint64,uint64,uint64)[],uint64)";
+            const SIGNATURE: &'static str = "NewCoprocessorContext(uint256,string,(uint64,uint64,uint64)[],uint64,uint16)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                89u8, 93u8, 16u8, 148u8, 159u8, 207u8, 130u8, 45u8, 225u8, 126u8, 137u8,
-                235u8, 195u8, 2u8, 86u8, 110u8, 209u8, 80u8, 23u8, 31u8, 244u8, 20u8,
-                254u8, 20u8, 217u8, 43u8, 120u8, 166u8, 211u8, 174u8, 204u8, 232u8,
+                158u8, 202u8, 163u8, 80u8, 140u8, 122u8, 242u8, 24u8, 136u8, 27u8, 167u8,
+                199u8, 116u8, 119u8, 53u8, 33u8, 162u8, 201u8, 46u8, 60u8, 215u8, 36u8,
+                194u8, 221u8, 180u8, 210u8, 240u8, 225u8, 65u8, 101u8, 214u8, 147u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -3517,6 +3625,7 @@ event NewCoprocessorContext(uint256 indexed coprocessorContextId, string softwar
                     softwareVersion: data.0,
                     chainUpgradeWindows: data.1,
                     gwStartBlock: data.2,
+                    ciphertextVersion: data.3,
                 }
             }
             #[inline]
@@ -3546,6 +3655,9 @@ event NewCoprocessorContext(uint256 indexed coprocessorContextId, string softwar
                     <alloy::sol_types::sol_data::Uint<
                         64,
                     > as alloy_sol_types::SolType>::tokenize(&self.gwStartBlock),
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.ciphertextVersion),
                 )
             }
             #[inline]
@@ -3717,9 +3829,9 @@ event NewKmsContext(uint256 indexed kmsContextId, KmsNode[] kmsNodes, KmsThresho
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `defineNewCoprocessorContext(string,(uint64,uint64,uint64)[],uint64)` and selector `0xf76ca577`.
+    /**Function with signature `defineNewCoprocessorContext(string,(uint64,uint64,uint64)[],uint64,uint16)` and selector `0x15f9a717`.
 ```solidity
-function defineNewCoprocessorContext(string memory softwareVersion, ChainUpgradeWindow[] memory chainUpgradeWindows, uint64 gwStartBlock) external;
+function defineNewCoprocessorContext(string memory softwareVersion, ChainUpgradeWindow[] memory chainUpgradeWindows, uint64 gwStartBlock, uint16 ciphertextVersion) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -3732,8 +3844,10 @@ function defineNewCoprocessorContext(string memory softwareVersion, ChainUpgrade
         >,
         #[allow(missing_docs)]
         pub gwStartBlock: u64,
+        #[allow(missing_docs)]
+        pub ciphertextVersion: u16,
     }
-    ///Container type for the return parameters of the [`defineNewCoprocessorContext(string,(uint64,uint64,uint64)[],uint64)`](defineNewCoprocessorContextCall) function.
+    ///Container type for the return parameters of the [`defineNewCoprocessorContext(string,(uint64,uint64,uint64)[],uint64,uint16)`](defineNewCoprocessorContextCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct defineNewCoprocessorContextReturn {}
@@ -3751,6 +3865,7 @@ function defineNewCoprocessorContext(string memory softwareVersion, ChainUpgrade
                 alloy::sol_types::sol_data::String,
                 alloy::sol_types::sol_data::Array<ChainUpgradeWindow>,
                 alloy::sol_types::sol_data::Uint<64>,
+                alloy::sol_types::sol_data::Uint<16>,
             );
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -3759,6 +3874,7 @@ function defineNewCoprocessorContext(string memory softwareVersion, ChainUpgrade
                     <ChainUpgradeWindow as alloy::sol_types::SolType>::RustType,
                 >,
                 u64,
+                u16,
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
@@ -3780,6 +3896,7 @@ function defineNewCoprocessorContext(string memory softwareVersion, ChainUpgrade
                         value.softwareVersion,
                         value.chainUpgradeWindows,
                         value.gwStartBlock,
+                        value.ciphertextVersion,
                     )
                 }
             }
@@ -3792,6 +3909,7 @@ function defineNewCoprocessorContext(string memory softwareVersion, ChainUpgrade
                         softwareVersion: tuple.0,
                         chainUpgradeWindows: tuple.1,
                         gwStartBlock: tuple.2,
+                        ciphertextVersion: tuple.3,
                     }
                 }
             }
@@ -3844,6 +3962,7 @@ function defineNewCoprocessorContext(string memory softwareVersion, ChainUpgrade
                 alloy::sol_types::sol_data::String,
                 alloy::sol_types::sol_data::Array<ChainUpgradeWindow>,
                 alloy::sol_types::sol_data::Uint<64>,
+                alloy::sol_types::sol_data::Uint<16>,
             );
             type Token<'a> = <Self::Parameters<
                 'a,
@@ -3853,8 +3972,8 @@ function defineNewCoprocessorContext(string memory softwareVersion, ChainUpgrade
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "defineNewCoprocessorContext(string,(uint64,uint64,uint64)[],uint64)";
-            const SELECTOR: [u8; 4] = [247u8, 108u8, 165u8, 119u8];
+            const SIGNATURE: &'static str = "defineNewCoprocessorContext(string,(uint64,uint64,uint64)[],uint64,uint16)";
+            const SELECTOR: [u8; 4] = [21u8, 249u8, 167u8, 23u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -3873,6 +3992,9 @@ function defineNewCoprocessorContext(string memory softwareVersion, ChainUpgrade
                     <alloy::sol_types::sol_data::Uint<
                         64,
                     > as alloy_sol_types::SolType>::tokenize(&self.gwStartBlock),
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.ciphertextVersion),
                 )
             }
             #[inline]
@@ -7551,6 +7673,7 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [13u8, 142u8, 110u8, 44u8],
             [14u8, 24u8, 135u8, 201u8],
+            [21u8, 249u8, 167u8, 23u8],
             [23u8, 10u8, 41u8, 129u8],
             [32u8, 61u8, 1u8, 20u8],
             [38u8, 207u8, 93u8, 239u8],
@@ -7571,7 +7694,6 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
             [194u8, 180u8, 41u8, 134u8],
             [195u8, 170u8, 170u8, 90u8],
             [215u8, 64u8, 228u8, 2u8],
-            [247u8, 108u8, 165u8, 119u8],
             [249u8, 198u8, 112u8, 195u8],
         ];
     }
@@ -7695,6 +7817,17 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                             .map(IProtocolConfigCalls::isValidCoprocessorContext)
                     }
                     isValidCoprocessorContext
+                },
+                {
+                    fn defineNewCoprocessorContext(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
+                        <defineNewCoprocessorContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigCalls::defineNewCoprocessorContext)
+                    }
+                    defineNewCoprocessorContext
                 },
                 {
                     fn getCurrentCoprocessorContextId(
@@ -7921,17 +8054,6 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                     destroyCoprocessorContext
                 },
                 {
-                    fn defineNewCoprocessorContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
-                        <defineNewCoprocessorContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IProtocolConfigCalls::defineNewCoprocessorContext)
-                    }
-                    defineNewCoprocessorContext
-                },
-                {
                     fn getKmsNodesForContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
@@ -7983,6 +8105,17 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                             .map(IProtocolConfigCalls::isValidCoprocessorContext)
                     }
                     isValidCoprocessorContext
+                },
+                {
+                    fn defineNewCoprocessorContext(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
+                        <defineNewCoprocessorContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigCalls::defineNewCoprocessorContext)
+                    }
+                    defineNewCoprocessorContext
                 },
                 {
                     fn getCurrentCoprocessorContextId(
@@ -8207,17 +8340,6 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                             .map(IProtocolConfigCalls::destroyCoprocessorContext)
                     }
                     destroyCoprocessorContext
-                },
-                {
-                    fn defineNewCoprocessorContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
-                        <defineNewCoprocessorContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolConfigCalls::defineNewCoprocessorContext)
-                    }
-                    defineNewCoprocessorContext
                 },
                 {
                     fn getKmsNodesForContext(
@@ -8519,6 +8641,8 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IProtocolConfigErrors {
         #[allow(missing_docs)]
+        CiphertextVersionTooLarge(CiphertextVersionTooLarge),
+        #[allow(missing_docs)]
         CurrentKmsContextCannotBeDestroyed(CurrentKmsContextCannotBeDestroyed),
         #[allow(missing_docs)]
         DuplicateChainId(DuplicateChainId),
@@ -8567,6 +8691,7 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
             [6u8, 140u8, 141u8, 64u8],
             [22u8, 167u8, 39u8, 120u8],
             [23u8, 211u8, 233u8, 72u8],
+            [33u8, 164u8, 116u8, 1u8],
             [34u8, 186u8, 82u8, 219u8],
             [45u8, 236u8, 207u8, 77u8],
             [54u8, 191u8, 182u8, 14u8],
@@ -8588,10 +8713,13 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
     impl alloy_sol_types::SolInterface for IProtocolConfigErrors {
         const NAME: &'static str = "IProtocolConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 18usize;
+        const COUNT: usize = 19usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
+                Self::CiphertextVersionTooLarge(_) => {
+                    <CiphertextVersionTooLarge as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::CurrentKmsContextCannotBeDestroyed(_) => {
                     <CurrentKmsContextCannotBeDestroyed as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -8699,6 +8827,17 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                             .map(IProtocolConfigErrors::ZeroGwStartBlock)
                     }
                     ZeroGwStartBlock
+                },
+                {
+                    fn CiphertextVersionTooLarge(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <CiphertextVersionTooLarge as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::CiphertextVersionTooLarge)
+                    }
+                    CiphertextVersionTooLarge
                 },
                 {
                     fn ThresholdExceedsProofFormatLimit(
@@ -8921,6 +9060,17 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                     ZeroGwStartBlock
                 },
                 {
+                    fn CiphertextVersionTooLarge(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <CiphertextVersionTooLarge as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::CiphertextVersionTooLarge)
+                    }
+                    CiphertextVersionTooLarge
+                },
+                {
                     fn ThresholdExceedsProofFormatLimit(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
@@ -9101,6 +9251,11 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
+                Self::CiphertextVersionTooLarge(inner) => {
+                    <CiphertextVersionTooLarge as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::CurrentKmsContextCannotBeDestroyed(inner) => {
                     <CurrentKmsContextCannotBeDestroyed as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -9192,6 +9347,12 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
+                Self::CiphertextVersionTooLarge(inner) => {
+                    <CiphertextVersionTooLarge as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::CurrentKmsContextCannotBeDestroyed(inner) => {
                     <CurrentKmsContextCannotBeDestroyed as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -9326,14 +9487,14 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                89u8, 93u8, 16u8, 148u8, 159u8, 207u8, 130u8, 45u8, 225u8, 126u8, 137u8,
-                235u8, 195u8, 2u8, 86u8, 110u8, 209u8, 80u8, 23u8, 31u8, 244u8, 20u8,
-                254u8, 20u8, 217u8, 43u8, 120u8, 166u8, 211u8, 174u8, 204u8, 232u8,
-            ],
-            [
                 110u8, 213u8, 242u8, 199u8, 89u8, 249u8, 250u8, 37u8, 180u8, 120u8, 81u8,
                 29u8, 174u8, 42u8, 167u8, 104u8, 220u8, 153u8, 62u8, 157u8, 4u8, 171u8,
                 21u8, 249u8, 194u8, 81u8, 159u8, 7u8, 92u8, 71u8, 37u8, 211u8,
+            ],
+            [
+                158u8, 202u8, 163u8, 80u8, 140u8, 122u8, 242u8, 24u8, 136u8, 27u8, 167u8,
+                199u8, 116u8, 119u8, 53u8, 33u8, 162u8, 201u8, 46u8, 60u8, 215u8, 36u8,
+                194u8, 221u8, 180u8, 210u8, 240u8, 225u8, 65u8, 101u8, 214u8, 147u8,
             ],
             [
                 218u8, 7u8, 93u8, 9u8, 25u8, 141u8, 32u8, 126u8, 58u8, 145u8, 141u8,
@@ -9606,12 +9767,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 <ChainUpgradeWindow as alloy::sol_types::SolType>::RustType,
             >,
             gwStartBlock: u64,
+            ciphertextVersion: u16,
         ) -> alloy_contract::SolCallBuilder<&P, defineNewCoprocessorContextCall, N> {
             self.call_builder(
                 &defineNewCoprocessorContextCall {
                     softwareVersion,
                     chainUpgradeWindows,
                     gwStartBlock,
+                    ciphertextVersion,
                 },
             )
         }

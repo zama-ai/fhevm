@@ -173,7 +173,8 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     function defineNewCoprocessorContext(
         string calldata softwareVersion,
         ChainUpgradeWindow[] calldata chainUpgradeWindows,
-        uint64 gwStartBlock
+        uint64 gwStartBlock,
+        uint16 ciphertextVersion
     ) external virtual onlyACLOwner {
         if (bytes(softwareVersion).length == 0) {
             revert EmptySoftwareVersion();
@@ -183,6 +184,9 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         }
         if (gwStartBlock == 0) {
             revert ZeroGwStartBlock();
+        }
+        if (ciphertextVersion > uint16(type(int16).max)) {
+            revert CiphertextVersionTooLarge(ciphertextVersion);
         }
 
         for (uint256 i = 0; i < chainUpgradeWindows.length; i++) {
@@ -201,7 +205,13 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         }
 
         uint256 newCoprocessorContextId = ++_getProtocolConfigStorage().currentCoprocessorContextId;
-        emit NewCoprocessorContext(newCoprocessorContextId, softwareVersion, chainUpgradeWindows, gwStartBlock);
+        emit NewCoprocessorContext(
+            newCoprocessorContextId,
+            softwareVersion,
+            chainUpgradeWindows,
+            gwStartBlock,
+            ciphertextVersion
+        );
     }
 
     /// @inheritdoc IProtocolConfig

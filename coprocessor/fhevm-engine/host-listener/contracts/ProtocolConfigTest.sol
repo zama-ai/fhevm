@@ -15,7 +15,8 @@ contract ProtocolConfigTest {
         uint256 indexed coprocessorContextId,
         string softwareVersion,
         ChainUpgradeWindow[] chainUpgradeWindows,
-        uint64 gwStartBlock
+        uint64 gwStartBlock,
+        uint16 ciphertextVersion
     );
 
     event CoprocessorContextDestroyed(uint256 indexed coprocessorContextId);
@@ -25,13 +26,15 @@ contract ProtocolConfigTest {
         uint256 coprocessorContextId,
         string calldata softwareVersion,
         ChainUpgradeWindow[] calldata chainUpgradeWindows,
-        uint64 gwStartBlock
+        uint64 gwStartBlock,
+        uint16 ciphertextVersion
     ) external {
         emit NewCoprocessorContext(
             coprocessorContextId,
             softwareVersion,
             chainUpgradeWindows,
-            gwStartBlock
+            gwStartBlock,
+            ciphertextVersion
         );
     }
 

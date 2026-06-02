@@ -47,12 +47,14 @@ interface IProtocolConfig {
      * @param softwareVersion The coprocessor software version for the new context.
      * @param chainUpgradeWindows The per-host-chain replay windows for the upgrade.
      * @param gwStartBlock The Gateway block at which GCS's gateway-listener resumes from.
+     * @param ciphertextVersion The ciphertext version the new software writes; promoted into the `versioning` singleton at cutover.
      */
     event NewCoprocessorContext(
         uint256 indexed coprocessorContextId,
         string softwareVersion,
         ChainUpgradeWindow[] chainUpgradeWindows,
-        uint64 gwStartBlock
+        uint64 gwStartBlock,
+        uint16 ciphertextVersion
     );
 
     /**
@@ -135,6 +137,10 @@ interface IProtocolConfig {
     /// @notice The `gwStartBlock` argument is zero.
     error ZeroGwStartBlock();
 
+    /// @notice `ciphertextVersion` exceeds the off-chain `int16` storage range.
+    /// @param ciphertextVersion The rejected value.
+    error CiphertextVersionTooLarge(uint16 ciphertextVersion);
+
     /// @notice The coprocessor context ID does not exist or has been destroyed.
     /// @param coprocessorContextId The invalid coprocessor context ID.
     error InvalidCoprocessorContext(uint256 coprocessorContextId);
@@ -161,11 +167,13 @@ interface IProtocolConfig {
      * @param softwareVersion The coprocessor software version.
      * @param chainUpgradeWindows The per-host-chain replay windows.
      * @param gwStartBlock The Gateway block to resume from.
+     * @param ciphertextVersion The ciphertext version the new software writes.
      */
     function defineNewCoprocessorContext(
         string calldata softwareVersion,
         ChainUpgradeWindow[] calldata chainUpgradeWindows,
-        uint64 gwStartBlock
+        uint64 gwStartBlock,
+        uint16 ciphertextVersion
     ) external;
 
     /**
