@@ -334,7 +334,7 @@ async fn watch_gcs_activation(
             "SELECT start_block FROM upgrade_state WHERE stack_role = 'GCS'",
         )
         .fetch_optional(pool)
-        .await?;q
+        .await?;
 
         if let Some((Some(start_block),)) = row {
             let prev = state.swap(start_block, Ordering::SeqCst);
