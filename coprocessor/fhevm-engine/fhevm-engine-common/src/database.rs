@@ -382,6 +382,43 @@ fn identity_connect_options(options: PgConnectOptions) -> PgConnectOptions {
     options
 }
 
+/// Schema name used by the GCS (green coprocessor stack) during the
+/// blue/green upgrade flow. The upgrade-controller creates this schema at
+/// activation and the GCS-mode services connect with
+/// `search_path = "gcs,public"` so unqualified writes land in `gcs.*`.
+pub const GCS_SCHEMA: &str = "gcs";
+
+/// Default search_path applied by [`apply_gcs_mode_search_path`] when
+/// `gcs_mode = true`: GCS first, then public. The fallback to public is
+/// what lets shared read-only tables (keys, crs, host_chains, upgrade_state…)
+/// resolve from public without each query having to qualify them. Tables
+/// duplicated into `gcs` (ciphertexts, computations, state_hash, …) resolve
+/// to the GCS copy and pre-empt the public one.
+pub const GCS_SEARCH_PATH: &str = "gcs,public";
+
+/// Returns a [`PgConnectOptions`] transform that, when `gcs_mode = true`,
+/// pins every new connection in the pool to
+/// `search_path = "gcs,public"`. When `gcs_mode = false`, returns the
+/// identity transform so callers can keep a single code path.
+///
+/// Use this for services that own GCS-side data (host-listener, tfhe-worker,
+/// zkproof-worker, sns-worker). The upgrade-controller itself should NOT
+/// use this — it always operates on `public` and explicitly qualifies any
+/// reads/writes against `gcs.*` during activation and cutover.
+pub fn apply_gcs_mode_search_path(
+    gcs_mode: bool,
+) -> fn(PgConnectOptions) -> PgConnectOptions {
+    if gcs_mode {
+        apply_gcs_search_path
+    } else {
+        identity_connect_options
+    }
+}
+
+fn apply_gcs_search_path(options: PgConnectOptions) -> PgConnectOptions {
+    options.options([("search_path", GCS_SEARCH_PATH)])
+}
+
 fn apply_iam_ssl_settings_to_url(url: &mut Url, ssl_root_cert_path: Option<&str>) {
     let existing_pairs: Vec<(String, String)> = url
         .query_pairs()

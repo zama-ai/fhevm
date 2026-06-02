@@ -14,7 +14,16 @@ pub mod telemetry;
 pub mod tfhe_ops;
 pub mod types;
 pub mod utils;
+pub mod versioning;
 
 pub mod common {
     tonic::include_proto!("fhevm.common");
 }
+
+/// Version string of the coprocessor stack this binary belongs to.
+///
+/// Hard-coded per binary and bumped on each release; written into the
+/// `versioning` singleton at cutover and surfaced in upgrade notifications.
+pub const STACK_VERSION: &str = "v0.14.0";
+
+pub const CIPHERTEXT_VERSION: i16 = 1;
