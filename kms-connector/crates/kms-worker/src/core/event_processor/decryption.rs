@@ -1,6 +1,8 @@
 use crate::core::{
     config::Config,
-    event_processor::{ProcessingError, context::ContextManager, s3::S3Service},
+    event_processor::{
+        AttestationVerifier, ProcessingError, context::ContextManager, s3::S3Service,
+    },
 };
 use alloy::{
     consensus::Transaction,
@@ -47,13 +49,16 @@ pub struct DecryptionProcessor<GP: Provider, HP: Provider, C> {
     /// The entity used to collect ciphertexts from S3 buckets.
     s3_service: S3Service<GP>,
 
+    /// Off-chain ciphertext attestation verifier.
+    ct_attestation_verifier: AttestationVerifier<GP>,
+
     /// Gas cap for the `IERC1271.isValidSignature` static call (RFC-012).
     erc1271_gas_limit: u64,
 }
 
 impl<GP, HP, C> DecryptionProcessor<GP, HP, C>
 where
-    GP: Provider,
+    GP: Provider + Clone + 'static,
     HP: Provider,
     C: ContextManager,
 {
@@ -63,6 +68,7 @@ where
         gateway_provider: GP,
         acl_contracts: HashMap<u64, ACLInstance<HP>>,
         s3_service: S3Service<GP>,
+        ct_attestation_verifier: AttestationVerifier<GP>,
     ) -> Self {
         let domain = Eip712DomainMsg {
             name: config.decryption_contract.domain_name.clone(),
@@ -80,6 +86,7 @@ where
             decryption_contract,
             acl_contracts,
             s3_service,
+            ct_attestation_verifier,
             erc1271_gas_limit: config.erc1271_gas_limit,
         }
     }
@@ -609,6 +616,12 @@ where
             fhe_types,
         );
 
+        // RFC-023 shadow-mode off-chain verification. It never blocks dispatch, the on-chain
+        // result stays authoritative.
+        self.ct_attestation_verifier
+            .spawn_verification(sns_materials)
+            .await;
+
         Ok(sns_ciphertext_materials)
     }
 
@@ -688,7 +701,8 @@ mod tests {
     fn setup_test_processor(
         asserter: Asserter,
         sns_ct: &SnsCiphertextMaterial,
-    ) -> DecryptionProcessor<impl Provider + use<>, impl Provider + use<>, MockContextManager> {
+    ) -> DecryptionProcessor<impl Provider + Clone + use<>, impl Provider + use<>, MockContextManager>
+    {
         let mock_provider = ProviderBuilder::new()
             .disable_recommended_fillers()
             .connect_mocked_client(asserter);
@@ -699,12 +713,15 @@ mod tests {
         )]);
         let config = Config::default();
         let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
+        let ct_attestation_verifier =
+            AttestationVerifier::disabled(mock_provider.clone(), reqwest::Client::new());
         DecryptionProcessor::new(
             &config,
             MockContextManager,
             mock_provider,
             acl_contracts,
             s3_service,
+            ct_attestation_verifier,
         )
     }
 

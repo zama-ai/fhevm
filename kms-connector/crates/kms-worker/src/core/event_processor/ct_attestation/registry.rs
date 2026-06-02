@@ -14,14 +14,9 @@ use std::collections::{HashMap, HashSet};
 use tracing::warn;
 
 /// An immutable snapshot of the Coprocessor registry at one point in time.
-///
-/// Held behind an `Arc` so reads are snapshot-and-release: a reader clones the
-/// `Arc` (one atomic increment), drops the lock guard, and runs the HEAD fan-out
-/// while holding no lock.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct CoprocessorRegistry {
-    /// Addresses an attestation signature must recover to
-    /// (`getCoprocessorSigners`).
+    /// Addresses an attestation signature must recover to (`getCoprocessorSigners`).
     pub signers: HashSet<Address>,
     /// `txSender -> s3BucketUrl` for every registered Coprocessor
     /// (`getCoprocessorTxSenders` + `getCoprocessor(addr).s3BucketUrl`).

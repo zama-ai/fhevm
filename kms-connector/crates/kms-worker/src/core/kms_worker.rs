@@ -4,8 +4,8 @@ use crate::{
         config::Config,
         event_picker::{DbEventPicker, EventPicker},
         event_processor::{
-            DbContextManager, DbEventProcessor, DecryptionProcessor, EventProcessor,
-            KMSGenerationProcessor, KmsClient, s3::S3Service,
+            AttestationVerifier, DbContextManager, DbEventProcessor, DecryptionProcessor,
+            EventProcessor, KMSGenerationProcessor, KmsClient, s3::S3Service,
         },
         kms_response_publisher::DbKmsResponsePublisher,
     },
@@ -145,13 +145,17 @@ impl
         let event_picker = DbEventPicker::connect(db_pool.clone(), &config).await?;
 
         let context_manager = DbContextManager::new(db_pool.clone());
-        let s3_service = S3Service::new(&config, gateway_provider.clone(), s3_client);
+        let s3_service = S3Service::new(&config, gateway_provider.clone(), s3_client.clone());
+
+        let ct_attestation_verifier =
+            AttestationVerifier::connect(gateway_provider.clone(), s3_client, &config).await;
         let decryption_processor = DecryptionProcessor::new(
             &config,
             context_manager.clone(),
             gateway_provider.clone(),
             acl_contracts,
             s3_service,
+            ct_attestation_verifier,
         );
         let kms_generation_processor = KMSGenerationProcessor::new(&config, context_manager);
         let event_processor = DbEventProcessor::new(
