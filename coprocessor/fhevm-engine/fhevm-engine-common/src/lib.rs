@@ -22,8 +22,16 @@ pub mod common {
 
 /// Version string of the coprocessor stack this binary belongs to.
 ///
-/// Hard-coded per binary and bumped on each release; written into the
+/// Derived from this crate's (`fhevm-engine-common`) Cargo package version, so
+/// every service that links it shares one fleet-wide stack version. Bumped by
+/// bumping `fhevm-engine-common`'s version on each release; written into the
 /// `versioning` singleton at cutover and surfaced in upgrade notifications.
-pub const STACK_VERSION: &str = "v0.14.0";
+///
+/// Note: `CARGO_PKG_VERSION` resolves at *this* crate's compile time, i.e. to
+/// `fhevm-engine-common`'s version — not the calling binary's. That is
+/// intentional: it gives all services a single shared value to compare against
+/// `versioning.stack_version`. The leading-`v` prefix is optional; the version
+/// parser in `versioning::parse_version` tolerates its absence.
+pub const STACK_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub const CIPHERTEXT_VERSION: i16 = 1;
