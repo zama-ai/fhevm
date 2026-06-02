@@ -251,6 +251,7 @@ pub async fn ingest_block_logs(
         }
     }
     for tfhe_log in tfhe_event_log.iter_mut() {
+        // For multi-output ops all outputs are produced together, so one allowed handle runs the op.
         tfhe_log.is_allowed = tfhe_result_handles(&tfhe_log.event)
             .iter()
             .any(|h| is_allowed.contains(&h.to_vec()));
