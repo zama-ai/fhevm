@@ -1,4 +1,6 @@
-use crate::http::endpoints::common::types::{HandleContractPairJson, RequestValidityJson};
+use crate::http::endpoints::common::types::{
+    HandleContractPairJson, HandleEntryJson, RequestValidityJson, RequestValiditySecondsJson,
+};
 use alloy::primitives::U256;
 use serde::{de, Deserialize, Deserializer};
 use serde_json::Value;
@@ -210,5 +212,121 @@ pub fn validate_request_validity(
 ) -> Result<(), ValidationError> {
     validate_timestamp(&request_validity.start_timestamp)?;
     validate_u32_string(&request_validity.duration_days)?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// v3 (unified EIP-712 user-decryption) validators
+// ---------------------------------------------------------------------------
+
+/// The single attestation-type value supported by the current v3 endpoint.
+/// Future signature schemes (e.g. Solana ed25519) plug in by widening this
+/// allowlist.
+pub const V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1: &str = "eip712-unified-user-decrypt-v1";
+
+/// Required `version` value in the EIP-712 payload.
+pub const V3_PAYLOAD_VERSION: &str = "2.0";
+
+/// Required `type` value in the EIP-712 payload.
+pub const V3_PAYLOAD_TYPE: &str = "user_decryption";
+
+/// v3 envelope: `attestationType` must match a supported scheme.
+pub fn validate_v3_attestation_type(value: &str) -> Result<(), ValidationError> {
+    if value != V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1 {
+        return Err(ValidationError::new("validation_error").with_message(
+            format!(
+                "Unsupported attestationType; expected one of: [{}]",
+                V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1
+            )
+            .into(),
+        ));
+    }
+    Ok(())
+}
+
+/// v3 payload: `version` must be `"2.0"`.
+pub fn validate_v3_version(value: &str) -> Result<(), ValidationError> {
+    if value != V3_PAYLOAD_VERSION {
+        return Err(ValidationError::new("validation_error").with_message(
+            format!("Unsupported version; expected \"{}\"", V3_PAYLOAD_VERSION).into(),
+        ));
+    }
+    Ok(())
+}
+
+/// v3 payload: `type` must be `"user_decryption"`.
+pub fn validate_v3_payload_type(value: &str) -> Result<(), ValidationError> {
+    if value != V3_PAYLOAD_TYPE {
+        return Err(ValidationError::new("validation_error").with_message(
+            format!("Unsupported payload type; expected \"{}\"", V3_PAYLOAD_TYPE).into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Validates each `HandleEntryJson`: the ctHandle is a 0x-prefixed 64-hex
+/// string, and both `contractAddress` and `ownerAddress` are valid Ethereum
+/// addresses. The list must be non-empty (enforced by `length(min = 1)`).
+pub fn validate_handle_entries(entries: &Vec<HandleEntryJson>) -> Result<(), ValidationError> {
+    for entry in entries {
+        validate_0x_hex(&entry.ct_handle)?;
+        if entry.ct_handle.len() != 66 {
+            return Err(ValidationError::new("validation_error")
+                .with_message(validation_messages::LENGTH_MUST_BE_64_CHARACTERS.into()));
+        }
+        validate_blockchain_address(&entry.contract_address)?;
+        validate_blockchain_address(&entry.owner_address)?;
+    }
+    Ok(())
+}
+
+/// Like `validate_blockchain_addresses` but `allowedContracts` may be
+/// empty (permissive mode is part of the unified EIP-712 spec).
+pub fn validate_blockchain_addresses_allow_empty(
+    addresses: &Vec<String>,
+) -> Result<(), ValidationError> {
+    for address in addresses {
+        validate_blockchain_address(address)?;
+    }
+    Ok(())
+}
+
+/// Validates the v3 request-validity window: `startTimestamp` not in the
+/// future, `durationSeconds` parses as a u64, and the resulting window
+/// ends in the future (`start_timestamp + duration_seconds > now`).
+pub fn validate_request_validity_seconds(
+    request_validity: &RequestValiditySecondsJson,
+) -> Result<(), ValidationError> {
+    validate_timestamp(&request_validity.start_timestamp)?;
+    validate_u64_string(&request_validity.duration_seconds)?;
+
+    let start = request_validity
+        .start_timestamp
+        .parse::<u64>()
+        .map_err(|_| {
+            ValidationError::new("validation_error")
+                .with_message("startTimestamp must be a valid u64 number".into())
+        })?;
+    let duration = request_validity
+        .duration_seconds
+        .parse::<u64>()
+        .map_err(|_| {
+            ValidationError::new("validation_error")
+                .with_message("durationSeconds must be a valid u64 number".into())
+        })?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| {
+            ValidationError::new("internal_server_error")
+                .with_message("System time is before UNIX epoch.".into())
+        })?
+        .as_secs();
+
+    let end = start.saturating_add(duration);
+    if end <= now {
+        return Err(ValidationError::new("validation_error")
+            .with_message("requestValidity window has already expired".into()));
+    }
+
     Ok(())
 }

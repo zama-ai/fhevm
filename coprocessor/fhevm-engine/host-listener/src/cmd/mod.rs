@@ -62,7 +62,7 @@ pub struct Args {
     #[arg(long)]
     pub tfhe_contract_address: String,
 
-    #[arg(long)]
+    #[arg(long, default_value = "")]
     pub kms_generation_address: String,
 
     #[arg(
@@ -1175,10 +1175,12 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                 )
                 .await;
             }
-            background_tasks.spawn(process_kms_generation_activations(
-                db.pool.read().await.clone(),
-                aws_s3_client,
-            ));
+            if kms_generation_address.is_some() {
+                background_tasks.spawn(process_kms_generation_activations(
+                    db.pool.read().await.clone(),
+                    aws_s3_client,
+                ));
+            }
         }
 
         if !args.only_catchup_loop {

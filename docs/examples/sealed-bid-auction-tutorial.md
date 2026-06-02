@@ -25,7 +25,7 @@ Before starting this tutorial, ensure you have:
 
 For help with these steps, refer to these tutorials:
 - [Setting up OpenZeppelin confidential contracts](./openzeppelin/README.md)
-- [Deploying a Confidential Token](./openzeppelin/erc7984-tutorial.md)
+- [Deploying a Confidential Token](./openzeppelin/erc7984.md)
 
 # Create the smart contracts
 

@@ -11,10 +11,16 @@ fn print_all_fhevm_event_signatures() {
         hex::encode(Decryption::publicDecryptionRequestCall::SELECTOR)
     );
 
-    println!("2. userDecryptionRequestCall");
+    println!("2a. userDecryptionRequest_0Call (unified HandleEntry[] overload)");
     println!(
-        "   Selector: 0x{}",
-        hex::encode(Decryption::userDecryptionRequestCall::SELECTOR)
+        "    Selector: 0x{}",
+        hex::encode(Decryption::userDecryptionRequest_0Call::SELECTOR)
+    );
+
+    println!("2b. userDecryptionRequest_1Call (legacy CtHandleContractPair[] overload)");
+    println!(
+        "    Selector: 0x{}",
+        hex::encode(Decryption::userDecryptionRequest_1Call::SELECTOR)
     );
 
     println!("3. userDecryptionResponseCall");
@@ -70,14 +76,24 @@ fn print_all_fhevm_event_signatures() {
         hex::encode(Decryption::PublicDecryptionResponse::SIGNATURE_HASH)
     );
 
-    println!("3. UserDecryptionRequest");
+    println!("3a. UserDecryptionRequest_0 (legacy event)");
     println!(
-        "   Signature: {}",
-        Decryption::UserDecryptionRequest::SIGNATURE
+        "    Signature: {}",
+        Decryption::UserDecryptionRequest_0::SIGNATURE
     );
     println!(
-        "   Hash:      0x{}\n",
-        hex::encode(Decryption::UserDecryptionRequest::SIGNATURE_HASH)
+        "    Hash:      0x{}\n",
+        hex::encode(Decryption::UserDecryptionRequest_0::SIGNATURE_HASH)
+    );
+
+    println!("3b. UserDecryptionRequest_1 (unified event)");
+    println!(
+        "    Signature: {}",
+        Decryption::UserDecryptionRequest_1::SIGNATURE
+    );
+    println!(
+        "    Hash:      0x{}\n",
+        hex::encode(Decryption::UserDecryptionRequest_1::SIGNATURE_HASH)
     );
 
     println!("4. UserDecryptionResponse");

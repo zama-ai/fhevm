@@ -26,6 +26,7 @@ tokio-util.workspace = true
 tracing.workspace = true
 tracing-opentelemetry.workspace = true
 tracing-subscriber.workspace = true
+url.workspace = true
 
 [dev-dependencies]
 connector-utils = { workspace = true, features = ["tests"] }

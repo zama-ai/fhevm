@@ -2,13 +2,13 @@ use crate::{
     config::settings::GatewayConfig,
     core::{
         errors::EventProcessingError,
-        event::{DelegatedUserDecryptRequest, UserDecryptRequest},
+        event::{HandleContractPair, UserDecryptRequest},
         job_id::JobId,
     },
     gateway::ciphertext_checker::CiphertextChecker,
     host::{HostAclChecker, HostAclError},
 };
-use alloy::primitives::{Address, Bytes, FixedBytes};
+use alloy::primitives::{Bytes, FixedBytes};
 use std::fmt;
 
 /// Steps for readiness checker operations
@@ -83,52 +83,68 @@ impl ReadinessChecker {
             .await
     }
 
+    /// Host ACL pre-check covering all three attestation types. The shape
+    /// of the check is dictated by the request variant:
+    /// - `LegacyDirect`: per-pair `isAllowed(handle, user) +
+    ///   isAllowed(handle, contract)`.
+    /// - `LegacyDelegated`: per-pair `isHandleDelegatedForUserDecryption`
+    ///   for the single (delegator, delegate) couple.
+    /// - `Eip712UnifiedV1`: per-`HandleEntry` direct vs delegated split
+    ///   based on `owner_address == user_address`.
     pub async fn check_host_acl_user_decrypt(
         &self,
         job_id: &JobId,
         request: &UserDecryptRequest,
     ) -> Result<(), ReadinessCheckError> {
-        self.host_acl
-            .check_user_decrypt(
-                job_id,
-                &request.ct_handle_contract_pairs,
-                request.user_address,
-            )
-            .await
-            .map_err(|e| match &e {
-                HostAclError::NotAllowed { .. } => ReadinessCheckError::NotAllowedOnHostAcl(e),
-                _ => ReadinessCheckError::HostAclFailed(e),
-            })
+        let result = match request {
+            UserDecryptRequest::LegacyDirect {
+                ct_handle_contract_pairs,
+                user_address,
+                ..
+            } => {
+                self.host_acl
+                    .check_user_decrypt(job_id, ct_handle_contract_pairs, *user_address)
+                    .await
+            }
+            UserDecryptRequest::LegacyDelegated {
+                ct_handle_contract_pairs,
+                delegator_address,
+                delegate_address,
+                ..
+            } => {
+                self.host_acl
+                    .check_delegated_user_decrypt(
+                        job_id,
+                        ct_handle_contract_pairs,
+                        *delegator_address,
+                        *delegate_address,
+                    )
+                    .await
+            }
+            UserDecryptRequest::Eip712UnifiedV1 {
+                handles,
+                user_address,
+                ..
+            } => {
+                self.host_acl
+                    .check_unified_user_decrypt(job_id, handles, *user_address)
+                    .await
+            }
+        };
+        result.map_err(|e| match &e {
+            HostAclError::NotAllowed { .. } => ReadinessCheckError::NotAllowedOnHostAcl(e),
+            _ => ReadinessCheckError::HostAclFailed(e),
+        })
     }
 
     pub async fn check_user_decryption_readiness(
         &self,
         job_id: &JobId,
-        address: Address,
-        pairs: &[crate::core::event::HandleContractPair],
+        pairs: &[HandleContractPair],
         extra_data: Bytes,
     ) -> Result<(), ReadinessCheckError> {
         self.ciphertext
-            .check_user_decryption_readiness(job_id, address, pairs, extra_data)
+            .check_user_decryption_readiness(job_id, pairs, extra_data)
             .await
-    }
-
-    pub async fn check_host_acl_delegated_user_decrypt(
-        &self,
-        job_id: &JobId,
-        request: &DelegatedUserDecryptRequest,
-    ) -> Result<(), ReadinessCheckError> {
-        self.host_acl
-            .check_delegated_user_decrypt(
-                job_id,
-                &request.ct_handle_contract_pairs,
-                request.delegator_address,
-                request.delegate_address,
-            )
-            .await
-            .map_err(|e| match &e {
-                HostAclError::NotAllowed { .. } => ReadinessCheckError::NotAllowedOnHostAcl(e),
-                _ => ReadinessCheckError::HostAclFailed(e),
-            })
     }
 }

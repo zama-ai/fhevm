@@ -2,7 +2,9 @@
  * Renders runtime env maps from resolved versions, scenario topology, discovery outputs, and compat policy.
  */
 import {
+  coprocessorUsesHostKmsGeneration,
   compatPolicyForState,
+  kmsConnectorUsesHostKmsGeneration,
   requiresLegacyRelayerUrl,
   requiresMultichainAclAddress,
   requiresModernHostAddressArtifacts,
@@ -155,9 +157,14 @@ const applyDiscoveryEnv = (
     return;
   }
   const primaryHost = state.discovery.hosts[defaultChain.key] ?? {};
-  const kmsGenerationAddress = requiresModernHostAddressArtifacts(plan)
-    ? primaryHost.KMS_GENERATION_CONTRACT_ADDRESS
-    : state.discovery.gateway.KMS_GENERATION_ADDRESS;
+  const gatewayKmsGenerationAddress = state.discovery.gateway.KMS_GENERATION_ADDRESS;
+  const hostKmsGenerationAddress = primaryHost.KMS_GENERATION_CONTRACT_ADDRESS;
+  const coprocessorKmsGenerationAddress = coprocessorUsesHostKmsGeneration(plan)
+    ? hostKmsGenerationAddress
+    : gatewayKmsGenerationAddress;
+  const connectorKmsGenerationAddress = kmsConnectorUsesHostKmsGeneration(plan)
+    ? hostKmsGenerationAddress
+    : gatewayKmsGenerationAddress;
 
   updateContracts(envs["gateway-sc"], state.discovery.gateway);
   updateContracts(envs["gateway-mocked-payment"], {
@@ -177,7 +184,7 @@ const applyDiscoveryEnv = (
     INPUT_VERIFICATION_ADDRESS: state.discovery.gateway.INPUT_VERIFICATION_ADDRESS,
     CIPHERTEXT_COMMITS_ADDRESS: state.discovery.gateway.CIPHERTEXT_COMMITS_ADDRESS,
     ...(requiresMultichainAclAddress(plan) ? { MULTICHAIN_ACL_ADDRESS: state.discovery.gateway.MULTICHAIN_ACL_ADDRESS } : {}),
-    KMS_GENERATION_ADDRESS: kmsGenerationAddress,
+    KMS_GENERATION_ADDRESS: coprocessorKmsGenerationAddress ?? "",
   });
 
   const kmsHostChains = chains.map((chain) => {
@@ -192,7 +199,7 @@ const applyDiscoveryEnv = (
   updateContracts(envs["kms-connector"], {
     KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
     KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS: state.discovery.gateway.GATEWAY_CONFIG_ADDRESS,
-    KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS: kmsGenerationAddress,
+    KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS: connectorKmsGenerationAddress ?? "",
     KMS_CONNECTOR_HOST_CHAINS: JSON.stringify(kmsHostChains),
   });
   updateContracts(envs["relayer"], {
@@ -293,6 +300,24 @@ export const renderEnvMaps = async (
   envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_CHAIN_ID = defaultChain.chainId;
   envs["test-suite"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["test-suite"].CHAIN_ID_HOST = defaultChain.chainId;
+
+  // Multi-chain seeding for the coprocessor dbMigration container.
+  // HOST_CHAINS_COUNT + indexed HOST_CHAIN_<i>_{ID,NAME,ACL} drive
+  // `seed_host_chains` in `initialize_db.sh`. Same shape the helm chart
+  // renders from `.Values.chains` — keeps the e2e on the same code path
+  // as production rather than bypassing it via direct SQL. Applied BEFORE
+  // `buildInstanceEnvs` so multi-coprocessor topology instances inherit
+  // these env vars when they clone `envs["coprocessor"]`.
+  envs["coprocessor"].HOST_CHAINS_COUNT = String(chains.length);
+  for (const chain of chains) {
+    const chainIndex = chain.index;
+    const hostAddresses = state.discovery?.hosts[chain.key] ?? {};
+    envs["coprocessor"][`HOST_CHAIN_${chainIndex}_ID`] = chain.chainId;
+    envs["coprocessor"][`HOST_CHAIN_${chainIndex}_NAME`] = chain.key;
+    envs["coprocessor"][`HOST_CHAIN_${chainIndex}_ACL`] =
+      hostAddresses.ACL_CONTRACT_ADDRESS ?? "";
+  }
+
   const instanceEnvs = await buildInstanceEnvs(envs, plan, deriveWallet);
 
   // Uniform per-chain gateway-sc indexed vars for ALL host chains.
