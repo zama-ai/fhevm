@@ -10,8 +10,7 @@ use crate::core::errors::{
     TIMEOUT_REASON_MISSING_MSG,
 };
 use crate::core::event::{
-    ApiVersion, DelegatedUserDecryptEventData, DelegatedUserDecryptRequest, RelayerEvent,
-    RelayerEventData, UserDecryptEventData, UserDecryptRequest,
+    ApiVersion, RelayerEvent, RelayerEventData, UserDecryptEventData, UserDecryptRequest,
 };
 use crate::core::job_id::JobId;
 use crate::host::HostChainIdChecker;
@@ -22,7 +21,7 @@ use crate::logging::UserDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::metrics::{observe_raw_eta_seconds, HttpApiVersion, RetryAfterRequestType};
 use crate::orchestrator::{ContentHasher, Orchestrator};
-use crate::readiness::throttler::{DelegatedUserDecryptReadinessTask, UserDecryptReadinessTask};
+use crate::readiness::throttler::UserDecryptReadinessTask;
 use crate::store::sql::models::{
     req_status_enum_model::ReqStatus, user_decrypt_req_model::UserDecryptReqData,
 };
@@ -52,7 +51,6 @@ pub struct UserDecryptHandler {
     user_decrypt_repo: Arc<UserDecryptRepository>,
     user_decrypt_shares_threshold: u32,
     user_decrypt_queue_checker: BounceChecker<UserDecryptReadinessTask>,
-    delegated_queue_checker: BounceChecker<DelegatedUserDecryptReadinessTask>,
     retry_after_state: Arc<RetryAfterState>,
     host_chain_id_checker: Arc<HostChainIdChecker>,
 }
@@ -65,7 +63,6 @@ impl UserDecryptHandler {
         user_decrypt_repo: Arc<UserDecryptRepository>,
         user_decrypt_shares_threshold: u32,
         user_decrypt_queue_checker: BounceChecker<UserDecryptReadinessTask>,
-        delegated_queue_checker: BounceChecker<DelegatedUserDecryptReadinessTask>,
         retry_after_state: Arc<RetryAfterState>,
         host_chain_id_checker: Arc<HostChainIdChecker>,
     ) -> Self {
@@ -75,7 +72,6 @@ impl UserDecryptHandler {
             user_decrypt_repo,
             user_decrypt_shares_threshold,
             user_decrypt_queue_checker,
-            delegated_queue_checker,
             retry_after_state,
             host_chain_id_checker,
         }
@@ -193,6 +189,8 @@ impl UserDecryptHandler {
             }
         };
 
+        // `TryFrom<UserDecryptRequestJson>` only constructs `LegacyDirect`;
+        // the downstream `UserDecryptReqData::UserDecrypt` tag relies on it.
         let user_decrypt_request: UserDecryptRequest =
             match parse_and_validate::<UserDecryptRequestJson, UserDecryptRequest>(&body) {
                 Ok(request) => request,
@@ -210,7 +208,7 @@ impl UserDecryptHandler {
         // Check early to avoid filling the queue with handles of unsupported chains
         if let Err(chain_id) = self
             .host_chain_id_checker
-            .validate_u256_handles(&user_decrypt_request.ct_handle_contract_pairs)
+            .validate_u256_handles(user_decrypt_request.ct_handles())
         {
             return RelayerV2ResponseFailed::host_chain_id_not_supported(
                 chain_id,
@@ -422,9 +420,12 @@ impl UserDecryptHandler {
             }
         };
 
-        let delegated_user_decrypt_request: DelegatedUserDecryptRequest = match parse_and_validate::<
+        // `TryFrom<DelegatedUserDecryptRequestJson>` only constructs
+        // `LegacyDelegated`; the downstream
+        // `UserDecryptReqData::DelegatedUserDecrypt` tag relies on it.
+        let delegated_user_decrypt_request: UserDecryptRequest = match parse_and_validate::<
             DelegatedUserDecryptRequestJson,
-            DelegatedUserDecryptRequest,
+            UserDecryptRequest,
         >(&body)
         {
             Ok(request) => request,
@@ -442,7 +443,7 @@ impl UserDecryptHandler {
         // Check early to avoid filling the queue with handles of unsupported chains
         if let Err(chain_id) = self
             .host_chain_id_checker
-            .validate_u256_handles(&delegated_user_decrypt_request.ct_handle_contract_pairs)
+            .validate_u256_handles(delegated_user_decrypt_request.ct_handles())
         {
             return RelayerV2ResponseFailed::host_chain_id_not_supported(
                 chain_id,
@@ -463,7 +464,7 @@ impl UserDecryptHandler {
             Ok(res) => {
                 if res.is_none() {
                     // In this case, we check queue full and bounce the request with 429
-                    if let Err(retry_after) = self.delegated_queue_checker.check().await {
+                    if let Err(retry_after) = self.user_decrypt_queue_checker.check().await {
                         info!("Delegated user decryption v2 is bounced by full queue.");
                         return RelayerV2ResponseFailed::protocol_overloaded(
                             "relayer is currently processing too many requests",
@@ -520,13 +521,13 @@ impl UserDecryptHandler {
 
         // Only dispatch event for new requests (deduplication)
         if matches!(insert_result, UserDecryptInsertResult::Inserted { .. }) {
-            let request_data = DelegatedUserDecryptEventData::ReqRcvdFromUser {
+            let request_data = UserDecryptEventData::ReqRcvdFromUser {
                 decrypt_request: delegated_user_decrypt_request,
             };
             let event = RelayerEvent::new(
                 int_job_id,
                 self.api_version,
-                RelayerEventData::DelegatedUserDecrypt(request_data),
+                RelayerEventData::UserDecrypt(request_data),
             );
 
             if let Err(e) = self.orchestrator.dispatch_event(event).await {
@@ -559,12 +560,12 @@ impl UserDecryptHandler {
 
         // Compute dynamic retry-after based on dual queue state
         let readiness_queue_info = self
-            .delegated_queue_checker
+            .user_decrypt_queue_checker
             .readiness_throttler()
             .get_queue_info()
             .await;
         let tx_queue_info = self
-            .delegated_queue_checker
+            .user_decrypt_queue_checker
             .tx_throttler()
             .get_queue_info()
             .await;
@@ -876,6 +877,10 @@ impl UserDecryptHandler {
 
 // OpenAPI documented endpoints as standalone functions
 /// Submit user decryption.
+///
+/// **Deprecated.** Superseded by `POST /v3/user-decrypt` (unified EIP-712
+/// user-decryption). The v2 surface remains available throughout the
+/// deprecation window.
 #[utoipa::path(
     post,
     path = "/v2/user-decrypt",
@@ -887,6 +892,9 @@ impl UserDecryptHandler {
         (status = 500, description = "Internal server error", body = crate::http::endpoints::v2::types::error::RelayerV2ResponseFailed),
     ),
     tag = "User Decrypt"
+)]
+#[deprecated(
+    note = "Use POST /v3/user-decrypt (unified EIP-712). Should be removed once the legacy EIP-712 formats are deprecated."
 )]
 pub async fn user_decrypt_post_v2(
     handler: Arc<UserDecryptHandler>,
@@ -923,6 +931,10 @@ pub async fn user_decrypt_get_v2(
 }
 
 /// Submit delegated user decryption.
+///
+/// **Deprecated.** Superseded by `POST /v3/user-decrypt` (unified EIP-712
+/// user-decryption — delegated handles use the per-entry `ownerAddress`).
+/// The v2 surface remains available throughout the deprecation window.
 #[utoipa::path(
     post,
     path = "/v2/delegated-user-decrypt",
@@ -934,6 +946,9 @@ pub async fn user_decrypt_get_v2(
         (status = 500, description = "Internal server error", body = crate::http::endpoints::v2::types::error::RelayerV2ResponseFailed),
     ),
     tag = "Delegated User Decrypt"
+)]
+#[deprecated(
+    note = "Use POST /v3/user-decrypt (unified EIP-712). Should be removed once the legacy EIP-712 formats are deprecated."
 )]
 pub async fn delegated_user_decrypt_post_v2(
     handler: Arc<UserDecryptHandler>,

@@ -484,6 +484,9 @@ impl<V: serde::Serialize> IntoResponse for AppResponse<V> {
 /// lower case.
 pub fn to_camel_case<S: AsRef<str>>(s: S) -> String {
     let s = s.as_ref();
+    // Strip the `r#` raw-identifier prefix that Rust struct fields may
+    // carry when their name collides with a keyword (e.g. `r#type`).
+    let s = s.strip_prefix("r#").unwrap_or(s);
     let mut result = String::new();
     let mut capitalize_next = false;
 

@@ -117,7 +117,9 @@ make db-shell       # Open psql shell
 These require `sqlx-cli`:
 
 ```bash
-cargo install sqlx-cli --no-default-features --features postgres,rustls
+# Pinned to the 0.8.x series: sqlx-cli 0.9.0 raised its MSRV to
+# rustc 1.94; rust-toolchain.toml pins 1.91.1.
+cargo install sqlx-cli --version 0.8.6 --no-default-features --features postgres,rustls
 ```
 
 Then:

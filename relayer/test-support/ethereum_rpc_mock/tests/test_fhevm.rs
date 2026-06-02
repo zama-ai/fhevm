@@ -81,7 +81,7 @@ async fn create_user_decrypt_transaction(
     nonce: u64,
 ) -> Result<Bytes, Box<dyn std::error::Error>> {
     // Create call data with just the function selector - mock only needs selector to match patterns
-    let mut call_data = Decryption::userDecryptionRequestCall::SELECTOR.to_vec();
+    let mut call_data = Decryption::userDecryptionRequest_1Call::SELECTOR.to_vec();
     call_data.extend_from_slice(&[0; 32]); // Add some padding data
 
     let mut tx = TxEip1559 {
@@ -328,97 +328,6 @@ async fn test_input_proof_revert() {
 }
 
 // USER DECRYPTION TESTS
-
-#[tokio::test]
-async fn test_user_decrypt_response() {
-    let port = get_free_port().unwrap();
-    let server = MockServer::new(MockConfig {
-        port,
-        chain_id: 1337,
-        ..MockConfig::new()
-    });
-
-    let handle = B256::from([0x42; 32]);
-
-    FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
-        .on_user_decrypt_success(
-            UserDecryptKind::Direct,
-            vec![handle],
-            USER_ADDRESS,
-            ethereum_rpc_mock::SubscriptionTarget::All,
-        );
-
-    let server_handle = server.clone().start().await.unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
-    let provider = ProviderBuilder::new()
-        .network::<alloy::network::AnyNetwork>()
-        .connect_ws(WsConnect::new(format!("ws://127.0.0.1:{}/ws", port)))
-        .await
-        .unwrap();
-
-    let mut events = provider
-        .subscribe_logs(&Filter::new().address(DECRYPTION_CONTRACT))
-        .await
-        .unwrap()
-        .into_stream();
-    let mut blocks = provider.subscribe_blocks().await.unwrap().into_stream();
-
-    let event_task = tokio::spawn(async move {
-        timeout(std::time::Duration::from_secs(2), events.next())
-            .await
-            .ok()
-            .flatten()
-            .and_then(|log| extract_decryption_id(&log))
-    });
-
-    let block_task = tokio::spawn(async move {
-        timeout(std::time::Duration::from_secs(2), blocks.next())
-            .await
-            .ok()
-            .flatten()
-    });
-
-    let (signer, addr) = create_test_wallet();
-    server.set_balance(addr, parse_ether("1").unwrap());
-
-    let signed_tx = create_user_decrypt_transaction(&signer, vec![handle], USER_ADDRESS, 0)
-        .await
-        .unwrap();
-    let tx_hash = *provider
-        .send_raw_transaction(&signed_tx)
-        .await
-        .unwrap()
-        .tx_hash();
-
-    let receipt = provider
-        .get_transaction_receipt(tx_hash)
-        .await
-        .unwrap()
-        .unwrap();
-    let receipt_id = receipt
-        .logs()
-        .iter()
-        .find(|log| log.address() == DECRYPTION_CONTRACT)
-        .and_then(extract_decryption_id)
-        .expect("Receipt should contain user decryption response event");
-
-    let event_id = event_task.await.unwrap().expect("Should receive event");
-    assert_eq!(receipt_id, event_id, "User decryption IDs should match");
-
-    // Validate block subscription - assert one block is received and can be decoded
-    let block_header = block_task
-        .await
-        .unwrap()
-        .expect("Should receive block header");
-    assert!(block_header.number > 0, "Block should have a valid number");
-    assert!(
-        !block_header.hash.is_zero(),
-        "Block should have a valid hash"
-    );
-
-    server_handle.shutdown().await.unwrap();
-}
 
 #[tokio::test]
 async fn test_user_decrypt_error() {

@@ -18,9 +18,7 @@ use crate::gateway::throttlers::GatewayThrottlers;
 use crate::host::{HostAclChecker, ThresholdResolver};
 use crate::orchestrator::{HealthCheck, Orchestrator};
 use crate::readiness::{
-    checker::ReadinessChecker,
-    delegated_user_decrypt_processor::DelegatedUserDecryptReadinessProcessor,
-    public_decrypt_processor::PublicDecryptReadinessProcessor,
+    checker::ReadinessChecker, public_decrypt_processor::PublicDecryptReadinessProcessor,
     user_decrypt_processor::UserDecryptReadinessProcessor,
 };
 use crate::store::sql::repositories::Repositories;
@@ -119,15 +117,6 @@ pub async fn initialize_gateway(
     )
     .await?;
 
-    DelegatedUserDecryptReadinessProcessor::orchestrator_spawn_task(
-        gateway_throttlers
-            .readiness_throttlers
-            .delegated_user_decrypt_readiness_worker,
-        readiness_checker.clone(),
-        orchestrator.clone(),
-    )
-    .await?;
-
     // Parse addresses for handlers (listener parses its own from config)
     let decryption_address = Address::from_str(&settings.gateway.contracts.decryption_address)
         .map_err(|_| anyhow::anyhow!("Invalid decryption address"))?;
@@ -168,10 +157,6 @@ pub async fn initialize_gateway(
         gateway_throttlers
             .readiness_throttlers
             .user_decrypt_readiness_throttler
-            .clone(),
-        gateway_throttlers
-            .readiness_throttlers
-            .delegated_user_decrypt_readiness_throttler
             .clone(),
         repositories.user_decrypt.clone(),
         user_decrypt_handler::UserDecryptHandlerConfig {
