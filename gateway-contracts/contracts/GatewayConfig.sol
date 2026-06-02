@@ -342,9 +342,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice See {IGatewayConfig-updateCoprocessors}.
-     * @dev No pause coupling: the coprocessor set/threshold are read live by `InputVerification` at
-     *      finalization, so an in-flight request may finalize under the changed value. Accepted
-     *      trade-off; host-mirrored changes follow the Phase-3 cutover ordering (see fhevm-internal#1487).
      */
     function updateCoprocessors(
         Coprocessor[] calldata newCoprocessors,
@@ -460,7 +457,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice See {IGatewayConfig-updateCoprocessorThreshold}.
-     * @dev No pause coupling; the threshold is read live at finalization (see {updateCoprocessors}).
      */
     function updateCoprocessorThreshold(
         uint256 newCoprocessorThreshold
@@ -471,7 +467,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice See {IGatewayConfig-setPriorityCoprocessorTxSender}.
-     * @dev No pause coupling; priority changes are coordinated via the Phase-3 cutover ordering.
      */
     function setPriorityCoprocessorTxSender(
         address coprocessorTxSenderAddress
@@ -483,7 +478,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice See {IGatewayConfig-removePriorityCoprocessorTxSender}.
-     * @dev No pause coupling; priority changes are coordinated via the Phase-3 cutover ordering.
      */
     function removePriorityCoprocessorTxSender() external virtual onlyOwner {
         _setPriorityCoprocessorTxSender(address(0));
