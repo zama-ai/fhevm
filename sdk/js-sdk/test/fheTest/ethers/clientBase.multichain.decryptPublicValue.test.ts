@@ -1,6 +1,6 @@
 import { createFhevmBaseClient } from '@fhevm/sdk/ethers';
 import { areAllEthersTestConfigsCleartext, isMultichain } from '../setup-ethers.js';
-import { defineClientBaseMultichainDecryptPublicValueTests } from '../ethers-common/clientBase.multichain.decryptPublicValue.test.js';
+import { defineClientBaseMultichainDecryptPublicValueTests } from '../ethers-common/clientBase.multichain.decryptPublicValue.tests.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //

@@ -1,6 +1,6 @@
 import { createFhevmBaseClient } from '@fhevm/sdk/viem';
 import { areAllViemTestConfigsCleartext, isMultichain } from '../setup-viem.js';
-import { defineClientBaseMultichainDecryptPublicValueTests } from '../viem-common/clientBase.multichain.decryptPublicValue.test.js';
+import { defineClientBaseMultichainDecryptPublicValueTests } from '../viem-common/clientBase.multichain.decryptPublicValue.tests.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
