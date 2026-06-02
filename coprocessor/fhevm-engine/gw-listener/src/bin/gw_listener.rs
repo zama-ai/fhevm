@@ -3,7 +3,10 @@ use std::time::Duration;
 use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
-use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
+use fhevm_engine_common::database::{
+    apply_gcs_mode_search_path, connect_pool_with_options_and_connect_options,
+    resolve_database_url_from_option,
+};
 use fhevm_engine_common::{
     drift_revert::{
         self, RevertRunnerConfig, WatcherTimeouts, DRIFT_REVERT_DB_DOWN_LIMIT,
@@ -144,12 +147,6 @@ struct Conf {
     #[arg(long, default_value = "30m", value_parser = parse_duration)]
     drift_auto_revert_recent_attempts_window: Duration,
 
-    /// When true, the gw-listener runs in GCS mode and starts paused: it
-    /// brings up health, drift-revert init and metrics, but does not poll for
-    /// or process any events. Used by the GCS stack during the blue/green
-    /// upgrade flow before cutover.
-    #[arg(long, default_value_t = false)]
-    gcs_mode: bool,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -207,7 +204,7 @@ async fn main() -> anyhow::Result<()> {
 
     let cancel_token = CancellationToken::new();
 
-    let config = ConfigSettings {
+    let mut config = ConfigSettings {
         database_url: resolve_database_url_from_option(conf.database_url.clone())?,
         database_pool_size: conf.database_pool_size,
         verify_proof_req_db_channel: conf.verify_proof_req_database_channel,
@@ -225,7 +222,19 @@ async fn main() -> anyhow::Result<()> {
         drift_post_consensus_grace: conf.drift_post_consensus_grace,
         drift_auto_revert_grace_period: conf.drift_auto_revert_grace_period,
         drift_auto_revert_enabled: conf.drift_auto_revert_enabled,
-        gcs_mode: conf.gcs_mode,
+        gcs_mode: false,
+    };
+
+    config.gcs_mode = match fhevm_engine_common::versioning::resolve_gcs_mode(
+        config.database_url.as_str(),
+    )
+    .await
+    {
+        Ok(gcs_mode) => gcs_mode,
+        Err(err) => {
+            error!(error = %err, "Failed to resolve gcs_mode from versioning table");
+            std::process::exit(1);
+        }
     };
 
     let gw_listener = std::sync::Arc::new(GatewayListener::new(
@@ -251,10 +260,16 @@ async fn main() -> anyhow::Result<()> {
         "Starting HTTP health check server"
     );
 
-    let (db_pool, _pool_refresh_handle) = connect_pool_with_options(
+    // In --gcs-mode the pool is pinned to `search_path = gcs,public` so
+    // unqualified writes (`verify_proofs`, `gw_listener_last_block`) land in
+    // the `gcs` schema; shared/control-plane tables (drift_revert_signal,
+    // host_chains, upgrade_state, ciphertext_digest, …) still resolve from
+    // `public` via fallback.
+    let (db_pool, _pool_refresh_handle) = connect_pool_with_options_and_connect_options(
         &config.database_url,
         PgPoolOptions::new().max_connections(config.database_pool_size),
         Some(&cancel_token),
+        apply_gcs_mode_search_path(config.gcs_mode),
     )
     .await?;
 

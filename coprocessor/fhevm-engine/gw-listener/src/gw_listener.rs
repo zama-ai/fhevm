@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use alloy::eips::BlockId;
@@ -8,9 +10,10 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::connect_options_for_database_url;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::utils::to_hex;
-use sqlx::{postgres::PgPoolOptions, Pool, Postgres, Row};
+use fhevm_engine_common::versioning::{run_stack_version_listener, StackMode};
+use sqlx::{postgres::PgListener, postgres::PgPoolOptions, Pool, Postgres, Row};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::drift_detector::{DriftDetector, EventContext};
 use crate::metrics::{
@@ -19,6 +22,15 @@ use crate::metrics::{
 };
 use crate::ConfigSettings;
 use crate::HealthStatus;
+
+/// Wake-up channel for GCS activation. Must stay in sync with
+/// `upgrade_controller::UPGRADE_ACTIVATED_CHANNEL`.
+const EVENT_UPGRADE_ACTIVATED: &str = "event_upgrade_activated";
+
+/// Sentinel for the activation atomic: the GCS row in `upgrade_state` has
+/// not been observed yet (the listener is paused). Any non-sentinel value is
+/// the real start_block.
+const GCS_NOT_ACTIVATED: i64 = -1;
 
 use fhevm_gateway_bindings::ciphertext_commits::CiphertextCommits;
 use fhevm_gateway_bindings::gateway_config::GatewayConfig;
@@ -36,6 +48,10 @@ pub struct GatewayListener<P: Provider<Ethereum> + Clone + 'static> {
     conf: ConfigSettings,
     cancel_token: CancellationToken,
     provider: P,
+    /// Runtime stack mode, updated by the `event_stack_version_upgraded`
+    /// listener. When this (blue) stack is retired at cutover it flips to
+    /// paused and the work loop becomes a no-op.
+    stack_mode: Arc<StackMode>,
 }
 
 impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
@@ -45,11 +61,13 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         cancel_token: CancellationToken,
         provider: P,
     ) -> Self {
+        let stack_mode = StackMode::new(conf.gcs_mode);
         GatewayListener {
             input_verification_address,
             conf,
             cancel_token,
             provider,
+            stack_mode,
         }
     }
 
@@ -60,10 +78,55 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             "Starting Gateway Listener",
         );
 
+        // GCS gating: spawn a long-lived watcher that mirrors
+        // `upgrade_state.start_block` (stack_role='GCS') into a shared atomic,
+        // then block here until the watcher has observed activation. Once
+        // activated, the listener proceeds normally; its writes resolve to
+        // `gcs.*` via the connection's `search_path = gcs,public`. In BCS
+        // mode this branch is a no-op.
         if self.conf.gcs_mode {
-            info!("Gateway listener started in --gcs-mode (paused); not processing any events. Waiting for cancellation.");
-            self.cancel_token.cancelled().await;
-            return Ok(());
+            let start_block_state = Arc::new(AtomicI64::new(GCS_NOT_ACTIVATED));
+            let watcher_pool = db_pool.clone();
+            let watcher_state = start_block_state.clone();
+            tokio::spawn(async move {
+                loop {
+                    if let Err(err) =
+                        watch_gcs_activation(&watcher_pool, &watcher_state).await
+                    {
+                        error!(error = %err, "GCS activation watcher errored; restarting in 5s");
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                    }
+                }
+            });
+
+            info!("Gateway listener in --gcs-mode (paused, not yet activated). Waiting for event_upgrade_activated.");
+            loop {
+                if self.cancel_token.is_cancelled() {
+                    return Ok(());
+                }
+                if start_block_state.load(Ordering::SeqCst) != GCS_NOT_ACTIVATED {
+                    break;
+                }
+                tokio::select! {
+                    _ = self.cancel_token.cancelled() => return Ok(()),
+                    _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+                }
+            }
+            info!("Gateway listener observed GCS activation; resuming.");
+        }
+
+        // Listen for `event_stack_version_upgraded`: at cutover this (blue)
+        // stack is retired and `stack_mode` flips to paused, turning the
+        // get-logs loop into a no-op.
+        {
+            let pool = db_pool.clone();
+            let stack_mode = self.stack_mode.clone();
+            let cancel = self.cancel_token.clone();
+            tokio::spawn(async move {
+                if let Err(err) = run_stack_version_listener(pool, stack_mode, cancel).await {
+                    error!(error = %err, "stack-version listener exited with error");
+                }
+            });
         }
 
         let get_logs_handle = {
@@ -156,6 +219,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                 }
 
                 _ = ticker.tick() => {
+                    // Paused (retired blue stack after cutover): no-op — don't
+                    // fetch or process any logs.
+                    if self.stack_mode.is_paused() {
+                        continue;
+                    }
+
                     let current_block = self.provider.get_block_number().await.inspect(|_| {
                         GET_BLOCK_NUM_SUCCESS_COUNTER.inc();
                     }).inspect_err(|_| {
@@ -615,6 +684,52 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                 blockchain_connected,
                 error_details.join("; "),
             )
+        }
+    }
+}
+
+/// LISTENs on `event_upgrade_activated` and mirrors
+/// `upgrade_state.start_block` (for `stack_role='GCS'`) into `state`. Polls
+/// once on entry so a worker started AFTER the activation notify fired still
+/// picks the value up. A 30s fallback sleep catches any missed NOTIFY.
+async fn watch_gcs_activation(
+    pool: &Pool<Postgres>,
+    state: &AtomicI64,
+) -> Result<(), sqlx::Error> {
+    let mut listener = PgListener::connect_with(pool).await?;
+    listener.listen(EVENT_UPGRADE_ACTIVATED).await?;
+    info!(
+        channel = EVENT_UPGRADE_ACTIVATED,
+        "GCS activation watcher listening"
+    );
+
+    loop {
+        let row: Option<(Option<i64>,)> = sqlx::query_as(
+            "SELECT start_block FROM upgrade_state WHERE stack_role = 'GCS'",
+        )
+        .fetch_optional(pool)
+        .await?;
+
+        if let Some((Some(start_block),)) = row {
+            let prev = state.swap(start_block, Ordering::SeqCst);
+            if prev != start_block {
+                info!(
+                    start_block,
+                    prev, "GCS start_block updated from upgrade_state"
+                );
+            }
+        } else {
+            debug!("GCS row in upgrade_state has no start_block yet");
+        }
+
+        tokio::select! {
+            recv = listener.recv() => {
+                if let Err(err) = recv {
+                    warn!(error = %err, "GCS activation listener recv error");
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            }
+            _ = tokio::time::sleep(Duration::from_secs(30)) => {}
         }
     }
 }
