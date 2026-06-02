@@ -69,7 +69,7 @@ jobs:
         env:
           GH_WORKSPACE: ${{ github.workspace }}
         run: |
-          version="$(grep 'channel' "$GH_WORKSPACE/rust-toolchain.toml" | awk -F' = ' '{print $2}' | tr -d '"')"
+          version="$(grep 'channel' "$GH_WORKSPACE/kms-connector/rust-toolchain.toml" | awk -F' = ' '{print $2}' | tr -d '"')"
           echo "RUST_IMAGE_VERSION=$version" >> "$GITHUB_ENV"
           echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "${GITHUB_ENV}"
 
