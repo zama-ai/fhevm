@@ -108,13 +108,19 @@ impl ZkProofService {
         let max_pool_connections =
             std::cmp::max(conf.pg_pool_connections, 3 * conf.worker_thread_count);
 
-        let Some(pool_mngr) = PostgresPoolManager::connect_pool(
+        // In --gcs-mode the pool is pinned to `search_path = gcs,public` so
+        // unqualified writes (`INSERT INTO ciphertexts`, `INSERT INTO
+        // state_hash`) resolve to the GCS schema; shared read-only tables
+        // (keys, crs, host_chains, upgrade_state, verify_proofs, …) still
+        // resolve from `public` via fallback.
+        let Some(pool_mngr) = PostgresPoolManager::connect_pool_with_gcs_mode(
             token.child_token(),
             conf.database_url.as_str(),
             conf.pg_timeout,
             max_pool_connections,
             Duration::from_secs(2),
             conf.pg_auto_explain_with_min_duration,
+            conf.gcs_mode,
         )
         .await
         else {
@@ -173,10 +179,7 @@ impl ZkProofService {
 /// once on entry so a worker started AFTER the activation notify fired still
 /// picks the value up. A 30s fallback sleep catches any missed NOTIFY (dropped
 /// connection, late start).
-async fn watch_gcs_activation(
-    pool: &PgPool,
-    state: &AtomicI64,
-) -> Result<(), ExecutionError> {
+async fn watch_gcs_activation(pool: &PgPool, state: &AtomicI64) -> Result<(), ExecutionError> {
     let mut listener = PgListener::connect_with(pool).await?;
     listener.listen(EVENT_UPGRADE_ACTIVATED).await?;
     info!(
@@ -325,10 +328,16 @@ async fn execute_worker(
     loop {
         update_last_active(last_active_at.clone()).await;
 
-        // GCS is active for this iteration iff the worker was started with
-        // --gcs-mode AND the activation watcher has populated start_block.
-        let gcs_active = conf.gcs_mode
-            && start_block_state.load(Ordering::SeqCst) != GCS_NOT_ACTIVATED;
+        // GCS gating: skip the iteration entirely until the activation
+        // watcher has populated `start_block` in `upgrade_state`. The `gcs`
+        // schema doesn't exist before activation, so writes that fell back
+        // through `search_path = gcs,public` would hit `public.*` — exactly
+        // what we must avoid.
+        if conf.gcs_mode && start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED {
+            debug!("GCS not yet activated; sleeping before re-check");
+            tokio::time::sleep(Duration::from_secs(conf.pg_polling_interval as u64)).await;
+            continue;
+        }
 
         execute_verify_proof_routine(
             &pool,
@@ -336,7 +345,6 @@ async fn execute_worker(
             latest_crs.clone(),
             host_chain_cache.as_ref(),
             &conf,
-            gcs_active,
         )
         .await?;
         let count = get_remaining_tasks(&pool).await?;
@@ -374,7 +382,6 @@ async fn execute_verify_proof_routine(
     crs: Arc<Crs>,
     host_chain_cache: &HostChainsCache,
     conf: &Config,
-    gcs_active: bool,
 ) -> Result<(), ExecutionError> {
     let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
     if let Ok(row) = sqlx::query!(
@@ -465,14 +472,13 @@ async fn execute_verify_proof_routine(
                     });
                     verified = true;
                     let count = cts.len();
-                    insert_ciphertexts(&mut txn, cts, blob_hash, gcs_active).await?;
+                    insert_ciphertexts(&mut txn, cts, blob_hash).await?;
                     if let Some(bn) = block_number {
                         insert_input_handles(&mut txn, cts, bn).await?;
                         upsert_state_hash_for_block(
                             &mut txn,
                             host_chain_id_raw,
                             bn,
-                            gcs_active,
                         )
                         .await?;
                     }
@@ -721,7 +727,7 @@ fn finalize_ciphertext(
     handle[21] = ct_idx as u8;
     handle[22..30].copy_from_slice(&aux_data.chain_id.as_u64().to_be_bytes());
     handle[30] = serialized_type as u8;
-    handle[31] = current_ciphertext_version() as u8;
+    handle[31] = 0u8;
 
     tracing::Span::current().record("ct_type", tracing::field::display(serialized_type));
     info!(
@@ -765,34 +771,28 @@ pub(crate) async fn insert_ciphertexts(
     db_txn: &mut Transaction<'_, Postgres>,
     cts: &[Ciphertext],
     blob_hash: &Vec<u8>,
-    gcs_active: bool,
 ) -> Result<(), ExecutionError> {
-    // In GCS mode (post-activation) all new ciphertexts land in the staging
-    // child table; BCS continues writing to the parent. Both tables share the
-    // same `(handle, ciphertext_version)` unique constraint, so ON CONFLICT
-    // semantics are preserved.
-    let ciphertexts_table = if gcs_active {
-        "ciphertexts_staging"
-    } else {
-        "ciphertexts"
-    };
-    let insert_sql = format!(
-        "INSERT INTO {ciphertexts_table} (
-            handle, ciphertext, ciphertext_version, ciphertext_type,
-            input_blob_hash, input_blob_index, is_input, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, TRUE, NOW())
-        ON CONFLICT (handle, ciphertext_version) DO NOTHING"
-    );
+    // Schema isolation handles BCS/GCS routing at the connection layer
+    // (`search_path = gcs,public` for GCS, default `public` for BCS), so
+    // this INSERT references `ciphertexts` unqualified.
     for (i, ct) in cts.iter().enumerate() {
-        sqlx::query(&insert_sql)
-            .bind(&ct.handle)
-            .bind(&ct.compressed)
-            .bind(ct.ct_version)
-            .bind(ct.ct_type)
-            .bind(blob_hash)
-            .bind(i as i32)
-            .execute(db_txn.as_mut())
-            .await?;
+        sqlx::query!(
+            r#"
+            INSERT INTO ciphertexts (
+                handle, ciphertext, ciphertext_version, ciphertext_type,
+                input_blob_hash, input_blob_index, is_input, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, TRUE, NOW())
+            ON CONFLICT (handle, ciphertext_version) DO NOTHING;
+            "#,
+            &ct.handle,
+            &ct.compressed,
+            ct.ct_version,
+            ct.ct_type,
+            &blob_hash,
+            i as i32,
+        )
+        .execute(db_txn.as_mut())
+        .await?;
     }
 
     // Notify all workers that new ciphertext is inserted
@@ -840,27 +840,22 @@ pub(crate) async fn insert_input_handles(
 // hash unless every computation for that block is completed, so partial blocks
 // are silently skipped.
 //
-// BCS: reads `FROM ONLY ciphertexts` and writes to `state_hash`.
-// GCS (active): reads `FROM ONLY ciphertexts_staging` and writes to
-// `state_hash_staging`. GCS only produces input ciphertexts post-activation,
-// all of which land in ciphertexts_staging, so the staging hash is computed
-// exclusively over GCS-produced rows.
+// Schema isolation: BCS connects with `search_path = public`, GCS with
+// `search_path = gcs,public`. Unqualified `ciphertexts` and `state_hash`
+// resolve to the stack's own schema. Pre-snapshot ciphertexts (input_handles
+// from before activation) still live in `public.ciphertexts`; the JOIN would
+// miss them under `search_path = gcs,public`. But GCS only produces input
+// ciphertexts post-activation, all of which land in `gcs.ciphertexts`, so
+// the JOIN is consistent.
 pub(crate) async fn upsert_state_hash_for_block(
     db_txn: &mut Transaction<'_, Postgres>,
     chain_id: i64,
     block_number: i64,
-    gcs_active: bool,
 ) -> Result<(), ExecutionError> {
-    let (ciphertexts_source, state_hash_table) = if gcs_active {
-        ("ONLY ciphertexts_staging", "state_hash_staging")
-    } else {
-        ("ONLY ciphertexts", "state_hash")
-    };
-
     // From zkproof-worker's perspective the state at this block is the set of
     // input ciphertexts it just materialised, so the hash is computed over
     // `input_handles` for the block rather than over `computations` outputs.
-    let select_sql = format!(
+    let row: Option<(Option<String>, i64)> = sqlx::query_as(
         "SELECT
             encode(
                 sha256(
@@ -870,31 +865,28 @@ pub(crate) async fn upsert_state_hash_for_block(
             ) AS state_hash,
             COUNT(*) AS ciphertext_count
         FROM input_handles ih
-        JOIN {ciphertexts_source} ct ON ct.handle = ih.handle
-        WHERE ih.block_number = $1"
-    );
-    let row: Option<(Option<String>, i64)> = sqlx::query_as(&select_sql)
-        .bind(block_number)
-        .fetch_optional(db_txn.as_mut())
-        .await?;
+        JOIN ciphertexts ct ON ct.handle = ih.handle
+        WHERE ih.block_number = $1",
+    )
+    .bind(block_number)
+    .fetch_optional(db_txn.as_mut())
+    .await?;
 
     if let Some((Some(state_hash), _count)) = row {
-        let insert_sql = format!(
-            "INSERT INTO {state_hash_table} (chain_id, block_number, state_hash)
+        sqlx::query(
+            "INSERT INTO state_hash (chain_id, block_number, state_hash)
              VALUES ($1, $2, $3)
-             ON CONFLICT (chain_id, block_number) DO NOTHING"
-        );
-        sqlx::query(&insert_sql)
-            .bind(chain_id)
-            .bind(block_number)
-            .bind(&state_hash)
-            .execute(db_txn.as_mut())
-            .await?;
+             ON CONFLICT (chain_id, block_number) DO NOTHING",
+        )
+        .bind(chain_id)
+        .bind(block_number)
+        .bind(&state_hash)
+        .execute(db_txn.as_mut())
+        .await?;
         info!(
             chain_id,
             block_number,
             state_hash = %state_hash,
-            table = state_hash_table,
             "inserted state_hash for block"
         );
     }
