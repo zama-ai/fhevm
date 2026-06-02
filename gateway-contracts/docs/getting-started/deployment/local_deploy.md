@@ -41,6 +41,28 @@ This:
 - deploys the contracts through the `deployAllGatewayContracts` task found in [deploy.ts](../../../tasks/deployment/contracts.ts)
 - adds the host chains to the `GatewayConfig` contract through the `addHostChainsToGatewayConfig` task found in [addHostChains.ts](../../../tasks/addHostChains.ts)
 
+## Manage host chains
+
+Once a host chain is registered, its lifecycle is managed through three owner-only tasks found in
+[manageHostChains.ts](../../../tasks/manageHostChains.ts). Each task signs with `DEPLOYER_PRIVATE_KEY`
+and resolves the `GatewayConfig` address the same way as `addHostChainsToGatewayConfig` — from the
+`GATEWAY_CONFIG_ADDRESS` env var by default, or from the `addresses/` directory when
+`--use-internal-proxy-address true` is passed (local / CI flow):
+
+```bash
+# Disable a registered host chain (it stays registered but is flagged disabled)
+npx hardhat task:disableHostChainOnGatewayConfig --chain-id <id>
+
+# Re-enable a previously disabled host chain
+npx hardhat task:enableHostChainOnGatewayConfig --chain-id <id>
+
+# Remove a host chain entirely (it must be disabled first)
+npx hardhat task:removeHostChainOnGatewayConfig --chain-id <id>
+```
+
+Each task runs a pre-flight check (chain registered / disabled state) so the operator gets a clean
+error before submitting a transaction that would otherwise revert on-chain.
+
 ## Run tests
 
 Run all tests on the local network:
