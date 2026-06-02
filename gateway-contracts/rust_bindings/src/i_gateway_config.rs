@@ -55,7 +55,6 @@ interface IGatewayConfig {
     error HostChainAlreadyRegistered(uint256 chainId);
     error HostChainNotDisabled(uint256 chainId);
     error HostChainNotRegistered(uint256 chainId);
-    error InputVerificationMustBePaused();
     error InvalidHighCoprocessorThreshold(uint256 coprocessorThreshold, uint256 nCoprocessors);
     error InvalidHighKmsGenThreshold(uint256 kmsGenThreshold, uint256 nKmsNodes);
     error InvalidHighMpcThreshold(uint256 mpcThreshold, uint256 nKmsNodes);
@@ -1855,11 +1854,6 @@ interface IGatewayConfig {
         "internalType": "uint256"
       }
     ]
-  },
-  {
-    "type": "error",
-    "name": "InputVerificationMustBePaused",
-    "inputs": []
   },
   {
     "type": "error",
@@ -5056,81 +5050,6 @@ error HostChainNotRegistered(uint256 chainId);
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.chainId),
                 )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `InputVerificationMustBePaused()` and selector `0x0bb9fc83`.
-```solidity
-error InputVerificationMustBePaused();
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct InputVerificationMustBePaused;
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = ();
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = ();
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<InputVerificationMustBePaused>
-        for UnderlyingRustTuple<'_> {
-            fn from(value: InputVerificationMustBePaused) -> Self {
-                ()
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for InputVerificationMustBePaused {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for InputVerificationMustBePaused {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "InputVerificationMustBePaused()";
-            const SELECTOR: [u8; 4] = [11u8, 185u8, 252u8, 131u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
@@ -19155,8 +19074,6 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
         #[allow(missing_docs)]
         HostChainNotRegistered(HostChainNotRegistered),
         #[allow(missing_docs)]
-        InputVerificationMustBePaused(InputVerificationMustBePaused),
-        #[allow(missing_docs)]
         InvalidHighCoprocessorThreshold(InvalidHighCoprocessorThreshold),
         #[allow(missing_docs)]
         InvalidHighKmsGenThreshold(InvalidHighKmsGenThreshold),
@@ -19212,7 +19129,6 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [1u8, 49u8, 181u8, 233u8],
             [6u8, 140u8, 141u8, 64u8],
-            [11u8, 185u8, 252u8, 131u8],
             [15u8, 105u8, 203u8, 252u8],
             [20u8, 238u8, 189u8, 73u8],
             [22u8, 167u8, 39u8, 120u8],
@@ -19255,7 +19171,7 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
     impl alloy_sol_types::SolInterface for IGatewayConfigErrors {
         const NAME: &'static str = "IGatewayConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 39usize;
+        const COUNT: usize = 38usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -19309,9 +19225,6 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 }
                 Self::HostChainNotRegistered(_) => {
                     <HostChainNotRegistered as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::InputVerificationMustBePaused(_) => {
-                    <InputVerificationMustBePaused as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::InvalidHighCoprocessorThreshold(_) => {
                     <InvalidHighCoprocessorThreshold as alloy_sol_types::SolError>::SELECTOR
@@ -19416,17 +19329,6 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                             .map(IGatewayConfigErrors::EmptyKmsNodes)
                     }
                     EmptyKmsNodes
-                },
-                {
-                    fn InputVerificationMustBePaused(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InputVerificationMustBePaused as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::InputVerificationMustBePaused)
-                    }
-                    InputVerificationMustBePaused
                 },
                 {
                     fn InvalidHighKmsGenThreshold(
@@ -19887,17 +19789,6 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                             .map(IGatewayConfigErrors::EmptyKmsNodes)
                     }
                     EmptyKmsNodes
-                },
-                {
-                    fn InputVerificationMustBePaused(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InputVerificationMustBePaused as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::InputVerificationMustBePaused)
-                    }
-                    InputVerificationMustBePaused
                 },
                 {
                     fn InvalidHighKmsGenThreshold(
@@ -20414,11 +20305,6 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                         inner,
                     )
                 }
-                Self::InputVerificationMustBePaused(inner) => {
-                    <InputVerificationMustBePaused as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::InvalidHighCoprocessorThreshold(inner) => {
                     <InvalidHighCoprocessorThreshold as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -20625,12 +20511,6 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 }
                 Self::HostChainNotRegistered(inner) => {
                     <HostChainNotRegistered as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::InputVerificationMustBePaused(inner) => {
-                    <InputVerificationMustBePaused as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

@@ -185,15 +185,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @dev Used by admin operations that mutate consensus state read by `InputVerification`.
-     *      The operator must pause `InputVerification` first to drain in-flight requests.
-     */
-    modifier whenInputVerificationPaused() {
-        _checkInputVerificationPaused();
-        _;
-    }
-
-    /**
      * @dev Used by admin operations that mutate KMS context state read by `Decryption`.
      *      KMS-context rotations, destructions and per-context threshold changes race
      *      against decryption requests pinned to the affected context, so the operator
@@ -275,7 +266,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @custom:oz-upgrades-validate-as-initializer
     function reinitializeV8(address coprocessorTxSenderAddress) public virtual reinitializer(REINITIALIZER_VERSION) {
         if (coprocessorTxSenderAddress != address(0)) {
-            _checkInputVerificationPaused();
             _requireRegisteredPriorityCoprocessorTxSender(coprocessorTxSenderAddress);
             _setPriorityCoprocessorTxSender(coprocessorTxSenderAddress);
             emit UpdatePriorityCoprocessorTxSender(coprocessorTxSenderAddress);
@@ -352,11 +342,14 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice See {IGatewayConfig-updateCoprocessors}.
+     * @dev No pause coupling: the coprocessor set/threshold are read live by `InputVerification` at
+     *      finalization, so an in-flight request may finalize under the changed value. Accepted
+     *      trade-off; host-mirrored changes follow the Phase-3 cutover ordering (see fhevm-internal#1487).
      */
     function updateCoprocessors(
         Coprocessor[] calldata newCoprocessors,
         uint256 newCoprocessorThreshold
-    ) external virtual onlyOwner whenInputVerificationPaused {
+    ) external virtual onlyOwner {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         address priorityCoprocessorTxSender = $.priorityCoprocessorTxSender;
         if (priorityCoprocessorTxSender != address(0)) {
@@ -467,20 +460,22 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice See {IGatewayConfig-updateCoprocessorThreshold}.
+     * @dev No pause coupling; the threshold is read live at finalization (see {updateCoprocessors}).
      */
     function updateCoprocessorThreshold(
         uint256 newCoprocessorThreshold
-    ) external virtual onlyOwner whenInputVerificationPaused {
+    ) external virtual onlyOwner {
         _setCoprocessorThreshold(newCoprocessorThreshold);
         emit UpdateCoprocessorThreshold(newCoprocessorThreshold);
     }
 
     /**
      * @notice See {IGatewayConfig-setPriorityCoprocessorTxSender}.
+     * @dev No pause coupling; priority changes are coordinated via the Phase-3 cutover ordering.
      */
     function setPriorityCoprocessorTxSender(
         address coprocessorTxSenderAddress
-    ) external virtual onlyOwner whenInputVerificationPaused {
+    ) external virtual onlyOwner {
         _requireRegisteredPriorityCoprocessorTxSender(coprocessorTxSenderAddress);
         _setPriorityCoprocessorTxSender(coprocessorTxSenderAddress);
         emit UpdatePriorityCoprocessorTxSender(coprocessorTxSenderAddress);
@@ -488,8 +483,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice See {IGatewayConfig-removePriorityCoprocessorTxSender}.
+     * @dev No pause coupling; priority changes are coordinated via the Phase-3 cutover ordering.
      */
-    function removePriorityCoprocessorTxSender() external virtual onlyOwner whenInputVerificationPaused {
+    function removePriorityCoprocessorTxSender() external virtual onlyOwner {
         _setPriorityCoprocessorTxSender(address(0));
         emit UpdatePriorityCoprocessorTxSender(address(0));
     }
@@ -1182,14 +1178,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         $.priorityCoprocessorTxSender = coprocessorTxSenderAddress;
     }
 
-    /**
-     * @notice Reverts if InputVerification is not paused.
-     */
-    function _checkInputVerificationPaused() internal view virtual {
-        if (!INPUT_VERIFICATION.paused()) {
-            revert InputVerificationMustBePaused();
-        }
-    }
 
     /**
      * @notice Reverts if the priority coprocessor transaction sender is not registered.

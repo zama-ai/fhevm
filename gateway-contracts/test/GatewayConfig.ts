@@ -268,18 +268,18 @@ describe("GatewayConfig", function () {
       expect(await upgradedGatewayConfig.getPriorityCoprocessorTxSender()).to.equal(ZeroAddress);
     });
 
-    it("Should revert when reinitializing with priority while InputVerification is not paused", async function () {
+    it("Should set priority during reinitialization while InputVerification is not paused", async function () {
       const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
       expect(await inputVerification.paused()).to.be.false;
 
-      await expect(
-        hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
-          call: {
-            fn: "reinitializeV8",
-            args: [coprocessors[0].txSenderAddress],
-          },
-        }),
-      ).to.be.revertedWithCustomError(gatewayConfig, "InputVerificationMustBePaused");
+      const upgradedGatewayConfig = await hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
+        call: {
+          fn: "reinitializeV8",
+          args: [coprocessors[0].txSenderAddress],
+        },
+      });
+
+      expect(await upgradedGatewayConfig.getPriorityCoprocessorTxSender()).to.equal(coprocessors[0].txSenderAddress);
     });
 
     it("Should revert when reinitializing with an unregistered priority coprocessor transaction sender", async function () {
@@ -1259,22 +1259,19 @@ describe("GatewayConfig", function () {
             .withArgs(fakeOwner.address);
         });
 
-        it("Should revert when setting the priority coprocessor while InputVerification is not paused", async function () {
+        it("Should set the priority coprocessor while InputVerification is not paused", async function () {
           await inputVerification.connect(owner).unpause();
 
-          await expect(
-            gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(coprocessorTxSenders[0].address),
-          ).to.be.revertedWithCustomError(gatewayConfig, "InputVerificationMustBePaused");
+          await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(coprocessorTxSenders[0].address);
+          expect(await gatewayConfig.getPriorityCoprocessorTxSender()).to.equal(coprocessorTxSenders[0].address);
         });
 
-        it("Should revert when removing the priority coprocessor while InputVerification is not paused", async function () {
+        it("Should remove the priority coprocessor while InputVerification is not paused", async function () {
           await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(coprocessorTxSenders[0].address);
           await inputVerification.connect(owner).unpause();
 
-          await expect(gatewayConfig.connect(owner).removePriorityCoprocessorTxSender()).to.be.revertedWithCustomError(
-            gatewayConfig,
-            "InputVerificationMustBePaused",
-          );
+          await gatewayConfig.connect(owner).removePriorityCoprocessorTxSender();
+          expect(await gatewayConfig.getPriorityCoprocessorTxSender()).to.equal(ZeroAddress);
         });
 
         it("Should revert when removing the priority coprocessor through a coprocessor update", async function () {
@@ -1329,13 +1326,11 @@ describe("GatewayConfig", function () {
             .withArgs(highCoprocessorThreshold, nCoprocessors);
         });
 
-        it("Should revert because InputVerification is not paused", async function () {
-          // Rewrite coprocessor consensus state without first pausing InputVerification.
+        it("Should update coprocessors while InputVerification is not paused", async function () {
+          // Coprocessor consensus state can be rewritten without first pausing InputVerification.
           await inputVerification.connect(owner).unpause();
-          await expect(gatewayConfig.connect(owner).updateCoprocessors(coprocessors, 1)).to.be.revertedWithCustomError(
-            gatewayConfig,
-            "InputVerificationMustBePaused",
-          );
+          await gatewayConfig.connect(owner).updateCoprocessors(coprocessors, 1);
+          expect(await gatewayConfig.getCoprocessorMajorityThreshold()).to.equal(1);
         });
       });
 
@@ -1897,13 +1892,11 @@ describe("GatewayConfig", function () {
           .withArgs(highCoprocessorThreshold, nCoprocessors);
       });
 
-      it("Should revert because InputVerification is not paused", async function () {
-        // Rewrite coprocessor consensus state without first pausing InputVerification.
+      it("Should update the coprocessor threshold while InputVerification is not paused", async function () {
+        // Coprocessor consensus state can be rewritten without first pausing InputVerification.
         await inputVerification.connect(owner).unpause();
-        await expect(gatewayConfig.connect(owner).updateCoprocessorThreshold(1)).to.be.revertedWithCustomError(
-          gatewayConfig,
-          "InputVerificationMustBePaused",
-        );
+        await gatewayConfig.connect(owner).updateCoprocessorThreshold(1);
+        expect(await gatewayConfig.getCoprocessorMajorityThreshold()).to.equal(1);
       });
     });
 

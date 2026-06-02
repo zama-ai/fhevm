@@ -360,15 +360,6 @@ interface IGatewayConfig {
     error ThresholdExceedsProofFormatLimit(string thresholdName, uint256 threshold, uint256 maxAllowed);
 
     /**
-     * @notice Error emitted when an admin operation requires `InputVerification` to be paused first.
-     * @dev Coprocessor set, threshold, and priority updates rewrite consensus state read by every
-     *      input verification, so the contract must be paused first. The pause stops new proof
-     *      requests; operators are still responsible for draining in-flight proof responses and
-     *      ciphertext commits before changing priority.
-     */
-    error InputVerificationMustBePaused();
-
-    /**
      * @notice Error emitted when an admin operation requires `Decryption` to be paused first.
      * @dev KMS-context mutators (`updateKmsContext`, `destroyKmsContext`) and per-context
      *      threshold setters race against decryption requests pinned to the affected context;
