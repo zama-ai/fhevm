@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id\n            FROM verify_proofs\n            WHERE verified IS NULL\n            ORDER BY zk_proof_id ASC\n            LIMIT 1 FOR UPDATE SKIP LOCKED",
+  "query": "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id\n            FROM verify_proofs\n            WHERE verified IS NULL\n              AND chain_id = ANY($1::bigint[])\n            ORDER BY zk_proof_id ASC\n            LIMIT 1 FOR UPDATE SKIP LOCKED",
   "describe": {
     "columns": [
       {
@@ -35,7 +35,9 @@
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Int8Array"
+      ]
     },
     "nullable": [
       false,
@@ -46,5 +48,5 @@
       true
     ]
   },
-  "hash": "092136523b568e034b34abc83c1286765e9a2016faffead206b56c22a487256a"
+  "hash": "b7510de4735f7dce4b05471ebc50b55b8f209a755b5cf6b88a8cb864d9ebd1dd"
 }

@@ -20,7 +20,10 @@ overrides:
   - files: '*.md'
     options:
       proseWrap: preserve
-  - files: '*.ts'
+  - files: "*.{yml,yaml}"
+    options:
+      singleQuote: false
+  - files: "*.ts"
     options:
       importOrder: ['<THIRD_PARTY_MODULES>', '^[./]']
       importOrderParserPlugins: ['typescript']

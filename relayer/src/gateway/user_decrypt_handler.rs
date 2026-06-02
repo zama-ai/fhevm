@@ -3,9 +3,9 @@ use crate::{
     core::{
         errors::{EventProcessingError, READINESS_CHECK_TIMEOUT_MSG},
         event::{
-            DelegatedUserDecryptEventData, DelegatedUserDecryptRequest, GatewayChainEventData,
-            GatewayChainEventId, HandleContractPair, RelayerEvent, RelayerEventData,
-            UserDecryptEventData, UserDecryptEventId, UserDecryptRequest, UserDecryptResponse,
+            GatewayChainEventData, GatewayChainEventId, HandleContractPair, RelayerEvent,
+            RelayerEventData, UserDecryptEventData, UserDecryptEventId, UserDecryptRequest,
+            UserDecryptResponse,
         },
         job_id::JobId,
     },
@@ -27,9 +27,7 @@ use crate::{
         traits::{Event, EventHandler},
         ContentHasher, Orchestrator,
     },
-    readiness::throttler::{
-        DelegatedUserDecryptReadinessTask, ReadinessSender, UserDecryptReadinessTask,
-    },
+    readiness::throttler::{ReadinessSender, UserDecryptReadinessTask},
     store::sql::{
         models::{
             req_status_enum_model::ReqStatus,
@@ -67,7 +65,6 @@ pub struct GatewayHandler {
     dispatcher: Arc<Orchestrator>,
     tx_throttler: TxThrottlingSender<GatewayTxTask>,
     user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
-    delegated_user_decrypt_readiness_throttler: ReadinessSender<DelegatedUserDecryptReadinessTask>,
     user_decrypt_repo: Arc<UserDecryptRepository>,
     config: UserDecryptHandlerConfig,
     threshold_resolver: Arc<ThresholdResolver>,
@@ -78,9 +75,6 @@ impl GatewayHandler {
         dispatcher: Arc<Orchestrator>,
         tx_throttler: TxThrottlingSender<GatewayTxTask>,
         user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
-        delegated_user_decrypt_readiness_throttler: ReadinessSender<
-            DelegatedUserDecryptReadinessTask,
-        >,
         user_decrypt_repo: Arc<UserDecryptRepository>,
         config: UserDecryptHandlerConfig,
         threshold_resolver: Arc<ThresholdResolver>,
@@ -89,7 +83,6 @@ impl GatewayHandler {
             dispatcher: Arc::clone(&dispatcher),
             tx_throttler,
             user_decrypt_readiness_throttler,
-            delegated_user_decrypt_readiness_throttler,
             user_decrypt_repo,
             config,
             threshold_resolver,
@@ -124,9 +117,18 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                     ref decrypt_request,
                     ..
                 } => {
-                    info!("Processing user decrypt request {}", event.job_id);
+                    info!(
+                        kind = %decrypt_request.attestation_kind(),
+                        "Processing user decrypt request {}",
+                        event.job_id
+                    );
                     async {
                         let job_id_hash = decrypt_request.content_hash();
+                        // All three attestation types share the readiness
+                        // throttler: the gateway uses the same
+                        // `isUserDecryptionReady_1((bytes32,address)[], bytes)`
+                        // call regardless of variant, and the host-ACL step
+                        // dispatches per-variant inside `ReadinessChecker`.
                         self.readiness_check_enqueue(job_id_hash, decrypt_request)
                             .await
                     }
@@ -140,6 +142,7 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                         info!(
                             step = %UserDecryptStep::ReadinessCheckPassed,
                             int_job_id = %event.job_id,
+                            kind = %decrypt_request.attestation_kind(),
                             "Readiness check passed, sending user decrypt request to gateway"
                         );
 
@@ -162,52 +165,6 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                 }
             },
 
-            RelayerEventData::DelegatedUserDecrypt(delegated_user_decrypt_event) => {
-                match delegated_user_decrypt_event {
-                    DelegatedUserDecryptEventData::ReqRcvdFromUser {
-                        ref decrypt_request,
-                        ..
-                    } => {
-                        info!("Processing delegated user decrypt request {}", event.job_id);
-                        async {
-                            let job_id_hash = decrypt_request.content_hash();
-                            self.delegated_user_decrypt_readiness_check_enqueue(job_id_hash, decrypt_request)
-                                .await
-                        }
-                        .await
-                    }
-                    DelegatedUserDecryptEventData::ReadinessCheckPassed {
-                        ref decrypt_request,
-                        ..
-                    } => {
-                        async {
-                            info!(
-                        "Readiness check passed. Throttling delegated user decrypt request to gateway {}",
-                        event.job_id
-                    );
-
-                            let job_id_hash = decrypt_request.content_hash();
-                            self.mark_processing(job_id_hash).await?;
-
-                            self.send_delegated_user_decrypt_request(event.clone(), decrypt_request.clone())
-                                .await
-                        }
-                        .await
-                    }
-                    DelegatedUserDecryptEventData::ReadinessCheckTimedOut { ref error, .. } => {
-                        Err(error.clone())
-                    }
-                    DelegatedUserDecryptEventData::ReadinessCheckFailed { ref error, .. } => {
-                        Err(error.clone())
-                    }
-                    DelegatedUserDecryptEventData::InternalFailure { error } => Err(error.clone()),
-                    _ => {
-                        warn!("Unexpected event received in delegated user decrypt handler");
-                        return;
-                    }
-                }
-            }
-
             RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd {
                 ref log,
                 tx_hash,
@@ -225,9 +182,7 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                                 .await
                         }
                         topic if topic == consensus_topic => {
-                            debug!(
-                                "Observed gateway user-decrypt consensus response"
-                            );
+                            debug!("Observed gateway user-decrypt consensus response");
                             self.update_consensus_hash(log, event.clone(), *tx_hash)
                                 .await;
                             return;
@@ -304,49 +259,6 @@ impl GatewayHandler {
         Ok(())
     }
 
-    /// Validates that all ciphertext handles are ready and user is authorized for delegated decryption.
-    ///
-    /// Checks if handles exist on fhevm and user has permission to decrypt them.
-    /// Enqueue the readiness check event with a semaphore for throttling requests.
-    async fn delegated_user_decrypt_readiness_check_enqueue(
-        &self,
-        job_id_hash: [u8; 32],
-        decrypt_request: &DelegatedUserDecryptRequest,
-    ) -> Result<(), EventProcessingError> {
-        let task: DelegatedUserDecryptReadinessTask = DelegatedUserDecryptReadinessTask {
-            id: hex::encode(job_id_hash),
-            job_id: JobId::from(job_id_hash),
-            request: decrypt_request.clone(),
-        };
-
-        match self
-            .delegated_user_decrypt_readiness_throttler
-            .push(task)
-            .await
-        {
-            Ok(()) => {}
-            // The following are termination errors, which means a failure on readiness.
-            // These should NEVER happen with the bouncer.
-            Err(e) => match e {
-                EventProcessingError::QueueFull => {
-                    return Err(EventProcessingError::ProtocolOverload(
-                        "Relayer is full for delegated user readiness check, retry later."
-                            .to_string(),
-                    ));
-                }
-                EventProcessingError::ChannelClosed => {
-                    error!("FATAL: Cannot accept request for delegated user readiness check, internal worker is dead.");
-                    return Err(e);
-                }
-                _ => {
-                    return Err(e);
-                }
-            },
-        };
-
-        Ok(())
-    }
-
     /// Processes user decrypt request by sending it to the Gateway blockchain.
     ///
     /// Steps:
@@ -370,35 +282,6 @@ impl GatewayHandler {
         self.send_to_gateway(calldata_bytes, job_id_hash).await?;
         info!(
             "User decrypt request sent to gateway for {:?}",
-            event.job_id
-        );
-        Ok(())
-    }
-
-    /// Processes delegated user decrypt request by sending it to the Gateway blockchain.
-    ///
-    /// Steps:
-    /// 1. Send transaction to Gateway Decryption contract
-    /// 2. Extract user_decryption_id from receipt
-    /// 3. Store receipt in database
-    async fn send_delegated_user_decrypt_request(
-        &self,
-        event: RelayerEvent,
-        decrypt_request: DelegatedUserDecryptRequest,
-    ) -> Result<(), EventProcessingError> {
-        info!(
-            "Sending delegated user decrypt request to gateway for {}",
-            event.job_id
-        );
-
-        let job_id_hash = decrypt_request.content_hash();
-
-        let calldata_bytes =
-            ComputeCalldata::delegated_user_decryption_req(decrypt_request.clone())?;
-
-        self.send_to_gateway(calldata_bytes, job_id_hash).await?;
-        info!(
-            "Delegated user decryption request sent to the gateway for {}",
             event.job_id
         );
         Ok(())
@@ -940,28 +823,6 @@ impl GatewayHandler {
                         );
                     }
                 }
-
-                if let RelayerEventData::DelegatedUserDecrypt(
-                    DelegatedUserDecryptEventData::ReadinessCheckTimedOut {
-                        ref decrypt_request,
-                        ..
-                    },
-                ) = event.data
-                {
-                    let job_id_hash = decrypt_request.content_hash();
-
-                    if let Err(db_err) = self
-                        .user_decrypt_repo
-                        .update_status_to_timed_out(&job_id_hash[..], READINESS_CHECK_TIMEOUT_MSG)
-                        .await
-                    {
-                        error!(
-                            job_id = %event.job_id,
-                            db_error = %db_err,
-                            "Failed to update timeout status in database"
-                        );
-                    }
-                }
             }
 
             EventProcessingError::ThresholdResolutionFailed(ref reason) => {
@@ -987,28 +848,6 @@ impl GatewayHandler {
                     ref decrypt_request,
                     ..
                 }) = event.data
-                {
-                    let job_id_hash = decrypt_request.content_hash();
-
-                    if let Err(db_err) = self
-                        .user_decrypt_repo
-                        .update_status_to_failure_from_queued(&job_id_hash[..], &err_reason)
-                        .await
-                    {
-                        error!(
-                            job_id = %event.job_id,
-                            db_error = %db_err,
-                            "Failed to update failure status in database"
-                        );
-                    }
-                }
-
-                if let RelayerEventData::DelegatedUserDecrypt(
-                    DelegatedUserDecryptEventData::ReadinessCheckFailed {
-                        ref decrypt_request,
-                        ..
-                    },
-                ) = event.data
                 {
                     let job_id_hash = decrypt_request.content_hash();
 
@@ -1054,56 +893,10 @@ impl GatewayHandler {
                     }
                 }
 
-                if let RelayerEventData::DelegatedUserDecrypt(
-                    DelegatedUserDecryptEventData::ReqRcvdFromUser {
-                        ref decrypt_request,
-                        ..
-                    },
-                ) = event.data
-                {
-                    let job_id_hash = decrypt_request.content_hash();
-                    let err_reason = format!("Processing Failed: {}", error);
-
-                    if let Err(db_err) = self
-                        .user_decrypt_repo
-                        .update_status_to_failure_from_queued(&job_id_hash[..], &err_reason)
-                        .await
-                    {
-                        error!(
-                            job_id = %event.job_id,
-                            db_error = %db_err,
-                            "Failed to update failure status in database"
-                        );
-                    }
-                }
-
                 if let RelayerEventData::UserDecrypt(UserDecryptEventData::ReadinessCheckFailed {
                     ref decrypt_request,
                     ..
                 }) = event.data
-                {
-                    let job_id_hash = decrypt_request.content_hash();
-                    let err_reason = format!("Processing Failed: {}", error);
-
-                    if let Err(db_err) = self
-                        .user_decrypt_repo
-                        .update_status_to_failure_from_queued(&job_id_hash[..], &err_reason)
-                        .await
-                    {
-                        error!(
-                            job_id = %event.job_id,
-                            db_error = %db_err,
-                            "Failed to update failure status in database"
-                        );
-                    }
-                }
-
-                if let RelayerEventData::DelegatedUserDecrypt(
-                    DelegatedUserDecryptEventData::ReadinessCheckFailed {
-                        ref decrypt_request,
-                        ..
-                    },
-                ) = event.data
                 {
                     let job_id_hash = decrypt_request.content_hash();
                     let err_reason = format!("Processing Failed: {}", error);
@@ -1142,29 +935,6 @@ impl GatewayHandler {
                         );
                     }
                 }
-
-                if let RelayerEventData::DelegatedUserDecrypt(
-                    DelegatedUserDecryptEventData::ReadinessCheckPassed {
-                        ref decrypt_request,
-                        ..
-                    },
-                ) = event.data
-                {
-                    let job_id_hash = decrypt_request.content_hash();
-                    let err_reason = format!("Processing Failed: {}", error);
-
-                    if let Err(db_err) = self
-                        .user_decrypt_repo
-                        .update_status_to_failure_on_tx_failed(&job_id_hash[..], &err_reason)
-                        .await
-                    {
-                        error!(
-                            job_id = %event.job_id,
-                            db_error = %db_err,
-                            "Failed to update failure status in database"
-                        );
-                    }
-                }
             }
         }
 
@@ -1173,14 +943,8 @@ impl GatewayHandler {
 
     /// Dispatches failure event to notify waiting HTTP handlers.
     async fn notify_failed(&self, event: RelayerEvent, error: EventProcessingError) {
-        let error_event_data = match &event.data {
-            RelayerEventData::DelegatedUserDecrypt(_) => {
-                RelayerEventData::DelegatedUserDecrypt(DelegatedUserDecryptEventData::Failed {
-                    error,
-                })
-            }
-            _ => RelayerEventData::UserDecrypt(UserDecryptEventData::Failed { error }),
-        };
+        let error_event_data =
+            RelayerEventData::UserDecrypt(UserDecryptEventData::Failed { error });
 
         let error_event = event.derive_next_event(error_event_data);
 
@@ -1208,13 +972,29 @@ impl TxLifecycleHooks for GatewayHandler {
         job_id: &JobId,
         receipt: &TxResult,
     ) -> Result<(), EventProcessingError> {
-        let gw_reference_id = TransactionHelper::extract_gateway_id_from_receipt::<
-            Decryption::UserDecryptionRequest,
+        // Both gateway overloads emit a `UserDecryptionRequest` event but the
+        // legacy and unified variants have different signature hashes. Try
+        // the legacy one first (covers v2 direct and v2 delegated); fall back
+        // to the unified one for v3 calls.
+        let gw_reference_id = match TransactionHelper::extract_gateway_id_from_receipt::<
+            Decryption::UserDecryptionRequest_0,
         >(
             receipt,
-            Decryption::UserDecryptionRequest::SIGNATURE_HASH,
+            Decryption::UserDecryptionRequest_0::SIGNATURE_HASH,
             |event| event.decryptionId,
-        )?;
+        ) {
+            Ok(id) => id,
+            Err(EventProcessingError::ValidationFailed { .. }) => {
+                TransactionHelper::extract_gateway_id_from_receipt::<
+                    Decryption::UserDecryptionRequest_1,
+                >(
+                    receipt,
+                    Decryption::UserDecryptionRequest_1::SIGNATURE_HASH,
+                    |event| event.decryptionId,
+                )?
+            }
+            Err(e) => return Err(e),
+        };
 
         let tx_hash = format!("{:?}", receipt.transaction_hash);
 

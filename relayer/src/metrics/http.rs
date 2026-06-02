@@ -143,12 +143,14 @@ impl HttpEndpoint {
 #[derive(Debug, Clone, Copy)]
 pub enum HttpApiVersion {
     V2,
+    V3,
 }
 
 impl HttpApiVersion {
     pub fn as_str(&self) -> &'static str {
         match self {
             HttpApiVersion::V2 => "v2",
+            HttpApiVersion::V3 => "v3",
         }
     }
 }
