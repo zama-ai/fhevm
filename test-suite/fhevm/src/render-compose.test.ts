@@ -275,7 +275,7 @@ describe("render-compose", () => {
       const volumes = secondaryDeploy?.volumes ?? [];
       expect(volumes.some((vol) => vol.includes("/addresses/chain-a:/canonical-addresses:ro"))).toBe(true);
       expect(secondaryDeploy?.command?.[0]).toBe(
-        'until [ -s /canonical-addresses/.env.host ]; do sleep 1; done; source /canonical-addresses/.env.host && npx hardhat task:deploySecondaryHost --canonical-rpc-url http://host-node:9545 --canonical-protocol-config-address "$$PROTOCOL_CONFIG_CONTRACT_ADDRESS"',
+        'until grep -q \'^PROTOCOL_CONFIG_CONTRACT_ADDRESS=.\' /canonical-addresses/.env.host 2>/dev/null; do sleep 1; done; source /canonical-addresses/.env.host && npx hardhat task:deploySecondaryHost --canonical-rpc-url http://host-node:9545 --canonical-protocol-config-address "$$PROTOCOL_CONFIG_CONTRACT_ADDRESS"',
       );
       expect(secondaryDeploy?.depends_on).not.toHaveProperty("host-sc-deploy");
     });
