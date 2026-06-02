@@ -114,6 +114,7 @@ export const COMPONENTS = [
   "minio",
   "database",
   "core",
+  "core-threshold",
   "gateway-node",
   "host-node",
   "gateway-mocked-payment",
@@ -318,6 +319,9 @@ export const HEAVY_TEST_PROFILES = [
 export const DEFAULT_TENANT_API_KEY = "00000000-0000-0000-0000-000000000000";
 export const COPROCESSOR_WALLET_INDICES = [5, 8, 9, 10, 11] as const;
 export const MAX_COPROCESSOR_INSTANCES = COPROCESSOR_WALLET_INDICES.length;
+// Mnemonic indices for per-party KMS connector tx-sender wallets (threshold
+// mode). Distinct from the coprocessor indices above to avoid address clashes.
+export const KMS_NODE_WALLET_INDICES = [12, 13, 14, 15, 16, 17, 18] as const;
 
 /** Returns the generated env-file path for a component or instance. */
 export const envPath = (name: string) => path.join(ENV_DIR, `${name}.env`);

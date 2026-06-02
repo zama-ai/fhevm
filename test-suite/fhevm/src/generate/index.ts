@@ -6,6 +6,7 @@ import path from "node:path";
 
 import type { StackSpec } from "../stack-spec/stack-spec";
 import { renderKmsCoreConfig, renderRelayerConfig } from "./config";
+import { kmsRenderOptionsFor, renderThresholdConfigs } from "./kms-core";
 import { renderEnvMaps, type WalletMaterial } from "./env";
 import {
   renderGatewayAddressesEnv,
@@ -113,6 +114,14 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
       await fs.readFile(TEMPLATE_KMS_CORE_CONFIG_MODERN, "utf8"),
     ),
   );
+  // Threshold mode: also emit one `compose_{i}.toml` per KMS party (mounted by
+  // the generated kms-core-{i} cluster services). Centralized mode ignores these.
+  if (plan.kms.mode === "threshold") {
+    const kmsConfigs = renderThresholdConfigs(plan.kms, kmsRenderOptionsFor(plan.versions.env.CORE_VERSION));
+    for (const [name, text] of Object.entries(kmsConfigs)) {
+      await writeWritableFile(path.join(GENERATED_CONFIG_DIR, name), text);
+    }
+  }
   await writeWritableFile(gatewayAddressesPath, renderGatewayAddressesEnv(state));
   await writeWritableFile(gatewayAddressesSolidityPath, renderGatewayAddressesSolidity(state));
   await writeWritableFile(

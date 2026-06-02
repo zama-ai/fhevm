@@ -4,6 +4,7 @@
 import type {
   HostChainScenario,
   ResolvedCoprocessorScenario,
+  ResolvedKmsTopology,
   State,
   Topology,
   UpOptions,
@@ -26,6 +27,7 @@ export type StackSpec = {
   topology: Topology;
   hostChains: HostChainScenario[];
   coprocessor: ResolvedCoprocessorScenario;
+  kms: ResolvedKmsTopology;
 };
 
 /** Resolves the effective scenario from explicit input, overrides, or defaults. */
@@ -66,6 +68,7 @@ const stackSpecFromResolved = (input: {
   topology: topologyFromScenario(input.scenario),
   hostChains: input.scenario.hostChains,
   coprocessor: input.scenario,
+  kms: input.scenario.kms,
 });
 
 /** Rebuilds a stack spec from persisted state. */

@@ -23,11 +23,24 @@ const KMS_CONNECTOR_DECRYPTION_READY =
 const KMS_CONNECTOR_KMS_GENERATION_READY =
   /Started KMSGeneration polling from block|Last block polled updated for \d+\/\d+ event types in \[PrepKeygenRequest, KeygenRequest, CrsgenRequest, PrssInit, KeyReshareSameSet\]/;
 
-export const KMS_CONNECTOR_HEALTH_CONTAINERS = [
-  "kms-connector-gw-listener",
-  "kms-connector-kms-worker",
-  "kms-connector-tx-sender",
-];
+/** Container-name prefix for a KMS connector party. Party 1 keeps the bare
+ * `kms-connector-*` names (it replaces the single-node template); parties 2..N
+ * are `kms-connector-{party}-*` (see buildKmsConnectorOverride). */
+const kmsConnectorPrefix = (party: number) => (party === 1 ? "kms-connector" : `kms-connector-${party}`);
+
+/** Number of KMS connector instances: one per party in threshold mode, else one. */
+// `kms.parties` is the canonical connector/party count: 1 for centralized, N for threshold.
+const kmsConnectorPartyCount = (state: State) => state.scenario.kms.parties;
+
+/** gw-listener / kms-worker / tx-sender health containers across every KMS party. */
+export const kmsConnectorHealthContainers = (state: State): string[] => {
+  const containers: string[] = [];
+  for (let party = 1; party <= kmsConnectorPartyCount(state); party += 1) {
+    const prefix = kmsConnectorPrefix(party);
+    containers.push(`${prefix}-gw-listener`, `${prefix}-kms-worker`, `${prefix}-tx-sender`);
+  }
+  return containers;
+};
 
 /** Reads docker inspect data for a container and validates the JSON payload. */
 export const dockerInspect = async (name: string) => {
@@ -229,33 +242,62 @@ export const waitForStableChainListeners = async (state: Pick<State, "scenario">
   await postBootHealthGate(listenerContainersForChain(state, chainKey));
 };
 
-/** Discovers the KMS signer address and MinIO key prefix after bootstrap. */
-export const discoverSigner = async () => {
+/** MinIO prefixes that hold a party's VerfAddress. Centralized stores it under
+ * `PUB/PUB` (or legacy `PUB`); a threshold cluster stores party i under `PUB-p{i}`. */
+const verfAddressPrefixes = (parties: number, party: number): string[] =>
+  parties === 1 ? ["PUB/PUB", "PUB"] : [`PUB-p${party}`];
+
+/** Reads a single party's VerfAddress for `handle`, trying each candidate prefix. */
+const fetchVerfAddress = async (
+  prefixes: string[],
+  handle: string,
+): Promise<{ address: string; prefix: string } | null> => {
+  for (const prefix of prefixes) {
+    try {
+      const response = await fetch(`${MINIO_EXTERNAL_URL}/kms-public/${prefix}/VerfAddress/${handle}`);
+      if (response.ok) {
+        return { address: (await response.text()).trim(), prefix };
+      }
+    } catch {
+      // try the next prefix / retry the whole discovery
+    }
+  }
+  return null;
+};
+
+/**
+ * Discovers the KMS signer addresses after bootstrap: one for a centralized node,
+ * one per party for a threshold cluster (`parties` is 1 in the centralized case).
+ * The signing-key handle is scraped from the core logs and is shared across parties;
+ * each party's address lives at its own MinIO prefix.
+ */
+export const discoverKmsSigners = async (
+  parties: number,
+): Promise<{ signers: string[]; minioKeyPrefix: string }> => {
   for (let attempt = 0; attempt <= 60; attempt += 1) {
     const logs = await run(["docker", "logs", KMS_CORE_CONTAINER], { allowFailure: true });
-    const match = logs.stdout.match(/handle ([a-zA-Z0-9]+)/) ?? logs.stderr.match(/handle ([a-zA-Z0-9]+)/);
-    if (match) {
-      const handle = match[1];
-      for (const prefix of ["PUB/PUB", "PUB"]) {
-        try {
-          const response = await fetch(`${MINIO_EXTERNAL_URL}/kms-public/${prefix}/VerfAddress/${handle}`);
-          if (response.ok) {
-            return {
-              address: (await response.text()).trim(),
-              minioKeyPrefix: prefix,
-            };
-          }
-        } catch {
-          // retry
+    const text = `${logs.stdout}\n${logs.stderr}`;
+    const handle = (text.match(/SigningKey\/([a-f0-9]{64})/) ?? text.match(/handle ([a-zA-Z0-9]+)/))?.[1];
+    if (handle) {
+      const signers: string[] = [];
+      let minioKeyPrefix = "";
+      for (let party = 1; party <= parties; party += 1) {
+        const found = await fetchVerfAddress(verfAddressPrefixes(parties, party), handle);
+        if (!found) {
+          break;
+        }
+        signers.push(found.address);
+        if (party === 1) {
+          minioKeyPrefix = found.prefix;
         }
       }
-    }
-    if (attempt === 60) {
-      throw new MinioError("Could not discover KMS signer after 60 attempts");
+      if (signers.length === parties) {
+        return { signers, minioKeyPrefix };
+      }
     }
     await Bun.sleep(1_000);
   }
-  throw new MinioError("Could not discover KMS signer after 60 attempts");
+  throw new MinioError(`Could not discover ${parties} KMS signer(s) after 60 attempts`);
 };
 
 /** Waits until one material artifact becomes available through host-reachable MinIO. */
@@ -384,13 +426,19 @@ export const waitForBootstrap = async (state: State, attempts = 120) => {
 
 /** Waits for the kms-connector runtime services to become ready. */
 export const waitForKmsConnector = async (state: State) => {
-  await waitForContainer("kms-connector-db-migration", "complete");
-  await waitForContainer("kms-connector-gw-listener", "running");
-  await waitForContainer("kms-connector-kms-worker", "running");
-  await waitForContainer("kms-connector-tx-sender", "running");
-  if (kmsConnectorUsesHostKmsGeneration(state)) {
-    await waitForLog("kms-connector-gw-listener", KMS_CONNECTOR_DECRYPTION_READY);
-    await waitForLog("kms-connector-gw-listener", KMS_CONNECTOR_KMS_GENERATION_READY);
+  const usesHostKmsGeneration = kmsConnectorUsesHostKmsGeneration(state);
+  // Threshold runs one connector per party; every party must be ready or the
+  // on-chain 2t+1 quorum can never be reached. Centralized = a single party.
+  for (let party = 1; party <= kmsConnectorPartyCount(state); party += 1) {
+    const prefix = kmsConnectorPrefix(party);
+    await waitForContainer(`${prefix}-db-migration`, "complete");
+    await waitForContainer(`${prefix}-gw-listener`, "running");
+    await waitForContainer(`${prefix}-kms-worker`, "running");
+    await waitForContainer(`${prefix}-tx-sender`, "running");
+    if (usesHostKmsGeneration) {
+      await waitForLog(`${prefix}-gw-listener`, KMS_CONNECTOR_DECRYPTION_READY);
+      await waitForLog(`${prefix}-gw-listener`, KMS_CONNECTOR_KMS_GENERATION_READY);
+    }
   }
 };
 

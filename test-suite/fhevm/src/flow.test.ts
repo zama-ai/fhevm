@@ -49,6 +49,7 @@ const completeState = (): State => ({
     hostChains: [{ key: "host", chainId: "12345", rpcPort: 8545 }],
     topology: { count: 1, threshold: 1 },
     instances: [{ index: 0, source: { mode: "inherit" }, env: {}, args: {} }],
+    kms: { mode: "centralized", parties: 1, threshold: 1, fheParams: "Default" },
   },
   completedSteps: [
     "preflight",
