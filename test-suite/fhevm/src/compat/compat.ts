@@ -203,13 +203,13 @@ export const supportsHostListenerConsumer = (state: Pick<CompatState, "versions"
 
 /** Detects when the resolved coprocessor bundle includes the consensus-detector service. */
 export const supportsConsensusDetector = (state: Pick<CompatState, "versions">) => {
-  const version = state.versions.env.COPROCESSOR_HOST_LISTENER_VERSION ?? "";
+  const version = state.versions.env.COPROCESSOR_CONSENSUS_DETECTOR_VERSION ?? "";
   return sameCompatBase(version, [0, 13, 0]) || !versionLt(version, [0, 13, 0], { unparsed: "modern" });
 };
 
 /** Detects when the resolved coprocessor bundle includes the upgrade-controller service. */
 export const supportsUpgradeController = (state: Pick<CompatState, "versions">) => {
-  const version = state.versions.env.COPROCESSOR_HOST_LISTENER_VERSION ?? "";
+  const version = state.versions.env.COPROCESSOR_UPGRADE_CONTROLLER_VERSION ?? "";
   return sameCompatBase(version, [0, 13, 0]) || !versionLt(version, [0, 13, 0], { unparsed: "modern" });
 };
 

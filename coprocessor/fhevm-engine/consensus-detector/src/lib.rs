@@ -127,9 +127,11 @@ pub enum Error {
     Gateway(String),
 }
 
-/// HTTP-GETs each operator's `state_hash` blob for `(chain_id, block_height)`.
-/// If any operator is missing (404 / transport error), returns an empty `Vec`
-/// so `all_identical` rejects the round.
+/// HTTP-GETs each operator's `state_hash` blob for `(chain_id, block_height)`
+/// concurrently. If any operator is missing (404, 5xx, transport error)
+/// returns an empty `Vec` so `all_identical` rejects the round. The three
+/// failure modes are logged distinctly so operators can tell "peer hasn't
+/// uploaded yet" from "peer's S3 is flaky".
 async fn fetch_state_commitments(
     http: &reqwest::Client,
     s3_urls: &[String],
@@ -137,17 +139,43 @@ async fn fetch_state_commitments(
     block_height: i64,
 ) -> Vec<Vec<u8>> {
     let key = state_hash_key(chain_id, block_height);
-    let mut out = Vec::with_capacity(s3_urls.len());
-    for url in s3_urls {
+    let fetches = s3_urls.iter().map(|url| {
         let path = format!("{}/{key}", url.trim_end_matches('/'));
-        let bytes = match http.get(&path).send().await {
-            Ok(r) if r.status().is_success() => r.bytes().await.ok().map(|b| b.to_vec()),
-            _ => None,
-        };
-        let Some(bytes) = bytes else { return vec![] };
-        out.push(bytes);
+        async move {
+            match http.get(&path).send().await {
+                Ok(r) => {
+                    let status = r.status();
+                    if status.is_success() {
+                        match r.bytes().await {
+                            Ok(b) => Some(b.to_vec()),
+                            Err(e) => {
+                                warn!(operator = %url, error = %e, "operator body read failed");
+                                None
+                            }
+                        }
+                    } else if status == reqwest::StatusCode::NOT_FOUND {
+                        debug!(operator = %url, "operator state_hash not yet uploaded");
+                        None
+                    } else if status.is_server_error() {
+                        warn!(operator = %url, %status, "operator S3 server error");
+                        None
+                    } else {
+                        warn!(operator = %url, %status, "operator returned unexpected status");
+                        None
+                    }
+                }
+                Err(e) => {
+                    warn!(operator = %url, error = %e, "operator request failed (timeout/transport)");
+                    None
+                }
+            }
+        }
+    });
+    let results: Vec<Option<Vec<u8>>> = futures::future::join_all(fetches).await;
+    if results.iter().any(|r| r.is_none()) {
+        return vec![];
     }
-    out
+    results.into_iter().flatten().collect()
 }
 
 /// Returns true when `commitments` is non-empty and every entry is identical.
@@ -443,12 +471,18 @@ where
     };
     {
         let pool = pool.clone();
-        let cancel = cancel.child_token();
+        let worker_cancel = cancel.child_token();
+        let parent_cancel = cancel.clone();
         let bucket = config.my_bucket.clone();
         let batch_limit = config.state_hash_batch_limit;
         tokio::spawn(async move {
-            if let Err(e) = state_hash::run(pool, s3, bucket, gw_chain_id, batch_limit, cancel).await {
-                error!(error = %e, "state_hash worker exited with error");
+            // The state_hash worker is required for the consensus poll: without
+            // it, no GCS state hashes get uploaded and the poll always times
+            // out. If it exits unexpectedly, cancel the parent so the service
+            // crashes and is restarted by its supervisor.
+            if let Err(e) = state_hash::run(pool, s3, bucket, gw_chain_id, batch_limit, worker_cancel).await {
+                error!(error = %e, "state_hash worker exited with error; shutting down consensus-detector");
+                parent_cancel.cancel();
             }
         });
     }

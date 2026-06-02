@@ -1,7 +1,7 @@
 -- Track the handles of input ciphertexts produced by the zkproof-worker.
 -- These are not computation outputs and do not flow through the scheduler,
 -- so they live in a dedicated, minimal table instead of synthesising fake
--- rows in `computations`. `block_number` carries the Gateway block where
+-- rows in `computations`. `block_number` carries the host-chain block where
 -- the originating VerifyProofRequest event was emitted (recorded by
 -- gw-listener on `verify_proofs.block_number`).
 

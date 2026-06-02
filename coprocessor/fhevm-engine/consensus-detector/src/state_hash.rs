@@ -3,7 +3,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Context;
 use aws_sdk_s3::primitives::ByteStream;
 use sqlx::{postgres::PgListener, Pool, Postgres};
 use tokio::select;
@@ -190,8 +189,13 @@ async fn upload_pending_state_hashes(
     for row in pending {
         let chain_id = row.chain_id;
         let block_number = row.block_number;
-        let bytes = hex::decode(&row.state_hash)
-            .with_context(|| format!("decode state_hash for ({chain_id}, {block_number})"))?;
+        let bytes = match hex::decode(&row.state_hash) {
+            Ok(b) => b,
+            Err(e) => {
+                warn!(chain_id, block_number, error = %e, "malformed state_hash hex in DB; skipping row");
+                continue;
+            }
+        };
         let key = state_hash_key(chain_id, block_number);
         match s3
             .put_object()

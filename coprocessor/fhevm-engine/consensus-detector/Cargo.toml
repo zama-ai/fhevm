@@ -12,6 +12,7 @@ aws-config = { workspace = true }
 aws-sdk-s3 = { workspace = true }
 clap = { workspace = true }
 dashmap = { workspace = true }
+futures = "0.3.31"
 hex = { workspace = true }
 humantime = { workspace = true }
 reqwest = { workspace = true }
