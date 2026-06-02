@@ -22,17 +22,11 @@ pub const UNANIMITY_CONSENSUS_CHANNEL: &str = "event_unanimity_consensus";
 /// names emitted by `host-listener::ingest_block_logs` and the FHE workers.
 pub const NEW_BLOCK_CHANNEL: &str = "event_new_block";
 pub const EVENT_CIPHERTEXT_COMPUTED_CHANNEL: &str = "event_ciphertext_computed";
-/// Emitted once GCS transitions to `DryRunStarted`, and again from
-/// `execute_cutover` after the cutover tx commits (with `stack_role="GCS"`).
-/// Consumed by the GCS-side host-listener / gw-listener / tfhe-worker to flip
-/// them out of `--paused`.
-pub const UNPAUSE_CHANNEL: &str = "event_unpause";
-/// Emitted from `execute_cutover` after the cutover tx commits (with
-/// `stack_role="BCS"`). Consumed by the BCS-side services to stop processing.
-/// The BCS tfhe-worker also exits its cycle by observing `state='PAUSED'` on
-/// the FSM row under the shared cutover lock; this notify is the wake-up
-/// signal so listeners don't have to wait for their next FSM re-read.
-pub const PAUSE_CHANNEL: &str = "event_pause";
+
+/// Channel emitted by `execute_cutover`, atomically with the `versioning`
+/// bump, telling every service to re-evaluate its mode. Re-exported from the
+/// common crate so services and the controller agree on the name.
+pub use fhevm_engine_common::versioning::EVENT_STACK_VERSION_UPGRADED;
 
 /// Number of host-chain blocks below `start_block` whose computations must
 /// also be fully settled before GCS can leave `UpgradeActivated`. Hard-coded
@@ -63,8 +57,9 @@ pub struct Config {
     pub database_pool_size: u32,
     /// When true, the service operates as the Green Coprocessor Stack (GCS) —
     /// it gates `execute_cutover` and runs the GCS-side dry-run readiness loop.
-    /// When false (default), it operates as the Blue Coprocessor Stack (BCS).
-    /// Mirrors the `--gcs-mode` flag used by the other coprocessor services.
+    /// When false, it operates as the Blue Coprocessor Stack (BCS).
+    /// Auto-detected at startup from the `versioning` table, like the other
+    /// coprocessor services (see `fhevm_engine_common::versioning::resolve_gcs_mode`).
     pub gcs_mode: bool,
     pub log_level: Level,
     /// Fallback poll interval used while waiting for notifications, so a missed
@@ -115,6 +110,18 @@ pub struct UpgradeActivatedPayload {
 /// replayed event could trigger a cutover for the wrong block window.
 #[derive(Debug, Clone, Deserialize)]
 pub struct UnanimityConsensusPayload {
+    pub chain_id: i64,
+    pub block_height: i64,
+    pub block_hash: String,
+}
+
+/// Payload published over `event_new_block` by `host-listener::ingest_block_logs`.
+///
+/// JSON shape must stay in sync with that producer (and
+/// `consensus_detector::NewBlockPayload`). Only `block_height` is used here, to
+/// log the block that re-triggered the readiness check.
+#[derive(Debug, Clone, Deserialize)]
+pub struct NewBlockPayload {
     pub chain_id: i64,
     pub block_height: i64,
     pub block_hash: String,
@@ -201,6 +208,11 @@ pub async fn handle_upgrade_activated(
     .execute(pool)
     .await?;
 
+    // Create the GCS schema (empty duplicates of every BCS-owned data table)
+    // so the GCS services have a write target the moment they observe
+    // activation. Idempotent: safe to run from either side and on retry.
+    create_gcs_schema(pool).await?;
+
     // Only GCS gates on the pre-snapshot completeness check; BCS keeps
     // serving live traffic untouched until cutover.
     if gcs_mode {
@@ -214,6 +226,62 @@ pub async fn handle_upgrade_activated(
         }
     }
 
+    Ok(())
+}
+
+/// Tables that the GCS stack writes to during the dry-run phase. Each gets
+/// duplicated into the `gcs` schema with `CREATE TABLE gcs.X (LIKE public.X
+/// INCLUDING ALL)` at activation, then merged back into `public.X` at
+/// cutover.
+///
+/// `INCLUDING ALL` copies defaults, identity, constraints (incl. PKs/uniques),
+/// generated columns, indexes, statistics, storage, comments, and compression
+/// — but NOT triggers, rules, foreign keys, or ownership. That's by design:
+/// the `enforce_ciphertext_version` trigger on `public.ciphertexts` does NOT
+/// propagate to `gcs.ciphertexts`, which lets the GCS worker write V_new
+/// while `versioning` still reads V_old.
+///
+/// To add a new table to the dry-run, list it here.
+pub const GCS_DUPLICATED_TABLES: &[&str] = &[
+    "ciphertexts",
+    "ciphertexts128",
+    "ciphertext_digest",
+    "computations",
+    "pbs_computations",
+    "state_hash",
+    "input_handles",
+    "verify_proofs",
+    "transactions",
+    "allowed_handles",
+    "host_chain_blocks_valid",
+    "dependence_chain",
+    "kms_key_activation_events",
+    "kms_crs_activation_events",
+    "gw_listener_last_block",
+];
+
+/// Create schema `gcs` and a `CREATE TABLE gcs.X (LIKE public.X INCLUDING ALL)`
+/// for every table listed in [`GCS_DUPLICATED_TABLES`]. Idempotent.
+pub async fn create_gcs_schema(pool: &Pool<Postgres>) -> Result<(), Error> {
+    let mut tx = pool.begin().await?;
+
+    sqlx::query("CREATE SCHEMA IF NOT EXISTS gcs")
+        .execute(&mut *tx)
+        .await?;
+
+    for table in GCS_DUPLICATED_TABLES {
+        let sql = format!(
+            "CREATE TABLE IF NOT EXISTS gcs.{table} \
+             (LIKE public.{table} INCLUDING ALL)"
+        );
+        sqlx::query(&sql).execute(&mut *tx).await?;
+    }
+
+    tx.commit().await?;
+    info!(
+        tables = ?GCS_DUPLICATED_TABLES,
+        "GCS schema created with empty table duplicates"
+    );
     Ok(())
 }
 
@@ -235,16 +303,16 @@ async fn check_dry_run_ready(
         r#"
         SELECT
           COALESCE(
-            (SELECT MAX(block_number) FROM host_chain_blocks_valid WHERE chain_id = $1),
+            (SELECT MAX(block_number) FROM public.host_chain_blocks_valid WHERE chain_id = $1),
             -1
           ) >= $3
           AND NOT EXISTS (
-              SELECT 1 FROM host_chain_blocks_valid hcbv
+              SELECT 1 FROM public.host_chain_blocks_valid hcbv
               WHERE hcbv.chain_id = $1
                 AND hcbv.block_number BETWEEN $2 AND $3
                 AND hcbv.fhe_event_count > 0
                 AND EXISTS (
-                    SELECT 1 FROM computations c
+                    SELECT 1 FROM public.computations c
                     WHERE c.host_chain_id = $1
                       AND c.block_number = hcbv.block_number
                       AND (c.is_completed = false OR c.is_error = true)
@@ -262,7 +330,7 @@ async fn check_dry_run_ready(
 
 /// GCS-only loop. Polls `check_dry_run_ready`, re-triggered by every
 /// `event_new_block` and `event_ciphertext_computed` notification. On success,
-/// flips `upgrade_state` to `DryRunStarted` and emits `event_unpause`.
+/// flips `upgrade_state` to `DryRunStarted`.
 /// Exits on cancellation, or if another path has already moved the GCS row
 /// out of `UpgradeActivated`.
 async fn wait_until_dry_run_ready(
@@ -343,7 +411,23 @@ async fn wait_until_dry_run_ready(
             recv = listener.recv() => {
                 match recv {
                     Ok(notification) => {
-                        info!(channel = notification.channel(), "readiness loop trigger");
+                        let block_height = if notification.channel() == NEW_BLOCK_CHANNEL {
+                            match serde_json::from_str::<NewBlockPayload>(notification.payload()) {
+                                Ok(payload) => Some(payload.block_height),
+                                Err(e) => {
+                                    warn!(
+                                        channel = notification.channel(),
+                                        payload = notification.payload(),
+                                        error = %e,
+                                        "failed to parse new_block payload"
+                                    );
+                                    None
+                                }
+                            }
+                        } else {
+                            None
+                        };
+                        info!(channel = notification.channel(), start_block = start_block, block_height, "readiness loop trigger");
                     }
                     Err(e) => {
                         warn!(error = %e, "readiness listener recv error; sleeping before retry");
@@ -356,7 +440,6 @@ async fn wait_until_dry_run_ready(
 }
 
 /// Conditional UPDATE: only flips if the GCS row is still in `UpgradeActivated`.
-/// Always followed by an `event_unpause` notify with `{chain_id, start_block}`.
 async fn transition_to_dry_run_started(pool: &Pool<Postgres>) -> Result<(), Error> {
     let result = sqlx::query(
         r#"
@@ -389,11 +472,13 @@ async fn transition_to_dry_run_started(pool: &Pool<Postgres>) -> Result<(), Erro
 ///
 /// Sequence:
 ///   1. Read `start_block` and `ciphertext_version` from the GCS upgrade row.
-///   2. DELETE post-snapshot BCS rows from parent `ciphertexts` (matching the
-///      old version still in `versioning`).
+///   2. DELETE post-snapshot BCS rows from `public.ciphertexts` (matching
+///      the old version still in `versioning`).
 ///   3. UPDATE `versioning` to the new ciphertext_version.
-///   4. INSERT staging → parent for ciphertexts, ciphertexts128, state_hash.
-///   5. DROP the three staging tables.
+///   4. Merge `gcs.ciphertexts` → `public.ciphertexts` (re-stamping the new
+///      ciphertext_version so the `enforce_ciphertext_version` trigger accepts
+///      the rows).
+///   5. DROP SCHEMA gcs CASCADE.
 ///   6. Mark GCS row LIVE/completed and BCS row PAUSED/completed.
 ///
 /// After commit, any BCS write tx that was waiting on the shared lock
@@ -409,7 +494,7 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     .fetch_optional(pool)
     .await?;
 
-    let (start_block, new_ciphertext_version, stack_version) = match row {
+    let (_start_block, new_ciphertext_version, stack_version) = match row {
         Some((Some(s), Some(v), version)) => (s, v, version.unwrap_or_default()),
         Some((s, v, _)) => {
             return Err(Error::Payload(format!(
@@ -451,25 +536,7 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         )));
     }
 
-    // 1. Drop BCS-produced rows for post-snapshot blocks from the parent.
-    //    Filter on the current (still-old) ciphertext_version in versioning.
-    let deleted = sqlx::query(
-        "DELETE FROM ONLY ciphertexts
-         WHERE ciphertext_version = (SELECT ciphertext_version FROM versioning WHERE singleton = TRUE)
-           AND handle IN (
-               SELECT output_handle FROM computations
-               WHERE block_number >= $1 AND output_handle IS NOT NULL
-           )",
-    )
-    .bind(start_block)
-    .execute(&mut *tx)
-    .await?;
-    info!(
-        deleted = deleted.rows_affected(),
-        start_block, "purged BCS post-snapshot ciphertexts"
-    );
-
-    // 2. Promote the new version BEFORE inserting staging rows so the
+    // 2. Promote the new version BEFORE inserting gcs rows so the
     //    enforce_ciphertext_version() trigger lets the new-version rows through.
     sqlx::query(
         "UPDATE versioning
@@ -485,26 +552,22 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         stack_version, "versioning row updated"
     );
 
-    // 3. Merge staging → parent for all three table families and drop staging.
-    //    `ciphertexts` re-stamps `ciphertext_version` with the upgrade target
-    //    so the `enforce_ciphertext_version` trigger accepts the rows
-    //    regardless of what the GCS worker binary's `current_ciphertext_version()`
-    //    was at write time — the `versioning` singleton is the source of truth,
-    //    not the worker. The other two tables have no version column / no trigger.
+    // 4. Merge gcs.ciphertexts → public.ciphertexts. The SELECT re-stamps
+    //    `ciphertext_version` with the upgrade target so the
+    //    `enforce_ciphertext_version` trigger accepts the rows regardless of
+    //    what the GCS worker binary's `current_ciphertext_version()` was at
+    //    write time — the `versioning` singleton (updated above) is the source
+    //    of truth, not the worker.
     //
-    //    `ON CONFLICT DO UPDATE` lets staging win on PK collisions. Step 1's
-    //    DELETE only purges parent rows whose handle has a `computations` row
-    //    with `block_number >= start_block`; any staging row whose `computations`
-    //    row is missing or doesn't satisfy that predicate would otherwise
-    //    collide with a pre-existing parent row. GCS is the canonical writer
-    //    for its window, so staging wins.
+    //    `ON CONFLICT DO UPDATE` lets the GCS rows win on PK collisions: GCS is
+    //    the canonical writer for its window.
     let merged = sqlx::query(
-        "INSERT INTO ciphertexts
+        "INSERT INTO public.ciphertexts
              (tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type,
               input_blob_hash, input_blob_index, created_at, ciphertext128, is_input)
          SELECT tenant_id, handle, ciphertext, $1::smallint, ciphertext_type,
                 input_blob_hash, input_blob_index, created_at, ciphertext128, is_input
-         FROM ciphertexts_staging
+         FROM gcs.ciphertexts
          ON CONFLICT (tenant_id, handle, ciphertext_version) DO UPDATE
          SET ciphertext       = EXCLUDED.ciphertext,
              ciphertext_type  = EXCLUDED.ciphertext_type,
@@ -520,34 +583,17 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     info!(
         merged = merged.rows_affected(),
         ciphertext_version = new_ciphertext_version,
-        "merged ciphertexts_staging into ciphertexts"
+        "merged gcs.ciphertexts into public.ciphertexts"
     );
 
-    //
-    // sqlx::query("TRUNCATE TABLE ciphertexts_staging")
-    //    .execute(&mut *tx)
-    //    .await?;
-    info!("truncated staging table ciphertexts_staging");
+    // 5. Drop the gcs schema (and everything in it) now that its data has been
+    //    merged back into public.
+    sqlx::query("DROP SCHEMA gcs CASCADE")
+        .execute(&mut *tx)
+        .await?;
+    info!("dropped gcs schema");
 
-    for (parent, staging) in [
-        ("ciphertexts128", "ciphertexts128_staging"),
-        ("state_hash", "state_hash_staging"),
-    ] {
-        let merged = sqlx::query(&format!("INSERT INTO {parent} SELECT * FROM {staging}"))
-            .execute(&mut *tx)
-            .await?;
-        info!(
-            merged = merged.rows_affected(),
-            parent, staging, "merged staging into parent"
-        );
-
-        // TODO: sqlx::query(&format!("DROP TABLE {staging}"))
-        //    .execute(&mut *tx)
-        //   .await?;
-        // info!(staging, "dropped staging table");
-    }
-
-    // 4. Flip FSM rows.
+    // 6. Flip FSM rows.
     sqlx::query(
         "UPDATE upgrade_state
          SET state = 'LIVE', status = 'completed', updated_at = NOW()
@@ -563,42 +609,35 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     .execute(&mut *tx)
     .await?;
 
-    // 5. Queue pause/unpause notifies. NOTIFY messages are delivered on commit,
-    //    so this is atomic with the FSM flip — listeners only see the wake-up
-    //    if the cutover actually committed.
-    let pause_payload = serde_json::json!({
-        "stack_role": "BCS",
+    // 7. Notify every service that the live stack version changed. Queued in
+    //    the SAME transaction as the `versioning` UPDATE above, so the notify
+    //    is atomic with the version bump — it is only delivered if the cutover
+    //    commits. On receipt, each service re-evaluates its mode (the green
+    //    stack leaves GCS mode to become live; the retired blue stack pauses
+    //    into no-op mode).
+    let payload = serde_json::json!({
+        "new_version_number": stack_version,
         "ciphertext_version": new_ciphertext_version,
     })
     .to_string();
     sqlx::query("SELECT pg_notify($1, $2)")
-        .bind(PAUSE_CHANNEL)
-        .bind(&pause_payload)
-        .execute(&mut *tx)
-        .await?;
-    let unpause_payload = serde_json::json!({
-        "stack_role": "GCS",
-        "ciphertext_version": new_ciphertext_version,
-    })
-    .to_string();
-    sqlx::query("SELECT pg_notify($1, $2)")
-        .bind(UNPAUSE_CHANNEL)
-        .bind(&unpause_payload)
+        .bind(EVENT_STACK_VERSION_UPGRADED)
+        .bind(&payload)
         .execute(&mut *tx)
         .await?;
 
     tx.commit().await?;
     info!(
-        channel_pause = PAUSE_CHANNEL,
-        channel_unpause = UNPAUSE_CHANNEL,
+        channel = EVENT_STACK_VERSION_UPGRADED,
+        stack_version,
         ciphertext_version = new_ciphertext_version,
-        "execute_cutover() committed; pause/unpause notifies delivered"
+        "execute_cutover() committed; stack-version-upgraded notify delivered"
     );
     Ok(())
 }
 
 /// Handle an `event_unanimity_consensus` notification. The cutover is gated on:
-///   - service started with `--gcs-mode` (i.e. `gcs_mode = true`), AND
+///   - service is running in GCS mode (i.e. `gcs_mode = true`), AND
 ///   - current `upgrade_state` row for stack_role='GCS' is in state
 ///     'DryRunStarted', AND
 ///   - the payload's `block_height` is within the FSM row's

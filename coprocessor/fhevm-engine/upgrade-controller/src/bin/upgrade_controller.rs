@@ -26,13 +26,6 @@ struct Args {
     #[arg(long, default_value_t = 4)]
     database_pool_size: u32,
 
-    /// When set, the service runs as the Green Coprocessor Stack (GCS): it
-    /// drives the dry-run readiness loop and gates `execute_cutover`. When
-    /// omitted (default), it runs as the Blue Coprocessor Stack (BCS).
-    /// Mirrors the `--gcs-mode` flag exposed by the other coprocessor services.
-    #[arg(long, default_value_t = false)]
-    gcs_mode: bool,
-
     /// Fallback poll interval (seconds) used while waiting for notifications.
     #[arg(long, default_value_t = 30)]
     poll_interval_secs: u64,
@@ -66,11 +59,15 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(args.log_level)
         .init();
 
+    let database_url = resolve_database_url_from_option(args.database_url.clone())?;
+
+    let gcs_mode = fhevm_engine_common::versioning::resolve_gcs_mode(database_url.as_str()).await?;
+
     let config = Config {
         service_name: args.service_name.clone(),
-        database_url: resolve_database_url_from_option(args.database_url.clone())?,
+        database_url,
         database_pool_size: args.database_pool_size,
-        gcs_mode: args.gcs_mode,
+        gcs_mode,
         log_level: args.log_level,
         poll_interval: Duration::from_secs(args.poll_interval_secs),
     };
