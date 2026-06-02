@@ -72,9 +72,10 @@ pub struct Args {
     #[arg(
         long,
         env = "ETHEREUM_CHAIN_ID",
-        help = "Ethereum host chain id; only the listener on this chain decodes ProtocolConfig events."
+        help = "Ethereum host chain id; only the listener on this chain decodes ProtocolConfig events. \
+                Omit on listeners that are never the authority."
     )]
-    pub ethereum_chain_id: u64,
+    pub ethereum_chain_id: Option<u64>,
 
     #[arg(
         long,
@@ -976,6 +977,7 @@ async fn db_insert_block(
     kms_generation_address: &Option<Address>,
     protocol_config_address: &Option<Address>,
     args: &Args,
+    is_protocol_config_listener: bool,
 ) -> anyhow::Result<()> {
     info!(
         block = ?block_logs.summary,
@@ -997,7 +999,7 @@ async fn db_insert_block(
                 dependence_by_connexity: args.dependence_by_connexity,
                 dependence_cross_block: args.dependence_cross_block,
                 dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
-                ethereum_chain_id: args.ethereum_chain_id,
+                is_protocol_config_listener,
             },
         )
         .await;
@@ -1101,9 +1103,12 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     let chain_id = log_iter.get_chain_id().await?;
 
     info!(chain_id = %chain_id, "Chain ID");
-    if args.ethereum_chain_id == chain_id.as_u64()
-        && protocol_config_address.is_none()
-    {
+    let is_protocol_config_listener =
+        crate::protocol_config::resolve_protocol_config_listener(
+            args.ethereum_chain_id,
+            chain_id.as_u64(),
+        )?;
+    if is_protocol_config_listener && protocol_config_address.is_none() {
         warn!(
             chain_id = %chain_id,
             "ProtocolConfig listener has no --protocol-config-address; \
@@ -1232,6 +1237,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                 &kms_generation_address,
                 &protocol_config_address,
                 &args,
+                is_protocol_config_listener,
             )
             .await;
             if status.is_err() {

@@ -47,7 +47,7 @@ pub struct ConsumerConfig {
     pub dependent_ops_max_per_chain: u32,
     pub chain_id: String,
     pub gcs_mode: bool,
-    pub ethereum_chain_id: u64,
+    pub ethereum_chain_id: Option<u64>,
 }
 
 pub fn collect_logs(payload: &BlockPayload) -> Vec<Log> {
@@ -203,6 +203,11 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     ];
     let chain_id: u64 = config.chain_id.parse()?;
     let chain_id = ChainId::try_from(chain_id)?;
+    let is_protocol_config_listener =
+        crate::protocol_config::resolve_protocol_config_listener(
+            config.ethereum_chain_id,
+            chain_id.as_u64(),
+        )?;
 
     let blockchain_tick = HeartBeat::new();
     let blockchain_timeout_tick = HeartBeat::new();
@@ -251,7 +256,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         dependence_by_connexity: config.dependence_by_connexity,
         dependence_cross_block: config.dependence_cross_block,
         dependent_ops_max_per_chain: config.dependent_ops_max_per_chain,
-        ethereum_chain_id: config.ethereum_chain_id,
+        is_protocol_config_listener,
     };
 
     // Runtime stack mode + `event_stack_version_upgraded` listener: at cutover

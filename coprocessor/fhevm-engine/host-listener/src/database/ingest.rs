@@ -34,9 +34,10 @@ pub struct IngestOptions {
     pub dependence_by_connexity: bool,
     pub dependence_cross_block: bool,
     pub dependent_ops_max_per_chain: u32,
-    /// Chain id of the Ethereum host chain. The listener only decodes
-    /// `ProtocolConfig.NewCoprocessorContext` when its own `chain_id` matches.
-    pub ethereum_chain_id: u64,
+    /// Resolved once at startup from the listener's own `chain_id` and the
+    /// configured `--ethereum-chain-id`. When false, the listener silently
+    /// skips `ProtocolConfig.NewCoprocessorContext` events.
+    pub is_protocol_config_listener: bool,
 }
 
 /// Converts a block timestamp to a UTC `PrimitiveDateTime`.
@@ -191,7 +192,7 @@ pub async fn ingest_block_logs(
 
     // Only the listener watching the configured Ethereum host chain decodes
     // `NewCoprocessorContext`; every other listener skips the channel.
-    let is_protocol_config_listener = options.ethereum_chain_id == chain_id.as_u64();
+    let is_protocol_config_listener = options.is_protocol_config_listener;
 
     let mut is_allowed = HashSet::<Handle>::new();
     let mut tfhe_event_log = vec![];
@@ -290,24 +291,8 @@ pub async fn ingest_block_logs(
                 .as_ref()
                 .is_some_and(|addr| &log.inner.address == addr);
         if is_protocol_config_address {
-            if let Ok(event) =
-                ProtocolConfig::ProtocolConfigEvents::decode_log(&log.inner)
-            {
-                if let ProtocolConfig::ProtocolConfigEvents::NewCoprocessorContext(
-                    new_ctx,
-                ) = &event.data
-                {
-                    notify_new_coprocessor_context(
-                        &mut tx,
-                        chain_id,
-                        new_ctx,
-                    )
-                    .await?;
-                }
-                continue;
-            } else {
-                PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER.inc()
-            }
+            handle_protocol_config_log(&mut tx, chain_id, log).await?;
+            continue;
         }
 
         if is_acl_address
@@ -437,6 +422,36 @@ pub async fn ingest_block_logs(
 /// Channel name the upgrade-controller LISTENs on for `NewCoprocessorContext` events.
 const UPGRADE_ACTIVATED_CHANNEL: &str = "event_upgrade_activated";
 
+/// Decodes a log known to come from the configured ProtocolConfig contract on
+/// the authority chain and dispatches it. Caller must pre-gate on
+/// `is_protocol_config_listener && log.address == protocol_config_contract_address`.
+async fn handle_protocol_config_log(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    chain_id: ChainId,
+    log: &Log,
+) -> Result<(), sqlx::Error> {
+    match ProtocolConfig::ProtocolConfigEvents::decode_log(&log.inner) {
+        Ok(event) => match &event.data {
+            ProtocolConfig::ProtocolConfigEvents::NewCoprocessorContext(new_ctx) => {
+                notify_new_coprocessor_context(tx, chain_id, new_ctx).await?;
+            }
+            other => {
+                info!(
+                    ?other,
+                    block_number = ?log.block_number,
+                    tx_hash = ?log.transaction_hash,
+                    log_index = ?log.log_index,
+                    "ProtocolConfig event decoded but not actionable; skipping",
+                );
+            }
+        },
+        Err(_) => {
+            PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER.inc();
+        }
+    }
+    Ok(())
+}
+
 /// Emits `pg_notify('event_upgrade_activated', payload)` for a decoded
 /// `NewCoprocessorContext` event when one of its `chainUpgradeWindows` matches
 /// this listener's `chain_id`. The notification rides on the existing block-
@@ -471,16 +486,18 @@ async fn notify_new_coprocessor_context(
         start_block = window.startBlock,
         end_block = window.endBlock,
         gw_start_block = event.gwStartBlock,
+        ciphertext_version = event.ciphertextVersion,
         "Decoded NewCoprocessorContext, emitting pg_notify('event_upgrade_activated')"
     );
 
     let payload = serde_json::json!({
-        "proposal_id":    &context_id_hex,
-        "chain_id":       listener_chain_id as i64,
-        "start_block":    window.startBlock as i64,
-        "end_block":      window.endBlock as i64,
-        "gw_start_block": event.gwStartBlock as i64,
-        "version":        &event.softwareVersion,
+        "proposal_id":        &context_id_hex,
+        "chain_id":           listener_chain_id as i64,
+        "start_block":        window.startBlock as i64,
+        "end_block":          window.endBlock as i64,
+        "gw_start_block":     event.gwStartBlock as i64,
+        "ciphertext_version": event.ciphertextVersion as i16,
+        "version":            &event.softwareVersion,
     });
 
     sqlx::query("SELECT pg_notify($1, $2)")

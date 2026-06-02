@@ -188,7 +188,7 @@ async fn poller_catches_up_to_safe_tip(
         dependence_cross_block: false,
         dependent_ops_max_per_chain: 0,
         gcs_mode: false,
-        ethereum_chain_id: chain_id.as_u64(),
+        ethereum_chain_id: Some(chain_id.as_u64()),
     };
 
     let poller_handle = tokio::spawn(run_poller(config));

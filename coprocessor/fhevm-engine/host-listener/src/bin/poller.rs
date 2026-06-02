@@ -38,9 +38,10 @@ struct Args {
     #[arg(
         long,
         env = "ETHEREUM_CHAIN_ID",
-        help = "Ethereum host chain id; only the listener on this chain decodes ProtocolConfig events."
+        help = "Ethereum host chain id; only the listener on this chain decodes ProtocolConfig events. \
+                Omit on listeners that are never the authority."
     )]
-    pub ethereum_chain_id: u64,
+    pub ethereum_chain_id: Option<u64>,
 
     #[arg(long, help = "PostgreSQL connection URL")]
     database_url: DatabaseURL,
@@ -147,6 +148,12 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
+    if matches!(args.ethereum_chain_id, Some(0)) {
+        return Err(anyhow::anyhow!(
+            "--ethereum-chain-id=0 is not a valid chain id; omit the flag to disable ProtocolConfig decoding"
+        ));
+    }
 
     let cancel_token = CancellationToken::new();
     metrics_server::spawn(

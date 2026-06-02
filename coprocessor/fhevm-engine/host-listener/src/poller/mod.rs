@@ -96,7 +96,7 @@ pub struct PollerConfig {
     pub dependence_cross_block: bool,
     pub dependent_ops_max_per_chain: u32,
     pub gcs_mode: bool,
-    pub ethereum_chain_id: u64,
+    pub ethereum_chain_id: Option<u64>,
 }
 
 pub async fn run_poller(config: PollerConfig) -> Result<()> {
@@ -139,6 +139,11 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         }
     };
     let chain_id_str = chain_id.to_string();
+    let is_protocol_config_listener =
+        crate::protocol_config::resolve_protocol_config_listener(
+            config.ethereum_chain_id,
+            chain_id.as_u64(),
+        )?;
     blockchain_timeout_tick.update();
 
     let mut db = Database::new_with_gcs_mode(
@@ -346,7 +351,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 dependence_by_connexity: config.dependence_by_connexity,
                 dependence_cross_block: config.dependence_cross_block,
                 dependent_ops_max_per_chain: config.dependent_ops_max_per_chain,
-                ethereum_chain_id: config.ethereum_chain_id,
+                is_protocol_config_listener,
             };
             match ingest_with_retry(
                 chain_id,
