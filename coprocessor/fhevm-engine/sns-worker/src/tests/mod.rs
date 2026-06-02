@@ -33,7 +33,10 @@ use test_harness::{
 use tfhe::{
     prelude::FheDecrypt, ClientKey, CompressedSquashedNoiseCiphertextList, SquashedNoiseFheUint,
 };
-use tokio::{sync::mpsc, time::timeout};
+use tokio::{
+    sync::mpsc,
+    time::{sleep, timeout},
+};
 use tracing::{info, Level};
 
 const LISTEN_CHANNEL: &str = "sns_worker_chan";
@@ -814,17 +817,8 @@ async fn assert_ciphertext_uploaded(
     let attestation: CiphertextAttestation = serde_json::from_str(attestation_json)?;
     attestation.verify(B256::from_slice(handle), COPROCESSOR_CONTEXT_ID)?;
 
-    let row = sqlx::query(
-        "SELECT ciphertext, ciphertext128, s3_format_version
-        FROM ciphertext_digest
-        WHERE handle = $1",
-    )
-    .bind(handle)
-    .fetch_one(&test_env.pool)
-    .await?;
-    let ciphertext_digest: Vec<u8> = row.try_get("ciphertext")?;
-    let sns_ciphertext_digest: Vec<u8> = row.try_get("ciphertext128")?;
-    let s3_format_version: i16 = row.try_get("s3_format_version")?;
+    let (ciphertext_digest, sns_ciphertext_digest, s3_format_version) =
+        wait_for_ciphertext_digest_upload_state(&test_env.pool, handle, 100).await?;
     let signer = PrivateKeySigner::from_str(&hex::encode(&test_env.private_key))?;
 
     assert_eq!(
@@ -894,6 +888,43 @@ async fn assert_ciphertext_uploaded(
     }
 
     Ok(())
+}
+
+async fn wait_for_ciphertext_digest_upload_state(
+    pool: &sqlx::PgPool,
+    handle: &Vec<u8>,
+    retries: u64,
+) -> anyhow::Result<(Vec<u8>, Vec<u8>, i16)> {
+    for retry in 0..retries {
+        let row = sqlx::query(
+            "SELECT ciphertext, ciphertext128, s3_format_version
+            FROM ciphertext_digest
+            WHERE handle = $1",
+        )
+        .bind(handle)
+        .fetch_optional(pool)
+        .await?;
+
+        if let Some(row) = row {
+            let ciphertext_digest: Option<Vec<u8>> = row.try_get("ciphertext")?;
+            let sns_ciphertext_digest: Option<Vec<u8>> = row.try_get("ciphertext128")?;
+            let s3_format_version: Option<i16> = row.try_get("s3_format_version")?;
+
+            if let (Some(ciphertext_digest), Some(sns_ciphertext_digest), Some(s3_format_version)) =
+                (ciphertext_digest, sns_ciphertext_digest, s3_format_version)
+            {
+                return Ok((ciphertext_digest, sns_ciphertext_digest, s3_format_version));
+            }
+        }
+
+        info!(retry, "Waiting for ciphertext_digest upload state");
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    Err(anyhow!(
+        "ciphertext_digest upload state was not complete for handle {}",
+        to_hex(handle)
+    ))
 }
 
 #[cfg(feature = "gpu")]
