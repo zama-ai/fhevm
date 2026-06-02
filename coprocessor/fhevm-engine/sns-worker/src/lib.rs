@@ -10,7 +10,7 @@ mod tests;
 
 use std::{
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicI64, Ordering},
         Arc,
     },
     time::Duration,
@@ -29,7 +29,7 @@ use fhevm_engine_common::{
     utils::{to_hex, DatabaseURL},
 };
 use futures::join;
-use sqlx::{Postgres, Transaction};
+use sqlx::{postgres::PgListener, Pool, Postgres, Transaction};
 use thiserror::Error;
 use tokio::{
     spawn,
@@ -39,7 +39,16 @@ use tokio::{
     },
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, Level};
+use tracing::{debug, error, info, warn, Level};
+
+/// Wake-up channel for GCS activation. Must stay in sync with
+/// `upgrade_controller::UPGRADE_ACTIVATED_CHANNEL`.
+const EVENT_UPGRADE_ACTIVATED: &str = "event_upgrade_activated";
+
+/// Sentinel for the activation atomic: the GCS row in `upgrade_state` has
+/// not been observed yet (the worker is paused). Any non-sentinel value is
+/// the real start_block.
+const GCS_NOT_ACTIVATED: i64 = -1;
 
 use crate::{
     aws_upload::{check_is_ready, spawn_resubmit_task, spawn_uploader},
@@ -121,6 +130,11 @@ pub struct Config {
     pub enable_compression: bool,
     pub schedule_policy: SchedulePolicy,
     pub pg_auto_explain_with_min_duration: Option<Duration>,
+    /// When true, the sns-worker runs in GCS mode. It connects with
+    /// `search_path = gcs,public` so writes (`ciphertexts128`,
+    /// `pbs_computations`) land in the `gcs` schema, and it pauses until
+    /// `event_upgrade_activated` is received before processing any work.
+    pub gcs_mode: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -145,8 +159,12 @@ impl std::fmt::Display for Config {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "db_url: {},  db_listen_channel: {:?}, db_notify_channel: {}, db_batch_limit: {}",
-            self.db.url, self.db.listen_channels, self.db.notify_channel, self.db.batch_limit
+            "db_url: {},  db_listen_channel: {:?}, db_notify_channel: {}, db_batch_limit: {}, gcs_mode: {}",
+            self.db.url,
+            self.db.listen_channels,
+            self.db.notify_channel,
+            self.db.batch_limit,
+            self.gcs_mode
         )
     }
 }
@@ -477,13 +495,18 @@ pub async fn run_all(
     let s3 = client.clone();
     let jobs_rx: Arc<RwLock<mpsc::Receiver<UploadJob>>> = Arc::new(RwLock::new(uploads_rx));
 
-    let Some(pool_mngr) = PostgresPoolManager::connect_pool(
+    // In --gcs-mode the pool is pinned to `search_path = gcs,public` so
+    // unqualified writes (`ciphertexts128`, `pbs_computations`) land in the
+    // `gcs` schema; shared read-only tables (keys, crs, host_chains,
+    // upgrade_state, …) still resolve from `public` via fallback.
+    let Some(pool_mngr) = PostgresPoolManager::connect_pool_with_gcs_mode(
         token.child_token(),
         conf.db.url.as_str(),
         conf.db.timeout,
         conf.db.max_connections,
         Duration::from_secs(2),
         conf.pg_auto_explain_with_min_duration,
+        conf.gcs_mode,
     )
     .await
     else {
@@ -492,6 +515,40 @@ pub async fn run_all(
     };
 
     let pg_mngr = pool_mngr.clone();
+
+    // GCS gating: spawn the activation watcher and pause until it observes
+    // `upgrade_state.start_block` for stack_role='GCS'. In BCS mode this is
+    // a no-op — the loop falls through immediately.
+    let start_block_state = Arc::new(AtomicI64::new(GCS_NOT_ACTIVATED));
+    if conf.gcs_mode {
+        let watcher_pool = pool_mngr.pool();
+        let watcher_state = start_block_state.clone();
+        spawn(async move {
+            loop {
+                if let Err(err) =
+                    watch_gcs_activation(&watcher_pool, &watcher_state).await
+                {
+                    error!(error = %err, "GCS activation watcher errored; restarting in 5s");
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                }
+            }
+        });
+
+        info!("sns-worker in --gcs-mode (paused, not yet activated). Waiting for event_upgrade_activated.");
+        loop {
+            if token.is_cancelled() {
+                return Ok(());
+            }
+            if start_block_state.load(Ordering::SeqCst) != GCS_NOT_ACTIVATED {
+                break;
+            }
+            tokio::select! {
+                _ = token.cancelled() => return Ok(()),
+                _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+            }
+        }
+        info!("sns-worker observed GCS activation; resuming.");
+    }
 
     // Start metrics server
     metrics_server::spawn(conf.metrics.addr.clone(), token.child_token());
@@ -560,4 +617,50 @@ pub async fn run_all(
 
     info!("Worker stopped");
     Ok(())
+}
+
+/// LISTENs on `event_upgrade_activated` and mirrors
+/// `upgrade_state.start_block` (for `stack_role='GCS'`) into `state`. Polls
+/// once on entry so a worker started AFTER the activation notify fired still
+/// picks the value up. A 30s fallback sleep catches any missed NOTIFY.
+async fn watch_gcs_activation(
+    pool: &Pool<Postgres>,
+    state: &AtomicI64,
+) -> Result<(), sqlx::Error> {
+    let mut listener = PgListener::connect_with(pool).await?;
+    listener.listen(EVENT_UPGRADE_ACTIVATED).await?;
+    info!(
+        channel = EVENT_UPGRADE_ACTIVATED,
+        "GCS activation watcher listening"
+    );
+
+    loop {
+        let row: Option<(Option<i64>,)> = sqlx::query_as(
+            "SELECT start_block FROM upgrade_state WHERE stack_role = 'GCS'",
+        )
+        .fetch_optional(pool)
+        .await?;
+
+        if let Some((Some(start_block),)) = row {
+            let prev = state.swap(start_block, Ordering::SeqCst);
+            if prev != start_block {
+                info!(
+                    start_block,
+                    prev, "GCS start_block updated from upgrade_state"
+                );
+            }
+        } else {
+            debug!("GCS row in upgrade_state has no start_block yet");
+        }
+
+        tokio::select! {
+            recv = listener.recv() => {
+                if let Err(err) = recv {
+                    warn!(error = %err, "GCS activation listener recv error");
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            }
+            _ = tokio::time::sleep(Duration::from_secs(30)) => {}
+        }
+    }
 }
