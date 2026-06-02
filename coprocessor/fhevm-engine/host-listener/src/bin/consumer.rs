@@ -92,12 +92,6 @@ struct Args {
     #[arg(long)]
     pub chain_id: String,
 
-    /// When true, the listener runs in GCS mode and starts paused: only the
-    /// ProtocolConfig `UpgradeActivated` event is acted on; all TFHE/ACL/KMS
-    /// events in incoming blocks are skipped. Used by the GCS stack during
-    /// the blue/green upgrade flow.
-    #[arg(long, default_value_t = false)]
-    pub gcs_mode: bool,
 }
 
 #[tokio::main]
@@ -118,6 +112,18 @@ async fn main() -> anyhow::Result<()> {
         cancel_token.child_token(),
     );
 
+    let gcs_mode = match fhevm_engine_common::versioning::resolve_gcs_mode(
+        args.database_url.as_str(),
+    )
+    .await
+    {
+        Ok(gcs_mode) => gcs_mode,
+        Err(err) => {
+            tracing::error!(error = %err, "Failed to resolve gcs_mode from versioning table");
+            return Err(err);
+        }
+    };
+
     let config = ConsumerConfig {
         url: args.url,
         acl_address: args.acl_contract_address,
@@ -134,7 +140,7 @@ async fn main() -> anyhow::Result<()> {
         dependence_cross_block: args.dependence_cross_block,
         dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
         chain_id: args.chain_id,
-        gcs_mode: args.gcs_mode,
+        gcs_mode,
     };
 
     run_consumer(config).await

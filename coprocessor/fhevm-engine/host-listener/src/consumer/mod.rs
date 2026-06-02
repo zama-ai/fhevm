@@ -14,6 +14,7 @@ use fhevm_engine_common::drift_revert::SignalStatus as DriftStatus;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
+use fhevm_engine_common::versioning::{run_stack_version_listener, StackMode};
 
 use crate::cmd::block_history::BlockSummary;
 use crate::consumer::metrics::{inc_blocks_processed, inc_db_errors};
@@ -211,10 +212,11 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     let client =
         ListenerConsumer::new(&broker, chain_id.as_u64(), &consumer_id);
 
-    let db = Database::new(
+    let db = Database::new_with_gcs_mode(
         &config.database_url,
         chain_id,
         config.dependence_cache_size,
+        config.gcs_mode,
     )
     .await?;
 
@@ -261,6 +263,21 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         gcs_start_block,
     };
 
+    // Runtime stack mode + `event_stack_version_upgraded` listener: at cutover
+    // this (blue) stack is retired and `stack_mode` flips to paused; the
+    // consume handler then drops incoming blocks without writing to the DB.
+    let stack_mode = StackMode::new(config.gcs_mode);
+    {
+        let pool = db.pool().await;
+        let stack_mode = stack_mode.clone();
+        let cancel = client.cancel_token.clone();
+        tokio::spawn(async move {
+            if let Err(err) = run_stack_version_listener(pool, stack_mode, cancel).await {
+                error!(error = %err, "stack-version listener exited with error");
+            }
+        });
+    }
+
     let last_known_drift = Arc::new(RwLock::new(STARTING_DRIFT));
     let chain_id_str = config.chain_id.to_string();
     let consumer_task = client.consume(move |payload, _cancel| {
@@ -269,7 +286,13 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         let chain_id_str = chain_id_str.clone();
         let last_known_drift = last_known_drift.clone();
         let ingest_options = ingest_options.clone();
+        let stack_mode = stack_mode.clone();
         async move {
+            // Paused (retired blue stack after cutover): no-op — ack and drop
+            // the block without writing anything to the DB.
+            if stack_mode.is_paused() {
+                return Ok(AckDecision::Ack);
+            }
             let drift_revert_is_over = check_if_drift_revert_is_over(
                 &db,
                 chain_id.as_u64() as i64,

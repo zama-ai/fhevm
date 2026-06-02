@@ -85,7 +85,21 @@ const STATEMENT_CANCELLED: DbErrorCode = DbErrorCode::Borrowed("57014"); // SQLS
 
 fn apply_connection_options(options: PgConnectOptions) -> PgConnectOptions {
     options.options([
-        ("statement_timeout", "10000"), // 10 seconds
+        // 120s: large-object (lowrite) writes of the KMS server key can take
+        // 25s+ under DB contention; 10s was too tight and rolled back the
+        // key-activation download every cycle.
+        ("statement_timeout", "120000"), // 120 seconds
+    ])
+}
+
+/// Same as [`apply_connection_options`] but additionally pins
+/// `search_path = gcs,public` so every connection routes unqualified writes
+/// to the `gcs` schema (with fallback to `public` for shared read-only
+/// tables). Used by the host-listener in `--gcs-mode`.
+fn apply_connection_options_gcs(options: PgConnectOptions) -> PgConnectOptions {
+    options.options([
+        ("statement_timeout", "120000"), // 120 seconds; see apply_connection_options
+        ("search_path", fhevm_engine_common::database::GCS_SEARCH_PATH),
     ])
 }
 
@@ -125,6 +139,9 @@ pub struct Database {
     pub chain_id: ChainId,
     pub dependence_chain: ChainCache,
     pub tick: HeartBeat,
+    /// When true, every connection in this pool sets
+    /// `search_path = gcs,public` so writes resolve to the GCS schema.
+    gcs_mode: bool,
 }
 
 #[derive(Debug)]
@@ -148,7 +165,16 @@ impl Database {
         chain_id: ChainId,
         dependence_cache_size: u16,
     ) -> Result<Self> {
-        let (pool, pool_refresh_handle) = Self::new_pool(url).await;
+        Self::new_with_gcs_mode(url, chain_id, dependence_cache_size, false).await
+    }
+
+    pub async fn new_with_gcs_mode(
+        url: &DatabaseURL,
+        chain_id: ChainId,
+        dependence_cache_size: u16,
+        gcs_mode: bool,
+    ) -> Result<Self> {
+        let (pool, pool_refresh_handle) = Self::new_pool(url, gcs_mode).await;
         let bucket_cache =
             Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
                 std::num::NonZeroU16::new(
@@ -164,6 +190,7 @@ impl Database {
             pool_refresh_handle: Arc::new(RwLock::new(pool_refresh_handle)),
             dependence_chain: bucket_cache,
             tick: HeartBeat::default(),
+            gcs_mode,
         })
     }
 
@@ -267,7 +294,15 @@ impl Database {
         Ok(slow_dep_chain_ids)
     }
 
-    async fn new_pool(url: &DatabaseURL) -> (PgPool, PoolRefreshHandle) {
+    async fn new_pool(
+        url: &DatabaseURL,
+        gcs_mode: bool,
+    ) -> (PgPool, PoolRefreshHandle) {
+        let transform: fn(PgConnectOptions) -> PgConnectOptions = if gcs_mode {
+            apply_connection_options_gcs
+        } else {
+            apply_connection_options
+        };
         let connect = || {
             connect_pool_with_options_and_connect_options(
                 url,
@@ -277,7 +312,7 @@ impl Database {
                     .max_connections(8)
                     .acquire_timeout(Duration::from_secs(5)),
                 None,
-                apply_connection_options,
+                transform,
             )
         };
         let mut pool = connect().await;
@@ -304,7 +339,7 @@ impl Database {
         tokio::time::sleep(RECONNECTION_DELAY).await;
         let (old_pool, old_refresh_handle) = {
             let (new_pool, new_refresh_handle) =
-                Self::new_pool(&self.url).await;
+                Self::new_pool(&self.url, self.gcs_mode).await;
             let mut pool = self.pool.write().await;
             let mut pool_refresh_handle =
                 self.pool_refresh_handle.write().await;
@@ -331,7 +366,6 @@ impl Database {
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
         log: &LogTfhe,
-        gcs_active: bool,
     ) -> Result<bool, SqlxError> {
         let dependencies_handles = dependencies_handles
             .iter()
@@ -345,7 +379,6 @@ impl Database {
             fhe_operation,
             scalar_byte,
             log,
-            gcs_active,
         )
         .await
     }
@@ -359,7 +392,6 @@ impl Database {
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
         log: &LogTfhe,
-        gcs_active: bool,
     ) -> Result<bool, SqlxError> {
         let dependencies =
             dependencies.iter().map(|d| d.to_vec()).collect::<Vec<_>>();
@@ -370,7 +402,6 @@ impl Database {
             fhe_operation,
             scalar_byte,
             log,
-            gcs_active,
         )
         .await
     }
@@ -384,22 +415,15 @@ impl Database {
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
         log: &LogTfhe,
-        gcs_active: bool,
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
-        // In GCS mode (post-activation) all new computations land in the
-        // staging child table; BCS keeps writing to the parent. Both share
-        // the same `(output_handle, transaction_id)` unique constraint so
-        // ON CONFLICT semantics are preserved.
-        let computations_table = if gcs_active {
-            "computations_staging"
-        } else {
-            "computations"
-        };
-        let sql = format!(
+        // Schema isolation handles BCS/GCS routing at the connection layer
+        // (`search_path = gcs,public` for GCS, default `public` for BCS), so
+        // this INSERT references `computations` unqualified.
+        let query = sqlx::query!(
             r#"
-            INSERT INTO {computations_table} (
+            INSERT INTO computations (
                 output_handle,
                 dependencies,
                 fhe_operation,
@@ -415,24 +439,23 @@ impl Database {
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11)
             ON CONFLICT (output_handle, transaction_id) DO NOTHING
-            "#
+            "#,
+            output_handle,
+            &dependencies,
+            fhe_operation as i16,
+            is_scalar,
+            log.dependence_chain.to_vec(),
+            log.transaction_hash.map(|txh| txh.to_vec()),
+            log.is_allowed,
+            log.block_timestamp
+                .saturating_add(TimeDuration::microseconds(
+                    log.tx_depth_size as i64
+                )),
+            !log.is_allowed,
+            self.chain_id.as_i64(),
+            log.block_number as i64
         );
-        sqlx::query(&sql)
-            .bind(output_handle)
-            .bind(&dependencies)
-            .bind(fhe_operation as i16)
-            .bind(is_scalar)
-            .bind(log.dependence_chain.to_vec())
-            .bind(log.transaction_hash.map(|txh| txh.to_vec()))
-            .bind(log.is_allowed)
-            .bind(
-                log.block_timestamp.saturating_add(
-                    TimeDuration::microseconds(log.tx_depth_size as i64),
-                ),
-            )
-            .bind(!log.is_allowed)
-            .bind(self.chain_id.as_i64())
-            .bind(log.block_number as i64)
+        query
             .execute(tx.deref_mut())
             .await
             .map(|result| result.rows_affected() > 0)
@@ -444,7 +467,6 @@ impl Database {
         &self,
         tx: &mut Transaction<'_>,
         log: &LogTfhe,
-        gcs_active: bool,
     ) -> Result<bool, SqlxError> {
         use TfheContract as C;
         use TfheContractEvents as E;
@@ -461,10 +483,10 @@ impl Database {
             log.transaction_hash.as_ref(),
         );
         let insert_computation = |tx, result, dependencies, scalar_byte| {
-            self.insert_computation(tx, result, dependencies, fhe_operation, scalar_byte, log, gcs_active)
+            self.insert_computation(tx, result, dependencies, fhe_operation, scalar_byte, log)
         };
         let insert_computation_bytes = |tx, result, dependencies_handles, dependencies_bytes, scalar_byte| {
-            self.insert_computation_bytes(tx, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log, gcs_active)
+            self.insert_computation_bytes(tx, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
         };
 
         // Record the transaction if this is a computation event

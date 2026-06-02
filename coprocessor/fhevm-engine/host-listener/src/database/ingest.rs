@@ -40,9 +40,10 @@ pub struct IngestOptions {
     ///     `UpgradeActivated` ProtocolConfig event is acted on; all TFHE /
     ///     ACL / KMS-generation events in the block are skipped.
     ///   - real start_block: the listener is activated — events are
-    ///     processed normally but `computations` writes are routed to
-    ///     `computations_staging` instead of the parent table.
-    /// When false (default), writes go to the parent tables.
+    ///     processed normally. Writes are routed to the `gcs` schema by
+    ///     the connection's `search_path = gcs,public`, not by per-statement
+    ///     table-name swaps.
+    /// When false (default), writes go to the `public` schema (BCS).
     pub gcs_mode: bool,
     /// Shared activation state populated by `gcs_activation::watch_gcs_activation`.
     /// Holds `GCS_NOT_ACTIVATED` until the watcher observes a real start_block.
@@ -51,7 +52,7 @@ pub struct IngestOptions {
 }
 
 impl IngestOptions {
-    /// Returns true iff the listener was started with `--gcs-mode` AND the
+    /// Returns true iff the listener is running in GCS mode AND the
     /// activation watcher has populated a real start_block. When true, all
     /// new computations rows are routed to `computations_staging`.
     pub fn gcs_active(&self) -> bool {
@@ -211,9 +212,9 @@ pub async fn ingest_block_logs(
     // ProtocolConfig `UpgradeActivated` event is acted on. TFHE/ACL/KMS
     // events are skipped. Once the activation watcher populates
     // `gcs_start_block`, this branch is skipped and the events are processed
-    // below, with writes routed to `computations_staging`.
-    let gcs_active = options.gcs_active();
-    if options.gcs_mode && !gcs_active {
+    // below. Writes are routed to `gcs.*` via the connection's `search_path`
+    // (no per-statement table-name swaps needed).
+    if options.gcs_mode && !options.gcs_active() {
         info!(
             block_number = block_logs.summary.number,
             nb_logs = block_logs.logs.len(),
@@ -358,7 +359,7 @@ pub async fn ingest_block_logs(
     let slow_lane_enabled = options.dependent_ops_max_per_chain > 0;
     let mut dependent_ops_by_chain: HashMap<ChainHash, u64> = HashMap::new();
     for tfhe_log in tfhe_event_log {
-        let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log, gcs_active).await?;
+        let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
         at_least_one_insertion |= inserted;
         // Count all newly inserted ops per chain to avoid underestimating
         // pressure from producer paths that are required by downstream work.

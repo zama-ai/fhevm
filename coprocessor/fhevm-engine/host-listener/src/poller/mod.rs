@@ -18,6 +18,7 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::connect_pool_with_options;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
+use fhevm_engine_common::versioning::{run_stack_version_listener, StackMode};
 use sqlx::postgres::PgPoolOptions;
 
 use crate::cmd::block_history::BlockSummary;
@@ -138,10 +139,11 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
     let chain_id_str = chain_id.to_string();
     blockchain_timeout_tick.update();
 
-    let mut db = Database::new(
+    let mut db = Database::new_with_gcs_mode(
         &config.database_url,
         chain_id,
         config.dependence_cache_size,
+        config.gcs_mode,
     )
     .await?;
     let aws_s3_client = AwsS3Client {};
@@ -201,6 +203,21 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         gcs_start_block.clone(),
     );
 
+    // Runtime stack mode + `event_stack_version_upgraded` listener: at cutover
+    // this (blue) stack is retired and `stack_mode` flips to paused, turning
+    // the poll loop below into a no-op (stops polling/producing blocks).
+    let stack_mode = StackMode::new(config.gcs_mode);
+    {
+        let pool = db.pool().await;
+        let stack_mode = stack_mode.clone();
+        let cancel = cancel_token.clone();
+        tokio::spawn(async move {
+            if let Err(err) = run_stack_version_listener(pool, stack_mode, cancel).await {
+                error!(error = %err, "stack-version listener exited with error");
+            }
+        });
+    }
+
     let initial_anchor = db.poller_get_last_caught_up_block(chain_id).await?;
     db.tick.update();
     let mut last_caught_up_block = match initial_anchor {
@@ -232,6 +249,11 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
     let mut consecutive_rpc_failures: u64 = 0;
 
     loop {
+        // Paused (retired blue stack after cutover): no-op — stop polling.
+        if stack_mode.is_paused() {
+            sleep(config.poll_interval).await;
+            continue;
+        }
         let latest = match client.latest_block_number().await {
             Ok(block) => {
                 consecutive_rpc_failures = 0;

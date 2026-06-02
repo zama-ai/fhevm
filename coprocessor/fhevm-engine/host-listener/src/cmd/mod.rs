@@ -23,6 +23,7 @@ use fhevm_engine_common::drift_revert;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::types::BlockchainProvider;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
+use fhevm_engine_common::versioning::{run_stack_version_listener, StackMode};
 use sqlx::postgres::PgPoolOptions;
 
 use crate::database::ingest::{
@@ -181,12 +182,6 @@ pub struct Args {
     )]
     pub timeout_request_websocket: u64,
 
-    /// When true, the listener runs in GCS mode and starts paused: only the
-    /// ProtocolConfig `UpgradeActivated` event is acted on; all TFHE/ACL/KMS
-    /// events in incoming blocks are skipped. Used by the GCS stack during
-    /// the blue/green upgrade flow.
-    #[arg(long, default_value_t = false)]
-    pub gcs_mode: bool,
 }
 
 // TODO: to merge with Levent works
@@ -965,6 +960,7 @@ async fn db_insert_block(
     tfhe_contract_address: &Option<Address>,
     kms_generation_address: &Option<Address>,
     args: &Args,
+    gcs_mode: bool,
     gcs_start_block: &std::sync::Arc<std::sync::atomic::AtomicI64>,
 ) -> anyhow::Result<()> {
     info!(
@@ -986,7 +982,7 @@ async fn db_insert_block(
                 dependence_by_connexity: args.dependence_by_connexity,
                 dependence_cross_block: args.dependence_cross_block,
                 dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
-                gcs_mode: args.gcs_mode,
+                gcs_mode,
                 gcs_start_block: gcs_start_block.clone(),
             },
         )
@@ -1085,16 +1081,33 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         error!("Database URL is required");
         panic!("Database URL is required");
     };
-    let mut db =
-        Database::new(&args.database_url, chain_id, args.dependence_cache_size)
-            .await?;
+
+    let gcs_mode = match fhevm_engine_common::versioning::resolve_gcs_mode(
+        args.database_url.as_str(),
+    )
+    .await
+    {
+        Ok(gcs_mode) => gcs_mode,
+        Err(err) => {
+            error!(error = %err, "Failed to resolve gcs_mode from versioning table");
+            return Err(err);
+        }
+    };
+
+    let mut db = Database::new_with_gcs_mode(
+        &args.database_url,
+        chain_id,
+        args.dependence_cache_size,
+        gcs_mode,
+    )
+    .await?;
 
     // GCS activation: long-lived watcher mirrors `upgrade_state.start_block`
     // into a shared atomic; the ingest path reads it to decide between paused,
     // BCS, and GCS-staging modes. No-op when --gcs-mode is false.
     let gcs_start_block = crate::database::gcs_activation::new_state();
     crate::database::gcs_activation::spawn_watcher(
-        args.gcs_mode,
+        gcs_mode,
         db.pool().await,
         gcs_start_block.clone(),
     );
@@ -1108,6 +1121,21 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     };
 
     let cancel_token = CancellationToken::new();
+
+    // Runtime stack mode + `event_stack_version_upgraded` listener: at cutover
+    // this (blue) stack is retired and `stack_mode` flips to paused, turning
+    // the ingest loop below into a no-op (no DB writes).
+    let stack_mode = StackMode::new(gcs_mode);
+    {
+        let pool = db.pool().await;
+        let stack_mode = stack_mode.clone();
+        let cancel = cancel_token.clone();
+        tokio::spawn(async move {
+            if let Err(err) = run_stack_version_listener(pool, stack_mode, cancel).await {
+                error!(error = %err, "stack-version listener exited with error");
+            }
+        });
+    }
 
     // Start health check before drift-revert init so the service stays
     // healthy while waiting for a revert to complete.
@@ -1164,6 +1192,11 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         log_iter.stream = None; // force new connection each iteration
 
         while let Some(block_logs) = log_iter.next().await {
+            // Paused (retired blue stack after cutover): no-op — drop the block
+            // without writing anything to the DB.
+            if stack_mode.is_paused() {
+                continue;
+            }
             if args.only_catchup_loop && !block_logs.catchup {
                 break;
             }
@@ -1175,6 +1208,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                 &tfhe_contract_address,
                 &kms_generation_address,
                 &args,
+                gcs_mode,
                 &gcs_start_block,
             )
             .await;
