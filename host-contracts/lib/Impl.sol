@@ -299,23 +299,6 @@ interface IFHEVMExecutor {
     ) external returns (bytes32 result);
 
     /**
-     * @notice                  Sample multi-output op (proof-of-concept).
-     *                          Returns two handles derived from one base hash.
-     * @param ct                Ciphertext input.
-     * @return resultValue      Output index 0 — same type as `ct` (= `ct + 1`).
-     * @return resultFound      Output index 1 — `ebool` (= `ct != 0`).
-     */
-    function fheSampleMultiOutput(bytes32 ct) external returns (bytes32 resultValue, bytes32 resultFound);
-
-    /**
-     * @notice                  Variable-input sample multi-output op (POC).
-     *                          Takes N inputs of the same FHE type, returns 2 handles.
-     * @param cts               Array of ciphertext inputs (length N >= 1, all same type).
-     * @return results          Output handles 0..1 (each = `cts[i % N] + (i + 1)`).
-     */
-    function fheSampleVariableInputOutput(bytes32[] calldata cts) external returns (bytes32[] memory results);
-
-    /**
      * @notice                      Returns the address of the InputVerifier contract used by the coprocessor.
      * @return inputVerifierAddress Address of the InputVerifier.
      */
@@ -701,16 +684,6 @@ library Impl {
     function not(bytes32 ct) internal returns (bytes32 result) {
         CoprocessorConfig storage $ = getCoprocessorConfig();
         result = IFHEVMExecutor($.CoprocessorAddress).fheNot(ct);
-    }
-
-    function sampleMultiOutput(bytes32 ct) internal returns (bytes32 resultValue, bytes32 resultFound) {
-        CoprocessorConfig storage $ = getCoprocessorConfig();
-        (resultValue, resultFound) = IFHEVMExecutor($.CoprocessorAddress).fheSampleMultiOutput(ct);
-    }
-
-    function sampleVariableInputOutput(bytes32[] memory cts) internal returns (bytes32[] memory results) {
-        CoprocessorConfig storage $ = getCoprocessorConfig();
-        results = IFHEVMExecutor($.CoprocessorAddress).fheSampleVariableInputOutput(cts);
     }
 
     /**

@@ -1655,68 +1655,6 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
-     * @notice HCU check for the sample multi-output op (2 outputs).
-     *         Costs are placeholders sized at ~2x fheNeg (clone-ish + ne_zero).
-     */
-    function checkHCUForFheSampleMultiOutput(
-        FheType inputType,
-        bytes32 ct,
-        bytes32 resultValue,
-        bytes32 resultFound,
-        address caller
-    ) external virtual {
-        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
-        uint256 opHCU;
-        if (inputType == FheType.Uint8) {
-            opHCU = 160000;
-        } else if (inputType == FheType.Uint16) {
-            opHCU = 186000;
-        } else if (inputType == FheType.Uint32) {
-            opHCU = 190000;
-        } else if (inputType == FheType.Uint64) {
-            opHCU = 262000;
-        } else if (inputType == FheType.Uint128) {
-            opHCU = 336000;
-        } else {
-            revert UnsupportedOperation();
-        }
-        bytes32[] memory results = new bytes32[](2);
-        results[0] = resultValue;
-        results[1] = resultFound;
-        _adjustAndCheckFheTransactionLimitOneOpMultiResult(opHCU, caller, ct, results);
-    }
-
-    /**
-     * @notice HCU check for the variable-input sample multi-output op.
-     *         Scales linearly with the number of inputs N (one base cost + per-input cost).
-     */
-    function checkHCUForFheSampleVariableInputOutput(
-        FheType inputType,
-        bytes32[] memory cts,
-        bytes32[] memory results,
-        address caller
-    ) external virtual {
-        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
-        uint256 baseHCU;
-        if (inputType == FheType.Uint8) {
-            baseHCU = 160000;
-        } else if (inputType == FheType.Uint16) {
-            baseHCU = 186000;
-        } else if (inputType == FheType.Uint32) {
-            baseHCU = 190000;
-        } else if (inputType == FheType.Uint64) {
-            baseHCU = 262000;
-        } else if (inputType == FheType.Uint128) {
-            baseHCU = 336000;
-        } else {
-            revert UnsupportedOperation();
-        }
-        // Per-input cost is half the base — keeps total bounded for moderate N.
-        uint256 opHCU = baseHCU + (baseHCU / 2) * cts.length;
-        _adjustAndCheckFheTransactionLimitVarInMultiResult(opHCU, caller, cts, results);
-    }
-
-    /**
      * @notice Sets the block-level HCU limit for non-whitelisted callers.
      * @param hcuPerBlock New block-level cap.
      */
@@ -1779,60 +1717,6 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         }
 
         _setHCUForHandle(result, totalHCU);
-    }
-
-    /**
-     * @notice Adjusts the sequential HCU for a multi-output op with a single input.
-     *         The op HCU is charged once at the transaction level (one FHE call),
-     *         and the depth HCU is recorded on every output handle.
-     */
-    function _adjustAndCheckFheTransactionLimitOneOpMultiResult(
-        uint256 opHCU,
-        address caller,
-        bytes32 op1,
-        bytes32[] memory results
-    ) internal virtual {
-        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
-
-        uint256 totalHCU = opHCU + _getHCUForHandle(op1);
-        if (totalHCU > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
-            revert HCUTransactionDepthLimitExceeded();
-        }
-
-        for (uint256 i = 0; i < results.length; i++) {
-            _setHCUForHandle(results[i], totalHCU);
-        }
-    }
-
-    /**
-     * @notice Adjusts the sequential HCU for a multi-output op with variable input count.
-     *         The op HCU is charged once at the transaction level (one FHE call),
-     *         and the depth HCU is recorded on every output handle. The per-handle
-     *         depth uses the max depth across all inputs.
-     */
-    function _adjustAndCheckFheTransactionLimitVarInMultiResult(
-        uint256 opHCU,
-        address caller,
-        bytes32[] memory ops,
-        bytes32[] memory results
-    ) internal virtual {
-        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
-
-        uint256 maxInputHCU = 0;
-        for (uint256 i = 0; i < ops.length; i++) {
-            uint256 h = _getHCUForHandle(ops[i]);
-            if (h > maxInputHCU) {
-                maxInputHCU = h;
-            }
-        }
-        uint256 totalHCU = opHCU + maxInputHCU;
-        if (totalHCU > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
-            revert HCUTransactionDepthLimitExceeded();
-        }
-
-        for (uint256 i = 0; i < results.length; i++) {
-            _setHCUForHandle(results[i], totalHCU);
-        }
     }
 
     /**

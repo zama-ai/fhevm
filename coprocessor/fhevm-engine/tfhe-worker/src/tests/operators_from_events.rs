@@ -10,9 +10,8 @@ use crate::tests::event_helpers::{
     next_handle_with_type, setup_event_harness, to_ty, zero_address, EventHarness,
 };
 use crate::tests::test_cases::{
-    generate_binary_test_cases, generate_multi_output_test_cases, generate_panic_binary_test_cases,
-    generate_unary_test_cases, BinaryOperatorTestCase, MultiOutputOperatorTestCase,
-    UnaryOperatorTestCase,
+    generate_binary_test_cases, generate_panic_binary_test_cases, generate_unary_test_cases,
+    BinaryOperatorTestCase, UnaryOperatorTestCase,
 };
 use crate::tests::utils::{
     decrypt_ciphertexts, errors_on_allowed_handles, wait_until_all_allowed_handles_computed,
@@ -442,35 +441,6 @@ fn unary_op_to_event(
     }
 }
 
-fn multi_output_op_to_event(
-    op: &MultiOutputOperatorTestCase,
-    inputs: &[Handle],
-    results: &[Handle],
-) -> TfheContractEvents {
-    use fhevm_engine_common::types::SupportedFheOperations as S;
-    use host_listener::contracts::TfheContract as C;
-    use host_listener::contracts::TfheContract::TfheContractEvents as E;
-
-    let caller = zero_address();
-
-    match S::try_from(op.operand).unwrap() {
-        S::FheSampleMultiOutput => E::FheSampleMultiOutput(C::FheSampleMultiOutput {
-            caller,
-            ct: inputs[0],
-            resultValue: results[0],
-            resultFound: results[1],
-        }),
-        S::FheSampleVariableInputOutput => {
-            E::FheSampleVariableInputOutput(C::FheSampleVariableInputOutput {
-                caller,
-                cts: inputs.to_vec(),
-                results: results.to_vec(),
-            })
-        }
-        _ => panic!("unknown multi-output operation: {:?}", op.operand),
-    }
-}
-
 #[tokio::test]
 #[serial(db)]
 async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Error>> {
@@ -549,108 +519,6 @@ async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Erro
             decr_response.value, expected_value,
             "operand output values not equal"
         );
-    }
-
-    Ok(())
-}
-
-#[tokio::test]
-#[serial(db)]
-async fn test_fhe_multi_output_operands_events() -> Result<(), Box<dyn std::error::Error>> {
-    let ops = generate_multi_output_test_cases();
-    let EventHarness {
-        app,
-        pool,
-        listener_db,
-    } = setup_event_harness().await?;
-
-    let mut cases = vec![];
-    for op in &ops {
-        if !supported_types().contains(&op.operand_types) {
-            continue;
-        }
-        if op.bits > 256 {
-            continue;
-        }
-        let input_handles: Vec<Handle> = (0..op.inps.len())
-            .map(|_| next_handle_with_type(op.operand_types))
-            .collect();
-        let result_handles: Vec<Handle> = op
-            .expected_outputs
-            .iter()
-            .map(|out| next_handle_with_type(out.fhe_type))
-            .collect();
-        let transaction_id = next_handle();
-
-        println!(
-            "Operations for multi-output test bits:{} op:{} inputs:{} outputs:{}",
-            op.bits,
-            op.operand,
-            op.inps.len(),
-            result_handles.len()
-        );
-
-        let caller = zero_address();
-
-        let mut tx = listener_db.new_transaction().await?;
-        // Emit one TrivialEncrypt per input.
-        for (inp_value, inp_handle) in op.inps.iter().zip(input_handles.iter()) {
-            let inp_bytes = as_scalar_uint(inp_value);
-            insert_event(
-                &listener_db,
-                &mut tx,
-                transaction_id,
-                TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
-                    caller,
-                    pt: inp_bytes,
-                    toType: to_ty(op.operand_types),
-                    result: *inp_handle,
-                }),
-                true,
-            )
-            .await?;
-            allow_handle(&listener_db, &mut tx, inp_handle).await?;
-        }
-
-        let op_event = multi_output_op_to_event(op, &input_handles, &result_handles);
-        insert_event(&listener_db, &mut tx, transaction_id, op_event, true).await?;
-        for h in &result_handles {
-            allow_handle(&listener_db, &mut tx, h).await?;
-        }
-        tx.commit().await?;
-
-        cases.push((op, result_handles));
-    }
-
-    wait_until_all_allowed_handles_computed(&app).await?;
-    for (op, result_handles) in cases {
-        let decrypt_request: Vec<Vec<u8>> = result_handles.iter().map(|h| h.to_vec()).collect();
-        let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
-        assert_eq!(
-            resp.len(),
-            op.expected_outputs.len(),
-            "op:{} expected {} outputs, got {}",
-            op.operand,
-            op.expected_outputs.len(),
-            resp.len()
-        );
-        for (i, (r, exp)) in resp.iter().zip(op.expected_outputs.iter()).enumerate() {
-            assert_eq!(
-                r.output_type, exp.fhe_type as i16,
-                "op:{} output[{i}]: type mismatch",
-                op.operand
-            );
-            let expected_value = if exp.fhe_type == 0 {
-                exp.value.gt(&BigInt::from(0)).to_string()
-            } else {
-                exp.value.to_string()
-            };
-            assert_eq!(
-                r.value, expected_value,
-                "op:{} output[{i}]: value mismatch",
-                op.operand
-            );
-        }
     }
 
     Ok(())

@@ -50,12 +50,4 @@ contract FHEEvents {
         bytes1 scalarByte,
         bytes32 result
     );
-    /// @dev Sample multi-output op (proof-of-concept). Emits two result handles:
-    ///      `resultValue` (index 0, same type as input) and `resultFound` (index 1, ebool).
-    event FheSampleMultiOutput(address indexed caller, bytes32 ct, bytes32 resultValue, bytes32 resultFound);
-    /// @dev Variable-input + variable-output sample multi-output op. Takes N inputs
-    ///      (N >= 1, all same FHE type) and emits M = 2*N result handles (output arity
-    ///      derived from input arity). Coprocessor computes `results[i] = cts[i % N] + (i + 1)`
-    ///      for `i = 0..2N-1`. Not a production op.
-    event FheSampleVariableInputOutput(address indexed caller, bytes32[] cts, bytes32[] results);
 }

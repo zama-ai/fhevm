@@ -846,31 +846,6 @@ pub fn check_fhe_operand_types(
                     }
                     Ok(())
                 }
-                SupportedFheOperations::FheSampleVariableInputOutput => {
-                    // N inputs (N >= 1) of uniform type.
-                    if input_handles.is_empty() {
-                        return Err(FhevmError::UnexpectedOperandCountForFheOperation {
-                            fhe_operation,
-                            fhe_operation_name: format!("{:?}", fhe_op),
-                            expected_operands: 1,
-                            got_operands: 0,
-                        });
-                    }
-                    let first_type = get_ct_type(&input_handles[0])?;
-                    for (i, handle) in input_handles.iter().enumerate().skip(1) {
-                        let handle_type = get_ct_type(handle)?;
-                        if handle_type != first_type {
-                            return Err(FhevmError::UnsupportedFheTypes {
-                                fhe_operation: format!(
-                                    "{:?}: handle at index {i} has type {handle_type}, expected {first_type}",
-                                    fhe_op
-                                ),
-                                input_types: vec![],
-                            });
-                        }
-                    }
-                    Ok(())
-                }
                 other => Err(FhevmError::UnsupportedFheTypes {
                     fhe_operation: format!("Unexpected op_type branch: {:?}", other),
                     input_types: vec![],
@@ -3581,120 +3556,15 @@ pub fn perform_fhe_operation_impl(
                 }),
             }
         }
-        // Multi-output ops dispatch through perform_multi_output_fhe_operation_impl.
-        SupportedFheOperations::FheSampleMultiOutput
-        | SupportedFheOperations::FheSampleVariableInputOutput => {
-            Err(FhevmError::UnknownFheOperation(fhe_operation_int as i32))
-        }
     }
 }
 
+/// Placeholder dispatch for multi-output ops; no ops are wired up yet.
 pub fn perform_multi_output_fhe_operation_impl(
     fhe_operation_int: i16,
-    input_operands: &[SupportedFheCiphertexts],
+    _input_operands: &[SupportedFheCiphertexts],
 ) -> Result<Vec<SupportedFheCiphertexts>, FhevmError> {
-    let fhe_operation: SupportedFheOperations = fhe_operation_int.try_into()?;
-    match fhe_operation {
-        SupportedFheOperations::FheSampleMultiOutput => {
-            if input_operands.len() != 1 {
-                return Err(FhevmError::UnsupportedFheTypes {
-                    fhe_operation: format!("{:?}", fhe_operation),
-                    input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-                });
-            }
-            let (value, found) = match &input_operands[0] {
-                SupportedFheCiphertexts::FheUint8(a) => (
-                    SupportedFheCiphertexts::FheUint8(a + 1u8),
-                    SupportedFheCiphertexts::FheBool(a.ne(0u8)),
-                ),
-                SupportedFheCiphertexts::FheUint16(a) => (
-                    SupportedFheCiphertexts::FheUint16(a + 1u16),
-                    SupportedFheCiphertexts::FheBool(a.ne(0u16)),
-                ),
-                SupportedFheCiphertexts::FheUint32(a) => (
-                    SupportedFheCiphertexts::FheUint32(a + 1u32),
-                    SupportedFheCiphertexts::FheBool(a.ne(0u32)),
-                ),
-                SupportedFheCiphertexts::FheUint64(a) => (
-                    SupportedFheCiphertexts::FheUint64(a + 1u64),
-                    SupportedFheCiphertexts::FheBool(a.ne(0u64)),
-                ),
-                SupportedFheCiphertexts::FheUint128(a) => (
-                    SupportedFheCiphertexts::FheUint128(a + 1u128),
-                    SupportedFheCiphertexts::FheBool(a.ne(0u128)),
-                ),
-                _ => {
-                    return Err(FhevmError::UnsupportedFheTypes {
-                        fhe_operation: format!("{:?}", fhe_operation),
-                        input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-                    });
-                }
-            };
-            Ok(vec![value, found])
-        }
-        SupportedFheOperations::FheSampleVariableInputOutput => {
-            // N inputs (variable, >= 1, all same type T) -> M = 2*N outputs of type T.
-            // Output arity derived from input arity: M = 2*N.
-            // results[i] = inputs[i % N] + (i + 1) for i in 0..2N.
-            if input_operands.is_empty() {
-                return Err(FhevmError::UnsupportedFheTypes {
-                    fhe_operation: format!("{:?}", fhe_operation),
-                    input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-                });
-            }
-            // All inputs must share the same FHE type.
-            let first_type = input_operands[0].type_num();
-            if input_operands.iter().any(|c| c.type_num() != first_type) {
-                return Err(FhevmError::UnsupportedFheTypes {
-                    fhe_operation: format!("{:?}", fhe_operation),
-                    input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-                });
-            }
-            let n = input_operands.len();
-            let m = n * 2;
-            let outputs: Vec<SupportedFheCiphertexts> = (0..m)
-                .map(|i| {
-                    let pick = &input_operands[i % n];
-                    let offset = (i as u128) + 1;
-                    sample_add_scalar(pick, offset, &fhe_operation, input_operands)
-                })
-                .collect::<Result<_, _>>()?;
-            Ok(outputs)
-        }
-        _ => Err(FhevmError::UnknownFheOperation(fhe_operation_int as i32)),
-    }
-}
-
-/// Helper for `FheSampleVariableInputOutput`: returns a new ciphertext that is
-/// `input + offset` (scalar add), preserving the input's FHE type.
-/// Only supports FheUint{8,16,32,64,128}.
-fn sample_add_scalar(
-    input: &SupportedFheCiphertexts,
-    offset: u128,
-    fhe_operation: &SupportedFheOperations,
-    input_operands: &[SupportedFheCiphertexts],
-) -> Result<SupportedFheCiphertexts, FhevmError> {
-    match input {
-        SupportedFheCiphertexts::FheUint8(a) => {
-            Ok(SupportedFheCiphertexts::FheUint8(a + offset as u8))
-        }
-        SupportedFheCiphertexts::FheUint16(a) => {
-            Ok(SupportedFheCiphertexts::FheUint16(a + offset as u16))
-        }
-        SupportedFheCiphertexts::FheUint32(a) => {
-            Ok(SupportedFheCiphertexts::FheUint32(a + offset as u32))
-        }
-        SupportedFheCiphertexts::FheUint64(a) => {
-            Ok(SupportedFheCiphertexts::FheUint64(a + offset as u64))
-        }
-        SupportedFheCiphertexts::FheUint128(a) => {
-            Ok(SupportedFheCiphertexts::FheUint128(a + offset))
-        }
-        _ => Err(FhevmError::UnsupportedFheTypes {
-            fhe_operation: format!("{:?}", fhe_operation),
-            input_types: input_operands.iter().map(|i| i.type_name()).collect(),
-        }),
-    }
+    Err(FhevmError::UnknownFheOperation(fhe_operation_int as i32))
 }
 
 pub fn to_be_u4_bit(inp: &[u8]) -> u8 {

@@ -383,7 +383,8 @@ impl Database {
     }
 
     // N rows sharing `group_id`, with `output_index` 0..N-1.
-    #[allow(clippy::too_many_arguments)]
+    // Infrastructure for future multi-output ops; no callers in this PR.
+    #[allow(clippy::too_many_arguments, dead_code)]
     async fn insert_multi_output_computation(
         &self,
         tx: &mut Transaction<'_>,
@@ -521,9 +522,9 @@ impl Database {
         let insert_computation_bytes = |tx, result, dependencies_handles, dependencies_bytes, scalar_byte| {
             self.insert_computation_bytes(tx, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
         };
-        let insert_multi_output_computation = |tx, results, dependencies, scalar_byte| {
-            self.insert_multi_output_computation(tx, results, dependencies, fhe_operation, scalar_byte, log)
-        };
+        // TODO: when adding a multi-output op, define a closure mirroring the two above,
+        // backed by `self.insert_multi_output_computation(...)`, which writes N rows
+        // sharing `group_id`.
 
         // Record the transaction if this is a computation event
         if !matches!(
@@ -600,20 +601,6 @@ impl Database {
                 } else {
                     insert_computation_bytes(tx, result, &[factor1, factor2], &[divisor.to_vec()], &NO_SCALAR).await
                 }
-            }
-
-            E::FheSampleMultiOutput(C::FheSampleMultiOutput { ct, resultValue, resultFound, .. })
-            => insert_multi_output_computation(
-                tx,
-                &[resultValue, resultFound],
-                &[ct],
-                &NO_SCALAR,
-            ).await,
-
-            E::FheSampleVariableInputOutput(C::FheSampleVariableInputOutput { cts, results, .. }) => {
-                let result_refs: Vec<&Handle> = results.iter().collect();
-                let dep_refs: Vec<&Handle> = cts.iter().collect();
-                insert_multi_output_computation(tx, &result_refs, &dep_refs, &NO_SCALAR).await
             }
 
             | E::Initialized(_)
@@ -1251,10 +1238,6 @@ fn event_to_op_int(op: &TfheContractEvents) -> FheOperation {
         E::FheSum(_) => O::FheSum as i32,
         E::FheIsIn(_) => O::FheIsIn as i32,
         E::FheMulDiv(_) => O::FheMulDiv as i32,
-        E::FheSampleMultiOutput(_) => O::FheSampleMultiOutput as i32,
-        E::FheSampleVariableInputOutput(_) => {
-            O::FheSampleVariableInputOutput as i32
-        }
         // Not tfhe ops
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => -1,
     }
@@ -1293,8 +1276,6 @@ pub fn event_name(op: &TfheContractEvents) -> &'static str {
         E::FheSum(_) => "FheSum",
         E::FheIsIn(_) => "FheIsIn",
         E::FheMulDiv(_) => "FheMulDiv",
-        E::FheSampleMultiOutput(_) => "FheSampleMultiOutput",
-        E::FheSampleVariableInputOutput(_) => "FheSampleVariableInputOutput",
         E::Initialized(_) => "Initialized",
         E::Upgraded(_) => "Upgraded",
         E::VerifyInput(_) => "VerifyInput",
@@ -1335,16 +1316,6 @@ pub fn tfhe_result_handles(op: &TfheContractEvents) -> Vec<Handle> {
         | E::FheSum(C::FheSum { result, .. })
         | E::FheIsIn(C::FheIsIn { result, .. })
         | E::FheMulDiv(C::FheMulDiv { result, .. }) => vec![*result],
-
-        E::FheSampleMultiOutput(C::FheSampleMultiOutput {
-            resultValue,
-            resultFound,
-            ..
-        }) => vec![*resultValue, *resultFound],
-        E::FheSampleVariableInputOutput(C::FheSampleVariableInputOutput {
-            results,
-            ..
-        }) => results.clone(),
 
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
     }
@@ -1537,15 +1508,6 @@ pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
                 vec![*factor1, *factor2]
             }
         }
-
-        E::FheSampleMultiOutput(C::FheSampleMultiOutput { ct, .. }) => {
-            vec![*ct]
-        }
-
-        E::FheSampleVariableInputOutput(C::FheSampleVariableInputOutput {
-            cts,
-            ..
-        }) => cts.clone(),
 
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
     }
