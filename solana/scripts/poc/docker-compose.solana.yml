@@ -1,0 +1,38 @@
+# Solana side-stack for the PoC local env.
+#
+# This runs ALONGSIDE the real fhevm-cli backend (gateway / coprocessor / KMS /
+# relayer / DB stay unchanged — see HARNESS.md). Only the host side is Solana:
+# this validator, the Anchor programs deployed onto it, and the Solana
+# host-listener decode path feeding the same coprocessor DB.
+#
+# Image is parameterised on purpose — set SOLANA_VALIDATOR_IMAGE to a
+# solana-test-validator image matching the toolchain CI pins (Solana 2.1.0).
+# We do not hardcode a tag we haven't verified against the live env.
+#
+# Bring up:  SOLANA_VALIDATOR_IMAGE=<image> docker compose -f docker-compose.solana.yml up -d
+# Tear down: docker compose -f docker-compose.solana.yml down -v   (loop may do this to reset)
+
+services:
+  solana-validator:
+    image: ${SOLANA_VALIDATOR_IMAGE:?set SOLANA_VALIDATOR_IMAGE to a solana-test-validator 2.1.0 image}
+    container_name: poc-solana-validator
+    command:
+      - solana-test-validator
+      - --reset
+      - --rpc-port=8899
+      - --bind-address=0.0.0.0
+      # Pre-deployed program ids come from solana/Anchor.toml; programs are loaded
+      # by the bootstrap step (anchor deploy) after the validator is healthy.
+    ports:
+      - "8899:8899" # JSON-RPC (the host-listener + relayer + connector read this)
+    volumes:
+      - solana-ledger:/root/.local/share/solana
+    healthcheck:
+      # getHealth returns "ok" once the validator is serving.
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8899 -X POST -H 'content-type: application/json' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getHealth\"}' | grep -q ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  solana-ledger:
