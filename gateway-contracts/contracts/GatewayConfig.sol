@@ -151,7 +151,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         /// @notice The user decryption threshold per context
         mapping(uint256 contextId => uint256) userDecryptionThresholdForContext;
         /// @notice The MPC threshold per context
-        /// @dev The SDK derives the MPC threshold from the MPC nodes it knows about instead of reading this value.
         mapping(uint256 contextId => uint256) mpcThresholdForContext;
         /// @notice The key and CRS generation threshold per context
         mapping(uint256 contextId => uint256) kmsGenThresholdForContext;
