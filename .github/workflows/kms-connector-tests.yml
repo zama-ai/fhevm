@@ -46,6 +46,7 @@ jobs:
   test-connector:
     name: kms-connector-tests/test-connector (bpr)
     needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-connector == 'true' }}
     timeout-minutes: 50
     permissions:
       actions: 'read' # Required to read workflow run information
