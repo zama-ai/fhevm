@@ -12,6 +12,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Instrument};
 
 const CODE_DEADLOCK_DETECTED: &str = "40P01";
+const CODE_UNIQUE_VIOLATION: &str = "23505";
 
 #[derive(Clone)]
 pub struct PostgresPoolManager {
@@ -217,6 +218,18 @@ impl PostgresPoolManager {
                         let code = db_err.code().unwrap_or("".into());
                         if code == CODE_DEADLOCK_DETECTED {
                             error!(error=%err, code=%code, "Transient DB error; retrying...");
+                        } else if code == CODE_UNIQUE_VIOLATION {
+                            // A unique violation here is a transient artifact of an
+                            // idempotent `INSERT ... ON CONFLICT` racing a concurrent
+                            // DELETE (e.g. a state/drift revert deleting
+                            // ciphertext_digest rows). The ON CONFLICT arbiter covers
+                            // only one of the table's unique indexes, so the conflict
+                            // can surface on another (the primary key) as a hard 23505.
+                            // Re-running the operation after the delete settles
+                            // succeeds, so back off and retry rather than tearing down
+                            // the whole worker.
+                            error!(error=%err, code=%code, "Transient unique-violation; backing off and retrying...");
+                            cancellable_sleep(&ct, backoff_delay).await;
                         } else {
                             error!(error=%db_err, code=%code, "Non-transient DB error; not retrying");
                             return Err(err);
