@@ -1,4 +1,30 @@
+//! Closes revoked or expired confidential-token operator records.
+
 use super::*;
+
+/// Accounts for closing an operator row.
+#[derive(Accounts)]
+#[event_cpi]
+#[instruction(operator: Pubkey)]
+pub struct CloseOperator<'info> {
+    /// Optional token owner. Required when closing an active operator row.
+    pub owner: Option<Signer<'info>>,
+    /// Confidential mint.
+    pub mint: Account<'info, ConfidentialMint>,
+    /// Token account controlled by the operator row.
+    pub token_account: Account<'info, ConfidentialTokenAccount>,
+    /// Operator authorization row to close.
+    #[account(
+        mut,
+        seeds = [b"operator", token_account.key().as_ref(), operator.as_ref()],
+        bump = operator_record.bump,
+        close = refund_recipient
+    )]
+    pub operator_record: Account<'info, ConfidentialOperator>,
+    /// CHECK: Must be the stored token owner and receives the rent refund.
+    #[account(mut)]
+    pub refund_recipient: UncheckedAccount<'info>,
+}
 
 /// Closes a revoked or expired operator row and refunds rent to the token owner.
 pub fn close_operator(ctx: Context<CloseOperator>, operator: Pubkey) -> Result<()> {

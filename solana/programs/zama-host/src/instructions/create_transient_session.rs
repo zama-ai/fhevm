@@ -1,3 +1,5 @@
+//! Creates one-slot transient capability sessions.
+
 use anchor_lang::prelude::*;
 
 use super::common::*;

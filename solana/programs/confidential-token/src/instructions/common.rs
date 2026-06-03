@@ -1,3 +1,8 @@
+//! Shared confidential-token instruction helpers.
+//!
+//! This module holds cross-instruction account shape checks, FHE CPI builders,
+//! and deterministic labels used by the token handlers.
+
 use super::*;
 
 pub(crate) fn assert_no_remaining_accounts(remaining_accounts: &[AccountInfo]) -> Result<()> {
@@ -696,6 +701,11 @@ pub(crate) fn call_transfer_receiver_hook<'info>(
     let receiver_program = receiver_program_account.key();
 
     require!(
+        receiver_instruction_data.len() <= MAX_RECEIVER_HOOK_DATA_LEN
+            && remaining_accounts.len() <= MAX_RECEIVER_HOOK_ACCOUNTS,
+        ConfidentialTokenError::ReceiverHookInputTooLarge
+    );
+    require!(
         receiver_program_account.executable,
         ConfidentialTokenError::ReceiverHookMismatch
     );
@@ -842,12 +852,12 @@ pub(crate) fn assert_previous_transfer_for_receiver_hook(
             assert_previous_transfer_accounts(
                 &transfer_ix.accounts,
                 PreviousTransferAccountIndexes {
-                    authority: 0,
+                    authority: ConfidentialTransfer::OWNER_ACCOUNT_INDEX,
                     operator_record: None,
-                    mint: 1,
-                    from_token_account: 2,
-                    to_token_account: 3,
-                    sent_acl_record: 11,
+                    mint: ConfidentialTransfer::MINT_ACCOUNT_INDEX,
+                    from_token_account: ConfidentialTransfer::FROM_ACCOUNT_INDEX,
+                    to_token_account: ConfidentialTransfer::TO_ACCOUNT_INDEX,
+                    sent_acl_record: ConfidentialTransfer::TRANSFERRED_AMOUNT_ACL_INDEX,
                 },
                 PreviousTransferAuthority {
                     authority: owner,
@@ -869,12 +879,12 @@ pub(crate) fn assert_previous_transfer_for_receiver_hook(
             assert_previous_transfer_accounts(
                 &transfer_ix.accounts,
                 PreviousTransferAccountIndexes {
-                    authority: 0,
-                    operator_record: Some(4),
-                    mint: 1,
-                    from_token_account: 2,
-                    to_token_account: 3,
-                    sent_acl_record: 12,
+                    authority: ConfidentialTransferFrom::OPERATOR_ACCOUNT_INDEX,
+                    operator_record: Some(ConfidentialTransferFrom::OPERATOR_RECORD_ACCOUNT_INDEX),
+                    mint: ConfidentialTransferFrom::MINT_ACCOUNT_INDEX,
+                    from_token_account: ConfidentialTransferFrom::FROM_ACCOUNT_INDEX,
+                    to_token_account: ConfidentialTransferFrom::TO_ACCOUNT_INDEX,
+                    sent_acl_record: ConfidentialTransferFrom::TRANSFERRED_AMOUNT_ACL_INDEX,
                 },
                 PreviousTransferAuthority {
                     authority: operator,
@@ -943,6 +953,10 @@ fn assert_previous_transfer_accounts(
         authority.authority,
         ConfidentialTokenError::ReceiverHookMismatch
     );
+    require!(
+        authority_meta.is_signer && authority_meta.is_writable,
+        ConfidentialTokenError::ReceiverHookMismatch
+    );
     if let (Some(index), Some(expected_operator_record)) =
         (indexes.operator_record, authority.operator_record)
     {
@@ -954,10 +968,18 @@ fn assert_previous_transfer_accounts(
             expected_operator_record,
             ConfidentialTokenError::ReceiverHookMismatch
         );
+        require!(
+            !operator_record_meta.is_signer && !operator_record_meta.is_writable,
+            ConfidentialTokenError::ReceiverHookMismatch
+        );
     }
     require_keys_eq!(
         mint_meta.pubkey,
         mint,
+        ConfidentialTokenError::ReceiverHookMismatch
+    );
+    require!(
+        !mint_meta.is_signer && !mint_meta.is_writable,
         ConfidentialTokenError::ReceiverHookMismatch
     );
     require_keys_eq!(
@@ -965,14 +987,26 @@ fn assert_previous_transfer_accounts(
         from_token_account,
         ConfidentialTokenError::ReceiverHookMismatch
     );
+    require!(
+        !from_meta.is_signer && from_meta.is_writable,
+        ConfidentialTokenError::ReceiverHookMismatch
+    );
     require_keys_eq!(
         to_meta.pubkey,
         to_token_account,
         ConfidentialTokenError::ReceiverHookMismatch
     );
+    require!(
+        !to_meta.is_signer && to_meta.is_writable,
+        ConfidentialTokenError::ReceiverHookMismatch
+    );
     require_keys_eq!(
         sent_meta.pubkey,
         sent_acl_record,
+        ConfidentialTokenError::ReceiverHookMismatch
+    );
+    require!(
+        !sent_meta.is_signer && sent_meta.is_writable,
         ConfidentialTokenError::ReceiverHookMismatch
     );
     Ok(())
@@ -1769,7 +1803,11 @@ pub(crate) fn assert_disclosure_signature(
         ConfidentialTokenError::DisclosureProofSignatureMissing
     );
     require!(
-        ed25519_instruction_contains_message(&verifier_ix.data, verifier.as_ref(), &message),
+        solana_ed25519_instruction::instruction_contains_message(
+            &verifier_ix.data,
+            verifier.as_ref(),
+            &message,
+        ),
         ConfidentialTokenError::DisclosureProofSignatureMissing
     );
     Ok(())
@@ -1791,74 +1829,6 @@ pub fn disclosure_proof_message(
     message.extend_from_slice(&handle);
     message.extend_from_slice(&cleartext_amount.to_le_bytes());
     message
-}
-
-pub(crate) fn ed25519_instruction_contains_message(
-    data: &[u8],
-    expected_pubkey: &[u8],
-    expected_message: &[u8],
-) -> bool {
-    if data.len() < ED25519_SIGNATURE_OFFSETS_START {
-        return false;
-    }
-    if data[1] != 0 {
-        return false;
-    }
-    let signature_count = data[0] as usize;
-    if signature_count == 0 {
-        return false;
-    }
-    let expected_offsets_end = ED25519_SIGNATURE_OFFSETS_START
-        .saturating_add(signature_count.saturating_mul(ED25519_SIGNATURE_OFFSETS_SERIALIZED_SIZE));
-    if data.len() < expected_offsets_end {
-        return false;
-    }
-
-    for signature_index in 0..signature_count {
-        let start = ED25519_SIGNATURE_OFFSETS_START.saturating_add(
-            signature_index.saturating_mul(ED25519_SIGNATURE_OFFSETS_SERIALIZED_SIZE),
-        );
-        let fields = &data[start..start + ED25519_SIGNATURE_OFFSETS_SERIALIZED_SIZE];
-        let signature_offset = read_u16_le(fields, 0) as usize;
-        let signature_instruction_index = read_u16_le(fields, 2);
-        let public_key_offset = read_u16_le(fields, 4) as usize;
-        let public_key_instruction_index = read_u16_le(fields, 6);
-        let message_data_offset = read_u16_le(fields, 8) as usize;
-        let message_data_size = read_u16_le(fields, 10) as usize;
-        let message_instruction_index = read_u16_le(fields, 12);
-
-        if signature_instruction_index != u16::MAX
-            || public_key_instruction_index != u16::MAX
-            || message_instruction_index != u16::MAX
-        {
-            continue;
-        }
-        let Some(signature_end) = signature_offset.checked_add(ED25519_SIGNATURE_SERIALIZED_SIZE)
-        else {
-            continue;
-        };
-        let Some(public_key_end) = public_key_offset.checked_add(ED25519_PUBKEY_SERIALIZED_SIZE)
-        else {
-            continue;
-        };
-        let Some(message_end) = message_data_offset.checked_add(message_data_size) else {
-            continue;
-        };
-        if signature_end > data.len() || public_key_end > data.len() || message_end > data.len() {
-            continue;
-        }
-        if &data[public_key_offset..public_key_end] != expected_pubkey {
-            continue;
-        }
-        if &data[message_data_offset..message_end] == expected_message {
-            return true;
-        }
-    }
-    false
-}
-
-pub(crate) fn read_u16_le(data: &[u8], offset: usize) -> u16 {
-    u16::from_le_bytes([data[offset], data[offset + 1]])
 }
 
 pub(crate) fn assert_current_balance_acl(

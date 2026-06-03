@@ -1,4 +1,39 @@
+//! Initializes confidential token accounts and their initial balance handles.
+
 use super::*;
+
+/// Accounts for initializing a confidential token account.
+#[derive(Accounts)]
+#[event_cpi]
+pub struct InitializeTokenAccount<'info> {
+    /// Account owner and rent payer.
+    #[account(mut)]
+    pub owner: Signer<'info>,
+    /// Confidential mint this account belongs to.
+    pub mint: Account<'info, ConfidentialMint>,
+    /// CHECK: Program-controlled compute signer PDA.
+    #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
+    pub compute_signer: UncheckedAccount<'info>,
+    #[account(
+        init,
+        payer = owner,
+        space = 8 + ConfidentialTokenAccount::SPACE,
+        seeds = [b"token-account", mint.key().as_ref(), owner.key().as_ref()],
+        bump
+    )]
+    pub token_account: Account<'info, ConfidentialTokenAccount>,
+    /// CHECK: initialized and validated by the Zama host program CPI.
+    #[account(mut)]
+    pub acl_record: UncheckedAccount<'info>,
+    /// CHECK: Anchor event CPI authority for the Zama host program.
+    pub zama_event_authority: UncheckedAccount<'info>,
+    /// ZamaHost program used to create the initial balance handle.
+    pub zama_program: Program<'info, ZamaHost>,
+    /// ZamaHost config used for handle derivation.
+    pub host_config: Account<'info, zama_host::HostConfig>,
+    /// System program used for account creation.
+    pub system_program: Program<'info, System>,
+}
 
 /// Initializes a token account and creates its initial confidential balance handle.
 pub fn initialize_token_account(

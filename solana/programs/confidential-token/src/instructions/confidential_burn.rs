@@ -1,4 +1,56 @@
+//! Burns encrypted token balances and rotates confidential supply state.
+
 use super::*;
+
+/// Accounts for confidential balance burn.
+#[derive(Accounts)]
+#[event_cpi]
+pub struct ConfidentialBurn<'info> {
+    /// Token owner and burn authority.
+    #[account(mut)]
+    pub owner: Signer<'info>,
+    /// Confidential mint whose encrypted total supply is decreased.
+    #[account(mut)]
+    pub mint: Box<Account<'info, ConfidentialMint>>,
+    /// Token account whose balance is decreased.
+    #[account(mut)]
+    pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
+    /// CHECK: Program-controlled compute signer PDA.
+    #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
+    pub compute_signer: UncheckedAccount<'info>,
+    /// CHECK: Mint-scoped app authority for total-supply handles.
+    #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
+    pub total_supply_authority: UncheckedAccount<'info>,
+    /// Current balance ACL record used as the left-hand operand.
+    pub current_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
+    /// Current total-supply ACL record used as the left-hand operand.
+    pub current_total_supply_acl: Box<Account<'info, zama_host::AclRecord>>,
+    /// Encrypted burn amount ACL record.
+    pub amount_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
+    /// CHECK: initialized and validated by the Zama host program CPI.
+    #[account(mut)]
+    pub burn_success_acl: UncheckedAccount<'info>,
+    /// CHECK: initialized and validated by the Zama host program CPI.
+    #[account(mut)]
+    pub debit_candidate_acl: UncheckedAccount<'info>,
+    /// CHECK: initialized and validated by the Zama host program CPI.
+    #[account(mut)]
+    pub output_acl: UncheckedAccount<'info>,
+    /// CHECK: initialized and validated by the Zama host program CPI.
+    #[account(mut)]
+    pub burned_amount_acl: UncheckedAccount<'info>,
+    /// CHECK: initialized and validated by the Zama host program CPI.
+    #[account(mut)]
+    pub total_supply_output_acl: UncheckedAccount<'info>,
+    /// CHECK: Anchor event CPI authority for the Zama host program.
+    pub zama_event_authority: UncheckedAccount<'info>,
+    /// ZamaHost program used for FHE operations.
+    pub zama_program: Program<'info, ZamaHost>,
+    /// ZamaHost config used for handle derivation.
+    pub host_config: Box<Account<'info, zama_host::HostConfig>>,
+    /// System program used for ACL account creation.
+    pub system_program: Program<'info, System>,
+}
 
 /// Burns an encrypted amount by rotating the account balance and encrypted total supply.
 pub fn confidential_burn(ctx: Context<ConfidentialBurn>, amount_handle: [u8; 32]) -> Result<()> {

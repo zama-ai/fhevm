@@ -1,3 +1,5 @@
+//! Binds mock verified inputs behind authority-gated PoC controls.
+
 use anchor_lang::prelude::*;
 
 use super::common::*;

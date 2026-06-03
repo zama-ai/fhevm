@@ -16,34 +16,11 @@ use crate::{
         host_config_address, role_flags_are_known, subject_has_role, transient_session_address,
         AclPermission, AclRecord, AclSubjectEntry, DenySubjectRecord, HostConfig,
         TransientCapability, TransientCapabilityGrant, TransientSession, ACL_PERMISSION_SEED,
-        ACL_ROLE_COMPUTE, ACL_ROLE_USE, EVENT_VERSION, HOST_CONFIG_SEED, MAX_ACL_SUBJECTS,
-        MAX_TRANSIENT_CAPABILITIES, TRANSIENT_SESSION_STATE_OPEN, TRANSIENT_SESSION_STATE_SEALED,
+        ACL_ROLE_COMPUTE, ACL_ROLE_USE, EVENT_VERSION, MAX_ACL_SUBJECTS,
+        MAX_ACL_SUBJECT_GRANTS_PER_CALL, MAX_TRANSIENT_CAPABILITIES, TRANSIENT_SESSION_STATE_OPEN,
+        TRANSIENT_SESSION_STATE_SEALED,
     },
 };
-
-/// Shared account context for admin-only config updates.
-#[derive(Accounts)]
-pub struct HostAdmin<'info> {
-    /// Configured host admin.
-    pub admin: Signer<'info>,
-    /// Singleton config PDA.
-    #[account(mut, seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
-    pub host_config: Account<'info, HostConfig>,
-}
-
-/// Accounts for authority-gated test event shims.
-///
-/// These shims do not prove or mutate protocol state and must not be treated as
-/// production APIs.
-#[derive(Accounts)]
-#[event_cpi]
-pub struct TestEmitProtocolEvent<'info> {
-    /// Configured test-shim authority.
-    pub test_authority: Signer<'info>,
-    /// Singleton config PDA with `test_shims_enabled`.
-    #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
-    pub host_config: Account<'info, HostConfig>,
-}
 
 pub(super) fn assert_no_remaining_accounts(remaining_accounts: &[AccountInfo]) -> Result<()> {
     require!(
@@ -169,7 +146,7 @@ pub(super) fn extend_acl_subjects<'info>(
     permission_accounts: &[AccountInfo<'info>],
 ) -> Result<Vec<AclSubjectUpdate>> {
     require!(
-        !subjects.is_empty(),
+        !subjects.is_empty() && subjects.len() <= MAX_ACL_SUBJECT_GRANTS_PER_CALL,
         ZamaHostError::AclSubjectCapacityExceeded
     );
 
@@ -1080,7 +1057,10 @@ mod tests {
         let mut data = Vec::new();
         let info = AccountInfo::new(&key, false, false, &mut lamports, &mut data, &owner, true);
 
-        assert!(is_absent_deny_record(&info).is_err());
+        assert_eq!(
+            is_absent_deny_record(&info).unwrap_err(),
+            error!(ZamaHostError::AclDenyRecordMismatch)
+        );
     }
 
     #[test]

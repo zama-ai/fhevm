@@ -1,4 +1,58 @@
+//! Redeems KMS-certified burned encrypted amounts from the SPL vault.
+
 use super::*;
+
+/// Accounts for redeeming a KMS-certified burned amount from the SPL vault.
+#[derive(Accounts)]
+#[instruction(burned_handle: [u8; 32], cleartext_amount: u64)]
+#[event_cpi]
+pub struct RedeemBurnedAmount<'info> {
+    /// Token owner and redemption recipient.
+    #[account(mut)]
+    pub owner: Signer<'info>,
+    /// Confidential mint whose vault backs the redeemed burned amount.
+    pub mint: Box<Account<'info, ConfidentialMint>>,
+    /// Confidential token account that produced the burned amount.
+    pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
+    /// Underlying SPL mint.
+    pub underlying_mint: Box<Account<'info, SplMint>>,
+    /// Program vault USDC token account.
+    #[account(
+        mut,
+        constraint = vault_usdc.mint == underlying_mint.key() @ ConfidentialTokenError::UnderlyingMintMismatch,
+        constraint = vault_usdc.owner == vault_authority.key() @ ConfidentialTokenError::VaultAuthorityMismatch
+    )]
+    pub vault_usdc: Box<Account<'info, TokenAccount>>,
+    /// Owner's destination USDC token account.
+    #[account(
+        mut,
+        constraint = destination_usdc.mint == underlying_mint.key() @ ConfidentialTokenError::UnderlyingMintMismatch,
+        constraint = destination_usdc.owner == owner.key() @ ConfidentialTokenError::OwnerMismatch
+    )]
+    pub destination_usdc: Box<Account<'info, TokenAccount>>,
+    /// CHECK: PDA authority for the underlying-token vault.
+    #[account(seeds = [b"vault-authority", mint.key().as_ref()], bump)]
+    pub vault_authority: UncheckedAccount<'info>,
+    /// Burned amount ACL record whose handle is redeemed.
+    pub burned_amount_acl: Box<Account<'info, zama_host::AclRecord>>,
+    /// Material commitment witness for the burned handle.
+    pub burned_material_commitment: Box<Account<'info, zama_host::HandleMaterialCommitment>>,
+    /// Replay marker for this burned handle.
+    #[account(
+        init,
+        payer = owner,
+        space = 8 + BurnRedemption::SPACE,
+        seeds = [b"burn-redemption", mint.key().as_ref(), burned_handle.as_ref()],
+        bump
+    )]
+    pub redemption_record: Account<'info, BurnRedemption>,
+    /// CHECK: Solana instructions sysvar; handler verifies its address and previous Ed25519 ix.
+    pub instructions_sysvar: UncheckedAccount<'info>,
+    /// SPL token program.
+    pub token_program: Program<'info, Token>,
+    /// System program used for the replay marker.
+    pub system_program: Program<'info, System>,
+}
 
 /// Redeems a previously burned encrypted amount from the underlying-token vault.
 pub fn redeem_burned_amount(

@@ -35,7 +35,9 @@ jobs:
             solana:
               - .github/workflows/solana-tests.yml
               - solana/**
+              - coprocessor/fhevm-engine/host-listener/build.rs
               - coprocessor/fhevm-engine/host-listener/idl/zama_host.json
+              - coprocessor/fhevm-engine/host-listener/src/solana_adapter.rs
 
   build-and-test:
     name: solana-tests/build-and-test
@@ -83,9 +85,13 @@ jobs:
           solana --version
           anchor --version
           test "$(anchor --version)" = "anchor-cli ${ANCHOR_VERSION}"
+          test "$(awk -F'"' '/^anchor_version/ { print $2 }' Anchor.toml)" = "${ANCHOR_VERSION}"
 
       - name: Build Anchor programs and check host-listener IDL sync
         run: bash scripts/check-zama-host-idl.sh
+
+      - name: Check Rust formatting
+        run: cargo fmt --check
 
       - name: Run Solana workspace tests
         run: cargo test --workspace

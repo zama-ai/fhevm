@@ -1,0 +1,70 @@
+//! On-chain account data for `HostConfig`.
+
+use super::*;
+
+/// Singleton host configuration and authority surface.
+///
+/// `HostConfig` is the runtime switchboard for this PoC. Production-shaped
+/// instructions reject while paused, and mock/test-only instructions require
+/// both the corresponding feature gate and configured signer.
+#[account]
+pub struct HostConfig {
+    /// Program administrator allowed to update config flags.
+    pub admin: Pubkey,
+    /// Host-chain id included in handle derivation.
+    pub chain_id: u64,
+    /// Configured authority for input verification paths.
+    pub input_verifier_authority: Pubkey,
+    /// Configured authority for material-commitment paths.
+    pub material_authority: Pubkey,
+    /// Configured signer for `test_emit_*` shims.
+    pub test_authority: Pubkey,
+    /// Pauses production-shaped host instructions when true.
+    pub paused: bool,
+    /// Enables the mock encrypted-input bind instruction.
+    pub mock_input_enabled: bool,
+    /// Enables test event shim instructions.
+    pub test_shims_enabled: bool,
+    /// Enables deny-list checks for persistent grant authorities.
+    pub grant_deny_list_enabled: bool,
+    /// Slot in which the config was initialized or last changed.
+    pub updated_slot: u64,
+    /// PDA bump for `PDA("host-config")`.
+    pub bump: u8,
+}
+
+impl HostConfig {
+    pub const SPACE: usize = 32 + 8 + 32 + 32 + 32 + 1 + 1 + 1 + 1 + 8 + 1;
+
+    /// True only for the local PoC sentinel chain id.
+    ///
+    /// Local-only relaxations (the zero birth-entropy fallback and the mock
+    /// encrypted-input bind path) are confined to this chain. A real host chain
+    /// always takes the production branch regardless of admin-toggled flags, so
+    /// an operator cannot enable PoC short-circuits on a deployed chain. See
+    /// `DESIGN_DECISIONS.md` DD-014.
+    pub fn is_local_poc_chain(&self) -> bool {
+        self.chain_id == SOLANA_POC_CHAIN_ID
+    }
+
+    /// True when handle birth may substitute the zero bank hash for an
+    /// unavailable prior bank hash.
+    ///
+    /// This is a local-PoC-only relaxation: production chains always fail closed
+    /// with [`ZamaHostError::PreviousBankHashUnavailable`] when the prior bank
+    /// hash is unavailable, so toggling `test_shims_enabled` on a deployed chain
+    /// can never degrade birth entropy. This intentionally decouples the
+    /// birth-entropy fallback from the `test_emit_*` shim gate on real chains.
+    pub fn zero_birth_entropy_allowed(&self) -> bool {
+        self.test_shims_enabled && self.is_local_poc_chain()
+    }
+
+    /// True when the mock encrypted-input bind path may run.
+    ///
+    /// Mock input is a PoC short-circuit for the real signed input-verifier
+    /// path and is confined to the local PoC chain even when `mock_input_enabled`
+    /// is set, so it cannot become a generic ACL-minting path on a deployed chain.
+    pub fn mock_input_allowed(&self) -> bool {
+        self.mock_input_enabled && self.is_local_poc_chain()
+    }
+}

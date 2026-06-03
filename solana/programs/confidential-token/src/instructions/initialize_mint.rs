@@ -1,4 +1,39 @@
+//! Initializes confidential mint state and its host ACL domain.
+
 use super::*;
+
+/// Accounts for initializing a confidential mint.
+#[derive(Accounts)]
+#[event_cpi]
+pub struct InitializeMint<'info> {
+    /// Mint authority and rent payer.
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    /// Confidential mint account created by this instruction.
+    #[account(init, payer = authority, space = 8 + ConfidentialMint::SPACE)]
+    pub mint: Account<'info, ConfidentialMint>,
+    /// Underlying SPL mint wrapped by this confidential mint.
+    pub underlying_mint: Account<'info, SplMint>,
+    /// CHECK: Program-controlled compute signer PDA.
+    #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
+    pub compute_signer: UncheckedAccount<'info>,
+    /// CHECK: Mint-scoped app authority for total-supply handles.
+    #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
+    pub total_supply_authority: UncheckedAccount<'info>,
+    /// CHECK: Ed25519 authority whose KMS response certificates disclose cleartexts.
+    pub kms_verifier_authority: UncheckedAccount<'info>,
+    /// CHECK: initialized and validated by the Zama host program CPI.
+    #[account(mut)]
+    pub total_supply_acl_record: UncheckedAccount<'info>,
+    /// CHECK: Anchor event CPI authority for the Zama host program.
+    pub zama_event_authority: UncheckedAccount<'info>,
+    /// ZamaHost program used to create the initial total-supply handle.
+    pub zama_program: Program<'info, ZamaHost>,
+    /// ZamaHost config used for handle derivation.
+    pub host_config: Account<'info, zama_host::HostConfig>,
+    /// System program used for account creation.
+    pub system_program: Program<'info, System>,
+}
 
 /// Initializes a confidential mint and records its host ACL domain.
 pub fn initialize_mint(ctx: Context<InitializeMint>) -> Result<()> {

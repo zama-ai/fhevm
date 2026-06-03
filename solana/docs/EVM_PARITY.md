@@ -112,11 +112,12 @@ fromExternal** — all implemented. The confidential token is therefore **op-com
   zama-host Anchor CPI events (codegen from vendored IDL `idl/zama_host.json`) into TFHE/ACL DB
   rows. `cargo check -p host-listener` → exit 0. **Library-only**: no live Geyser/Yellowstone
   subscriber is wired (PRODUCT-OPEN, DD-003). Only Add/Sub/Ge / IfThenElse mapped (tracks §2 SCOPE).
-- **KMS connector** (`kms-connector/crates/kms-worker/src/core/solana_acl.rs`, 3097 ln): witness
-  decoders + `SolanaAclVerifier` (canonical-PDA, owner, hash-domain, role checks). `cargo check
-  -p kms-worker` → exit 0; **114 Solana unit tests**. The **Gateway-PoC `extraData` path is wired
+- **KMS connector** (`kms-connector/crates/kms-worker/src/core/solana_*.rs` and
+  `kms-connector/crates/tx-sender/src/core/solana_native.rs`): witness decoders +
+  `SolanaAclVerifier` (canonical-PDA, owner, hash-domain, role checks). `cargo check
+  -p kms-worker` → exit 0; **100+ Solana unit tests**. The **Gateway-PoC `extraData` path is wired
   live** into public/user decryption (`event_processor/decryption.rs`) with canonical-PDA + SNS
-  material binding. Account layouts are hand-mirrored 1:1 against `zama-host/src/state.rs` (verified)
+  material binding. Account layouts are hand-mirrored 1:1 against `zama-host/src/state/` (verified)
   but **version-pinned / no compile-time link** — a layout/seed/hash-domain/EVENT_VERSION change in
   zama-host requires editing the connector decoder + regenerating the coprocessor IDL.
 
@@ -162,7 +163,7 @@ connector's canonical-PDA + material-binding verification.
    would not be caught at build time. `EVENT_VERSION=0` / `MAX_ACL_SUBJECTS=8` hardcoded in two places.
 7. **`previous_bank_hash` is fail-closed on real chains.** When the prior bank hash is unavailable,
    handle birth returns `PreviousBankHashUnavailable` rather than substituting a zero hash. The
-   zero-hash fallback (intended only for LiteSVM bootstrap) is confined to `SOLANA_POC_CHAIN_ID` via
+   zero-hash fallback (intended only for local Mollusk bootstrap) is confined to `SOLANA_POC_CHAIN_ID` via
    `HostConfig::zero_birth_entropy_allowed`, so it cannot weaken birth entropy on a deployed chain
    (DD-014). Note bank-hash + timestamp entropy is itself a PoC choice; native-v0's deterministic
    `BirthContextV0` removes this surface entirely (DD-015).

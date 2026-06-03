@@ -1,3 +1,5 @@
+//! Emits binary FHE operations and binds durable output ACL state.
+
 use anchor_lang::prelude::*;
 
 use super::common::*;
@@ -124,39 +126,6 @@ pub fn fhe_binary_op_and_bind_output(
                 .as_ref(),
         )?;
     }
-    if output_public_decrypt {
-        require!(
-            unchecked_acl_record_subject_has_role(
-                &ctx.accounts.lhs_acl_record.to_account_info(),
-                lhs,
-                subject,
-                ACL_ROLE_PUBLIC_DECRYPT,
-                ctx.accounts
-                    .lhs_permission_record
-                    .as_ref()
-                    .map(|account| account.to_account_info())
-                    .as_ref(),
-            )?,
-            ZamaHostError::AclSubjectRoleMismatch
-        );
-        if !scalar {
-            require!(
-                unchecked_acl_record_subject_has_role(
-                    &ctx.accounts.rhs_acl_record.to_account_info(),
-                    rhs,
-                    subject,
-                    ACL_ROLE_PUBLIC_DECRYPT,
-                    ctx.accounts
-                        .rhs_permission_record
-                        .as_ref()
-                        .map(|account| account.to_account_info())
-                        .as_ref(),
-                )?,
-                ZamaHostError::AclSubjectRoleMismatch
-            );
-        }
-    }
-
     let clock = Clock::get()?;
     let previous_bank_hash = previous_bank_hash_with_test_fallback(
         clock.slot,

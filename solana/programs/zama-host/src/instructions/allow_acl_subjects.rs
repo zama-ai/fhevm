@@ -1,3 +1,5 @@
+//! Extends persistent ACL membership on canonical handle records.
+
 use anchor_lang::prelude::*;
 
 use super::common::*;

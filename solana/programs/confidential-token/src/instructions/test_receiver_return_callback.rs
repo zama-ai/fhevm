@@ -1,4 +1,10 @@
+//! Test receiver hook that returns a supplied callback-success witness.
+
 use super::*;
+
+/// Empty account set for the test receiver hook endpoint.
+#[derive(Accounts)]
+pub struct TestReceiverReturnCallback {}
 
 /// Test-only receiver endpoint that returns the supplied callback-success witness.
 pub fn test_receiver_return_callback(

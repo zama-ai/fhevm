@@ -40,9 +40,8 @@ really allowed / this handle's metadata isn't actually checked — prove the pro
 The result is a program surface where the account layout, the witness shapes, and the role rules
 are treated as a strict ABI, with a rejection test for each way they can be abused.
 
-Midway through, the test harness itself was migrated from **LiteSVM** to **Mollusk** wherever
-that was feasible (see [`TESTING.md`](./TESTING.md) for what each is and why both still exist).
-That migration is what grew `host_mollusk` and `token_mollusk` into the suites you see today.
+Midway through, the runtime test harness itself was migrated to **Mollusk**. That migration is what
+grew `host_mollusk` and `token_mollusk` into the suites you see today.
 
 ### Chapter 2 — Prove it actually matches the EVM design
 
@@ -145,5 +144,5 @@ listener and KMS decoders.
 - `DESIGN_DECISIONS.md` — the stable *why* (DD-001…DD-013) + open product decisions.
 - `EVM_PARITY.md` — capability-by-capability EVM→Solana map + the solid/fragile assessment.
 - `TRANSIENT_ALLOW.md` — the transient-allowance design in depth.
-- `TESTING.md` — test layout, Mollusk vs LiteSVM, how to run, and the traps.
+- `TESTING.md` — test layout, Mollusk runtime coverage, how to run, and the traps.
 - this file — the history, the hardening catalog, and the status snapshot.

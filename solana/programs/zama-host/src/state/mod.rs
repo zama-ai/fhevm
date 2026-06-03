@@ -8,81 +8,29 @@ use anchor_lang::prelude::*;
 use solana_sha256_hasher::hashv;
 use solana_sysvar::slot_hashes::PodSlotHashes;
 
+use crate::constants::{
+    COMPUTATION_DOMAIN_SEPARATOR, COMPUTED_HANDLE_MARKER, INPUT_PROOF_DOMAIN_SEPARATOR,
+    RANDOM_SEED_DOMAIN_SEPARATOR,
+};
 use crate::errors::ZamaHostError;
 
-/// Version byte written to host protocol events.
-pub const EVENT_VERSION: u8 = 0;
-/// Number of subjects embedded directly in an [`AclRecord`].
-///
-/// Logical ACL sets are not capped at this value. Additional subjects are
-/// represented by [`AclPermission`] witness PDAs.
-pub const MAX_ACL_SUBJECTS: usize = 8;
-/// PoC chain id used by tests and helpers that do not receive [`HostConfig`].
-pub const SOLANA_POC_CHAIN_ID: u64 = 12345;
+pub mod acl_permission;
+pub mod acl_record;
+pub mod deny_subject_record;
+pub mod handle_material_commitment;
+pub mod host_config;
+pub mod transient_session;
+pub mod user_decryption_delegation;
 
-/// Seed for the singleton [`HostConfig`] PDA.
-pub const HOST_CONFIG_SEED: &[u8] = b"host-config";
-/// Seed prefix for canonical [`AclRecord`] PDAs.
-pub const ACL_RECORD_SEED: &[u8] = b"acl-record";
-/// Seed prefix for overflow [`AclPermission`] PDAs.
-pub const ACL_PERMISSION_SEED: &[u8] = b"acl-permission";
-/// Seed prefix for grant deny-list records.
-pub const DENY_SUBJECT_SEED: &[u8] = b"deny-subject";
-/// Seed prefix for user-decryption delegation records.
-pub const DELEGATION_SEED: &[u8] = b"user-decryption-delegation";
-/// Reserved app-context sentinel for wildcard user-decryption delegation rows.
-pub const WILDCARD_APP_CONTEXT_BYTES: [u8; 32] = [0xff; 32];
-/// Seed prefix for one-shot transient compute capability sessions.
-pub const TRANSIENT_SESSION_SEED: &[u8] = b"transient-session";
-/// Seed prefix for host-owned material commitment records.
-pub const HANDLE_MATERIAL_SEED: &[u8] = b"handle-material";
+pub use acl_permission::*;
+pub use acl_record::*;
+pub use deny_subject_record::*;
+pub use handle_material_commitment::*;
+pub use host_config::*;
+pub use transient_session::*;
+pub use user_decryption_delegation::*;
 
-/// Subject may use a handle in host operations and decrypt checks.
-pub const ACL_ROLE_USE: u8 = 0x01;
-/// Subject may extend persistent ACL membership for a handle.
-pub const ACL_ROLE_GRANT: u8 = 0x02;
-/// Subject may mark a handle as publicly decryptable.
-pub const ACL_ROLE_PUBLIC_DECRYPT: u8 = 0x04;
-/// Subject is intended for FHE compute execution.
-pub const ACL_ROLE_COMPUTE: u8 = 0x08;
-/// All role bits currently understood by the host and KMS verifier.
-pub const ACL_ROLE_KNOWN: u8 =
-    ACL_ROLE_USE | ACL_ROLE_GRANT | ACL_ROLE_PUBLIC_DECRYPT | ACL_ROLE_COMPUTE;
-/// Convenience role set for a full user/owner subject.
-pub const ACL_ROLE_ALL: u8 = ACL_ROLE_USE | ACL_ROLE_GRANT | ACL_ROLE_PUBLIC_DECRYPT;
-/// Convenience role set for the PoC compute signer.
-///
-/// This grants handle use and compute authority, but not persistent grant or
-/// public decrypt authority.
-pub const ACL_ROLE_COMPUTE_SUBJECT: u8 = ACL_ROLE_USE | ACL_ROLE_COMPUTE;
-/// Convenience role set used for owner/user subjects in the token PoC.
-pub const ACL_ROLE_USER: u8 = ACL_ROLE_ALL;
-/// Maximum number of FHE operations accepted by one composed eval.
-pub const MAX_FHE_EVAL_OPS: usize = 16;
-/// Maximum number of external encrypted-input handles in one signed proof.
-pub const MAX_INPUT_PROOF_HANDLES: usize = 16;
-/// Maximum opaque verifier payload bytes carried in one signed input proof.
-pub const MAX_INPUT_PROOF_EXTRA_DATA: usize = 256;
-/// Maximum number of capability entries stored in one transient session.
-///
-/// Transient sessions intentionally follow the one-shot capability model from
-/// `solana/docs/TRANSIENT_ALLOW.md`: one account, one capability, one
-/// successful consume.
-pub const MAX_TRANSIENT_CAPABILITIES: usize = 1;
-/// Transient session accepts new capabilities.
-pub const TRANSIENT_SESSION_STATE_OPEN: u8 = 0;
-/// Transient session may be consumed but no longer mutated by append APIs.
-pub const TRANSIENT_SESSION_STATE_SEALED: u8 = 1;
-/// Material commitment state for committed/decryptable material.
-pub const HANDLE_MATERIAL_STATE_COMMITTED: u8 = 1;
-
-const COMPUTATION_DOMAIN_SEPARATOR: &[u8] = b"FHE_comp";
-const RANDOM_SEED_DOMAIN_SEPARATOR: &[u8] = b"FHE_seed";
-const COMPUTED_HANDLE_MARKER: u8 = 0xff;
-/// Current handle encoding version byte.
-pub const HANDLE_VERSION: u8 = 0;
-
-const INPUT_PROOF_DOMAIN_SEPARATOR: &[u8] = b"zama-solana-input-proof-v1";
+pub use crate::constants::*;
 
 /// Initialization arguments for the singleton [`HostConfig`] account.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -101,73 +49,6 @@ pub struct InitializeHostConfigArgs {
     pub test_shims_enabled: bool,
     /// Whether persistent grants must include a deny-list witness.
     pub grant_deny_list_enabled: bool,
-}
-
-/// Singleton host configuration and authority surface.
-///
-/// `HostConfig` is the runtime switchboard for this PoC. Production-shaped
-/// instructions reject while paused, and mock/test-only instructions require
-/// both the corresponding feature gate and configured signer.
-#[account]
-pub struct HostConfig {
-    /// Program administrator allowed to update config flags.
-    pub admin: Pubkey,
-    /// Host-chain id included in handle derivation.
-    pub chain_id: u64,
-    /// Configured authority for input verification paths.
-    pub input_verifier_authority: Pubkey,
-    /// Configured authority for material-commitment paths.
-    pub material_authority: Pubkey,
-    /// Configured signer for `test_emit_*` shims.
-    pub test_authority: Pubkey,
-    /// Pauses production-shaped host instructions when true.
-    pub paused: bool,
-    /// Enables the mock encrypted-input bind instruction.
-    pub mock_input_enabled: bool,
-    /// Enables test event shim instructions.
-    pub test_shims_enabled: bool,
-    /// Enables deny-list checks for persistent grant authorities.
-    pub grant_deny_list_enabled: bool,
-    /// Slot in which the config was initialized or last changed.
-    pub updated_slot: u64,
-    /// PDA bump for `PDA("host-config")`.
-    pub bump: u8,
-}
-
-impl HostConfig {
-    pub const SPACE: usize = 32 + 8 + 32 + 32 + 32 + 1 + 1 + 1 + 1 + 8 + 1;
-
-    /// True only for the local PoC sentinel chain id.
-    ///
-    /// Local-only relaxations (the zero birth-entropy fallback and the mock
-    /// encrypted-input bind path) are confined to this chain. A real host chain
-    /// always takes the production branch regardless of admin-toggled flags, so
-    /// an operator cannot enable PoC short-circuits on a deployed chain. See
-    /// `DESIGN_DECISIONS.md` DD-014.
-    pub fn is_local_poc_chain(&self) -> bool {
-        self.chain_id == SOLANA_POC_CHAIN_ID
-    }
-
-    /// True when handle birth may substitute the zero bank hash for an
-    /// unavailable prior bank hash.
-    ///
-    /// This is a local-PoC-only relaxation: production chains always fail closed
-    /// with [`ZamaHostError::PreviousBankHashUnavailable`] when the prior bank
-    /// hash is unavailable, so toggling `test_shims_enabled` on a deployed chain
-    /// can never degrade birth entropy. This intentionally decouples the
-    /// birth-entropy fallback from the `test_emit_*` shim gate on real chains.
-    pub fn zero_birth_entropy_allowed(&self) -> bool {
-        self.test_shims_enabled && self.is_local_poc_chain()
-    }
-
-    /// True when the mock encrypted-input bind path may run.
-    ///
-    /// Mock input is a PoC short-circuit for the real signed input-verifier
-    /// path and is confined to the local PoC chain even when `mock_input_enabled`
-    /// is set, so it cannot become a generic ACL-minting path on a deployed chain.
-    pub fn mock_input_allowed(&self) -> bool {
-        self.mock_input_enabled && self.is_local_poc_chain()
-    }
 }
 
 /// Pubkey plus role flags stored inline or in an overflow permission PDA.
@@ -204,184 +85,6 @@ impl AclSubjectEntry {
             role_flags: ACL_ROLE_USE,
         }
     }
-}
-
-/// Canonical ACL state for one host handle.
-///
-/// The account address is independent from the opaque handle:
-/// `PDA("acl-record", nonce_key, nonce_sequence)`. The handle is stored in the
-/// account body so computed handles can be bound after transaction accounts are
-/// declared.
-#[account]
-pub struct AclRecord {
-    /// Opaque FHEVM handle controlled by this ACL record.
-    pub handle: [u8; 32],
-    /// Domain-separated nonce key derived from app account metadata.
-    pub nonce_key: [u8; 32],
-    /// App-maintained sequence for this nonce key.
-    pub nonce_sequence: u64,
-    /// App-level ACL domain, such as a confidential token mint.
-    pub acl_domain_key: Pubkey,
-    /// App-owned account whose encrypted field is represented by this handle.
-    pub app_account: Pubkey,
-    /// Domain-separated encrypted field label inside `app_account`.
-    pub encrypted_value_label: [u8; 32],
-    /// Inline subjects for the common case.
-    pub subjects: [Pubkey; MAX_ACL_SUBJECTS],
-    /// Role flags parallel to [`AclRecord::subjects`].
-    pub subject_roles: [u8; MAX_ACL_SUBJECTS],
-    /// Number of valid entries in the inline subject arrays.
-    pub subject_count: u8,
-    /// Number of overflow subjects represented by [`AclPermission`] PDAs.
-    pub overflow_subject_count: u32,
-    /// Durable public-decrypt flag checked by KMS-style verification.
-    pub public_decrypt: bool,
-    /// Canonical material commitment PDA sealed to this ACL record.
-    pub material_commitment: Pubkey,
-    /// Canonical material commitment hash sealed to this ACL record.
-    pub material_commitment_hash: [u8; 32],
-    /// Material key identifier sealed to this ACL record.
-    pub material_key_id: [u8; 32],
-    /// Slot in which this ACL record was first bound.
-    pub created_slot: u64,
-    /// PDA bump for this record.
-    pub bump: u8,
-}
-
-impl AclRecord {
-    /// Serialized size of the account body, excluding Anchor discriminator.
-    pub const SPACE: usize = 32
-        + 32
-        + 8
-        + 32
-        + 32
-        + 32
-        + (32 * MAX_ACL_SUBJECTS)
-        + MAX_ACL_SUBJECTS
-        + 1
-        + 4
-        + 1
-        + 32
-        + 32
-        + 32
-        + 8
-        + 1;
-
-    /// Returns the inline subject index if the subject is embedded in the ACL record.
-    pub fn inline_subject_index(&self, subject: Pubkey) -> Option<usize> {
-        let subject_count = (self.subject_count as usize).min(MAX_ACL_SUBJECTS);
-        self.subjects[..subject_count]
-            .iter()
-            .position(|candidate| *candidate == subject)
-    }
-
-    /// Returns true when an inline subject has every flag in `role`.
-    pub fn inline_subject_has_role(&self, subject: Pubkey, role: u8) -> bool {
-        self.inline_subject_index(subject)
-            .map(|index| subject_has_role(self.subject_roles[index], role))
-            .unwrap_or(false)
-    }
-}
-
-/// Overflow subject witness for an [`AclRecord`].
-///
-/// The canonical address is `PDA("acl-permission", acl_record, subject)`.
-/// KMS/Gateway requests that rely on overflow membership must carry this
-/// account as an explicit witness.
-#[account]
-pub struct AclPermission {
-    /// ACL record this permission extends.
-    pub acl_record: Pubkey,
-    /// Subject granted by this overflow permission.
-    pub subject: Pubkey,
-    /// Bitset of `ACL_ROLE_*` flags granted to `subject`.
-    pub role_flags: u8,
-    /// PDA bump for this permission account.
-    pub bump: u8,
-}
-
-impl AclPermission {
-    /// Serialized size of the account body, excluding Anchor discriminator.
-    pub const SPACE: usize = 32 + 32 + 1 + 1;
-}
-
-/// Host-owned commitment proving ciphertext material is available for a handle.
-///
-/// ACL birth and material readiness are deliberately separate. KMS-style
-/// decryption checks must verify both the canonical ACL record and this
-/// material commitment before authorizing a decryptable handle.
-#[account]
-pub struct HandleMaterialCommitment {
-    /// ACL record whose handle has committed material.
-    pub acl_record: Pubkey,
-    /// Handle copied from the ACL record at commitment time.
-    pub handle: [u8; 32],
-    /// Release/key identifier for the ciphertext material.
-    pub key_id: [u8; 32],
-    /// Digest of the ciphertext material.
-    pub ciphertext_digest: [u8; 32],
-    /// Digest of the SNS ciphertext material.
-    pub sns_ciphertext_digest: [u8; 32],
-    /// Release-pinned coprocessor-set digest.
-    pub coprocessor_set_digest: [u8; 32],
-    /// Canonical commitment hash over the material witness fields.
-    pub material_commitment_hash: [u8; 32],
-    /// Slot in which the commitment was recorded.
-    pub created_slot: u64,
-    /// Commitment state. Native-v0 decryptability requires committed.
-    pub state: u8,
-    /// PDA bump for this material commitment.
-    pub bump: u8,
-}
-
-impl HandleMaterialCommitment {
-    /// Serialized size of the account body, excluding Anchor discriminator.
-    pub const SPACE: usize = 32 + 32 + (32 * 5) + 8 + 1 + 1;
-}
-
-/// Optional deny-list record used to fail persistent grants closed.
-#[account]
-pub struct DenySubjectRecord {
-    /// Subject controlled by this deny-list record.
-    pub subject: Pubkey,
-    /// Whether `subject` is currently denied for grant-authority use.
-    pub denied: bool,
-    /// PDA bump for this deny-list account.
-    pub bump: u8,
-}
-
-impl DenySubjectRecord {
-    /// Serialized size of the account body, excluding Anchor discriminator.
-    pub const SPACE: usize = 32 + 1 + 1;
-}
-
-/// PoC user-decryption delegation witness.
-///
-/// Gateway/KMS payloads do not yet carry these records, but the account shape is
-/// present so the final witness format has a concrete Solana state target.
-#[account]
-pub struct UserDecryptionDelegation {
-    /// User granting delegated decrypt rights.
-    pub delegator: Pubkey,
-    /// Delegate allowed to request user decryption.
-    pub delegate: Pubkey,
-    /// App context for the delegation.
-    pub app_account: Pubkey,
-    /// Slot after which the delegation is invalid.
-    pub expiration_slot: u64,
-    /// Monotonic counter incremented on every grant, regrant, and revoke.
-    pub delegation_counter: u64,
-    /// Slot in which this row was last updated.
-    pub last_update_slot: u64,
-    /// Whether the delegation has been revoked by the delegator.
-    pub revoked: bool,
-    /// PDA bump for this delegation account.
-    pub bump: u8,
-}
-
-impl UserDecryptionDelegation {
-    /// Serialized size of the account body, excluding Anchor discriminator.
-    pub const SPACE: usize = 32 + 32 + 32 + 8 + 8 + 8 + 1 + 1;
 }
 
 /// Native Solana verifier payload for binding external encrypted inputs.
@@ -467,50 +170,6 @@ pub struct TransientCapability {
 impl TransientCapability {
     /// Serialized size of the account body.
     pub const SPACE: usize = 32 + TransientCapabilityGrant::SPACE + 1;
-}
-
-/// Host-owned one-shot transient compute capability account.
-///
-/// This is not durable ACL state and must not be accepted for KMS/public/user
-/// decrypt witnesses. It is a short-lived explicit account witness for
-/// same-slot compute authorization across instructions or CPIs.
-#[account]
-pub struct TransientSession {
-    /// Caller-chosen session nonce used in the PDA.
-    pub session_nonce: [u8; 32],
-    /// Authority that may append, seal, consume, and close before expiry.
-    pub authority: Pubkey,
-    /// Account that receives lamports when the session is closed.
-    pub refund_recipient: Pubkey,
-    /// Subject allowed by capabilities in this session.
-    pub compute_subject: Pubkey,
-    /// Slot in which the session was created.
-    pub created_slot: u64,
-    /// Last slot in which sealed capabilities may be consumed.
-    pub expires_slot: u64,
-    /// Session state. See `TRANSIENT_SESSION_STATE_*`.
-    pub state: u8,
-    /// Caller-selected capacity, currently required to be `1`.
-    pub max_entries: u8,
-    /// Capability entries.
-    pub entries: Vec<TransientCapability>,
-    /// PDA bump for this session.
-    pub bump: u8,
-}
-
-impl TransientSession {
-    /// Serialized size of the account body, excluding Anchor discriminator.
-    pub const SPACE: usize = 32
-        + 32
-        + 32
-        + 32
-        + 8
-        + 8
-        + 1
-        + 1
-        + 4
-        + (MAX_TRANSIENT_CAPABILITIES * TransientCapability::SPACE)
-        + 1;
 }
 
 /// Binary FHE operators currently modeled by the PoC.
@@ -1657,7 +1316,9 @@ pub fn computed_rand_seed(
         &sequence_bytes,
     ])
     .to_bytes();
-    hash[..16].try_into().expect("slice has length 16")
+    let mut seed = [0; 16];
+    seed.copy_from_slice(&hash[..16]);
+    seed
 }
 
 /// Deterministically derives a random-ciphertext handle from the emitted seed.
@@ -1776,7 +1437,11 @@ mod tests {
         assert_eq!(latest_prior_bank_hash_from_entries(3, entries), None);
     }
 
-    fn host_config_with(chain_id: u64, test_shims_enabled: bool, mock_input_enabled: bool) -> HostConfig {
+    fn host_config_with(
+        chain_id: u64,
+        test_shims_enabled: bool,
+        mock_input_enabled: bool,
+    ) -> HostConfig {
         HostConfig {
             admin: Pubkey::default(),
             chain_id,

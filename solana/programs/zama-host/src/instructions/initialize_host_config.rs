@@ -1,3 +1,5 @@
+//! Initializes the singleton ZamaHost configuration account.
+
 use anchor_lang::prelude::*;
 
 use super::common::*;

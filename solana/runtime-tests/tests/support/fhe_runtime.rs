@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
-use anchor_lang::{prelude::Pubkey, AnchorDeserialize, Discriminator};
-use litesvm::types::TransactionMetadata;
+use anchor_lang::{AnchorDeserialize, Discriminator};
 use zama_host::{
     FheBinaryOpCode, FheBinaryOpEvent, FheRandBoundedEvent, FheRandEvent, FheTernaryOpCode,
     FheTernaryOpEvent, TrivialEncryptEvent,
@@ -48,20 +47,6 @@ pub struct CleartextBackend {
     values: HashMap<Handle, TypedClearValue>,
 }
 
-impl CleartextBackend {
-    pub fn ingest_transaction(
-        &mut self,
-        meta: &TransactionMetadata,
-        account_keys: &[Pubkey],
-        program_id: Pubkey,
-    ) -> Result<(), String> {
-        for event in solana_fhe_events(meta, account_keys, program_id) {
-            self.ingest_event(&event)?;
-        }
-        Ok(())
-    }
-}
-
 impl FheBackend for CleartextBackend {
     fn seed_cleartext(&mut self, handle: Handle, value: TypedClearValue) {
         self.values.insert(handle, value);
@@ -80,7 +65,7 @@ impl FheBackend for CleartextBackend {
                 Ok(())
             }
             SolanaFheEvent::Rand(event) => {
-                let value = seed_to_u128(event.seed) % modulus(event.fhe_type)?;
+                let value = random_value(event.seed, event.fhe_type)?;
                 self.values.insert(
                     event.result,
                     TypedClearValue {
@@ -91,10 +76,7 @@ impl FheBackend for CleartextBackend {
                 Ok(())
             }
             SolanaFheEvent::RandBounded(event) => {
-                let upper_bound = bytes_to_u128(event.upper_bound);
-                if upper_bound == 0 {
-                    return Err("zero random upper bound".to_string());
-                }
+                let upper_bound = bounded_upper_bound_u128(event.upper_bound, event.fhe_type)?;
                 let value = seed_to_u128(event.seed) % upper_bound;
                 self.values.insert(
                     event.result,
@@ -196,53 +178,31 @@ impl CleartextBackend {
     }
 }
 
-pub fn solana_fhe_events(
-    meta: &TransactionMetadata,
-    account_keys: &[Pubkey],
-    program_id: Pubkey,
-) -> Vec<SolanaFheEvent> {
-    meta.inner_instructions
-        .iter()
-        .flatten()
-        .filter(|ix| *ix.instruction.program_id(account_keys) == program_id)
-        .filter_map(|ix| decode_fhe_event(&ix.instruction.data))
-        .collect()
-}
-
-fn decode_fhe_event(data: &[u8]) -> Option<SolanaFheEvent> {
-    decode_binary_op_event(data)
-        .map(SolanaFheEvent::BinaryOp)
-        .or_else(|| decode_ternary_op_event(data).map(SolanaFheEvent::TernaryOp))
-        .or_else(|| decode_trivial_encrypt_event(data).map(SolanaFheEvent::TrivialEncrypt))
-        .or_else(|| decode_fhe_rand_event(data).map(SolanaFheEvent::Rand))
-        .or_else(|| decode_fhe_rand_bounded_event(data).map(SolanaFheEvent::RandBounded))
-}
-
-fn decode_binary_op_event(data: &[u8]) -> Option<FheBinaryOpEvent> {
+pub fn decode_binary_op_event(data: &[u8]) -> Option<FheBinaryOpEvent> {
     let event_prefix = anchor_event_prefix(FheBinaryOpEvent::DISCRIMINATOR);
     let payload = data.strip_prefix(&event_prefix[..])?;
     FheBinaryOpEvent::deserialize(&mut &*payload).ok()
 }
 
-fn decode_trivial_encrypt_event(data: &[u8]) -> Option<TrivialEncryptEvent> {
+pub fn decode_trivial_encrypt_event(data: &[u8]) -> Option<TrivialEncryptEvent> {
     let event_prefix = anchor_event_prefix(TrivialEncryptEvent::DISCRIMINATOR);
     let payload = data.strip_prefix(&event_prefix[..])?;
     TrivialEncryptEvent::deserialize(&mut &*payload).ok()
 }
 
-fn decode_ternary_op_event(data: &[u8]) -> Option<FheTernaryOpEvent> {
+pub fn decode_ternary_op_event(data: &[u8]) -> Option<FheTernaryOpEvent> {
     let event_prefix = anchor_event_prefix(FheTernaryOpEvent::DISCRIMINATOR);
     let payload = data.strip_prefix(&event_prefix[..])?;
     FheTernaryOpEvent::deserialize(&mut &*payload).ok()
 }
 
-fn decode_fhe_rand_event(data: &[u8]) -> Option<FheRandEvent> {
+pub fn decode_fhe_rand_event(data: &[u8]) -> Option<FheRandEvent> {
     let event_prefix = anchor_event_prefix(FheRandEvent::DISCRIMINATOR);
     let payload = data.strip_prefix(&event_prefix[..])?;
     FheRandEvent::deserialize(&mut &*payload).ok()
 }
 
-fn decode_fhe_rand_bounded_event(data: &[u8]) -> Option<FheRandBoundedEvent> {
+pub fn decode_fhe_rand_bounded_event(data: &[u8]) -> Option<FheRandBoundedEvent> {
     let event_prefix = anchor_event_prefix(FheRandBoundedEvent::DISCRIMINATOR);
     let payload = data.strip_prefix(&event_prefix[..])?;
     FheRandBoundedEvent::deserialize(&mut &*payload).ok()
@@ -268,7 +228,7 @@ fn wrapping_add(lhs: u128, rhs: u128, fhe_type: u8) -> Result<u128, String> {
     if fhe_type == 6 {
         return Ok(lhs.wrapping_add(rhs));
     }
-    Ok((lhs + rhs) % modulus(fhe_type)?)
+    Ok(lhs.wrapping_add(rhs) % modulus(fhe_type)?)
 }
 
 fn wrapping_sub(lhs: u128, rhs: u128, fhe_type: u8) -> Result<u128, String> {
@@ -276,16 +236,46 @@ fn wrapping_sub(lhs: u128, rhs: u128, fhe_type: u8) -> Result<u128, String> {
         return Ok(lhs.wrapping_sub(rhs));
     }
     let modulus = modulus(fhe_type)?;
-    Ok((lhs + modulus - (rhs % modulus)) % modulus)
+    Ok(((lhs % modulus) + modulus - (rhs % modulus)) % modulus)
+}
+
+fn random_value(seed: [u8; 16], fhe_type: u8) -> Result<u128, String> {
+    if fhe_type == 6 {
+        return Ok(seed_to_u128(seed));
+    }
+    Ok(seed_to_u128(seed) % modulus(fhe_type)?)
+}
+
+fn bounded_upper_bound_u128(upper_bound: [u8; 32], fhe_type: u8) -> Result<u128, String> {
+    let _bits = fhe_type_width_bits(fhe_type)?;
+    if upper_bound[..16].iter().any(|byte| *byte != 0) {
+        return Err(format!(
+            "bounded random upper bound exceeds cleartext backend width for type {fhe_type}"
+        ));
+    }
+    let upper_bound = bytes_to_u128(upper_bound);
+    if upper_bound == 0 {
+        return Err("zero random upper bound".to_string());
+    }
+    Ok(upper_bound)
 }
 
 fn modulus(fhe_type: u8) -> Result<u128, String> {
-    let bits = match fhe_type {
-        2 => 4,
-        3 => 8,
-        4 => 16,
-        5 => 64,
-        other => return Err(format!("unsupported cleartext uint type {other}")),
-    };
+    let bits = fhe_type_width_bits(fhe_type)?;
+    if bits == 128 {
+        return Err("full-width u128 type has no u128 modulus".to_string());
+    }
     Ok(1_u128 << bits)
+}
+
+fn fhe_type_width_bits(fhe_type: u8) -> Result<u32, String> {
+    match fhe_type {
+        0 => Ok(1),
+        2 => Ok(8),
+        3 => Ok(16),
+        4 => Ok(32),
+        5 => Ok(64),
+        6 => Ok(128),
+        other => Err(format!("unsupported cleartext uint type {other}")),
+    }
 }

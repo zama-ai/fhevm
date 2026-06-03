@@ -3,27 +3,26 @@
 //! The public Anchor entrypoints in `lib.rs` delegate into these modules so
 //! account contexts, validation, and handler logic stay out of the crate root.
 
-mod accounts;
-mod close_operator;
-mod common;
-mod confidential_burn;
-mod confidential_call_transfer_receiver;
-mod confidential_call_transfer_receiver_from;
-mod confidential_finalize_transfer_callback;
-mod confidential_prepare_transfer_callback;
-mod confidential_transfer;
-mod confidential_transfer_from;
-mod create_random_amount;
-mod disclose_amount;
-mod disclose_balance;
-mod initialize_mint;
-mod initialize_token_account;
-mod redeem_burned_amount;
-mod request_disclose_amount;
-mod request_disclose_balance;
-mod set_operator;
-mod test_receiver_return_callback;
-mod wrap_usdc;
+pub mod close_operator;
+pub mod common;
+pub mod confidential_burn;
+pub mod confidential_call_transfer_receiver;
+pub mod confidential_call_transfer_receiver_from;
+pub mod confidential_finalize_transfer_callback;
+pub mod confidential_prepare_transfer_callback;
+pub mod confidential_transfer;
+pub mod confidential_transfer_from;
+pub mod create_random_amount;
+pub mod disclose_amount;
+pub mod disclose_balance;
+pub mod initialize_mint;
+pub mod initialize_token_account;
+pub mod redeem_burned_amount;
+pub mod request_disclose_amount;
+pub mod request_disclose_balance;
+pub mod set_operator;
+pub mod test_receiver_return_callback;
+pub mod wrap_usdc;
 
 use anchor_lang::solana_program::{
     instruction::{AccountMeta, Instruction},
@@ -44,7 +43,6 @@ use crate::{
     errors::*, events::*, fhe, state::*, transfer_receiver_return_data, TransferReceiverReturn,
 };
 
-pub use accounts::*;
 pub use close_operator::*;
 pub use common::disclosure_proof_message;
 pub(crate) use common::*;

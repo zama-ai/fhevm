@@ -77,4 +77,7 @@ pub enum ConfidentialTokenError {
     /// Receiver hook did not return the expected callback witness.
     #[msg("receiver hook return data is invalid")]
     ReceiverHookMismatch,
+    /// Receiver hook payload or account list exceeds program limits.
+    #[msg("receiver hook input exceeds program limits")]
+    ReceiverHookInputTooLarge,
 }

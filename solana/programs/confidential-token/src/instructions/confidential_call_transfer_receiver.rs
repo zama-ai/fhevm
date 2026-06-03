@@ -1,4 +1,44 @@
+//! Invokes receiver hooks for direct confidential transfers.
+
 use super::*;
+
+/// Accounts for calling a receiver hook after a confidential transfer.
+#[derive(Accounts)]
+#[instruction(sent_handle: [u8; 32])]
+pub struct ConfidentialCallTransferReceiver<'info> {
+    /// Original sender owner and rent payer for the hook invocation transaction.
+    #[account(mut)]
+    pub caller: Signer<'info>,
+    /// Confidential mint.
+    pub mint: Box<Account<'info, ConfidentialMint>>,
+    /// Original sender token account.
+    pub from_account: Box<Account<'info, ConfidentialTokenAccount>>,
+    /// Original recipient token account.
+    pub to_account: Box<Account<'info, ConfidentialTokenAccount>>,
+    /// CHECK: Program-controlled compute signer PDA.
+    #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
+    pub compute_signer: UncheckedAccount<'info>,
+    /// ACL record for the prior transfer's all-or-zero sent amount.
+    pub sent_amount_acl: Box<Account<'info, zama_host::AclRecord>>,
+    /// ACL record for the receiver-produced encrypted callback success bit.
+    pub callback_success_acl: Box<Account<'info, zama_host::AclRecord>>,
+    /// CHECK: Receiver hook program invoked with the remaining accounts.
+    pub receiver_program: UncheckedAccount<'info>,
+    /// CHECK: Solana instructions sysvar used to prove same-transaction transfer intent.
+    #[account(address = INSTRUCTIONS_SYSVAR_ID)]
+    pub instructions_sysvar: UncheckedAccount<'info>,
+    /// One-shot marker for this receiver hook invocation.
+    #[account(
+        init,
+        payer = caller,
+        space = 8 + TransferReceiverHookCall::SPACE,
+        seeds = [b"transfer-hook", mint.key().as_ref(), sent_handle.as_ref()],
+        bump
+    )]
+    pub hook_record: Account<'info, TransferReceiverHookCall>,
+    /// System program used to create the one-shot hook marker.
+    pub system_program: Program<'info, System>,
+}
 
 /// Calls an arbitrary receiver hook and verifies its encrypted callback-success result.
 pub fn confidential_call_transfer_receiver<'info>(

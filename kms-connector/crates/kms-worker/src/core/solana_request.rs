@@ -443,23 +443,23 @@ impl<'a> RequestCursor<'a> {
 
     fn read_u64(&mut self) -> Result<u64, SolanaNativeRequestParseError> {
         let bytes = self.read_exact(8)?;
-        Ok(u64::from_le_bytes(
-            bytes.try_into().expect("slice has 8 bytes"),
-        ))
+        let mut value = [0; 8];
+        value.copy_from_slice(bytes);
+        Ok(u64::from_le_bytes(value))
     }
 
     fn read_u32(&mut self) -> Result<u32, SolanaNativeRequestParseError> {
         let bytes = self.read_exact(4)?;
-        Ok(u32::from_le_bytes(
-            bytes.try_into().expect("slice has 4 bytes"),
-        ))
+        let mut value = [0; 4];
+        value.copy_from_slice(bytes);
+        Ok(u32::from_le_bytes(value))
     }
 
     fn read_u16(&mut self) -> Result<u16, SolanaNativeRequestParseError> {
         let bytes = self.read_exact(2)?;
-        Ok(u16::from_le_bytes(
-            bytes.try_into().expect("slice has 2 bytes"),
-        ))
+        let mut value = [0; 2];
+        value.copy_from_slice(bytes);
+        Ok(u16::from_le_bytes(value))
     }
 
     fn read_u8(&mut self) -> Result<u8, SolanaNativeRequestParseError> {

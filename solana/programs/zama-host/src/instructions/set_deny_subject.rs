@@ -1,3 +1,5 @@
+//! Creates and updates grant deny-list records.
+
 use anchor_lang::prelude::*;
 
 use super::common::*;

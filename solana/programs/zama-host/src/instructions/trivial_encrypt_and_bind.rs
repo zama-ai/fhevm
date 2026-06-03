@@ -1,3 +1,5 @@
+//! Creates trivial-encrypt handles and binds initial ACL records.
+
 use anchor_lang::prelude::*;
 
 use super::common::*;

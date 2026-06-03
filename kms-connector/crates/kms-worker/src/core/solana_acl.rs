@@ -1320,11 +1320,9 @@ pub fn decode_solana_kms_extra_data_v0(
     if kms_context_id == [0; 32] {
         return Err(SolanaNativeRequestError::KmsContextMismatch);
     }
-    let response_context_len = u32::from_le_bytes(
-        raw_extra_data[33..37]
-            .try_into()
-            .expect("slice has 4 bytes"),
-    ) as usize;
+    let mut response_context_len = [0; 4];
+    response_context_len.copy_from_slice(&raw_extra_data[33..37]);
+    let response_context_len = u32::from_le_bytes(response_context_len) as usize;
     if raw_extra_data.len() != 37 + response_context_len {
         return Err(SolanaNativeRequestError::InvalidExtraData);
     }
@@ -1543,16 +1541,16 @@ impl<'a> AccountDataCursor<'a> {
 
     fn read_u64(&mut self) -> Result<u64, SolanaAclVerificationError> {
         let bytes = self.read_exact(8)?;
-        Ok(u64::from_le_bytes(
-            bytes.try_into().expect("slice has 8 bytes"),
-        ))
+        let mut value = [0; 8];
+        value.copy_from_slice(bytes);
+        Ok(u64::from_le_bytes(value))
     }
 
     fn read_u32(&mut self) -> Result<u32, SolanaAclVerificationError> {
         let bytes = self.read_exact(4)?;
-        Ok(u32::from_le_bytes(
-            bytes.try_into().expect("slice has 4 bytes"),
-        ))
+        let mut value = [0; 4];
+        value.copy_from_slice(bytes);
+        Ok(u32::from_le_bytes(value))
     }
 
     fn read_u8(&mut self) -> Result<u8, SolanaAclVerificationError> {
@@ -2634,13 +2632,36 @@ mod tests {
     #[test]
     fn verifies_native_v0_delegated_request() {
         let verifier = SolanaAclVerifier::new(HOST_PROGRAM_ID);
-        verifier
+        let request = native_request(SOLANA_NATIVE_REQUEST_MODE_DELEGATED_SCOPED);
+
+        assert_eq!(request.entries[0].app_context_pubkey, APP_ACCOUNT);
+        assert_eq!(
+            request.entries[0].delegation.as_ref().unwrap().app_account,
+            APP_ACCOUNT
+        );
+
+        let accepted = verifier
             .verify_native_v0_request(
-                &native_request(SOLANA_NATIVE_REQUEST_MODE_DELEGATED_SCOPED),
+                &request,
                 OBSERVED_SLOT,
                 SolanaNativeRequestLimits::default(),
             )
             .unwrap();
+
+        assert_eq!(
+            accepted.request_hash,
+            solana_native_request_hash(&request.payload)
+        );
+        assert_eq!(
+            accepted.replay_key,
+            Some(SolanaNativeReplayKeyV0 {
+                host_chain_id: request.payload.host_chain_id,
+                solana_cluster_id: request.payload.solana_cluster_id,
+                kms_context_id: request.payload.kms_context_id,
+                request_signer_pubkey: DELEGATE,
+                nonce: [77; 32],
+            })
+        );
     }
 
     #[test]

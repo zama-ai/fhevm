@@ -387,8 +387,8 @@ mod tests {
     }
 
     #[test]
-    fn decodes_anchor_cpi_binary_event_to_existing_tfhe_event() {
-        let encoded = anchor_cpi_event(
+    fn decodes_anchor_event_cpi_binary_event_to_existing_tfhe_event() {
+        let encoded = anchor_event_cpi(
             "FheBinaryOpEvent",
             binary_op_payload(1, [9; 32], [1; 32], [2; 32], false, [3; 32]),
         );
@@ -415,8 +415,8 @@ mod tests {
     }
 
     #[test]
-    fn decodes_anchor_cpi_trivial_encrypt_event() {
-        let encoded = anchor_cpi_event("TrivialEncryptEvent", {
+    fn decodes_anchor_event_cpi_trivial_encrypt_event() {
+        let encoded = anchor_event_cpi("TrivialEncryptEvent", {
             let mut payload = vec![EVENT_VERSION];
             payload.extend_from_slice(&[9; 32]);
             payload.extend_from_slice(&[0; 31]);
@@ -446,8 +446,8 @@ mod tests {
     }
 
     #[test]
-    fn decodes_anchor_cpi_acl_allowed_event() {
-        let encoded = anchor_cpi_event("AclAllowedEvent", {
+    fn decodes_anchor_event_cpi_acl_allowed_event() {
+        let encoded = anchor_event_cpi("AclAllowedEvent", {
             let mut payload = vec![EVENT_VERSION];
             payload.extend_from_slice(&[7; 32]);
             payload.extend_from_slice(&[8; 32]);
@@ -472,11 +472,25 @@ mod tests {
     }
 
     #[test]
-    fn rejects_anchor_cpi_events_with_unsupported_version() {
+    fn ignores_anchor_event_cpi_with_unsupported_event_version() {
         let mut payload =
             binary_op_payload(0, [9; 32], [1; 32], [2; 32], false, [3; 32]);
         payload[0] = EVENT_VERSION.wrapping_add(1);
-        let encoded = anchor_cpi_event("FheBinaryOpEvent", payload);
+        let encoded = anchor_event_cpi("FheBinaryOpEvent", payload);
+
+        assert!(decode_anchor_cpi_event(&encoded).is_none());
+    }
+
+    #[test]
+    fn ignores_public_decrypt_allowed_event_for_coprocessor_ingest() {
+        let encoded = anchor_event_cpi("PublicDecryptAllowedEvent", {
+            let mut payload = vec![EVENT_VERSION];
+            payload.extend_from_slice(&[1; 32]);
+            payload.extend_from_slice(&[2; 32]);
+            payload.extend_from_slice(&[3; 32]);
+            payload.extend_from_slice(&42_u64.to_le_bytes());
+            payload
+        });
 
         assert!(decode_anchor_cpi_event(&encoded).is_none());
     }
@@ -589,6 +603,29 @@ mod tests {
     }
 
     #[test]
+    fn maps_random_to_existing_tfhe_event() {
+        let mapped = to_fhe_rand_event(FheRandEvent {
+            version: EVENT_VERSION,
+            subject: [0; 32],
+            seed: [7; 16],
+            fhe_type: 5,
+            result: [8; 32],
+        });
+
+        assert!(matches!(
+            mapped.data,
+            TfheContractEvents::FheRand(TfheContract::FheRand {
+                randType,
+                seed,
+                result,
+                ..
+            }) if randType == 5
+                && seed == FixedBytes::<16>::from([7; 16])
+                && result == handle(8)
+        ));
+    }
+
+    #[test]
     fn maps_bounded_random_to_existing_tfhe_event() {
         let mut upper_bound = [0_u8; 32];
         upper_bound[30] = 1;
@@ -618,15 +655,17 @@ mod tests {
     }
 
     #[test]
-    fn keeps_acl_allowance_outside_evm_address_shape() {
-        let event = SolanaAclAllowedEvent {
-            handle: handle(9),
-            subject: "6tc9KsnQ1nRGqGX97AQvCNnuhZ5SpQe68LiiFbG88kM5".to_owned(),
-            event_type: AllowEvents::AllowedAccount,
-        };
+    fn formats_acl_allowed_subject_as_full_solana_pubkey_hex() {
+        let decoded =
+            decode_anchor_cpi_event(&anchor_event_cpi("AclAllowedEvent", {
+                let mut payload = vec![EVENT_VERSION];
+                payload.extend_from_slice(&[9; 32]);
+                payload.extend_from_slice(&[0xab; 32]);
+                payload
+            }))
+            .expect("expected ACL event");
 
-        let SolanaMappedEvent::AclAllowed(mapped) =
-            map_solana_event(SolanaHostEvent::AclAllowed(event))
+        let SolanaMappedEvent::AclAllowed(mapped) = map_solana_event(decoded)
         else {
             panic!("expected ACL allowance event");
         };
@@ -634,7 +673,7 @@ mod tests {
         assert_eq!(mapped.handle, handle(9));
         assert_eq!(
             mapped.subject,
-            "6tc9KsnQ1nRGqGX97AQvCNnuhZ5SpQe68LiiFbG88kM5"
+            "0xabababababababababababababababababababababababababababababababab"
         );
         assert_eq!(
             mapped.event_type as i16,
@@ -648,9 +687,13 @@ mod tests {
 
         assert_eq!(
             solana_transaction_id(&signature),
-            solana_transaction_id(&signature)
+            TransactionHash::from([
+                0x6c, 0xfe, 0xeb, 0x3a, 0xa2, 0x5d, 0x3f, 0x41, 0x1d, 0xae,
+                0x5e, 0xec, 0x17, 0xd7, 0x36, 0x9c, 0xa7, 0x15, 0x3e, 0x72,
+                0xdc, 0xf5, 0x4b, 0xcf, 0x4c, 0x3d, 0xae, 0xc0, 0xf5, 0xb2,
+                0x1f, 0xc7,
+            ])
         );
-        assert_ne!(solana_transaction_id(&signature), handle(7));
     }
 
     #[test]
@@ -769,7 +812,7 @@ mod tests {
         assert!(!tfhe_logs[0].is_allowed);
     }
 
-    fn anchor_cpi_event(name: &str, payload: Vec<u8>) -> Vec<u8> {
+    fn anchor_event_cpi(name: &str, payload: Vec<u8>) -> Vec<u8> {
         let mut encoded = Vec::new();
         encoded.extend_from_slice(&ANCHOR_EVENT_IX_TAG_LE);
         encoded.extend_from_slice(&anchor_event_discriminator(name));

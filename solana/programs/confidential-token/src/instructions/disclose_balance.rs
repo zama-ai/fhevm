@@ -1,4 +1,22 @@
+//! Publishes KMS-certified cleartexts for current confidential balances.
+
 use super::*;
+
+/// Accounts for disclosing a KMS-certified current balance cleartext.
+#[derive(Accounts)]
+#[event_cpi]
+pub struct DiscloseBalance<'info> {
+    /// Confidential mint carrying the KMS verifier authority.
+    pub mint: Box<Account<'info, ConfidentialMint>>,
+    /// Confidential token account whose current balance is disclosed.
+    pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
+    /// Current balance ACL record for the disclosed handle.
+    pub balance_acl_record: Box<Account<'info, zama_host::AclRecord>>,
+    /// Material commitment witness for the disclosed handle.
+    pub balance_material_commitment: Box<Account<'info, zama_host::HandleMaterialCommitment>>,
+    /// CHECK: Solana instructions sysvar; handler verifies its address and previous Ed25519 ix.
+    pub instructions_sysvar: UncheckedAccount<'info>,
+}
 
 /// Emits a KMS-certified cleartext for the current balance handle.
 pub fn disclose_balance(ctx: Context<DiscloseBalance>, cleartext_amount: u64) -> Result<()> {

@@ -1,4 +1,24 @@
+//! Sets and revokes confidential-token operators.
+
 use super::*;
+
+/// Accounts for setting or revoking an operator.
+#[derive(Accounts)]
+#[event_cpi]
+pub struct SetOperator<'info> {
+    /// Token account owner and rent payer.
+    #[account(mut)]
+    pub owner: Signer<'info>,
+    /// Confidential mint.
+    pub mint: Account<'info, ConfidentialMint>,
+    /// Token account whose operator row is being changed.
+    pub token_account: Account<'info, ConfidentialTokenAccount>,
+    /// CHECK: Canonical operator PDA created or overwritten by this instruction.
+    #[account(mut)]
+    pub operator_record: UncheckedAccount<'info>,
+    /// System program used for operator PDA creation.
+    pub system_program: Program<'info, System>,
+}
 
 /// Sets or revokes an operator for this confidential token account.
 pub fn set_operator(

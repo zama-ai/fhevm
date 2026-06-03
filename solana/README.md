@@ -26,7 +26,7 @@ solana/programs/confidential-token
   Its local fhe.rs module is the current dev-facing wrapper around raw ZamaHost CPI calls.
 
 solana/runtime-tests
-  Fast LiteSVM tests for Solana accounts, PDAs, CPI, events, and ACL behavior.
+  Fast Mollusk tests for Solana accounts, PDAs, CPI, events, and ACL behavior.
   tests/support/fhe_runtime.rs adds a cleartext backend that consumes real ZamaHost events.
 
 solana/docs
@@ -127,8 +127,8 @@ Use this order when picking up the branch:
 2. Read the flow
    Start with docs/DESIGN_DECISIONS.md for rationale.
    Start with "Global Flow", then "Confidential Transfer", then "User Decrypt Shape".
-   The canonical product-shaped test is:
-     confidential_token_e2e_wrap_transfer_and_decrypts_current_and_historical_balances
+   The current worker-backed product-shaped tests live in:
+     coprocessor/fhevm-engine/tfhe-worker/src/tests/solana_poc.rs
 
 3. Change the PoC
    App behavior usually belongs in confidential-token.
@@ -183,8 +183,11 @@ For OpenZeppelin follow-up work, the safe area is:
 solana/programs/confidential-token
   Improve the confidential token flow against the current ZamaHost CPI surface.
 
-solana/runtime-tests/tests/host_events.rs
-  Add behavior tests here first.
+solana/runtime-tests/tests/host_mollusk.rs
+  Add host behavior tests here first.
+
+solana/runtime-tests/tests/token_mollusk.rs
+  Add confidential-token behavior tests here first.
 ```
 
 Current OZ handoff assumptions:
@@ -192,7 +195,7 @@ Current OZ handoff assumptions:
 ```text
 1. Treat zama-host CPI as the protocol boundary.
 2. Keep confidential-token SPL-like and app-owned.
-3. Add LiteSVM tests before changing token behavior.
+3. Add Mollusk tests before changing token behavior.
 4. Do not derive account addresses from handles.
 5. Do not add a separate ACL program unless the guild explicitly changes direction.
 ```
@@ -206,7 +209,7 @@ Use this checklist to see where the branch stands. Keep it updated when a PR cha
 
 ### Working Now
 
-- [x] Anchor workspace with `zama-host`, `confidential-token`, and LiteSVM runtime tests.
+- [x] Anchor workspace with `zama-host`, `confidential-token`, and Mollusk runtime tests.
 - [x] ZamaHost emits typed Anchor CPI events for real host operations and clearly named
       `test_emit_*` shims used by listener / worker tests.
 - [x] Host-listener decodes ZamaHost protocol events through Rust generated at build time from
@@ -492,7 +495,7 @@ application-local events are not protocol authority. Production authorization mu
 rebuilt from finalized or policy-approved transaction/account data and verified against host-owned
 ACL, material, delegation, and replay witnesses.
 
-The current PoC keeps Anchor CPI events because the local listener and LiteSVM tests already decode
+The current PoC keeps Anchor CPI events because the local listener and Mollusk tests already decode
 that shape. This is a PoC convenience, not a free production choice: every `emit_cpi!` adds a
 ZamaHost self-CPI frame, and Solana has a hard CPI/instruction-stack nesting limit. Deep app flows
 such as token -> host -> hook/settlement paths can hit that limit before compute budget is the
@@ -747,7 +750,7 @@ app wants two durable outputs for the same operation, it gets two distinct opaqu
 `trivial_encrypt_and_bind` uses the same output nonce metadata in its handle derivation, so equal
 plaintexts born for different ACL records do not alias to the same host handle.
 
-The PoC uses the previous slot hash when LiteSVM or the cluster exposes it. Local bootstrap tests can
+The PoC uses the previous slot hash when Mollusk or the cluster exposes it. Local bootstrap tests can
 fall back to zero when no prior slot hash exists; this is test glue, not the intended production
 entropy source.
 
@@ -1093,7 +1096,7 @@ callback-settlement PDA separately tracks refund preparation and finalization.
 
 The `programs/confidential-token-receiver` sample program is intentionally small and exists as an
 external-program reference for this ABI. It depends on the SDK crate, not the token program crate,
-and is loaded in LiteSVM receiver-hook tests instead of relying only on the token program's test
+and is loaded in Mollusk receiver-hook tests instead of relying only on the token program's test
 receiver endpoint.
 
 ## cUSDC Wrapper
@@ -1315,7 +1318,7 @@ allow_for_decryption on handle
   -> anyone can request public decrypt for that handle
 ```
 
-Compute-only subjects cannot flip `public_decrypt`; negative LiteSVM tests cover this case. ACL
+Compute-only subjects cannot flip `public_decrypt`; negative Mollusk tests cover this case. ACL
 membership and `public_decrypt` are authorization state, while `HandleMaterialCommitment` plus the
 ACL record's sealed material fields are decryptability state. Native-v0 KMS admission needs both
 sides to agree.
@@ -1348,7 +1351,7 @@ surface for a KMS response certificate once the Gateway request path carries nat
 ACL/material witnesses. The same certificate shape is used by `redeem_burned_amount`; redeem
 additionally checks the burned-amount ACL public-decrypt release flag, sealed host material
 commitment, vault constraints, owner destination, and burn-redemption replay marker. Negative
-LiteSVM tests cover missing public release, missing material, unsealed material, mismatched
+Mollusk tests cover missing public release, missing material, unsealed material, mismatched
 cleartext messages, and the wrong KMS signer.
 
 ## Operator Encoding Notes
@@ -1374,7 +1377,7 @@ handle and a Bool output. This mirrors the EVM executor rule that Add/Sub result
 type while comparison results are Bool.
 
 The current confidential-token transfer/wrap/burn flows only use encrypted/encrypted binary ops. The
-host-level scalar path is covered by LiteSVM tests so future token helpers can pass `scalar = true`
+host-level scalar path is covered by Mollusk tests so future token helpers can pass `scalar = true`
 without changing ZamaHost.
 
 When adding ternary operators, Solana host events must preserve the EVM `scalarByte` convention.
@@ -1571,11 +1574,11 @@ Negative case:
 
 ## Budget Snapshot
 
-Current `confidential_transfer` LiteSVM snapshot is tracked in:
+Current `confidential_transfer` Mollusk snapshot is tracked in:
 
 ```text
-solana/runtime-tests/tests/host_events.rs
-  confidential_transfer_budget_snapshot
+solana/runtime-tests/tests/token_mollusk.rs
+  mollusk_confidential_transfer_rotates_accounts_and_acl_records
 ```
 
 The important qualitative points:
@@ -1614,6 +1617,7 @@ Solana program build and runtime tests:
 cd solana
 bash scripts/check-zama-host-idl.sh
 cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 If the ZamaHost Anchor IDL intentionally changes, refresh the listener snapshot first:

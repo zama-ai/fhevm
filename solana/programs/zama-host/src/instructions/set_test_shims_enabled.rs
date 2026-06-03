@@ -1,6 +1,9 @@
+//! Toggles authority-gated test event shims.
+
 use anchor_lang::prelude::*;
 
 use super::common::*;
+use super::set_host_pause::HostAdmin;
 
 /// Enables or disables test event shims.
 pub fn set_test_shims_enabled(ctx: Context<HostAdmin>, enabled: bool) -> Result<()> {

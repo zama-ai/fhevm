@@ -209,7 +209,7 @@ fn mollusk_rand_and_bounded_bind_create_acl_records_and_events() {
     assert_eq!(rand_events[0].seed, rand_seed);
     assert_eq!(rand_events[0].fhe_type, 3);
     assert_eq!(rand_events[0].result, rand_handle);
-    assert_acl_allowed_event(&rand_result, rand_handle, authority);
+    assert_single_acl_allowed_event(&rand_result, rand_handle, authority);
 
     let upper_bound = amount_plaintext(256);
     let bounded_seed =
@@ -256,7 +256,7 @@ fn mollusk_rand_and_bounded_bind_create_acl_records_and_events() {
     assert_eq!(bounded_events[0].seed, bounded_seed);
     assert_eq!(bounded_events[0].fhe_type, 3);
     assert_eq!(bounded_events[0].result, bounded_handle);
-    assert_acl_allowed_event(&bounded_result, bounded_handle, authority);
+    assert_single_acl_allowed_event(&bounded_result, bounded_handle, authority);
 }
 
 #[test]
@@ -401,7 +401,7 @@ fn mollusk_input_trivial_encrypt_bind_nonce_separates_equal_plaintexts_and_event
     assert_eq!(first_events[0].plaintext, plaintext);
     assert_eq!(first_events[0].fhe_type, 5);
     assert_eq!(first_events[0].result, first_handle);
-    assert_acl_allowed_event(&first_result, first_handle, authority);
+    assert_single_acl_allowed_event(&first_result, first_handle, authority);
 
     let second_result = context.process_instruction(&trivial_encrypt_and_bind_ix(
         program_id,
@@ -440,7 +440,7 @@ fn mollusk_input_trivial_encrypt_bind_nonce_separates_equal_plaintexts_and_event
     assert_eq!(second_events[0].plaintext, plaintext);
     assert_eq!(second_events[0].fhe_type, 5);
     assert_eq!(second_events[0].result, second_handle);
-    assert_acl_allowed_event(&second_result, second_handle, authority);
+    assert_single_acl_allowed_event(&second_result, second_handle, authority);
 }
 
 #[test]
@@ -506,7 +506,7 @@ fn mollusk_input_mock_verified_bind_creates_acl_record_and_event() {
     assert_eq!(input_events[0].result_handle, input_handle);
     assert_eq!(input_events[0].user, authority.to_bytes());
     assert_eq!(input_events[0].acl_domain_key, acl_domain_key.to_bytes());
-    assert_acl_allowed_event(&result, input_handle, authority);
+    assert_single_acl_allowed_event(&result, input_handle, authority);
 }
 
 #[test]
@@ -1036,7 +1036,7 @@ fn mollusk_acl_allow_subjects_extends_inline_record_and_is_idempotent() {
     let result = context.process_instruction(&ix);
 
     assert!(result.raw_result.is_ok());
-    assert_acl_allowed_event(&result, handle, new_subject);
+    assert_single_acl_allowed_event(&result, handle, new_subject);
     let record = read_acl_record(&context, acl_record).expect("expected ACL record");
     assert_eq!(record.subject_count, 2);
     assert_eq!(record.subjects[0], authority);
@@ -1052,6 +1052,59 @@ fn mollusk_acl_allow_subjects_extends_inline_record_and_is_idempotent() {
     assert_eq!(record.subject_count, 2);
     assert_eq!(record.subjects[1], new_subject);
     assert_eq!(record.subject_roles[1], host::ACL_ROLE_USER);
+}
+
+#[test]
+fn mollusk_acl_allow_subjects_rejects_oversized_grant_batch_without_mutation() {
+    let program_id = host::id();
+    let authority = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(authority);
+    let acl_domain_key = Pubkey::new_unique();
+    let app_account = authority;
+    let encrypted_value_label = label("allow-batch-cap");
+    let nonce_key = host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let handle = handle_for_chain(101, 5);
+    let (acl_record, acl_account) = authorizing_acl_record_account(
+        nonce_key,
+        101,
+        acl_domain_key,
+        app_account,
+        encrypted_value_label,
+        handle,
+        authority,
+    );
+    let context = transient_context(
+        authority,
+        vec![
+            (host_config, host_config_account),
+            (acl_record, acl_account),
+            (event_authority(program_id), system_account(0)),
+            (program_id, executable_program_account()),
+        ],
+    );
+    let subjects = (0..=host::MAX_ACL_SUBJECT_GRANTS_PER_CALL)
+        .map(|_| AclSubjectEntry::use_only(Pubkey::new_unique()))
+        .collect();
+
+    let result = context.process_instruction(&allow_acl_subjects_ix(
+        program_id,
+        authority,
+        authority,
+        None,
+        host_config,
+        acl_record,
+        None,
+        handle,
+        subjects,
+        &[],
+    ));
+
+    assert!(result.raw_result.is_err());
+    let record = read_acl_record(&context, acl_record).expect("expected ACL record");
+    assert_eq!(record.subject_count, 1);
+    assert_eq!(record.subjects[0], authority);
+    assert_eq!(record.subject_roles[0], host::ACL_ROLE_ALL);
+    assert_eq!(record.overflow_subject_count, 0);
 }
 
 #[test]
@@ -1157,7 +1210,7 @@ fn mollusk_acl_allow_subjects_creates_overflow_permission_and_asserts_membership
     ));
 
     assert!(result.raw_result.is_ok());
-    assert_acl_allowed_event(&result, handle, overflow_subject);
+    assert_single_acl_allowed_event(&result, handle, overflow_subject);
     let record = read_acl_record(&context, acl_record).expect("expected ACL record");
     assert_eq!(record.subject_count as usize, host::MAX_ACL_SUBJECTS);
     assert_eq!(record.overflow_subject_count, 1);
@@ -1439,7 +1492,7 @@ fn mollusk_acl_grant_deny_list_rejects_missing_or_noncanonical_authority_witness
 }
 
 #[test]
-fn mollusk_acl_grant_deny_list_allows_absent_or_clear_authority_witness() {
+fn mollusk_acl_grant_deny_list_allows_absent_or_clear_authority_deny_record() {
     let program_id = host::id();
     let authority = Pubkey::new_unique();
     let acl_domain_key = Pubkey::new_unique();
@@ -1481,7 +1534,7 @@ fn mollusk_acl_grant_deny_list_allows_absent_or_clear_authority_witness() {
         &[],
     ));
     assert!(absent.raw_result.is_ok());
-    assert_acl_allowed_event(&absent, handle, absent_subject);
+    assert_single_acl_allowed_event(&absent, handle, absent_subject);
     let absent_record = read_acl_record(&absent_context, acl_record).expect("expected ACL record");
     assert!(absent_record.inline_subject_has_role(absent_subject, host::ACL_ROLE_USE));
 
@@ -2063,7 +2116,7 @@ fn mollusk_host_admin_pause_blocks_acl_grants_but_allows_unpause() {
         &[],
     ));
     assert!(unpaused_grant.raw_result.is_ok());
-    assert_acl_allowed_event(&unpaused_grant, handle, new_subject);
+    assert_single_acl_allowed_event(&unpaused_grant, handle, new_subject);
     let record = read_acl_record(&context, acl_record).expect("expected ACL record");
     assert!(record.inline_subject_has_role(new_subject, host::ACL_ROLE_USE));
 }
@@ -2183,7 +2236,7 @@ fn mollusk_host_admin_grant_deny_list_flag_is_idempotent_and_drives_gate() {
         &[],
     ));
     assert!(grant_after_disable.raw_result.is_ok());
-    assert_acl_allowed_event(&grant_after_disable, handle, allowed_after_disable_subject);
+    assert_single_acl_allowed_event(&grant_after_disable, handle, allowed_after_disable_subject);
     let record = read_acl_record(&context, acl_record).expect("expected ACL record");
     assert!(record.inline_subject_has_role(allowed_after_disable_subject, host::ACL_ROLE_USE));
     assert!(!record.inline_subject_has_role(denied_by_gate_subject, host::ACL_ROLE_USE));
@@ -2210,7 +2263,7 @@ fn mollusk_host_admin_pause_allows_transient_session_close_cleanup() {
     );
     let current_slot = context.mollusk.sysvars.clock.slot;
 
-    assert!(process_transaction(
+    assert_transaction_success(
         &context,
         &[
             create_transient_session_ix(
@@ -2234,7 +2287,7 @@ fn mollusk_host_admin_pause_allows_transient_session_close_cleanup() {
                 1,
             ),
         ],
-    ));
+    );
     assert!(read_transient_session(&context, authority_close_session).is_some());
     assert!(read_transient_session(&context, expired_close_session).is_some());
 
@@ -2694,10 +2747,7 @@ fn mollusk_transient_session_consumes_capability_once() {
         result,
         FheEvalOutput::Transient,
     );
-    assert!(process_transaction(
-        &context,
-        &[create_ix, allow_ix, seal_ix, consume_ix]
-    ));
+    assert_transaction_success(&context, &[create_ix, allow_ix, seal_ix, consume_ix]);
 
     let session_account = read_transient_session(&context, session).expect("expected session");
     assert_eq!(session_account.state, host::TRANSIENT_SESSION_STATE_SEALED);
@@ -3555,7 +3605,7 @@ fn mollusk_fhe_binary_op_scalar_rhs_rejects_unused_permission_witness() {
 }
 
 #[test]
-fn mollusk_binary_op_bind_rejects_public_decrypt_output_without_input_role() {
+fn mollusk_fhe_binary_op_bind_rejects_public_decrypt_output_without_input_role() {
     let program_id = host::id();
     let authority = Pubkey::new_unique();
     let host_config = host_config_account(authority).0;
@@ -3752,10 +3802,7 @@ fn mollusk_fhe_eval_appends_transient_session_output_for_later_consumption() {
         final_result,
         FheEvalOutput::Transient,
     );
-    assert!(process_transaction(
-        &context,
-        &[create_ix, append_ix, seal_ix, consume_ix]
-    ));
+    assert_transaction_success(&context, &[create_ix, append_ix, seal_ix, consume_ix]);
 
     let session_account = read_transient_session(&context, session).expect("expected session");
     assert_eq!(session_account.entries.len(), 1);
@@ -3788,13 +3835,17 @@ fn transient_context(
     mollusk().with_context(accounts)
 }
 
-fn process_transaction(
+fn assert_transaction_success(
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
     instructions: &[Instruction],
-) -> bool {
-    process_transaction_result(context, instructions)
-        .raw_result
-        .is_ok()
+) -> TransactionResult {
+    let result = process_transaction_result(context, instructions);
+    assert!(
+        result.raw_result.is_ok(),
+        "transaction failed: {:?}",
+        result.raw_result
+    );
+    result
 }
 
 fn process_transaction_result(
@@ -4943,6 +4994,9 @@ fn read_transient_session(
 ) -> Option<TransientSession> {
     let store = context.account_store.borrow();
     let account = store.get(&address)?;
+    if account.owner != host::id() {
+        return None;
+    }
     let mut data = account.data.as_slice();
     TransientSession::try_deserialize(&mut data).ok()
 }
@@ -5095,7 +5149,7 @@ fn assert_random_acl_record(
     );
 }
 
-fn assert_acl_allowed_event(
+fn assert_single_acl_allowed_event(
     result: &mollusk_svm::result::InstructionResult,
     handle: [u8; 32],
     subject: Pubkey,

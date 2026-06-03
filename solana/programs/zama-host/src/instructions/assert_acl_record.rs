@@ -1,3 +1,5 @@
+//! Verifies canonical ACL record metadata for client-side composition.
+
 use anchor_lang::prelude::*;
 
 use super::common::*;

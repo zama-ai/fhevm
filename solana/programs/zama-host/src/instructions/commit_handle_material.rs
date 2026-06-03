@@ -1,3 +1,5 @@
+//! Commits ciphertext material readiness for host-owned handles.
+
 use anchor_lang::prelude::*;
 
 use super::common::*;

@@ -1,3 +1,5 @@
+//! Closes transient capability sessions and returns rent.
+
 use anchor_lang::prelude::*;
 
 use super::common::*;

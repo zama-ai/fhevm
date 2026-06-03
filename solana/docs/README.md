@@ -21,7 +21,7 @@ DEVELOPMENT_HISTORY.md
   snapshot (solid / PoC-scope / product-open).
 
 TESTING.md
-  Test layout, Mollusk vs LiteSVM, how to run the suites, and the traps.
+  Test layout, Mollusk runtime coverage, how to run the suites, and the traps.
 ```
 
 When a change alters the intended architecture, update `DESIGN_DECISIONS.md` (or a focused doc

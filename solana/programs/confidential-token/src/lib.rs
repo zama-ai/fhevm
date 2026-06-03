@@ -10,6 +10,8 @@
 #![allow(unexpected_cfgs)]
 #![allow(clippy::diverging_sub_expression, clippy::too_many_arguments)]
 
+/// Shared constants, seed bytes, and fixed protocol sizes.
+pub mod constants;
 /// Program-specific errors returned by confidential-token instructions.
 pub mod errors;
 /// App-local events and instruction argument enums.
@@ -17,7 +19,7 @@ pub mod events;
 mod fhe;
 /// Instruction account contexts and handlers.
 pub mod instructions;
-/// Account layouts, PDA helpers, constants, and token-domain labels.
+/// Account layouts, PDA helpers, and token-domain labels.
 pub mod state;
 
 use anchor_lang::prelude::*;
@@ -26,6 +28,8 @@ pub use confidential_token_receiver_sdk::{
     transfer_receiver_return_data, TransferReceiverReturn, TRANSFER_RECEIVER_RETURN_FIELD_COUNT,
     TRANSFER_RECEIVER_RETURN_LEN, TRANSFER_RECEIVER_RETURN_MAGIC,
 };
+/// Re-export constants for generated clients and tests.
+pub use constants::*;
 /// Re-export errors for generated clients and tests.
 pub use errors::*;
 /// Re-export events and instruction argument enums for generated clients and tests.

@@ -22,7 +22,7 @@ zama-host
   creates durable output ACL records through explicit allow/bind calls
 
 runtime-tests
-  LiteSVM behavior tests
+  Mollusk behavior tests
   first place to prove or disprove a design change
 ```
 
@@ -255,7 +255,8 @@ Scalar RHS:
 ## How To Contribute Safely
 
 ```text
-1. Start with a LiteSVM test in solana/runtime-tests/tests/host_events.rs.
+1. Start with a Mollusk test in solana/runtime-tests/tests/host_mollusk.rs or
+   solana/runtime-tests/tests/token_mollusk.rs.
 2. Change confidential-token for app behavior.
 3. Change zama-host only when host semantics need to change.
 4. Keep README.md and docs/DESIGN_DECISIONS.md in sync with any durable behavior or API change.

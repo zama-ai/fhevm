@@ -1,6 +1,9 @@
+//! Emits input-verified events from the test shim.
+
 use anchor_lang::prelude::*;
 
 use super::common::*;
+use super::test_emit_acl_allowed::TestEmitProtocolEvent;
 use crate::{events::InputVerifiedEvent, state::EVENT_VERSION};
 
 /// Emits an input-verified event after test-shim authority checks.

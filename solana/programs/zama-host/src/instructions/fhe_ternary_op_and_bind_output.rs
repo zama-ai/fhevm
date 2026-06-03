@@ -1,3 +1,5 @@
+//! Emits ternary FHE operations and binds durable output ACL state.
+
 use anchor_lang::prelude::*;
 
 use super::common::*;
@@ -154,51 +156,6 @@ pub fn fhe_ternary_op_and_bind_output(
             .map(|account| account.to_account_info())
             .as_ref(),
     )?;
-
-    if output_public_decrypt {
-        require!(
-            unchecked_acl_record_subject_has_role(
-                &ctx.accounts.control_acl_record.to_account_info(),
-                control,
-                subject,
-                ACL_ROLE_PUBLIC_DECRYPT,
-                ctx.accounts
-                    .control_permission_record
-                    .as_ref()
-                    .map(|account| account.to_account_info())
-                    .as_ref(),
-            )?,
-            ZamaHostError::AclSubjectRoleMismatch
-        );
-        require!(
-            unchecked_acl_record_subject_has_role(
-                &ctx.accounts.if_true_acl_record.to_account_info(),
-                if_true,
-                subject,
-                ACL_ROLE_PUBLIC_DECRYPT,
-                ctx.accounts
-                    .if_true_permission_record
-                    .as_ref()
-                    .map(|account| account.to_account_info())
-                    .as_ref(),
-            )?,
-            ZamaHostError::AclSubjectRoleMismatch
-        );
-        require!(
-            unchecked_acl_record_subject_has_role(
-                &ctx.accounts.if_false_acl_record.to_account_info(),
-                if_false,
-                subject,
-                ACL_ROLE_PUBLIC_DECRYPT,
-                ctx.accounts
-                    .if_false_permission_record
-                    .as_ref()
-                    .map(|account| account.to_account_info())
-                    .as_ref(),
-            )?,
-            ZamaHostError::AclSubjectRoleMismatch
-        );
-    }
 
     let clock = Clock::get()?;
     let previous_bank_hash = previous_bank_hash_with_test_fallback(

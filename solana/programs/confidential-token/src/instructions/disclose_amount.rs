@@ -1,4 +1,20 @@
+//! Publishes KMS-certified cleartexts for token-scoped encrypted amounts.
+
 use super::*;
+
+/// Accounts for disclosing a KMS-certified token-scoped amount cleartext.
+#[derive(Accounts)]
+#[event_cpi]
+pub struct DiscloseAmount<'info> {
+    /// Confidential mint carrying the KMS verifier authority.
+    pub mint: Box<Account<'info, ConfidentialMint>>,
+    /// Token-scoped amount ACL record for the disclosed handle.
+    pub amount_acl_record: Box<Account<'info, zama_host::AclRecord>>,
+    /// Material commitment witness for the disclosed handle.
+    pub amount_material_commitment: Box<Account<'info, zama_host::HandleMaterialCommitment>>,
+    /// CHECK: Solana instructions sysvar; handler verifies its address and previous Ed25519 ix.
+    pub instructions_sysvar: UncheckedAccount<'info>,
+}
 
 /// Emits a KMS-certified cleartext for any token-scoped encrypted amount.
 pub fn disclose_amount(

@@ -380,7 +380,7 @@ Status: adopted
 
 Context:
 
-Two relaxations exist for local testing: the zero birth-entropy fallback (used when the LiteSVM
+Two relaxations exist for local testing: the zero birth-entropy fallback (used when the Mollusk
 slot-hash sysvar is empty) and the `mock_input_verified_and_bind` short-circuit for the real signed
 input-verifier path. Both were gated only by admin-toggled `HostConfig` flags
 (`test_shims_enabled`, `mock_input_enabled`). `test_shims_enabled` also gates the `test_emit_*` event

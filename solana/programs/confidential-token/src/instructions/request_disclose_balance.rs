@@ -1,4 +1,31 @@
+//! Requests public disclosure for confidential account balances.
+
 use super::*;
+
+/// Accounts for requesting public disclosure of the current balance handle.
+#[derive(Accounts)]
+#[event_cpi]
+pub struct RequestDiscloseBalance<'info> {
+    /// Token account owner and disclosure authority.
+    pub owner: Signer<'info>,
+    /// Confidential mint.
+    pub mint: Box<Account<'info, ConfidentialMint>>,
+    /// Confidential token account whose current balance is disclosed.
+    pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
+    /// Current balance ACL record. Updated by ZamaHost CPI.
+    #[account(mut)]
+    pub balance_acl_record: Box<Account<'info, zama_host::AclRecord>>,
+    /// CHECK: optional overflow permission witness for the owner authority.
+    pub authority_permission_record: Option<UncheckedAccount<'info>>,
+    /// CHECK: optional deny-list witness when host deny-lists are enabled.
+    pub deny_subject_record: Option<UncheckedAccount<'info>>,
+    /// CHECK: Anchor event CPI authority for the Zama host program.
+    pub zama_event_authority: UncheckedAccount<'info>,
+    /// ZamaHost program used to update the ACL record.
+    pub zama_program: Program<'info, ZamaHost>,
+    /// ZamaHost config used for pause and deny-list checks.
+    pub host_config: Box<Account<'info, zama_host::HostConfig>>,
+}
 
 /// Requests public disclosure for the current confidential balance handle.
 pub fn request_disclose_balance(ctx: Context<RequestDiscloseBalance>) -> Result<()> {

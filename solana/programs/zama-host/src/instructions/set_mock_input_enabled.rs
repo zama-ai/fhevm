@@ -1,6 +1,9 @@
+//! Toggles the mock encrypted-input bind path.
+
 use anchor_lang::prelude::*;
 
 use super::common::*;
+use super::set_host_pause::HostAdmin;
 
 /// Enables or disables the mock encrypted-input bind path.
 pub fn set_mock_input_enabled(ctx: Context<HostAdmin>, enabled: bool) -> Result<()> {

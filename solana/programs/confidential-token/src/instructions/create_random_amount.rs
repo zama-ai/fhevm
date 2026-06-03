@@ -1,4 +1,34 @@
+//! Creates token-scoped random encrypted amounts.
+
 use super::*;
+
+/// Accounts for creating a token-scoped random encrypted amount.
+#[derive(Accounts)]
+#[event_cpi]
+pub struct CreateRandomAmount<'info> {
+    /// Token account owner and rent payer.
+    #[account(mut)]
+    pub owner: Signer<'info>,
+    /// Confidential mint that scopes the encrypted amount.
+    pub mint: Box<Account<'info, ConfidentialMint>>,
+    /// Owner's confidential token account carrying the amount nonce allocator.
+    #[account(mut)]
+    pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
+    /// CHECK: Program-controlled compute signer PDA.
+    #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
+    pub compute_signer: UncheckedAccount<'info>,
+    /// CHECK: initialized and validated by the Zama host program CPI.
+    #[account(mut)]
+    pub amount_acl_record: UncheckedAccount<'info>,
+    /// CHECK: Anchor event CPI authority for the Zama host program.
+    pub zama_event_authority: UncheckedAccount<'info>,
+    /// ZamaHost program used to create the random handle.
+    pub zama_program: Program<'info, ZamaHost>,
+    /// ZamaHost config used for handle derivation.
+    pub host_config: Box<Account<'info, zama_host::HostConfig>>,
+    /// System program used for ACL account creation.
+    pub system_program: Program<'info, System>,
+}
 
 /// Creates a token-scoped random encrypted amount for transfer or burn flows.
 pub fn create_random_amount(

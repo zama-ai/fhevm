@@ -1,3 +1,5 @@
+//! Evaluates ordered instruction-local FHE plans.
+
 use anchor_lang::prelude::*;
 
 use super::common::*;
@@ -182,7 +184,6 @@ pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -
             } => {
                 assert_session_policies_allow_output(
                     &output_policies,
-                    output_public_decrypt_allowed,
                     *output_acl_domain_key,
                     *output_app_account,
                     output_subjects,
@@ -441,19 +442,12 @@ fn inputs_allow_public_decrypt(lhs: &ResolvedOperand, rhs: &ResolvedOperand) -> 
 
 fn assert_session_policies_allow_output(
     policies: &[SessionPolicy],
-    inputs_public_decrypt_allowed: bool,
     output_acl_domain_key: Pubkey,
     output_app_account: Pubkey,
     output_subjects: &[AclSubjectEntry],
     output_public_decrypt: bool,
 ) -> Result<()> {
     assert_public_decrypt_not_set_at_birth(output_public_decrypt)?;
-    if output_public_decrypt {
-        require!(
-            inputs_public_decrypt_allowed,
-            ZamaHostError::AclSubjectRoleMismatch
-        );
-    }
     for policy in policies {
         require!(
             policy.durable_output_allowed,
@@ -478,12 +472,6 @@ fn assert_session_policies_allow_output(
             require!(
                 output_subject.role_flags & !policy.role_flags == 0,
                 ZamaHostError::TransientCapabilityOutputDenied
-            );
-        }
-        if output_public_decrypt {
-            require!(
-                policy.public_decrypt_allowed,
-                ZamaHostError::TransientCapabilityPublicDecryptDenied
             );
         }
     }

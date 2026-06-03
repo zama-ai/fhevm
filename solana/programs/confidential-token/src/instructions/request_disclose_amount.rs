@@ -1,4 +1,29 @@
+//! Requests public disclosure for token-scoped encrypted amounts.
+
 use super::*;
+
+/// Accounts for requesting public disclosure of a token-scoped encrypted amount.
+#[derive(Accounts)]
+#[event_cpi]
+pub struct RequestDiscloseAmount<'info> {
+    /// Requester that must have `ACL_ROLE_PUBLIC_DECRYPT` on the amount ACL.
+    pub requester: Signer<'info>,
+    /// Confidential mint that scopes the encrypted amount.
+    pub mint: Box<Account<'info, ConfidentialMint>>,
+    /// Token-scoped amount ACL record. Updated by ZamaHost CPI.
+    #[account(mut)]
+    pub amount_acl_record: Box<Account<'info, zama_host::AclRecord>>,
+    /// CHECK: optional overflow permission witness for the requester authority.
+    pub authority_permission_record: Option<UncheckedAccount<'info>>,
+    /// CHECK: optional deny-list witness when host deny-lists are enabled.
+    pub deny_subject_record: Option<UncheckedAccount<'info>>,
+    /// CHECK: Anchor event CPI authority for the Zama host program.
+    pub zama_event_authority: UncheckedAccount<'info>,
+    /// ZamaHost program used to update the ACL record.
+    pub zama_program: Program<'info, ZamaHost>,
+    /// ZamaHost config used for pause and deny-list checks.
+    pub host_config: Box<Account<'info, zama_host::HostConfig>>,
+}
 
 /// Requests public disclosure for any token-scoped encrypted amount handle.
 pub fn request_disclose_amount(

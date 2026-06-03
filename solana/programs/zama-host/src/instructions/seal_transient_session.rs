@@ -1,3 +1,5 @@
+//! Seals transient sessions so existing capabilities can be consumed.
+
 use anchor_lang::prelude::*;
 
 use super::common::*;

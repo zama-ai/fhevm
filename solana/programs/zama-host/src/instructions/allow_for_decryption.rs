@@ -1,3 +1,5 @@
+//! Enables public decrypt access on canonical handle records.
+
 use anchor_lang::prelude::*;
 
 use super::common::*;

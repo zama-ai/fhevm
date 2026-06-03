@@ -14,6 +14,8 @@
 #![allow(unexpected_cfgs)]
 #![allow(clippy::diverging_sub_expression, clippy::too_many_arguments)]
 
+/// Shared constants, seed bytes, role flags, and fixed protocol sizes.
+pub mod constants;
 /// Program-specific errors returned by ZamaHost instructions.
 pub mod errors;
 /// Anchor events emitted by protocol and test-shim instructions.
@@ -25,6 +27,8 @@ pub mod state;
 
 use anchor_lang::prelude::*;
 
+/// Re-export constants for generated clients and tests.
+pub use constants::*;
 /// Re-export error types for generated clients and tests.
 pub use errors::*;
 /// Re-export event types for generated clients, listeners, and tests.

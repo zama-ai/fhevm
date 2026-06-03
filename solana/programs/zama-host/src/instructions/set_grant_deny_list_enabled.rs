@@ -1,6 +1,9 @@
+//! Toggles deny-list witnesses for persistent grant authorities.
+
 use anchor_lang::prelude::*;
 
 use super::common::*;
+use super::set_host_pause::HostAdmin;
 
 /// Enables or disables deny-list witnesses for persistent grant authorities.
 pub fn set_grant_deny_list_enabled(ctx: Context<HostAdmin>, enabled: bool) -> Result<()> {

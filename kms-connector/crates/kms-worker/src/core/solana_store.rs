@@ -893,7 +893,7 @@ mod tests {
     }
 
     #[test]
-    fn db_request_derives_route_fields_from_parsed_request() {
+    fn db_request_route_helper_derives_fields_from_parsed_request() {
         let raw_extra_data = encode_solana_kms_extra_data_v0(&SolanaKmsExtraDataV0 {
             kms_context_id: [8; 32],
             response_context: b"client-route".to_vec(),
@@ -1042,6 +1042,18 @@ mod tests {
         assert_eq!(encoded[0], SOLANA_NATIVE_RESPONSE_PAYLOAD_DB_LAYOUT_V0);
         assert_eq!(&encoded[1..33], &[1; 32]);
         assert_eq!(&encoded[33..41], &900_u64.to_le_bytes());
+        assert_eq!(&encoded[41..49], &3_u64.to_le_bytes());
+        assert_eq!(&encoded[49..81], &[9; 32]);
+        assert_eq!(&encoded[81..113], &[8; 32]);
+        assert_eq!(&encoded[113..145], &[55; 32]);
+        assert_eq!(encoded[145], SOLANA_NATIVE_REQUEST_MODE_DIRECT_SCOPED);
+        assert_eq!(encoded[146], SOLANA_NATIVE_RESPONSE_KIND_DIRECT_SCOPED);
+        assert_eq!(&encoded[147..179], &[77; 32]);
+        assert_eq!(&encoded[179..211], &[99; 32]);
+        assert_eq!(&encoded[211..243], &[10; 32]);
+        assert_eq!(&encoded[243..275], &[11; 32]);
+        assert_eq!(&encoded[275..279], &(body.len() as u32).to_le_bytes());
+        assert_eq!(&encoded[279..311], &solana_native_response_body_hash(&body));
     }
 
     #[test]
@@ -1069,6 +1081,10 @@ mod tests {
         assert_eq!(&encoded[33..65], &[9; 32]);
         assert_eq!(&encoded[65..67], &2_u16.to_le_bytes());
         assert_eq!(&encoded[67..69], &2_u16.to_le_bytes());
+        assert_eq!(&encoded[69..101], &[1; 32]);
+        assert_eq!(&encoded[101..165], &[2; 64]);
+        assert_eq!(&encoded[165..197], &[3; 32]);
+        assert_eq!(&encoded[197..261], &[4; 64]);
     }
 
     #[test]

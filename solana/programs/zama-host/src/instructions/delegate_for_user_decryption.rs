@@ -1,3 +1,5 @@
+//! Creates and refreshes user-decryption delegations.
+
 use anchor_lang::prelude::*;
 
 use super::common::*;

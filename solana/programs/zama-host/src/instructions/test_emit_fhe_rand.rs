@@ -1,6 +1,9 @@
+//! Emits random-ciphertext events from the test shim.
+
 use anchor_lang::prelude::*;
 
 use super::common::*;
+use super::test_emit_acl_allowed::TestEmitProtocolEvent;
 use crate::{events::FheRandEvent, state::EVENT_VERSION};
 
 /// Emits a random-ciphertext event after test-shim authority checks.

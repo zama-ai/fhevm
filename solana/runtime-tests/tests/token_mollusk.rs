@@ -17,7 +17,7 @@ use mollusk_svm::{
 };
 use solana_sdk::{
     account::Account,
-    bpf_loader, ed25519_program,
+    ed25519_program,
     instruction::{AccountMeta, Instruction},
     native_loader,
     program_option::COption,
@@ -29,7 +29,7 @@ use solana_sdk::{
 };
 use std::{
     collections::{HashMap, HashSet},
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 use support::fhe_runtime::{
     ClearValue, CleartextBackend, FheBackend, SolanaFheEvent, TypedClearValue,
@@ -214,7 +214,7 @@ fn mollusk_confidential_transfer_replays_token_event_cpis() {
         .collect();
 
     assert_eq!(transfer_events.len(), 1);
-    assert_eq!(transfer_events[0].version, 0);
+    assert_eq!(transfer_events[0].version, token::APP_EVENT_VERSION);
     assert_eq!(transfer_events[0].mint, fixture.mint);
     assert_eq!(transfer_events[0].from_owner, fixture.owner);
     assert_eq!(transfer_events[0].from_token_account, fixture.alice_token);
@@ -234,7 +234,7 @@ fn mollusk_confidential_transfer_replays_token_event_cpis() {
         balance_events[0].reason,
         token::BalanceHandleUpdateReason::TransferDebit
     );
-    assert_eq!(balance_events[0].version, 0);
+    assert_eq!(balance_events[0].version, token::APP_EVENT_VERSION);
     assert_eq!(balance_events[0].mint, fixture.mint);
     assert_eq!(balance_events[0].owner, fixture.owner);
     assert_eq!(balance_events[0].token_account, fixture.alice_token);
@@ -249,7 +249,7 @@ fn mollusk_confidential_transfer_replays_token_event_cpis() {
         balance_events[1].reason,
         token::BalanceHandleUpdateReason::TransferCredit
     );
-    assert_eq!(balance_events[1].version, 0);
+    assert_eq!(balance_events[1].version, token::APP_EVENT_VERSION);
     assert_eq!(balance_events[1].mint, fixture.mint);
     assert_eq!(balance_events[1].owner, fixture.bob_owner);
     assert_eq!(balance_events[1].token_account, fixture.bob_token);
@@ -263,7 +263,7 @@ fn mollusk_confidential_transfer_replays_token_event_cpis() {
 }
 
 #[test]
-fn mollusk_confidential_transfer_rejects_stale_current_acl_without_outputs() {
+fn mollusk_confidential_transfer_rejects_stale_current_acl_without_creating_outputs() {
     let fixture = TokenMolluskFixture::new();
     let amount_handle = handle_for_chain(95, BALANCE_FHE_TYPE);
     let first_output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
@@ -303,7 +303,7 @@ fn mollusk_confidential_transfer_rejects_stale_current_acl_without_outputs() {
 }
 
 #[test]
-fn mollusk_confidential_transfer_rejects_wrong_amount_acl_label_without_outputs() {
+fn mollusk_confidential_transfer_rejects_wrong_amount_acl_label_without_creating_outputs() {
     let fixture = TokenMolluskFixture::new();
     let amount_handle = handle_for_chain(96, BALANCE_FHE_TYPE);
     let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
@@ -342,7 +342,8 @@ fn mollusk_confidential_transfer_rejects_wrong_amount_acl_label_without_outputs(
 }
 
 #[test]
-fn mollusk_confidential_transfer_rejects_output_acl_for_wrong_token_account_without_outputs() {
+fn mollusk_confidential_transfer_rejects_output_acl_for_wrong_token_account_without_creating_outputs(
+) {
     let fixture = TokenMolluskFixture::new();
     let amount_handle = handle_for_chain(97, BALANCE_FHE_TYPE);
     let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
@@ -403,7 +404,7 @@ fn mollusk_request_disclose_balance_marks_current_balance_public_decrypt() {
     assert_eq!(public_events[0].authority, fixture.owner.to_bytes());
 
     assert_eq!(token_events.len(), 1);
-    assert_eq!(token_events[0].version, 0);
+    assert_eq!(token_events[0].version, token::APP_EVENT_VERSION);
     assert_eq!(token_events[0].mint, fixture.mint);
     assert_eq!(token_events[0].owner, fixture.owner);
     assert_eq!(token_events[0].token_account, fixture.alice_token);
@@ -456,7 +457,7 @@ fn mollusk_request_disclose_balance_is_idempotent_without_duplicate_host_event()
 
     assert!(second_public_events.is_empty());
     assert_eq!(second_token_events.len(), 1);
-    assert_eq!(second_token_events[0].version, 0);
+    assert_eq!(second_token_events[0].version, token::APP_EVENT_VERSION);
     assert_eq!(second_token_events[0].mint, fixture.mint);
     assert_eq!(second_token_events[0].owner, fixture.owner);
     assert_eq!(second_token_events[0].token_account, fixture.alice_token);
@@ -494,7 +495,7 @@ fn mollusk_disclose_balance_accepts_kms_signed_cleartext() {
         .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
         .collect();
     assert_eq!(events.len(), 1);
-    assert_eq!(events[0].version, 0);
+    assert_eq!(events[0].version, token::APP_EVENT_VERSION);
     assert_eq!(events[0].mint, fixture.mint);
     assert_eq!(events[0].owner, fixture.owner);
     assert_eq!(events[0].token_account, fixture.alice_token);
@@ -539,7 +540,7 @@ fn mollusk_disclose_amount_accepts_kms_signed_cleartext() {
         .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
         .collect();
     assert_eq!(events.len(), 1);
-    assert_eq!(events[0].version, 0);
+    assert_eq!(events[0].version, token::APP_EVENT_VERSION);
     assert_eq!(events[0].mint, fixture.mint);
     assert_eq!(events[0].handle, amount_handle);
     assert_eq!(events[0].cleartext_amount, cleartext_amount);
@@ -795,7 +796,7 @@ fn mollusk_disclose_amount_rejects_acl_record_with_noncanonical_nonce_sequence()
 }
 
 #[test]
-fn mollusk_disclose_balance_rejects_unsealed_material_commitment() {
+fn mollusk_disclose_balance_rejects_unlinked_unsealed_material_commitment() {
     let fixture = TokenMolluskFixture::new();
     let context = mollusk().with_context(fixture.base_accounts());
     let cleartext_amount = 125;
@@ -920,7 +921,7 @@ fn mollusk_transfer_receiver_hook_records_same_transaction_callback_metadata() {
         .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
         .collect();
     assert_eq!(transfer_events.len(), 1);
-    assert_eq!(transfer_events[0].version, 0);
+    assert_eq!(transfer_events[0].version, token::APP_EVENT_VERSION);
     assert_eq!(transfer_events[0].mint, fixture.mint);
     assert_eq!(transfer_events[0].from_owner, fixture.owner);
     assert_eq!(transfer_events[0].from_token_account, fixture.alice_token);
@@ -1014,7 +1015,7 @@ fn mollusk_transfer_receiver_hook_from_records_operator_callback_metadata() {
         .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
         .collect();
     assert_eq!(transfer_events.len(), 1);
-    assert_eq!(transfer_events[0].version, 0);
+    assert_eq!(transfer_events[0].version, token::APP_EVENT_VERSION);
     assert_eq!(transfer_events[0].mint, fixture.mint);
     assert_eq!(transfer_events[0].from_owner, fixture.owner);
     assert_eq!(transfer_events[0].from_token_account, fixture.alice_token);
@@ -1410,6 +1411,107 @@ fn mollusk_transfer_receiver_hook_rejects_extra_accounts_for_empty_receiver_cont
     hook_ix
         .accounts
         .push(AccountMeta::new_readonly(Pubkey::new_unique(), false));
+
+    let result = process_transaction(&context, &[transfer_ix, hook_ix]);
+
+    assert!(result.raw_result.is_err());
+    let hook_record_address = token::transfer_receiver_hook_address(fixture.mint, sent_handle).0;
+    assert!(!transfer_receiver_hook_call_exists(
+        &context,
+        hook_record_address
+    ));
+}
+
+#[test]
+fn mollusk_transfer_receiver_hook_rejects_oversized_instruction_data() {
+    let fixture = TokenMolluskFixture::new();
+    let amount_handle = handle_for_chain(63, BALANCE_FHE_TYPE);
+    let callback_success_handle = handle_for_chain(64, 0);
+    let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
+    let context = fixture.context_with_input_amount(amount_handle);
+    let sent_handle = predicted_transfer_sent_handle(&fixture, &context, amount_handle);
+    let callback_success_acl = callback_success_acl_address(
+        fixture.mint,
+        fixture.bob_owner,
+        DEFAULT_INPUT_NONCE_SEQUENCE,
+    );
+    seed_callback_success_acl(
+        &context,
+        &fixture,
+        callback_success_acl,
+        callback_success_handle,
+    );
+
+    let transfer_ix = direct_transfer_ix(&fixture, output, amount_handle);
+    let hook_ix = call_transfer_receiver_ix(
+        &fixture,
+        output.transferred,
+        sent_handle,
+        callback_success_acl,
+        callback_success_handle,
+        receiver::id(),
+        vec![0; token::MAX_RECEIVER_HOOK_DATA_LEN + 1],
+    );
+
+    let result = process_transaction(&context, &[transfer_ix, hook_ix]);
+
+    assert!(result.raw_result.is_err());
+    let hook_record_address = token::transfer_receiver_hook_address(fixture.mint, sent_handle).0;
+    assert!(!transfer_receiver_hook_call_exists(
+        &context,
+        hook_record_address
+    ));
+}
+
+#[test]
+fn mollusk_transfer_receiver_hook_from_rejects_too_many_remaining_accounts() {
+    let fixture = TokenMolluskFixture::new();
+    let amount_handle = handle_for_chain(65, BALANCE_FHE_TYPE);
+    let callback_success_handle = handle_for_chain(66, 0);
+    let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
+    let context = fixture.context_with_input_amount_for_authority(amount_handle, fixture.operator);
+    let sent_handle = predicted_transfer_sent_handle(&fixture, &context, amount_handle);
+    let callback_success_acl = callback_success_acl_address(
+        fixture.mint,
+        fixture.bob_owner,
+        DEFAULT_INPUT_NONCE_SEQUENCE,
+    );
+    seed_callback_success_acl(
+        &context,
+        &fixture,
+        callback_success_acl,
+        callback_success_handle,
+    );
+
+    let receiver_data = accept_transfer_receiver_data(
+        &fixture,
+        output.transferred,
+        sent_handle,
+        callback_success_acl,
+        callback_success_handle,
+    );
+    let transfer_ix = transfer_from_ix(
+        &fixture,
+        output,
+        operator_amount_acl_address(fixture.mint, fixture.operator, DEFAULT_INPUT_NONCE_SEQUENCE),
+        amount_handle,
+    );
+    let mut hook_ix = call_transfer_receiver_from_ix(
+        &fixture,
+        output.transferred,
+        sent_handle,
+        callback_success_acl,
+        callback_success_handle,
+        receiver::id(),
+        receiver_data,
+    );
+    for _ in 0..=token::MAX_RECEIVER_HOOK_ACCOUNTS {
+        let extra = Pubkey::new_unique();
+        seed_empty_system_account(&context, extra);
+        hook_ix
+            .accounts
+            .push(AccountMeta::new_readonly(extra, false));
+    }
 
     let result = process_transaction(&context, &[transfer_ix, hook_ix]);
 
@@ -2093,7 +2195,7 @@ fn mollusk_confidential_burn_after_wrap_rotates_balance_and_total_supply() {
     assert_eq!(binary_events[3].result, total_supply_acl.handle);
 
     assert_eq!(burn_events.len(), 1);
-    assert_eq!(burn_events[0].version, 0);
+    assert_eq!(burn_events[0].version, token::APP_EVENT_VERSION);
     assert_eq!(burn_events[0].mint, fixture.mint);
     assert_eq!(burn_events[0].owner, fixture.owner);
     assert_eq!(burn_events[0].token_account, fixture.alice_token);
@@ -2307,7 +2409,7 @@ fn mollusk_redeem_burned_amount_releases_vault_once_with_kms_certificate() {
         .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
         .collect();
     assert_eq!(redeem_events.len(), 1);
-    assert_eq!(redeem_events[0].version, 0);
+    assert_eq!(redeem_events[0].version, token::APP_EVENT_VERSION);
     assert_eq!(redeem_events[0].mint, fixture.mint);
     assert_eq!(redeem_events[0].owner, fixture.owner);
     assert_eq!(redeem_events[0].token_account, fixture.alice_token);
@@ -3255,7 +3357,7 @@ fn mollusk_create_random_amount_advances_nonce_and_emits_events() {
     assert_eq!(bounded_events[0].fhe_type, BALANCE_FHE_TYPE);
     assert_eq!(bounded_events[0].result, transfer_record.handle);
     assert_eq!(transfer_created_events.len(), 1);
-    assert_eq!(transfer_created_events[0].version, 0);
+    assert_eq!(transfer_created_events[0].version, token::APP_EVENT_VERSION);
     assert_eq!(transfer_created_events[0].mint, fixture.mint);
     assert_eq!(transfer_created_events[0].owner, fixture.owner);
     assert_eq!(
@@ -3310,7 +3412,7 @@ fn mollusk_create_random_amount_advances_nonce_and_emits_events() {
     assert_eq!(rand_events[0].fhe_type, BALANCE_FHE_TYPE);
     assert_eq!(rand_events[0].result, burn_record.handle);
     assert_eq!(burn_created_events.len(), 1);
-    assert_eq!(burn_created_events[0].version, 0);
+    assert_eq!(burn_created_events[0].version, token::APP_EVENT_VERSION);
     assert_eq!(burn_created_events[0].mint, fixture.mint);
     assert_eq!(burn_created_events[0].owner, fixture.owner);
     assert_eq!(burn_created_events[0].token_account, fixture.alice_token);
@@ -4720,66 +4822,8 @@ fn mollusk() -> Mollusk {
     let mut mollusk = Mollusk::new(&token::id(), "confidential_token");
     mollusk.add_program(&host::id(), "zama_host");
     mollusk.add_program(&receiver::id(), "confidential_token_receiver");
-    let spl_token_elf = bundled_spl_token_elf();
-    mollusk.add_program_with_loader_and_elf(&spl_token::id(), &bpf_loader::id(), &spl_token_elf);
+    mollusk_svm_programs_token::token::add_program(&mut mollusk);
     mollusk
-}
-
-fn bundled_spl_token_elf() -> Vec<u8> {
-    if let Ok(path) = std::env::var("SPL_TOKEN_ELF") {
-        return std::fs::read(&path).unwrap_or_else(|error| {
-            panic!("failed to read SPL_TOKEN_ELF at {path}: {error}");
-        });
-    }
-    for path in bundled_spl_token_elf_candidates() {
-        if path.exists() {
-            return std::fs::read(&path).unwrap_or_else(|error| {
-                panic!(
-                    "failed to read bundled SPL Token ELF at {}: {error}",
-                    path.display()
-                );
-            });
-        }
-    }
-    panic!(
-        "missing bundled SPL Token ELF; set SPL_TOKEN_ELF or ensure the litesvm dependency is present"
-    );
-}
-
-fn bundled_spl_token_elf_candidates() -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-    if let Ok(cargo_home) = std::env::var("CARGO_HOME") {
-        collect_litesvm_spl_token_elf_candidates(Path::new(&cargo_home), &mut candidates);
-    }
-    if let Ok(home) = std::env::var("HOME") {
-        collect_litesvm_spl_token_elf_candidates(&Path::new(&home).join(".cargo"), &mut candidates);
-    }
-    candidates
-}
-
-fn collect_litesvm_spl_token_elf_candidates(cargo_home: &Path, candidates: &mut Vec<PathBuf>) {
-    let registry_src = cargo_home.join("registry/src");
-    let Ok(index_dirs) = std::fs::read_dir(registry_src) else {
-        return;
-    };
-    for index_dir in index_dirs.flatten() {
-        let Ok(crate_dirs) = std::fs::read_dir(index_dir.path()) else {
-            continue;
-        };
-        for crate_dir in crate_dirs.flatten() {
-            let crate_path = crate_dir.path();
-            let Some(crate_name) = crate_path.file_name().and_then(|name| name.to_str()) else {
-                continue;
-            };
-            if crate_name.starts_with("litesvm-") {
-                candidates.push(
-                    crate_path
-                        .join("src/programs/elf")
-                        .join("spl_token-3.5.0.so"),
-                );
-            }
-        }
-    }
 }
 
 fn anchor_ix<A, D>(program_id: Pubkey, accounts: A, args: D) -> Instruction

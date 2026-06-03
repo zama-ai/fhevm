@@ -1,3 +1,5 @@
+//! Grants same-slot transient use of durable encrypted handles.
+
 use anchor_lang::prelude::*;
 
 use super::common::*;

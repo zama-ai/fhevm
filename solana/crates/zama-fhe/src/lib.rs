@@ -451,6 +451,79 @@ mod tests {
     }
 
     #[test]
+    fn lowers_durable_operand_permission_to_remaining_account_index() {
+        let acl_record = Pubkey::new_unique();
+        let permission = Pubkey::new_unique();
+        let mut builder = EvalBuilder::new(handle(9));
+        builder
+            .add(
+                Operand::durable_with_permission(handle(1), acl_record, permission),
+                Operand::scalar_u64(2),
+                5,
+                handle(3),
+                Output::Transient,
+            )
+            .unwrap();
+
+        let plan = builder.finish().unwrap();
+        assert_eq!(plan.remaining_accounts, vec![acl_record, permission]);
+        match &plan.args.ops[0].lhs {
+            FheEvalOperand::Durable {
+                handle: operand_handle,
+                acl_record_index,
+                permission_index,
+            } => {
+                assert_eq!(*operand_handle, handle(1));
+                assert_eq!(*acl_record_index, 0);
+                assert_eq!(*permission_index, Some(1));
+            }
+            other => panic!("unexpected operand: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn lowers_transient_session_output_to_remaining_account_index() {
+        let acl_record = Pubkey::new_unique();
+        let session = Pubkey::new_unique();
+        let capability = TransientCapabilityGrant {
+            subject: Pubkey::new_unique(),
+            receiver_program: Pubkey::new_unique(),
+            acl_domain_key: Pubkey::new_unique(),
+            app_account: Pubkey::new_unique(),
+            role_flags: zama_host::ACL_ROLE_USE,
+            max_uses: 1,
+            durable_output_allowed: false,
+            public_decrypt_allowed: false,
+        };
+        let mut builder = EvalBuilder::new(handle(9));
+        builder
+            .add(
+                Operand::durable(handle(1), acl_record),
+                Operand::scalar_u64(2),
+                5,
+                handle(3),
+                Output::TransientSession {
+                    session,
+                    capability,
+                },
+            )
+            .unwrap();
+
+        let plan = builder.finish().unwrap();
+        assert_eq!(plan.remaining_accounts, vec![acl_record, session]);
+        match &plan.args.ops[0].output {
+            FheEvalOutput::TransientSession {
+                session_index,
+                capability: lowered_capability,
+            } => {
+                assert_eq!(*session_index, 1);
+                assert_eq!(*lowered_capability, capability);
+            }
+            other => panic!("unexpected output: {other:?}"),
+        }
+    }
+
+    #[test]
     fn rejects_scalar_left_operand() {
         let mut builder = EvalBuilder::new(handle(9));
         let error = builder
@@ -484,7 +557,10 @@ mod tests {
                 Output::Transient,
             )
             .unwrap();
-        assert_eq!(builder.finish().unwrap_err(), EvalBuildError::EmptyContextId);
+        assert_eq!(
+            builder.finish().unwrap_err(),
+            EvalBuildError::EmptyContextId
+        );
     }
 
     #[test]

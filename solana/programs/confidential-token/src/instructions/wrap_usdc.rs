@@ -1,4 +1,69 @@
+//! Wraps public USDC into a confidential token balance.
+
 use super::*;
+
+/// Accounts for wrapping public USDC into a confidential balance.
+#[derive(Accounts)]
+#[event_cpi]
+pub struct WrapUsdc<'info> {
+    /// Token owner and transfer authority.
+    #[account(mut)]
+    pub owner: Signer<'info>,
+    /// Confidential mint.
+    #[account(mut)]
+    pub mint: Box<Account<'info, ConfidentialMint>>,
+    /// Confidential token account whose balance is increased.
+    #[account(mut)]
+    pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
+    /// Underlying SPL mint.
+    pub underlying_mint: Box<Account<'info, SplMint>>,
+    /// Owner's source USDC token account.
+    #[account(
+        mut,
+        constraint = user_usdc.mint == underlying_mint.key() @ ConfidentialTokenError::UnderlyingMintMismatch,
+        constraint = user_usdc.owner == owner.key() @ ConfidentialTokenError::OwnerMismatch
+    )]
+    pub user_usdc: Box<Account<'info, TokenAccount>>,
+    /// Program vault USDC token account.
+    #[account(
+        mut,
+        constraint = vault_usdc.mint == underlying_mint.key() @ ConfidentialTokenError::UnderlyingMintMismatch,
+        constraint = vault_usdc.owner == vault_authority.key() @ ConfidentialTokenError::VaultAuthorityMismatch
+    )]
+    pub vault_usdc: Box<Account<'info, TokenAccount>>,
+    /// CHECK: PDA authority for the underlying-token vault.
+    #[account(seeds = [b"vault-authority", mint.key().as_ref()], bump)]
+    pub vault_authority: UncheckedAccount<'info>,
+    /// CHECK: Program-controlled compute signer PDA.
+    #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
+    pub compute_signer: UncheckedAccount<'info>,
+    /// CHECK: Mint-scoped app authority for total-supply handles.
+    #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
+    pub total_supply_authority: UncheckedAccount<'info>,
+    /// Current balance ACL record used as the left-hand operand.
+    pub current_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
+    /// Current total-supply ACL record used as the left-hand operand.
+    pub current_total_supply_acl: Box<Account<'info, zama_host::AclRecord>>,
+    /// CHECK: initialized and validated by the Zama host program CPI.
+    #[account(mut)]
+    pub amount_compute_acl: UncheckedAccount<'info>,
+    /// CHECK: initialized and validated by the Zama host program CPI.
+    #[account(mut)]
+    pub output_acl: UncheckedAccount<'info>,
+    /// CHECK: initialized and validated by the Zama host program CPI.
+    #[account(mut)]
+    pub total_supply_output_acl: UncheckedAccount<'info>,
+    /// CHECK: Anchor event CPI authority for the Zama host program.
+    pub zama_event_authority: UncheckedAccount<'info>,
+    /// ZamaHost program used for FHE operations.
+    pub zama_program: Program<'info, ZamaHost>,
+    /// ZamaHost config used for handle derivation.
+    pub host_config: Box<Account<'info, zama_host::HostConfig>>,
+    /// SPL token program.
+    pub token_program: Program<'info, Token>,
+    /// System program used for ACL account creation.
+    pub system_program: Program<'info, System>,
+}
 
 /// Escrows public USDC and rotates the confidential balance by `amount`.
 pub fn wrap_usdc(ctx: Context<WrapUsdc>, amount: u64) -> Result<()> {

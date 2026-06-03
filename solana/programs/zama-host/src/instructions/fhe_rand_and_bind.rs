@@ -1,3 +1,5 @@
+//! Creates random ciphertext handles and binds their initial ACL records.
+
 use anchor_lang::prelude::*;
 
 use super::common::*;

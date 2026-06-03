@@ -1,3 +1,5 @@
+//! Verifies signed native Solana encrypted inputs and binds handle ACL state.
+
 use anchor_lang::prelude::*;
 use solana_instructions_sysvar::{
     load_current_index_checked, load_instruction_at_checked, ID as INSTRUCTIONS_SYSVAR_ID,
@@ -10,10 +12,6 @@ use crate::{
     state::*,
 };
 
-const ED25519_SIGNATURE_OFFSETS_SERIALIZED_SIZE: usize = 14;
-const ED25519_SIGNATURE_OFFSETS_START: usize = 2;
-const ED25519_PUBKEY_SERIALIZED_SIZE: usize = 32;
-const ED25519_SIGNATURE_SERIALIZED_SIZE: usize = 64;
 const ED25519_PROGRAM_ID: Pubkey =
     anchor_lang::pubkey!("Ed25519SigVerify111111111111111111111111111");
 
@@ -218,76 +216,12 @@ fn assert_previous_ed25519_instruction(
         ZamaHostError::InputProofSignatureMissing
     );
     require!(
-        ed25519_instruction_contains_message(&verifier_ix.data, verifier.as_ref(), message),
+        solana_ed25519_instruction::instruction_contains_message(
+            &verifier_ix.data,
+            verifier.as_ref(),
+            message,
+        ),
         ZamaHostError::InputProofSignatureMissing
     );
     Ok(())
-}
-
-fn ed25519_instruction_contains_message(
-    data: &[u8],
-    expected_pubkey: &[u8],
-    expected_message: &[u8],
-) -> bool {
-    if data.len() < ED25519_SIGNATURE_OFFSETS_START {
-        return false;
-    }
-    if data[1] != 0 {
-        return false;
-    }
-    let signature_count = data[0] as usize;
-    if signature_count == 0 {
-        return false;
-    }
-    let expected_offsets_end = ED25519_SIGNATURE_OFFSETS_START
-        .saturating_add(signature_count.saturating_mul(ED25519_SIGNATURE_OFFSETS_SERIALIZED_SIZE));
-    if data.len() < expected_offsets_end {
-        return false;
-    }
-
-    for signature_index in 0..signature_count {
-        let start = ED25519_SIGNATURE_OFFSETS_START.saturating_add(
-            signature_index.saturating_mul(ED25519_SIGNATURE_OFFSETS_SERIALIZED_SIZE),
-        );
-        let fields = &data[start..start + ED25519_SIGNATURE_OFFSETS_SERIALIZED_SIZE];
-        let signature_offset = read_u16_le(fields, 0) as usize;
-        let signature_instruction_index = read_u16_le(fields, 2);
-        let public_key_offset = read_u16_le(fields, 4) as usize;
-        let public_key_instruction_index = read_u16_le(fields, 6);
-        let message_data_offset = read_u16_le(fields, 8) as usize;
-        let message_data_size = read_u16_le(fields, 10) as usize;
-        let message_instruction_index = read_u16_le(fields, 12);
-
-        if signature_instruction_index != u16::MAX
-            || public_key_instruction_index != u16::MAX
-            || message_instruction_index != u16::MAX
-        {
-            continue;
-        }
-        let Some(signature_end) = signature_offset.checked_add(ED25519_SIGNATURE_SERIALIZED_SIZE)
-        else {
-            continue;
-        };
-        let Some(public_key_end) = public_key_offset.checked_add(ED25519_PUBKEY_SERIALIZED_SIZE)
-        else {
-            continue;
-        };
-        let Some(message_end) = message_data_offset.checked_add(message_data_size) else {
-            continue;
-        };
-        if signature_end > data.len() || public_key_end > data.len() || message_end > data.len() {
-            continue;
-        }
-        if &data[public_key_offset..public_key_end] != expected_pubkey {
-            continue;
-        }
-        if &data[message_data_offset..message_end] == expected_message {
-            return true;
-        }
-    }
-    false
-}
-
-fn read_u16_le(data: &[u8], offset: usize) -> u16 {
-    u16::from_le_bytes([data[offset], data[offset + 1]])
 }

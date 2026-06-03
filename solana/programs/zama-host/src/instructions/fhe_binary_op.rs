@@ -1,3 +1,5 @@
+//! Emits binary FHE operations without creating durable output ACL state.
+
 use anchor_lang::prelude::*;
 
 use super::common::*;

@@ -1,6 +1,9 @@
+//! Emits trivial-encrypt events from the test shim.
+
 use anchor_lang::prelude::*;
 
 use super::common::*;
+use super::test_emit_acl_allowed::TestEmitProtocolEvent;
 use crate::{events::TrivialEncryptEvent, state::EVENT_VERSION};
 
 /// Emits a trivial-encrypt event after test-shim authority checks.
