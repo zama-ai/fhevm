@@ -43,6 +43,17 @@ impl Drop for TracerProviderGuard {
     }
 }
 
+static TRACER_PROVIDER: OnceLock<SdkTracerProvider> = OnceLock::new();
+
+/// Flush buffered OTLP spans; call before `std::process::exit`.
+pub fn flush() {
+    if let Some(provider) = TRACER_PROVIDER.get() {
+        if let Err(err) = provider.force_flush() {
+            warn!(error = %err, "Failed to flush OTLP tracer provider");
+        }
+    }
+}
+
 pub static HOST_TXN_LATENCY_CONFIG: OnceLock<MetricsConfig> = OnceLock::new();
 pub(crate) static HOST_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
     register_histogram(
@@ -94,6 +105,7 @@ pub fn init_json_subscriber(
     let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     base.with(telemetry_layer).try_init()?;
     opentelemetry::global::set_tracer_provider(trace_provider.clone());
+    let _ = TRACER_PROVIDER.set(trace_provider.clone());
     Ok(Some(TracerProviderGuard::new(trace_provider)))
 }
 

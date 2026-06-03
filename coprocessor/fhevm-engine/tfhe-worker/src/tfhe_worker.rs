@@ -77,6 +77,7 @@ pub async fn run_tfhe_worker(
             if let Some(db_err) = cycle_error.downcast_ref::<sqlx::Error>() {
                 if fhevm_engine_common::pg_pool::is_fatal_connection_error(db_err) {
                     error!(target: "tfhe_worker", error = %db_err, "Fatal DB connection error; exiting for k8s restart");
+                    fhevm_engine_common::telemetry::flush();
                     std::process::exit(1);
                 }
             }

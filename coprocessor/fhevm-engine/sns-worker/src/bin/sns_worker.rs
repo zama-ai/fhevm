@@ -82,6 +82,7 @@ async fn main() {
         .await
         .unwrap_or_else(|err| {
             error!(error = %err, "Error running SNS worker");
+            telemetry::flush();
             std::process::exit(1);
         });
 }

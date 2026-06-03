@@ -163,5 +163,6 @@ async fn main() {
         _ = http_task => error!("Health-check server exited"),
         _ = service_task => error!("Service loop exited"),
     }
+    telemetry::flush();
     std::process::exit(1);
 }
