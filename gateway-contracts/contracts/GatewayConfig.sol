@@ -393,8 +393,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 contextId,
         uint256 newMpcThreshold
     ) external virtual onlyOwner {
-        // This threshold has no Gateway-side on-chain consumer that requires draining
-        // in-flight decryption requests.
         _requireValidContext(contextId);
         _setMpcThreshold(contextId, newMpcThreshold);
         emit UpdateMpcThresholdForContext(contextId, newMpcThreshold);
@@ -431,8 +429,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 contextId,
         uint256 newKmsGenThreshold
     ) external virtual onlyOwner {
-        // This threshold is consumed by host-side KMS generation, not Gateway-side
-        // decryption.
         _requireValidContext(contextId);
         _setKmsGenThreshold(contextId, newKmsGenThreshold);
         emit UpdateKmsGenThresholdForContext(contextId, newKmsGenThreshold);
