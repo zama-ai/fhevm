@@ -6,7 +6,7 @@ use fhevm_engine_common::{
 };
 use humantime::parse_duration;
 use std::{sync::Arc, time::Duration};
-use tokio::{join, task};
+use tokio::task;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Level};
 use zkproof_worker::verifier::ZkProofService;
@@ -151,13 +151,17 @@ async fn main() {
         std::process::exit(1);
     });
 
-    let service_task = async {
+    let service_task = async move {
         info!("Starting worker...");
         if let Err(err) = service.run().await {
             error!(error = %err, "Worker failed");
         }
-        Ok::<_, anyhow::Error>(())
     };
 
-    let (_http_result, _service_result) = join!(http_task, service_task);
+    // Either task returning means the service can't process work; crash so k8s restarts the service.
+    tokio::select! {
+        _ = http_task => error!("Health-check server exited"),
+        _ = service_task => error!("Service loop exited"),
+    }
+    std::process::exit(1);
 }

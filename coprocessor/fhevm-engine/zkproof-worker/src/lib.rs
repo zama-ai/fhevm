@@ -86,6 +86,17 @@ impl From<ExecutionError> for ServiceError {
     }
 }
 
+impl From<ServiceError> for ExecutionError {
+    fn from(err: ServiceError) -> Self {
+        match err {
+            ServiceError::Database(err) => ExecutionError::DbError(err),
+            ServiceError::InternalError(err) => {
+                ExecutionError::Other(Box::new(std::io::Error::other(err)))
+            }
+        }
+    }
+}
+
 #[derive(Default, Debug, Clone)]
 pub struct Config {
     pub database_url: DatabaseURL,

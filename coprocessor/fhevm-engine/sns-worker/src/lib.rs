@@ -446,7 +446,9 @@ pub async fn run_uploader_loop(
     .await?;
 
     let handle_uploader = spawn_uploader(pool_mngr, conf.clone(), rx, client, is_ready).await?;
-    let _res = join!(handle_resubmit, handle_uploader);
+    let (resubmit_res, uploader_res) = join!(handle_resubmit, handle_uploader);
+    resubmit_res??;
+    uploader_res??;
 
     info!("Uploader stopped");
     Ok(())
@@ -587,8 +589,13 @@ pub async fn run_all(
     });
 
     // Run the main service loop
-    service.run(&pool_mngr).await;
+    let result = service.run(&pool_mngr).await;
     token.cancel();
+
+    if let Err(err) = result {
+        error!(error = %err, "SNS worker exited with a fatal error");
+        return Err(err.into());
+    }
 
     info!("Worker stopped");
     Ok(())

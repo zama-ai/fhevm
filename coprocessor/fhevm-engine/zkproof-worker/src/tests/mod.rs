@@ -1,7 +1,15 @@
+use std::{
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
+
 use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::pg_pool::{is_fatal_connection_error, PostgresPoolManager};
 use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use serial_test::serial;
 use test_harness::db_utils::ACL_CONTRACT_ADDR;
+use test_harness::instance::ImportMode;
+use tokio::sync::RwLock;
 
 use crate::MAX_INPUT_INDEX;
 
@@ -40,6 +48,152 @@ async fn test_verify_proof() {
     assert!(!utils::is_valid(&pool, request_id_invalid, max_retries)
         .await
         .unwrap());
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_rolled_back_claim_is_reprocessed_exactly_once() {
+    let (pool_mngr, _instance) = utils::setup().await.expect("valid setup");
+    let pool = pool_mngr.pool();
+
+    let aux = utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
+    let zk_pok = utils::generate_sample_zk_pok(&pool, &aux.1).await;
+    let request_id: i64 = 201;
+
+    // Insert WITHOUT notifying so the idle worker doesn't race us to the row.
+    sqlx::query(
+        "INSERT INTO verify_proofs (zk_proof_id, input, chain_id, contract_address, user_address, verified)
+         VALUES ($1, $2, $3, $4, $5, NULL)",
+    )
+    .bind(request_id)
+    .bind(&zk_pok)
+    .bind(aux.0.chain_id.as_i64())
+    .bind(aux.0.contract_address.clone())
+    .bind(aux.0.user_address.clone())
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // A worker that claims the row then crashes mid-flight: claim it, never commit.
+    {
+        let mut txn = pool.begin().await.unwrap();
+        let claimed = sqlx::query(
+            "SELECT zk_proof_id FROM verify_proofs
+             WHERE verified IS NULL AND zk_proof_id = $1
+             FOR UPDATE SKIP LOCKED",
+        )
+        .bind(request_id)
+        .fetch_optional(&mut *txn)
+        .await
+        .unwrap();
+        assert!(
+            claimed.is_some(),
+            "freshly inserted row should be claimable"
+        );
+        txn.rollback().await.unwrap(); // == crash before commit
+    }
+
+    // Rollback left no partial state: the row is still pending.
+    let verified: Option<bool> =
+        sqlx::query_scalar("SELECT verified FROM verify_proofs WHERE zk_proof_id = $1")
+            .bind(request_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(
+        verified.is_none(),
+        "row must stay unverified after a mid-flight crash"
+    );
+
+    // Wake the worker; it must re-pick and complete the request.
+    sqlx::query("SELECT pg_notify('fhevm', '')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        utils::is_valid(&pool, request_id, 1000).await.unwrap(),
+        "request must be re-processed after a mid-flight crash"
+    );
+
+    let verified_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM verify_proofs WHERE zk_proof_id = $1 AND verified = true",
+    )
+    .bind(request_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(verified_count, 1, "request must be verified exactly once");
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_db_disconnect_exits_service_loop() {
+    let instance = test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+        .await
+        .expect("valid db instance");
+
+    let conf = crate::Config {
+        database_url: instance.db_url.clone(),
+        listen_database_channel: "fhevm".to_string(),
+        notify_database_channel: "notify".to_string(),
+        pg_pool_connections: 10,
+        pg_polling_interval: 60,
+        worker_thread_count: 1,
+        pg_timeout: Duration::from_secs(15),
+        pg_auto_explain_with_min_duration: None,
+    };
+
+    let pool_mngr = PostgresPoolManager::connect_pool(
+        instance.parent_token.child_token(),
+        conf.database_url.as_str(),
+        conf.pg_timeout,
+        conf.pg_pool_connections,
+        Duration::from_secs(2),
+        conf.pg_auto_explain_with_min_duration,
+    )
+    .await
+    .expect("pool should connect");
+
+    let service_task = tokio::spawn(crate::verifier::execute_verify_proofs_loop(
+        pool_mngr,
+        conf,
+        Arc::new(RwLock::new(SystemTime::now())),
+    ));
+
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    let admin_pool = sqlx::PgPool::connect(instance.db_url.as_str())
+        .await
+        .expect("admin pool should connect");
+    let terminated: Vec<bool> = sqlx::query_scalar(
+        "SELECT pg_terminate_backend(pid)
+         FROM pg_stat_activity
+         WHERE datname = current_database()
+           AND pid <> pg_backend_pid()",
+    )
+    .fetch_all(&admin_pool)
+    .await
+    .expect("backend termination should succeed");
+    assert!(
+        !terminated.is_empty() && terminated.into_iter().all(|res| res),
+        "expected to terminate at least one worker backend"
+    );
+
+    let err = tokio::time::timeout(Duration::from_secs(10), service_task)
+        .await
+        .expect("service loop should exit after backend termination")
+        .expect("service task should join")
+        .expect_err("service loop should return a fatal error");
+
+    match err {
+        crate::ExecutionError::DbError(db_err) => {
+            assert!(
+                is_fatal_connection_error(&db_err),
+                "service loop should surface a fatal connection error, got {db_err}"
+            );
+        }
+        other => panic!("expected fatal DB error, got {other}"),
+    }
 }
 
 #[tokio::test]

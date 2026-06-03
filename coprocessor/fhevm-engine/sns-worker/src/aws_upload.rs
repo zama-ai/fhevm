@@ -39,7 +39,7 @@ pub(crate) async fn spawn_resubmit_task(
     jobs_tx: mpsc::Sender<UploadJob>,
     client: Arc<aws_sdk_s3::Client>,
     is_ready: Arc<AtomicBool>,
-) -> Result<JoinHandle<()>, ExecutionError> {
+) -> Result<JoinHandle<Result<(), ServiceError>>, ExecutionError> {
     let op = move |pool, token| {
         let client = client.clone();
         let is_ready = is_ready.clone();
@@ -63,7 +63,7 @@ pub(crate) async fn spawn_uploader(
     rx: Arc<RwLock<mpsc::Receiver<UploadJob>>>,
     client: Arc<aws_sdk_s3::Client>,
     is_ready: Arc<AtomicBool>,
-) -> Result<JoinHandle<()>, ExecutionError> {
+) -> Result<JoinHandle<Result<(), ServiceError>>, ExecutionError> {
     let op = move |pool, token| {
         let client = client.clone();
         let is_ready = is_ready.clone();

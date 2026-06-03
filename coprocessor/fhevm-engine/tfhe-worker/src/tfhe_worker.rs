@@ -74,6 +74,12 @@ pub async fn run_tfhe_worker(
         // here we log the errors and make sure we retry
         if let Err(cycle_error) = tfhe_worker_cycle(&args, worker_id, health_check.clone()).await {
             WORKER_ERRORS_COUNTER.inc();
+            if let Some(db_err) = cycle_error.downcast_ref::<sqlx::Error>() {
+                if fhevm_engine_common::pg_pool::is_fatal_connection_error(db_err) {
+                    error!(target: "tfhe_worker", error = %db_err, "Fatal DB connection error; exiting for k8s restart");
+                    std::process::exit(1);
+                }
+            }
             error!(target: "tfhe_worker", { error = cycle_error }, "Error in background worker, retrying shortly");
         }
         tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
@@ -121,9 +127,20 @@ async fn tfhe_worker_cycle(
         // only if previous iteration had no work done do the wait
         if !immediately_poll_more_work {
             tokio::select! {
-                _ = listener.try_recv() => {
-                    WORK_ITEMS_NOTIFICATIONS_COUNTER.inc();
-                    info!(target: "tfhe_worker", "Received work_available notification from postgres");
+                notification = listener.try_recv() => {
+                    match notification? {
+                        Some(_) => {
+                            WORK_ITEMS_NOTIFICATIONS_COUNTER.inc();
+                            info!(target: "tfhe_worker", "Received work_available notification from postgres");
+                        }
+                        None => {
+                            return Err(sqlx::Error::Io(std::io::Error::new(
+                                std::io::ErrorKind::BrokenPipe,
+                                "postgres LISTEN connection lost",
+                            ))
+                            .into());
+                        }
+                    }
                 },
                 _ = tokio::time::sleep(tokio::time::Duration::from_millis(args.worker_polling_interval_ms)) => {
                     WORK_ITEMS_POLL_COUNTER.inc();
