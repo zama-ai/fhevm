@@ -194,19 +194,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @dev Used by admin operations that mutate KMS context state read by `Decryption`.
-     *      KMS-context rotations, destructions and decryption threshold changes race
-     *      against decryption requests pinned to the affected context, so the operator
-     *      must pause `Decryption` first to drain in-flight requests.
-     */
-    modifier whenDecryptionPaused() {
-        if (!DECRYPTION.paused()) {
-            revert DecryptionMustBePaused();
-        }
-        _;
-    }
-
-    /**
      * @notice Initializes the contract
      * @dev This function needs to be public in order to be called by the UUPS proxy.
      * @param initialMetadata Metadata of the protocol
@@ -278,6 +265,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice See {IGatewayConfig-updateKmsContext}.
+     * @dev WARNING: This mutates KMS context state read by `Decryption` without enforcing
+     *      an on-chain pause. Operators must follow the runbook to avoid racing in-flight
+     *      decryption requests when rotating contexts.
      */
     function updateKmsContext(
         uint256 newContextId,
@@ -286,7 +276,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 newPublicDecryptionThreshold,
         uint256 newUserDecryptionThreshold,
         uint256 newKmsGenThreshold
-    ) public virtual onlyOwner whenDecryptionPaused {
+    ) public virtual onlyOwner {
         if (newContextId == 0) {
             revert InvalidNullKmsContextId();
         }
@@ -323,8 +313,11 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice See {IGatewayConfig-destroyKmsContext}.
+     * @dev WARNING: This mutates KMS context state read by `Decryption` without enforcing
+     *      an on-chain pause. Operators must follow the runbook to avoid racing in-flight
+     *      decryption requests when destroying contexts.
      */
-    function destroyKmsContext(uint256 kmsContextId) external virtual onlyOwner whenDecryptionPaused {
+    function destroyKmsContext(uint256 kmsContextId) external virtual onlyOwner {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
 
         if (kmsContextId == $.currentKmsContextId) {
@@ -388,6 +381,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice See {IGatewayConfig-updateMpcThresholdForContext}.
+     * @dev The SDK derives the MPC threshold from the MPC nodes it knows about instead of reading this value.
      */
     function updateMpcThresholdForContext(
         uint256 contextId,
@@ -400,11 +394,14 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice See {IGatewayConfig-updatePublicDecryptionThresholdForContext}.
+     * @dev WARNING: This mutates threshold state read by `Decryption` without enforcing
+     *      an on-chain pause. Operators must follow the runbook to avoid racing in-flight
+     *      decryption requests.
      */
     function updatePublicDecryptionThresholdForContext(
         uint256 contextId,
         uint256 newPublicDecryptionThreshold
-    ) external virtual onlyOwner whenDecryptionPaused {
+    ) external virtual onlyOwner {
         _requireValidContext(contextId);
         _setPublicDecryptionThreshold(contextId, newPublicDecryptionThreshold);
         emit UpdatePublicDecryptionThresholdForContext(contextId, newPublicDecryptionThreshold);
@@ -412,11 +409,14 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice See {IGatewayConfig-updateUserDecryptionThresholdForContext}.
+     * @dev WARNING: This mutates threshold state read by `Decryption` without enforcing
+     *      an on-chain pause. Operators must follow the runbook to avoid racing in-flight
+     *      decryption requests.
      */
     function updateUserDecryptionThresholdForContext(
         uint256 contextId,
         uint256 newUserDecryptionThreshold
-    ) external virtual onlyOwner whenDecryptionPaused {
+    ) external virtual onlyOwner {
         _requireValidContext(contextId);
         _setUserDecryptionThreshold(contextId, newUserDecryptionThreshold);
         emit UpdateUserDecryptionThresholdForContext(contextId, newUserDecryptionThreshold);
@@ -424,6 +424,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice See {IGatewayConfig-updateKmsGenThresholdForContext}.
+     * @dev This threshold is consumed by host-side KMS generation, not Gateway-side decryption.
      */
     function updateKmsGenThresholdForContext(
         uint256 contextId,
