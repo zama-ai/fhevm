@@ -59,12 +59,19 @@ export const resolveKmsTopology = (
     throw new Error(`${sourceLabel}.mode must be "centralized" or "threshold"`);
   }
   if (mode === "centralized") {
-    // Single node: ignore parties/threshold, keep real params unless told otherwise.
+    // Single node: ignore parties/threshold. Only `KEYGEN_PARAMS_TYPE=1` (Test) is wired for the
+    // threshold path; centralized never emits it, so accepting `fheParams: Test` here would be a
+    // silent no-op (the stack would still run Default params). Reject it instead of lying.
+    if (block.fheParams === "Test") {
+      throw new Error(
+        `${sourceLabel}.fheParams "Test" is only supported for threshold mode; centralized KMS runs Default params`,
+      );
+    }
     return {
       mode,
       parties: 1,
       threshold: 1,
-      fheParams: block.fheParams ?? "Default",
+      fheParams: "Default",
     };
   }
   const parties = block.parties ?? 4;

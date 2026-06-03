@@ -968,6 +968,15 @@ export const up = async (options: UpOptions) => {
     state = nextState;
     await saveState(state);
   }
+  if ((options.resume || options.fromStep) && state.scenario.kms?.mode === "threshold") {
+    // The resume/from-step lifecycle map (COMPONENT_BY_STEP, resumeSteadyStateServices) models a
+    // single `kms-core` + one connector tier. A threshold cluster has kms-core-2..N, kms-core-init
+    // and per-party connectors that the map does not know about, so a partial restart would leave
+    // them stale. Block it like the threshold upgrade guard until the map is made scenario-aware.
+    throw new ResumeError(
+      "--resume / --from-step is not supported for a threshold KMS cluster (the lifecycle map models a single kms-core/connector and would leave kms-core-2..N, kms-core-init, and per-party connectors stale); recreate the stack with a fresh `up`",
+    );
+  }
   if (options.resume) {
     state.requiresGitHub = false;
     state.scenarioSourcePath ??= state.scenario?.sourcePath;

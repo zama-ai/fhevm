@@ -59,6 +59,10 @@ describe("resolveKmsTopology", () => {
       /Test/,
     );
   });
+
+  test("rejects Test params for centralized (it would be a silent no-op)", () => {
+    expect(() => resolveKmsTopology({ mode: "centralized", fheParams: "Test" })).toThrow(/threshold/);
+  });
 });
 
 describe("reconstructionThreshold", () => {
