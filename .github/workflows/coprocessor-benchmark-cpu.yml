@@ -50,7 +50,7 @@ env:
 jobs:
   setup-instance:
     name: coprocessor-benchmarks-cpu/setup-instance
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     permissions:
       contents: 'read' # Required to checkout repository code
     outputs:
@@ -236,7 +236,7 @@ jobs:
     name: coprocessor-benchmarks-cpu/teardown
     if: ${{ always() && needs.setup-instance.result == 'success' }}
     needs: [ setup-instance, benchmarks-cpu ]
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     permissions:
       contents: 'read' # Required to checkout repository code
     steps:
