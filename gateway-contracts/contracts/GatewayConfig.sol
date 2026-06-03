@@ -151,6 +151,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         /// @notice The user decryption threshold per context
         mapping(uint256 contextId => uint256) userDecryptionThresholdForContext;
         /// @notice The MPC threshold per context
+        /// @dev The SDK derives the MPC threshold from the MPC nodes it knows about instead of reading this value.
         mapping(uint256 contextId => uint256) mpcThresholdForContext;
         /// @notice The key and CRS generation threshold per context
         mapping(uint256 contextId => uint256) kmsGenThresholdForContext;
@@ -195,7 +196,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @dev Used by admin operations that mutate KMS context state read by `Decryption`.
-     *      KMS-context rotations, destructions and per-context threshold changes race
+     *      KMS-context rotations, destructions and decryption threshold changes race
      *      against decryption requests pinned to the affected context, so the operator
      *      must pause `Decryption` first to drain in-flight requests.
      */
@@ -392,7 +393,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function updateMpcThresholdForContext(
         uint256 contextId,
         uint256 newMpcThreshold
-    ) external virtual onlyOwner whenDecryptionPaused {
+    ) external virtual onlyOwner {
+        // This threshold has no Gateway-side on-chain consumer that requires draining
+        // in-flight decryption requests.
         _requireValidContext(contextId);
         _setMpcThreshold(contextId, newMpcThreshold);
         emit UpdateMpcThresholdForContext(contextId, newMpcThreshold);
@@ -428,7 +431,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function updateKmsGenThresholdForContext(
         uint256 contextId,
         uint256 newKmsGenThreshold
-    ) external virtual onlyOwner whenDecryptionPaused {
+    ) external virtual onlyOwner {
+        // This threshold is consumed by host-side KMS generation, not Gateway-side
+        // decryption.
         _requireValidContext(contextId);
         _setKmsGenThreshold(contextId, newKmsGenThreshold);
         emit UpdateKmsGenThresholdForContext(contextId, newKmsGenThreshold);

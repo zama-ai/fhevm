@@ -1363,11 +1363,6 @@ describe("GatewayConfig", function () {
     });
 
     describe("Update MPC threshold", function () {
-      beforeEach(async function () {
-        // Per-context threshold setters now require Decryption to be paused.
-        await decryption.connect(pauser).pause();
-      });
-
       it("Should revert because the sender is not the owner", async function () {
         const currentContextId = await gatewayConfig.getCurrentKmsContextId();
         await expect(gatewayConfig.connect(fakeOwner).updateMpcThresholdForContext(currentContextId, 1))
@@ -1390,7 +1385,9 @@ describe("GatewayConfig", function () {
 
       it("Should update the MPC threshold for a non-current context after rotation", async function () {
         const originalKmsContextId = await gatewayConfig.getCurrentKmsContextId();
+        await decryption.connect(pauser).pause();
         await gatewayConfig.connect(owner).updateKmsContext(nextKmsContextId, kmsNodes, 0, 1, 1, 1);
+        await decryption.connect(owner).unpause();
 
         const newMpcThreshold = 0;
         const tx = await gatewayConfig
@@ -1411,12 +1408,15 @@ describe("GatewayConfig", function () {
           .withArgs(highMpcThreshold, nKmsNodes);
       });
 
-      it("Should revert because Decryption is not paused", async function () {
+      it("Should update the MPC threshold when Decryption is paused", async function () {
         const currentContextId = await gatewayConfig.getCurrentKmsContextId();
-        await decryption.connect(owner).unpause();
-        await expect(
-          gatewayConfig.connect(owner).updateMpcThresholdForContext(currentContextId, 0),
-        ).to.be.revertedWithCustomError(gatewayConfig, "DecryptionMustBePaused");
+        const newMpcThreshold = 0;
+
+        await decryption.connect(pauser).pause();
+
+        await expect(gatewayConfig.connect(owner).updateMpcThresholdForContext(currentContextId, newMpcThreshold))
+          .to.emit(gatewayConfig, "UpdateMpcThresholdForContext")
+          .withArgs(currentContextId, newMpcThreshold);
       });
     });
 
@@ -1581,10 +1581,6 @@ describe("GatewayConfig", function () {
     });
 
     describe("Update KMS generation threshold", function () {
-      beforeEach(async function () {
-        await decryption.connect(pauser).pause();
-      });
-
       it("Should revert because the sender is not the owner", async function () {
         const currentContextId = await gatewayConfig.getCurrentKmsContextId();
         await expect(gatewayConfig.connect(fakeOwner).updateKmsGenThresholdForContext(currentContextId, 1))
@@ -1609,7 +1605,9 @@ describe("GatewayConfig", function () {
 
       it("Should update the KMS generation threshold for a non-current context after rotation", async function () {
         const originalKmsContextId = await gatewayConfig.getCurrentKmsContextId();
+        await decryption.connect(pauser).pause();
         await gatewayConfig.connect(owner).updateKmsContext(nextKmsContextId, kmsNodes, 0, 1, 1, 1);
+        await decryption.connect(owner).unpause();
 
         const newKmsGenThreshold = 1;
         const tx = await gatewayConfig
@@ -1641,12 +1639,14 @@ describe("GatewayConfig", function () {
           .withArgs(highKmsGenThreshold, nKmsNodes);
       });
 
-      it("Should revert because Decryption is not paused", async function () {
+      it("Should update the KMS generation threshold when Decryption is paused", async function () {
         const currentContextId = await gatewayConfig.getCurrentKmsContextId();
-        await decryption.connect(owner).unpause();
-        await expect(
-          gatewayConfig.connect(owner).updateKmsGenThresholdForContext(currentContextId, 1),
-        ).to.be.revertedWithCustomError(gatewayConfig, "DecryptionMustBePaused");
+
+        await decryption.connect(pauser).pause();
+
+        await expect(gatewayConfig.connect(owner).updateKmsGenThresholdForContext(currentContextId, 1))
+          .to.emit(gatewayConfig, "UpdateKmsGenThresholdForContext")
+          .withArgs(currentContextId, 1);
       });
     });
 
