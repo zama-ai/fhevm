@@ -444,9 +444,14 @@ interface IGatewayConfig {
 
     /**
      * @notice Update the list of coprocessors and their threshold.
-     * @dev Requires `InputVerification` to be paused first — this call rewrites the coprocessor
-     *      set, which input verification reads on every call. If priority mode is active, the active
-     *      priority coprocessor transaction sender and signer must remain unchanged.
+     * @dev Applied live — `InputVerification` no longer has to be paused first (the pause coupling was
+     *      removed, see fhevm-internal#1487). This rewrites the coprocessor set and threshold that input
+     *      verification reads on every call, so any in-flight per-proof tally sees the new values
+     *      mid-flight; that is the accepted trade-off, managed by ordering the coprocessor-set changes
+     *      rather than by a pause. If priority mode is active, the active priority coprocessor transaction
+     *      sender and signer must remain unchanged. Per host chain the ordering invariant must hold at every
+     *      step: the host signer set must be a superset of the gateway's signers, and the host threshold
+     *      must not exceed the number of signatures the gateway emits.
      * @param newCoprocessors The new coprocessors.
      * @param newCoprocessorThreshold The new coprocessor threshold.
      */
@@ -506,7 +511,12 @@ interface IGatewayConfig {
     /**
      * @notice Update the coprocessor threshold.
      * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of coprocessors currently registered.
-     *      Requires `InputVerification` to be paused first — input verification reads this threshold on every call.
+     *      Applied live — `InputVerification` no longer has to be paused first (the pause coupling was removed,
+     *      see fhevm-internal#1487); input verification reads this threshold on every call. While priority mode
+     *      is active the threshold is inert (the priority sender alone finalizes), so a batched
+     *      `updateCoprocessorThreshold(n)` + `removePriorityCoprocessorTxSender()` flips to true threshold
+     *      consensus atomically. Raise each host chain's threshold only after that flip, never before —
+     *      otherwise the host reverts with `SignatureThresholdNotReached`.
      * @param newCoprocessorThreshold The new coprocessor threshold.
      */
     function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external;
@@ -514,20 +524,22 @@ interface IGatewayConfig {
     /**
      * @notice Set the priority coprocessor transaction sender.
      * @dev When set, coprocessor consensus is finalized only by this registered transaction sender.
-     *      Requires `InputVerification` to be paused first. Operators must also drain in-flight
-     *      input verification and ciphertext commit work before changing this value. Every host-chain
-     *      `InputVerifier` must accept this coprocessor signer with threshold 1 before priority mode
-     *      is used for user input proofs.
+     *      Applied live — `InputVerification` no longer has to be paused first (the pause coupling was
+     *      removed, see fhevm-internal#1487); the in-flight per-proof tally is the accepted trade-off.
+     *      Every host-chain `InputVerifier` must accept this coprocessor signer with threshold 1 before
+     *      priority mode is used for user input proofs.
      * @param coprocessorTxSenderAddress The registered coprocessor transaction sender to prioritize.
      */
     function setPriorityCoprocessorTxSender(address coprocessorTxSenderAddress) external;
 
     /**
      * @notice Remove the priority coprocessor transaction sender.
-     * @dev Restores normal threshold-based coprocessor consensus. Requires `InputVerification` to be
-     *      paused first. Operators must also drain in-flight input verification and ciphertext
-     *      commit work before changing this value. Every host-chain `InputVerifier` must accept the
-     *      normal gateway consensus signer set before priority mode is removed for user input proofs.
+     * @dev Restores normal threshold-based coprocessor consensus. Applied live — `InputVerification` no
+     *      longer has to be paused first (the pause coupling was removed, see fhevm-internal#1487). Every
+     *      host-chain `InputVerifier` must already accept the full gateway signer set (host signer set must
+     *      be a superset of the gateway signers) before priority is removed, otherwise partner signatures
+     *      reach the host and it reverts with `InvalidSigner`. Pair this with `updateCoprocessorThreshold`
+     *      in one batched tx so the raised threshold stays inert until priority is removed (atomic flip).
      */
     function removePriorityCoprocessorTxSender() external;
 
