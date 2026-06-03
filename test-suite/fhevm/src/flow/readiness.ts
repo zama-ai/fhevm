@@ -26,7 +26,7 @@ const KMS_CONNECTOR_KMS_GENERATION_READY =
 /** Container-name prefix for a KMS connector party. Party 1 keeps the bare
  * `kms-connector-*` names (it replaces the single-node template); parties 2..N
  * are `kms-connector-{party}-*` (see buildKmsConnectorOverride). */
-const kmsConnectorPrefix = (party: number) => (party === 1 ? "kms-connector" : `kms-connector-${party}`);
+export const kmsConnectorPrefix = (party: number) => (party === 1 ? "kms-connector" : `kms-connector-${party}`);
 
 /** Number of KMS connector instances: one per party in threshold mode, else one. */
 // `kms.parties` is the canonical connector/party count: 1 for centralized, N for threshold.

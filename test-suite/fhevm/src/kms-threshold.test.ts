@@ -1,6 +1,7 @@
 import path from "node:path";
 import { describe, expect, test } from "bun:test";
 
+import { partyContainers, quorumPlan } from "./commands/kms-generation";
 import { resolveUpgradePlan } from "./flow/repair";
 import { renderEnvMaps } from "./generate/env";
 import {
@@ -69,6 +70,23 @@ describe("reconstructionThreshold", () => {
   test("is 2t+1", () => {
     expect(reconstructionThreshold(1)).toBe(3);
     expect(reconstructionThreshold(2)).toBe(5);
+  });
+});
+
+describe("quorumPlan", () => {
+  test("4 parties / t=1: stop 1 to reach the 2t+1=3 quorum, stop 2 to drop below it", () => {
+    expect(quorumPlan(4, 1)).toEqual({ reconstruct: 3, stopForTolerance: 1, stopForFloor: 2 });
+  });
+
+  test("7 parties / t=2: stop 2 to reach 2t+1=5, stop 3 to drop below it", () => {
+    expect(quorumPlan(7, 2)).toEqual({ reconstruct: 5, stopForTolerance: 2, stopForFloor: 3 });
+  });
+});
+
+describe("partyContainers", () => {
+  test("party 1 uses the bare names; later parties get the -{i}- suffix", () => {
+    expect(partyContainers(1)).toEqual(["kms-core", "kms-connector-gw-listener", "kms-connector-kms-worker", "kms-connector-tx-sender"]);
+    expect(partyContainers(3)).toEqual(["kms-core-3", "kms-connector-3-gw-listener", "kms-connector-3-kms-worker", "kms-connector-3-tx-sender"]);
   });
 });
 

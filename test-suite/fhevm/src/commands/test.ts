@@ -2,6 +2,7 @@
  * Runs named e2e test profiles, standard/heavy CI suites, and topology-specific test flows.
  */
 import { compatPolicyForState, supportsCoprocessorDbStateRevert } from "../compat/compat";
+import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, driftDatabaseName, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
 import { PreflightError, formatCliError } from "../errors";
 import { dockerInspect } from "../flow/readiness";
@@ -54,10 +55,15 @@ const TEST_PROFILE_NAMES = [
   "ciphertext-drift-auto-recovery",
   "coprocessor-db-state-revert",
   "heavy",
+  "kms-generation",
   "light",
   "rollout-standard",
   "standard",
 ].sort();
+// Pass-expected decryption probes get a generous wall-clock bound; the below-quorum probe is
+// expected to never finalize, so it is killed sooner and the timeout is treated as the pass.
+const QUORUM_DECRYPT_TIMEOUT_MS = 300_000;
+const QUORUM_FLOOR_TIMEOUT_MS = 120_000;
 const ZERO_TESTS_RE = /\b0 passing\b/;
 // Mocha prints "N pending" when tests exist but were skipped. If any are pending,
 // the grep did match — don't treat all-skipped as "matched zero tests".
@@ -91,6 +97,7 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "ciphertext-drift-auto-recovery":
     "Run ciphertext drift auto-recovery checks — services self-recover (requires 2+ coprocessors).",
   "coprocessor-db-state-revert": "Run coprocessor DB state revert checks.",
+  "kms-generation": "Assert threshold KMSGeneration state on chain and prove the 2t+1 decryption quorum (threshold KMS).",
 };
 
 /** Validates whether a named profile supports an extra grep narrowing expression. */
@@ -830,7 +837,28 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       ? undefined
       : `COPROCESSOR_DB_MIGRATION_VERSION=${state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION || "unknown"} is older than v0.12.0`;
 
+  // Runs the user-decryption grep and reports pass/fail instead of throwing, so the
+  // kms-generation quorum probes can assert both success and (below quorum) non-success.
+  const runUserDecryption: DecryptionRunner = async (label, decryptOpts) => {
+    const grep = TEST_GREP["user-decryption"];
+    if (!grep) {
+      throw new PreflightError("kms-generation: missing user-decryption grep pattern");
+    }
+    console.log(`[test] ${label}`);
+    const argv = buildTestContainerArgs(runTestsArgs({ ...options, verbose: false, parallel: false, grep }));
+    const result = await run(argv, {
+      allowFailure: true,
+      timeoutMs: decryptOpts?.expectFailure ? QUORUM_FLOOR_TIMEOUT_MS : QUORUM_DECRYPT_TIMEOUT_MS,
+    });
+    const output = `${result.stdout}\n${result.stderr}`;
+    const matchedZero = ZERO_TESTS_RE.test(output) && !SOME_PENDING_RE.test(output);
+    return result.code === 0 && !matchedZero;
+  };
+
   const runProfile = async (name: string) => {
+    if (name === "kms-generation") {
+      return runKmsGenerationProfile(state, runUserDecryption);
+    }
     if (name === "coprocessor-db-state-revert") {
       return runDbStateRevert(state, options);
     }

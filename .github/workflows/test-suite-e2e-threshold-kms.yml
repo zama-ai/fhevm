@@ -9,18 +9,21 @@ name: test-suite-e2e-threshold-kms
 # label-driven e2e workflows). It resolves a latest-main lock and drives the reusable workflow in
 # orchestrated mode so the pull_request path is allowed without the generic `e2e` label.
 #
-# What it validates: KMS generation (the boot drives keygen -> activeKeyId; failure fails the
-# bootstrap step), threshold decryption (default `user-decryption` profile needs 2t+1 = 3 of 4 party
-# shares), and multi-coprocessor event-listening against a threshold KMS. Extensible: point
-# `test-profile` at a KMS-context profile once those tests land; resharing (RFC-005) is deferred to
-# fhevm 0.14.
+# What it validates: the default `kms-generation` profile asserts the on-chain KMSGeneration state
+# (activeKeyId/activeCrsId set, N distinct registered signers) and proves the 2t+1 decryption quorum
+# is genuinely enforced (decrypts at the quorum, cannot decrypt below it, recovers when parties
+# return) against a real 4-party threshold KMS + multi-coprocessor stack. KMS-context guarantees
+# (epoch activation, cross-context replay, resharing) are deferred to RFC-005 / fhevm 0.14.
 
 on:
   workflow_dispatch:
     inputs:
       test-profile:
-        description: "e2e test profile to run against the threshold KMS (e.g. user-decryption, public-decryption)."
-        default: "user-decryption"
+        description: >
+          e2e test profile to run against the threshold KMS. Default `kms-generation` asserts the
+          on-chain KMSGeneration state and proves the 2t+1 decryption quorum. Avoid `random`/`standard`
+          on Test params (fhevm-internal#685).
+        default: "kms-generation"
         type: string
       kms-core-version:
         description: >
@@ -106,6 +109,6 @@ jobs:
       orchestrated: ${{ github.event_name == 'pull_request' }}
       build: false
       scenario: four-party-threshold-kms
-      test-profile: ${{ github.event_name == 'workflow_dispatch' && inputs.test-profile || 'user-decryption' }}
+      test-profile: ${{ github.event_name == 'workflow_dispatch' && inputs.test-profile || 'kms-generation' }}
       kms-core-version: ${{ github.event_name == 'workflow_dispatch' && inputs.kms-core-version || '' }}
       lock-artifact-name: ${{ needs.resolve-lock.outputs.lock-artifact-name }}
