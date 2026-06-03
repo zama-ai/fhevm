@@ -23,6 +23,11 @@ const KMS_GENERATION_SLOT = {
 
 const coder = AbiCoder.defaultAbiCoder();
 
+// Upper bound on the KMS committee size and on every per-context threshold, enforced by host
+// ProtocolConfig (MAX_KMS_SIGNERS = type(uint8).max). Mirrored here so a config that is valid on
+// the gateway but invalid for the host is rejected at export time, not late at upgradeToAndCall.
+const MAX_KMS_SIGNERS = 255;
+
 const KMS_GENERATION_MIGRATION_ENV_FIELDS = {
   MIGRATION_PREP_KEYGEN_COUNTER: "prepKeygenCounter",
   MIGRATION_KEY_COUNTER: "keyCounter",
@@ -105,6 +110,35 @@ async function readKmsStorageState(
 function assertMigrationPrecondition(condition: boolean) {
   if (!condition) {
     throw new Error("Migration precondition failed");
+  }
+}
+
+// Mirrors host ProtocolConfig._defineKmsContext/_checkThreshold so a destination-invalid config
+// (zero threshold, oversized node set, or threshold above the node count) fails loudly at export
+// time rather than reverting late during the privileged host migration.
+function assertHostThresholdRules(thresholds: Record<string, number>, nodeCount: number) {
+  if (nodeCount === 0) {
+    throw new Error("Host migration pre-flight failed: KMS node set is empty");
+  }
+  if (nodeCount > MAX_KMS_SIGNERS) {
+    throw new Error(
+      `Host migration pre-flight failed: KMS node count ${nodeCount} exceeds proof-format limit ${MAX_KMS_SIGNERS}`,
+    );
+  }
+  for (const [name, value] of Object.entries(thresholds)) {
+    if (value === 0) {
+      throw new Error(`Host migration pre-flight failed: ${name} threshold is zero`);
+    }
+    if (value > MAX_KMS_SIGNERS) {
+      throw new Error(
+        `Host migration pre-flight failed: ${name} threshold ${value} exceeds proof-format limit ${MAX_KMS_SIGNERS}`,
+      );
+    }
+    if (value > nodeCount) {
+      throw new Error(
+        `Host migration pre-flight failed: ${name} threshold ${value} exceeds KMS node count ${nodeCount}`,
+      );
+    }
   }
 }
 
@@ -239,6 +273,7 @@ task("task:exportKmsMigrationState", "Exports Gateway KMSGeneration migration st
     };
 
     // These assertions check that the gateway snapshot can be consumed by host KMSGeneration.initializeFromMigration(...).
+    assertHostThresholdRules(thresholds, kmsNodes.length);
     assertMigrationPrecondition(storageState.prepKeygenCounter === storageState.activePrepKeygenId);
     assertMigrationPrecondition(storageState.keyCounter === storageState.activeKeyId);
     assertMigrationPrecondition(storageState.crsCounter === storageState.activeCrsId);
