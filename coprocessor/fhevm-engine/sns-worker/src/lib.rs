@@ -581,20 +581,23 @@ pub async fn run_all(
     )
     .await?;
 
-    // Spawns a task to handle S3 uploads
-    spawn(async move {
-        if let Err(err) = run_uploader_loop(&pg_mngr, &conf, jobs_rx, tx, s3, is_ready).await {
-            error!(error = %err, "Failed to run the upload-worker");
-        }
-    });
+    // Keep the uploader's handle so its failure exits the process too.
+    let uploader =
+        spawn(async move { run_uploader_loop(&pg_mngr, &conf, jobs_rx, tx, s3, is_ready).await });
 
-    // Run the main service loop
-    let result = service.run(&pool_mngr).await;
+    // Exit if either the service loop or the uploader fails.
+    let result: Result<(), Box<dyn std::error::Error + Send + Sync>> = tokio::select! {
+        res = service.run(&pool_mngr) => res.map_err(Into::into),
+        res = uploader => match res {
+            Ok(inner) => inner,
+            Err(join_err) => Err(join_err.into()),
+        },
+    };
     token.cancel();
 
     if let Err(err) = result {
         error!(error = %err, "SNS worker exited with a fatal error");
-        return Err(err.into());
+        return Err(err);
     }
 
     info!("Worker stopped");
