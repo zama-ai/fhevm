@@ -18,7 +18,7 @@ type CreateFhevmClientParameters = Parameters<typeof createFhevmClient>[0];
 type FhevmClientProvider = CreateFhevmClientParameters['provider'];
 type Auth = any;
 
-const CLEARTEXT = true;
+const CLEARTEXT = false;
 
 export class FhevmSdk implements SdkInstance {
   #fullClient: FhevmClient;
