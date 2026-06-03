@@ -216,15 +216,18 @@ impl PostgresPoolManager {
             match operation(self.pool.clone(), ct.clone()).await {
                 Ok(()) => return Ok(()),
                 Err(err) => {
-                    // Exit only on a lost connection (k8s gives us a fresh pool);
-                    // retry everything else.
+                    // Retry transient DB errors; exit on a lost connection or a
+                    // non-DB error so k8s restarts the service.
                     if let ServiceError::Database(db_err) = &err {
                         if is_fatal_connection_error(db_err) {
                             error!(error=%err, "Fatal DB connection error; not retrying");
                             return Err(err);
                         }
+                    } else {
+                        error!(error=%err, "Internal error; not retrying");
+                        return Err(err);
                     }
-                    error!(error=%err, "Service error; retrying...");
+                    error!(error=%err, "DB error; retrying...");
                     cancellable_sleep(&ct, backoff_delay).await;
                 }
             }
