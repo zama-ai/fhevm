@@ -75,7 +75,9 @@ GUARDRAILS (hard):
 - RFCs 021/024 and feature/solana are READ-ONLY references; if they conflict with the #1494 plan, the plan wins — record it in rfcDivergence, never edit an RFC.
 - No writes to RFCs, PRs, or issues. No git push, and do NOT commit yourself — leave your changes in the working tree; the driver commits an item only after verification passes.
 - run-oracle.sh is the source of truth. NEVER weaken a test, stub a check, or add glue to go green. If you cannot pass honestly, set oracleGreen=false (the loop will retry/park) — do not cheat.
-- Work in your worktree; keep the diff minimal and in our code-quality contract (no new >500-line files, no unwrap/panic/TODO/glue — check-form enforces this).`;
+- Work in your worktree; keep the diff minimal and in our code-quality contract (no new >500-line files, no unwrap/panic/TODO/glue — check-form enforces this).
+- If your change would grow a file listed in scripts/poc/form-allow.txt (e.g. zama-host/src/state/mod.rs, which currently holds the handle-derivation code), do NOT grow it: EXTRACT the code you touch into a new focused <500-line module so the allowlisted file shrinks. Editing form-allow.txt or check-form.sh is never allowed, and hitting this is NOT a scope-conflict — splitting the god-file is the intended path and advances our quality goal.
+- Need keccak256? Use solana_program::keccak (works on-chain AND off-chain; already a workspace dependency). Do NOT add a new crate — the dep-guard will (correctly) block it.`;
 
 const implPrompt = (it) => `Implement #1494 item "${it.id}" (${it.kind}, phase ${it.phase}) on test/solana-e2e.
 Task: ${it.desc}
