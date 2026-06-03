@@ -273,11 +273,9 @@ pub(crate) async fn run_loop(
                         info!(notification = ?notification, "Received notification");
                     }
                     None => {
-                        return Err(sqlx::Error::Io(std::io::Error::new(
-                            std::io::ErrorKind::BrokenPipe,
-                            "postgres LISTEN connection lost",
-                        ))
-                        .into());
+                        // sqlx already reconnected the LISTEN connection; keep going.
+                        warn!("postgres LISTEN connection reset; reconnected");
+                        continue;
                     }
                 }
             },

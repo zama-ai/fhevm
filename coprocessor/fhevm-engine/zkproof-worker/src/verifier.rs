@@ -32,7 +32,7 @@ use tokio::time::interval;
 use tokio::{select, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 pub const MAX_CACHED_KEYS: usize = 100;
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
@@ -263,11 +263,9 @@ async fn execute_worker(
                 match res {
                     Some(notification) => info!( src = %notification.process_id(), "Received notification"),
                     None => {
-                        return Err(sqlx::Error::Io(std::io::Error::new(
-                            std::io::ErrorKind::BrokenPipe,
-                            "postgres LISTEN connection lost",
-                        ))
-                        .into());
+                        // sqlx already reconnected the LISTEN connection; keep going.
+                        warn!("postgres LISTEN connection reset; reconnected");
+                        continue;
                     },
                 };
             },

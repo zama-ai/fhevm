@@ -125,9 +125,11 @@ async fn test_rolled_back_claim_is_reprocessed_exactly_once() {
     assert_eq!(verified_count, 1, "request must be verified exactly once");
 }
 
+// A transient backend termination (DB still up) must not take the worker down:
+// sqlx reconnects, so it should keep processing.
 #[tokio::test]
 #[serial(db)]
-async fn test_db_disconnect_exits_service_loop() {
+async fn test_worker_recovers_after_backend_termination() {
     let instance = test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
         .await
         .expect("valid db instance");
@@ -155,24 +157,24 @@ async fn test_db_disconnect_exits_service_loop() {
     .expect("pool should connect");
 
     let pool = pool_mngr.pool();
-    let service_task = tokio::spawn(crate::verifier::execute_verify_proofs_loop(
+    let _service_task = tokio::spawn(crate::verifier::execute_verify_proofs_loop(
         pool_mngr,
         conf,
         Arc::new(RwLock::new(SystemTime::now())),
     ));
 
-    // Drive one proof through so the worker is past startup and running in its
-    // steady-state loop before we sever the connection.
+    // Process one proof so the worker is fully up and running.
     let aux = utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
     let zk_pok = utils::generate_sample_zk_pok(&pool, &aux.1).await;
-    let request_id = utils::insert_proof(&pool, 301, &zk_pok, &aux.0)
+    let first = utils::insert_proof(&pool, 301, &zk_pok, &aux.0)
         .await
         .unwrap();
     assert!(
-        utils::is_valid(&pool, request_id, 2000).await.unwrap(),
+        utils::is_valid(&pool, first, 2000).await.unwrap(),
         "worker should verify a proof before the disconnect"
     );
 
+    // Sever every backend connection; the DB itself stays up.
     let admin_pool = sqlx::PgPool::connect(instance.db_url.as_str())
         .await
         .expect("admin pool should connect");
@@ -190,14 +192,13 @@ async fn test_db_disconnect_exits_service_loop() {
         "expected to terminate at least one worker backend"
     );
 
-    let result = tokio::time::timeout(Duration::from_secs(10), service_task)
+    // The worker must reconnect (listener + pool) and verify a new proof.
+    let second = utils::insert_proof(&pool, 302, &zk_pok, &aux.0)
         .await
-        .expect("service loop should exit after backend termination")
-        .expect("service task should join");
-
+        .unwrap();
     assert!(
-        result.is_err(),
-        "service loop should exit with an error on a DB disconnect, got {result:?}"
+        utils::is_valid(&pool, second, 2000).await.unwrap(),
+        "worker should reconnect and verify a proof after backend termination"
     );
 }
 

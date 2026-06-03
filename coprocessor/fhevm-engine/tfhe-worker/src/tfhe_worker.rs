@@ -135,11 +135,8 @@ async fn tfhe_worker_cycle(
                             info!(target: "tfhe_worker", "Received work_available notification from postgres");
                         }
                         None => {
-                            return Err(sqlx::Error::Io(std::io::Error::new(
-                                std::io::ErrorKind::BrokenPipe,
-                                "postgres LISTEN connection lost",
-                            ))
-                            .into());
+                            // sqlx already reconnected the LISTEN connection; poll for work.
+                            warn!(target: "tfhe_worker", "postgres LISTEN connection reset; reconnected");
                         }
                     }
                 },

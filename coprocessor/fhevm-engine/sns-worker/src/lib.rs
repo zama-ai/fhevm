@@ -28,7 +28,6 @@ use fhevm_engine_common::{
     types::FhevmError,
     utils::{to_hex, DatabaseURL},
 };
-use futures::join;
 use sqlx::{Postgres, Transaction};
 use thiserror::Error;
 use tokio::{
@@ -436,7 +435,7 @@ pub async fn run_uploader_loop(
     let (is_ready_res, _) = check_is_ready(&client, conf).await;
     is_ready.store(is_ready_res, Ordering::Release);
 
-    let handle_resubmit = spawn_resubmit_task(
+    let mut handle_resubmit = spawn_resubmit_task(
         pool_mngr,
         conf.clone(),
         tx.clone(),
@@ -445,10 +444,16 @@ pub async fn run_uploader_loop(
     )
     .await?;
 
-    let handle_uploader = spawn_uploader(pool_mngr, conf.clone(), rx, client, is_ready).await?;
-    let (resubmit_res, uploader_res) = join!(handle_resubmit, handle_uploader);
-    resubmit_res??;
-    uploader_res??;
+    let mut handle_uploader = spawn_uploader(pool_mngr, conf.clone(), rx, client, is_ready).await?;
+
+    // Return when either task ends; abort the other and propagate its result.
+    let res = tokio::select! {
+        r = &mut handle_resubmit => r,
+        r = &mut handle_uploader => r,
+    };
+    handle_resubmit.abort();
+    handle_uploader.abort();
+    res??;
 
     info!("Uploader stopped");
     Ok(())
