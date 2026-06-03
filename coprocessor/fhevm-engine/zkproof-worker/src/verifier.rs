@@ -178,22 +178,22 @@ pub async fn execute_verify_proofs_loop(
             .await;
     }
 
-    // A worker only returns on a fatal error; stop the rest and return so the
-    // process exits.
-    match task_set.join_next().await {
-        Some(Ok(Err(err))) => {
-            error!(error = %err, "A worker exited with a fatal DB error");
-            task_set.shutdown().await;
-            return Err(err.into());
+    // Exit on the first worker to fail; clean exits just drain.
+    while let Some(result) = task_set.join_next().await {
+        match result {
+            Ok(Err(err)) => {
+                error!(error = %err, "A worker exited with a fatal DB error");
+                task_set.shutdown().await;
+                return Err(err.into());
+            }
+            Err(err) => {
+                error!(error = %err, "A worker task panicked");
+                task_set.shutdown().await;
+                return Err(ExecutionError::from(err));
+            }
+            Ok(Ok(())) => {}
         }
-        Some(Err(err)) => {
-            error!(error = %err, "A worker task panicked");
-            task_set.shutdown().await;
-            return Err(ExecutionError::from(err));
-        }
-        Some(Ok(Ok(()))) | None => {}
     }
-    task_set.shutdown().await;
 
     Ok(())
 }

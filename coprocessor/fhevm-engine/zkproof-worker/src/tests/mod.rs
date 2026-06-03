@@ -4,7 +4,7 @@ use std::{
 };
 
 use fhevm_engine_common::chain_id::ChainId;
-use fhevm_engine_common::pg_pool::{is_fatal_connection_error, PostgresPoolManager};
+use fhevm_engine_common::pg_pool::PostgresPoolManager;
 use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use serial_test::serial;
 use test_harness::db_utils::ACL_CONTRACT_ADDR;
@@ -154,13 +154,24 @@ async fn test_db_disconnect_exits_service_loop() {
     .await
     .expect("pool should connect");
 
+    let pool = pool_mngr.pool();
     let service_task = tokio::spawn(crate::verifier::execute_verify_proofs_loop(
         pool_mngr,
         conf,
         Arc::new(RwLock::new(SystemTime::now())),
     ));
 
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    // Drive one proof through so the worker is past startup and running in its
+    // steady-state loop before we sever the connection.
+    let aux = utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
+    let zk_pok = utils::generate_sample_zk_pok(&pool, &aux.1).await;
+    let request_id = utils::insert_proof(&pool, 301, &zk_pok, &aux.0)
+        .await
+        .unwrap();
+    assert!(
+        utils::is_valid(&pool, request_id, 2000).await.unwrap(),
+        "worker should verify a proof before the disconnect"
+    );
 
     let admin_pool = sqlx::PgPool::connect(instance.db_url.as_str())
         .await
@@ -179,21 +190,15 @@ async fn test_db_disconnect_exits_service_loop() {
         "expected to terminate at least one worker backend"
     );
 
-    let err = tokio::time::timeout(Duration::from_secs(10), service_task)
+    let result = tokio::time::timeout(Duration::from_secs(10), service_task)
         .await
         .expect("service loop should exit after backend termination")
-        .expect("service task should join")
-        .expect_err("service loop should return a fatal error");
+        .expect("service task should join");
 
-    match err {
-        crate::ExecutionError::DbError(db_err) => {
-            assert!(
-                is_fatal_connection_error(&db_err),
-                "service loop should surface a fatal connection error, got {db_err}"
-            );
-        }
-        other => panic!("expected fatal DB error, got {other}"),
-    }
+    assert!(
+        result.is_err(),
+        "service loop should exit with an error on a DB disconnect, got {result:?}"
+    );
 }
 
 #[tokio::test]

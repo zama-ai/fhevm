@@ -11,8 +11,6 @@ use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Instrument};
 
-const CODE_DEADLOCK_DETECTED: &str = "40P01";
-
 /// True if the DB connection is lost/unusable, so we should exit and let k8s
 /// restart us rather than retry on a dead pool.
 pub fn is_fatal_connection_error(err: &sqlx::Error) -> bool {
@@ -217,21 +215,17 @@ impl PostgresPoolManager {
 
             match operation(self.pool.clone(), ct.clone()).await {
                 Ok(()) => return Ok(()),
-                // Retry deadlocks; everything else (lost connection, auth
-                // rejection) is fatal, so the caller exits and k8s restarts us.
-                Err(ServiceError::Database(sqlx::Error::Database(ref db_err)))
-                    if db_err.code().as_deref() == Some(CODE_DEADLOCK_DETECTED) =>
-                {
-                    error!(error=%db_err, "Transient DB error (deadlock); retrying...");
-                    cancellable_sleep(&ct, backoff_delay).await;
-                }
-                Err(ServiceError::Database(sqlx::Error::PoolTimedOut)) => {
-                    error!("Timed out waiting for a DB pool connection; retrying...");
-                    cancellable_sleep(&ct, self.params.retry_db_conn_interval).await;
-                }
                 Err(err) => {
-                    error!(error=%err, "Fatal DB error; not retrying");
-                    return Err(err);
+                    // Exit only on a lost connection (k8s gives us a fresh pool);
+                    // retry everything else.
+                    if let ServiceError::Database(db_err) = &err {
+                        if is_fatal_connection_error(db_err) {
+                            error!(error=%err, "Fatal DB connection error; not retrying");
+                            return Err(err);
+                        }
+                    }
+                    error!(error=%err, "Transient DB error; retrying...");
+                    cancellable_sleep(&ct, backoff_delay).await;
                 }
             }
         }
