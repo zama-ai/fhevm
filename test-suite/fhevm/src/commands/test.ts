@@ -60,10 +60,10 @@ const TEST_PROFILE_NAMES = [
   "rollout-standard",
   "standard",
 ].sort();
-// Pass-expected decryption probes get a generous wall-clock bound; the below-quorum probe is
-// expected to never finalize, so it is killed sooner and the timeout is treated as the pass.
-const QUORUM_DECRYPT_TIMEOUT_MS = 300_000;
-const QUORUM_FLOOR_TIMEOUT_MS = 120_000;
+// The below-quorum probe is expected to never finalize, so it is killed after this bound and the
+// timeout (or any non-pass) is read as "the 2t+1 quorum held". Pass-expected probes use the same
+// streamed, unbounded invocation as the normal user-decryption profile (runWithHeartbeat).
+const QUORUM_FLOOR_TIMEOUT_MS = 300_000;
 const ZERO_TESTS_RE = /\b0 passing\b/;
 // Mocha prints "N pending" when tests exist but were skipped. If any are pending,
 // the grep did match — don't treat all-skipped as "matched zero tests".
@@ -845,14 +845,29 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       throw new PreflightError("kms-generation: missing user-decryption grep pattern");
     }
     console.log(`[test] ${label}`);
-    const argv = buildTestContainerArgs(runTestsArgs({ ...options, verbose: false, parallel: false, grep }));
-    const result = await run(argv, {
-      allowFailure: true,
-      timeoutMs: decryptOpts?.expectFailure ? QUORUM_FLOOR_TIMEOUT_MS : QUORUM_DECRYPT_TIMEOUT_MS,
-    });
-    const output = `${result.stdout}\n${result.stderr}`;
-    const matchedZero = ZERO_TESTS_RE.test(output) && !SOME_PENDING_RE.test(output);
-    return result.code === 0 && !matchedZero;
+    if (decryptOpts?.expectFailure) {
+      // Below quorum: bound the wait and treat a timeout (or any non-pass) as the expected outcome.
+      // Print the captured output so a wrongly-successful run is debuggable.
+      const argv = buildTestContainerArgs(runTestsArgs({ ...options, verbose: false, parallel: false, grep }));
+      const result = await run(argv, { allowFailure: true, timeoutMs: QUORUM_FLOOR_TIMEOUT_MS });
+      if (result.stdout.trim()) console.log(result.stdout);
+      if (result.stderr.trim()) console.log(result.stderr);
+      const output = `${result.stdout}\n${result.stderr}`;
+      return result.code === 0 && !(ZERO_TESTS_RE.test(output) && !SOME_PENDING_RE.test(output));
+    }
+    // Pass-expected: identical streamed invocation to the normal user-decryption profile
+    // (runWithHeartbeat throws on non-zero), wrapped to report pass/fail instead of throwing.
+    try {
+      const result = await runWithHeartbeat(
+        buildTestContainerArgs(["sh", "-lc", runTestsCommand({ ...options, parallel: false, grep })]),
+        label,
+      );
+      assertMatchedTests(result.stdout + result.stderr, label);
+      return true;
+    } catch (error) {
+      console.log(`[kms-generation] decryption probe reported failure: ${formatCliError(error) ?? "unknown error"}`);
+      return false;
+    }
   };
 
   const runProfile = async (name: string) => {
