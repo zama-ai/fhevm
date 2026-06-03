@@ -347,7 +347,11 @@ contract Decryption is
         $.publicCtHandles[publicDecryptionId] = ctHandles;
 
         // Pin the KMS context at request time. See `decryptionContextId` storage docs.
-        $.decryptionContextId[publicDecryptionId] = _extractContextId(extraData);
+        {
+            uint256 contextId = _extractContextId(extraData);
+            _validateContextId(contextId);
+            $.decryptionContextId[publicDecryptionId] = contextId;
+        }
 
         // Collect the fee from the transaction sender for this public decryption request.
         _collectPublicDecryptionFee(msg.sender);
@@ -509,7 +513,11 @@ contract Decryption is
         $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
         // Pin the KMS context at request time. See `decryptionContextId` storage docs.
-        $.decryptionContextId[userDecryptionId] = _extractContextId(extraData);
+        {
+            uint256 contextId = _extractContextId(extraData);
+            _validateContextId(contextId);
+            $.decryptionContextId[userDecryptionId] = contextId;
+        }
 
         // Collect the fee from the transaction sender for this user decryption request.
         _collectUserDecryptionFee(msg.sender);
@@ -601,7 +609,11 @@ contract Decryption is
         $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
         // Pin the KMS context at request time. See `decryptionContextId` storage docs.
-        $.decryptionContextId[userDecryptionId] = _extractContextId(extraData);
+        {
+            uint256 contextId = _extractContextId(extraData);
+            _validateContextId(contextId);
+            $.decryptionContextId[userDecryptionId] = contextId;
+        }
 
         // Collect the fee from the transaction sender for this delegated user decryption request.
         _collectUserDecryptionFee(msg.sender);
@@ -847,6 +859,16 @@ contract Decryption is
 
         // Unsupported version
         revert UnsupportedExtraDataVersion(version);
+    }
+
+    /**
+     * @notice Checks that a context ID refers to a valid KMS context.
+     * @param contextId The context ID to validate.
+     */
+    function _validateContextId(uint256 contextId) internal view virtual {
+        if (!GATEWAY_CONFIG.isValidKmsContext(contextId)) {
+            revert IGatewayConfig.InvalidKmsContext(contextId);
+        }
     }
 
     /**
