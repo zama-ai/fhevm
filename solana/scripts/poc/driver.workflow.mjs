@@ -73,7 +73,7 @@ const COMMON = `
 GUARDRAILS (hard):
 - Scope is ONLY this item. Do not touch unrelated files or the moving parts (Decryption.sol churn) — if blocked by scope, escalate scope-conflict.
 - RFCs 021/024 and feature/solana are READ-ONLY references; if they conflict with the #1494 plan, the plan wins — record it in rfcDivergence, never edit an RFC.
-- No writes to RFCs, PRs, or issues. No git push. Commit locally only when the oracle is green.
+- No writes to RFCs, PRs, or issues. No git push, and do NOT commit yourself — leave your changes in the working tree; the driver commits an item only after verification passes.
 - run-oracle.sh is the source of truth. NEVER weaken a test, stub a check, or add glue to go green. If you cannot pass honestly, set oracleGreen=false (the loop will retry/park) — do not cheat.
 - Work in your worktree; keep the diff minimal and in our code-quality contract (no new >500-line files, no unwrap/panic/TODO/glue — check-form enforces this).`;
 
@@ -92,8 +92,15 @@ Claimed: ${impl.diffSummary}
 - no-hack/form: set hack=true if the diff weakened a test/oracle, stubbed a check, added glue, or violates the code-quality contract.
 Return refuted, hack, why.`;
 
-// --- The frugal loop. Time ~ token budget (the script can't read a clock). ---
+// --- The frugal loop. Sequential (no worktree isolation needed): each impl agent
+//     works in-tree, the driver commits an item only after verify passes and reverts
+//     the working tree on a failed attempt so the next item starts clean.
+//     maxTokens (from args, set by the driver at launch) is the self-imposed ceiling
+//     on budget.spent(); falls back to the turn budget directive, else park/escalate-bounded.
+const MAX_TOKENS = (args && typeof args === 'object' && args.maxTokens) || null;
 const RESERVE = 80_000;
+const withinBudget = () =>
+  MAX_TOKENS ? budget.spent() < MAX_TOKENS : (budget.total ? budget.remaining() > RESERVE : true);
 const LENSES = ['correctness', 'matches-evm', 'no-hack/form'];
 const queue = ITEMS.map((it) => ({ ...it, status: 'todo', tries: 0 }));
 const done = (id) => queue.find((q) => q.id === id)?.status === 'green';
@@ -101,25 +108,31 @@ const nextReady = () => queue.find((q) => q.status === 'todo' && q.deps.every(do
 const escalations = [];
 const divergences = [];
 
-while ((budget.total ? budget.remaining() > RESERVE : true) && nextReady() && !escalations.length) {
+const commitItem = (it) =>
+  agent(`Commit ONLY the working-tree changes for #1494 item "${it.id}" on test/solana-e2e: \`git add -A && git commit\` with a conventional message referencing the item and zama-ai/fhevm-internal#1494. Do NOT push. Return the commit hash.`,
+    { label: `commit:${it.id}`, phase: 'Implement', model: 'sonnet' });
+const revertTree = (it) =>
+  agent(`Discard the UNCOMMITTED working-tree changes from the failed attempt at "${it.id}" so the next item starts clean (\`git checkout -- . && git clean -fd\` under solana/). Never touch committed history. Confirm the tree is clean.`,
+    { label: `revert:${it.id}`, phase: 'Implement', model: 'sonnet' });
+
+while (withinBudget() && nextReady() && !escalations.length) {
   const it = nextReady();
   phase('Implement');
-  const impl = await agent(implPrompt(it), { label: `impl:${it.id}`, phase: 'Implement', isolation: 'worktree', schema: IMPL });
+  const impl = await agent(implPrompt(it), { label: `impl:${it.id}`, phase: 'Implement', schema: IMPL });
   if (!impl) { it.status = 'parked'; continue; }
   if (impl.escalate) { escalations.push({ id: it.id, reason: impl.escalateReason }); break; }
   if (impl.rfcDivergence) divergences.push({ id: it.id, note: impl.rfcDivergence });
-  if (!impl.oracleGreen) { it.tries += 1; if (it.tries >= 3) it.status = 'parked'; continue; }
+  if (!impl.oracleGreen) { await revertTree(it); it.tries += 1; if (it.tries >= 3) it.status = 'parked'; continue; }
 
   phase('Verify');
   const verdicts = (await parallel(LENSES.map((lens) => () =>
     agent(refutePrompt(it, impl, lens), { label: `verify:${it.id}:${lens}`, phase: 'Verify', schema: VERDICT,
       model: lens === 'correctness' ? undefined : 'sonnet' })))).filter(Boolean);
-  if (verdicts.some((v) => v.hack)) { escalations.push({ id: it.id, reason: 'cheat-detected', detail: verdicts.find((v) => v.hack)?.why }); break; }
+  if (verdicts.some((v) => v.hack)) { await revertTree(it); escalations.push({ id: it.id, reason: 'cheat-detected', detail: verdicts.find((v) => v.hack)?.why }); break; }
   if (verdicts.length === LENSES.length && verdicts.every((v) => !v.refuted)) {
-    it.status = 'green';
-    log(`green: ${it.id}`);
+    await commitItem(it); it.status = 'green'; log(`green: ${it.id}`);
   } else {
-    it.tries += 1; if (it.tries >= 3) it.status = 'parked';
+    await revertTree(it); it.tries += 1; if (it.tries >= 3) it.status = 'parked';
   }
 }
 
