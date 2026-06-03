@@ -38,21 +38,32 @@ grandfathered in `form-allow.txt` but may **not grow**; no new file may exceed
 in changed Rust; the tests/oracle themselves may not be edited; no silent deps.
 Verified baseline-green and that it bites (catches new oversized files + growth).
 
-## Side-stack (L3, needs the live env)
+## Side-stack — linking to fhevm-cli (L3, needs the live env)
 
-`fhevm-cli up` brings the **real** backend unchanged (gateway / coprocessor /
-KMS / relayer / DB). Alongside it:
+`fhevm-cli up` runs under docker compose project **`fhevm`** (`src/layout.ts:PROJECT`),
+so its services share network **`fhevm_default`** and the coprocessor Postgres is at
+**`db:5432`**, database **`coprocessor`** (`src/layout.ts:POSTGRES_HOST`). The Solana
+side-stack joins that network and reuses that DB — nothing in the EVM stack changes.
 
 ```bash
-SOLANA_VALIDATOR_IMAGE=<solana-test-validator 2.1.0 image> \
-  docker compose -f scripts/poc/docker-compose.solana.yml up -d
+fhevm-cli up            # real gateway/coprocessor/KMS/relayer/DB (+ creates network fhevm_default)
+cd solana/scripts/poc
+SOLANA_VALIDATOR_IMAGE=<solana-test-validator 2.1.0> \
+SOLANA_HOST_CHAIN_ID=<high-bit chain id> \
+FHEVM_STATE_DIR=../../../.fhevm \
+docker compose --env-file ../../../.fhevm/runtime/env/coprocessor.env \
+  -f docker-compose.solana.yml up -d --build
 ```
 
-Then deploy + bootstrap (the **first build work-item**, not yet implemented —
-deliberately not faked here): `anchor deploy` the programs, then an init client
-sends `initialize_host_config{chain_id: <high-bit>}` → mint → token accounts →
-wrap, and the `solana_adapter` host-listener is pointed at the same coprocessor
-DB. The loop owns the lifecycle and may `down -v` + re-up to reset (capped).
+What links to what (precise):
+
+- **network** — the side compose joins external `fhevm_default`; the coprocessor reaches `poc-solana-validator:8899`, our listener reaches `db`.
+- **DB** — `solana-host-listener` `env_file`s the SAME `coprocessor.env`, so `DATABASE_URL=…@db:5432/coprocessor`. It writes the SAME normalized rows the EVM listener does, so `tfhe-worker`/`sns-worker`/`transaction-sender` downstream are untouched. (`--env-file` makes `DATABASE_URL`/`CHAIN_ID` available for the compose substitutions — the same vars fhevm-cli's own templates use.)
+- **listener mode** — same host-listener image/binary, run as `solana_host_listener` (wraps `solana_adapter`). That subcommand is the #1494 **listener-wire** work-item — built from this branch, not in the published image. The one real dependency, called out, not faked.
+- **gateway registration** — register the Solana chain via `task:addHostChainsToGatewayConfig` (the `gateway-sc-add-network` step): bytes32 ACL = the `zama_host` program id, high-bit chain id; add it to the relayer `host_chains`.
+- **deploy/bootstrap** (first build work-item, not faked) — `anchor deploy` the programs onto the validator, then an init client sends `initialize_host_config{chain_id:<high-bit>}` → mint → token accounts → wrap.
+
+The loop owns lifecycle and may `down -v` + re-up to reset (capped).
 
 ## Autonomous driver (Track 2)
 
