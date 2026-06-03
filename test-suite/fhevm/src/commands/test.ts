@@ -347,6 +347,14 @@ const assertClusterFullyParticipating = async (
   }
   const payload = (await response.json()) as { result?: { data: string }[] };
   const senders = recentCoprocessorSenders(payload.result ?? [], CLUSTER_HEALTH_SAMPLE);
+  if (senders.length === 0) {
+    // No AddCiphertextMaterial activity to measure yet (e.g. running this profile
+    // standalone on a fresh stack with no prior submissions). With nothing to
+    // judge, skip the preflight rather than false-failing; a genuinely degraded
+    // cluster still surfaces via the injection/recovery timeout.
+    console.log("[drift-auto-recovery] no recent coprocessor submissions observed; skipping cluster-health preflight");
+    return;
+  }
   if (senders.length < expectedCount) {
     throw new PreflightError(
       `ciphertext-drift-auto-recovery needs all ${expectedCount} coprocessors submitting, but only ${senders.length} did across the last ${CLUSTER_HEALTH_SAMPLE} AddCiphertextMaterial events (${senders.join(", ") || "none"}). A coprocessor worker has likely crashed — the cluster is degraded, so consensus-based auto-revert cannot be exercised.`,
