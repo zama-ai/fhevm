@@ -224,7 +224,7 @@ impl PostgresPoolManager {
                             return Err(err);
                         }
                     }
-                    error!(error=%err, "Transient DB error; retrying...");
+                    error!(error=%err, "Service error; retrying...");
                     cancellable_sleep(&ct, backoff_delay).await;
                 }
             }
