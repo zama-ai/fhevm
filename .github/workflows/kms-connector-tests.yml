@@ -20,7 +20,7 @@ jobs:
       contents: 'read' # Required to checkout repository code
       packages: 'read' # Required to read GitHub packages/container registry
       pull-requests: 'read' # Required to read pull request information
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     outputs:
       # Each output indicates if files in a specific component were modified
       changes-connector: ${{ steps.filter.outputs.connector }}
@@ -43,40 +43,17 @@ jobs:
             - host-contracts/rust_bindings/**
             - shared/user-decryption-signature/**
 
-  start-runner:
-    name: kms-connector-tests/start-runner
-    needs: check-changes
-    if: ${{ needs.check-changes.outputs.changes-connector == 'true' }}
-    permissions:
-      actions: 'read' # Required to read workflow run information
-      contents: 'read' # Required to checkout repository code
-      packages: 'read' # Required to read GitHub packages/container registry
-      pull-requests: 'read' # Required to read pull request information
-    runs-on: ubuntu-latest
-    outputs:
-      label: ${{ steps.start-ec2-runner.outputs.label }}
-    steps:
-      - name: Start EC2 runner
-        id: start-ec2-runner
-        uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac # v1.4.1
-        with:
-          mode: start
-          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
-          slab-url: ${{ secrets.SLAB_BASE_URL }}
-          job-secret: ${{ secrets.JOB_SECRET }}
-          backend: aws
-          profile: big-instance
-
   test-connector:
     name: kms-connector-tests/test-connector (bpr)
-    needs: start-runner
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-connector == 'true' }}
     timeout-minutes: 50
     permissions:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
       packages: 'read' # Required to read GitHub packages/container registry
       pull-requests: 'read' # Required to read pull request information
-    runs-on: ${{ needs.start-runner.outputs.label }}
+    runs-on: runs-on=${{ github.run_id }}/runner=64cpu-linux-x64
     defaults:
       run:
         shell: bash
@@ -91,8 +68,11 @@ jobs:
           persist-credentials: 'false'
 
       - name: Setup common environment variables
+        env:
+          GH_WORKSPACE: ${{ github.workspace }}
         run: |
-          echo "HOME=/home/ubuntu" >> "${GITHUB_ENV}"
+          version="$(grep 'channel' "$GH_WORKSPACE/kms-connector/rust-toolchain.toml" | awk -F' = ' '{print $2}' | tr -d '"')"
+          echo "RUST_IMAGE_VERSION=$version" >> "$GITHUB_ENV"
           echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "${GITHUB_ENV}"
 
       - name: Login to GitHub Container Registry
@@ -108,8 +88,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
-          toolchain: stable
-          components: rustfmt, clippy
+          toolchain: ${{ env.RUST_IMAGE_VERSION }}
 
       - name: Install Protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
@@ -131,27 +110,11 @@ jobs:
       - name: Run Tests
         env:
           BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+          CARGO_INCREMENTAL: "0"
+          CARGO_PROFILE_DEV_DEBUG: line-tables-only
+          CARGO_PROFILE_TEST_DEBUG: line-tables-only
+          # Disable rust-lld's internal parallelism so concurrent links
+          # don't multiplicatively oversubscribe RAM/tmpfs.
+          RUSTFLAGS: "-C link-arg=-Wl,--threads=1"
         run: |
-          RUST_BACKTRACE=full cargo test
-
-  stop-runner:
-    name: kms-connector-tests/stop-runner
-    needs:
-      - start-runner
-      - test-connector
-    permissions:
-      actions: 'read' # Required to read workflow run information
-      contents: 'read' # Required to checkout repository code
-      packages: 'read' # Required to read GitHub packages/container registry
-      pull-requests: 'read' # Required to read pull request information
-    runs-on: ubuntu-latest
-    if: ${{ always() && needs.start-runner.result != 'skipped' }} # required to stop the runner even if the error happened in the previous jobs, but only if start-runner was not skipped
-    steps:
-      - name: Stop EC2 runner
-        uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac # v1.4.1
-        with:
-          mode: stop
-          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
-          slab-url: ${{ secrets.SLAB_BASE_URL }}
-          job-secret: ${{ secrets.JOB_SECRET }}
-          label: ${{ needs.start-runner.outputs.label }}
+          RUST_BACKTRACE=full cargo test --jobs 16

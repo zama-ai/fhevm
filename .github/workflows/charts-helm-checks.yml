@@ -15,7 +15,7 @@ jobs:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
       pull-requests: 'read' # Required to read pull request information
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     outputs:
       changes-charts: ${{ steps.filter.outputs.charts }}
     steps:
@@ -33,7 +33,7 @@ jobs:
     name: charts-helm-checks/lint
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-charts == 'true' }}
-    runs-on: 'ubuntu-latest'
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     permissions:
       contents: 'read' # Required to checkout repository code
     steps:
@@ -48,7 +48,7 @@ jobs:
     name: charts-helm-checks/test (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-charts == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     permissions:
       contents: 'read' # Required to checkout repository code
     steps:
