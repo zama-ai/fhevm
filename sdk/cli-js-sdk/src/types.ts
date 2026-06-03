@@ -57,7 +57,7 @@ export type DecryptionPermitSummary = Readonly<{
   isDelegated: boolean;
   signerAddress: Hex;
   encryptedDataOwnerAddress: Hex;
-  e2eTransportPublicKey: string;
+  transportPublicKey: string;
   signature: Hex;
   contractAddresses: readonly string[];
   startTimestamp: number;

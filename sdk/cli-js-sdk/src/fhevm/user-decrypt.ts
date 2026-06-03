@@ -103,7 +103,7 @@ const summarizePermit = (
     isDelegated: boolean;
     signerAddress: string;
     encryptedDataOwnerAddress: string;
-    e2eTransportPublicKey: string;
+    transportPublicKey: string;
     signature: string;
   },
   signedParameters: {
@@ -115,7 +115,7 @@ const summarizePermit = (
   isDelegated: permit.isDelegated,
   signerAddress: permit.signerAddress as Hex,
   encryptedDataOwnerAddress: permit.encryptedDataOwnerAddress as Hex,
-  e2eTransportPublicKey: permit.e2eTransportPublicKey,
+  transportPublicKey: permit.transportPublicKey,
   signature: permit.signature as Hex,
   contractAddresses: signedParameters.contractAddresses,
   startTimestamp: signedParameters.startTimestamp,

@@ -14,7 +14,7 @@ export const readPublicValues = async (
   onProgress?.(
     `Requesting public decryption for ${encryptedValues.length.toString()} handle(s)`,
   );
-  const result = await fhevm.readPublicValuesWithSignatures({
+  const result = await fhevm.decryptPublicValuesWithSignatures({
     encryptedValues,
   });
   onProgress?.("Public decryption received and signatures verified");

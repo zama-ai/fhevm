@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@commander-js/extra-typings": "^14.0.0",
-    "@fhevm/sdk": "1.0.0-alpha.5",
+    "@fhevm/sdk": "1.1.0-alpha.4",
     "commander": "^14.0.3",
     "consola": "^3.4.2",
     "viem": "^2.50.4"

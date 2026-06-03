@@ -12,8 +12,8 @@ importers:
         specifier: ^14.0.0
         version: 14.0.0(commander@14.0.3)
       '@fhevm/sdk':
-        specifier: 1.0.0-alpha.5
-        version: 1.0.0-alpha.5(typescript@5.9.3)(viem@2.50.4(typescript@5.9.3))
+        specifier: 1.1.0-alpha.4
+        version: 1.1.0-alpha.4(typescript@5.9.3)(viem@2.50.4(typescript@5.9.3))
       commander:
         specifier: ^14.0.3
         version: 14.0.3
@@ -200,8 +200,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@fhevm/sdk@1.0.0-alpha.5':
-    resolution: {integrity: sha512-DwVFRG/tIyDkJEMWeA454+bMNiIqG4E+yTc6sY8I/idzCk0zluU+F0HHP7ivZBBHwmntYw9LFPdYjSsaVP/ZDA==}
+  '@fhevm/sdk@1.1.0-alpha.4':
+    resolution: {integrity: sha512-XYUTKSoV4OTs7dc7s6lWYV4aeiYRtXptbbvFJdo+VzFDcgtyW1+ryOSfpj6pc7oTvpbra1nXKxoYFMBVdWaj8g==}
     engines: {node: '>=22.0'}
     peerDependencies:
       ethers: '>=6.8.0'
@@ -414,7 +414,7 @@ snapshots:
   '@esbuild/win32-x64@0.28.0':
     optional: true
 
-  '@fhevm/sdk@1.0.0-alpha.5(typescript@5.9.3)(viem@2.50.4(typescript@5.9.3))':
+  '@fhevm/sdk@1.1.0-alpha.4(typescript@5.9.3)(viem@2.50.4(typescript@5.9.3))':
     dependencies:
       '@noble/curves': 2.0.1
       '@noble/hashes': 2.0.1
