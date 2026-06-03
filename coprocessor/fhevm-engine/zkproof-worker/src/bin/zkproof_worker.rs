@@ -153,15 +153,13 @@ async fn main() {
 
     let service_task = async move {
         info!("Starting worker...");
-        if let Err(err) = service.run().await {
-            error!(error = %err, "Worker failed");
-        }
+        service.run().await
     };
 
     // Either task returning means the service can't process work; crash so k8s restarts the service.
     tokio::select! {
-        _ = http_task => error!("Health-check server exited"),
-        _ = service_task => error!("Service loop exited"),
+        r = http_task => error!(result = ?r, "Health-check server exited"),
+        r = service_task => error!(result = ?r, "Service loop exited"),
     }
     telemetry::flush();
     std::process::exit(1);
