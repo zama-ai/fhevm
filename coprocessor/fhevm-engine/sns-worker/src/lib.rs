@@ -251,6 +251,14 @@ impl HandleItem {
     ) -> Result<(), ExecutionError> {
         let ct128_format = self.ct128.format();
 
+        info!(
+            handle = %to_hex(&self.handle),
+            host_chain_id = self.host_chain_id.as_i64(),
+            ct128_empty = self.ct128.is_empty(),
+            ct128_format = ?ct128_format,
+            "enqueue ciphertext_digest (ON CONFLICT) for (tenant_id, handle)"
+        );
+
         if self.ct128.is_empty() {
             sqlx::query(
                 "INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle, transaction_id)
