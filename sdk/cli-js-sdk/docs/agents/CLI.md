@@ -12,6 +12,7 @@ Behavioral guidance:
 - Keep the final machine-readable response on stdout as JSON.
 - Global options are passed before the subcommand.
 - FHETest is the only contract target.
+- Networks may target different host chains; do not assume Ethereum Sepolia for every network.
 - Keep `fresh` and `cached` naming consistent across decrypt workflows.
 - `fresh` creates or stores a new FHETest handle before decrypting.
 - `cached` reads an existing FHETest handle from account/type or accepts direct `--handle` values.
