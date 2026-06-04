@@ -25,6 +25,7 @@
 use alloy_primitives::{Address, B256, U256};
 use serde::{Deserialize, Serialize};
 
+pub mod consensus;
 pub mod sign;
 
 /// Domain separator for the canonical signed payload. Scopes the keccak hash to

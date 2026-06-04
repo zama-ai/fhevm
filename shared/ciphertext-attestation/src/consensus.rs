@@ -1,10 +1,20 @@
 //! Consensus evaluation over a fetched attestation set.
 
-use super::{COPROCESSOR_CONTEXT_ID, error::AttestationError};
-use alloy::primitives::{Address, B256, U256};
-use ciphertext_attestation::{CiphertextAttestation, CiphertextFormat};
-use std::collections::{HashMap, HashSet};
+use crate::{CiphertextAttestation, CiphertextFormat};
+use alloy_primitives::{Address, B256, U256};
+use std::{
+    collections::{HashMap, HashSet},
+    num::NonZeroUsize,
+};
 use tracing::warn;
+
+/// A winning consensus: the agreed material plus the number of distinct, in-registry signers that
+/// vouched for it.
+#[derive(Clone, Debug)]
+pub struct Consensus {
+    pub material: ConsensusMaterial,
+    pub valid_signers: usize,
+}
 
 /// The ciphertext material a consensus group agreed on.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -13,6 +23,14 @@ pub struct ConsensusMaterial {
     pub ciphertext_digest: B256,
     pub sns_ciphertext_digest: B256,
     pub format: CiphertextFormat,
+}
+
+/// Why the consensus could not be reached.
+#[derive(Debug, thiserror::Error)]
+#[error("consensus unreachable: {valid_signers} valid signer(s), threshold {threshold}")]
+pub struct ConsensusError {
+    valid_signers: usize,
+    threshold: NonZeroUsize,
 }
 
 impl From<&CiphertextAttestation> for ConsensusMaterial {
@@ -26,30 +44,27 @@ impl From<&CiphertextAttestation> for ConsensusMaterial {
     }
 }
 
-/// A winning consensus group: the agreed material plus the number of distinct,
-/// in-registry signers that vouched for it (always `>= threshold`).
-#[derive(Clone, Debug)]
-pub struct Consensus {
-    pub material: ConsensusMaterial,
-    pub valid_signers: usize,
-}
-
-/// Validates every fetched attestation and evaluates the majority threshold for a single handle.
+/// Validates every fetched attestations and evaluates the majority threshold for a handle.
 ///
+/// The address of the coprocessor's tx-sender is attached to each attestation for debugging.
 /// An attestation counts only if its signature recovers to its embedded `signer` and that signer
 /// is in the `allowed_signers` set.
 /// Survivors are grouped by material tuple; the largest group wins if it gathers at least
 /// `threshold` distinct signers.
+///
+/// `threshold` is a [`NonZeroUsize`]: a zero threshold would let any single attestation win,
+/// so it is unrepresentable here and rejected where the threshold is loaded.
 pub fn evaluate(
     handle: B256,
+    coprocessor_context_id: U256,
     attestations: &[(Address, CiphertextAttestation)],
     allowed_signers: &HashSet<Address>,
-    threshold: usize,
-) -> Result<Consensus, AttestationError> {
+    threshold: NonZeroUsize,
+) -> Result<Consensus, ConsensusError> {
     let mut signer_groups: HashMap<ConsensusMaterial, HashSet<Address>> = HashMap::new();
 
     for (tx_sender, attestation) in attestations {
-        if let Err(e) = attestation.verify(handle, COPROCESSOR_CONTEXT_ID) {
+        if let Err(e) = attestation.verify(handle, coprocessor_context_id) {
             warn!(
                 %tx_sender,
                 "Discarding attestation with invalid signature: {e}"
@@ -75,15 +90,15 @@ pub fn evaluate(
         .into_iter()
         .max_by_key(|(_, signers)| signers.len())
     {
-        Some((material, signers)) if signers.len() >= threshold => Ok(Consensus {
+        Some((material, signers)) if signers.len() >= threshold.get() => Ok(Consensus {
             material,
             valid_signers: signers.len(),
         }),
-        Some((_, signers)) => Err(AttestationError::ConsensusUnreachable {
+        Some((_, signers)) => Err(ConsensusError {
             valid_signers: signers.len(),
             threshold,
         }),
-        None => Err(AttestationError::ConsensusUnreachable {
+        None => Err(ConsensusError {
             valid_signers: 0,
             threshold,
         }),
@@ -93,10 +108,11 @@ pub fn evaluate(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy::signers::local::PrivateKeySigner;
-    use ciphertext_attestation::{CiphertextAttestationPayload, Version};
+    use crate::{CiphertextAttestationPayload, Version};
+    use alloy_signer_local::PrivateKeySigner;
 
     const HANDLE: B256 = B256::repeat_byte(0xAA);
+    const COPROCESSOR_CONTEXT_ID: U256 = U256::ONE;
     const KEY_ID: U256 = U256::from_limbs([0xdead_beef, 0, 0, 0]);
     const CT_DIGEST: B256 = B256::repeat_byte(0xBB);
     const SNS_DIGEST: B256 = B256::repeat_byte(0xCC);
@@ -139,6 +155,11 @@ mod tests {
         atts.into_iter().map(|a| (a.signer, a)).collect()
     }
 
+    /// Shorthand for the [`NonZeroUsize`] thresholds.
+    fn nz(threshold: usize) -> NonZeroUsize {
+        NonZeroUsize::new(threshold).unwrap()
+    }
+
     #[tokio::test]
     async fn reaches_consensus_at_threshold() {
         let s1 = PrivateKeySigner::random();
@@ -146,7 +167,14 @@ mod tests {
         let signers = signer_set(&[&s1, &s2]);
         let atts = vec![default_att(&s1).await, default_att(&s2).await];
 
-        let consensus = evaluate(HANDLE, &fetched(atts), &signers, 2).unwrap();
+        let consensus = evaluate(
+            HANDLE,
+            COPROCESSOR_CONTEXT_ID,
+            &fetched(atts),
+            &signers,
+            nz(2),
+        )
+        .unwrap();
         assert_eq!(consensus.valid_signers, 2);
         assert_eq!(consensus.material.sns_ciphertext_digest, SNS_DIGEST);
         assert_eq!(consensus.material.key_id, KEY_ID);
@@ -158,12 +186,19 @@ mod tests {
         let signers = signer_set(&[&s1]);
         let atts = vec![default_att(&s1).await];
 
-        let err = evaluate(HANDLE, &fetched(atts), &signers, 2).unwrap_err();
+        let err = evaluate(
+            HANDLE,
+            COPROCESSOR_CONTEXT_ID,
+            &fetched(atts),
+            &signers,
+            nz(2),
+        )
+        .unwrap_err();
         assert!(matches!(
             err,
-            AttestationError::ConsensusUnreachable {
+            ConsensusError {
                 valid_signers: 1,
-                threshold: 2
+                threshold: nz(2),
             }
         ));
     }
@@ -176,10 +211,17 @@ mod tests {
         let signers = signer_set(&[&s1]);
         let atts = vec![default_att(&s1).await, default_att(&intruder).await];
 
-        let err = evaluate(HANDLE, &fetched(atts), &signers, 2).unwrap_err();
+        let err = evaluate(
+            HANDLE,
+            COPROCESSOR_CONTEXT_ID,
+            &fetched(atts),
+            &signers,
+            nz(2),
+        )
+        .unwrap_err();
         assert!(matches!(
             err,
-            AttestationError::ConsensusUnreachable {
+            ConsensusError {
                 valid_signers: 1,
                 ..
             }
@@ -198,12 +240,19 @@ mod tests {
             signed(&s2, KEY_ID, CT_DIGEST, other_sns, FORMAT).await,
         ];
 
-        let err = evaluate(HANDLE, &fetched(atts), &signers, 2).unwrap_err();
+        let err = evaluate(
+            HANDLE,
+            COPROCESSOR_CONTEXT_ID,
+            &fetched(atts),
+            &signers,
+            nz(2),
+        )
+        .unwrap_err();
         assert!(matches!(
             err,
-            AttestationError::ConsensusUnreachable {
+            ConsensusError {
                 valid_signers: 1,
-                threshold: 2
+                threshold: nz(2),
             }
         ));
     }
@@ -228,7 +277,14 @@ mod tests {
             .await,
         ];
 
-        let consensus = evaluate(HANDLE, &fetched(atts), &signers, 2).unwrap();
+        let consensus = evaluate(
+            HANDLE,
+            COPROCESSOR_CONTEXT_ID,
+            &fetched(atts),
+            &signers,
+            nz(2),
+        )
+        .unwrap();
         assert_eq!(consensus.valid_signers, 2);
         assert_eq!(consensus.material.format, FORMAT);
     }
@@ -241,10 +297,17 @@ mod tests {
         // Tamper with a signed field so recovery yields a different address.
         att.sns_ciphertext_digest = B256::repeat_byte(0xEE);
 
-        let err = evaluate(HANDLE, &fetched(vec![att]), &signers, 1).unwrap_err();
+        let err = evaluate(
+            HANDLE,
+            COPROCESSOR_CONTEXT_ID,
+            &fetched(vec![att]),
+            &signers,
+            nz(1),
+        )
+        .unwrap_err();
         assert!(matches!(
             err,
-            AttestationError::ConsensusUnreachable {
+            ConsensusError {
                 valid_signers: 0,
                 ..
             }
@@ -261,12 +324,12 @@ mod tests {
         let a1 = default_att(&s1).await;
         let atts = vec![(s1.address(), a1.clone()), (Address::repeat_byte(0x99), a1)];
 
-        let err = evaluate(HANDLE, &atts, &signers, 2).unwrap_err();
+        let err = evaluate(HANDLE, COPROCESSOR_CONTEXT_ID, &atts, &signers, nz(2)).unwrap_err();
         assert!(matches!(
             err,
-            AttestationError::ConsensusUnreachable {
+            ConsensusError {
                 valid_signers: 1,
-                threshold: 2
+                threshold: nz(2),
             }
         ));
     }

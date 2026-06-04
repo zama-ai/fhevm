@@ -2247,6 +2247,7 @@ dependencies = [
  "serde_json",
  "sha3",
  "thiserror 2.0.12",
+ "tracing",
 ]
 
 [[package]]
@@ -2336,6 +2337,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-kms",
  "bc2wrap",
+ "ciphertext-attestation",
  "clap",
  "config",
  "fhevm_gateway_bindings",

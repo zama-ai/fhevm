@@ -1,30 +1,23 @@
-use alloy::{
-    hex,
-    providers::{ProviderBuilder, mock::Asserter},
-    transports::http::reqwest,
-};
+use alloy::{hex, transports::http::reqwest};
 use anyhow::anyhow;
 use connector_utils::tests::{
     rand::rand_u256,
-    setup::{S3_CT_DIGEST, S3_CT_HANDLE, S3Instance, TestInstance},
+    setup::{S3_CT_DIGEST, S3_CT_HANDLE, S3_CT_RFC023_BUCKET, S3Instance, TestInstance},
 };
 use fhevm_gateway_bindings::decryption::Decryption::SnsCiphertextMaterial;
-use kms_worker::core::{Config, event_processor::s3::S3Service};
+use kms_grpc::kms::v1::CiphertextFormat;
+use kms_worker::core::{Config, event_processor::ciphertext::s3::retrieve_s3_ciphertext};
 
-#[tokio::test]
-async fn test_get_ciphertext_from_s3() -> anyhow::Result<()> {
-    let test_instance = TestInstance::builder()
-        .with_s3(S3Instance::setup().await?)
-        .build();
+fn s3_http_client() -> anyhow::Result<reqwest::Client> {
     let config = Config::default();
-    let mock_provider = ProviderBuilder::new().connect_mocked_client(Asserter::new());
-    let s3_client = reqwest::Client::builder()
+    reqwest::Client::builder()
         .connect_timeout(config.s3_connect_timeout)
         .build()
-        .map_err(|e| anyhow!("Failed to create HTTP client: {}", e))?;
+        .map_err(|e| anyhow!("Failed to create HTTP client: {}", e))
+}
 
-    let bucket_url = format!("{}/ct128", test_instance.s3_url());
-    let sns_ct = SnsCiphertextMaterial {
+fn stored_sns_ct() -> anyhow::Result<SnsCiphertextMaterial> {
+    Ok(SnsCiphertextMaterial {
         ctHandle: <[u8; 32]>::try_from(hex::decode(S3_CT_HANDLE)?)
             .unwrap()
             .into(),
@@ -32,12 +25,45 @@ async fn test_get_ciphertext_from_s3() -> anyhow::Result<()> {
             .unwrap()
             .into(),
         ..Default::default()
-    };
-    let s3_service = S3Service::new(&config, mock_provider, s3_client);
-    s3_service
-        .retrieve_s3_ciphertext(&bucket_url, &sns_ct, S3_CT_DIGEST)
+    })
+}
+
+#[tokio::test]
+async fn test_get_ciphertext_from_s3_rfc023_url_format() -> anyhow::Result<()> {
+    let test_instance = TestInstance::builder()
+        .with_s3(S3Instance::setup().await?)
+        .build();
+    let s3_client = s3_http_client()?;
+
+    // This bucket only stores the ciphertext under the RFC-023 layout (`{handle}/{context_id}`),
+    // so a successful retrieval cannot have gone through the old-URL fallback.
+    let bucket_url = format!("{}/{S3_CT_RFC023_BUCKET}", test_instance.s3_url());
+    let sns_ct = stored_sns_ct()?;
+    let ct = retrieve_s3_ciphertext(&s3_client, &bucket_url, &sns_ct, S3_CT_DIGEST)
         .await
         .unwrap();
+
+    // The format is extracted from the RFC-023 attestation metadata (`compressed_on_cpu`)
+    assert_eq!(ct.ciphertext_format, CiphertextFormat::BigCompressed as i32);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_ciphertext_from_s3_old_url_format() -> anyhow::Result<()> {
+    let test_instance = TestInstance::builder()
+        .with_s3(S3Instance::setup().await?)
+        .build();
+    let s3_client = s3_http_client()?;
+
+    let bucket_url = format!("{}/ct128", test_instance.s3_url());
+    let sns_ct = stored_sns_ct()?;
+    let ct = retrieve_s3_ciphertext(&s3_client, &bucket_url, &sns_ct, S3_CT_DIGEST)
+        .await
+        .unwrap();
+
+    // The format is extracted from the old `Ct-Format` metadata (`compressed_on_cpu`)
+    assert_eq!(ct.ciphertext_format, CiphertextFormat::BigCompressed as i32);
 
     Ok(())
 }
@@ -56,12 +82,7 @@ async fn test_get_unstored_s3_ciphertext() -> anyhow::Result<()> {
     let test_instance = TestInstance::builder()
         .with_s3(S3Instance::setup().await?)
         .build();
-    let config = Config::default();
-    let mock_provider = ProviderBuilder::new().connect_mocked_client(Asserter::new());
-    let s3_client = reqwest::Client::builder()
-        .connect_timeout(config.s3_connect_timeout)
-        .build()
-        .map_err(|e| anyhow!("Failed to create HTTP client: {}", e))?;
+    let s3_client = s3_http_client()?;
 
     let bucket_url = format!("{}/ct128", test_instance.s3_url());
     let sns_ct = SnsCiphertextMaterial {
@@ -71,11 +92,7 @@ async fn test_get_unstored_s3_ciphertext() -> anyhow::Result<()> {
             .into(),
         ..Default::default()
     };
-    let s3_service = S3Service::new(&config, mock_provider, s3_client);
-    if let Ok(ct) = s3_service
-        .retrieve_s3_ciphertext(&bucket_url, &sns_ct, S3_CT_UNSTORED)
-        .await
-    {
+    if let Ok(ct) = retrieve_s3_ciphertext(&s3_client, &bucket_url, &sns_ct, S3_CT_UNSTORED).await {
         panic!("Unexpected ciphertext retrievd {ct:?}");
     }
 
