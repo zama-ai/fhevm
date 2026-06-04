@@ -320,6 +320,22 @@ describe("compat", () => {
     expect(requiresGatewayKmsGenerationAddress(state)).toBe(false);
   });
 
+  test("treats numeric build suffix (v0.13.0-8) as the 0.13.0 release, not a prerelease below it", () => {
+    const state = {
+      versions: {
+        target: "latest-supported" as const,
+        lockName: "latest-supported.json",
+        env: { GATEWAY_VERSION: "v0.13.0-8", HOST_VERSION: "v0.13.0-8" } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    };
+    expect(requiresModernHostAddressArtifacts(state)).toBe(true);
+    expect(requiresLegacyGatewayKmsGenerationAddress(state)).toBe(false);
+    expect(requiresGatewayKmsGenerationAddress(state)).toBe(false);
+  });
+
   test("routes semver relayer images to the legacy console registry", () => {
     const policy = compatPolicyForState({
       versions: {
