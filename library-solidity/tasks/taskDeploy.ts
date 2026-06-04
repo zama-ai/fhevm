@@ -4,44 +4,10 @@ import dotenv from 'dotenv';
 import { Wallet } from 'ethers';
 import * as fs from 'fs-extra';
 import { task, types } from 'hardhat/config';
-import type { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
+import type { TaskArguments } from 'hardhat/types';
 import path from 'path';
 
 import { getRequiredEnvVar } from './utils/loadVariables';
-
-async function waitForProtocolConfigReady(
-  hre: HardhatRuntimeEnvironment,
-  proxyAddress: string,
-  timeoutMs = 60_000
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  let lastError: unknown;
-  const protocolConfig = new hre.ethers.Contract(
-    proxyAddress,
-    [
-      'function getVersion() view returns (string)',
-      'function getCurrentKmsContextId() view returns (uint256)',
-    ],
-    hre.ethers.provider
-  );
-
-  while (true) {
-    try {
-      const version: string = await protocolConfig.getVersion();
-      const currentKmsContextId: bigint = await protocolConfig.getCurrentKmsContextId();
-      if (version.startsWith('ProtocolConfig') && currentKmsContextId !== 0n) {
-        return;
-      }
-    } catch (err) {
-      lastError = err;
-    }
-    if (Date.now() >= deadline) {
-      const detail = lastError instanceof Error ? `: ${lastError.message}` : '';
-      throw new Error(`ProtocolConfig at ${proxyAddress} did not become ready after ${timeoutMs}ms${detail}`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Host deployment roles
@@ -60,7 +26,7 @@ task('task:deployCanonicalHost', 'Deploys the complete canonical host stack.').s
 ////////////////////////////////////////////////////////////////////////////////
 
 // Deploys only the shared host skeleton. Use task:deployCanonicalHost for full local deployments.
-// No skipKmsGeneration flag here (unlike host-contracts): library-solidity only deploys canonical.
+// library-solidity only deploys the canonical host locally, so there is no KMSGeneration to skip.
 task('task:deployHostSkeleton', 'Deploys the shared host skeleton only; not a full host deployment.')
   .setAction(async function (_taskArguments: TaskArguments, hre) {
     if (process.env.SOLIDITY_COVERAGE !== 'true') {
@@ -223,8 +189,6 @@ task('task:deployKMSVerifier', 'Upgrades the existing KMSVerifier proxy and init
 
   const verifyingContractSource = getRequiredEnvVar('DECRYPTION_ADDRESS');
   const chainIDSource = +getRequiredEnvVar('CHAIN_ID_GATEWAY');
-  const protocolConfigAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
-  await waitForProtocolConfigReady(hre, protocolConfigAddress);
   await upgrades.upgradeProxy(proxy, newImplem, {
     call: {
       fn: 'initializeFromEmptyProxy',
@@ -260,7 +224,6 @@ task(
       args: [buildKmsNodes(), buildKmsThresholds()],
     },
   });
-  await waitForProtocolConfigReady(hre, proxyAddress);
   console.info('ProtocolConfig code set successfully at address:', proxyAddress);
 });
 
