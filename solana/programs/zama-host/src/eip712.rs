@@ -157,8 +157,12 @@ pub fn verify_kms_public_decrypt(
     extra_data: &[u8],
     signatures: &[[u8; 65]],
 ) -> bool {
-    let domain =
-        domain_separator(b"Decryption", b"1", config.gateway_chain_id, &config.verifying_contract);
+    let domain = domain_separator(
+        b"Decryption",
+        b"1",
+        config.gateway_chain_id,
+        &config.verifying_contract,
+    );
     let struct_hash = public_decrypt_struct_hash(ct_handles, decrypted_result, extra_data);
     let digest = typed_data_digest(&domain, &struct_hash);
     verify_threshold(&digest, signatures, config.signers, config.threshold)
@@ -235,7 +239,13 @@ mod tests {
         let key = SigningKey::from_bytes(&[0x22u8; 32].into()).unwrap();
         let signer = evm_address_of(&key);
         let ds = domain_separator(b"InputVerification", b"1", 31337, &[0xCDu8; 20]);
-        let sh = ciphertext_verification_struct_hash(&[[3u8; 32]], &[4u8; 32], &[5u8; 32], 12345, &[0x00]);
+        let sh = ciphertext_verification_struct_hash(
+            &[[3u8; 32]],
+            &[4u8; 32],
+            &[5u8; 32],
+            12345,
+            &[0x00],
+        );
         let digest = typed_data_digest(&ds, &sh);
         let sig = sign(&key, &digest);
 
@@ -255,11 +265,24 @@ mod tests {
         let handles = [[0xA1u8; 32]];
         let result = [42u8; 8];
         let ds = domain_separator(b"Decryption", b"1", 31337, &[0xDEu8; 20]);
-        let digest = typed_data_digest(&ds, &public_decrypt_struct_hash(&handles, &result, &[0x00]));
+        let digest =
+            typed_data_digest(&ds, &public_decrypt_struct_hash(&handles, &result, &[0x00]));
         let sig = sign(&key, &digest);
-        assert!(verify_kms_public_decrypt(&config, &handles, &result, &[0x00], &[sig]));
+        assert!(verify_kms_public_decrypt(
+            &config,
+            &handles,
+            &result,
+            &[0x00],
+            &[sig]
+        ));
         // a different decrypted result yields a different digest -> rejected
-        assert!(!verify_kms_public_decrypt(&config, &handles, &[0u8; 8], &[0x00], &[sig]));
+        assert!(!verify_kms_public_decrypt(
+            &config,
+            &handles,
+            &[0u8; 8],
+            &[0x00],
+            &[sig]
+        ));
     }
 
     #[test]
@@ -279,9 +302,25 @@ mod tests {
             &ciphertext_verification_struct_hash(&handles, &user, &contract, 12345, &[0x00]),
         );
         let sig = sign(&key, &digest);
-        assert!(verify_coprocessor_input(&config, &handles, &user, &contract, 12345, &[0x00], &[sig]));
+        assert!(verify_coprocessor_input(
+            &config,
+            &handles,
+            &user,
+            &contract,
+            12345,
+            &[0x00],
+            &[sig]
+        ));
         // wrong contract chain id -> rejected
-        assert!(!verify_coprocessor_input(&config, &handles, &user, &contract, 999, &[0x00], &[sig]));
+        assert!(!verify_coprocessor_input(
+            &config,
+            &handles,
+            &user,
+            &contract,
+            999,
+            &[0x00],
+            &[sig]
+        ));
     }
 
     #[test]
@@ -299,8 +338,26 @@ mod tests {
         let digest = typed_data_digest(&ds, &public_decrypt_struct_hash(&handles, &[1], &[0x00]));
         let s1 = sign(&k1, &digest);
         let s2 = sign(&k2, &digest);
-        assert!(!verify_kms_public_decrypt(&config, &handles, &[1], &[0x00], &[s1])); // 1 < 2
-        assert!(!verify_kms_public_decrypt(&config, &handles, &[1], &[0x00], &[s1, s1])); // dup -> 1 distinct
-        assert!(verify_kms_public_decrypt(&config, &handles, &[1], &[0x00], &[s1, s2])); // 2 distinct
+        assert!(!verify_kms_public_decrypt(
+            &config,
+            &handles,
+            &[1],
+            &[0x00],
+            &[s1]
+        )); // 1 < 2
+        assert!(!verify_kms_public_decrypt(
+            &config,
+            &handles,
+            &[1],
+            &[0x00],
+            &[s1, s1]
+        )); // dup -> 1 distinct
+        assert!(verify_kms_public_decrypt(
+            &config,
+            &handles,
+            &[1],
+            &[0x00],
+            &[s1, s2]
+        )); // 2 distinct
     }
 }
