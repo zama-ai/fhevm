@@ -36,7 +36,11 @@ use crate::tests::{
 use confidential_token as token;
 use zama_host as host;
 
+// Small "fast" euint8 type used by the standalone fhe-rand round-trip.
 const FAST_REAL_FHE_TYPE: u8 = 2;
+// Must equal the token program's BALANCE_FHE_TYPE: confidential balances and
+// transfer amounts are euint64 (type 5); the program rejects other handle types.
+const BALANCE_FHE_TYPE: u8 = 5;
 type SeededCiphertext = ([u8; 32], i16, Vec<u8>);
 
 #[tokio::test]
@@ -47,7 +51,7 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
     let harness = setup_event_harness().await?;
     let mut fixture = token_fixture();
 
-    let amount_handle = typed_fast_handle(0x09);
+    let amount_handle = balance_handle(0x09);
 
     seed_real_fast_ciphertexts(
         &harness.pool,
@@ -127,9 +131,9 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
     )
     .await?;
 
-    assert_eq!(decrypted[0].output_type, FAST_REAL_FHE_TYPE as i16);
+    assert_eq!(decrypted[0].output_type, BALANCE_FHE_TYPE as i16);
     assert_eq!(decrypted[0].value, "25");
-    assert_eq!(decrypted[1].output_type, FAST_REAL_FHE_TYPE as i16);
+    assert_eq!(decrypted[1].output_type, BALANCE_FHE_TYPE as i16);
     assert_eq!(decrypted[1].value, "120");
 
     Ok(())
@@ -143,7 +147,7 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
     let harness = setup_event_harness().await?;
     let mut fixture = token_fixture();
 
-    let amount_handle = typed_fast_handle(0x19);
+    let amount_handle = balance_handle(0x19);
 
     let initial_ixs = vec![
         test_emit_trivial_encrypt_ix(
@@ -242,9 +246,9 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
     )
     .await?;
 
-    assert_eq!(decrypted[0].output_type, FAST_REAL_FHE_TYPE as i16);
+    assert_eq!(decrypted[0].output_type, BALANCE_FHE_TYPE as i16);
     assert_eq!(decrypted[0].value, "25");
-    assert_eq!(decrypted[1].output_type, FAST_REAL_FHE_TYPE as i16);
+    assert_eq!(decrypted[1].output_type, BALANCE_FHE_TYPE as i16);
     assert_eq!(decrypted[1].value, "120");
 
     Ok(())
@@ -295,7 +299,7 @@ async fn solana_fhe_rand_creates_ciphertext_and_decrypts() -> Result<(), Box<dyn
 #[ignore = "requires built Solana PoC programs; validates user-decrypt ACL semantics without running the worker"]
 fn solana_user_decrypt_acl_invariants_match_evm_semantics() {
     let mut fixture = token_fixture();
-    let amount_handle = typed_fast_handle(0x39);
+    let amount_handle = balance_handle(0x39);
     authorize_input_compute_acl(&mut fixture, amount_handle);
     let output = transfer_output_accounts(&fixture, 1);
     let transfer_ix = transfer_ix(&fixture, output, amount_handle);
@@ -347,7 +351,7 @@ fn solana_user_decrypt_acl_invariants_match_evm_semantics() {
         &fixture.alice,
         vec![fixture.mint.pubkey()],
         vec![UserDecryptHandleEntry {
-            handle: typed_fast_handle(0x7f),
+            handle: balance_handle(0x7f),
             ..valid.handles[0]
         }],
     );
@@ -455,11 +459,13 @@ fn seed_host_config(
                 admin,
                 chain_id: host::SOLANA_POC_CHAIN_ID,
                 input_verifier_authority,
+                material_authority: input_verifier_authority,
                 test_authority,
                 paused: false,
                 mock_input_enabled: true,
                 test_shims_enabled: true,
                 grant_deny_list_enabled: false,
+                updated_slot: 0,
                 bump,
             }),
             owner: program_id,
@@ -526,6 +532,7 @@ fn token_fixture() -> TokenFixture {
                 underlying_mint: underlying_mint.pubkey(),
                 compute_signer,
                 total_supply_authority,
+                kms_verifier_authority: alice.pubkey(),
                 total_supply_acl_record,
                 zama_event_authority: event_authority(host_program_id),
                 zama_program: host_program_id,
@@ -558,7 +565,9 @@ fn token_fixture() -> TokenFixture {
             token_account: alice_token,
             compute_signer,
             acl_record: alice_current_compute_acl,
-            initial_balance: 125,
+            // Program forbids nonzero init balances (funded via wrap); the test injects
+            // the real input ciphertext value (125) into the DB keyed by this handle.
+            initial_balance: 0,
         },
     );
     initialize_token_account(
@@ -572,7 +581,7 @@ fn token_fixture() -> TokenFixture {
             token_account: bob_token,
             compute_signer,
             acl_record: bob_current_compute_acl,
-            initial_balance: 20,
+            initial_balance: 0,
         },
     );
     let alice_initial = read_acl_record(&svm, alice_current_compute_acl)
@@ -790,7 +799,7 @@ fn test_emit_trivial_encrypt_ix(
         data: host::instruction::TestEmitTrivialEncrypt {
             subject,
             plaintext: amount_to_plaintext(value),
-            fhe_type: FAST_REAL_FHE_TYPE,
+            fhe_type: BALANCE_FHE_TYPE,
             result,
         }
         .data(),
@@ -885,9 +894,9 @@ async fn seed_real_fast_ciphertexts(
             values
                 .into_iter()
                 .map(|(handle, value)| {
-                    let ciphertext = tfhe::FheUint8::try_encrypt(value, &client_key)
+                    let ciphertext = tfhe::FheUint64::try_encrypt(value as u64, &client_key)
                         .map_err(|err| err.to_string())?;
-                    let supported = SupportedFheCiphertexts::FheUint8(ciphertext);
+                    let supported = SupportedFheCiphertexts::FheUint64(ciphertext);
                     let ty = supported.type_num();
                     let compressed = supported.compress().map_err(|err| err.to_string())?;
                     Ok((handle, ty, compressed))
@@ -1075,10 +1084,23 @@ fn serialized_account<T: AccountSerialize>(account: T) -> Vec<u8> {
     data
 }
 
-fn typed_fast_handle(seed: u8) -> [u8; 32] {
+fn typed_handle(seed: u8, fhe_type: u8) -> [u8; 32] {
+    // Canonical handle metadata the host validates on input bind: embedded chain
+    // id (bytes 22..30), fhe type (byte 30), and handle version (byte 31).
     let mut handle = [seed; 32];
-    handle[30] = FAST_REAL_FHE_TYPE;
+    handle[21] = 0;
+    handle[22..30].copy_from_slice(&host::SOLANA_POC_CHAIN_ID.to_be_bytes());
+    handle[30] = fhe_type;
+    handle[31] = host::HANDLE_VERSION;
     handle
+}
+
+fn typed_fast_handle(seed: u8) -> [u8; 32] {
+    typed_handle(seed, FAST_REAL_FHE_TYPE)
+}
+
+fn balance_handle(seed: u8) -> [u8; 32] {
+    typed_handle(seed, BALANCE_FHE_TYPE)
 }
 
 fn amount_to_plaintext(amount: u64) -> [u8; 32] {
@@ -1137,13 +1159,31 @@ fn send(svm: &mut LiteSVM, payer: &Keypair, ix: Instruction) {
     send_with_signers(svm, &payer.pubkey(), ix, &[payer]);
 }
 
+/// ComputeBudget `SetComputeUnitLimit` instruction (consensus-stable wire format:
+/// variant tag 2 + u32 LE), hand-built to avoid a version-skewed solana dep.
+fn set_compute_unit_limit_ix(units: u32) -> Instruction {
+    let program_id: Pubkey = "ComputeBudget111111111111111111111111111111"
+        .parse()
+        .unwrap();
+    let mut data = vec![2u8];
+    data.extend_from_slice(&units.to_le_bytes());
+    Instruction {
+        program_id,
+        accounts: vec![],
+        data,
+    }
+}
+
 fn send_with_meta(
     svm: &mut LiteSVM,
     payer: &Keypair,
     ix: Instruction,
 ) -> (TransactionMetadata, Vec<Pubkey>, Signature) {
+    // Confidential transfer's real euint64 FHE ops exceed the default 200k CU limit
+    // (mollusk measures ~258k); raise it like a real client would.
+    let ixs = [set_compute_unit_limit_ix(400_000), ix];
     let message =
-        Message::new_with_blockhash(&[ix], Some(&payer.pubkey()), &svm.latest_blockhash());
+        Message::new_with_blockhash(&ixs, Some(&payer.pubkey()), &svm.latest_blockhash());
     let account_keys = message.account_keys.clone();
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(message), &[payer]).unwrap();
     let signature = tx.signatures[0];
@@ -1155,6 +1195,8 @@ fn send_many_with_meta(
     payer: &Keypair,
     ixs: Vec<Instruction>,
 ) -> (TransactionMetadata, Vec<Pubkey>, Signature) {
+    let mut ixs = ixs;
+    ixs.insert(0, set_compute_unit_limit_ix(400_000));
     let message = Message::new_with_blockhash(&ixs, Some(&payer.pubkey()), &svm.latest_blockhash());
     let account_keys = message.account_keys.clone();
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(message), &[payer]).unwrap();
