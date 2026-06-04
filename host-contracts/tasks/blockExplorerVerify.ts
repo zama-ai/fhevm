@@ -28,7 +28,7 @@ task('task:verifyACL')
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
     false,
-    types.boolean,
+    types.boolean
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
@@ -45,7 +45,7 @@ task('task:verifyFHEVMExecutor')
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
     false,
-    types.boolean,
+    types.boolean
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
@@ -62,7 +62,7 @@ task('task:verifyKMSVerifier')
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
     false,
-    types.boolean,
+    types.boolean
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
@@ -79,7 +79,7 @@ task('task:verifyInputVerifier')
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
     false,
-    types.boolean,
+    types.boolean
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
@@ -96,7 +96,7 @@ task('task:verifyHCULimit')
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
     false,
-    types.boolean,
+    types.boolean
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
@@ -113,7 +113,7 @@ task('task:verifyPauserSet')
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
     false,
-    types.boolean,
+    types.boolean
   )
   .setAction(async function ({ useInternalProxyAddress }, { run }) {
     if (useInternalProxyAddress) {
@@ -128,7 +128,7 @@ task('task:verifyProtocolConfig')
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
     false,
-    types.boolean,
+    types.boolean
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
@@ -145,7 +145,7 @@ task('task:verifyKMSGeneration')
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
     false,
-    types.boolean,
+    types.boolean
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
@@ -157,12 +157,40 @@ task('task:verifyKMSGeneration')
     await verifyContract(run, proxyAddress);
   });
 
+task('task:verifyBridge')
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean
+  )
+  .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
+    if (useInternalProxyAddress) {
+      loadHostAddresses();
+    }
+    const proxyAddress = getRequiredEnvVar('CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS');
+    const lzEndpoint = getRequiredEnvVar('LZ_ENDPOINT_ADDRESS');
+    const implementationConfidentialBridgeAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
+    // The ConfidentialBridge implementation stores the LayerZero V2 endpoint as
+    // an immutable in its constructor (via OAppCoreUpgradeable), so the impl
+    // verification needs that one constructorArg. The proxy itself is a
+    // standard ERC1967Proxy with no constructor args.
+    await run('verify:verify', {
+      address: implementationConfidentialBridgeAddress,
+      constructorArguments: [lzEndpoint],
+    });
+    await run('verify:verify', {
+      address: proxyAddress,
+      constructorArguments: [],
+    });
+  });
+
 task('task:verifyAllHostContracts')
   .addOptionalParam(
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
     false,
-    types.boolean,
+    types.boolean
   )
   .setAction(async function ({ useInternalProxyAddress }, hre) {
     console.log('Verify ACL contract:');
@@ -225,6 +253,14 @@ task('task:verifyAllHostContracts')
       // to not panic if Etherscan throws an error due to already verified implementation
       console.log('Verify KMSGeneration contract:');
       await hre.run('task:verifyKMSGeneration', { useInternalProxyAddress });
+    } catch (error) {
+      console.error('An error occurred:', error);
+    }
+
+    try {
+      // to not panic if Etherscan throws an error due to already verified implementation
+      console.log('Verify ConfidentialBridge contract:');
+      await hre.run('task:verifyBridge', { useInternalProxyAddress });
     } catch (error) {
       console.error('An error occurred:', error);
     }

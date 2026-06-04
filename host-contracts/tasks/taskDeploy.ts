@@ -34,7 +34,7 @@ export function readHostEnv() {
   return dotenv.parse(fs.readFileSync(HOST_ENV_FILE));
 }
 
-function writeHostEnvLine(content: string, mode: 'w' | 'a') {
+export function writeHostEnvLine(content: string, mode: 'w' | 'a') {
   fs.writeFileSync(HOST_ENV_FILE, content, { flag: mode });
 }
 
@@ -42,18 +42,14 @@ function writeHostAddressesSol(content: string, mode: 'w' | 'a') {
   fs.writeFileSync(HOST_ADDRESSES_FILE, content, { encoding: 'utf8', flag: mode });
 }
 
-export function readExistingHostEnv(): Record<string, string> {
+export function readExistingHostEnv(): Record {
   if (!fs.existsSync(HOST_ENV_FILE)) {
     return {};
   }
   return readHostEnv();
 }
 
-export async function waitForTaskReady(
-  hre: HardhatRuntimeEnvironment,
-  taskName: string,
-  timeoutMs = 60_000,
-): Promise<void> {
+export async function waitForTaskReady(hre: HardhatRuntimeEnvironment, taskName: string, timeoutMs = 60_000): Promise {
   const deadline = Date.now() + timeoutMs;
 
   while (true) {
@@ -85,25 +81,25 @@ task('task:deployAllHostContracts')
     'withKmsGeneration',
     'Whether to deploy canonical-host-only KMSGeneration. Required: true for canonical host, false for non-canonical host.',
     undefined,
-    types.boolean,
+    types.boolean
   )
   .addOptionalParam(
     'protocolConfigSource',
     "How to initialize ProtocolConfig: 'fresh' (default) calls initializeFromEmptyProxy with env-driven KMS nodes/thresholds; 'migration' calls initializeFromMigration consuming MIGRATION_CONTEXT_ID / MIGRATION_KMS_NODES / MIGRATION_KMS_THRESHOLDS; 'canonical' mirrors the canonical chain's ProtocolConfig via task:deployProtocolConfigFromCanonical (non-canonical hosts only).",
     'fresh',
-    types.string,
+    types.string
   )
   .addOptionalParam(
     'canonicalRpcUrl',
     'RPC URL of the canonical host chain. Required with --protocol-config-source canonical.',
     undefined,
-    types.string,
+    types.string
   )
   .addOptionalParam(
     'canonicalProtocolConfigAddress',
     "Address of the canonical chain's ProtocolConfig. Required with --protocol-config-source canonical.",
     undefined,
-    types.string,
+    types.string
   )
   .setAction(async function (
     {
@@ -117,22 +113,24 @@ task('task:deployAllHostContracts')
       canonicalRpcUrl?: string;
       canonicalProtocolConfigAddress?: string;
     },
-    hre,
+    hre
   ) {
     if (!PROTOCOL_CONFIG_SOURCES.includes(protocolConfigSource as ProtocolConfigSource)) {
       throw new Error(
-        `Invalid --protocol-config-source "${protocolConfigSource}". Allowed values: ${PROTOCOL_CONFIG_SOURCES.join(', ')}.`,
+        `Invalid --protocol-config-source "${protocolConfigSource}". Allowed values: ${PROTOCOL_CONFIG_SOURCES.join(
+          ', '
+        )}.`
       );
     }
     if (protocolConfigSource === 'canonical') {
       if (withKmsGeneration) {
         throw new Error(
-          '--protocol-config-source canonical seeds a non-canonical replica; it cannot be combined with --with-kms-generation true.',
+          '--protocol-config-source canonical seeds a non-canonical replica; it cannot be combined with --with-kms-generation true.'
         );
       }
       if (!(canonicalRpcUrl && canonicalProtocolConfigAddress)) {
         throw new Error(
-          '--protocol-config-source canonical requires --canonical-rpc-url and --canonical-protocol-config-address.',
+          '--protocol-config-source canonical requires --canonical-rpc-url and --canonical-protocol-config-address.'
         );
       }
     }
@@ -165,6 +163,29 @@ task('task:deployAllHostContracts')
     await hre.run('task:deployKMSVerifier');
     await hre.run('task:deployInputVerifier');
     await hre.run('task:deployHCULimit');
+
+    // ConfidentialBridge upgrade is opt-in via the LZ_ENDPOINT_ADDRESS env var.
+    // When unset, the bridge stays at its empty-proxy stage and can be upgraded
+    // later by running `task:deployBridge` once LZ_ENDPOINT_ADDRESS is configured.
+    //
+    // We also skip the bridge upgrade on the in-memory `hardhat` network: the
+    // canonical LZ endpoint doesn't exist there, so initializeFromEmptyProxy →
+    // __OAppCore_init → endpoint.setDelegate(...) would revert. Test fixtures
+    // that need the bridge deploy their own proxies (see test/bridge/fixture.ts
+    // and test/bridge/Bridge.t.sol::_deployBridgeProxy).
+    if (process.env.LZ_ENDPOINT_ADDRESS && hre.network.name !== 'hardhat') {
+      await hre.run('task:deployBridge');
+    } else if (!process.env.LZ_ENDPOINT_ADDRESS) {
+      console.log(
+        '[task:deployAllHostContracts] LZ_ENDPOINT_ADDRESS not set; ' +
+          'ConfidentialBridge stays at its empty-proxy stage. Set LZ_ENDPOINT_ADDRESS and run task:deployBridge when ready.'
+      );
+    } else {
+      console.log(
+        "[task:deployAllHostContracts] Skipping bridge upgrade on the in-memory 'hardhat' network " +
+          '(no LayerZero endpoint contract exists there). Run on a real network to upgrade the bridge.'
+      );
+    }
 
     console.log('Contract deployment done!');
   });
@@ -209,7 +230,7 @@ task('task:deployEmptyUUPSProxies')
     'withKmsGeneration',
     'Whether to deploy the canonical-host-only KMSGeneration proxy. Required: true for canonical host, false for non-canonical host.',
     undefined,
-    types.boolean,
+    types.boolean
   )
   .setAction(async function ({ withKmsGeneration }: { withKmsGeneration: boolean }, { ethers, upgrades, run }) {
     // Compile the EmptyUUPS proxy contract for ACL
@@ -253,6 +274,9 @@ task('task:deployEmptyUUPSProxies')
       const kmsGenerationAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
       await run('task:setKMSGenerationAddress', { address: kmsGenerationAddress });
     }
+
+    const confidentialBridgeAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run('task:setBridgeAddress', { address: confidentialBridgeAddress });
   });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -323,7 +347,7 @@ task('task:deployInputVerifier')
     'useAddress',
     'Use addresses instead of private keys env variables for kms signers',
     true,
-    types.boolean,
+    types.boolean
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
     const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
@@ -359,7 +383,7 @@ task('task:deployInputVerifier')
     console.log('InputVerifier code set successfully at address:', proxyAddress);
     console.log(
       `${numSigners} Coprocessor signers were added to InputVerifier at initialization, list of Coprocessor signers is:`,
-      initialSigners,
+      initialSigners
     );
     console.log('Threshold for InputVerifier is:', initialThreshold);
   });
@@ -399,6 +423,43 @@ task('task:deployPauserSet').setAction(async function (_, hre) {
   await hre.run('task:setPauserSetAddress', {
     address: pauserSetAddress,
   });
+});
+
+////////////////////////////////////////////////////////////////////////////////
+// ConfidentialBridge
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:deployBridge').setAction(async function (_, { ethers, upgrades }) {
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+  const lzEndpoint = getRequiredEnvVar('LZ_ENDPOINT_ADDRESS');
+  if (!ethers.isAddress(lzEndpoint)) {
+    throw new Error(`LZ_ENDPOINT_ADDRESS is not a valid address: ${lzEndpoint}`);
+  }
+
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const newImplem = await ethers.getContractFactory('ConfidentialBridge', deployer);
+  const parsedEnv = readHostEnv();
+  const proxyAddress = parsedEnv.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS;
+  if (!proxyAddress) {
+    throw new Error(
+      'CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS not found in addresses/.env.host. ' +
+        'Run task:deployEmptyUUPSProxies first.'
+    );
+  }
+
+  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+  await upgrades.upgradeProxy(proxy, newImplem, {
+    constructorArgs: [lzEndpoint],
+    // - constructor / state-variable-immutable: LayerZero's `OAppCoreUpgradeable`
+    //   stores the endpoint as an immutable in the implementation's constructor.
+    // - missing-initializer-call: `__OApp(Sender|Receiver)_init_unchained()` are no-ops
+    //   and we call them explicitly; OZ's static validator doesn't recognize the
+    //   `_unchained` variants as satisfying the `_init` requirement.
+    unsafeAllow: ['constructor', 'state-variable-immutable', 'missing-initializer-call'],
+    call: { fn: 'initializeFromEmptyProxy', args: [[], []] },
+  });
+  console.log(`ConfidentialBridge upgraded at ${proxyAddress} (lzEndpoint=${lzEndpoint})`);
 });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -445,7 +506,7 @@ task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
   const protocolConfig = new hre.ethers.Contract(
     protocolConfigAddress,
     ['function getCurrentKmsContextId() view returns (uint256)'],
-    hre.ethers.provider,
+    hre.ethers.provider
   );
 
   let currentKmsContextId: bigint;
@@ -453,13 +514,15 @@ task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
     currentKmsContextId = await protocolConfig.getCurrentKmsContextId();
   } catch (err) {
     throw new Error(
-      `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigAddress} is not initialized (reading current context reverted: ${formatError(err)}).`,
+      `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigAddress} is not initialized (reading current context reverted: ${formatError(
+        err
+      )}).`
     );
   }
 
   if (currentKmsContextId === 0n) {
     throw new Error(
-      `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigAddress} has no active KMS context (currentKmsContextId=0).`,
+      `Cannot deploy KMSVerifier: ProtocolConfig at ${protocolConfigAddress} has no active KMS context (currentKmsContextId=0).`
     );
   }
 });
@@ -473,7 +536,7 @@ task('task:assertNoPendingKeyManagementRequest')
     'address',
     'KMSGeneration proxy address. Falls back to env var then addresses/.env.host.',
     undefined,
-    types.string,
+    types.string
   )
   .setAction(async function (taskArguments: TaskArguments, hre) {
     const kmsGenAddress: string | undefined =
@@ -482,19 +545,21 @@ task('task:assertNoPendingKeyManagementRequest')
       readExistingHostEnv().KMS_GENERATION_CONTRACT_ADDRESS;
     if (!kmsGenAddress) {
       throw new Error(
-        'KMSGeneration address not resolved. Pass --address 0x…, or set KMS_GENERATION_CONTRACT_ADDRESS, or generate addresses/.env.host via a deploy task first.',
+        'KMSGeneration address not resolved. Pass --address 0x…, or set KMS_GENERATION_CONTRACT_ADDRESS, or generate addresses/.env.host via a deploy task first.'
       );
     }
 
     await assertContractMatchesVersionPrefix(hre, kmsGenAddress, 'KMSGeneration');
 
     const kmsGen = await hre.ethers.getContractAt('KMSGeneration', kmsGenAddress);
-    const readKmsStatusView = async <T>(viewLabel: string, read: () => Promise<T>): Promise<T> => {
+    const readKmsStatusView = async <T>(viewLabel: string, read: () => Promise): Promise => {
       try {
         return await read();
       } catch (err) {
         const wrapped = new Error(
-          `Failed reading ${viewLabel} from KMSGeneration at ${kmsGenAddress}. Re-check the configured address and confirm this KMSGeneration version exposes ${viewLabel}. (${formatError(err)})`,
+          `Failed reading ${viewLabel} from KMSGeneration at ${kmsGenAddress}. Re-check the configured address and confirm this KMSGeneration version exposes ${viewLabel}. (${formatError(
+            err
+          )})`
         ) as Error & { cause?: unknown };
         wrapped.cause = err;
         throw wrapped;
@@ -517,13 +582,13 @@ task('task:assertNoPendingKeyManagementRequest')
 
     if (keyCounter !== KEY_COUNTER_BASE && !keyDone) {
       throw new Error(
-        `Keygen pending on ${kmsGenAddress}: keyCounter=${keyCounter} has not completed (isRequestDone=false). Complete or abort before proposing a new key management request.`,
+        `Keygen pending on ${kmsGenAddress}: keyCounter=${keyCounter} has not completed (isRequestDone=false). Complete or abort before proposing a new key management request.`
       );
     }
 
     if (crsCounter !== CRS_COUNTER_BASE && !crsDone) {
       throw new Error(
-        `CRS generation pending on ${kmsGenAddress}: crsCounter=${crsCounter} has not completed (isRequestDone=false). Complete or abort before proposing a new key management request.`,
+        `CRS generation pending on ${kmsGenAddress}: crsCounter=${crsCounter} has not completed (isRequestDone=false). Complete or abort before proposing a new key management request.`
       );
     }
 
@@ -561,25 +626,25 @@ task('task:deployProtocolConfig').setAction(async function (_taskArguments: Task
 // KMS context — from a reviewed export artifact (--snapshot) or a live block-pinned RPC read.
 task(
   'task:deployProtocolConfigFromCanonical',
-  "Upgrades the existing ProtocolConfig proxy from the canonical chain's state (reviewed snapshot artifact, or live read).",
+  "Upgrades the existing ProtocolConfig proxy from the canonical chain's state (reviewed snapshot artifact, or live read)."
 )
   .addOptionalParam(
     'snapshot',
     'Path to a reviewed task:exportCanonicalProtocolConfig artifact to apply. When set, canonical RPC access is not needed and exactly the reviewed state is deployed.',
     undefined,
-    types.string,
+    types.string
   )
   .addOptionalParam(
     'canonicalRpcUrl',
     'RPC URL of the canonical host chain to read the current ProtocolConfig state from. Required without --snapshot.',
     undefined,
-    types.string,
+    types.string
   )
   .addOptionalParam(
     'canonicalProtocolConfigAddress',
     'Address of the ProtocolConfig contract on the canonical host chain. Required without --snapshot.',
     undefined,
-    types.string,
+    types.string
   )
   .setAction(async function (
     {
@@ -587,11 +652,11 @@ task(
       canonicalRpcUrl,
       canonicalProtocolConfigAddress,
     }: { snapshot?: string; canonicalRpcUrl?: string; canonicalProtocolConfigAddress?: string },
-    hre,
+    hre
   ) {
     if (!snapshotPath && !(canonicalRpcUrl && canonicalProtocolConfigAddress)) {
       throw new Error(
-        'Pass either --snapshot <artifact.json> (reviewed export) or both --canonical-rpc-url and --canonical-protocol-config-address (live read).',
+        'Pass either --snapshot <artifact.json> (reviewed export) or both --canonical-rpc-url and --canonical-protocol-config-address (live read).'
       );
     }
 
@@ -621,7 +686,7 @@ task(
     // On interval-mining networks, upgradeProxy can return before the tx is mined.
     await waitForTaskReady(hre, 'task:assertProtocolConfigReady');
     console.log(
-      `ProtocolConfig code set successfully at ${secondaryProxyAddress}, mirroring canonical chain ${snapshot.canonicalChainId} context ${snapshot.currentKmsContextId} (block ${snapshot.blockNumber}) with ${snapshot.kmsNodes.length} KMS nodes.`,
+      `ProtocolConfig code set successfully at ${secondaryProxyAddress}, mirroring canonical chain ${snapshot.canonicalChainId} context ${snapshot.currentKmsContextId} (block ${snapshot.blockNumber}) with ${snapshot.kmsNodes.length} KMS nodes.`
     );
   });
 
@@ -630,25 +695,25 @@ task(
 // canonical before accepting secondary-host ownership.
 task(
   'task:exportCanonicalProtocolConfig',
-  'Exports the canonical ProtocolConfig KMS context to a JSON snapshot for DAO review.',
+  'Exports the canonical ProtocolConfig KMS context to a JSON snapshot for DAO review.'
 )
   .addParam(
     'canonicalRpcUrl',
     'RPC URL of the canonical host chain to read ProtocolConfig from.',
     undefined,
-    types.string,
+    types.string
   )
   .addParam(
     'canonicalProtocolConfigAddress',
     'Address of the ProtocolConfig contract on the canonical host chain.',
     undefined,
-    types.string,
+    types.string
   )
   .addOptionalParam(
     'blockNumber',
     "Canonical block height to pin the snapshot to. Defaults to the latest finalized block; pass the artifact's blockNumber to reproduce a prior export for DAO review.",
     undefined,
-    types.int,
+    types.int
   )
   .addOptionalParam('out', 'Path to write the snapshot JSON.', 'canonical-protocol-config-snapshot.json', types.string)
   .setAction(async function (
@@ -658,7 +723,7 @@ task(
       blockNumber,
       out,
     }: { canonicalRpcUrl: string; canonicalProtocolConfigAddress: string; blockNumber?: number; out: string },
-    hre,
+    hre
   ) {
     // readCanonicalSnapshot needs the ProtocolConfig artifact for its ABI; compile so the export
     // also works from a clean checkout.
@@ -673,7 +738,7 @@ task(
     const artifact = buildSnapshotArtifact(snapshot, canonicalProtocolConfigAddress);
     fs.writeFileSync(out, JSON.stringify(artifact, null, 2));
     console.log(
-      `Canonical ProtocolConfig snapshot written to ${out}: chain ${snapshot.canonicalChainId}, block ${snapshot.blockNumber}, context ${snapshot.currentKmsContextId}, ${snapshot.kmsNodes.length} KMS nodes.`,
+      `Canonical ProtocolConfig snapshot written to ${out}: chain ${snapshot.canonicalChainId}, block ${snapshot.blockNumber}, context ${snapshot.currentKmsContextId}, ${snapshot.kmsNodes.length} KMS nodes.`
     );
     return artifact;
   });
@@ -914,4 +979,47 @@ address constant kmsGenerationAdd = ${taskArguments.address};\n`;
     } catch (error) {
       throw new Error(`Failed to write ${HOST_ADDRESSES_FILE}: ${String(error)}`);
     }
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// Setup ConfidentialBridge Address
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:setBridgeAddress')
+  .addParam('address', 'The address of the contract')
+  .setAction(async function (taskArguments: TaskArguments) {
+    ensureAddressesDirectoryExists();
+    const content = `CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    try {
+      writeHostEnvLine(content, 'a');
+      console.log(`ConfidentialBridge address ${taskArguments.address} written successfully!`);
+    } catch (err) {
+      throw new Error(`Failed to write ConfidentialBridge address: ${String(err)}`);
+    }
+
+    const solidityTemplate = `
+address constant confidentialBridgeAdd = ${taskArguments.address};\n`;
+    try {
+      writeHostAddressesSol(solidityTemplate, 'a');
+      console.log(`${HOST_ADDRESSES_FILE} appended with confidentialBridgeAdd successfully!`);
+    } catch (error) {
+      throw new Error(`Failed to write ${HOST_ADDRESSES_FILE}: ${String(error)}`);
+    }
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// Set the bridge-specific `dstChainId`
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:setDstChainId')
+  .addParam('bridgeAddress', 'The address of the contract')
+  .addParam('remoteEid', 'The remote EID')
+  .addParam('remoteChainId', 'The remote chain ID')
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+    const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
+    const confidentialBridgeAddress = taskArguments.bridgeAddress;
+    const confidentialBridge = await ethers.getContractAt('ConfidentialBridge', confidentialBridgeAddress, deployer);
+    await confidentialBridge.setDstChainId(taskArguments.remoteEid, taskArguments.remoteChainId);
+    console.log('setDstChainId done successfully!');
   });
