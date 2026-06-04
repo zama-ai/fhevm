@@ -249,8 +249,10 @@ jobs:
   # Runs in parallel with the standard leg and reuses the single image build + lock resolution above,
   # so the only added cost is one boot+test. It is intentionally NOT a merge-queue gate yet
   # (.mergify.yml gates on `run-e2e-tests / fhevm-e2e-test` only) — promote it to a merge_condition
-  # once the threshold leg is proven stable. The dedicated test-suite-e2e-threshold-kms.yml workflow
-  # remains the fast, no-build, latest-main path for iterating on the threshold harness itself.
+  # once the threshold leg is proven stable. For a standalone threshold run (no full image build),
+  # dispatch the reusable workflow directly:
+  #   gh workflow run test-suite-e2e-tests.yml -f scenario=four-party-threshold-kms \
+  #     -f test-profile=kms-generation -f build=false
   run-e2e-tests-threshold-kms:
     needs: [create-e2e-tests-input]
     if: *build-trigger-condition
