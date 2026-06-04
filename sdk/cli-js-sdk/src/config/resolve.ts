@@ -47,4 +47,4 @@ export const resolveRpcUrl = (options: ClientOptions): string => {
 const rpcUrlFromOptions = (
   rpcUrl: string | undefined,
   config: NetworkConfig,
-): string => rpcUrl ?? process.env[config.envRpcUrl] ?? config.defaultRpcUrl;
+): string => rpcUrl?.trim() || process.env[config.envRpcUrl]?.trim() || config.defaultRpcUrl;
