@@ -8,6 +8,39 @@ export const fheTestAbi = [
   },
   {
     type: "function",
+    name: "confidentialProtocolId",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    stateMutability: "pure",
+  },
+  {
+    type: "function",
+    name: "getCoprocessorConfig",
+    inputs: [],
+    outputs: [
+      {
+        name: "config",
+        type: "tuple",
+        internalType: "struct CoprocessorConfig",
+        components: [
+          { name: "ACLAddress", type: "address", internalType: "address" },
+          {
+            name: "CoprocessorAddress",
+            type: "address",
+            internalType: "address",
+          },
+          {
+            name: "KMSVerifierAddress",
+            type: "address",
+            internalType: "address",
+          },
+        ],
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
     name: "getClearText",
     inputs: [{ name: "handle", type: "bytes32", internalType: "bytes32" }],
     outputs: [{ name: "", type: "uint256", internalType: "uint256" }],

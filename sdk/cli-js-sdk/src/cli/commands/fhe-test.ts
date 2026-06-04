@@ -1,6 +1,6 @@
 import type { Command } from "@commander-js/extra-typings";
 
-import { initFheTest } from "../../flows";
+import { getFheTestInfo, initFheTest } from "../../flows";
 import { FHE_VALUE_TYPES } from "../../types";
 import { getGlobalOptions } from "../options";
 import { printJson } from "../output";
@@ -12,6 +12,27 @@ export const registerFheTestCommands = (program: Command): void => {
   const fheTestCommand = program
     .command("fhe-test")
     .description("FHETest contract utilities");
+
+  fheTestCommand
+    .command("info")
+    .description("Show FHETest contract and network metadata")
+    .option(
+      "--contract <address>",
+      "FHETest contract address override",
+      parseAddress,
+    )
+    .action(async (options, command) => {
+      const globals = getGlobalOptions(command);
+      const result = await getFheTestInfo({
+        network: globals.network,
+        relayerUrl: globals.relayerUrl,
+        rpcUrl: globals.rpcUrl,
+        contractAddress: options.contract,
+        onProgress: createProgressReporter(),
+      });
+
+      printJson(result);
+    });
 
   fheTestCommand
     .command("init")
