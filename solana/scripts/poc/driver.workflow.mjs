@@ -120,12 +120,21 @@ const revertTree = (it) =>
   agent(`Discard the UNCOMMITTED working-tree changes from the failed attempt at "${it.id}" so the next item starts clean (\`git checkout -- . && git clean -fd\` under solana/). Never touch committed history. Confirm the tree is clean.`,
     { label: `revert:${it.id}`, phase: 'Implement', model: 'sonnet' });
 
-while (withinBudget() && nextReady() && !escalations.length) {
+// Escalations PARK the item and the loop continues with other ready items — one
+// hard item must not block independent ones. Only env-unrecoverable halts everything.
+let fatal = false;
+while (withinBudget() && nextReady() && !fatal) {
   const it = nextReady();
   phase('Implement');
   const impl = await agent(implPrompt(it), { label: `impl:${it.id}`, phase: 'Implement', schema: IMPL });
   if (!impl) { it.status = 'parked'; continue; }
-  if (impl.escalate) { escalations.push({ id: it.id, reason: impl.escalateReason }); break; }
+  if (impl.escalate) {
+    await revertTree(it);
+    escalations.push({ id: it.id, reason: impl.escalateReason });
+    it.status = 'parked';
+    if (impl.escalateReason === 'env-unrecoverable') fatal = true;
+    continue;
+  }
   if (impl.rfcDivergence) divergences.push({ id: it.id, note: impl.rfcDivergence });
   if (!impl.oracleGreen) { await revertTree(it); it.tries += 1; if (it.tries >= 3) it.status = 'parked'; continue; }
 
@@ -133,7 +142,12 @@ while (withinBudget() && nextReady() && !escalations.length) {
   const verdicts = (await parallel(LENSES.map((lens) => () =>
     agent(refutePrompt(it, impl, lens), { label: `verify:${it.id}:${lens}`, phase: 'Verify', schema: VERDICT,
       model: lens === 'correctness' ? undefined : 'sonnet' })))).filter(Boolean);
-  if (verdicts.some((v) => v.hack)) { await revertTree(it); escalations.push({ id: it.id, reason: 'cheat-detected', detail: verdicts.find((v) => v.hack)?.why }); break; }
+  if (verdicts.some((v) => v.hack)) {
+    await revertTree(it);
+    escalations.push({ id: it.id, reason: 'cheat-detected', detail: verdicts.find((v) => v.hack)?.why });
+    it.status = 'parked';
+    continue;
+  }
   if (verdicts.length === LENSES.length && verdicts.every((v) => !v.refuted)) {
     await commitItem(it); it.status = 'green'; log(`green: ${it.id}`);
   } else {
