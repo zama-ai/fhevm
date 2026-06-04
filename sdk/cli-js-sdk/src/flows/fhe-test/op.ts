@@ -18,6 +18,7 @@ import type {
   FheTestHandle,
 } from "../../types";
 import { createRandomValue } from "../../values";
+import { describeHandle, describeValue } from "../progress";
 
 export { FHE_TEST_OPERATIONS, getFheTestOperationType };
 export type { FheTestOperation };
@@ -67,6 +68,7 @@ export const runFheTestOperation = async (
       ? createRandomValue(type)
       : { type, value: options.value };
   const makePublic = options.makePublic ?? false;
+  options.onProgress?.(`Operation input: ${describeValue(value)}`);
 
   const previousHandle = await readFheTestHandle({
     publicClient,
@@ -75,6 +77,9 @@ export const runFheTestOperation = async (
     type,
     onProgress: options.onProgress,
   });
+  options.onProgress?.(
+    `Previous ${type} handle: ${describeHandle(previousHandle)}`,
+  );
 
   const encrypted = await encryptValues(fhevm, {
     contractAddress,
@@ -85,6 +90,7 @@ export const runFheTestOperation = async (
   });
   const encryptedValue = encrypted.encryptedValues[0];
   if (!encryptedValue) throw new Error("FHEVM SDK did not return a handle.");
+  options.onProgress?.(`Encrypted operation input handle: ${encryptedValue}`);
 
   const functionName = getFheTestOperationFunctionName(options.operation);
   options.onProgress?.(`Simulating FHETest.${functionName}`);
@@ -112,6 +118,7 @@ export const runFheTestOperation = async (
     type,
     onProgress: options.onProgress,
   });
+  options.onProgress?.(`Updated ${type} handle: ${describeHandle(handle)}`);
 
   return {
     operation: options.operation,

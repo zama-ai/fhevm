@@ -18,6 +18,7 @@ import type {
   FheTestHandle,
 } from "../../types";
 import { createFreshDecryptValues } from "../../values";
+import { describeHandle, describeValue } from "../progress";
 import {
   loadRequiredDelegatorAccount,
   resolveDelegatorAddress,
@@ -59,6 +60,8 @@ export const freshDelegatedUserDecrypt = async (
     delegatorAddress,
     delegateContext.account.address,
   );
+  options.onProgress?.(`Delegate address: ${delegateContext.account.address}`);
+  options.onProgress?.(`Delegator address: ${delegatorAddress}`);
 
   const values =
     options.value === undefined
@@ -66,6 +69,7 @@ export const freshDelegatedUserDecrypt = async (
       : [{ type: options.type, value: options.value }];
   const value = values[0];
   if (!value) throw new Error("No value to encrypt.");
+  options.onProgress?.(`Delegator input value: ${describeValue(value)}`);
 
   const encrypted = await encryptValues(delegatorContext.fhevm, {
     contractAddress: delegatorContext.contractAddress,
@@ -76,6 +80,7 @@ export const freshDelegatedUserDecrypt = async (
   });
   const encryptedValue = encrypted.encryptedValues[0];
   if (!encryptedValue) throw new Error("FHEVM SDK did not return a handle.");
+  options.onProgress?.(`Encrypted delegator input handle: ${encryptedValue}`);
 
   options.onProgress?.(
     `Simulating FHETest.${getSetEncryptedFunctionName(options.type)}`,
@@ -115,6 +120,9 @@ export const freshDelegatedUserDecrypt = async (
     type: options.type,
     onProgress: options.onProgress,
   });
+  options.onProgress?.(
+    `Stored delegator ${options.type} handle: ${describeHandle(handle)}`,
+  );
   const decrypted = await decryptDelegatedHandles(delegateContext, {
     encryptedValues: [handle.handle],
     delegatorAddress,

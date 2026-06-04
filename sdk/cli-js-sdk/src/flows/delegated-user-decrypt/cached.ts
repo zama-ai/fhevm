@@ -7,6 +7,7 @@ import {
 } from "../../config";
 import { readFheTestHandle } from "../../fhe-test/handles";
 import type { FheTestHandle } from "../../types";
+import { describeHandle } from "../progress";
 import {
   loadOptionalDelegatorAccount,
   resolveDelegatorAddress,
@@ -43,6 +44,8 @@ export const delegatedUserDecrypt = async (
     delegatorAddress,
     delegateContext.account.address,
   );
+  options.onProgress?.(`Delegate address: ${delegateContext.account.address}`);
+  options.onProgress?.(`Delegator address: ${delegatorAddress}`);
 
   const delegation = await ensureUserDecryptionDelegation(delegateContext, {
     delegatorContext,
@@ -56,6 +59,7 @@ export const delegatedUserDecrypt = async (
     options.onProgress?.(
       `Using ${options.handles.length.toString()} provided handle(s)`,
     );
+    options.onProgress?.(`Provided handle(s): ${options.handles.join(", ")}`);
     const decrypted = await decryptDelegatedHandles(delegateContext, {
       encryptedValues: options.handles,
       delegatorAddress,
@@ -77,6 +81,9 @@ export const delegatedUserDecrypt = async (
     type: options.type,
     onProgress: options.onProgress,
   });
+  options.onProgress?.(
+    `Using stored delegator ${options.type} handle: ${describeHandle(handle)}`,
+  );
   const decrypted = await decryptDelegatedHandles(delegateContext, {
     encryptedValues: [handle.handle],
     delegatorAddress,

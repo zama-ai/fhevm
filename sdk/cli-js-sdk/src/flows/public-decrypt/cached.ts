@@ -9,6 +9,7 @@ import type {
   FheValueType,
   PublicDecryptResult,
 } from "../../types";
+import { describeHandle } from "../progress";
 import { resolveAccountAddress } from "./account";
 
 /**
@@ -40,6 +41,7 @@ export const publicDecrypt = async (
     options.onProgress?.(
       `Using ${options.handles.length.toString()} provided handle(s)`,
     );
+    options.onProgress?.(`Provided handle(s): ${options.handles.join(", ")}`);
     return readPublicValues(fhevm, options.handles, options.onProgress);
   }
 
@@ -51,6 +53,9 @@ export const publicDecrypt = async (
     type: options.type,
     onProgress: options.onProgress,
   });
+  options.onProgress?.(
+    `Using stored public ${options.type} handle: ${describeHandle(handle)}`,
+  );
   const decrypted = await readPublicValues(
     fhevm,
     [handle.handle],

@@ -12,6 +12,7 @@ import { sendAndWait } from "../../shared/transactions";
 import type { FheTestHandle, FheValueType } from "../../types";
 import { FHE_VALUE_TYPES } from "../../types";
 import { createInitValue } from "../../values";
+import { describeHandle } from "../progress";
 
 /**
  * Options for initializing FHETest handles for the wallet account.
@@ -29,6 +30,27 @@ export type InitFheTestOptions = ClientOptions &
     mnemonic?: string;
     onProgress?: ProgressReporter;
   }>;
+
+const describeTypes = (handles: readonly FheTestHandle[]): string =>
+  handles.length === 0
+    ? "none"
+    : handles.map((handle) => handle.type).join(", ");
+
+const reportInitSummary = (
+  onProgress: ProgressReporter | undefined,
+  initialized: readonly FheTestHandle[],
+  skipped: readonly FheTestHandle[],
+): void => {
+  onProgress?.(
+    `Initialized type(s): ${describeTypes(initialized)}; skipped type(s): ${describeTypes(skipped)}`,
+  );
+  for (const handle of initialized) {
+    onProgress?.(`Initialized ${handle.type} handle: ${describeHandle(handle)}`);
+  }
+  for (const handle of skipped) {
+    onProgress?.(`Skipped existing ${handle.type} handle: ${describeHandle(handle)}`);
+  }
+};
 
 /** Ensures FHETest has stored handles for one or more types. */
 export const initFheTest = async (
@@ -82,6 +104,7 @@ export const initFheTest = async (
         );
 
     if (typesToInitialize.length === 0) {
+      reportInitSummary(options.onProgress, initialized, skipped);
       return {
         contractAddress,
         account: account.address,
@@ -114,6 +137,7 @@ export const initFheTest = async (
       );
     }
 
+    reportInitSummary(options.onProgress, initialized, skipped);
     return {
       contractAddress,
       account: account.address,
@@ -171,6 +195,7 @@ export const initFheTest = async (
     );
   }
 
+  reportInitSummary(options.onProgress, initialized, skipped);
   return {
     contractAddress,
     account: account.address,

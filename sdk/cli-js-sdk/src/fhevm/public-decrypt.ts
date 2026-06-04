@@ -1,7 +1,10 @@
 import type { Hex } from "viem";
 
 import type { ClientContext } from "../config";
-import type { ProgressReporter } from "../shared/progress";
+import {
+  describeDecryptedValues,
+  type ProgressReporter,
+} from "../shared/progress";
 import type { PublicDecryptResult } from "../types";
 
 type FhevmClient = ClientContext["fhevm"];
@@ -24,16 +27,18 @@ export const readPublicValues = async (
     encryptedValues,
   });
   onProgress?.("Public decryption received and signatures verified");
+  const clearValues = result.clearValues.map((value) => ({
+    type: value.type,
+    value:
+      typeof value.value === "bigint"
+        ? value.value.toString()
+        : String(value.value),
+  }));
+  onProgress?.(`Public decrypted value(s): ${describeDecryptedValues(clearValues)}`);
 
   return {
     encryptedValues,
-    clearValues: result.clearValues.map((value) => ({
-      type: value.type,
-      value:
-        typeof value.value === "bigint"
-          ? value.value.toString()
-          : String(value.value),
-    })),
+    clearValues,
     abiEncodedCleartexts: result.checkSignaturesArgs
       .abiEncodedCleartexts as Hex,
     decryptionProof: result.checkSignaturesArgs.decryptionProof as Hex,

@@ -18,6 +18,7 @@ import type {
   PublicDecryptResult,
 } from "../../types";
 import { createFreshDecryptValues } from "../../values";
+import { describeHandle, describeValue } from "../progress";
 
 /**
  * Options for the fresh public-decrypt demo flow.
@@ -55,16 +56,19 @@ export const freshPublicDecrypt = async (
       : [{ type: options.type, value: options.value }];
   const value = values[0];
   if (!value) throw new Error("No value to encrypt.");
+  options.onProgress?.(`Input value: ${describeValue(value)}`);
 
-  options.onProgress?.(`Encrypting ${options.type} value`);
   const encrypted = await encryptValues(fhevm, {
     contractAddress,
     userAddress: account.address,
     values,
+    onProgress: options.onProgress,
+    progressLabel: `Encrypting ${options.type} value`,
   });
 
   const encryptedValue = encrypted.encryptedValues[0];
   if (!encryptedValue) throw new Error("FHEVM SDK did not return a handle.");
+  options.onProgress?.(`Encrypted input handle: ${encryptedValue}`);
 
   options.onProgress?.(
     `Simulating FHETest.${getSetEncryptedFunctionName(options.type)}`,
@@ -93,6 +97,9 @@ export const freshPublicDecrypt = async (
     type: options.type,
     onProgress: options.onProgress,
   });
+  options.onProgress?.(
+    `Stored public ${options.type} handle: ${describeHandle(handle)}`,
+  );
   const decrypted = await readPublicValues(
     fhevm,
     [handle.handle],

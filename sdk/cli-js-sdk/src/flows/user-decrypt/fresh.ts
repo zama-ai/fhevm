@@ -18,6 +18,7 @@ import type {
   UserDecryptResult,
 } from "../../types";
 import { createFreshDecryptValues } from "../../values";
+import { describeHandle, describeValue } from "../progress";
 
 /**
  * Options for the fresh user-decrypt demo flow.
@@ -56,6 +57,7 @@ export const freshUserDecrypt = async (
       : [{ type: options.type, value: options.value }];
   const value = values[0];
   if (!value) throw new Error("No value to encrypt.");
+  options.onProgress?.(`Input value: ${describeValue(value)}`);
 
   const encrypted = await encryptValues(fhevm, {
     contractAddress,
@@ -67,6 +69,7 @@ export const freshUserDecrypt = async (
 
   const encryptedValue = encrypted.encryptedValues[0];
   if (!encryptedValue) throw new Error("FHEVM SDK did not return a handle.");
+  options.onProgress?.(`Encrypted input handle: ${encryptedValue}`);
 
   options.onProgress?.(
     `Simulating FHETest.${getSetEncryptedFunctionName(options.type)}`,
@@ -94,6 +97,9 @@ export const freshUserDecrypt = async (
     type: options.type,
     onProgress: options.onProgress,
   });
+  options.onProgress?.(
+    `Stored ${options.type} handle: ${describeHandle(handle)}`,
+  );
   const decrypted = await decryptUserValues(
     { ...context, contractAddress, publicClient },
     {

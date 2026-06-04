@@ -3,7 +3,10 @@ import type { Hex } from "viem";
 import type { Account } from "viem/accounts";
 
 import type { ClientContext } from "../config";
-import type { ProgressReporter } from "../shared/progress";
+import {
+  describeDecryptedValues,
+  type ProgressReporter,
+} from "../shared/progress";
 import type {
   DecryptedValue,
   DecryptionPermitSummary,
@@ -89,6 +92,13 @@ export const decryptUserValues = async (
     signedPermit,
     transportKeyPair,
   });
+  const serializedClearValues = serializeTypedValues(clearValues);
+  options.onProgress?.(
+    `User decryption received ${clearValues.length.toString()} value(s)`,
+  );
+  options.onProgress?.(
+    `User decrypted value(s): ${describeDecryptedValues(serializedClearValues)}`,
+  );
 
   return {
     contractAddress: context.contractAddress,
@@ -96,7 +106,7 @@ export const decryptUserValues = async (
     signerAddress: options.signer.address,
     isDelegated: signedPermit.isDelegated,
     encryptedValues: options.encryptedValues,
-    clearValues: serializeTypedValues(clearValues),
+    clearValues: serializedClearValues,
     permit: summarizePermit(signedPermit, {
       contractAddresses: [context.contractAddress],
       durationDays: options.durationDays,

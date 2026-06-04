@@ -10,6 +10,7 @@ import type {
   InputProofResult,
 } from "../types";
 import { createRandomValue } from "../values";
+import { describeValues } from "./progress";
 
 /**
  * Options for requesting an input proof without writing anything to FHETest.
@@ -46,6 +47,7 @@ export const requestInputProof = async (
     (options.value === undefined
       ? [createRandomValue(valueType)]
       : [{ type: valueType, value: options.value }]);
+  options.onProgress?.(`Input value(s): ${describeValues(values)}`);
 
   const encrypted = await encryptValues(fhevm, {
     contractAddress,
@@ -54,6 +56,9 @@ export const requestInputProof = async (
     onProgress: options.onProgress,
     progressLabel: `Encrypting ${values.length.toString()} ${valueType} value(s) and requesting verified input proof`,
   });
+  options.onProgress?.(
+    `Encrypted input handle(s): ${encrypted.encryptedValues.join(", ")}`,
+  );
 
   options.onProgress?.("Input proof received");
   return {

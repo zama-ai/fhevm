@@ -1,10 +1,14 @@
+import { createConsola } from "consola";
+
 import type { ProgressReporter } from "../shared/progress";
 
-export const createProgressReporter = (): ProgressReporter => {
-  const startedAt = performance.now();
+const progressLogger = createConsola({
+  stdout: process.stderr,
+  stderr: process.stderr,
+});
 
+export const createProgressReporter = (): ProgressReporter => {
   return (message: string) => {
-    const elapsedSeconds = ((performance.now() - startedAt) / 1000).toFixed(1);
-    process.stderr.write(`[${elapsedSeconds}s] ${message}\n`);
+    progressLogger.start(message);
   };
 };

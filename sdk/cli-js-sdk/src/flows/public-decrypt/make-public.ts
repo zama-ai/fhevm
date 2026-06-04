@@ -11,6 +11,7 @@ import type {
   FheValueType,
   PublicDecryptResult,
 } from "../../types";
+import { describeHandle } from "../progress";
 
 /**
  * Options for converting an existing wallet-owned FHETest handle to public
@@ -40,6 +41,16 @@ export const makePublicAndDecrypt = async (
   options.onProgress?.("Loading wallet and creating clients");
   const { account, contractAddress, fhevm, publicClient, walletClient } =
     createWalletContext(options);
+  const previousHandle = await readFheTestHandle({
+    publicClient,
+    contractAddress,
+    account: account.address,
+    type: options.type,
+    onProgress: options.onProgress,
+  });
+  options.onProgress?.(
+    `Existing ${options.type} handle: ${describeHandle(previousHandle)}`,
+  );
 
   options.onProgress?.(
     `Simulating FHETest.makePubliclyDecryptable for ${options.type}`,
@@ -55,18 +66,14 @@ export const makePublicAndDecrypt = async (
     request,
     onProgress: options.onProgress,
   });
-  const handle = await readFheTestHandle({
-    publicClient,
-    contractAddress,
-    account: account.address,
-    type: options.type,
-    onProgress: options.onProgress,
-  });
+  options.onProgress?.(
+    `Publicly decryptable ${options.type} handle: ${describeHandle(previousHandle)}`,
+  );
   const decrypted = await readPublicValues(
     fhevm,
-    [handle.handle],
+    [previousHandle.handle],
     options.onProgress,
   );
 
-  return { ...decrypted, transactionHash, handle };
+  return { ...decrypted, transactionHash, handle: previousHandle };
 };

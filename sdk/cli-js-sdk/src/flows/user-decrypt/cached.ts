@@ -5,6 +5,7 @@ import { readFheTestHandle } from "../../fhe-test/handles";
 import { decryptUserValues } from "../../fhevm/user-decrypt";
 import type { ProgressReporter } from "../../shared/progress";
 import type { FheTestHandle, FheValueType, UserDecryptResult } from "../../types";
+import { describeHandle } from "../progress";
 
 /**
  * User-decrypt options for existing private handles.
@@ -35,6 +36,7 @@ export const userDecrypt = async (
     options.onProgress?.(
       `Using ${options.handles.length.toString()} provided handle(s)`,
     );
+    options.onProgress?.(`Provided handle(s): ${options.handles.join(", ")}`);
     return decryptUserValues(
       { ...context, contractAddress, publicClient },
       {
@@ -54,6 +56,9 @@ export const userDecrypt = async (
     type: options.type,
     onProgress: options.onProgress,
   });
+  options.onProgress?.(
+    `Using stored ${options.type} handle: ${describeHandle(handle)}`,
+  );
   const decrypted = await decryptUserValues(
     { ...context, contractAddress, publicClient },
     {
