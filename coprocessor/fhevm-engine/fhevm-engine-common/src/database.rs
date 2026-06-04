@@ -382,19 +382,28 @@ fn identity_connect_options(options: PgConnectOptions) -> PgConnectOptions {
     options
 }
 
-/// Schema name used by the GCS (green coprocessor stack) during the
-/// blue/green upgrade flow. The upgrade-controller creates this schema at
-/// activation and the GCS-mode services connect with
-/// `search_path = "gcs,public"` so unqualified writes land in `gcs.*`.
-pub const GCS_SCHEMA: &str = "gcs";
+/// Versioned GCS schema name, e.g. `gcs-0.14.0` — the literal name stored in the
+/// catalog (unquoted). Built from this crate's `CARGO_PKG_VERSION`, which is the
+/// same value as [`crate::STACK_VERSION`], so each stack version owns a distinct
+/// schema and a new green stack never collides with the schema of the version it
+/// is replacing.
+pub const GCS_SCHEMA: &str = concat!("gcs-", env!("CARGO_PKG_VERSION"));
+
+/// [`GCS_SCHEMA`] wrapped in double quotes for use as a SQL identifier, e.g.
+/// `"gcs-0.14.0"`. The hyphen and dots make the bare name an invalid *unquoted*
+/// identifier, so every SQL reference to the schema (`CREATE SCHEMA`,
+/// `<schema>.<table>`, `DROP SCHEMA`) and the `search_path` value must use this
+/// quoted form.
+pub const GCS_SCHEMA_QUOTED: &str = concat!("\"gcs-", env!("CARGO_PKG_VERSION"), "\"");
 
 /// Default search_path applied by [`apply_gcs_mode_search_path`] when
-/// `gcs_mode = true`: GCS first, then public. The fallback to public is
-/// what lets shared read-only tables (keys, crs, host_chains, upgrade_state…)
-/// resolve from public without each query having to qualify them. Tables
-/// duplicated into `gcs` (ciphertexts, computations, state_hash, …) resolve
-/// to the GCS copy and pre-empt the public one.
-pub const GCS_SEARCH_PATH: &str = "gcs,public";
+/// `gcs_mode = true`: the versioned GCS schema first, then public, e.g.
+/// `"gcs-0.14.0",public`. The fallback to public is what lets shared read-only
+/// tables (keys, crs, host_chains, upgrade_state…) resolve from public without
+/// each query having to qualify them. Tables duplicated into the GCS schema
+/// (ciphertexts, computations, state_hash, …) resolve to the GCS copy and
+/// pre-empt the public one.
+pub const GCS_SEARCH_PATH: &str = concat!("\"gcs-", env!("CARGO_PKG_VERSION"), "\",public");
 
 /// Returns a [`PgConnectOptions`] transform that, when `gcs_mode = true`,
 /// pins every new connection in the pool to
