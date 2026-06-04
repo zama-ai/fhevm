@@ -1,6 +1,5 @@
 import type { Command } from "@commander-js/extra-typings";
 
-import { freshUserDecrypt, userDecrypt } from "../../flows";
 import { FHE_VALUE_TYPES } from "../../types";
 import { parseClearValue, serializeValue } from "../../values";
 import { getGlobalOptions } from "../options";
@@ -56,6 +55,7 @@ export const registerUserDecryptCommands = (program: Command): void => {
     )
     .option("--mnemonic <mnemonic>", "wallet mnemonic; falls back to MNEMONIC")
     .action(async (options, command) => {
+      const { userDecrypt } = await import("../../flows/user-decrypt/cached");
       const globals = getGlobalOptions(command);
       const result = await userDecrypt({
         network: globals.network,
@@ -101,6 +101,9 @@ export const registerUserDecryptCommands = (program: Command): void => {
     )
     .option("--mnemonic <mnemonic>", "wallet mnemonic; falls back to MNEMONIC")
     .action(async (options, command) => {
+      const { freshUserDecrypt } = await import(
+        "../../flows/user-decrypt/fresh"
+      );
       const globals = getGlobalOptions(command);
       const value =
         options.value === undefined

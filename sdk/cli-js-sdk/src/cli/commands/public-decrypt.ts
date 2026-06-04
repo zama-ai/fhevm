@@ -1,10 +1,5 @@
 import type { Command } from "@commander-js/extra-typings";
 
-import {
-  freshPublicDecrypt,
-  makePublicAndDecrypt,
-  publicDecrypt,
-} from "../../flows";
 import { FHE_VALUE_TYPES } from "../../types";
 import { parseClearValue, serializeValue } from "../../values";
 import { getGlobalOptions } from "../options";
@@ -60,6 +55,7 @@ export const registerPublicDecryptCommands = (program: Command): void => {
     )
     .option("--mnemonic <mnemonic>", "wallet mnemonic; falls back to MNEMONIC")
     .action(async (options, command) => {
+      const { publicDecrypt } = await import("../../flows/public-decrypt/cached");
       const globals = getGlobalOptions(command);
       const result = await publicDecrypt({
         network: globals.network,
@@ -101,6 +97,9 @@ export const registerPublicDecryptCommands = (program: Command): void => {
     )
     .option("--mnemonic <mnemonic>", "wallet mnemonic; falls back to MNEMONIC")
     .action(async (options, command) => {
+      const { freshPublicDecrypt } = await import(
+        "../../flows/public-decrypt/fresh"
+      );
       const globals = getGlobalOptions(command);
       const value =
         options.value === undefined
@@ -153,6 +152,9 @@ export const registerPublicDecryptCommands = (program: Command): void => {
     )
     .option("--mnemonic <mnemonic>", "wallet mnemonic; falls back to MNEMONIC")
     .action(async (options, command) => {
+      const { makePublicAndDecrypt } = await import(
+        "../../flows/public-decrypt/make-public"
+      );
       const globals = getGlobalOptions(command);
       const result = await makePublicAndDecrypt({
         network: globals.network,

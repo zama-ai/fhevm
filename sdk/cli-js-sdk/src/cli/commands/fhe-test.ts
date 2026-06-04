@@ -1,14 +1,10 @@
 import type { Command } from "@commander-js/extra-typings";
 
 import {
-  getFheTestInfo,
-  getFheTestOperationType,
-  initFheTest,
-  inspectFheTest,
-  runFheTestOperation,
   FHE_TEST_OPERATIONS,
-} from "../../flows";
-import { FHE_VALUE_TYPES } from "../../types";
+  getFheTestOperationType,
+  FHE_VALUE_TYPES,
+} from "../../types";
 import { parseClearValue, serializeValue } from "../../values";
 import { getGlobalOptions } from "../options";
 import { printJson } from "../output";
@@ -37,6 +33,7 @@ export const registerFheTestCommands = (program: Command): void => {
       parseAddress,
     )
     .action(async (options, command) => {
+      const { getFheTestInfo } = await import("../../flows/fhe-test/info");
       const globals = getGlobalOptions(command);
       const result = await getFheTestInfo({
         network: globals.network,
@@ -94,6 +91,7 @@ export const registerFheTestCommands = (program: Command): void => {
         return;
       }
 
+      const { inspectFheTest } = await import("../../flows/fhe-test/inspect");
       const globals = getGlobalOptions(command);
       const result = await inspectFheTest({
         network: globals.network,
@@ -141,6 +139,7 @@ export const registerFheTestCommands = (program: Command): void => {
         throw new Error("fhe-test init --bulk cannot be used with --type.");
       }
 
+      const { initFheTest } = await import("../../flows/fhe-test/init");
       const globals = getGlobalOptions(command);
       const result = await initFheTest({
         network: globals.network,
@@ -188,6 +187,7 @@ export const registerFheTestCommands = (program: Command): void => {
       )
       .option("--mnemonic <mnemonic>", "wallet mnemonic; falls back to MNEMONIC")
       .action(async (options, command) => {
+        const { runFheTestOperation } = await import("../../flows/fhe-test/op");
         const globals = getGlobalOptions(command);
         const value =
           options.value === undefined

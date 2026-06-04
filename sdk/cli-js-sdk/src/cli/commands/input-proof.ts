@@ -1,6 +1,5 @@
 import type { Command } from "@commander-js/extra-typings";
 
-import { requestInputProof } from "../../flows";
 import { FHE_VALUE_TYPES } from "../../types";
 import { parseClearValue, serializeValue } from "../../values";
 import { getGlobalOptions } from "../options";
@@ -38,6 +37,7 @@ export const registerInputProofCommand = (program: Command): void => {
       parseAddress,
     )
     .action(async (options, command) => {
+      const { requestInputProof } = await import("../../flows/input-proof");
       const globals = getGlobalOptions(command);
       const value =
         options.value === undefined

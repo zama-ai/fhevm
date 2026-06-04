@@ -28,6 +28,12 @@ fhevm-sdk --help
 pnpm --silent run cli
 ```
 
+To remove the global link later, remove the globally linked package:
+
+```bash
+pnpm remove --global cli-fhevm-sdk
+```
+
 The repository `.env` is loaded automatically, even when you run the CLI from another directory. Shell variables override `.env` values.
 Explicit credential flags override environment credentials.
 
@@ -251,6 +257,8 @@ fhevm-sdk completion uninstall
 ```
 
 Supported shells are `bash`, `zsh`, `fish`, and `pwsh`. Restart the shell or source its profile after installing.
+
+Completion uses a lightweight static resolver so pressing Tab does not load the SDK, connect to networks, or evaluate command flows.
 
 ## Not Yet Exposed
 

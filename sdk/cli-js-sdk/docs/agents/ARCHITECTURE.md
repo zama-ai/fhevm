@@ -10,6 +10,7 @@ Use the existing boundaries when adding behavior.
 - `src/config`: network registry, runtime config, account loading, and client contexts.
 - `src/values`: clear-value parsing, random values, and JSON serialization helpers.
 - `src/shared`: cross-cutting helpers like progress and transaction waiting.
+- `bin/completion-server.mjs`: static tab completion resolver. It must stay lightweight and must not import TypeScript runtime, SDK clients, config, or flows.
 
 When adding a command, prefer:
 
@@ -18,3 +19,4 @@ When adding a command, prefer:
 3. Adapter changes only at the boundary being crossed.
 
 Keep raw SDK response casts and raw contract calls out of CLI and flow code when practical.
+Keep expensive flow and SDK imports inside command actions, not at CLI module top level.

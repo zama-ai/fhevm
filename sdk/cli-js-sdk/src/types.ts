@@ -2,6 +2,7 @@ import type { Hex } from "viem";
 
 export const NETWORKS = ["testnet", "devnet", "devnet-amoy"] as const;
 export type NetworkName = (typeof NETWORKS)[number];
+export const DEFAULT_NETWORK: NetworkName = "testnet";
 
 /**
  * FHETest value kinds supported by the CLI and by the contract helper mappings.
@@ -34,6 +35,42 @@ export const FHE_TYPE_IDS = {
   address: 7,
   uint256: 8,
 } as const satisfies Record<FheValueType, number>;
+
+export const FHE_TEST_OPERATIONS = [
+  "xor-bool",
+  "add-uint8",
+  "add-uint16",
+  "add-uint32",
+  "add-uint64",
+  "add-uint128",
+  "xor-uint256",
+  "eq-address",
+] as const;
+export type FheTestOperation = (typeof FHE_TEST_OPERATIONS)[number];
+
+export const FHE_TEST_OPERATION_CONFIG = {
+  "xor-bool": { functionName: "xorEbool", type: "bool" },
+  "add-uint8": { functionName: "addEuint8", type: "uint8" },
+  "add-uint16": { functionName: "addEuint16", type: "uint16" },
+  "add-uint32": { functionName: "addEuint32", type: "uint32" },
+  "add-uint64": { functionName: "addEuint64", type: "uint64" },
+  "add-uint128": { functionName: "addEuint128", type: "uint128" },
+  "xor-uint256": { functionName: "xorEuint256", type: "uint256" },
+  "eq-address": { functionName: "eqEaddress", type: "address" },
+} as const satisfies Record<
+  FheTestOperation,
+  Readonly<{ functionName: string; type: FheValueType }>
+>;
+
+/** Returns the value type required by a supported FHETest operation. */
+export const getFheTestOperationType = (
+  operation: FheTestOperation,
+): FheValueType => FHE_TEST_OPERATION_CONFIG[operation].type;
+
+/** Returns the FHETest contract function name for a supported operation. */
+export const getFheTestOperationFunctionName = (
+  operation: FheTestOperation,
+): string => FHE_TEST_OPERATION_CONFIG[operation].functionName;
 
 export type FheClearValue = boolean | number | bigint | string;
 

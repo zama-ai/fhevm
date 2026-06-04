@@ -6,10 +6,10 @@ import {
 } from "viem/chains";
 import type { Chain } from "viem";
 
+import { DEFAULT_NETWORK } from "../types";
 import type { NetworkName } from "../types";
 import type { NetworkConfig } from "./types";
 
-export const DEFAULT_NETWORK: NetworkName = "testnet";
 export const DEFAULT_SEPOLIA_RPC_URL = "https://sepolia.drpc.org";
 export const DEFAULT_POLYGON_AMOY_RPC_URL =
   "https://rpc-amoy.polygon.technology";

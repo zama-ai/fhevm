@@ -3,12 +3,11 @@ import type { Hex } from "viem";
 import { createWalletContext, type ClientOptions } from "../../config";
 import { readFheTestHandle } from "../../fhe-test/handles";
 import {
-  FHE_TEST_OPERATIONS,
   type FheTestOperation,
   getFheTestOperationFunctionName,
   getFheTestOperationType,
-  simulateFheTestOperation,
-} from "../../fhe-test/writes";
+} from "../../types";
+import { simulateFheTestOperation } from "../../fhe-test/writes";
 import { encryptValues } from "../../fhevm/encryption";
 import type { ProgressReporter } from "../../shared/progress";
 import { sendAndWait } from "../../shared/transactions";
@@ -20,7 +19,6 @@ import type {
 import { createRandomValue } from "../../values";
 import { describeHandle, describeValue } from "../progress";
 
-export { FHE_TEST_OPERATIONS, getFheTestOperationType };
 export type { FheTestOperation };
 
 /**

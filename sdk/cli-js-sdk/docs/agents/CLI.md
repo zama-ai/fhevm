@@ -15,8 +15,9 @@ Behavioral guidance:
 - Global options may be passed before or after subcommands; use `optsWithGlobals()` from the command action context.
 - The CLI ships as the `fhevm-sdk` binary (`bin/fhevm-sdk.mjs`, exposed via `pnpm link --global`); `pnpm run cli` remains equivalent.
 - The project-level `.env` is loaded by `src/env.ts` relative to the repository, not the working directory; shell variables take precedence.
-- `completion-server` is a hidden command invoked by tabtab's shell templates; keep its stdout limited to completion items.
-- Completion suggestions come from walking the Commander tree in `src/cli/completion.ts`; define option value choices with Commander's `.choices()` so completion and `--help` stay in sync.
+- `completion-server` is invoked by tabtab's shell templates; the binary routes it to `bin/completion-server.mjs` before loading `tsx` or runtime flow modules. Keep its stdout limited to completion items.
+- Keep completion metadata in `bin/completion-server.mjs` aligned with command help whenever changing commands, options, choices, or descriptions.
+- Keep CLI command modules free of top-level flow imports. Runtime flow modules should be loaded with dynamic imports inside `.action()` handlers so help and completion startup stay fast.
 - FHETest is the only contract target.
 - Networks may target different host chains; do not assume Ethereum Sepolia for every network.
 - Keep `fresh` and `cached` naming consistent across decrypt workflows.

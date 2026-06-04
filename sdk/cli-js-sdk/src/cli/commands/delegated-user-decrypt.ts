@@ -1,9 +1,5 @@
 import type { Command } from "@commander-js/extra-typings";
 
-import {
-  delegatedUserDecrypt,
-  freshDelegatedUserDecrypt,
-} from "../../flows";
 import { FHE_VALUE_TYPES } from "../../types";
 import { parseClearValue, serializeValue } from "../../values";
 import { getGlobalOptions } from "../options";
@@ -85,6 +81,9 @@ export const registerDelegatedUserDecryptCommands = (program: Command): void => 
       "delegator mnemonic; falls back to DELEGATOR_MNEMONIC",
     )
     .action(async (options, command) => {
+      const { delegatedUserDecrypt } = await import(
+        "../../flows/delegated-user-decrypt/cached"
+      );
       const globals = getGlobalOptions(command);
       const result = await delegatedUserDecrypt({
         network: globals.network,
@@ -152,6 +151,9 @@ export const registerDelegatedUserDecryptCommands = (program: Command): void => 
       "delegator mnemonic; falls back to DELEGATOR_MNEMONIC",
     )
     .action(async (options, command) => {
+      const { freshDelegatedUserDecrypt } = await import(
+        "../../flows/delegated-user-decrypt/fresh"
+      );
       const globals = getGlobalOptions(command);
       const value =
         options.value === undefined

@@ -3,8 +3,12 @@ import type { Hex } from "viem";
 import { fheTestAbi } from "./abi";
 import type { WalletContext } from "../config";
 import type { ContractWriteRequest } from "../shared/transactions";
-import type { EncryptValue, FheValueType } from "../types";
-import { FHE_TYPE_IDS } from "../types";
+import type { EncryptValue, FheTestOperation, FheValueType } from "../types";
+import {
+  FHE_TYPE_IDS,
+  getFheTestOperationFunctionName,
+  getFheTestOperationType,
+} from "../types";
 
 const setEncryptedFunctionByType = {
   bool: "setEbool",
@@ -27,34 +31,6 @@ const setClearFunctionByType = {
   uint256: "setClearEuint256",
   address: "setClearEaddress",
 } as const satisfies Record<FheValueType, string>;
-
-export const FHE_TEST_OPERATIONS = [
-  "xor-bool",
-  "add-uint8",
-  "add-uint16",
-  "add-uint32",
-  "add-uint64",
-  "add-uint128",
-  "xor-uint256",
-  "eq-address",
-] as const;
-
-/** Explicit FHETest operator demos supported by the CLI. */
-export type FheTestOperation = (typeof FHE_TEST_OPERATIONS)[number];
-
-const operationConfig = {
-  "xor-bool": { functionName: "xorEbool", type: "bool" },
-  "add-uint8": { functionName: "addEuint8", type: "uint8" },
-  "add-uint16": { functionName: "addEuint16", type: "uint16" },
-  "add-uint32": { functionName: "addEuint32", type: "uint32" },
-  "add-uint64": { functionName: "addEuint64", type: "uint64" },
-  "add-uint128": { functionName: "addEuint128", type: "uint128" },
-  "xor-uint256": { functionName: "xorEuint256", type: "uint256" },
-  "eq-address": { functionName: "eqEaddress", type: "address" },
-} as const satisfies Record<
-  FheTestOperation,
-  Readonly<{ functionName: string; type: FheValueType }>
->;
 
 type WriteContext = Pick<
   WalletContext,
@@ -152,15 +128,15 @@ export const simulateFheTestOperation = async (
     makePublic: boolean;
   },
 ): Promise<ContractWriteRequest> => {
-  const config = operationConfig[options.operation];
-  if (options.value.type !== config.type) {
+  const type = getFheTestOperationType(options.operation);
+  if (options.value.type !== type) {
     throw new Error(
-      `${options.operation} expects ${config.type}, received ${options.value.type}.`,
+      `${options.operation} expects ${type}, received ${options.value.type}.`,
     );
   }
 
   return simulateWriteRequest(context, {
-    functionName: config.functionName,
+    functionName: getFheTestOperationFunctionName(options.operation),
     args: [
       options.encryptedValue,
       options.inputProof,
@@ -177,13 +153,3 @@ export const getSetEncryptedFunctionName = (type: FheValueType): string =>
 /** Returns the FHETest clear setter name for a value type. */
 export const getSetClearFunctionName = (type: FheValueType): string =>
   setClearFunctionByType[type];
-
-/** Returns the value type required by a supported FHETest operation. */
-export const getFheTestOperationType = (
-  operation: FheTestOperation,
-): FheValueType => operationConfig[operation].type;
-
-/** Returns the FHETest contract function name for a supported operation. */
-export const getFheTestOperationFunctionName = (
-  operation: FheTestOperation,
-): string => operationConfig[operation].functionName;

@@ -1,7 +1,6 @@
 import type { Command } from "@commander-js/extra-typings";
 
-import { DEFAULT_NETWORK } from "../config";
-import type { NetworkName } from "../types";
+import { DEFAULT_NETWORK, type NetworkName } from "../types";
 
 /**
  * Global options shared by every command.

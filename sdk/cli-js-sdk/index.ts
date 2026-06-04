@@ -5,14 +5,13 @@ import "./src/env";
 import { Command, Option } from "@commander-js/extra-typings";
 import { consola } from "consola";
 
-import { DEFAULT_NETWORK } from "./src/config";
 import { registerCompletionCommands } from "./src/cli/commands/completion";
 import { registerDelegatedUserDecryptCommands } from "./src/cli/commands/delegated-user-decrypt";
 import { registerFheTestCommands } from "./src/cli/commands/fhe-test";
 import { registerInputProofCommand } from "./src/cli/commands/input-proof";
 import { registerPublicDecryptCommands } from "./src/cli/commands/public-decrypt";
 import { registerUserDecryptCommands } from "./src/cli/commands/user-decrypt";
-import { NETWORKS } from "./src/types";
+import { DEFAULT_NETWORK, NETWORKS } from "./src/types";
 
 const program = new Command()
   .name("fhevm-sdk")
