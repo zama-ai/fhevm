@@ -13,8 +13,8 @@ concurrency:
 
 jobs:
   check-docs:
-    name: check-docs
-    runs-on: ubuntu-latest
+    name: check-docs/check-docs
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     container:
       image: python:3.10.17-bullseye@sha256:0b9be13617fed7d883b30e31a47371a8bdd60a4bb5e45fcda63cb4a3846f6d98
     steps:

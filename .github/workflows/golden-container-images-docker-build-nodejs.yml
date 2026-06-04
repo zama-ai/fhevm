@@ -28,7 +28,7 @@ jobs:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
       pull-requests: 'read' # Required to read pull request information
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     outputs:
       changes-golden-nodejs: ${{ steps.filter.outputs.golden-nodejs }}
     steps:
@@ -46,7 +46,7 @@ jobs:
     name: golden-container-images-docker-build-nodejs/build
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-golden-nodejs == 'true' || github.event_name == 'release' }}
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@f3ad2e177a5247777349447608ba20f0977a824f # v1.0.7
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
     secrets:
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}

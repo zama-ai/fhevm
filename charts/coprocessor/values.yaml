@@ -63,7 +63,7 @@ commonConfig:
   hostChainHttpUrl: "http://ethereum-node:8545"
   aclContractAddress: {}            # required — e.g. 0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c
   fhevmExecutorContractAddress: {}  # required — e.g. 0x...
-  kmsGenerationContractAddress: {}  # required — e.g. 0x...
+  kmsGenerationContractAddress: {}  # optional — e.g. 0x...
 
   # Gateway chain configuration. Consumed by gwListener and txSender.
   # Each field accepts either a literal `value` or a `valueFrom` block
@@ -162,27 +162,12 @@ dbMigration:
   # Override the container command. Defaults to ["/initialize_db.sh"] when unset.
   command:
 
-  # Component-specific configuration
-  config:
-    # Host chain ID. Rendered as the CHAIN_ID env var.
-    # Leave unset/empty to inject nothing.
-    chainId: ""
-
-    # Host chain ACL contract address. Rendered as the ACL_CONTRACT_ADDRESS
-    # env var. Accepts `value` (literal) or `valueFrom`
-    # (secretKeyRef/configMapKeyRef). Leave unset to inject nothing.
-    # Example:
-    #   aclContractAddress:
-    #     valueFrom:
-    #       configMapKeyRef:
-    #         name: eth-sc-addresses
-    #         key: acl.address
-    aclContractAddress: {}
-
-    # Host chain input verifier (a.k.a. FHEVM executor) contract address.
-    # Rendered as the INPUT_VERIFIER_ADDRESS env var. Accepts `value`
-    # or `valueFrom`. Leave unset to inject nothing.
-    inputVerifierAddress: {}
+  # Host-chains seeding is now driven entirely by the top-level `.Values.chains`
+  # list (see the `chains:` block lower in this file). The dbMigration Job
+  # reads it via HOST_CHAINS_COUNT + HOST_CHAIN_<i>_{ID,NAME,ACL} env vars
+  # rendered by coprocessor-db-migration.yaml. Add or remove entries in
+  # `chains[]` to add or remove host chains.
+  config: {}
 
   # Additional Environment variables
   env: []
@@ -708,6 +693,11 @@ hostListenerConsumerShared:
 #     #   configMapKeyRef:
 #     #     name: eth-sc-addresses
 #     #     key: fhevm_executor.address
+#     # kmsGenerationContractAddress: "0x..."  # optional; omit when KMSGeneration is not deployed on the host chain
+#     # kmsGenerationContractAddressValueFrom:
+#     #   configMapKeyRef:
+#     #     name: eth-sc-addresses
+#     #     key: kms_generation.address
 #     hostListener:
 #       enabled: true
 #       useLegacyName: true   # set true on exactly one chain to keep the unsuffixed legacy resource names

@@ -19,6 +19,7 @@ import {
   HEAVY_TEST_PROFILES,
   LIGHT_TEST_PROFILES,
   POSTGRES_HOST,
+  ROLLOUT_STANDARD_TEST_PROFILES,
   STANDARD_TEST_PROFILES,
   TEST_GREP,
   TEST_PARALLEL,
@@ -47,7 +48,16 @@ const CIPHERTEXT_DRIFT_FORBIDDEN_NETWORKS = new Set(["sepolia", "mainnet", "zwsD
 const timedLabel = (label: string, started: number) =>
   `${label} (${Math.round((Date.now() - started) / 1000)}s)`;
 
-const TEST_PROFILE_NAMES = [...Object.keys(TEST_GREP), "ciphertext-drift", "ciphertext-drift-auto-recovery", "coprocessor-db-state-revert", "heavy", "light", "standard"].sort();
+const TEST_PROFILE_NAMES = [
+  ...Object.keys(TEST_GREP),
+  "ciphertext-drift",
+  "ciphertext-drift-auto-recovery",
+  "coprocessor-db-state-revert",
+  "heavy",
+  "light",
+  "rollout-standard",
+  "standard",
+].sort();
 const ZERO_TESTS_RE = /\b0 passing\b/;
 // Mocha prints "N pending" when tests exist but were skipped. If any are pending,
 // the grep did match — don't treat all-skipped as "matched zero tests".
@@ -58,6 +68,7 @@ const PAUSE_PROFILE_SCOPE: Record<string, string> = {
 };
 const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[number], string>> = {
   light: "Run the lightweight smoke suite.",
+  "rollout-standard": "Run rollout-safe write-path coverage without pause, DB revert, or drift recovery.",
   standard: "Run the default CI suite for the active topology.",
   heavy: "Run the long operators suite.",
   "paused-host-contracts": "Run pause-mode checks with host contracts paused.",
@@ -103,6 +114,9 @@ export const listTestProfiles = () => {
     ].filter(Boolean);
     const suiteTags = [
       LIGHT_TEST_PROFILES.includes(name as (typeof LIGHT_TEST_PROFILES)[number]) ? "light" : undefined,
+      ROLLOUT_STANDARD_TEST_PROFILES.includes(name as (typeof ROLLOUT_STANDARD_TEST_PROFILES)[number])
+        ? "rollout-standard"
+        : undefined,
       STANDARD_TEST_PROFILES.includes(name as (typeof STANDARD_TEST_PROFILES)[number]) ? "standard" : undefined,
       HEAVY_TEST_PROFILES.includes(name as (typeof HEAVY_TEST_PROFILES)[number]) ? "heavy" : undefined,
       ...topologyTags,
@@ -289,6 +303,68 @@ const assertOnChainDivergence = async (
   console.log(`[drift] on-chain divergence confirmed: ${logs.length} submissions with ${unique.size} distinct digest(s)`);
 };
 
+/** Number of most-recent AddCiphertextMaterial events sampled when checking
+ * that every coprocessor is still participating in consensus. */
+const CLUSTER_HEALTH_SAMPLE = 24;
+
+/** Extracts the distinct coprocessor tx-sender addresses (lowercased) from the
+ * most recent `sampleSize` AddCiphertextMaterial event logs. The sender is the
+ * 4th 32-byte word of the event data:
+ * keyId | ciphertextDigest | snsCiphertextDigest | coprocessorTxSender. */
+export const recentCoprocessorSenders = (logs: { data: string }[], sampleSize: number): string[] => {
+  const senders = new Set<string>();
+  for (const log of logs.slice(-sampleSize)) {
+    if (typeof log.data !== "string" || log.data.length < 2 + 4 * 64) {
+      continue;
+    }
+    senders.add(`0x${log.data.slice(2 + 3 * 64, 2 + 4 * 64).slice(-40)}`.toLowerCase());
+  }
+  return [...senders].sort();
+};
+
+/** Fails fast when fewer than the full coprocessor set is still submitting
+ * AddCiphertextMaterial. A crashed coprocessor worker (e.g. an sns-worker that
+ * exited on a fatal DB error) silently stops submitting; with one fewer honest
+ * node the drift test can no longer form the consensus its auto-revert depends
+ * on, which otherwise surfaces only as a confusing injection or revert timeout. */
+const assertClusterFullyParticipating = async (
+  gatewayRpcUrl: string,
+  contractAddress: string,
+  expectedCount: number,
+) => {
+  const response = await fetch(gatewayRpcUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "eth_getLogs",
+      params: [{ fromBlock: "0x0", toBlock: "latest", address: contractAddress, topics: [ADD_CIPHERTEXT_MATERIAL_TOPIC] }],
+    }),
+  });
+  if (!response.ok) {
+    throw new PreflightError(`eth_getLogs failed: ${response.status} ${response.statusText}`);
+  }
+  const payload = (await response.json()) as { result?: { data: string }[] };
+  const senders = recentCoprocessorSenders(payload.result ?? [], CLUSTER_HEALTH_SAMPLE);
+  if (senders.length === 0) {
+    // No AddCiphertextMaterial activity to measure yet (e.g. running this profile
+    // standalone on a fresh stack with no prior submissions). With nothing to
+    // judge, skip the preflight rather than false-failing; a genuinely degraded
+    // cluster still surfaces via the injection/recovery timeout.
+    console.log("[drift-auto-recovery] no recent coprocessor submissions observed; skipping cluster-health preflight");
+    return;
+  }
+  if (senders.length < expectedCount) {
+    throw new PreflightError(
+      `ciphertext-drift-auto-recovery needs all ${expectedCount} coprocessors submitting, but only ${senders.length} did across the last ${CLUSTER_HEALTH_SAMPLE} AddCiphertextMaterial events (${senders.join(", ") || "none"}). A coprocessor worker has likely crashed — the cluster is degraded, so consensus-based auto-revert cannot be exercised.`,
+    );
+  }
+  console.log(
+    `[drift-auto-recovery] cluster healthy: ${senders.length}/${expectedCount} coprocessors submitting recently`,
+  );
+};
+
 type DriftRevertDbOptions = {
   instanceIndex: number;
   postgresContainer: string;
@@ -337,7 +413,7 @@ const waitForComputationsCatchup = async (
 /** Polls drift_revert_signal until the latest row reaches a given status. */
 const waitForDriftRevertStatus = async (
   options: DriftRevertDbOptions & {
-    targetStatus: "reverting" | "done";
+    targetStatus: "pending" | "reverting" | "done";
     timeoutSeconds: number;
     pollIntervalSeconds: number;
   },
@@ -906,6 +982,19 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         // input drift is out of scope for auto-recovery.
         const grepPattern = process.env.GREP_PATTERN ?? "test add 42 to uint64 input and decrypt";
 
+        // Before injecting, confirm the whole coprocessor set is alive and
+        // submitting. Auto-revert needs the honest majority to form consensus;
+        // if a coprocessor worker has crashed (so it submits nothing) the test
+        // would otherwise hang until an injection or consensus timeout and
+        // report a misleading error instead of the real "degraded cluster".
+        const ciphertextCommitsAddress = state.discovery!.gateway.CIPHERTEXT_COMMITS_ADDRESS;
+        const gatewayRpcUrl = ciphertextCommitsAddress
+          ? hostReachableRpcUrl(state.discovery!.endpoints.gateway.http)
+          : undefined;
+        if (ciphertextCommitsAddress && gatewayRpcUrl) {
+          await assertClusterFullyParticipating(gatewayRpcUrl, ciphertextCommitsAddress, topologyForState(state).count);
+        }
+
         const injector = injectCiphertextDrift({
           instanceIndex: faultyInstanceIndex,
           timeoutSeconds: driftInjectTimeoutSeconds,
@@ -944,9 +1033,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         // across the AddCiphertextMaterial submissions). Folded in from the
         // former `ciphertext-drift` profile so this single test covers both
         // detection and recovery.
-        const ciphertextCommitsAddress = state.discovery!.gateway.CIPHERTEXT_COMMITS_ADDRESS;
-        if (ciphertextCommitsAddress) {
-          const gatewayRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.gateway.http);
+        if (ciphertextCommitsAddress && gatewayRpcUrl) {
           await assertOnChainDivergence(gatewayRpcUrl, ciphertextCommitsAddress, injectedHandleHex);
         }
 
@@ -957,6 +1044,16 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           postgresPassword: postgres.postgresPassword,
         };
         const hostChainId = process.env.CHAIN_ID ?? "12345";
+
+        // The peer-submission drift warning only proves that some listener
+        // observed divergent submissions. Auto-revert starts when the faulty
+        // coprocessor records drift_revert_signal after its local digest check.
+        await waitForDriftRevertStatus({
+          ...dbOptions,
+          targetStatus: "pending",
+          timeoutSeconds: driftAlertTimeoutSeconds,
+          pollIntervalSeconds: driftAlertPollIntervalSeconds,
+        });
 
         // Snapshot row counts before the revert runs. The gw-listener is
         // still in the grace period (pending status), so this is stable.
@@ -1112,6 +1209,23 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     const started = Date.now();
     await runLogged("light", started, async () => {
       for (const profile of LIGHT_TEST_PROFILES) {
+        await runProfile(profile);
+      }
+    });
+    return;
+  }
+
+  if (testName === "rollout-standard") {
+    if (options.grep) {
+      throw new PreflightError("`fhevm-cli test rollout-standard` does not accept `--grep`; run a named profile instead");
+    }
+    if (options.parallel === true) {
+      throw new PreflightError("`fhevm-cli test rollout-standard` does not accept `--parallel`; suite members choose their own mode");
+    }
+    console.log(`[test] rollout-standard (${options.network})`);
+    const started = Date.now();
+    await runLogged("rollout-standard", started, async () => {
+      for (const profile of ROLLOUT_STANDARD_TEST_PROFILES) {
         await runProfile(profile);
       }
     });

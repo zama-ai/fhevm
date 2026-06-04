@@ -19,7 +19,7 @@ jobs:
     permissions:
       contents: "read" # Required to checkout repository code
       pull-requests: "read" # Required to read pull request for paths-filter
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     outputs:
       packages: ${{ steps.filter.outputs.changes }}
     steps:
@@ -46,7 +46,7 @@ jobs:
     needs: check-changes
     permissions:
       contents: "read" # Required to checkout repository code
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     env:
       PACKAGE_CHANGED: ${{ contains(fromJSON(needs.check-changes.outputs.packages), matrix.package) }}
     strategy:

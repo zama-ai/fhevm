@@ -520,11 +520,11 @@ impl Database {
                 insert_computation(tx, result, &deps, &NO_SCALAR).await
             }
 
-            E::FheMulDiv(C::FheMulDiv { lhs, rhs, divisor, scalarByte, result, .. }) => {
-                if scalarByte.const_is_zero() {
-                    insert_computation_bytes(tx, result, &[lhs, rhs], &[divisor.to_vec()], &NO_SCALAR).await
+            E::FheMulDiv(C::FheMulDiv { factor1, factor2, divisor, scalarByte, result, .. }) => {
+                if fhe_mul_div_factor2_is_scalar(scalarByte) {
+                    insert_computation_bytes(tx, result, &[factor1], &[factor2.to_vec(), divisor.to_vec()], &HAS_SCALAR).await
                 } else {
-                    insert_computation_bytes(tx, result, &[lhs], &[rhs.to_vec(), divisor.to_vec()], &HAS_SCALAR).await
+                    insert_computation_bytes(tx, result, &[factor1, factor2], &[divisor.to_vec()], &NO_SCALAR).await
                 }
             }
 
@@ -845,6 +845,14 @@ impl Database {
                     "unhandled Acl::UnblockedAccount event"
                 );
             }
+            AclContractEvents::DecryptionSignaturesInvalidated(
+                decryption_signatures_invalidated,
+            ) => {
+                warn!(
+                    event = ?decryption_signatures_invalidated,
+                    "unhandled Acl::DecryptionSignaturesInvalidated event"
+                );
+            }
         }
         self.tick.update();
         Ok(inserted)
@@ -1160,7 +1168,8 @@ pub fn acl_result_handles(event: &Log<AclContractEvents>) -> Vec<Handle> {
         | AclContractEvents::Paused(_)
         | AclContractEvents::Unpaused(_)
         | AclContractEvents::BlockedAccount(_)
-        | AclContractEvents::UnblockedAccount(_) => vec![],
+        | AclContractEvents::UnblockedAccount(_)
+        | AclContractEvents::DecryptionSignaturesInvalidated(_) => vec![],
     }
 }
 
@@ -1319,18 +1328,24 @@ pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
         }
 
         E::FheMulDiv(C::FheMulDiv {
-            lhs,
-            rhs,
+            factor1,
+            factor2,
             scalarByte,
             ..
         }) => {
-            if scalarByte.const_is_zero() {
-                vec![*lhs, *rhs]
+            if fhe_mul_div_factor2_is_scalar(scalarByte) {
+                vec![*factor1]
             } else {
-                vec![*lhs]
+                vec![*factor1, *factor2]
             }
         }
 
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
     }
+}
+
+/// `fheMulDiv` `scalarByte` bit 1 — factor2 is a plaintext scalar (bit 0 is the
+/// always-scalar divisor).
+fn fhe_mul_div_factor2_is_scalar(scalar_byte: &ScalarByte) -> bool {
+    scalar_byte.0[0] & 0b10 != 0
 }

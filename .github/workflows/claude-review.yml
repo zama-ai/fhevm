@@ -41,7 +41,7 @@ jobs:
       github.actor != 'claude[bot]' &&
       github.actor != 'github-actions[bot]' &&
       github.event.comment.user.type == 'User'
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     timeout-minutes: 60
     env:
       # Pin Squid image to a specific digest to prevent supply-chain attacks.

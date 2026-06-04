@@ -13,7 +13,7 @@ permissions: {}
 jobs:
   publish:
     name: library-solidity-publish/publish
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     defaults:
       run:
         working-directory: ./library-solidity
@@ -67,7 +67,7 @@ jobs:
   publish-soldeer:
     name: library-solidity-publish/publish-soldeer
     if: ${{ inputs.release == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     defaults:
       run:
         working-directory: ./library-solidity
