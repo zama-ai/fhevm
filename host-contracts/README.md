@@ -107,7 +107,17 @@ A host chain is deployed in one of two roles:
 - **Secondary host**: never writes `KMS_GENERATION_CONTRACT_ADDRESS`; it mirrors
   `ProtocolConfig` from the canonical host, then deploys `KMSVerifier`.
 
-Use the role-level tasks for normal deployments.
+Pick the flow for your situation; the table below is the per-task reference.
+
+- **Fresh canonical host** → `task:deployCanonicalHost` — full stack including `KMSGeneration`.
+- **Fresh secondary host** → `task:deploySecondaryHost` — mirrors canonical's `ProtocolConfig`, with no
+  `KMSGeneration` (a secondary always copies canonical).
+- **Migrate an existing host to 0.13** → Gateway-side `task:exportKmsMigrationState`, then host-side
+  `task:prepareDeployProtocolConfigFromMigration` / `task:prepareDeployKMSGenerationFromMigration` → DAO executes.
+- **Upgrade one contract** → `task:prepareUpgrade<Contract>` → DAO executes (or `task:upgrade<Contract>` locally).
+- **Verify on the block explorer** → `task:verifyCanonicalHost` / `task:verifySecondaryHost`.
+- **Audit & hand off** → `task:exportCanonicalProtocolConfig` writes a hashed snapshot for the DAO, then
+  `task:transferHostOwnership` → `task:acceptHostOwnership`.
 
 | Task | Role | Standalone? | What it does |
 |---|---|---:|---|
