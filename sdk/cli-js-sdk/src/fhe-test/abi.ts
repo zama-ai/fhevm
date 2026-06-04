@@ -48,6 +48,13 @@ export const fheTestAbi = [
   },
   {
     type: "function",
+    name: "hasClearText",
+    inputs: [{ name: "handle", type: "bytes32", internalType: "bytes32" }],
+    outputs: [{ name: "", type: "bool", internalType: "bool" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
     name: "getHandleOf",
     inputs: [
       { name: "account", type: "address", internalType: "address" },

@@ -11,6 +11,16 @@ type PublicClient = ClientContext["publicClient"];
 const ZERO_HANDLE =
   "0x0000000000000000000000000000000000000000000000000000000000000000";
 
+const FHE_TYPE_BY_ID = Object.fromEntries(
+  Object.entries(FHE_TYPE_IDS).map(([type, id]) => [id, type]),
+) as Partial<Record<number, FheValueType>>;
+
+export const getHandleTypeId = (handle: Hex): number =>
+  Number.parseInt(handle.slice(62, 64), 16);
+
+export const getHandleType = (handle: Hex): FheValueType | undefined =>
+  FHE_TYPE_BY_ID[getHandleTypeId(handle)];
+
 export const hasFheTestHandle = async (options: {
   publicClient: PublicClient;
   contractAddress: Hex;
@@ -41,12 +51,7 @@ export const readFheTestHandle = async (options: {
     );
   }
 
-  const handle = (await options.publicClient.readContract({
-    address: options.contractAddress,
-    abi: fheTestAbi,
-    functionName: "getHandleOf",
-    args: [options.account, FHE_TYPE_IDS[options.type]],
-  } as never)) as Hex;
+  const handle = await readFheTestStoredHandle(options);
   if (handle === ZERO_HANDLE) {
     throw new Error(`FHETest returned an empty ${options.type} handle.`);
   }
@@ -66,3 +71,40 @@ export const readFheTestHandle = async (options: {
     clearText: clearText.toString(),
   };
 };
+
+export const readFheTestStoredHandle = async (options: {
+  publicClient: PublicClient;
+  contractAddress: Hex;
+  account: Hex;
+  type: FheValueType;
+}): Promise<Hex> =>
+  (await options.publicClient.readContract({
+    address: options.contractAddress,
+    abi: fheTestAbi,
+    functionName: "getHandleOf",
+    args: [options.account, FHE_TYPE_IDS[options.type]],
+  } as never)) as Hex;
+
+export const hasFheTestClearText = async (options: {
+  publicClient: PublicClient;
+  contractAddress: Hex;
+  handle: Hex;
+}): Promise<boolean> =>
+  (await options.publicClient.readContract({
+    address: options.contractAddress,
+    abi: fheTestAbi,
+    functionName: "hasClearText",
+    args: [options.handle],
+  } as never)) as boolean;
+
+export const readFheTestClearText = async (options: {
+  publicClient: PublicClient;
+  contractAddress: Hex;
+  handle: Hex;
+}): Promise<bigint> =>
+  (await options.publicClient.readContract({
+    address: options.contractAddress,
+    abi: fheTestAbi,
+    functionName: "getClearText",
+    args: [options.handle],
+  } as never)) as bigint;

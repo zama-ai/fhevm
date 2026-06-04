@@ -19,3 +19,5 @@ Behavioral guidance:
 - Public decrypt `fresh` stores with `makePublic=true`.
 - User decrypt and delegated user decrypt `fresh` store with `makePublic=false`.
 - Delegated flows use `PRIVATE_KEY`/`MNEMONIC` for the delegate and `DELEGATOR_PRIVATE_KEY`/`DELEGATOR_MNEMONIC` for the encrypted data owner.
+- `fhe-test inspect` is read-only. Keep raw `--handle` inspection mutually exclusive with account/type inspection.
+- `fhe-test inspect --type <type>` defaults `--account` to the wallet address loaded from `PRIVATE_KEY`/`MNEMONIC` when no account is provided.

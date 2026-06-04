@@ -45,6 +45,11 @@ Decrypt workflows have two modes:
 
 Public decrypt `fresh` stores with `makePublic=true`. User decrypt and delegated user decrypt `fresh` store with `makePublic=false`.
 
+`fhe-test inspect` is read-only and has two mutually exclusive modes:
+
+- `--handle <handle>`: inspect a raw handle's embedded FHE type and whether FHETest can read its recorded cleartext.
+- `--type <type>` with optional `--account <address>`: inspect the FHETest account/type slot. When `--account` is omitted, the wallet address from `--private-key`, `PRIVATE_KEY`, `--mnemonic`, or `MNEMONIC` is used.
+
 ## Examples
 
 Input proof:
@@ -84,6 +89,9 @@ FHETest utilities:
 
 ```bash
 pnpm --silent run cli --network testnet fhe-test info
+pnpm --silent run cli --network testnet fhe-test inspect --type uint64
+pnpm --silent run cli --network testnet fhe-test inspect --account 0x... --type uint64
+pnpm --silent run cli --network testnet fhe-test inspect --handle 0x...
 pnpm --silent run cli --network testnet fhe-test init
 pnpm --silent run cli --network testnet fhe-test init --type uint256 --force
 ```

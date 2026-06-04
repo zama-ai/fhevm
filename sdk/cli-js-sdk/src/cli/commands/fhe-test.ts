@@ -1,10 +1,15 @@
 import type { Command } from "@commander-js/extra-typings";
 
-import { getFheTestInfo, initFheTest } from "../../flows";
+import { getFheTestInfo, initFheTest, inspectFheTest } from "../../flows";
 import { FHE_VALUE_TYPES } from "../../types";
 import { getGlobalOptions } from "../options";
 import { printJson } from "../output";
-import { parseAddress, parsePrivateKey, parseValueType } from "../parsers";
+import {
+  parseAddress,
+  parseBytes32,
+  parsePrivateKey,
+  parseValueType,
+} from "../parsers";
 import { createProgressReporter } from "../progress";
 
 export const registerFheTestCommands = (program: Command): void => {
@@ -28,6 +33,68 @@ export const registerFheTestCommands = (program: Command): void => {
         relayerUrl: globals.relayerUrl,
         rpcUrl: globals.rpcUrl,
         contractAddress: options.contract,
+        onProgress: createProgressReporter(),
+      });
+
+      printJson(result);
+    });
+
+  fheTestCommand
+    .command("inspect")
+    .description("Inspect FHETest account/type state or a raw handle")
+    .option(
+      "-t, --type <type>",
+      `value type for account inspection (${supportedValueTypes})`,
+      parseValueType,
+    )
+    .option(
+      "--account <address>",
+      "account used for FHETest.getHandleOf; defaults to wallet address",
+      parseAddress,
+    )
+    .option("--handle <handle>", "raw encrypted handle to inspect", parseBytes32)
+    .option(
+      "--contract <address>",
+      "FHETest contract address override",
+      parseAddress,
+    )
+    .option(
+      "--private-key <privateKey>",
+      "wallet private key for default account; falls back to PRIVATE_KEY",
+      parsePrivateKey,
+    )
+    .option(
+      "--mnemonic <mnemonic>",
+      "wallet mnemonic for default account; falls back to MNEMONIC",
+    )
+    .action(async (options, command) => {
+      if (options.handle) {
+        if (
+          options.type ||
+          options.account ||
+          options.privateKey ||
+          options.mnemonic
+        ) {
+          throw new Error(
+            "Use either --handle, or account/type inspection options, not both.",
+          );
+        }
+      } else if (!options.type) {
+        command.outputHelp();
+        return;
+      }
+
+      const globals = getGlobalOptions(command);
+      const result = await inspectFheTest({
+        network: globals.network,
+        relayerUrl: globals.relayerUrl,
+        rpcUrl: globals.rpcUrl,
+        type: options.type,
+        account: options.account,
+        handle: options.handle,
+        contractAddress: options.contract,
+        privateKey: options.privateKey,
+        mnemonic: options.mnemonic,
         onProgress: createProgressReporter(),
       });
 
