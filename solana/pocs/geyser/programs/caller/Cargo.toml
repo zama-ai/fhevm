@@ -1,0 +1,28 @@
+[package]
+name = "caller"
+version = "0.1.0"
+description = "Program that CPIs into the geyser program"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "caller"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "geyser/idl-build"]
+anchor-debug = []
+custom-heap = []
+custom-panic = []
+
+[dependencies]
+anchor-lang = "1.0.2"
+# Pull in the geyser program's generated CPI helpers (no-entrypoint via `cpi`).
+geyser = { path = "../geyser", features = ["cpi"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }

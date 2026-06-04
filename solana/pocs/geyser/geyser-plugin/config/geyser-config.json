@@ -1,0 +1,5 @@
+{
+  "libpath": "/Users/nikitakhateev/projects/zama/fhevm/solana/pocs/geyser/geyser-plugin/target/release/libgeyser_tracker_plugin.dylib",
+  "program_id": "H4Yc3MugAkJk2FEjLCfCr2J28hgMXzipJaSLq1Sa2SP8",
+  "log_path": "/Users/nikitakhateev/projects/zama/fhevm/solana/pocs/geyser/geyser-plugin/geyser-events.log"
+}

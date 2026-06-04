@@ -1,0 +1,35 @@
+[package]
+name = "geyser"
+version = "0.1.0"
+description = "Created with Anchor"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "geyser"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build"]
+anchor-debug = []
+custom-heap = []
+custom-panic = []
+
+
+[dependencies]
+anchor-lang = { version = "1.0.2", features = ["init-if-needed"] }
+
+[dev-dependencies]
+litesvm = "0.10.0"
+solana-message = "3.0.1"
+solana-transaction = "3.0.2"
+solana-signer = "3.0.0"
+solana-keypair = "3.0.1"
+
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
