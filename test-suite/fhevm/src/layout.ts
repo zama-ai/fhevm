@@ -89,6 +89,10 @@ export const TEMPLATE_KMS_CORE_CONFIG_MODERN = path.join(
   TEMPLATE_CONFIG_DIR,
   "kms-core-modern.toml",
 );
+export const TEMPLATE_KMS_CORE_CONFIG_THRESHOLD = path.join(
+  TEMPLATE_CONFIG_DIR,
+  "kms-core-threshold.toml",
+);
 export const LATEST_SUPPORTED_PROFILE = path.join(PROFILE_DIR, "latest-supported.json");
 export const PROJECT = "fhevm";
 export const DEFAULT_HOST_RPC_PORT = 8545;

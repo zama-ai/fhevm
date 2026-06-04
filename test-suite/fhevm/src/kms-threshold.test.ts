@@ -5,10 +5,14 @@ import { partyContainers, quorumPlan } from "./commands/kms-generation";
 import { resolveUpgradePlan } from "./flow/repair";
 import { renderEnvMaps } from "./generate/env";
 import {
+  KMS_THRESHOLD_CONFIG_NAME,
+  THRESHOLD_PEERS_MARKER,
   buildKmsThresholdOverride,
   kmsRenderOptionsFor,
   reconstructionThreshold,
-  renderThresholdConfigToml,
+  renderThresholdCoreConfig,
+  renderThresholdPeers,
+  thresholdCoreEnv,
 } from "./generate/kms-core";
 import { COMPONENTS, TEMPLATE_ENV_DIR } from "./layout";
 import { presetBundle } from "./resolve/target";
@@ -109,14 +113,43 @@ describe("buildKmsThresholdOverride", () => {
   test("rejects a non-threshold topology", () => {
     expect(() => buildKmsThresholdOverride(resolveKmsTopology(undefined), RENDER_OPTS)).toThrow();
   });
+
+  test("each core gets per-party env overrides and mounts the one shared config", () => {
+    const core = buildKmsThresholdOverride(fourParty, RENDER_OPTS).services["kms-core-3"];
+    expect((core.environment as Record<string, string>).KMS_CORE__THRESHOLD__MY_ID).toBe("3");
+    expect(JSON.stringify(core.volumes)).toContain(KMS_THRESHOLD_CONFIG_NAME);
+    expect(JSON.stringify(core.entrypoint)).toContain(KMS_THRESHOLD_CONFIG_NAME);
+  });
 });
 
-describe("renderThresholdConfigToml", () => {
-  test("pins my_id, the reconstruction threshold and the full peer list", () => {
-    const toml = renderThresholdConfigToml(2, fourParty, RENDER_OPTS);
-    expect(toml).toContain("my_id = 2");
-    expect(toml).toContain("threshold = 1");
-    expect(toml).toContain("party_id = 4");
+describe("threshold core config", () => {
+  test("renderThresholdPeers lists every party with its address and mpc port", () => {
+    const peers = renderThresholdPeers(fourParty);
+    expect(peers).toContain("party_id = 1");
+    expect(peers).toContain("party_id = 4");
+    expect(peers).toContain('address = "kms-core"');
+    expect(peers).toContain('address = "kms-core-4"');
+    expect(peers).toContain("port = 50004");
+  });
+
+  test("renderThresholdCoreConfig injects the roster and leaves no marker", () => {
+    const config = renderThresholdCoreConfig(`[threshold]\nmy_id = 0\n\n${THRESHOLD_PEERS_MARKER}\n`, fourParty);
+    expect(config).not.toContain(THRESHOLD_PEERS_MARKER);
+    expect(config).toContain("party_id = 4");
+  });
+
+  test("renderThresholdCoreConfig fails fast when the template marker is missing", () => {
+    expect(() => renderThresholdCoreConfig("[threshold]\n", fourParty)).toThrow(/marker/);
+  });
+
+  test("thresholdCoreEnv overrides per-party identity, ports and prefixes", () => {
+    const env = thresholdCoreEnv(2, fourParty, RENDER_OPTS);
+    expect(env.KMS_CORE__THRESHOLD__MY_ID).toBe("2");
+    expect(env.KMS_CORE__THRESHOLD__THRESHOLD).toBe("1");
+    expect(env.KMS_CORE__SERVICE__LISTEN_PORT).toBe("50200");
+    expect(env.KMS_CORE__THRESHOLD__LISTEN_PORT).toBe("50002");
+    expect(env.KMS_CORE__PUBLIC_VAULT__STORAGE__S3__PREFIX).toBe("PUB-p2");
+    expect(env.KMS_CORE__PRIVATE_VAULT__STORAGE__S3__PREFIX).toBe("PRIV-p2");
   });
 });
 
