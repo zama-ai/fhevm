@@ -11,8 +11,6 @@ use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Instrument};
 
-const CODE_DEADLOCK_DETECTED: &str = "40P01";
-
 /// True if the DB connection is lost/unusable, so we should exit and let k8s
 /// restart us rather than retry on a dead pool.
 pub fn is_fatal_connection_error(err: &sqlx::Error) -> bool {
@@ -218,25 +216,15 @@ impl PostgresPoolManager {
             match operation(self.pool.clone(), ct.clone()).await {
                 Ok(()) => return Ok(()),
                 Err(err) => {
-                    // Retry transient DB errors; exit on a lost connection or a
-                    // non-DB error so k8s restarts the service.
+                    // Only a lost connection is fatal (a restart gives a fresh
+                    // pool); retry everything else.
                     if let ServiceError::Database(db_err) = &err {
                         if is_fatal_connection_error(db_err) {
                             error!(error=%err, "Fatal DB connection error; not retrying");
                             return Err(err);
                         }
-                        // Retry deadlocks; other DB errors won't recover by retrying.
-                        if let sqlx::Error::Database(pg) = db_err {
-                            if pg.code().as_deref() != Some(CODE_DEADLOCK_DETECTED) {
-                                error!(error=%err, "Non-transient DB error; not retrying");
-                                return Err(err);
-                            }
-                        }
-                    } else {
-                        error!(error=%err, "Internal error; not retrying");
-                        return Err(err);
                     }
-                    error!(error=%err, "DB error; retrying...");
+                    error!(error=%err, "Service error; retrying...");
                     cancellable_sleep(&ct, backoff_delay).await;
                 }
             }
