@@ -1,6 +1,17 @@
 # cli-fhevm-sdk
 
-CLI for `@fhevm/sdk` viem flows against FHETest.
+Command-line examples for `@fhevm/sdk` viem flows against the `FHETest` contract.
+
+The CLI can:
+
+- create encrypted inputs and input proofs
+- public decrypt FHETest handles
+- user decrypt private FHETest handles
+- delegated user decrypt handles owned by another account
+- initialize, inspect, and run operation demos on FHETest
+- install shell completion for commands, options, and choice values
+
+Progress logs go to stderr. Final results go to stdout as JSON, so commands are pipeable.
 
 ## Quick Start
 
@@ -11,110 +22,202 @@ pnpm link --global
 fhevm-sdk --help
 ```
 
-`pnpm link --global` exposes the CLI as the `fhevm-sdk` binary. Without linking, every `fhevm-sdk` invocation below also works as `pnpm --silent run cli`.
+`pnpm link --global` exposes the `fhevm-sdk` binary. Without linking, replace `fhevm-sdk` with:
 
-The project-level `.env` is loaded automatically from any working directory, so create it from `.env.example` before running commands that rely on environment variables. Variables already set in the shell take precedence over `.env` values.
+```bash
+pnpm --silent run cli
+```
+
+The repository `.env` is loaded automatically, even when you run the CLI from another directory. Shell variables override `.env` values.
+
+## First Commands
+
+These are good smoke tests once your RPC and wallet environment are set:
+
+```bash
+fhevm-sdk fhe-test info
+fhevm-sdk input-proof --type uint64 --value 42
+fhevm-sdk fhe-test init --type uint32
+fhevm-sdk public-decrypt fresh --type uint8
+fhevm-sdk user-decrypt fresh --type uint16
+```
+
+Global options such as `-n devnet`, `--rpc-url`, and `--relayer-url` can be placed before or after subcommands.
+
+## Command Map
+
+| Command | What it does | Needs wallet? |
+| --- | --- | --- |
+| `input-proof` | Encrypts clear values and requests a verified input proof. Does not write to FHETest. | No |
+| `public-decrypt fresh` | Encrypts a value, stores it in FHETest with `makePublic=true`, then public decrypts it. | Yes |
+| `public-decrypt cached` | Public decrypts direct `--handle` values, an explicit `--account`/`--type` slot, or the wallet's default account/type slot. | Only when using the wallet default |
+| `public-decrypt make-public` | Marks the caller's stored FHETest handle public, then public decrypts it. | Yes |
+| `user-decrypt fresh` | Encrypts a value, stores it in FHETest with `makePublic=false`, then decrypts it as the owner. | Yes |
+| `user-decrypt cached` | User decrypts direct `--handle` values, or the caller's stored FHETest handle for `--type`. | Yes |
+| `delegated-user-decrypt fresh` | Delegator creates a private handle; delegate gets ACL permission and decrypts it. | Delegate and delegator |
+| `delegated-user-decrypt cached` | Delegate decrypts direct `--handle` values, or a delegator's stored handle for `--type`. | Delegate; delegator only if creating ACL permission |
+| `fhe-test info` | Shows resolved network, host chain, relayer, and FHETest metadata. | No |
+| `fhe-test inspect` | Reads FHETest state for a raw handle, an explicit account/type slot, or the wallet's default account/type slot. | Only when using the wallet default |
+| `fhe-test init` | Creates public FHETest handles for one or all supported types. | Yes |
+| `fhe-test op <operation>` | Runs an FHETest operation against the caller's stored handle. | Yes |
+| `completion install` | Installs shell completion. | No |
+| `completion uninstall` | Uninstalls shell completion. | No |
+
+Use `--help` on any command for exact options:
+
+```bash
+fhevm-sdk public-decrypt cached --help
+fhevm-sdk delegated-user-decrypt fresh --help
+fhevm-sdk fhe-test op --help
+```
+
+## Networks And Global Options
+
+| Option | Meaning |
+| --- | --- |
+| `-n, --network testnet` | FHETest `0x94B9d3aF050687D1F76251aD7D09a1F216a19845` on Ethereum Sepolia. Default. |
+| `-n, --network devnet` | FHETest `0xf56a7990E63a63eC75aD9Aa07De8cB6bF7baa805` on Ethereum Sepolia with devnet relayer config. |
+| `-n, --network devnet-amoy` | FHETest `0x7553CB9124f974Ee475E5cE45482F90d5B6076BC` on Polygon Amoy with devnet relayer config. |
+| `--rpc-url <url>` | Host chain RPC override. Otherwise uses the matching env var, then a public fallback. |
+| `--relayer-url <url>` | Relayer base URL override. `localhost:3000` becomes `http://localhost:3000`. |
+| `--contract <address>` | FHETest contract override. This is command-specific, not a global option. |
+
+Supported FHETest value types are `bool`, `uint8`, `uint16`, `uint32`, `uint64`, `uint128`, `uint256`, and `address`.
+
+## Environment
+
+| Variable | Used for |
+| --- | --- |
+| `SEPOLIA_RPC_URL` | RPC for `testnet` and `devnet`. |
+| `POLYGON_AMOY_RPC_URL` | RPC for `devnet-amoy`. |
+| `ZAMA_FHEVM_API_KEY` | Optional SDK relayer auth when the target environment requires an API key. |
+| `PRIVATE_KEY` | Default wallet private key. Used by transaction commands, user decrypt, and delegated decrypt as the delegate. |
+| `MNEMONIC` | Default wallet mnemonic when `PRIVATE_KEY` is not set. |
+| `DELEGATOR_PRIVATE_KEY` | Encrypted data owner private key for delegated decrypt flows. |
+| `DELEGATOR_MNEMONIC` | Encrypted data owner mnemonic when `DELEGATOR_PRIVATE_KEY` is not set. |
+
+For delegated flows:
+
+- delegate credentials are `--private-key`/`--mnemonic` or `PRIVATE_KEY`/`MNEMONIC`
+- delegator credentials are `--delegator-private-key`/`--delegator-mnemonic` or `DELEGATOR_PRIVATE_KEY`/`DELEGATOR_MNEMONIC`
+- `--delegator <address>` identifies the encrypted data owner when credentials are not needed or are supplied separately
+
+## Workflow Examples
+
+### Input Proof
+
+`input-proof` only talks to the SDK/relayer. It does not write a transaction.
+
+```bash
+fhevm-sdk input-proof
+fhevm-sdk input-proof --type uint32
+fhevm-sdk input-proof --type uint64 --value 42 --user 0x0000000000000000000000000000000000000002
+```
+
+### Public Decrypt
+
+Use `fresh` to create a new public handle and immediately decrypt it:
+
+```bash
+fhevm-sdk public-decrypt fresh --type uint8
+fhevm-sdk public-decrypt fresh --type uint64 --value 42
+```
+
+Use `cached` to decrypt an existing public handle:
+
+```bash
+fhevm-sdk public-decrypt cached --type uint8
+fhevm-sdk public-decrypt cached --account 0x... --type uint8
+fhevm-sdk public-decrypt cached --handle 0x... --handle 0x...
+```
+
+Use `make-public` when the caller already has a stored FHETest handle and wants to mark it publicly decryptable:
+
+```bash
+fhevm-sdk public-decrypt make-public --type uint64
+```
+
+### User Decrypt
+
+Use `fresh` to create a new private handle and decrypt it as the owner:
+
+```bash
+fhevm-sdk user-decrypt fresh --type uint8
+fhevm-sdk user-decrypt fresh --type uint64 --value 42 --duration-days 7
+```
+
+Use `cached` to decrypt an existing private handle owned by the wallet:
+
+```bash
+fhevm-sdk user-decrypt cached --type uint8
+fhevm-sdk user-decrypt cached --handle 0x... --handle 0x...
+```
+
+### Delegated User Decrypt
+
+In delegated decrypt, the delegator owns the encrypted data and the delegate signs the decrypt permit.
+
+Use `fresh` to create delegator-owned data, create ACL delegation if needed, and decrypt as the delegate:
+
+```bash
+fhevm-sdk delegated-user-decrypt fresh --type uint8
+fhevm-sdk delegated-user-decrypt fresh --type uint64 --value 42 --duration-days 7 --delegation-duration-days 30
+```
+
+Use `cached` when the delegator already has a stored handle or when you have raw handles:
+
+```bash
+fhevm-sdk delegated-user-decrypt cached --delegator 0x... --type uint8
+fhevm-sdk delegated-user-decrypt cached --delegator 0x... --handle 0x... --handle 0x...
+```
+
+If an active ACL delegation already exists, cached delegated decrypt only needs delegate credentials plus `--delegator`. If not, provide delegator credentials so the CLI can create the delegation.
+
+### FHETest Utilities
+
+Inspect network and contract configuration:
+
+```bash
+fhevm-sdk fhe-test info
+```
+
+Initialize stored FHETest handles:
+
+```bash
+fhevm-sdk fhe-test init --type uint64
+fhevm-sdk fhe-test init --bulk
+fhevm-sdk fhe-test init --type uint256 --force
+```
+
+Inspect FHETest state:
+
+```bash
+fhevm-sdk fhe-test inspect --type uint64
+fhevm-sdk fhe-test inspect --account 0x... --type uint64
+fhevm-sdk fhe-test inspect --handle 0x...
+```
+
+`inspect --handle` is mutually exclusive with account/type options. `inspect --type` defaults to the wallet address when `--account` is omitted.
+
+Run operation demos against the caller's stored handle:
+
+```bash
+fhevm-sdk fhe-test op add-uint64 --value 42
+fhevm-sdk fhe-test op xor-bool --value true --public
+fhevm-sdk fhe-test op eq-address --value 0x0000000000000000000000000000000000000001
+```
+
+Supported operations are `xor-bool`, `add-uint8`, `add-uint16`, `add-uint32`, `add-uint64`, `add-uint128`, `xor-uint256`, and `eq-address`.
 
 ## Shell Completion
 
 ```bash
-fhevm-sdk completion install            # prompts for the shell
+fhevm-sdk completion install
 fhevm-sdk completion install --shell zsh
 fhevm-sdk completion uninstall
 ```
 
-Completion covers subcommands, options, and option values with choices (for example `--network`). Supported shells are `bash`, `zsh`, `fish`, and `pwsh`. Restart the shell or source its profile after installing.
-
-## Environment
-
-| Variable                | Purpose                                                                             |
-| ----------------------- | ----------------------------------------------------------------------------------- |
-| `SEPOLIA_RPC_URL`       | Ethereum Sepolia host chain RPC override for testnet and devnet.                    |
-| `POLYGON_AMOY_RPC_URL`  | Devnet Polygon Amoy host chain RPC override.                                        |
-| `ZAMA_FHEVM_API_KEY`    | Optional SDK relayer auth, required where the target environment enforces API keys. |
-| `PRIVATE_KEY`           | Default wallet private key for transaction/decryption commands.                     |
-| `MNEMONIC`              | Default wallet mnemonic when `PRIVATE_KEY` is not set.                              |
-| `DELEGATOR_PRIVATE_KEY` | Delegator private key for delegated user decrypt flows.                             |
-| `DELEGATOR_MNEMONIC`    | Delegator mnemonic when `DELEGATOR_PRIVATE_KEY` is not set.                         |
-
-Global options may be passed before or after subcommands:
-
-- `--network testnet`: uses FHETest `0x94B9d3aF050687D1F76251aD7D09a1F216a19845` on Ethereum Sepolia.
-- `--network devnet`: uses FHETest `0xf56a7990E63a63eC75aD9Aa07De8cB6bF7baa805` on Ethereum Sepolia with the dev relayer config.
-- `--network devnet-amoy`: uses FHETest `0x7553CB9124f974Ee475E5cE45482F90d5B6076BC` on Polygon Amoy with the dev relayer config.
-- `--relayer-url <url>`: relayer base URL override. `localhost:3000` is normalized to `http://localhost:3000`.
-- `--rpc-url <url>`: host chain RPC URL override. Defaults to `SEPOLIA_RPC_URL` for Sepolia-backed networks, `POLYGON_AMOY_RPC_URL` for devnet-amoy, then the network public RPC fallback.
-
-Progress is written to stderr. The final machine-readable payload is written to stdout as JSON, so commands remain pipeable.
-
-Supported FHETest value types are `bool`, `uint8`, `uint16`, `uint32`, `uint64`, `uint128`, `uint256`, and `address`.
-
-## Command Model
-
-Decrypt workflows have two modes:
-
-- `fresh`: encrypts/stores a new FHETest handle first, then decrypts it.
-- `cached`: decrypts an existing FHETest handle from account/type, or decrypts direct `--handle` values.
-
-Public decrypt `fresh` stores with `makePublic=true`. User decrypt and delegated user decrypt `fresh` store with `makePublic=false`.
-
-`fhe-test inspect` is read-only and has two mutually exclusive modes:
-
-- `--handle <handle>`: inspect a raw handle's embedded FHE type and whether FHETest can read its recorded cleartext.
-- `--type <type>` with optional `--account <address>`: inspect the FHETest account/type slot. When `--account` is omitted, the wallet address from `--private-key`, `PRIVATE_KEY`, `--mnemonic`, or `MNEMONIC` is used.
-
-`fhe-test init --bulk` initializes all FHETest value types with one `initFheTest` transaction. It is incompatible with `--type`.
-
-`fhe-test op` runs FHETest's on-chain operation demos against the caller's stored handle for the operation type, so initialize or store that type first. Supported operations are `xor-bool`, `add-uint8`, `add-uint16`, `add-uint32`, `add-uint64`, `add-uint128`, `xor-uint256`, and `eq-address`.
-
-## Examples
-
-Input proof:
-
-```bash
-fhevm-sdk --network testnet input-proof
-fhevm-sdk --network testnet input-proof --type uint32
-fhevm-sdk --network testnet input-proof --type uint64 --value 42
-```
-
-Public decrypt:
-
-```bash
-fhevm-sdk --network testnet public-decrypt fresh --type uint8
-fhevm-sdk --network testnet public-decrypt cached --type uint8
-fhevm-sdk --network testnet public-decrypt cached --handle 0x...
-fhevm-sdk --network testnet public-decrypt make-public --type uint64
-```
-
-User decrypt:
-
-```bash
-fhevm-sdk --network testnet user-decrypt fresh --type uint8
-fhevm-sdk --network testnet user-decrypt cached --type uint8
-fhevm-sdk --network testnet user-decrypt cached --handle 0x...
-```
-
-Delegated user decrypt:
-
-```bash
-fhevm-sdk --network testnet delegated-user-decrypt fresh --type uint8
-fhevm-sdk --network testnet delegated-user-decrypt cached --delegator 0x... --type uint8
-fhevm-sdk --network testnet delegated-user-decrypt cached --delegator 0x... --handle 0x...
-```
-
-FHETest utilities:
-
-```bash
-fhevm-sdk --network testnet fhe-test info
-fhevm-sdk --network testnet fhe-test inspect --type uint64
-fhevm-sdk --network testnet fhe-test inspect --account 0x... --type uint64
-fhevm-sdk --network testnet fhe-test inspect --handle 0x...
-fhevm-sdk --network testnet fhe-test init
-fhevm-sdk --network testnet fhe-test init --bulk
-fhevm-sdk --network testnet fhe-test init --type uint256 --force
-fhevm-sdk --network testnet fhe-test op add-uint64 --value 42
-fhevm-sdk --network testnet fhe-test op xor-bool --value true --public
-```
+Supported shells are `bash`, `zsh`, `fish`, and `pwsh`. Restart the shell or source its profile after installing.
 
 ## Development
 
