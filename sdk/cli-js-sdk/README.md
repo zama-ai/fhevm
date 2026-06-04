@@ -50,6 +50,10 @@ Public decrypt `fresh` stores with `makePublic=true`. User decrypt and delegated
 - `--handle <handle>`: inspect a raw handle's embedded FHE type and whether FHETest can read its recorded cleartext.
 - `--type <type>` with optional `--account <address>`: inspect the FHETest account/type slot. When `--account` is omitted, the wallet address from `--private-key`, `PRIVATE_KEY`, `--mnemonic`, or `MNEMONIC` is used.
 
+`fhe-test init --bulk` initializes all FHETest value types with one `initFheTest` transaction. It is incompatible with `--type`.
+
+`fhe-test op` runs FHETest's on-chain operation demos against the caller's stored handle for the operation type, so initialize or store that type first. Supported operations are `xor-bool`, `add-uint8`, `add-uint16`, `add-uint32`, `add-uint64`, `add-uint128`, `xor-uint256`, and `eq-address`.
+
 ## Examples
 
 Input proof:
@@ -93,7 +97,10 @@ pnpm --silent run cli --network testnet fhe-test inspect --type uint64
 pnpm --silent run cli --network testnet fhe-test inspect --account 0x... --type uint64
 pnpm --silent run cli --network testnet fhe-test inspect --handle 0x...
 pnpm --silent run cli --network testnet fhe-test init
+pnpm --silent run cli --network testnet fhe-test init --bulk
 pnpm --silent run cli --network testnet fhe-test init --type uint256 --force
+pnpm --silent run cli --network testnet fhe-test op add-uint64 --value 42
+pnpm --silent run cli --network testnet fhe-test op xor-bool --value true --public
 ```
 
 ## Development

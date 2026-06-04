@@ -27,6 +27,33 @@ const setClearFunctionByType = {
   address: "setClearEaddress",
 } as const satisfies Record<FheValueType, string>;
 
+export const FHE_TEST_OPERATIONS = [
+  "xor-bool",
+  "add-uint8",
+  "add-uint16",
+  "add-uint32",
+  "add-uint64",
+  "add-uint128",
+  "xor-uint256",
+  "eq-address",
+] as const;
+
+export type FheTestOperation = (typeof FHE_TEST_OPERATIONS)[number];
+
+const operationConfig = {
+  "xor-bool": { functionName: "xorEbool", type: "bool" },
+  "add-uint8": { functionName: "addEuint8", type: "uint8" },
+  "add-uint16": { functionName: "addEuint16", type: "uint16" },
+  "add-uint32": { functionName: "addEuint32", type: "uint32" },
+  "add-uint64": { functionName: "addEuint64", type: "uint64" },
+  "add-uint128": { functionName: "addEuint128", type: "uint128" },
+  "xor-uint256": { functionName: "xorEuint256", type: "uint256" },
+  "eq-address": { functionName: "eqEaddress", type: "address" },
+} as const satisfies Record<
+  FheTestOperation,
+  Readonly<{ functionName: string; type: FheValueType }>
+>;
+
 type WriteContext = Pick<
   WalletContext,
   "account" | "contractAddress" | "publicClient"
@@ -90,8 +117,64 @@ export const simulateMakePubliclyDecryptable = async (
   return request;
 };
 
+export const simulateInitFheTest = async (
+  context: WriteContext,
+  force: boolean,
+): Promise<unknown> => {
+  const { request } = await context.publicClient.simulateContract({
+    account: context.account,
+    address: context.contractAddress,
+    abi: fheTestAbi,
+    functionName: "initFheTest",
+    args: [force],
+  } as never);
+
+  return request;
+};
+
+export const simulateFheTestOperation = async (
+  context: WriteContext,
+  options: {
+    operation: FheTestOperation;
+    encryptedValue: Hex;
+    inputProof: Hex;
+    value: EncryptValue;
+    makePublic: boolean;
+  },
+): Promise<unknown> => {
+  const config = operationConfig[options.operation];
+  if (options.value.type !== config.type) {
+    throw new Error(
+      `${options.operation} expects ${config.type}, received ${options.value.type}.`,
+    );
+  }
+
+  const { request } = await context.publicClient.simulateContract({
+    account: context.account,
+    address: context.contractAddress,
+    abi: fheTestAbi,
+    functionName: config.functionName,
+    args: [
+      options.encryptedValue,
+      options.inputProof,
+      options.value.value,
+      options.makePublic,
+    ],
+  } as never);
+
+  return request;
+};
+
 export const getSetEncryptedFunctionName = (type: FheValueType): string =>
   setEncryptedFunctionByType[type];
 
 export const getSetClearFunctionName = (type: FheValueType): string =>
   setClearFunctionByType[type];
+
+export const getFheTestOperationType = (
+  operation: FheTestOperation,
+): FheValueType => operationConfig[operation].type;
+
+export const getFheTestOperationFunctionName = (
+  operation: FheTestOperation,
+): string => operationConfig[operation].functionName;

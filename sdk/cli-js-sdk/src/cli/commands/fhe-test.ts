@@ -1,7 +1,15 @@
 import type { Command } from "@commander-js/extra-typings";
 
-import { getFheTestInfo, initFheTest, inspectFheTest } from "../../flows";
+import {
+  getFheTestInfo,
+  getFheTestOperationType,
+  initFheTest,
+  inspectFheTest,
+  runFheTestOperation,
+  FHE_TEST_OPERATIONS,
+} from "../../flows";
 import { FHE_VALUE_TYPES } from "../../types";
+import { parseClearValue, serializeValue } from "../../values";
 import { getGlobalOptions } from "../options";
 import { printJson } from "../output";
 import {
@@ -114,6 +122,11 @@ export const registerFheTestCommands = (program: Command): void => {
       "FHETest contract address override",
       parseAddress,
     )
+    .option(
+      "--bulk",
+      "initialize all types in one FHETest.initFheTest transaction",
+      false,
+    )
     .option("--force", "overwrite existing handles", false)
     .option(
       "--private-key <privateKey>",
@@ -122,6 +135,10 @@ export const registerFheTestCommands = (program: Command): void => {
     )
     .option("--mnemonic <mnemonic>", "wallet mnemonic; falls back to MNEMONIC")
     .action(async (options, command) => {
+      if (options.bulk && options.type) {
+        throw new Error("fhe-test init --bulk cannot be used with --type.");
+      }
+
       const globals = getGlobalOptions(command);
       const result = await initFheTest({
         network: globals.network,
@@ -129,6 +146,7 @@ export const registerFheTestCommands = (program: Command): void => {
         rpcUrl: globals.rpcUrl,
         type: options.type,
         contractAddress: options.contract,
+        bulk: options.bulk,
         force: options.force,
         privateKey: options.privateKey,
         mnemonic: options.mnemonic,
@@ -137,4 +155,59 @@ export const registerFheTestCommands = (program: Command): void => {
 
       printJson(result);
     });
+
+  const opCommand = fheTestCommand
+    .command("op")
+    .description("Run FHETest on-chain FHE operation demos");
+
+  for (const operation of FHE_TEST_OPERATIONS) {
+    const type = getFheTestOperationType(operation);
+    opCommand
+      .command(operation)
+      .description(`Run FHETest ${operation} using the caller's stored ${type}`)
+      .option(
+        "--value <value>",
+        "right-hand clear value to encrypt; defaults to a random value",
+      )
+      .option(
+        "--contract <address>",
+        "FHETest contract address override",
+        parseAddress,
+      )
+      .option(
+        "--public",
+        "make the resulting handle publicly decryptable",
+        false,
+      )
+      .option(
+        "--private-key <privateKey>",
+        "wallet private key; falls back to PRIVATE_KEY",
+        parsePrivateKey,
+      )
+      .option("--mnemonic <mnemonic>", "wallet mnemonic; falls back to MNEMONIC")
+      .action(async (options, command) => {
+        const globals = getGlobalOptions(command);
+        const value =
+          options.value === undefined
+            ? undefined
+            : parseClearValue(type, options.value);
+        const result = await runFheTestOperation({
+          network: globals.network,
+          relayerUrl: globals.relayerUrl,
+          rpcUrl: globals.rpcUrl,
+          operation,
+          value,
+          contractAddress: options.contract,
+          makePublic: options.public,
+          privateKey: options.privateKey,
+          mnemonic: options.mnemonic,
+          onProgress: createProgressReporter(),
+        });
+
+        printJson({
+          ...result,
+          inputValues: result.inputValues.map(serializeValue),
+        });
+      });
+  }
 };

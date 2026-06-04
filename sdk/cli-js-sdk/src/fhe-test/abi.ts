@@ -55,6 +55,13 @@ export const fheTestAbi = [
   },
   {
     type: "function",
+    name: "hasClearText",
+    inputs: [{ name: "handle", type: "bytes32", internalType: "bytes32" }],
+    outputs: [{ name: "", type: "bool", internalType: "bool" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
     name: "getHandleOf",
     inputs: [
       { name: "account", type: "address", internalType: "address" },
@@ -80,6 +87,34 @@ export const fheTestAbi = [
     outputs: [],
     stateMutability: "nonpayable",
   },
+  {
+    type: "function",
+    name: "initFheTest",
+    inputs: [{ name: "force", type: "bool", internalType: "bool" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  ...[
+    ["xorEbool", "externalEbool", "bool"],
+    ["addEuint8", "externalEuint8", "uint8"],
+    ["addEuint16", "externalEuint16", "uint16"],
+    ["addEuint32", "externalEuint32", "uint32"],
+    ["addEuint64", "externalEuint64", "uint64"],
+    ["addEuint128", "externalEuint128", "uint128"],
+    ["xorEuint256", "externalEuint256", "uint256"],
+    ["eqEaddress", "externalEaddress", "address"],
+  ].map(([name, externalType, clearType]) => ({
+    type: "function",
+    name,
+    inputs: [
+      { name: "input", type: "bytes32", internalType: externalType },
+      { name: "inputProof", type: "bytes", internalType: "bytes" },
+      { name: "clearValue", type: clearType, internalType: clearType },
+      { name: "makePublic", type: "bool", internalType: "bool" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  })),
   ...[
     ["setEbool", "externalEbool", "bool", "ebool"],
     ["setEuint8", "externalEuint8", "uint8", "euint8"],
