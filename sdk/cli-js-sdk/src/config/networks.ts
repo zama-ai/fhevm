@@ -69,6 +69,9 @@ const NETWORK_CONFIGS = {
     defaultRpcUrl: DEFAULT_SEPOLIA_RPC_URL,
     envRpcUrl: "SEPOLIA_RPC_URL",
     fheTestAddress: "0x94B9d3aF050687D1F76251aD7D09a1F216a19845",
+    runtime: {
+      moduleVersions: { tfhe: "1.5.3" },
+    },
   },
   "devnet": {
     fhevmChain: devnet,

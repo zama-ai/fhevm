@@ -18,10 +18,10 @@ import { configureFhevmRuntime } from "./runtime";
 import type { ClientOptions } from "./types";
 
 export const createClients = (options: ClientOptions) => {
-  configureFhevmRuntime();
+  const networkConfig = resolveNetworkConfig(options.network);
+  configureFhevmRuntime(networkConfig);
 
   const chain = resolveChain(options);
-  const networkConfig = resolveNetworkConfig(options.network);
   const rpcUrl = resolveRpcUrl(options);
   const transport = http(rpcUrl);
   const publicClient = createPublicClient({
