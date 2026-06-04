@@ -1,7 +1,6 @@
 import type { Hex } from "viem";
 
 import { createClientContext, type ClientOptions } from "../../config";
-import { readFheTestHandle } from "../../fhe-test/handles";
 import { readPublicValues } from "../../fhevm/public-decrypt";
 import type { ProgressReporter } from "../../shared/progress";
 import type {
@@ -10,9 +9,12 @@ import type {
   PublicDecryptResult,
 } from "../../types";
 import { describeHandle } from "../progress";
+import {
+  readCachedFheTestHandles,
+  reportProvidedHandles,
+  resolveCachedDecryptSelection,
+} from "../handles";
 import { resolveAccountAddress } from "./account";
-
-const DEFAULT_CACHED_TYPES: readonly FheValueType[] = ["bool"];
 
 /**
  * Public-decrypt options for existing ciphertext handles.
@@ -37,38 +39,27 @@ export type PublicDecryptOptions = ClientOptions &
 export const publicDecrypt = async (
   options: PublicDecryptOptions,
 ): Promise<PublicDecryptResult & { handles?: readonly FheTestHandle[] }> => {
-  const handles = options.handles ?? [];
-  const types = options.types ?? [];
-
-  if (handles.length > 0 && types.length > 0) {
-    throw new Error("Use either --handle or --type for cached decrypt, not both.");
-  }
+  const { handles, types } = resolveCachedDecryptSelection(options);
 
   options.onProgress?.("Creating FHEVM client");
   const { contractAddress, fhevm, publicClient } = createClientContext(options);
 
   if (handles.length > 0) {
-    options.onProgress?.(`Using ${handles.length.toString()} provided handle(s)`);
-    options.onProgress?.(`Provided handle(s): ${handles.join(", ")}`);
+    reportProvidedHandles(handles, options.onProgress);
     return readPublicValues(fhevm, handles, options.onProgress);
   }
 
   const account = resolveAccountAddress(options);
-  const selectedTypes = types.length > 0 ? types : DEFAULT_CACHED_TYPES;
-  const storedHandles: FheTestHandle[] = [];
-  for (const type of selectedTypes) {
-    const handle = await readFheTestHandle({
-      publicClient,
-      contractAddress,
+  const storedHandles = await readCachedFheTestHandles(
+    { contractAddress, publicClient },
+    {
       account,
-      type,
+      types,
+      describeStoredHandle: (type, handle) =>
+        `Using stored public ${type} handle: ${describeHandle(handle)}`,
       onProgress: options.onProgress,
-    });
-    options.onProgress?.(
-      `Using stored public ${type} handle: ${describeHandle(handle)}`,
-    );
-    storedHandles.push(handle);
-  }
+    },
+  );
   const decrypted = await readPublicValues(
     fhevm,
     storedHandles.map((handle) => handle.handle),

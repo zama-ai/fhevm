@@ -8,7 +8,7 @@ import {
 /**
  * Loads the default wallet account from explicit options, then environment.
  *
- * Mnemonic takes precedence over private key when both are present.
+ * Explicit CLI credentials take precedence over environment fallback.
  */
 export const loadAccount = (privateKey?: Hex, mnemonic?: string): Account => {
   return loadNamedAccount({
@@ -33,12 +33,13 @@ export const loadNamedAccount = (options: {
   mnemonicEnv: string;
   label: string;
 }): Account => {
-  const resolvedMnemonic = options.mnemonic ?? process.env[options.mnemonicEnv];
-  const resolvedPrivateKey =
-    options.privateKey ?? (process.env[options.privateKeyEnv] as Hex | undefined);
+  const resolvedPrivateKey = process.env[options.privateKeyEnv] as Hex | undefined;
+  const resolvedMnemonic = process.env[options.mnemonicEnv];
 
-  if (resolvedMnemonic) return mnemonicToAccount(resolvedMnemonic);
+  if (options.mnemonic) return mnemonicToAccount(options.mnemonic);
+  if (options.privateKey) return privateKeyToAccount(options.privateKey);
   if (resolvedPrivateKey) return privateKeyToAccount(resolvedPrivateKey);
+  if (resolvedMnemonic) return mnemonicToAccount(resolvedMnemonic);
 
   throw new Error(
     `Provide ${options.label} private key, ${options.label} mnemonic, ${options.privateKeyEnv}, or ${options.mnemonicEnv}.`,

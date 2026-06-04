@@ -1,13 +1,15 @@
 import type { Hex } from "viem";
 
 import { createWalletContext, type ClientOptions } from "../../config";
-import { readFheTestHandle } from "../../fhe-test/handles";
 import { decryptUserValues } from "../../fhevm/user-decrypt";
 import type { ProgressReporter } from "../../shared/progress";
 import type { FheTestHandle, FheValueType, UserDecryptResult } from "../../types";
 import { describeHandle } from "../progress";
-
-const DEFAULT_CACHED_TYPES: readonly FheValueType[] = ["bool"];
+import {
+  readCachedFheTestHandles,
+  reportProvidedHandles,
+  resolveCachedDecryptSelection,
+} from "../handles";
 
 /**
  * User-decrypt options for existing private handles.
@@ -31,20 +33,14 @@ export type UserDecryptOptions = ClientOptions &
 export const userDecrypt = async (
   options: UserDecryptOptions,
 ): Promise<UserDecryptResult & { handles?: readonly FheTestHandle[] }> => {
-  const handles = options.handles ?? [];
-  const types = options.types ?? [];
-
-  if (handles.length > 0 && types.length > 0) {
-    throw new Error("Use either --handle or --type for cached decrypt, not both.");
-  }
+  const { handles, types } = resolveCachedDecryptSelection(options);
 
   options.onProgress?.("Loading wallet and creating clients");
   const { account, contractAddress, publicClient, ...context } =
     createWalletContext(options);
 
   if (handles.length > 0) {
-    options.onProgress?.(`Using ${handles.length.toString()} provided handle(s)`);
-    options.onProgress?.(`Provided handle(s): ${handles.join(", ")}`);
+    reportProvidedHandles(handles, options.onProgress);
     return decryptUserValues(
       { ...context, contractAddress, publicClient },
       {
@@ -57,19 +53,16 @@ export const userDecrypt = async (
     );
   }
 
-  const selectedTypes = types.length > 0 ? types : DEFAULT_CACHED_TYPES;
-  const storedHandles: FheTestHandle[] = [];
-  for (const type of selectedTypes) {
-    const handle = await readFheTestHandle({
-      publicClient,
-      contractAddress,
+  const storedHandles = await readCachedFheTestHandles(
+    { contractAddress, publicClient },
+    {
       account: account.address,
-      type,
+      types,
+      describeStoredHandle: (type, handle) =>
+        `Using stored ${type} handle: ${describeHandle(handle)}`,
       onProgress: options.onProgress,
-    });
-    options.onProgress?.(`Using stored ${type} handle: ${describeHandle(handle)}`);
-    storedHandles.push(handle);
-  }
+    },
+  );
   const decrypted = await decryptUserValues(
     { ...context, contractAddress, publicClient },
     {

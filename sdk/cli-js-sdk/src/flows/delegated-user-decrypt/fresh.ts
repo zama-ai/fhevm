@@ -5,20 +5,13 @@ import {
   createWalletContext,
   createWalletContextForAccount,
 } from "../../config";
-import { readFheTestHandle } from "../../fhe-test/handles";
-import {
-  getSetEncryptedFunctionName,
-  simulateSetEncryptedValue,
-} from "../../fhe-test/writes";
-import { encryptValues } from "../../fhevm/encryption";
-import { sendAndWait } from "../../shared/transactions";
 import type {
   EncryptValue,
   FheClearValue,
   FheTestHandle,
 } from "../../types";
-import { createFreshDecryptValues } from "../../values";
-import { describeHandle, describeValue } from "../progress";
+import { createStoredFheTestHandle } from "../handles";
+import { describeHandle } from "../progress";
 import {
   loadRequiredDelegatorAccount,
   resolveDelegatorAddress,
@@ -63,47 +56,19 @@ export const freshDelegatedUserDecrypt = async (
   options.onProgress?.(`Delegate address: ${delegateContext.account.address}`);
   options.onProgress?.(`Delegator address: ${delegatorAddress}`);
 
-  const values =
-    options.value === undefined
-      ? createFreshDecryptValues(options.type)
-      : [{ type: options.type, value: options.value }];
-  const value = values[0];
-  if (!value) throw new Error("No value to encrypt.");
-  options.onProgress?.(`Delegator input value: ${describeValue(value)}`);
-
-  const encrypted = await encryptValues(delegatorContext.fhevm, {
-    contractAddress: delegatorContext.contractAddress,
-    userAddress: delegatorAddress,
-    values,
-    onProgress: options.onProgress,
-    progressLabel: `Encrypting ${options.type} value for delegator`,
-  });
-  const encryptedValue = encrypted.encryptedValues[0];
-  if (!encryptedValue) throw new Error("FHEVM SDK did not return a handle.");
-  options.onProgress?.(`Encrypted delegator input handle: ${encryptedValue}`);
-
-  options.onProgress?.(
-    `Simulating FHETest.${getSetEncryptedFunctionName(options.type)}`,
-  );
-  const request = await simulateSetEncryptedValue(
-    {
-      account: delegatorContext.account,
-      contractAddress: delegatorContext.contractAddress,
-      publicClient: delegatorContext.publicClient,
-    },
-    {
-      encryptedValue,
-      inputProof: encrypted.inputProof,
-      value,
+  const { transactionHash, inputProof, inputValues, handle } =
+    await createStoredFheTestHandle(delegatorContext, {
+      type: options.type,
+      ownerAddress: delegatorAddress,
+      value: options.value,
       makePublic: false,
-    },
-  );
-  const transactionHash = await sendAndWait({
-    walletClient: delegatorContext.walletClient,
-    publicClient: delegatorContext.publicClient,
-    request,
-    onProgress: options.onProgress,
-  });
+      inputProgressLabel: "Delegator input value",
+      encryptProgressLabel: `Encrypting ${options.type} value for delegator`,
+      encryptedProgressLabel: "Encrypted delegator input handle",
+      storedProgressLabel: (storedHandle) =>
+        `Stored delegator ${options.type} handle: ${describeHandle(storedHandle)}`,
+      onProgress: options.onProgress,
+    });
 
   const delegation = await ensureUserDecryptionDelegation(delegateContext, {
     delegatorContext,
@@ -113,16 +78,6 @@ export const freshDelegatedUserDecrypt = async (
     onProgress: options.onProgress,
   });
 
-  const handle = await readFheTestHandle({
-    publicClient: delegateContext.publicClient,
-    contractAddress: delegateContext.contractAddress,
-    account: delegatorAddress,
-    type: options.type,
-    onProgress: options.onProgress,
-  });
-  options.onProgress?.(
-    `Stored delegator ${options.type} handle: ${describeHandle(handle)}`,
-  );
   const decrypted = await decryptDelegatedHandles(delegateContext, {
     encryptedValues: [handle.handle],
     delegatorAddress,
@@ -133,8 +88,8 @@ export const freshDelegatedUserDecrypt = async (
   return {
     ...decrypted,
     transactionHash,
-    inputProof: encrypted.inputProof,
-    inputValues: values,
+    inputProof,
+    inputValues,
     handle,
     delegatorAddress,
     delegateAddress: delegateContext.account.address,

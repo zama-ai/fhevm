@@ -28,4 +28,6 @@ Behavioral guidance:
 - `fhe-test inspect` is read-only. Keep raw `--handle` inspection mutually exclusive with account/type inspection.
 - `fhe-test inspect --type <type>` defaults `--account` to the wallet address loaded from `PRIVATE_KEY`/`MNEMONIC` when no account is provided.
 - `fhe-test init --bulk` calls the contract-level all-types initializer and is mutually exclusive with `--type`.
+- `fhe-test init --type <type>` may be repeated to initialize selected types without bulk mode.
+- `fhe-test init` returns `transactionHashes` as an array because non-bulk initialization may send one transaction per initialized type.
 - `fhe-test op` exposes FHETest operator demos as explicit subcommands, not as a generic `--type` flag. Keep operation names aligned with the underlying behavior, such as `add-uint64` and `xor-uint256`.

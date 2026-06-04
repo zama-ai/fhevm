@@ -5,9 +5,13 @@ import {
   createWalletContext,
   createWalletContextForAccount,
 } from "../../config";
-import { readFheTestHandle } from "../../fhe-test/handles";
 import type { FheTestHandle } from "../../types";
 import { describeHandle } from "../progress";
+import {
+  readCachedFheTestHandles,
+  reportProvidedHandles,
+  resolveCachedDecryptSelection,
+} from "../handles";
 import {
   loadOptionalDelegatorAccount,
   resolveDelegatorAddress,
@@ -20,8 +24,6 @@ import type {
 } from "./types";
 
 type DelegatedValueType = DelegatedUserDecryptBaseOptions["type"];
-
-const DEFAULT_CACHED_TYPES: readonly DelegatedValueType[] = ["bool"];
 
 export type DelegatedUserDecryptOptions = Omit<
   DelegatedUserDecryptBaseOptions,
@@ -41,11 +43,7 @@ export type DelegatedUserDecryptOptions = Omit<
 export const delegatedUserDecrypt = async (
   options: DelegatedUserDecryptOptions,
 ): Promise<DelegatedUserDecryptResult & { handles?: readonly FheTestHandle[] }> => {
-  const handles = options.handles ?? [];
-  const types = options.types ?? [];
-  if (handles.length > 0 && types.length > 0) {
-    throw new Error("Use either --handle or --type for cached decrypt, not both.");
-  }
+  const { handles, types } = resolveCachedDecryptSelection(options);
 
   options.onProgress?.("Loading delegate wallet and creating clients");
   const delegateContext = createWalletContext(options);
@@ -70,8 +68,7 @@ export const delegatedUserDecrypt = async (
   });
 
   if (handles.length > 0) {
-    options.onProgress?.(`Using ${handles.length.toString()} provided handle(s)`);
-    options.onProgress?.(`Provided handle(s): ${handles.join(", ")}`);
+    reportProvidedHandles(handles, options.onProgress);
     const decrypted = await decryptDelegatedHandles(delegateContext, {
       encryptedValues: handles,
       delegatorAddress,
@@ -86,21 +83,13 @@ export const delegatedUserDecrypt = async (
     };
   }
 
-  const selectedTypes = types.length > 0 ? types : DEFAULT_CACHED_TYPES;
-  const storedHandles: FheTestHandle[] = [];
-  for (const type of selectedTypes) {
-    const handle = await readFheTestHandle({
-      publicClient: delegateContext.publicClient,
-      contractAddress: delegateContext.contractAddress,
-      account: delegatorAddress,
-      type,
-      onProgress: options.onProgress,
-    });
-    options.onProgress?.(
+  const storedHandles = await readCachedFheTestHandles(delegateContext, {
+    account: delegatorAddress,
+    types,
+    describeStoredHandle: (type, handle) =>
       `Using stored delegator ${type} handle: ${describeHandle(handle)}`,
-    );
-    storedHandles.push(handle);
-  }
+    onProgress: options.onProgress,
+  });
   const decrypted = await decryptDelegatedHandles(delegateContext, {
     encryptedValues: storedHandles.map((handle) => handle.handle),
     delegatorAddress,

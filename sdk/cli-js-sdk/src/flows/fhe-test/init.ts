@@ -18,13 +18,14 @@ import { describeHandle } from "../progress";
  * Options for initializing FHETest handles for the wallet account.
  *
  * `bulk` uses FHETest's all-types initializer and is mutually exclusive with
- * `type`; without `bulk`, each type is initialized through its clear setter.
+ * explicit `types`; without `bulk`, each type is initialized through its clear
+ * setter.
  */
 export type InitFheTestOptions = ClientOptions &
   Readonly<{
     contractAddress?: Hex;
     bulk?: boolean;
-    type?: FheValueType;
+    types?: readonly FheValueType[];
     force?: boolean;
     privateKey?: Hex;
     mnemonic?: string;
@@ -60,16 +61,17 @@ export const initFheTest = async (
   account: Hex;
   initialized: readonly FheTestHandle[];
   skipped: readonly FheTestHandle[];
-  transactionHash?: Hex;
+  transactionHashes: readonly Hex[];
 }> => {
   options.onProgress?.("Loading wallet and creating clients");
   const { account, contractAddress, publicClient, walletClient } =
     createWalletContext(options);
-  if (options.bulk && options.type) {
+  if (options.bulk && options.types?.length) {
     throw new Error("fhe-test init --bulk cannot be used with --type.");
   }
 
-  const types = options.type ? [options.type] : FHE_VALUE_TYPES;
+  const types =
+    options.types && options.types.length > 0 ? options.types : FHE_VALUE_TYPES;
   const initialized: FheTestHandle[] = [];
   const skipped: FheTestHandle[] = [];
 
@@ -110,6 +112,7 @@ export const initFheTest = async (
         account: account.address,
         initialized,
         skipped,
+        transactionHashes: [],
       };
     }
 
@@ -143,10 +146,11 @@ export const initFheTest = async (
       account: account.address,
       initialized,
       skipped,
-      transactionHash,
+      transactionHashes: [transactionHash],
     };
   }
 
+  const transactionHashes: Hex[] = [];
   for (const valueType of types) {
     options.onProgress?.(`Checking existing ${valueType} handle`);
     const hasHandle = await hasFheTestHandle({
@@ -178,12 +182,13 @@ export const initFheTest = async (
       { value, makePublic: true },
     );
 
-    await sendAndWait({
+    const transactionHash = await sendAndWait({
       walletClient,
       publicClient,
       request,
       onProgress: options.onProgress,
     });
+    transactionHashes.push(transactionHash);
     initialized.push(
       await readFheTestHandle({
         publicClient,
@@ -201,5 +206,6 @@ export const initFheTest = async (
     account: account.address,
     initialized,
     skipped,
+    transactionHashes,
   };
 };

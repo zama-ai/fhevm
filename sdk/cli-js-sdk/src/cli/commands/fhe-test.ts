@@ -13,6 +13,7 @@ import { parseClearValue, serializeValue } from "../../values";
 import { getGlobalOptions } from "../options";
 import { printJson } from "../output";
 import {
+  collectValueType,
   parseAddress,
   parseBytes32,
   parsePrivateKey,
@@ -115,8 +116,8 @@ export const registerFheTestCommands = (program: Command): void => {
     .description("Initialize publicly decryptable FHETest handles")
     .option(
       "-t, --type <type>",
-      `initialize one type (${supportedValueTypes}); defaults to all`,
-      parseValueType,
+      `initialize one or more types; repeat for multiple (${supportedValueTypes}); defaults to all`,
+      collectValueType,
     )
     .option(
       "--contract <address>",
@@ -136,7 +137,7 @@ export const registerFheTestCommands = (program: Command): void => {
     )
     .option("--mnemonic <mnemonic>", "wallet mnemonic; falls back to MNEMONIC")
     .action(async (options, command) => {
-      if (options.bulk && options.type) {
+      if (options.bulk && options.type?.length) {
         throw new Error("fhe-test init --bulk cannot be used with --type.");
       }
 
@@ -145,7 +146,7 @@ export const registerFheTestCommands = (program: Command): void => {
         network: globals.network,
         relayerUrl: globals.relayerUrl,
         rpcUrl: globals.rpcUrl,
-        type: options.type,
+        types: options.type,
         contractAddress: options.contract,
         bulk: options.bulk,
         force: options.force,

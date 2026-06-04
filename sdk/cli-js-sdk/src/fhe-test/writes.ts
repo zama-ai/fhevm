@@ -2,6 +2,7 @@ import type { Hex } from "viem";
 
 import { fheTestAbi } from "./abi";
 import type { WalletContext } from "../config";
+import type { ContractWriteRequest } from "../shared/transactions";
 import type { EncryptValue, FheValueType } from "../types";
 import { FHE_TYPE_IDS } from "../types";
 
@@ -60,6 +61,24 @@ type WriteContext = Pick<
   "account" | "contractAddress" | "publicClient"
 >;
 
+const simulateWriteRequest = async (
+  context: WriteContext,
+  options: {
+    functionName: string;
+    args: readonly unknown[];
+  },
+): Promise<ContractWriteRequest> => {
+  const { request } = await context.publicClient.simulateContract({
+    account: context.account,
+    address: context.contractAddress,
+    abi: fheTestAbi,
+    functionName: options.functionName,
+    args: options.args,
+  } as never);
+
+  return request as ContractWriteRequest;
+};
+
 /** Simulates an encrypted setter call and returns the viem write request. */
 export const simulateSetEncryptedValue = async (
   context: WriteContext,
@@ -69,11 +88,8 @@ export const simulateSetEncryptedValue = async (
     value: EncryptValue;
     makePublic: boolean;
   },
-): Promise<unknown> => {
-  const { request } = await context.publicClient.simulateContract({
-    account: context.account,
-    address: context.contractAddress,
-    abi: fheTestAbi,
+): Promise<ContractWriteRequest> => {
+  return simulateWriteRequest(context, {
     functionName: setEncryptedFunctionByType[options.value.type],
     args: [
       options.encryptedValue,
@@ -81,9 +97,7 @@ export const simulateSetEncryptedValue = async (
       options.value.value,
       options.makePublic,
     ],
-  } as never);
-
-  return request;
+  });
 };
 
 /** Simulates a clear setter call used by FHETest initialization. */
@@ -93,48 +107,33 @@ export const simulateSetClearValue = async (
     value: EncryptValue;
     makePublic: boolean;
   },
-): Promise<unknown> => {
-  const { request } = await context.publicClient.simulateContract({
-    account: context.account,
-    address: context.contractAddress,
-    abi: fheTestAbi,
+): Promise<ContractWriteRequest> => {
+  return simulateWriteRequest(context, {
     functionName: setClearFunctionByType[options.value.type],
     args: [options.value.value, options.makePublic],
-  } as never);
-
-  return request;
+  });
 };
 
 /** Simulates marking an existing stored FHETest handle publicly decryptable. */
 export const simulateMakePubliclyDecryptable = async (
   context: WriteContext,
   type: FheValueType,
-): Promise<unknown> => {
-  const { request } = await context.publicClient.simulateContract({
-    account: context.account,
-    address: context.contractAddress,
-    abi: fheTestAbi,
+): Promise<ContractWriteRequest> => {
+  return simulateWriteRequest(context, {
     functionName: "makePubliclyDecryptable",
     args: [FHE_TYPE_IDS[type]],
-  } as never);
-
-  return request;
+  });
 };
 
 /** Simulates FHETest's contract-level all-types initializer. */
 export const simulateInitFheTest = async (
   context: WriteContext,
   force: boolean,
-): Promise<unknown> => {
-  const { request } = await context.publicClient.simulateContract({
-    account: context.account,
-    address: context.contractAddress,
-    abi: fheTestAbi,
+): Promise<ContractWriteRequest> => {
+  return simulateWriteRequest(context, {
     functionName: "initFheTest",
     args: [force],
-  } as never);
-
-  return request;
+  });
 };
 
 /**
@@ -152,7 +151,7 @@ export const simulateFheTestOperation = async (
     value: EncryptValue;
     makePublic: boolean;
   },
-): Promise<unknown> => {
+): Promise<ContractWriteRequest> => {
   const config = operationConfig[options.operation];
   if (options.value.type !== config.type) {
     throw new Error(
@@ -160,10 +159,7 @@ export const simulateFheTestOperation = async (
     );
   }
 
-  const { request } = await context.publicClient.simulateContract({
-    account: context.account,
-    address: context.contractAddress,
-    abi: fheTestAbi,
+  return simulateWriteRequest(context, {
     functionName: config.functionName,
     args: [
       options.encryptedValue,
@@ -171,9 +167,7 @@ export const simulateFheTestOperation = async (
       options.value.value,
       options.makePublic,
     ],
-  } as never);
-
-  return request;
+  });
 };
 
 /** Returns the FHETest encrypted setter name for a value type. */

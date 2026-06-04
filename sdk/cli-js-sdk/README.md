@@ -29,6 +29,7 @@ pnpm --silent run cli
 ```
 
 The repository `.env` is loaded automatically, even when you run the CLI from another directory. Shell variables override `.env` values.
+Explicit credential flags override environment credentials.
 
 ## First Commands
 
@@ -58,7 +59,7 @@ Global options such as `-n devnet`, `--rpc-url`, and `--relayer-url` can be plac
 | `delegated-user-decrypt cached` | Delegate decrypts direct `--handle` values, or a delegator's stored handles for `--type` values. | Delegate; delegator only if creating ACL permission |
 | `fhe-test info` | Shows resolved network, host chain, relayer, and FHETest metadata. | No |
 | `fhe-test inspect` | Reads FHETest state for a raw handle, an explicit account/type slot, or the wallet's default account/type slot. | Only when using the wallet default |
-| `fhe-test init` | Creates public FHETest handles for one or all supported types. | Yes |
+| `fhe-test init` | Creates public FHETest handles for one, several, or all supported types. | Yes |
 | `fhe-test op <operation>` | Runs an FHETest operation against the caller's stored handle. | Yes |
 | `completion install` | Installs shell completion. | No |
 | `completion uninstall` | Uninstalls shell completion. | No |
@@ -214,9 +215,12 @@ Initialize stored FHETest handles:
 
 ```bash
 fhevm-sdk fhe-test init --type uint64
+fhevm-sdk fhe-test init --type uint64 --type uint128
 fhevm-sdk fhe-test init --bulk
 fhevm-sdk fhe-test init --type uint256 --force
 ```
+
+The init JSON includes `transactionHashes`, because non-bulk initialization may write one transaction per initialized type.
 
 Inspect FHETest state:
 

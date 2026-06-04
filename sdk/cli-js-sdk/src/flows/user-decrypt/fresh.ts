@@ -1,15 +1,8 @@
 import type { Hex } from "viem";
 
 import { createWalletContext, type ClientOptions } from "../../config";
-import { readFheTestHandle } from "../../fhe-test/handles";
-import {
-  getSetEncryptedFunctionName,
-  simulateSetEncryptedValue,
-} from "../../fhe-test/writes";
-import { encryptValues } from "../../fhevm/encryption";
 import { decryptUserValues } from "../../fhevm/user-decrypt";
 import type { ProgressReporter } from "../../shared/progress";
-import { sendAndWait } from "../../shared/transactions";
 import type {
   EncryptValue,
   FheClearValue,
@@ -17,8 +10,8 @@ import type {
   FheValueType,
   UserDecryptResult,
 } from "../../types";
-import { createFreshDecryptValues } from "../../values";
-import { describeHandle, describeValue } from "../progress";
+import { createStoredFheTestHandle } from "../handles";
+import { describeHandle } from "../progress";
 
 /**
  * Options for the fresh user-decrypt demo flow.
@@ -49,63 +42,26 @@ export const freshUserDecrypt = async (
   }
 > => {
   options.onProgress?.("Loading wallet and creating clients");
-  const { account, contractAddress, fhevm, publicClient, walletClient, ...context } =
-    createWalletContext(options);
-  const values =
-    options.value === undefined
-      ? createFreshDecryptValues(options.type)
-      : [{ type: options.type, value: options.value }];
-  const value = values[0];
-  if (!value) throw new Error("No value to encrypt.");
-  options.onProgress?.(`Input value: ${describeValue(value)}`);
-
-  const encrypted = await encryptValues(fhevm, {
-    contractAddress,
-    userAddress: account.address,
-    values,
-    onProgress: options.onProgress,
-    progressLabel: `Encrypting ${options.type} value`,
-  });
-
-  const encryptedValue = encrypted.encryptedValues[0];
-  if (!encryptedValue) throw new Error("FHEVM SDK did not return a handle.");
-  options.onProgress?.(`Encrypted input handle: ${encryptedValue}`);
-
-  options.onProgress?.(
-    `Simulating FHETest.${getSetEncryptedFunctionName(options.type)}`,
-  );
-  const request = await simulateSetEncryptedValue(
-    { account, contractAddress, publicClient },
-    {
-      encryptedValue,
-      inputProof: encrypted.inputProof,
-      value,
+  const context = createWalletContext(options);
+  const { transactionHash, inputProof, inputValues, handle } =
+    await createStoredFheTestHandle(context, {
+      type: options.type,
+      ownerAddress: context.account.address,
+      value: options.value,
       makePublic: false,
-    },
-  );
-  const transactionHash = await sendAndWait({
-    walletClient,
-    publicClient,
-    request,
-    onProgress: options.onProgress,
-  });
-
-  const handle = await readFheTestHandle({
-    publicClient,
-    contractAddress,
-    account: account.address,
-    type: options.type,
-    onProgress: options.onProgress,
-  });
-  options.onProgress?.(
-    `Stored ${options.type} handle: ${describeHandle(handle)}`,
-  );
+      inputProgressLabel: "Input value",
+      encryptProgressLabel: `Encrypting ${options.type} value`,
+      encryptedProgressLabel: "Encrypted input handle",
+      storedProgressLabel: (storedHandle) =>
+        `Stored ${options.type} handle: ${describeHandle(storedHandle)}`,
+      onProgress: options.onProgress,
+    });
   const decrypted = await decryptUserValues(
-    { ...context, contractAddress, publicClient },
+    context,
     {
       encryptedValues: [handle.handle],
-      signer: account,
-      ownerAddress: account.address,
+      signer: context.account,
+      ownerAddress: context.account.address,
       durationDays: options.durationDays,
       onProgress: options.onProgress,
     },
@@ -114,8 +70,8 @@ export const freshUserDecrypt = async (
   return {
     ...decrypted,
     transactionHash,
-    inputProof: encrypted.inputProof,
-    inputValues: values,
+    inputProof,
+    inputValues,
     handle,
   };
 };

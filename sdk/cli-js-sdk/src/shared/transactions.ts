@@ -1,4 +1,4 @@
-import type { Hex } from "viem";
+import type { Hex, WriteContractParameters } from "viem";
 
 import type { createClients, createWallet } from "../config";
 import type { ProgressReporter } from "./progress";
@@ -6,16 +6,16 @@ import type { ProgressReporter } from "./progress";
 type PublicClient = ReturnType<typeof createClients>["publicClient"];
 type WalletClient = ReturnType<typeof createWallet>["walletClient"];
 
+export type ContractWriteRequest = WriteContractParameters;
+
 export const sendAndWait = async (options: {
   walletClient: WalletClient;
   publicClient: PublicClient;
-  request: unknown;
+  request: ContractWriteRequest;
   onProgress?: ProgressReporter;
 }): Promise<Hex> => {
   options.onProgress?.("Sending transaction");
-  const transactionHash = await options.walletClient.writeContract(
-    options.request as never,
-  );
+  const transactionHash = await options.walletClient.writeContract(options.request);
   options.onProgress?.(`Waiting for transaction receipt: ${transactionHash}`);
   const receipt = await options.publicClient.waitForTransactionReceipt({
     hash: transactionHash,
