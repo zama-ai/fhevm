@@ -21,11 +21,14 @@ on:
 permissions: {}
 
 concurrency:
-  # Only @claude comments share the per-PR group, so a new @claude cancels an in-progress one.
-  # Other issue_comment events (e.g. the tracking/result comments this workflow posts via the
-  # GitHub App token) get a unique per-comment group, so they can't cancel an in-progress run.
-  # The job-level `if:` skips those non-@claude runs; the group split prevents cross-cancellation.
-  group: ${{ contains(github.event.comment.body, '@claude') && format('claude-review-{0}-{1}', github.repository, github.event.issue.number) || format('claude-review-noop-{0}', github.event.comment.id) }}
+  # Only human @claude comments share the per-PR group, so a new @claude cancels an in-progress one.
+  # Bot comments are routed to a unique noop group even if their body contains '@claude'
+  # (e.g. rejection messages with usage examples, or Claude responses quoting the request).
+  # This matters because concurrency cancellation fires at queue time, before job-level `if:`
+  # conditions are evaluated — so without the user.type guard, a bot comment whose body contains
+  # '@claude' would cancel the still-running job before its tail steps (iptables reset, token
+  # revocation) complete.
+  group: ${{ (github.event.comment.user.type == 'User' && contains(github.event.comment.body, '@claude')) && format('claude-review-{0}-{1}', github.repository, github.event.issue.number) || format('claude-review-noop-{0}', github.event.comment.id) }}
   cancel-in-progress: true
 
 jobs:
