@@ -1,0 +1,25 @@
+# Standalone crate (own workspace) so `anchor build` / cargo-build-sbf in the
+# parent Anchor workspace never tries to compile this native plugin for SBF.
+[workspace]
+
+[package]
+name = "geyser-tracker-plugin"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# cdylib -> produces libgeyser_tracker_plugin.dylib that the validator dlopen's.
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+# Must match the running validator (Agave 3.1.12) so the transaction/account
+# types passed across the FFI boundary are ABI-identical.
+agave-geyser-plugin-interface = "=3.1.12"
+solana-transaction = "^3.0.2"
+solana-transaction-status = "=3.1.12"
+solana-pubkey = "^3.0"
+solana-message = "^3.0"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"

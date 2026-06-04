@@ -1,0 +1,19 @@
+[toolchain]
+package_manager = "yarn"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+geyser = "H4Yc3MugAkJk2FEjLCfCr2J28hgMXzipJaSLq1Sa2SP8"
+caller = "4RsnoEwKPWbZg4Z6NUGaqP355SvtGWjjUFqEdmEGiFAB"
+
+[provider]
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "cargo test"
+
+[hooks]
