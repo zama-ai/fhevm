@@ -8,7 +8,6 @@ use crate::{
 use alloy::{
     eips::BlockNumberOrTag,
     network::Ethereum,
-    primitives::Address,
     providers::Provider,
     rpc::types::{Filter, Log},
     sol_types::SolEventInterface,
@@ -199,7 +198,7 @@ where
 
         let mut events = Vec::with_capacity(logs.len());
         for log in logs {
-            let log_address: Address = log.inner.address;
+            let log_address = log.inner.address;
             let event_kind = if log_address == kms_generation_address {
                 KMSGenerationEvents::decode_log(&log.inner)
                     .map_err(|e| anyhow!("Failed to decode KMSGeneration event: {e}"))?
@@ -278,7 +277,7 @@ where
 mod tests {
     use super::*;
     use alloy::{
-        primitives::U256,
+        primitives::{Address, U256},
         providers::{
             Identity, ProviderBuilder, RootProvider,
             fillers::{

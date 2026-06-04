@@ -239,10 +239,10 @@ fn key_type_to_string(key_type: u8) -> anyhow::Result<String> {
 pub fn compute_anchor_event_hash(event: &NewKmsContext) -> FixedBytes<32> {
     // keccak256(abi.encode(initialKmsNodeParams, initialThresholds, softwareVersion, pcrValues))
     let encoded_data = (
-        event.kmsNodeParams.clone(),
+        event.kmsNodeParams.as_slice(),
         event.thresholds.clone(),
         &event.softwareVersion,
-        event.pcrValues.clone(),
+        event.pcrValues.as_slice(),
     )
         .abi_encode_sequence();
 
