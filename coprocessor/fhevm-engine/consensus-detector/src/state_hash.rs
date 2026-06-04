@@ -164,8 +164,9 @@ async fn compute_and_insert_gcs(
     Ok(())
 }
 
-/// Uploads `gcs.state_hash` rows with `s3_uploaded_at IS NULL`.
-/// Stamps `NOW()` on success; failures stay NULL and retry next sweep.
+/// Uploads `gcs.state_hash` rows with `s3_uploaded_at IS NULL`, attaching the
+/// host-chain block_hash as S3 object metadata. Stamps `NOW()` on success;
+/// failures stay NULL and retry next sweep.
 async fn upload_pending_state_hashes(
     pool: &Pool<Postgres>,
     s3: &aws_sdk_s3::Client,
@@ -174,11 +175,13 @@ async fn upload_pending_state_hashes(
 ) -> anyhow::Result<()> {
     let pending = sqlx::query!(
         r#"
-        SELECT chain_id AS "chain_id!", block_number AS "block_number!",
-               state_hash AS "state_hash!"
-          FROM gcs.state_hash
-         WHERE s3_uploaded_at IS NULL
-         ORDER BY chain_id, block_number
+        SELECT sh.chain_id AS "chain_id!", sh.block_number AS "block_number!",
+               sh.state_hash AS "state_hash!", b.block_hash AS "block_hash!"
+          FROM gcs.state_hash sh
+          JOIN gcs.host_chain_blocks_valid b
+            ON b.chain_id = sh.chain_id AND b.block_number = sh.block_number
+         WHERE sh.s3_uploaded_at IS NULL
+         ORDER BY sh.chain_id, sh.block_number
          LIMIT $1
         "#,
         batch_limit,
@@ -196,11 +199,13 @@ async fn upload_pending_state_hashes(
                 continue;
             }
         };
+        let block_hash_hex = format!("0x{}", hex::encode(&row.block_hash));
         let key = state_hash_key(chain_id, block_number);
         match s3
             .put_object()
             .bucket(my_bucket)
             .key(&key)
+            .metadata("block-hash", &block_hash_hex)
             .body(ByteStream::from(bytes))
             .send()
             .await
@@ -214,7 +219,7 @@ async fn upload_pending_state_hashes(
                 )
                 .execute(pool)
                 .await?;
-                info!(chain_id, block_number, bucket = my_bucket, "state_hash uploaded");
+                info!(chain_id, block_number, block_hash = %block_hash_hex, bucket = my_bucket, "state_hash uploaded");
             }
             Err(e) => {
                 warn!(chain_id, block_number, error = %e, "state_hash upload failed; will retry");
