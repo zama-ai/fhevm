@@ -136,6 +136,61 @@ pub fn verify_threshold(
     seen.len() as u8 >= threshold
 }
 
+/// v0 verifier config: the EVM EIP-712 domain + signer set a Zama party signs under.
+/// Held on-chain (a config PDA) and set by the host admin.
+pub struct Eip712VerifierConfig<'a> {
+    /// Gateway chain id used in the EIP-712 domain.
+    pub gateway_chain_id: u64,
+    /// Gateway verifying-contract address (Decryption or InputVerification).
+    pub verifying_contract: [u8; 20],
+    /// Authorized signer EVM addresses (v0: typically one).
+    pub signers: &'a [[u8; 20]],
+    /// Minimum distinct valid signatures required.
+    pub threshold: u8,
+}
+
+/// Verify a KMS `PublicDecryptVerification` certificate (cert-secp).
+pub fn verify_kms_public_decrypt(
+    config: &Eip712VerifierConfig,
+    ct_handles: &[[u8; 32]],
+    decrypted_result: &[u8],
+    extra_data: &[u8],
+    signatures: &[[u8; 65]],
+) -> bool {
+    let domain =
+        domain_separator(b"Decryption", b"1", config.gateway_chain_id, &config.verifying_contract);
+    let struct_hash = public_decrypt_struct_hash(ct_handles, decrypted_result, extra_data);
+    let digest = typed_data_digest(&domain, &struct_hash);
+    verify_threshold(&digest, signatures, config.signers, config.threshold)
+}
+
+/// Verify a coprocessor `CiphertextVerification` input attestation (input-bind-secp).
+pub fn verify_coprocessor_input(
+    config: &Eip712VerifierConfig,
+    ct_handles: &[[u8; 32]],
+    user_address: &[u8; 32],
+    contract_address: &[u8; 32],
+    contract_chain_id: u64,
+    extra_data: &[u8],
+    signatures: &[[u8; 65]],
+) -> bool {
+    let domain = domain_separator(
+        b"InputVerification",
+        b"1",
+        config.gateway_chain_id,
+        &config.verifying_contract,
+    );
+    let struct_hash = ciphertext_verification_struct_hash(
+        ct_handles,
+        user_address,
+        contract_address,
+        contract_chain_id,
+        extra_data,
+    );
+    let digest = typed_data_digest(&domain, &struct_hash);
+    verify_threshold(&digest, signatures, config.signers, config.threshold)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -186,5 +241,66 @@ mod tests {
 
         assert_eq!(recover_evm_address(&digest, &sig), Some(signer));
         assert!(verify_threshold(&digest, &[sig], &[signer], 1));
+    }
+
+    #[test]
+    fn verifies_full_kms_cert_flow() {
+        let key = SigningKey::from_bytes(&[0x33u8; 32].into()).unwrap();
+        let config = Eip712VerifierConfig {
+            gateway_chain_id: 31337,
+            verifying_contract: [0xDEu8; 20],
+            signers: &[evm_address_of(&key)],
+            threshold: 1,
+        };
+        let handles = [[0xA1u8; 32]];
+        let result = [42u8; 8];
+        let ds = domain_separator(b"Decryption", b"1", 31337, &[0xDEu8; 20]);
+        let digest = typed_data_digest(&ds, &public_decrypt_struct_hash(&handles, &result, &[0x00]));
+        let sig = sign(&key, &digest);
+        assert!(verify_kms_public_decrypt(&config, &handles, &result, &[0x00], &[sig]));
+        // a different decrypted result yields a different digest -> rejected
+        assert!(!verify_kms_public_decrypt(&config, &handles, &[0u8; 8], &[0x00], &[sig]));
+    }
+
+    #[test]
+    fn verifies_full_coprocessor_input_flow() {
+        let key = SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
+        let config = Eip712VerifierConfig {
+            gateway_chain_id: 31337,
+            verifying_contract: [0xCDu8; 20],
+            signers: &[evm_address_of(&key)],
+            threshold: 1,
+        };
+        let handles = [[0xB2u8; 32]];
+        let (user, contract) = ([0x01u8; 32], [0x02u8; 32]);
+        let ds = domain_separator(b"InputVerification", b"1", 31337, &[0xCDu8; 20]);
+        let digest = typed_data_digest(
+            &ds,
+            &ciphertext_verification_struct_hash(&handles, &user, &contract, 12345, &[0x00]),
+        );
+        let sig = sign(&key, &digest);
+        assert!(verify_coprocessor_input(&config, &handles, &user, &contract, 12345, &[0x00], &[sig]));
+        // wrong contract chain id -> rejected
+        assert!(!verify_coprocessor_input(&config, &handles, &user, &contract, 999, &[0x00], &[sig]));
+    }
+
+    #[test]
+    fn threshold_requires_two_distinct_signers() {
+        let k1 = SigningKey::from_bytes(&[0x55u8; 32].into()).unwrap();
+        let k2 = SigningKey::from_bytes(&[0x66u8; 32].into()).unwrap();
+        let config = Eip712VerifierConfig {
+            gateway_chain_id: 31337,
+            verifying_contract: [0u8; 20],
+            signers: &[evm_address_of(&k1), evm_address_of(&k2)],
+            threshold: 2,
+        };
+        let handles = [[7u8; 32]];
+        let ds = domain_separator(b"Decryption", b"1", 31337, &[0u8; 20]);
+        let digest = typed_data_digest(&ds, &public_decrypt_struct_hash(&handles, &[1], &[0x00]));
+        let s1 = sign(&k1, &digest);
+        let s2 = sign(&k2, &digest);
+        assert!(!verify_kms_public_decrypt(&config, &handles, &[1], &[0x00], &[s1])); // 1 < 2
+        assert!(!verify_kms_public_decrypt(&config, &handles, &[1], &[0x00], &[s1, s1])); // dup -> 1 distinct
+        assert!(verify_kms_public_decrypt(&config, &handles, &[1], &[0x00], &[s1, s2])); // 2 distinct
     }
 }
