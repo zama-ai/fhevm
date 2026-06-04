@@ -10,6 +10,7 @@ Behavioral guidance:
 
 - Keep progress and status logs on stderr.
 - Keep the final machine-readable response on stdout as JSON.
+- Update `README.md` examples and this guidance when changing command behavior, options, outputs, defaults, or supported flows.
 - Global options are passed before the subcommand.
 - FHETest is the only contract target.
 - Networks may target different host chains; do not assume Ethereum Sepolia for every network.
