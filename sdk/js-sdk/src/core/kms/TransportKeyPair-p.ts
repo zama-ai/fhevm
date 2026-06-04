@@ -10,7 +10,6 @@ import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 import { assertRecordNonNullableProperty } from '../base/record.js';
 import { asFhevmRuntimeWith } from '../runtime/CoreFhevmRuntime-p.js';
 import { verifyTkmsPublicKey } from '../utils-p/decrypt/verifyTkmsPublicKey.js';
-import { hyperWasmResolveTkmsModuleVersion } from '../runtime/HyperWasmSolver-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -186,12 +185,9 @@ export async function generateTransportKeyPair(context: {
   readonly runtime: WithDecrypt;
   readonly chain: FhevmChain;
   readonly client: NativeClient;
+  readonly tkmsVersion: TkmsVersion;
 }): Promise<TransportKeyPair> {
-  const tkmsVersion = await hyperWasmResolveTkmsModuleVersion({
-    runtime: context.runtime,
-    chain: context.chain,
-    client: context.client,
-  });
+  const tkmsVersion = context.tkmsVersion;
 
   const tkmsPrivateKey = await context.runtime.decrypt.generateTkmsPrivateKey({ tkmsVersion });
   const tkmsPrivateKeyBytes = await context.runtime.decrypt.serializeTkmsPrivateKey({ tkmsPrivateKey, tkmsVersion });

@@ -1,8 +1,6 @@
 import { setFhevmRuntimeConfig, createFhevmClient } from '../../../src/ethers/index.js';
 import { sepolia } from '../../../src/core/chains/index.js';
 import { ethers } from 'ethers';
-import { getTfheVersion } from '../../../src/core/actions/encrypt/index.js';
-import { getTkmsVersion } from '../../../src/core/actions/decrypt/getKmsVersion.js';
 
 const logEl = document.getElementById('log')!;
 const t0 = performance.now();
@@ -57,7 +55,7 @@ async function run() {
     //
     // 3. Display TFHE module infos
     //
-    const tfheVersion = await getTfheVersion(client);
+    const tfheVersion = client.tfheVersion;
     log(`TfheVersion=${tfheVersion}`);
     const tfheInfo = await client.runtime.encrypt.getTfheModuleInfo({ tfheVersion });
     if (!tfheInfo) {
@@ -70,7 +68,7 @@ async function run() {
     //
     // 4. Display TKMS module infos
     //
-    const tkmsVersion = await getTkmsVersion(client);
+    const tkmsVersion = client.tkmsVersion;
     log(`TkmsVersion=${tkmsVersion}`);
     const tkmsInfo = await client.runtime.decrypt.getTkmsModuleInfo({ tkmsVersion });
     if (!tkmsInfo) {

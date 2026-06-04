@@ -5,6 +5,13 @@ import { getEthersTestConfig, type CreateEthersClientFn, type FheTestEthersConfi
 import { chainIdFromHandle, clearTypeFromHandle, encryptTestCases, isBytes32Hex } from '../setupCommon.js';
 import { asEncryptedValue } from '@fhevm/sdk/types';
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encrypt.test.ts
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encrypt.test.ts
+//
+////////////////////////////////////////////////////////////////////////////////
+
 type ModuleVersions = Parameters<typeof setFhevmRuntimeConfig>[0]['moduleVersions'];
 
 export function defineClientEncryptEncryptTests(parameters: {

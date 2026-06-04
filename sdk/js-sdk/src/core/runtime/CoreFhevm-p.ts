@@ -9,18 +9,37 @@ import type {
   NativeClient,
   OptionalNativeClient,
   ResolvedFhevmOptions,
+  WithTfheVersion,
+  WithTkmsVersion,
 } from '../types/coreFhevmClient.js';
 import type { FhevmRuntime, WithModule, WithModuleMap } from '../types/coreFhevmRuntime.js';
+import type { TfheVersion } from '../../wasm/tfhe/TfheApi.js';
+import type { TkmsVersion } from '../../wasm/tkms/KmsLibApi.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 import { verifyTrustedValue } from '../base/trustedValue.js';
 import { uid } from '../base/uid.js';
 import { createTrustedClient } from '../modules/ethereum/createTrustedClient.js';
 import { asFhevmRuntimeWith, assertIsFhevmRuntime, assertIsFhevmRuntimeWith } from './CoreFhevmRuntime-p.js';
 import { globalFheEncryptionKeyCache } from '../key/FheEncryptionKeyCache-p.js';
+import { hyperWasmResolveTfheModuleVersion, hyperWasmResolveTkmsModuleVersion } from './HyperWasmSolver-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
 const PRIVATE_TOKEN = Symbol('CoreFhevmHostClient.token');
+const GET_TFHE_VERSION = Symbol('CoreFhevmHostClient.getTfheVersion');
+const GET_TKMS_VERSION = Symbol('CoreFhevmHostClient.getTkmsVersion');
+const SET_TFHE_VERSION = Symbol('CoreFhevmHostClient.setTfheVersion');
+const SET_TKMS_VERSION = Symbol('CoreFhevmHostClient.setTkmsVersion');
+
+const UNRESOLVED_TFHE_VERSION_MESSAGE =
+  'TFHE version has not been resolved. Await client.ready before reading tfheVersion.';
+const UNRESOLVED_TKMS_VERSION_MESSAGE =
+  'TKMS version has not been resolved. Await client.ready before reading tkmsVersion.';
+
+type GetTfheVersionFn = () => TfheVersion | undefined;
+type GetTkmsVersionFn = () => TkmsVersion | undefined;
+type SetTfheVersionFn = (tfheVersion: TfheVersion) => void;
+type SetTkmsVersionFn = (tkmsVersion: TkmsVersion) => void;
 
 ////////////////////////////////////////////////////////////////////////////////
 // CoreFhevmImpl
@@ -33,6 +52,8 @@ class CoreFhevmImpl<
 > implements Fhevm<chain, FhevmRuntime, client> {
   // Private fields (truly inaccessible from outside)
   readonly #uid: string;
+  #tfheVersion: TfheVersion | undefined;
+  #tkmsVersion: TkmsVersion | undefined;
   readonly #runtime: runtime;
   readonly #trustedClient: TrustedClient<client> | undefined;
   readonly #chain: chain | undefined;
@@ -43,6 +64,8 @@ class CoreFhevmImpl<
   // Declared for TypeScript — defined at runtime via Object.defineProperties
   declare readonly uid: string;
   declare readonly chain: chain;
+  declare readonly tfheVersion: TfheVersion;
+  declare readonly tkmsVersion: TkmsVersion;
   declare readonly options: ResolvedFhevmOptions;
   declare readonly trustedClient: client extends NativeClient ? TrustedClient<client> : undefined;
   declare readonly client: client;
@@ -71,6 +94,8 @@ class CoreFhevmImpl<
 
     this.#runtime = parameters.runtime;
     this.#uid = uid();
+    this.#tfheVersion = undefined;
+    this.#tkmsVersion = undefined;
     this.#trustedClient =
       parameters.client !== undefined ? createTrustedClient(parameters.client, ownerToken) : undefined;
     this.#chain = parameters.chain;
@@ -85,6 +110,26 @@ class CoreFhevmImpl<
     Object.defineProperties(this, {
       uid: {
         get: () => this.#uid,
+        configurable: false,
+        enumerable: true,
+      },
+      tfheVersion: {
+        get: () => {
+          if (this.#tfheVersion === undefined) {
+            throw new Error(UNRESOLVED_TFHE_VERSION_MESSAGE);
+          }
+          return this.#tfheVersion;
+        },
+        configurable: false,
+        enumerable: true,
+      },
+      tkmsVersion: {
+        get: () => {
+          if (this.#tkmsVersion === undefined) {
+            throw new Error(UNRESOLVED_TKMS_VERSION_MESSAGE);
+          }
+          return this.#tkmsVersion;
+        },
         configurable: false,
         enumerable: true,
       },
@@ -124,6 +169,40 @@ class CoreFhevmImpl<
           if (token !== ownerToken) {
             throw new Error('Unauthorized');
           }
+        },
+        configurable: false,
+        enumerable: false,
+        writable: false,
+      },
+      [GET_TFHE_VERSION]: {
+        value: (): TfheVersion | undefined => this.#tfheVersion,
+        configurable: false,
+        enumerable: false,
+        writable: false,
+      },
+      [GET_TKMS_VERSION]: {
+        value: (): TkmsVersion | undefined => this.#tkmsVersion,
+        configurable: false,
+        enumerable: false,
+        writable: false,
+      },
+      [SET_TFHE_VERSION]: {
+        value: (tfheVersion: TfheVersion): void => {
+          if (this.#tfheVersion !== undefined && this.#tfheVersion !== tfheVersion) {
+            throw new Error(`TFHE version already resolved as ${this.#tfheVersion}; cannot set ${tfheVersion}.`);
+          }
+          this.#tfheVersion = tfheVersion;
+        },
+        configurable: false,
+        enumerable: false,
+        writable: false,
+      },
+      [SET_TKMS_VERSION]: {
+        value: (tkmsVersion: TkmsVersion): void => {
+          if (this.#tkmsVersion !== undefined && this.#tkmsVersion !== tkmsVersion) {
+            throw new Error(`TKMS version already resolved as ${this.#tkmsVersion}; cannot set ${tkmsVersion}.`);
+          }
+          this.#tkmsVersion = tkmsVersion;
         },
         configurable: false,
         enumerable: false,
@@ -253,6 +332,46 @@ export function asFhevmClientWith<
 
 ////////////////////////////////////////////////////////////////////////////////
 
+export function asFhevmWithTfheVersion<
+  chain extends FhevmChain | undefined = FhevmChain | undefined,
+  runtime extends FhevmRuntime = FhevmRuntime,
+  client extends OptionalNativeClient = NativeClient,
+>(
+  fhevm: FhevmBase<chain, runtime, client>,
+): Fhevm<chain & FhevmChain, runtime & WithModule<'encrypt'>, client & NativeClient> & WithTfheVersion {
+  const f = asFhevmClientWith(fhevm, 'encrypt') as Fhevm<
+    chain & FhevmChain,
+    runtime & WithModule<'encrypt'>,
+    client & NativeClient
+  > &
+    WithTfheVersion;
+  if (getResolvedTfheVersion(f) === undefined) {
+    throw new Error(UNRESOLVED_TFHE_VERSION_MESSAGE);
+  }
+  return f;
+}
+
+export function asFhevmWithTkmsVersion<
+  chain extends FhevmChain | undefined = FhevmChain | undefined,
+  runtime extends FhevmRuntime = FhevmRuntime,
+  client extends OptionalNativeClient = NativeClient,
+>(
+  fhevm: FhevmBase<chain, runtime, client>,
+): Fhevm<chain & FhevmChain, runtime & WithModule<'decrypt'>, client & NativeClient> & WithTkmsVersion {
+  const f = asFhevmClientWith(fhevm, 'decrypt') as Fhevm<
+    chain & FhevmChain,
+    runtime & WithModule<'decrypt'>,
+    client & NativeClient
+  > &
+    WithTkmsVersion;
+  if (getResolvedTkmsVersion(f) === undefined) {
+    throw new Error(UNRESOLVED_TKMS_VERSION_MESSAGE);
+  }
+  return f;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 export function assertIsFhevmClientWith<
   module extends keyof WithModuleMap,
   chain extends FhevmChain | undefined = FhevmChain | undefined,
@@ -275,9 +394,7 @@ export function assertIsFhevmBaseClient<
   chain extends FhevmChain | undefined = FhevmChain | undefined,
   runtime extends FhevmRuntime = FhevmRuntime,
   client extends OptionalNativeClient = NativeClient,
->(
-  fhevm: FhevmBase<chain, runtime, client>,
-): asserts fhevm is Fhevm<chain & FhevmChain, runtime, client & NativeClient> {
+>(fhevm: unknown): asserts fhevm is Fhevm<chain & FhevmChain, runtime, client & NativeClient> {
   const f = asCoreClientFhevm(fhevm);
   if (f.chain === undefined) {
     throw new Error('Fhevm client chain is undefined');
@@ -401,4 +518,44 @@ function resolveOptions(options: FhevmOptions | undefined): ResolvedFhevmOptions
   return {
     batchRpcCalls: options?.batchRpcCalls ?? false,
   };
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+export function setResolvedTfheVersion(fhevm: FhevmBase, tfheVersion: TfheVersion): void {
+  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [SET_TFHE_VERSION]: SetTfheVersionFn };
+  f[SET_TFHE_VERSION](tfheVersion);
+}
+
+export function setResolvedTkmsVersion(fhevm: FhevmBase, tkmsVersion: TkmsVersion): void {
+  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [SET_TKMS_VERSION]: SetTkmsVersionFn };
+  f[SET_TKMS_VERSION](tkmsVersion);
+}
+
+export function getResolvedTfheVersion(fhevm: unknown): TfheVersion | undefined {
+  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [GET_TFHE_VERSION]: GetTfheVersionFn };
+  return f[GET_TFHE_VERSION]();
+}
+
+export function getResolvedTkmsVersion(fhevm: unknown): TkmsVersion | undefined {
+  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [GET_TKMS_VERSION]: GetTkmsVersionFn };
+  return f[GET_TKMS_VERSION]();
+}
+
+export async function resolveFhevmTfheVersion(fhevm: unknown): Promise<TfheVersion> {
+  const tfheVersion = getResolvedTfheVersion(fhevm);
+  if (tfheVersion !== undefined) {
+    return tfheVersion;
+  }
+  assertIsFhevmBaseClient(fhevm);
+  return hyperWasmResolveTfheModuleVersion(fhevm);
+}
+
+export async function resolveFhevmTkmsVersion(fhevm: unknown): Promise<TkmsVersion> {
+  const tkmsVersion = getResolvedTkmsVersion(fhevm);
+  if (tkmsVersion !== undefined) {
+    return tkmsVersion;
+  }
+  assertIsFhevmBaseClient(fhevm);
+  return hyperWasmResolveTkmsModuleVersion(fhevm);
 }

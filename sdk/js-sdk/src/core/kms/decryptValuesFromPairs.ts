@@ -1,5 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 
+import type { TkmsVersion } from '../../wasm/tkms/KmsLibApi.js';
 import type { WithDecrypt } from '../types/coreFhevmRuntime.js';
 import type { Handle } from '../types/encryptedTypes-p.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
@@ -17,6 +18,7 @@ type Context = {
   readonly chain: FhevmChain;
   readonly runtime: WithDecrypt;
   readonly client: NonNullable<object>;
+  readonly tkmsVersion: TkmsVersion;
   readonly options: { readonly batchRpcCalls: boolean };
 };
 

@@ -7,7 +7,7 @@ import type { EncryptedValue } from '../../types/encryptedTypes.js';
 import { addressToChecksummedAddress, assertIsAddress } from '../../base/address.js';
 import { createTypedValue } from '../../base/typedValue.js';
 import { encrypt as encrypt_ } from '../../coprocessor/encrypt.js';
-import { hyperWasmResolveTfheModuleVersion } from '../../runtime/HyperWasmSolver-p.js';
+import { asFhevmWithTfheVersion } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -36,23 +36,14 @@ export async function encryptValues(
   assertIsAddress(contractAddress, {});
   assertIsAddress(userAddress, {});
 
-  const tfheVersion = await hyperWasmResolveTfheModuleVersion(fhevm);
+  const f = asFhevmWithTfheVersion(fhevm);
 
-  const result = await encrypt_(
-    {
-      chain: fhevm.chain,
-      runtime: fhevm.runtime,
-      client: fhevm.client,
-      options: fhevm.options,
-      tfheVersion,
-    },
-    {
-      contractAddress: addressToChecksummedAddress(contractAddress),
-      userAddress: addressToChecksummedAddress(userAddress),
-      values,
-      options,
-    },
-  );
+  const result = await encrypt_(f, {
+    contractAddress: addressToChecksummedAddress(contractAddress),
+    userAddress: addressToChecksummedAddress(userAddress),
+    values,
+    options,
+  });
 
   return {
     encryptedValues: result.inputHandles.map(

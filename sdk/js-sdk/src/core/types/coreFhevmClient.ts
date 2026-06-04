@@ -1,6 +1,8 @@
 import type { FhevmChain } from './fhevmChain.js';
 import type { FhevmRuntime } from './coreFhevmRuntime.js';
 import type { FheEncryptionKeyBytes } from './fheEncryptionKey.js';
+import type { TfheVersion } from '../../wasm/tfhe/TfheApi.js';
+import type { TkmsVersion } from '../../wasm/tkms/KmsLibApi.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -18,6 +20,14 @@ export type ResolvedFhevmOptions = {
 export type NativeClient = NonNullable<object>;
 export type OptionalNativeClient = NativeClient | undefined;
 export type OptionalFhevmChain = FhevmChain | undefined;
+
+export type WithTfheVersion = {
+  readonly tfheVersion: TfheVersion;
+};
+
+export type WithTkmsVersion = {
+  readonly tkmsVersion: TkmsVersion;
+};
 
 export type FhevmExtension<
   actions extends Record<string, unknown> = Record<string, unknown>,

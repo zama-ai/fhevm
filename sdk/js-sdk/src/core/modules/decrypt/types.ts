@@ -102,16 +102,6 @@ export type DecryptAndReconstructModuleFunction = {
   decryptAndReconstruct(parameters: DecryptAndReconstructParameters): Promise<DecryptAndReconstructReturnType>;
 };
 
-// ////////////////////////////////////////////////////////////////////////////////
-// // 1. (User) decryptAndReconstruct
-// ////////////////////////////////////////////////////////////////////////////////
-
-// export type DecryptAndReconstructUserParameters = WithTkmsVersion & DecryptAndReconstructBaseParameters;
-
-// export type DecryptAndReconstructUserModuleFunction = {
-//   decryptAndReconstruct(parameters: DecryptAndReconstructUserParameters): Promise<DecryptAndReconstructReturnType>;
-// };
-
 ////////////////////////////////////////////////////////////////////////////////
 // 2. generateTkmsPrivateKey
 ////////////////////////////////////////////////////////////////////////////////
@@ -134,16 +124,6 @@ export type GetTkmsPublicKeyHexModuleFunction = {
   getTkmsPublicKeyHex(parameters: GetTkmsPublicKeyHexParameters): Promise<GetTkmsPublicKeyHexReturnType>;
 };
 
-// ////////////////////////////////////////////////////////////////////////////////
-// // 3. (User) getTkmsPublicKeyHex
-// ////////////////////////////////////////////////////////////////////////////////
-
-// export type GetTkmsPublicKeyHexUserParameters = WithTkmsVersion;
-
-// export type GetTkmsPublicKeyHexUserModuleFunction = {
-//   getTkmsPublicKeyHex(parameters: GetTkmsPublicKeyHexUserParameters): Promise<GetTkmsPublicKeyHexReturnType>;
-// };
-
 ////////////////////////////////////////////////////////////////////////////////
 // 4. serializeTkmsPrivateKey
 ////////////////////////////////////////////////////////////////////////////////
@@ -155,18 +135,6 @@ export type SerializeTkmsPrivateKeyReturnType = Bytes;
 export type SerializeTkmsPrivateKeyModuleFunction = {
   serializeTkmsPrivateKey(parameters: SerializeTkmsPrivateKeyParameters): Promise<SerializeTkmsPrivateKeyReturnType>;
 };
-
-// ////////////////////////////////////////////////////////////////////////////////
-// // 4. (User) serializeTkmsPrivateKey
-// ////////////////////////////////////////////////////////////////////////////////
-
-// export type SerializeTkmsPrivateKeyUserParameters = WithTkmsVersion;
-
-// export type SerializeTkmsPrivateKeyUserModuleFunction = {
-//   serializeTkmsPrivateKey(
-//     parameters: SerializeTkmsPrivateKeyUserParameters,
-//   ): Promise<SerializeTkmsPrivateKeyReturnType>;
-// };
 
 ////////////////////////////////////////////////////////////////////////////////
 // 5. deserializeTkmsPrivateKey
@@ -216,29 +184,3 @@ export type DecryptModule = Prettify<
 export type DecryptModuleFactory = (runtime: FhevmRuntime) => {
   readonly decrypt: DecryptModule;
 };
-
-////////////////////////////////////////////////////////////////////////////////
-// UserDecryptModule
-////////////////////////////////////////////////////////////////////////////////
-
-// export type WithUserDecryptModule = {
-//   readonly userDecrypt: UserDecryptModule;
-// };
-
-// export type UserDecryptModuleParameters = {
-//   readonly privateKey: TkmsPrivateKey;
-// };
-
-// export type UserDecryptModule = Prettify<
-//   InitTkmsModuleFunction &
-//     DecryptAndReconstructUserModuleFunction &
-//     GetTkmsPublicKeyHexUserModuleFunction &
-//     SerializeTkmsPrivateKeyUserModuleFunction
-// >;
-
-// export type UserDecryptModuleFactory = (
-//   runtime: FhevmRuntime,
-//   parameters: UserDecryptModuleParameters,
-// ) => {
-//   readonly userDecrypt: UserDecryptModule;
-// };
