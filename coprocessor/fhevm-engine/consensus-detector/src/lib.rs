@@ -23,6 +23,7 @@
 //! Note: `unanimity_consensus` is only meaningful as a signal for the upgrade
 //! procedure; nothing else consumes it.
 
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -127,22 +128,34 @@ pub enum Error {
     Gateway(String),
 }
 
-/// HTTP-GETs each operator's `state_hash` blob for `(chain_id, block_height)`
-/// concurrently. If any operator is missing (404, 5xx, transport error)
-/// returns an empty `Vec` so `all_identical` rejects the round. The three
-/// failure modes are logged distinctly so operators can tell "peer hasn't
-/// uploaded yet" from "peer's S3 is flaky".
+/// HTTP-GETs `state_hash` for `(chain_id, block_height)` from each operator
+/// whose slot is `None`, concurrently. Slots already populated by a prior
+/// attempt are left untouched, so retries only re-request the missing
+/// operators. Failure modes (404 / 5xx / transport) are logged distinctly
+/// so "peer hasn't uploaded yet" is visually separable from "peer's S3 is
+/// flaky".
 async fn fetch_state_commitments(
     http: &reqwest::Client,
     s3_urls: &[String],
     chain_id: i64,
     block_height: i64,
-) -> Vec<Vec<u8>> {
+    slots: &mut [Option<Vec<u8>>],
+) {
+    debug_assert_eq!(s3_urls.len(), slots.len());
     let key = state_hash_key(chain_id, block_height);
-    let fetches = s3_urls.iter().map(|url| {
+    let missing: Vec<usize> = slots
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, slot)| slot.is_none().then_some(idx))
+        .collect();
+    if missing.is_empty() {
+        return;
+    }
+    let fetches = missing.into_iter().map(|idx| {
+        let url = s3_urls[idx].clone();
         let path = format!("{}/{key}", url.trim_end_matches('/'));
         async move {
-            match http.get(&path).send().await {
+            let bytes = match http.get(&path).send().await {
                 Ok(r) => {
                     let status = r.status();
                     if status.is_success() {
@@ -168,22 +181,26 @@ async fn fetch_state_commitments(
                     warn!(operator = %url, error = %e, "operator request failed (timeout/transport)");
                     None
                 }
-            }
+            };
+            (idx, bytes)
         }
     });
-    let results: Vec<Option<Vec<u8>>> = futures::future::join_all(fetches).await;
-    if results.iter().any(|r| r.is_none()) {
-        return vec![];
+    let results = futures::future::join_all(fetches).await;
+    for (idx, bytes) in results {
+        if bytes.is_some() {
+            slots[idx] = bytes;
+        }
     }
-    results.into_iter().flatten().collect()
 }
 
-/// Returns true when `commitments` is non-empty and every entry is identical.
-fn all_identical(commitments: &[Vec<u8>]) -> bool {
-    let Some(first) = commitments.first() else {
+/// Returns true when every slot is `Some` and all bytes are identical.
+/// Empty / partially filled slot sets return false.
+fn all_some_and_identical(slots: &[Option<Vec<u8>>]) -> bool {
+    let mut iter = slots.iter();
+    let Some(Some(first)) = iter.next() else {
         return false;
     };
-    commitments.iter().all(|c| c == first)
+    iter.all(|s| matches!(s, Some(b) if b == first))
 }
 
 /// Returns `(start_block, end_block)` for the GCS dry-run when it's active.
@@ -240,20 +257,27 @@ async fn run_unanimity_poll(
     // First tick fires immediately — we want to attempt straight away.
     ticker.tick().await;
 
-    // Require unanimity on every block in [start_block, end_block]; cache matches.
+    // Require unanimity on every block in [start_block, end_block]. `confirmed`
+    // tracks blocks that already reached unanimity (skipped on later ticks).
+    // `partial` caches per-operator bytes for blocks still waiting on laggers,
+    // so each tick only re-requests the operators we haven't heard from yet.
     let window_size = end_block.saturating_sub(start_block) as usize + 1;
-    let mut confirmed: std::collections::HashSet<i64> =
-        std::collections::HashSet::with_capacity(window_size);
+    let mut confirmed: HashSet<i64> = HashSet::with_capacity(window_size);
+    let mut partial: HashMap<i64, Vec<Option<Vec<u8>>>> = HashMap::new();
 
     loop {
         for block_height in start_block..=end_block {
             if confirmed.contains(&block_height) {
                 continue;
             }
-            let commitments =
-                fetch_state_commitments(http, s3_urls, payload.chain_id, block_height).await;
-            if all_identical(&commitments) {
+            let slots = partial
+                .entry(block_height)
+                .or_insert_with(|| vec![None; s3_urls.len()]);
+            fetch_state_commitments(http, s3_urls, payload.chain_id, block_height, slots).await;
+            let done = all_some_and_identical(slots);
+            if done {
                 confirmed.insert(block_height);
+                partial.remove(&block_height);
             }
         }
 
@@ -570,26 +594,40 @@ mod tests {
     }
 
     #[test]
-    fn all_identical_rejects_empty() {
-        let v: Vec<Vec<u8>> = vec![];
-        assert!(!all_identical(&v));
+    fn all_some_and_identical_rejects_empty() {
+        let v: Vec<Option<Vec<u8>>> = vec![];
+        assert!(!all_some_and_identical(&v));
     }
 
     #[test]
-    fn all_identical_accepts_single() {
-        let v = vec![vec![1u8, 2, 3]];
-        assert!(all_identical(&v));
+    fn all_some_and_identical_accepts_single() {
+        let v = vec![Some(vec![1u8, 2, 3])];
+        assert!(all_some_and_identical(&v));
     }
 
     #[test]
-    fn all_identical_detects_match() {
-        let v = vec![vec![1, 2, 3], vec![1, 2, 3], vec![1, 2, 3]];
-        assert!(all_identical(&v));
+    fn all_some_and_identical_detects_match() {
+        let v = vec![
+            Some(vec![1, 2, 3]),
+            Some(vec![1, 2, 3]),
+            Some(vec![1, 2, 3]),
+        ];
+        assert!(all_some_and_identical(&v));
     }
 
     #[test]
-    fn all_identical_detects_mismatch() {
-        let v = vec![vec![1, 2, 3], vec![1, 2, 3], vec![9, 9, 9]];
-        assert!(!all_identical(&v));
+    fn all_some_and_identical_detects_mismatch() {
+        let v = vec![
+            Some(vec![1, 2, 3]),
+            Some(vec![1, 2, 3]),
+            Some(vec![9, 9, 9]),
+        ];
+        assert!(!all_some_and_identical(&v));
+    }
+
+    #[test]
+    fn all_some_and_identical_rejects_partial() {
+        let v = vec![Some(vec![1, 2, 3]), None, Some(vec![1, 2, 3])];
+        assert!(!all_some_and_identical(&v));
     }
 }
