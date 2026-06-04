@@ -40,7 +40,7 @@ pub fn signed_user_decrypt_request(
     signer: &Keypair,
     handles: Vec<UserDecryptHandleEntry>,
 ) -> UserDecryptRequest {
-    signed_user_decrypt_request_with_domains(signer, vec![fixture.mint.pubkey()], handles)
+    signed_user_decrypt_request_with_domains(signer, vec![fixture.mint], handles)
 }
 
 pub fn signed_user_decrypt_request_with_domains(

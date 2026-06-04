@@ -2,12 +2,13 @@ use anchor_lang::prelude::*;
 use solana_sha256_hasher::hashv;
 use solana_sysvar::slot_hashes::PodSlotHashes;
 
-use crate::{FheBinaryOpCode, ZamaHostError};
+use crate::{FheBinaryOpCode, FheTernaryOpCode, ZamaHostError};
 
 pub(crate) const COMPUTATION_DOMAIN_SEPARATOR: &[u8] = b"FHE_comp";
 pub(crate) const SEED_DOMAIN_SEPARATOR: &[u8] = b"FHE_seed";
 /// `FHEVMExecutor.Operators.fheRand` enum discriminant on EVM.
 pub(crate) const FHE_RAND_OP: u8 = 26;
+pub(crate) const FHE_TYPE_BOOL: u8 = 0;
 pub(crate) const COMPUTED_HANDLE_MARKER: u8 = 0xff;
 pub(crate) const HANDLE_VERSION: u8 = 0;
 const POC_INPUT_PROOF_DOMAIN_SEPARATOR: &[u8] = b"zama-solana-poc-input-v0";
@@ -50,6 +51,39 @@ pub fn computed_binary_handle(
     .to_bytes();
 
     stamp_computed_handle_tail(&mut result, chain_id, fhe_type);
+    result
+}
+
+pub fn computed_ternary_handle(
+    op: FheTernaryOpCode,
+    ls: [u8; 32],
+    ms: [u8; 32],
+    rs: [u8; 32],
+    fhe_type: u8,
+    chain_id: u64,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+) -> [u8; 32] {
+    let op_byte = [op.as_u8()];
+    let chain_id_bytes = chain_id.to_be_bytes();
+    let timestamp_bytes = unix_timestamp.to_be_bytes();
+    let mut result = hashv(&[
+        COMPUTATION_DOMAIN_SEPARATOR,
+        &op_byte,
+        &ls,
+        &ms,
+        &rs,
+        crate::ID.as_ref(),
+        &chain_id_bytes,
+        &previous_bank_hash,
+        &timestamp_bytes,
+    ])
+    .to_bytes();
+    result[21..32].fill(0);
+    result[21] = COMPUTED_HANDLE_MARKER;
+    result[22..30].copy_from_slice(&chain_id_bytes);
+    result[30] = fhe_type;
+    result[31] = HANDLE_VERSION;
     result
 }
 
@@ -176,7 +210,7 @@ mod tests {
     use crate::FheBinaryOpCode;
 
     #[test]
-    fn computed_handles_are_deterministic() {
+    fn computed_binary_handles_are_deterministic() {
         let lhs = [1_u8; 32];
         let rhs = [2_u8; 32];
         let bank_hash = [0xAB_u8; 32];
@@ -195,6 +229,37 @@ mod tests {
             lhs,
             rhs,
             false,
+            5,
+            12345,
+            bank_hash,
+            1_700_000_000,
+        );
+        assert_eq!(first, second);
+        assert_eq!(first[21], COMPUTED_HANDLE_MARKER);
+        assert_eq!(first[30], 5);
+    }
+
+    #[test]
+    fn computed_ternary_handles_are_deterministic() {
+        let ls = [1_u8; 32];
+        let ms = [2_u8; 32];
+        let rs = [3_u8; 32];
+        let bank_hash = [0xAB_u8; 32];
+        let first = computed_ternary_handle(
+            FheTernaryOpCode::IfThenElse,
+            ls,
+            ms,
+            rs,
+            5,
+            12345,
+            bank_hash,
+            1_700_000_000,
+        );
+        let second = computed_ternary_handle(
+            FheTernaryOpCode::IfThenElse,
+            ls,
+            ms,
+            rs,
             5,
             12345,
             bank_hash,

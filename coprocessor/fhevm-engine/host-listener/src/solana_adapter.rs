@@ -6,8 +6,8 @@ use sha2::{Digest, Sha256};
 use sqlx::Error as SqlxError;
 
 use crate::generated::{
-    FheBinaryOpCode, FheBinaryOpEvent, FheRandEvent, TrivialEncryptEvent,
-    ZamaHostEvent,
+    FheBinaryOpCode, FheBinaryOpEvent, FheRandEvent, FheTernaryOpCode, FheTernaryOpEvent,
+    TrivialEncryptEvent, ZamaHostEvent,
 };
 
 use crate::contracts::TfheContract;
@@ -77,6 +77,7 @@ pub fn normalize_solana_events_for_db(
     for (index, event) in host_events.enumerate() {
         let tfhe_event = match event {
             ZamaHostEvent::FheBinaryOp(event) => to_tfhe_event(event),
+            ZamaHostEvent::FheTernaryOp(event) => to_ternary_event(event),
             ZamaHostEvent::TrivialEncrypt(event) => {
                 to_trivial_encrypt_event(event)
             }
@@ -223,6 +224,35 @@ pub fn to_tfhe_event(event: FheBinaryOpEvent) -> Log<TfheContractEvents> {
                 rhs,
                 scalarByte: scalar_byte,
                 result,
+            })
+        }
+        FheBinaryOpCode::Ge => {
+            TfheContractEvents::FheGe(TfheContract::FheGe {
+                caller,
+                lhs: Handle::from(event.lhs),
+                rhs: Handle::from(event.rhs),
+                scalarByte: scalar_byte,
+                result: Handle::from(event.result),
+            })
+        }
+    };
+
+    Log {
+        address: caller,
+        data,
+    }
+}
+
+pub fn to_ternary_event(event: FheTernaryOpEvent) -> Log<TfheContractEvents> {
+    let caller = Address::ZERO;
+    let data = match event.op {
+        FheTernaryOpCode::IfThenElse => {
+            TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse {
+                caller,
+                control: Handle::from(event.ls),   // ls = control (BOOL)
+                ifTrue:  Handle::from(event.ms),    // ms = then
+                ifFalse: Handle::from(event.rs),    // rs = else
+                result:  Handle::from(event.result),
             })
         }
     };

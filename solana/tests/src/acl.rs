@@ -26,6 +26,14 @@ pub fn vault_authority_address(program_id: Pubkey, mint: Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[b"vault-authority", mint.as_ref()], &program_id).0
 }
 
+pub fn confidential_mint_address(program_id: Pubkey, underlying_mint: Pubkey) -> Pubkey {
+    Pubkey::find_program_address(
+        &[b"confidential-mint", underlying_mint.as_ref()],
+        &program_id,
+    )
+    .0
+}
+
 pub fn acl_record_address(program_id: Pubkey, nonce_key: [u8; 32], nonce_sequence: u64) -> Pubkey {
     Pubkey::find_program_address(
         &[

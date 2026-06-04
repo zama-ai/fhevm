@@ -1,5 +1,5 @@
 {
-  "address": "EMhXFu68v61bQV4GrF6ZhZhWNVbH6bHPnTdLtXK8meqn",
+  "address": "4TU1nKdM6cfPRctp5ziwCfDB2VRLaV6yGGgR6KpZGc7C",
   "metadata": {
     "name": "zama_host",
     "version": "0.1.0",
@@ -334,6 +334,19 @@
       ]
     },
     {
+      "name": "FheTernaryOpEvent",
+      "discriminator": [
+        213,
+        15,
+        41,
+        197,
+        234,
+        166,
+        182,
+        95
+      ]
+    },
+    {
       "name": "InputVerifiedEvent",
       "discriminator": [
         72,
@@ -613,6 +626,9 @@
           },
           {
             "name": "Sub"
+          },
+          {
+            "name": "Ge"
           }
         ]
       }
@@ -1052,6 +1068,82 @@
           {
             "name": "fhe_type",
             "type": "u8"
+          },
+          {
+            "name": "result",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "FheTernaryOpCode",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "IfThenElse"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FheTernaryOpEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "op",
+            "type": {
+              "defined": {
+                "name": "FheTernaryOpCode"
+              }
+            }
+          },
+          {
+            "name": "subject",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "ls",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "ms",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "rs",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
             "name": "result",

@@ -20,6 +20,6 @@ idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build", "zama-fhe/idl-buil
 
 [dependencies]
 anchor-lang = "1.0.2"
-anchor-spl = { version = "1.0.2", default-features = false, features = ["token", "token_2022"] }
+anchor-spl = { version = "1.0.2", default-features = false, features = ["token", "token_2022", "associated_token"] }
 zama-host = { path = "../zama-host", features = ["cpi"] }
 zama-fhe = { path = "../../crates/zama-fhe" }

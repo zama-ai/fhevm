@@ -7,7 +7,7 @@ use anchor_lang::{AnchorDeserialize, Discriminator, Event};
 use litesvm::types::TransactionMetadata;
 use solana_sdk::pubkey::Pubkey;
 pub use zama_host_events::{
-    decode_anchor_cpi_event, AclAllowedEvent, AclPublicDecryptAllowedEvent, FheBinaryOpEvent,
+    decode_anchor_cpi_event, AclAllowedEvent, AclPublicDecryptAllowedEvent, FheBinaryOpEvent, FheTernaryOpEvent,
     FheRandEvent, InputVerifiedEvent, TrivialEncryptEvent, ZamaHostEvent, ANCHOR_EVENT_IX_TAG_LE,
 };
 
@@ -56,6 +56,7 @@ macro_rules! zama_host_event_filter {
 }
 
 zama_host_event_filter!(binary_op_events, FheBinaryOp, FheBinaryOpEvent);
+zama_host_event_filter!(ternary_op_events, FheTernaryOp, FheTernaryOpEvent);
 zama_host_event_filter!(trivial_encrypt_events, TrivialEncrypt, TrivialEncryptEvent);
 zama_host_event_filter!(fhe_rand_events, FheRand, FheRandEvent);
 zama_host_event_filter!(acl_allowed_events, AclAllowed, AclAllowedEvent);
@@ -73,6 +74,7 @@ pub fn count_tfhe_host_events(events: &[ZamaHostEvent]) -> usize {
             matches!(
                 event,
                 ZamaHostEvent::FheBinaryOp(_)
+                    | ZamaHostEvent::FheTernaryOp(_)
                     | ZamaHostEvent::TrivialEncrypt(_)
                     | ZamaHostEvent::FheRand(_)
             )
@@ -105,6 +107,20 @@ pub fn balance_handle_updated_events(
     program_id: Pubkey,
 ) -> Vec<confidential_token::BalanceHandleUpdatedEvent> {
     collect_cpi_events(meta, account_keys, program_id, decode_token_cpi_event)
+}
+
+fn decode_withdrawal_requested_event(
+    data: &[u8],
+) -> Option<confidential_token::WithdrawalRequestedEvent> {
+    decode_cpi_event::<confidential_token::WithdrawalRequestedEvent>(data)
+}
+
+pub fn withdrawal_requested_events(
+    meta: &TransactionMetadata,
+    account_keys: &[Pubkey],
+    program_id: Pubkey,
+) -> Vec<confidential_token::WithdrawalRequestedEvent> {
+    collect_cpi_events(meta, account_keys, program_id, decode_withdrawal_requested_event)
 }
 
 pub fn max_cpi_depth(meta: &TransactionMetadata) -> u64 {

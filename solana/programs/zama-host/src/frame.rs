@@ -4,7 +4,8 @@ use crate::acl::{
     assert_canonical_acl_record_data, assert_output_acl_metadata, assert_record_allows_handle,
     create_acl_record_account, deserialize_acl_record, serialize_acl_record, write_acl_record,
 };
-use crate::handles;
+use crate::handles::{FHE_TYPE_BOOL, computed_ternary_handle};
+use crate::{FheTernaryOpCode, FheTernaryOpEvent, handles};
 use crate::{
     AclAllowedEvent, AclPublicDecryptAllowedEvent, FheBinaryOpCode, FheBinaryOpEvent,
     FheFrameAction, FheFrameStep, FheOpcode, FheOperand, FheRandEvent, InputVerifiedEvent,
@@ -26,6 +27,7 @@ pub enum FrameEvent {
     AclAllowed(AclAllowedEvent),
     AclPublicDecryptAllowed(AclPublicDecryptAllowedEvent),
     InputVerified(InputVerifiedEvent),
+    TernaryOp(FheTernaryOpEvent)
 }
 
 #[derive(Clone, Copy)]
@@ -222,6 +224,47 @@ fn execute_operation_step<'info>(
     previous_bank_hash: [u8; 32],
     unix_timestamp: i64,
 ) -> Result<()> {
+    if let Ok(ternary_op) = FheTernaryOpCode::try_from(opcode) {
+        require!(operands.len() == 3, ZamaHostError::InvalidFrameOperands);
+        let ls = resolve_operand(frame, remaining_accounts, &operands[0])?;
+        let ms = resolve_operand(frame, remaining_accounts, &operands[1])?;
+        let rs = resolve_operand(frame, remaining_accounts, &operands[2])?;
+
+        require!(!ls.is_scalar, ZamaHostError::InvalidFrameOperands);
+        require!(!ms.is_scalar, ZamaHostError::InvalidFrameOperands);
+        require!(!rs.is_scalar, ZamaHostError::InvalidFrameOperands);
+
+        require!(scalar_byte == 0, ZamaHostError::InvalidFrameOperands);
+
+        require!(ls.value[30] == FHE_TYPE_BOOL, ZamaHostError::UnsupportedFheType);
+  
+        require!(ms.value[30] == rs.value[30], ZamaHostError::InvalidFrameOperands);
+        require!(ms.value[30] == output_fhe_type, ZamaHostError::InvalidFrameOperands);
+
+        let result = computed_ternary_handle(
+            ternary_op, 
+            ls.value, 
+            ms.value, 
+            rs.value, 
+            output_fhe_type, 
+            SOLANA_POC_CHAIN_ID, 
+            previous_bank_hash, 
+            unix_timestamp
+        );
+
+        frame.push_result(result)?;
+        frame.events.push(FrameEvent::TernaryOp(FheTernaryOpEvent {
+            version: EVENT_VERSION,
+            op: ternary_op,
+            subject: frame.subject.to_bytes(),
+            ls: ls.value,
+            ms: ms.value,
+            rs: rs.value,
+            result,
+        }));
+
+        return Ok(());
+    }
     let binary_op = FheBinaryOpCode::try_from(opcode)?;
     require!(operands.len() == 2, ZamaHostError::InvalidFrameOperands);
     let lhs = resolve_operand(frame, remaining_accounts, &operands[0])?;
@@ -232,6 +275,9 @@ fn execute_operation_step<'info>(
         scalar_byte == u8::from(scalar),
         ZamaHostError::InvalidFrameOperands
     );
+    // TODO: validate the operand FHE type against the opcode (e.g. forbid
+    // arithmetic add/sub on bools / non-integer types) once the PoC settles on
+    // the supported type matrix.
 
     let result = handles::computed_binary_handle(
         binary_op,
