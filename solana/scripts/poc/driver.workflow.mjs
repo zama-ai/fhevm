@@ -82,16 +82,19 @@ GUARDRAILS (hard):
 const implPrompt = (it) => `Implement #1494 item "${it.id}" (${it.kind}, phase ${it.phase}) on test/solana-e2e.
 Task: ${it.desc}
 ${it.mirrors ? `Mirror this EVM component's shape/semantics: ${it.mirrors}` : ''}
-Run \`bash solana/scripts/poc/run-oracle.sh\` AND \`${it.oracle}\` yourself; iterate until green.
+First run \`${it.oracle}\` and \`bash solana/scripts/poc/run-oracle.sh\`; if the item is ALREADY satisfied (green, e.g. committed by a prior run), make no changes and report oracleGreen=true with diffSummary="already-satisfied". Otherwise implement it and iterate until both are green.
 Report oracleGreen, a one-line diffSummary, the oracle tail, and any rfcDivergence.
 If the only way to green is to cheat / the architecture is undecided / the env is unrecoverable, set escalate=true with escalateReason and stop.
 ${COMMON}`;
 
-const refutePrompt = (it, impl, lens) => `Adversarially verify #1494 item "${it.id}" via the ${lens} lens. Default to refuted=true unless you can prove otherwise.
+const refutePrompt = (it, impl, lens) => `Adversarially verify #1494 item "${it.id}" via the ${lens} lens. Default to refuted=true unless you can prove otherwise — but judge the WORKING-TREE diff (\`git diff\`), not git history.
+CONVENTIONS — do NOT refute or set hack on these (they are by design, not defects):
+- Changes are UNCOMMITTED in the working tree on purpose; the driver commits after you pass. "Not committed yet" is never a reason to refute.
+- Re-implementing canonical logic inside the Solana program/crate is EXPECTED and NOT a cheat when that crate cannot import the EVM/coprocessor source (e.g. mirroring zkproof-worker auxiliary.rs in an on-chain module). Only treat duplication as a problem if it could trivially be shared WITHIN the same crate.
 Claimed: ${impl.diffSummary}
 - correctness: find a path where the oracle passes but behavior is wrong (tautological test, both sides share the same wrong derivation, stubbed check).
 - matches-evm: confirm it preserves the semantics of ${it.mirrors || 'the mirrored component'}.
-- no-hack/form: set hack=true if the diff weakened a test/oracle, stubbed a check, added glue, or violates the code-quality contract.
+- no-hack/form: set hack=true ONLY for a genuine cheat — a weakened/stubbed/deleted test, a faked oracle, an edited gate/test file, or added glue (unwrap/panic/TODO). Necessary cross-crate reimplementation is NOT a hack.
 Return refuted, hack, why.`;
 
 // --- The frugal loop. Sequential (no worktree isolation needed): each impl agent
@@ -111,7 +114,7 @@ const escalations = [];
 const divergences = [];
 
 const commitItem = (it) =>
-  agent(`Commit ONLY the working-tree changes for #1494 item "${it.id}" on test/solana-e2e: \`git add -A && git commit\` with a conventional message referencing the item and zama-ai/fhevm-internal#1494. Do NOT push. Return the commit hash.`,
+  agent(`Commit ONLY the working-tree changes for #1494 item "${it.id}" on test/solana-e2e: \`git add -A && git commit\` with a conventional message referencing the item and zama-ai/fhevm-internal#1494. If there is nothing to commit (item was already satisfied), do nothing and return "no-op". Do NOT push. Return the commit hash.`,
     { label: `commit:${it.id}`, phase: 'Implement', model: 'sonnet' });
 const revertTree = (it) =>
   agent(`Discard the UNCOMMITTED working-tree changes from the failed attempt at "${it.id}" so the next item starts clean (\`git checkout -- . && git clean -fd\` under solana/). Never touch committed history. Confirm the tree is clean.`,
