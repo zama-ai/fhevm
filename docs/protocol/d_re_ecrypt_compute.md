@@ -34,7 +34,7 @@ Encryption is the starting point for any interaction with the FHEVM system, ensu
 
 <figure><img src="../.gitbook/assets/encrypt.png" alt="decryption" width="600"><figcaption></figcaption></figure>
 
-You can read about the implementation details in [our encryption guide](solidity-guides/inputs.md).
+You can read about the implementation details in [our encryption guide](../solidity-guides/inputs.md).
 
 ### **Computation**
 
@@ -69,7 +69,7 @@ There are two kinds of decryption supported in the FHEVM system:
 <figure><img src="../.gitbook/assets/decryption.png" alt="decryption"><figcaption></figcaption></figure>
 
 <figure><img src="../.gitbook/assets/asyncDecrypt.png" alt="decryption"><figcaption><p>decryption</p></figcaption></figure>
-You can read about the implementation details in [our decryption guide](solidity-guides/decryption/decrypt.md).
+You can read about the implementation details in [our decryption guide](../solidity-guides/decryption/oracle.md).
 
 #### What is “User Decryption”?
 
@@ -104,7 +104,7 @@ User decryption is initiated on the client side using the [`@zama-ai/relayer-sdk
    - The dApp receives the encrypted ciphertext under the user's public key from the Gateway/Relayer.
    - The dApp decrypts the ciphertext locally using the user's private key.
 
-You can read [our user decryption guide explaining how to use it](solidity-guides/decryption/user-decryption.md).
+You can read [our user decryption guide explaining how to use it](../solidity-guides/decryption/oracle.md).
 
 ## **Tying It All Together**
 

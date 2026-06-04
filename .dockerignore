@@ -11,6 +11,7 @@
 #   - kms-connector/
 #   - host-contracts/
 #   - library-solidity/
+#   - shared/
 #   - test-suite/
 #   - package.json, package-lock.json
 #   - .git/ (used for build metadata in some Dockerfiles)
@@ -127,7 +128,9 @@ golden-container-images/
 # -----------------------------------------------------------------------------
 # SDK (not used by any Dockerfile)
 # -----------------------------------------------------------------------------
-sdk/
+sdk/*
+!sdk/js-sdk/
+!sdk/js-sdk/**
 
 # -----------------------------------------------------------------------------
 # CI directory (not used by any Dockerfile)

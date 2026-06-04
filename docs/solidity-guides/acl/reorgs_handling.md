@@ -13,7 +13,7 @@ On Ethereum, a reorg can be up to 95 slots deep in the worst case, so waiting fo
 ```solidity
 contract PrivateKeySale {
   euint256 privateKey;
-  bool isAlreadyBought = false;
+  bool isBought = false;
 
   constructor(externalEuint256 _privateKey, bytes inputProof) {
     privateKey = FHE.fromExternal(_privateKey, inputProof);
@@ -24,7 +24,7 @@ contract PrivateKeySale {
     require(msg.value == 1 ether, "Must pay 1 ETH");
     require(!isBought, "Private key already bought");
     isBought = true;
-    FHE.allow(encryptedPrivateKey, msg.sender);
+    FHE.allow(privateKey, msg.sender);
   }
 }
 ```
@@ -36,7 +36,7 @@ Since the `privateKey`` encrypted variable contains critical information, we don
 ```solidity
 contract PrivateKeySale {
   euint256 privateKey;
-  bool isAlreadyBought = false;
+  bool isBought = false;
   uint256 blockWhenBought = 0;
   address buyer;
 

@@ -41,6 +41,34 @@ interface IProtocolConfig {
      */
     event KmsContextDestroyed(uint256 indexed kmsContextId);
 
+    /**
+     * @notice Emitted when the public decryption threshold for a KMS context is updated.
+     * @param kmsContextId The updated context ID.
+     * @param threshold The new public decryption threshold.
+     */
+    event PublicDecryptionThresholdUpdated(uint256 indexed kmsContextId, uint256 threshold);
+
+    /**
+     * @notice Emitted when the user decryption threshold for a KMS context is updated.
+     * @param kmsContextId The updated context ID.
+     * @param threshold The new user decryption threshold.
+     */
+    event UserDecryptionThresholdUpdated(uint256 indexed kmsContextId, uint256 threshold);
+
+    /**
+     * @notice Emitted when the KMS generation threshold for a KMS context is updated.
+     * @param kmsContextId The updated context ID.
+     * @param threshold The new KMS generation threshold.
+     */
+    event KmsGenThresholdUpdated(uint256 indexed kmsContextId, uint256 threshold);
+
+    /**
+     * @notice Emitted when the MPC threshold for a KMS context is updated.
+     * @param kmsContextId The updated context ID.
+     * @param threshold The new MPC threshold.
+     */
+    event MpcThresholdUpdated(uint256 indexed kmsContextId, uint256 threshold);
+
     // -----------------------------------------------------------------------------------------
     // Errors
     // -----------------------------------------------------------------------------------------
@@ -72,6 +100,19 @@ interface IProtocolConfig {
     /// @param nodeCount The number of nodes.
     error InvalidHighThreshold(string thresholdName, uint256 threshold, uint256 nodeCount);
 
+    /// @notice A threshold exceeds the proof format limit (`uint8` signature count in the
+    ///         `decryptionProof` payload consumed by `KMSVerifier`).
+    /// @param thresholdName The name of the invalid threshold.
+    /// @param threshold The invalid threshold value.
+    /// @param maxAllowed The maximum value the proof format can carry.
+    error ThresholdExceedsProofFormatLimit(string thresholdName, uint256 threshold, uint256 maxAllowed);
+
+    /// @notice The KMS signer set exceeds the proof format limit (`uint8` signature count in the
+    ///         `decryptionProof` payload consumed by `KMSVerifier`).
+    /// @param signerCount The number of signers in the rejected set.
+    /// @param maxAllowed The maximum size the proof format can carry.
+    error KmsSignerSetExceedsProofFormatLimit(uint256 signerCount, uint256 maxAllowed);
+
     /// @notice The context ID does not exist or has been destroyed.
     /// @param kmsContextId The invalid context ID.
     error InvalidKmsContext(uint256 kmsContextId);
@@ -96,6 +137,34 @@ interface IProtocolConfig {
      * @param kmsContextId The context ID to destroy.
      */
     function destroyKmsContext(uint256 kmsContextId) external;
+
+    /**
+     * @notice Update the public decryption threshold for a KMS context.
+     * @param kmsContextId The context ID to update.
+     * @param threshold The new public decryption threshold.
+     */
+    function updatePublicDecryptionThresholdForContext(uint256 kmsContextId, uint256 threshold) external;
+
+    /**
+     * @notice Update the user decryption threshold for a KMS context.
+     * @param kmsContextId The context ID to update.
+     * @param threshold The new user decryption threshold.
+     */
+    function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 threshold) external;
+
+    /**
+     * @notice Update the KMS generation threshold for a KMS context.
+     * @param kmsContextId The context ID to update.
+     * @param threshold The new KMS generation threshold.
+     */
+    function updateKmsGenThresholdForContext(uint256 kmsContextId, uint256 threshold) external;
+
+    /**
+     * @notice Update the MPC threshold for a KMS context.
+     * @param kmsContextId The context ID to update.
+     * @param threshold The new MPC threshold.
+     */
+    function updateMpcThresholdForContext(uint256 kmsContextId, uint256 threshold) external;
 
     /**
      * @notice Returns the current active KMS context ID.
@@ -194,10 +263,24 @@ interface IProtocolConfig {
     function getKmsGenThreshold() external view returns (uint256);
 
     /**
+     * @notice Returns the kmsGen threshold for a given context.
+     * @param kmsContextId The context ID.
+     * @return The kmsGen threshold for the context.
+     */
+    function getKmsGenThresholdForContext(uint256 kmsContextId) external view returns (uint256);
+
+    /**
      * @notice Returns the current MPC threshold (for the active context).
      * @return The MPC threshold.
      */
     function getMpcThreshold() external view returns (uint256);
+
+    /**
+     * @notice Returns the MPC threshold for a given context.
+     * @param kmsContextId The context ID.
+     * @return The MPC threshold for the context.
+     */
+    function getMpcThresholdForContext(uint256 kmsContextId) external view returns (uint256);
 
     /**
      * @notice Returns the contract version.

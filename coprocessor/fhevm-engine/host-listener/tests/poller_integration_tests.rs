@@ -172,7 +172,7 @@ async fn poller_catches_up_to_safe_tip(
         url: http_url,
         acl_address: *acl_contract.address(),
         tfhe_address: *tfhe_contract.address(),
-        kms_generation_address: *kms_generation_contract.address(),
+        kms_generation_address: Some(*kms_generation_contract.address()),
         database_url: db_url.clone(),
         finality_lag,
         batch_size: 2,

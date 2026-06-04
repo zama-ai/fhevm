@@ -126,7 +126,14 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
         // FheBool::generate_oblivious_pseudo_random produces the same
         // plaintext for all seeds with a given key, so we can only check
         // seed-variance for non-bool types.
-        if *rand_type != 0 {
+        //
+        // Type 1 (4 bits, 16-value domain) is also skipped because the
+        // OPRF output collides across two distinct seeds with
+        // probability 1/16 = 6.25%, which is too high for a
+        // deterministic test assertion. The collision is fixture-key
+        // dependent and a single pair of seeds can't reliably detect a
+        // constant-output bug at that width.
+        if *rand_type != 0 && *rand_type != 1 {
             assert_ne!(
                 first.value, third.value,
                 "type {rand_type}: random generation must change when seed changes"
@@ -269,10 +276,17 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
             "type {rand_type}: rand_bounded result {result2_num} should be < bound {}",
             bounds[idx]
         );
-        assert_ne!(
-            result1_num, result2_num,
-            "type {rand_type}: bounded random must vary with seed"
-        );
+        // Type 1 (bound 16) skipped from seed-variance check: with a
+        // 16-value domain, two distinct seeds collide with probability
+        // 1/16 = 6.25%, which is too high for a deterministic test
+        // assertion against any fixture key. Bound and non-negativity
+        // checks above still cover the value-domain contract.
+        if *rand_type != 1 {
+            assert_ne!(
+                result1_num, result2_num,
+                "type {rand_type}: bounded random must vary with seed"
+            );
+        }
     }
 
     Ok(())

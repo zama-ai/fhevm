@@ -138,7 +138,9 @@ describe("Mock contracts", function () {
     it("Should emit UserDecryptionRequest event on user decryption request", async function () {
       userDecryptionCounterId++;
       await expect(
-        decryptionMock.userDecryptionRequest(
+        decryptionMock[
+          "userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)"
+        ](
           EmptyArray,
           DefaultRequestValidity,
           DefaultContractsInfo,
@@ -148,7 +150,10 @@ describe("Mock contracts", function () {
           DefaultBytes,
         ),
       )
-        .to.emit(decryptionMock, "UserDecryptionRequest")
+        .to.emit(
+          decryptionMock,
+          "UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)",
+        )
         .withArgs(
           userDecryptionCounterId,
           toValues([DefaultSnsCiphertextMaterial]),
@@ -171,7 +176,10 @@ describe("Mock contracts", function () {
           DefaultBytes,
         ),
       )
-        .to.emit(decryptionMock, "UserDecryptionRequest")
+        .to.emit(
+          decryptionMock,
+          "UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)",
+        )
         .withArgs(
           userDecryptionCounterId,
           toValues([DefaultSnsCiphertextMaterial]),
@@ -256,16 +264,28 @@ describe("Mock contracts", function () {
         .withArgs(toValues([DefaultCustodian]));
     });
 
-    it("Should emit UpdateUserDecryptionThreshold event on update UserDecryption threshold call", async function () {
-      await expect(gatewayConfigMock.updateUserDecryptionThreshold(DefaultUint256))
-        .to.emit(gatewayConfigMock, "UpdateUserDecryptionThreshold")
-        .withArgs(DefaultUint256);
+    it("Should emit UpdateMpcThresholdForContext event on update Mpc threshold for context call", async function () {
+      await expect(gatewayConfigMock.updateMpcThresholdForContext(DefaultUint256, DefaultUint256))
+        .to.emit(gatewayConfigMock, "UpdateMpcThresholdForContext")
+        .withArgs(DefaultUint256, DefaultUint256);
     });
 
-    it("Should emit UpdateKmsGenThreshold event on update KmsGen threshold call", async function () {
-      await expect(gatewayConfigMock.updateKmsGenThreshold(DefaultUint256))
-        .to.emit(gatewayConfigMock, "UpdateKmsGenThreshold")
-        .withArgs(DefaultUint256);
+    it("Should emit UpdatePublicDecryptionThresholdForContext event on update PublicDecryption threshold for context call", async function () {
+      await expect(gatewayConfigMock.updatePublicDecryptionThresholdForContext(DefaultUint256, DefaultUint256))
+        .to.emit(gatewayConfigMock, "UpdatePublicDecryptionThresholdForContext")
+        .withArgs(DefaultUint256, DefaultUint256);
+    });
+
+    it("Should emit UpdateUserDecryptionThresholdForContext event on update UserDecryption threshold for context call", async function () {
+      await expect(gatewayConfigMock.updateUserDecryptionThresholdForContext(DefaultUint256, DefaultUint256))
+        .to.emit(gatewayConfigMock, "UpdateUserDecryptionThresholdForContext")
+        .withArgs(DefaultUint256, DefaultUint256);
+    });
+
+    it("Should emit UpdateKmsGenThresholdForContext event on update KmsGen threshold for context call", async function () {
+      await expect(gatewayConfigMock.updateKmsGenThresholdForContext(DefaultUint256, DefaultUint256))
+        .to.emit(gatewayConfigMock, "UpdateKmsGenThresholdForContext")
+        .withArgs(DefaultUint256, DefaultUint256);
     });
 
     it("Should emit UpdateCoprocessorThreshold event on update coprocessor threshold call", async function () {

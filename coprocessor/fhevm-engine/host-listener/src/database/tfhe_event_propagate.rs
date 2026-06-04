@@ -520,6 +520,14 @@ impl Database {
                 insert_computation(tx, result, &deps, &NO_SCALAR).await
             }
 
+            E::FheMulDiv(C::FheMulDiv { factor1, factor2, divisor, scalarByte, result, .. }) => {
+                if fhe_mul_div_factor2_is_scalar(scalarByte) {
+                    insert_computation_bytes(tx, result, &[factor1], &[factor2.to_vec(), divisor.to_vec()], &HAS_SCALAR).await
+                } else {
+                    insert_computation_bytes(tx, result, &[factor1, factor2], &[divisor.to_vec()], &NO_SCALAR).await
+                }
+            }
+
             | E::Initialized(_)
             | E::Upgraded(_)
             | E::VerifyInput(_)
@@ -837,6 +845,14 @@ impl Database {
                     "unhandled Acl::UnblockedAccount event"
                 );
             }
+            AclContractEvents::DecryptionSignaturesInvalidated(
+                decryption_signatures_invalidated,
+            ) => {
+                warn!(
+                    event = ?decryption_signatures_invalidated,
+                    "unhandled Acl::DecryptionSignaturesInvalidated event"
+                );
+            }
         }
         self.tick.update();
         Ok(inserted)
@@ -1052,6 +1068,7 @@ fn event_to_op_int(op: &TfheContractEvents) -> FheOperation {
         E::FheRandBounded(_) => O::FheRandBounded as i32,
         E::FheSum(_) => O::FheSum as i32,
         E::FheIsIn(_) => O::FheIsIn as i32,
+        E::FheMulDiv(_) => O::FheMulDiv as i32,
         // Not tfhe ops
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => -1,
     }
@@ -1089,6 +1106,7 @@ pub fn event_name(op: &TfheContractEvents) -> &'static str {
         E::FheRandBounded(_) => "FheRandBounded",
         E::FheSum(_) => "FheSum",
         E::FheIsIn(_) => "FheIsIn",
+        E::FheMulDiv(_) => "FheMulDiv",
         E::Initialized(_) => "Initialized",
         E::Upgraded(_) => "Upgraded",
         E::VerifyInput(_) => "VerifyInput",
@@ -1127,7 +1145,8 @@ pub fn tfhe_result_handle(op: &TfheContractEvents) -> Option<Handle> {
         | E::FheRandBounded(C::FheRandBounded { result, .. })
         | E::TrivialEncrypt(C::TrivialEncrypt { result, .. })
         | E::FheSum(C::FheSum { result, .. })
-        | E::FheIsIn(C::FheIsIn { result, .. }) => Some(*result),
+        | E::FheIsIn(C::FheIsIn { result, .. })
+        | E::FheMulDiv(C::FheMulDiv { result, .. }) => Some(*result),
 
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => None,
     }
@@ -1149,7 +1168,8 @@ pub fn acl_result_handles(event: &Log<AclContractEvents>) -> Vec<Handle> {
         | AclContractEvents::Paused(_)
         | AclContractEvents::Unpaused(_)
         | AclContractEvents::BlockedAccount(_)
-        | AclContractEvents::UnblockedAccount(_) => vec![],
+        | AclContractEvents::UnblockedAccount(_)
+        | AclContractEvents::DecryptionSignaturesInvalidated(_) => vec![],
     }
 }
 
@@ -1307,6 +1327,25 @@ pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
             handles
         }
 
+        E::FheMulDiv(C::FheMulDiv {
+            factor1,
+            factor2,
+            scalarByte,
+            ..
+        }) => {
+            if fhe_mul_div_factor2_is_scalar(scalarByte) {
+                vec![*factor1]
+            } else {
+                vec![*factor1, *factor2]
+            }
+        }
+
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
     }
+}
+
+/// `fheMulDiv` `scalarByte` bit 1 — factor2 is a plaintext scalar (bit 0 is the
+/// always-scalar divisor).
+fn fhe_mul_div_factor2_is_scalar(scalar_byte: &ScalarByte) -> bool {
+    scalar_byte.0[0] & 0b10 != 0
 }

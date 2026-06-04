@@ -154,6 +154,7 @@ const abi = [
   'event FheRandBounded(address indexed caller, uint256 upperBound, uint8 randType, bytes16 seed, bytes32 result)',
   'event FheSum(address indexed caller, bytes32[] values, bytes32 result)',
   'event FheIsIn(address indexed caller, bytes32 value, bytes32[] values, bytes32 result)',
+  'event FheMulDiv(address indexed caller, bytes32 factor1, bytes32 factor2, bytes32 divisor, bytes1 scalarByte, bytes32 result)',
 ];
 
 async function processAllPastFHEVMExecutorEvents() {
@@ -625,6 +626,23 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
         setHandles.map((h) => getClearText(ethers.toBeHex(h, 32)).then(BigInt)),
       );
       clearText = setClearTexts.some((s) => s === valueText) ? 1n : 0n;
+      insertSQL(handle, clearText);
+      break;
+    }
+
+    case 'FheMulDiv': {
+      handle = ethers.toBeHex(event.args[5], 32);
+      resultType = parseInt(handle.slice(-4, -2), 16);
+      const clearFactor1 = await getClearText(event.args[1]);
+      const divisor = BigInt(event.args[3]);
+      const factor2IsScalar = (BigInt(event.args[4]) & 0x02n) !== 0n;
+      if (factor2IsScalar) {
+        clearText = (BigInt(clearFactor1) * BigInt(event.args[2])) / divisor;
+      } else {
+        const clearFactor2 = await getClearText(event.args[2]);
+        clearText = (BigInt(clearFactor1) * BigInt(clearFactor2)) / divisor;
+      }
+      clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       insertSQL(handle, clearText);
       break;
     }
@@ -1391,6 +1409,31 @@ export function getTxHCUFromTxReceipt(
         const allInputHandles = [valueHandle, ...setHandles.map((h) => ethers.toBeHex(h, 32))];
         const maxInputHCU = Math.max(...allInputHandles.map((h) => readFromHCUMap(h)));
         hcuMap[handleResult] = hcuConsumed + maxInputHCU;
+        handleSet.add(handleResult);
+        totalHCUConsumed += hcuConsumed;
+        break;
+      }
+
+      case 'FheMulDiv': {
+        handleResult = ethers.toBeHex(event.args[5], 32);
+        typeIndex = parseInt(handleResult.slice(-4, -2), 16);
+        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
+        if (!type) {
+          throw new Error(`Invalid FheType index: ${typeIndex}`);
+        }
+        const rhsIsScalar = (BigInt(event.args[4]) & 0x02n) !== 0n;
+        if (rhsIsScalar) {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheMulDiv'].scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+        } else {
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheMulDiv'].nonScalar as Record<string, number>)[type];
+          hcuMap[handleResult] =
+            hcuConsumed +
+            Math.max(
+              readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
+              readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
+            );
+        }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;

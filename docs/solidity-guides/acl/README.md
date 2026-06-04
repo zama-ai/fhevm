@@ -62,6 +62,18 @@ To check if an entity has permission to access a ciphertext, use functions like 
 - **`isSenderAllowed`**: Simplifies checks for the current transaction sender.
 - **`isPubliclyDecryptable`**: Verifies whether any entity is permitted to retrieve the ciphertext's cleartext value off-chain.
 - **`checkSignatures`**: Verifies the authenticity of a cleartext value by checking cryptographic signatures. This ensures that the value submitted back to the chain originated from a legitimate public decryption operation on the associated ciphertext handle.
+- **`isAccountDenied`**: Checks whether an account is on the deny list. Denied accounts are blocked from `allow*` calls inside the ACL contract, so they cannot grant or receive new permissions on encrypted values.
+
+### User decryption delegation
+
+The ACL supports delegating user decryption rights from one account to another (for example, a backend service or relayer). The **delegator** is whichever account calls into the ACL — an EOA when calling `IACL.delegateForUserDecryption` directly, or `address(this)` when a contract uses the `FHE.delegateUserDecryption` helper. The two patterns are not interchangeable.
+
+- **`delegateUserDecryption`**: Grants a delegate the right to user-decrypt on behalf of the caller contract for a specific `contractAddress`, with an expiration date.
+- **`delegateUserDecryptionWithoutExpiration`**: Same as above, but without an expiration date.
+- **`revokeUserDecryptionDelegation`**: Revokes a previously granted delegation.
+- **`isUserDecryptable`**: Checks if a handle can be decrypted by a user in the context of a specific contract.
+
+For the EOA-side flow, the full constraints, and worked examples, see [User decryption delegation](delegation.md). For the API reference, see [FHEVM API reference](../functions.md#user-decryption-delegation).
 
 ## Practical uses of the ACL
 

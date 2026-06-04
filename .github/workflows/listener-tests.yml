@@ -14,7 +14,7 @@ concurrency:
 jobs:
   check-changes:
     name: listener-tests/check-changes
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     outputs:
       rust-changed: ${{ github.event_name == 'push' || steps.filter.outputs.rust }}
     steps:
@@ -39,7 +39,7 @@ jobs:
     if: ${{ needs.check-changes.outputs.rust-changed == 'true' }}
     permissions:
       contents: 'read'
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:

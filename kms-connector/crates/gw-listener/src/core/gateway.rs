@@ -84,9 +84,12 @@ where
         let from_block_config = self.config.decryption_from_block_number;
         let event_types = DECRYPTION_EVENT_TYPES.as_slice();
 
+        // `UserDecryptionRequest` contributes both the legacy and the RFC016 topic0 hashes, which
+        // is why we flat-map over `signature_hashes()` instead of collecting a single hash per
+        // event type.
         let event_signatures = event_types
             .iter()
-            .map(|e| e.signature_hash())
+            .flat_map(|e| e.signature_hashes())
             .collect::<Vec<_>>();
         let base_filter = Filter::new()
             .address(contract_address)

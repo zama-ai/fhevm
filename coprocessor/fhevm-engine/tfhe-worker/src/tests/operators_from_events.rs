@@ -1005,3 +1005,117 @@ async fn test_fhe_is_in_events() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+// Uint8 through Uint64 — the types FheMulDiv supports.
+const FHE_MUL_DIV_SUPPORTED_TYPES: &[i32] = &[2, 3, 4, 5];
+
+#[tokio::test]
+#[serial(db)]
+async fn test_fhe_mul_div_events() -> Result<(), Box<dyn std::error::Error>> {
+    let EventHarness {
+        app,
+        pool,
+        listener_db,
+    } = setup_event_harness().await?;
+
+    let enabled = supported_types();
+    let types: Vec<i32> = FHE_MUL_DIV_SUPPORTED_TYPES
+        .iter()
+        .copied()
+        .filter(|t| enabled.contains(t))
+        .collect();
+
+    // (factor1_value, factor2_value, divisor, is_scalar_factor2, expected_result)
+    let test_cases: &[(u64, u64, u64, bool, &str)] = &[
+        (20, 10, 2, false, "100"), // enc * enc / scalar
+        (20, 10, 2, true, "100"),  // enc * scalar / scalar
+        (10, 3, 1, false, "30"),   // enc * enc / 1
+    ];
+
+    let mut cases: Vec<(Handle, i32, &str)> = vec![];
+
+    for &fhe_type in &types {
+        for &(factor1_val, factor2_val, divisor_val, scalar_factor2, expected) in test_cases {
+            let tx_id = next_handle();
+            let factor1_handle = next_handle_with_type(fhe_type);
+            let output = next_handle_with_type(fhe_type);
+
+            let mut out = [0u8; 32];
+            out[16..].copy_from_slice(&(divisor_val as u128).to_be_bytes());
+            let divisor_handle = Handle::from(out);
+
+            let mut tx = listener_db.new_transaction().await?;
+            insert_trivial_encrypt(
+                &listener_db,
+                &mut tx,
+                tx_id,
+                factor1_val,
+                fhe_type,
+                factor1_handle,
+                true,
+            )
+            .await?;
+            allow_handle(&listener_db, &mut tx, &factor1_handle).await?;
+
+            let factor2_handle = if scalar_factor2 {
+                let mut factor2_bytes = [0u8; 32];
+                factor2_bytes[16..].copy_from_slice(&(factor2_val as u128).to_be_bytes());
+                Handle::from(factor2_bytes)
+            } else {
+                let h = next_handle_with_type(fhe_type);
+                insert_trivial_encrypt(
+                    &listener_db,
+                    &mut tx,
+                    tx_id,
+                    factor2_val,
+                    fhe_type,
+                    h,
+                    true,
+                )
+                .await?;
+                allow_handle(&listener_db, &mut tx, &h).await?;
+                h
+            };
+
+            insert_event(
+                &listener_db,
+                &mut tx,
+                tx_id,
+                TfheContractEvents::FheMulDiv(TfheContract::FheMulDiv {
+                    caller: zero_address(),
+                    factor1: factor1_handle,
+                    factor2: factor2_handle,
+                    divisor: divisor_handle,
+                    scalarByte: alloy::primitives::FixedBytes([if scalar_factor2 {
+                        0x03u8
+                    } else {
+                        0x01u8
+                    }]),
+                    result: output,
+                }),
+                true,
+            )
+            .await?;
+            allow_handle(&listener_db, &mut tx, &output).await?;
+            tx.commit().await?;
+
+            cases.push((output, fhe_type, expected));
+        }
+    }
+
+    wait_until_all_allowed_handles_computed(&app).await?;
+
+    for (output, fhe_type, expected_value) in cases {
+        let resp = decrypt_ciphertexts(&pool, vec![output.to_vec()]).await?;
+        assert_eq!(
+            resp[0].output_type, fhe_type as i16,
+            "FheMulDiv result type mismatch"
+        );
+        assert_eq!(
+            resp[0].value, expected_value,
+            "FheMulDiv result value mismatch (type={fhe_type})"
+        );
+    }
+
+    Ok(())
+}

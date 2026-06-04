@@ -99,6 +99,25 @@ struct CtHandleContractPair {
 }
 
 /**
+ * @notice A struct that carries a ciphertext handle together with its ACL-bearing
+ * contract and the address that owns the handle (the delegator for delegated access).
+ * @dev Used as an ABI parameter to the unified EIP-712 `userDecryptionRequest` method.
+ * Not part of the EIP-712 signed struct — the KMS Connector reads these fields from
+ * the emitted event and validates them against the ACL on the host chain.
+ */
+struct HandleEntry {
+    /// @notice The handle of the ciphertext.
+    bytes32 handle;
+    /// @notice The contract expected to hold `isAllowed(handle, contractAddress)` —
+    /// used as the third argument to `isHandleDelegatedForUserDecryption` and required
+    /// for every handle, including direct-access handles where `ownerAddress == userAddress`.
+    address contractAddress;
+    /// @notice The delegator's address — the address with `isAllowed` on the handle.
+    /// Equals `userAddress` for direct access.
+    address ownerAddress;
+}
+
+/**
  * @notice A struct that contains user decryption delegation data.
  */
 struct UserDecryptionDelegation {
