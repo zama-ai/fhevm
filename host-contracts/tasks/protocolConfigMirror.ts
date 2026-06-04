@@ -1,4 +1,4 @@
-import type { Provider } from 'ethers';
+import { AbiCoder, type Provider, keccak256 } from 'ethers';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
 import type { ProtocolConfig } from '../types';
@@ -24,24 +24,22 @@ export type KmsThresholds = {
   mpc: bigint;
 };
 
-// Upgrades the secondary ProtocolConfig proxy and initializes it from the
-// canonical host's current KMS context snapshot.
-export async function mirrorProtocolConfigFromCanonical(
-  hre: HardhatRuntimeEnvironment,
-  options: {
-    canonicalProvider: Provider;
-    canonicalProtocolConfigAddress: string;
-    secondaryProxyAddress: string;
-  },
-): Promise<{
+export type CanonicalSnapshot = {
   currentContextId: bigint;
   kmsNodes: KmsNode[];
   thresholds: KmsThresholds;
   canonicalChainId: bigint;
   canonicalBlockTag: number;
-}> {
-  const { ethers, upgrades } = hre;
-  const { canonicalProvider, canonicalProtocolConfigAddress, secondaryProxyAddress } = options;
+};
+
+// Reads the canonical ProtocolConfig's current KMS context, pinned to one block. Shared by the
+// secondary mirror deploy and the export task so both seed from the exact same read.
+export async function readCanonicalSnapshot(
+  hre: HardhatRuntimeEnvironment,
+  options: { canonicalProvider: Provider; canonicalProtocolConfigAddress: string },
+): Promise<CanonicalSnapshot> {
+  const { ethers } = hre;
+  const { canonicalProvider, canonicalProtocolConfigAddress } = options;
 
   const canonicalProtocolConfigBase = await ethers.getContractAt('ProtocolConfig', canonicalProtocolConfigAddress);
   const canonicalProtocolConfig = canonicalProtocolConfigBase.connect(canonicalProvider) as ProtocolConfig;
@@ -69,9 +67,6 @@ export async function mirrorProtocolConfigFromCanonical(
     throw new Error(`Canonical RPC handshake failed (${formatError(err)}).`);
   }
   const at = { blockTag: canonicalBlockTag };
-  console.log(
-    `Mirroring ProtocolConfig from canonical chain ${canonicalChainId} at block ${canonicalBlockTag} (contract ${canonicalProtocolConfigAddress}).`,
-  );
 
   const currentContextId: bigint = await canonicalProtocolConfig.getCurrentKmsContextId(at);
   if (currentContextId === 0n) {
@@ -100,8 +95,55 @@ export async function mirrorProtocolConfigFromCanonical(
     storageUrl: node.storageUrl,
   }));
   const thresholds: KmsThresholds = { publicDecryption, userDecryption, kmsGen, mpc };
+
+  return { currentContextId, kmsNodes, thresholds, canonicalChainId, canonicalBlockTag };
+}
+
+// Deterministic digest of the seeded context. Re-running the export at the same block reproduces it,
+// so DAO signers can diff the artifact against canonical before accepting secondary-host ownership.
+export function computeCanonicalSnapshotHash(protocolConfigAddress: string, snapshot: CanonicalSnapshot): string {
+  const encoded = AbiCoder.defaultAbiCoder().encode(
+    [
+      'uint256',
+      'address',
+      'uint256',
+      'tuple(address,address,string,string)[]',
+      'tuple(uint256,uint256,uint256,uint256)',
+    ],
+    [
+      snapshot.canonicalChainId,
+      protocolConfigAddress,
+      snapshot.currentContextId,
+      snapshot.kmsNodes.map((n) => [n.txSenderAddress, n.signerAddress, n.ipAddress, n.storageUrl]),
+      [
+        snapshot.thresholds.publicDecryption,
+        snapshot.thresholds.userDecryption,
+        snapshot.thresholds.kmsGen,
+        snapshot.thresholds.mpc,
+      ],
+    ],
+  );
+  return keccak256(encoded);
+}
+
+// Upgrades the secondary ProtocolConfig proxy and initializes it from the canonical snapshot. Reuses
+// ProtocolConfig.initializeFromMigration (originally the Gateway -> Ethereum migration initializer) to
+// land on canonical's currentKmsContextId rather than start a fresh counter.
+export async function mirrorProtocolConfigFromCanonical(
+  hre: HardhatRuntimeEnvironment,
+  options: {
+    canonicalProvider: Provider;
+    canonicalProtocolConfigAddress: string;
+    secondaryProxyAddress: string;
+  },
+): Promise<CanonicalSnapshot> {
+  const { ethers, upgrades } = hre;
+  const { canonicalProvider, canonicalProtocolConfigAddress, secondaryProxyAddress } = options;
+
+  const snapshot = await readCanonicalSnapshot(hre, { canonicalProvider, canonicalProtocolConfigAddress });
+  const { currentContextId, kmsNodes, thresholds, canonicalChainId, canonicalBlockTag } = snapshot;
   console.log(
-    `Canonical snapshot: contextId=${currentContextId}, kmsNodes=${kmsNodes.length}, thresholds={publicDecryption:${publicDecryption}, userDecryption:${userDecryption}, kmsGen:${kmsGen}, mpc:${mpc}}.`,
+    `Mirroring ProtocolConfig from canonical chain ${canonicalChainId} at block ${canonicalBlockTag}: contextId=${currentContextId}, kmsNodes=${kmsNodes.length}.`,
   );
 
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
@@ -117,5 +159,5 @@ export async function mirrorProtocolConfigFromCanonical(
     },
   });
 
-  return { currentContextId, kmsNodes, thresholds, canonicalChainId, canonicalBlockTag };
+  return snapshot;
 }

@@ -6,7 +6,12 @@ import { task, types } from 'hardhat/config';
 import type { HardhatEthersHelpers, HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 import path from 'path';
 
-import { mirrorProtocolConfigFromCanonical, type SecondaryDeployArgs } from './protocolConfigMirror';
+import {
+  type SecondaryDeployArgs,
+  computeCanonicalSnapshotHash,
+  mirrorProtocolConfigFromCanonical,
+  readCanonicalSnapshot,
+} from './protocolConfigMirror';
 import { formatError } from './utils/formatError';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from './utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from './utils/loadVariables';
@@ -566,6 +571,53 @@ task(
     console.log(
       `ProtocolConfig code set successfully at ${secondaryProxyAddress}, mirroring canonical chain ${canonicalChainId} context ${currentContextId} (block ${canonicalBlockTag}) with ${kmsNodes.length} KMS nodes.`,
     );
+  });
+
+// Reads the canonical ProtocolConfig context at a pinned block and writes a hashed JSON snapshot,
+// without deploying anything. The deployer pins the block; DAO signers re-run this at the same block
+// and diff the hash before accepting secondary-host ownership.
+task(
+  'task:exportCanonicalProtocolConfig',
+  'Exports the canonical ProtocolConfig KMS context to a hashed JSON snapshot for DAO review.',
+)
+  .addParam(
+    'canonicalRpcUrl',
+    'RPC URL of the canonical host chain to read ProtocolConfig from.',
+    undefined,
+    types.string,
+  )
+  .addParam(
+    'canonicalProtocolConfigAddress',
+    'Address of the ProtocolConfig contract on the canonical host chain.',
+    undefined,
+    types.string,
+  )
+  .addOptionalParam('out', 'Path to write the snapshot JSON.', 'canonical-protocol-config-snapshot.json', types.string)
+  .setAction(async function (
+    { canonicalRpcUrl, canonicalProtocolConfigAddress, out }: SecondaryDeployArgs & { out: string },
+    hre,
+  ) {
+    const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
+    const snapshot = await readCanonicalSnapshot(hre, { canonicalProvider, canonicalProtocolConfigAddress });
+    const hash = computeCanonicalSnapshotHash(canonicalProtocolConfigAddress, snapshot);
+
+    const artifact = {
+      canonicalChainId: snapshot.canonicalChainId,
+      blockNumber: snapshot.canonicalBlockTag,
+      protocolConfigAddress: canonicalProtocolConfigAddress,
+      currentKmsContextId: snapshot.currentContextId,
+      kmsNodes: snapshot.kmsNodes,
+      thresholds: snapshot.thresholds,
+      hash,
+    };
+    fs.writeFileSync(
+      out,
+      JSON.stringify(artifact, (_, value) => (typeof value === 'bigint' ? value.toString() : value), 2),
+    );
+    console.log(
+      `Canonical ProtocolConfig snapshot written to ${out}: chain ${snapshot.canonicalChainId}, block ${snapshot.canonicalBlockTag}, context ${snapshot.currentContextId}, ${snapshot.kmsNodes.length} KMS nodes.\nSnapshot hash: ${hash}`,
+    );
+    return artifact;
   });
 
 ////////////////////////////////////////////////////////////////////////////////

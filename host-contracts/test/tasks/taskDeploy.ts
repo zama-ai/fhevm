@@ -1,7 +1,11 @@
 import { expect } from 'chai';
 import hre, { ethers, run } from 'hardhat';
 
-import { mirrorProtocolConfigFromCanonical } from '../../tasks/protocolConfigMirror';
+import {
+  computeCanonicalSnapshotHash,
+  mirrorProtocolConfigFromCanonical,
+  readCanonicalSnapshot,
+} from '../../tasks/protocolConfigMirror';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE, PREP_KEYGEN_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import type { KMSGeneration, ProtocolConfig } from '../../types';
@@ -193,5 +197,38 @@ describe('mirrorProtocolConfigFromCanonical (canonical → secondary deploy flow
 
     const historicalContextId = await canonical.getCurrentKmsContextId({ blockTag: pinnedBlock });
     expect(historicalContextId).to.equal(pinnedContextId);
+  });
+});
+
+describe('canonical snapshot export (readCanonicalSnapshot + computeCanonicalSnapshotHash)', function () {
+  const deployer = new ethers.Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
+
+  it('reads the canonical context and hashes it reproducibly', async function () {
+    const canonicalNodes = buildProtocolConfigNodes();
+    const canonicalAddress = await deployFreshProtocolConfigProxy(
+      deployer,
+      canonicalNodes,
+      buildProtocolConfigThresholds(),
+    );
+
+    const snapshot = await readCanonicalSnapshot(hre, {
+      canonicalProvider: ethers.provider,
+      canonicalProtocolConfigAddress: canonicalAddress,
+    });
+    expect(snapshot.kmsNodes.length).to.equal(canonicalNodes.length);
+    expect(snapshot.canonicalChainId).to.equal((await ethers.provider.getNetwork()).chainId);
+
+    const hash = computeCanonicalSnapshotHash(canonicalAddress, snapshot);
+    expect(hash).to.match(/^0x[0-9a-f]{64}$/);
+
+    // A DAO signer re-reading the same pinned block must reproduce the hash.
+    const reread = await readCanonicalSnapshot(hre, {
+      canonicalProvider: ethers.provider,
+      canonicalProtocolConfigAddress: canonicalAddress,
+    });
+    expect(computeCanonicalSnapshotHash(canonicalAddress, reread)).to.equal(hash);
+
+    // The ProtocolConfig address is part of the digest.
+    expect(computeCanonicalSnapshotHash(ethers.ZeroAddress, snapshot)).to.not.equal(hash);
   });
 });

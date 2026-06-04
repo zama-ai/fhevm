@@ -161,6 +161,23 @@ Secondary host discovery must not contain `KMS_GENERATION_CONTRACT_ADDRESS`. Lat
 canonical rotations (`defineNewKmsContext`, `destroyKmsContext`) must be mirrored by the
 secondary ACL owner.
 
+### Verifying the mirrored snapshot (DAO review)
+
+`task:deploySecondaryHost` reads the canonical context live at deploy time, which the DAO
+cannot audit after the fact. Pin and publish the snapshot instead:
+
+```bash
+npx hardhat task:exportCanonicalProtocolConfig \
+  --canonical-rpc-url <CANONICAL_RPC_URL> \
+  --canonical-protocol-config-address <CANONICAL_PROTOCOL_CONFIG_ADDRESS> \
+  --out canonical-protocol-config-snapshot.json
+```
+
+This writes the canonical KMS context at a pinned block, plus a `hash` over the chain id,
+ProtocolConfig address, context id, KMS nodes, and thresholds. Before accepting
+secondary-host ownership, DAO signers re-run the export at the same `blockNumber` and confirm
+the `hash` matches the deployed secondary's context.
+
 ### Ownership hand-off
 
 After deployment, the deployer holds ACL ownership on every host chain. Hand control to
