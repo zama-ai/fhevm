@@ -7,6 +7,7 @@ Default to Node.js with pnpm.
 - Use `pnpm exec <binary>` for local binaries.
 - Use `pnpm dlx <package> <command>` for one-off package execution.
 - Use `tsx` for running TypeScript entry points in development.
+- Use `tsdown` via `pnpm run build` for the compiled CLI artifact.
 - Use `tsc --noEmit` for type-checking.
 
 ## APIs

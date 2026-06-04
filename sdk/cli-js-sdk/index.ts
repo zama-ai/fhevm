@@ -1,4 +1,4 @@
-#!/usr/bin/env -S node --import tsx
+#!/usr/bin/env node
 // Must stay first so the project .env is loaded before any module reads env.
 import "./src/env";
 

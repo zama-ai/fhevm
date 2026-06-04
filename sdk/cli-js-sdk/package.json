@@ -11,11 +11,14 @@
     "pnpm": ">=10.0.0"
   },
   "scripts": {
-    "cli": "node --import tsx index.ts",
+    "build": "tsdown",
+    "cli": "node dist/index.mjs",
+    "cli:dev": "node --import tsx index.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "tsdown": "^0.22.2",
     "tsx": "^4.21.0",
     "typescript": "^5.0.4"
   },

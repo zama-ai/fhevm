@@ -18,14 +18,21 @@ Progress logs go to stderr. Final results go to stdout as JSON, so commands are 
 ```bash
 pnpm install
 cp .env.example .env
+pnpm run build
 pnpm link --global
 fhevm-sdk --help
 ```
 
-`pnpm link --global` exposes the `fhevm-sdk` binary. Without linking, replace `fhevm-sdk` with:
+`pnpm run build` compiles the TypeScript CLI to `dist/` with `tsdown`; the linked `fhevm-sdk` binary runs that compiled output. Without linking, replace `fhevm-sdk` with:
 
 ```bash
 pnpm --silent run cli
+```
+
+For source-mode development without rebuilding, use:
+
+```bash
+pnpm --silent run cli:dev
 ```
 
 To remove the global link later, remove the globally linked package:

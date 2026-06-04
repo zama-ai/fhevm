@@ -4,6 +4,7 @@ Use pnpm scripts for verification.
 
 ```bash
 pnpm run typecheck
+pnpm run build
 ```
 
 For CLI changes, also run relevant help or parser checks, for example:
