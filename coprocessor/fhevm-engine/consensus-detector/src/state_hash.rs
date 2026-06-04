@@ -11,6 +11,11 @@ use tracing::{debug, error, info, warn};
 
 pub const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
+/// Sentinel for blocks with `fhe_event_count = 0`. Generated via
+/// `printf '' | shasum -a 256` (equivalently `encode(sha256(''::bytea), 'hex')`).
+pub const EMPTY_BLOCK_STATE_HASH: &str =
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
 // TODO: confirm. RFC 021 defers the state_hash S3
 // layout to RFC 023, but RFC 023 only specifies the layout for ciphertext
 // objects, not state_hash blobs.
@@ -20,65 +25,47 @@ pub fn state_hash_key(chain_id: i64, block_number: i64) -> String {
     format!("state_hash/chain={chain_id}/block={block_number}.bin")
 }
 
-/// GCS path: compute hashes from `gcs.ciphertexts`, insert into `gcs.state_hash`
-/// with `s3_uploaded_at = NULL`. Upload is done by `upload_pending_state_hashes`
-/// so failed PUTs retry from durable state. Schema is qualified explicitly
-/// because the consensus-detector connects with the default `public` search_path
-/// and operates on both stacks from a single pool.
+/// GCS path: stamp `gcs.state_hash` for blocks in `[start, end]` that don't
+/// already have an entry. Empty blocks (`fhe_event_count = 0`) get
+/// [`EMPTY_BLOCK_STATE_HASH`]; non-empty blocks get the SHA-256 over their
+/// `gcs.ciphertexts`.
 async fn compute_and_insert_gcs(
     pool: &Pool<Postgres>,
     start: i64,
     end: i64,
     batch_limit: i64,
 ) -> anyhow::Result<()> {
+    // `bool_and` guards against orphan rows: a block is treated as empty only
+    // if every `host_chain_blocks_valid` row for it reports zero FHE events.
     let pending = sqlx::query!(
         r#"
-        SELECT c.host_chain_id AS "host_chain_id!", c.block_number AS "block_number!"
-          FROM gcs.computations c
-         WHERE c.is_completed = true
-           AND c.is_error = false
-           AND c.block_number BETWEEN $2 AND $3
+        SELECT b.chain_id AS "chain_id!", b.block_number AS "block_number!",
+               bool_and(b.fhe_event_count = 0) AS "is_empty!"
+          FROM public.host_chain_blocks_valid b
+         WHERE b.block_number BETWEEN $1 AND $2
            AND NOT EXISTS (
                SELECT 1 FROM gcs.state_hash sh
-                WHERE sh.chain_id = c.host_chain_id AND sh.block_number = c.block_number)
-         GROUP BY c.host_chain_id, c.block_number
-         ORDER BY c.block_number
-         LIMIT $1
+                WHERE sh.chain_id = b.chain_id AND sh.block_number = b.block_number)
+         GROUP BY b.chain_id, b.block_number
+         ORDER BY b.block_number
+         LIMIT $3
         "#,
-        batch_limit,
         start,
         end,
+        batch_limit,
     )
     .fetch_all(pool)
     .await?;
 
     for row in pending {
-        let chain_id = row.host_chain_id;
+        let chain_id = row.chain_id;
         let block_number = row.block_number;
-        let hashed = sqlx::query!(
-            r#"
-            WITH bc AS (
-                SELECT output_handle, tenant_id, is_completed
-                  FROM gcs.computations
-                 WHERE host_chain_id = $1 AND block_number = $2 AND is_error = false
-            ),
-            v AS (SELECT 1 FROM bc HAVING bool_and(is_completed))
-            SELECT encode(
-                sha256(string_agg(ct.ciphertext, ''::bytea
-                                  ORDER BY ct.handle, ct.ciphertext_version)),
-                'hex'
-            ) AS state_hash
-              FROM v CROSS JOIN bc
-              JOIN gcs.ciphertexts ct
-                ON ct.tenant_id = bc.tenant_id AND ct.handle = bc.output_handle
-            "#,
-            chain_id,
-            block_number
-        )
-        .fetch_optional(pool)
-        .await?
-        .and_then(|r| r.state_hash);
-        let Some(hash) = hashed else { continue };
+        let hash = if row.is_empty {
+            Some(EMPTY_BLOCK_STATE_HASH.to_string())
+        } else {
+            compute_gcs_hash(pool, chain_id, block_number).await?
+        };
+        let Some(hash) = hash else { continue };
         let affected = sqlx::query!(
             "INSERT INTO gcs.state_hash (chain_id, block_number, state_hash)
              VALUES ($1, $2, $3)
@@ -95,6 +82,38 @@ async fn compute_and_insert_gcs(
         }
     }
     Ok(())
+}
+
+/// SHA-256 over the block's `gcs.ciphertexts`; `None` until every non-errored
+/// computation completes. Errored computations are excluded so operators agree.
+async fn compute_gcs_hash(
+    pool: &Pool<Postgres>,
+    chain_id: i64,
+    block_number: i64,
+) -> anyhow::Result<Option<String>> {
+    let row = sqlx::query!(
+        r#"
+        WITH bc AS (
+            SELECT output_handle, tenant_id, is_completed
+              FROM gcs.computations
+             WHERE host_chain_id = $1 AND block_number = $2 AND is_error = false
+        ),
+        v AS (SELECT 1 FROM bc HAVING bool_and(is_completed))
+        SELECT encode(
+            sha256(string_agg(ct.ciphertext, ''::bytea
+                              ORDER BY ct.handle, ct.ciphertext_version)),
+            'hex'
+        ) AS state_hash
+          FROM v CROSS JOIN bc
+          JOIN gcs.ciphertexts ct
+            ON ct.tenant_id = bc.tenant_id AND ct.handle = bc.output_handle
+        "#,
+        chain_id,
+        block_number,
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.and_then(|r| r.state_hash))
 }
 
 /// Uploads `gcs.state_hash` rows with `s3_uploaded_at IS NULL`, attaching the
@@ -223,5 +242,15 @@ mod tests {
     #[test]
     fn key_format_is_stable() {
         assert_eq!(state_hash_key(1, 42), "state_hash/chain=1/block=42.bin");
+    }
+
+    #[test]
+    fn empty_block_state_hash_is_well_formed() {
+        assert_eq!(EMPTY_BLOCK_STATE_HASH.len(), 64);
+        assert!(EMPTY_BLOCK_STATE_HASH.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_eq!(
+            EMPTY_BLOCK_STATE_HASH,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
     }
 }
