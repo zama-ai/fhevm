@@ -60,6 +60,7 @@ task('task:deployCanonicalHost', 'Deploys the complete canonical host stack.').s
 ////////////////////////////////////////////////////////////////////////////////
 
 // Deploys only the shared host skeleton. Use task:deployCanonicalHost for full local deployments.
+// No skipKmsGeneration flag here (unlike host-contracts): library-solidity only deploys canonical.
 task('task:deployHostSkeleton', 'Deploys the shared host skeleton only; not a full host deployment.')
   .setAction(async function (_taskArguments: TaskArguments, hre) {
     if (process.env.SOLIDITY_COVERAGE !== 'true') {

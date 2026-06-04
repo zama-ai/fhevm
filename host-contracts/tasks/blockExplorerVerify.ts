@@ -4,13 +4,8 @@ import type { HardhatRuntimeEnvironment, RunTaskFunction, TaskArguments } from '
 import { formatError } from './utils/formatError';
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 
-// Verifies a single contract on the block explorer, skipping the benign "already verified" response.
-//
-// `@nomicfoundation/hardhat-verify` rethrows "Already Verified" as a hard error — for the auto-matched
-// ERC1967 proxy, and for the deterministic implementation when a prior deploy already verified it.
-// When a per-contract `task:verify*` is called straight from a deploy script (the gitops sc-deploy
-// pattern), that error combines with `set -eo pipefail` to abort the whole deploy. Genuine failures
-// (bad API key, explorer down, bytecode mismatch) are rethrown unchanged.
+// Verifies a contract, swallowing the benign "already verified" response so a re-run from a deploy
+// script does not abort under `set -eo pipefail`. Genuine failures are rethrown.
 export async function verifyContract(run: RunTaskFunction, address: string): Promise<void> {
   try {
     await run('verify:verify', { address, constructorArguments: [] });
@@ -181,9 +176,8 @@ type HostVerifyResult = {
   error?: string;
 };
 
-// Verification is best-effort: a re-run legitimately hits "already verified", so a single failure
-// must not abort the rest of the batch. We capture each outcome instead of swallowing it, so the
-// end-of-run summary can show the operator exactly which contracts failed and the raw error.
+// Captures each contract's outcome instead of throwing, so one failure doesn't abort the batch and
+// the end-of-run summary can report exactly what failed.
 async function runVerifyTask(
   hre: HardhatRuntimeEnvironment,
   taskName: HostVerifyTaskName,
@@ -201,9 +195,7 @@ async function runVerifyTask(
   }
 }
 
-// Prints a per-contract pass/fail summary so the operator can triage at a glance. The raw error is
-// repeated for each failure to settle why it failed: "already verified" is benign, explorer/network/
-// rate-limit errors are usually transient and safe to retry, anything else warrants investigation.
+// Per-contract pass/fail summary with the raw error per failure, so the operator can triage at a glance.
 function printHostVerifySummary(scope: string, results: HostVerifyResult[]): void {
   const failed = results.filter((result) => !result.ok);
   console.log(`\n${scope} contract verification summary (${results.length - failed.length}/${results.length} ok):`);
