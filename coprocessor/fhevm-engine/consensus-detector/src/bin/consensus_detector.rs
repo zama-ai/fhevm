@@ -59,9 +59,9 @@ struct Args {
     #[arg(long, default_value = "60s", value_parser = parse_duration)]
     commitment_timeout: Duration,
 
-    /// This operator's S3 bucket. Empty disables GCS uploads.
-    #[arg(long, default_value = "")]
-    my_bucket: String,
+    /// This operator's S3 bucket. Omit to disable GCS uploads.
+    #[arg(long)]
+    my_bucket: Option<String>,
 
     /// S3 endpoint override (e.g. `http://minio:9000`).
     #[arg(long)]

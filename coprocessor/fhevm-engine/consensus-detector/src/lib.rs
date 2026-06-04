@@ -74,8 +74,8 @@ pub struct Config {
     /// Hard cap on how long we wait for unanimity before giving up and
     /// emitting `unanimity_consensus_timeout`.
     pub commitment_timeout: Duration,
-    /// This operator's S3 bucket. Empty disables GCS uploads (read-only).
-    pub my_bucket: String,
+    /// This operator's S3 bucket. `None` disables GCS uploads (read-only).
+    pub my_bucket: Option<String>,
     /// S3 endpoint override (e.g. `http://minio:9000`).
     pub s3_endpoint: Option<String>,
     /// Max pending blocks processed per state_hash sweep.
@@ -93,7 +93,7 @@ impl Default for Config {
             poll_interval: Duration::from_secs(30),
             commitment_poll_interval: Duration::from_secs(5),
             commitment_timeout: Duration::from_secs(60),
-            my_bucket: String::new(),
+            my_bucket: None,
             s3_endpoint: None,
             state_hash_batch_limit: 256,
         }
@@ -456,7 +456,7 @@ where
     info!(
         service_name = %config.service_name,
         gateway_config_address = %config.gateway_config_address,
-        my_bucket = %config.my_bucket,
+        my_bucket = ?config.my_bucket,
         "starting consensus-detector"
     );
 
@@ -479,7 +479,7 @@ where
         .build()?;
 
     // GCS upload only when --my-bucket is set.
-    let s3 = if config.my_bucket.is_empty() {
+    let s3 = if config.my_bucket.is_none() {
         info!("--my-bucket not set; GCS upload disabled");
         None
     } else {
@@ -489,7 +489,7 @@ where
         let pool = pool.clone();
         let worker_cancel = cancel.child_token();
         let parent_cancel = cancel.clone();
-        let bucket = config.my_bucket.clone();
+        let bucket = config.my_bucket.clone().unwrap_or_default();
         let batch_limit = config.state_hash_batch_limit;
         tokio::spawn(async move {
             // The state_hash worker is required for the consensus poll: without
