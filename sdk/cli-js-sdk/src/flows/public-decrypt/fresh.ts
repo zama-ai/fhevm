@@ -1,23 +1,23 @@
 import type { Hex } from "viem";
 
-import { createWalletContext, type ClientOptions } from "../config";
-import { readFheTestHandle } from "../fhe-test/handles";
+import { createWalletContext, type ClientOptions } from "../../config";
+import { readFheTestHandle } from "../../fhe-test/handles";
 import {
   getSetEncryptedFunctionName,
   simulateSetEncryptedValue,
-} from "../fhe-test/writes";
-import { encryptValues } from "../fhevm/encryption";
-import { readPublicValues } from "../fhevm/public-decrypt";
-import type { ProgressReporter } from "../shared/progress";
-import { sendAndWait } from "../shared/transactions";
+} from "../../fhe-test/writes";
+import { encryptValues } from "../../fhevm/encryption";
+import { readPublicValues } from "../../fhevm/public-decrypt";
+import type { ProgressReporter } from "../../shared/progress";
+import { sendAndWait } from "../../shared/transactions";
 import type {
   EncryptValue,
   FheClearValue,
   FheTestHandle,
   FheValueType,
   PublicDecryptResult,
-} from "../types";
-import { createFreshDecryptValues } from "../values";
+} from "../../types";
+import { createFreshDecryptValues } from "../../values";
 
 export type FreshPublicDecryptOptions = ClientOptions &
   Readonly<{

@@ -1,16 +1,16 @@
 import type { Hex } from "viem";
 
-import { createWalletContext, type ClientOptions } from "../config";
-import { readFheTestHandle } from "../fhe-test/handles";
-import { simulateMakePubliclyDecryptable } from "../fhe-test/writes";
-import { readPublicValues } from "../fhevm/public-decrypt";
-import type { ProgressReporter } from "../shared/progress";
-import { sendAndWait } from "../shared/transactions";
+import { createWalletContext, type ClientOptions } from "../../config";
+import { readFheTestHandle } from "../../fhe-test/handles";
+import { simulateMakePubliclyDecryptable } from "../../fhe-test/writes";
+import { readPublicValues } from "../../fhevm/public-decrypt";
+import type { ProgressReporter } from "../../shared/progress";
+import { sendAndWait } from "../../shared/transactions";
 import type {
   FheTestHandle,
   FheValueType,
   PublicDecryptResult,
-} from "../types";
+} from "../../types";
 
 export type MakePublicOptions = ClientOptions &
   Readonly<{

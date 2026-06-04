@@ -80,9 +80,10 @@ pnpm --silent run cli --network testnet delegated-user-decrypt cached --delegato
 pnpm --silent run cli --network testnet delegated-user-decrypt cached --delegator 0x... --handle 0x...
 ```
 
-FHETest setup:
+FHETest utilities:
 
 ```bash
+pnpm --silent run cli --network testnet fhe-test info
 pnpm --silent run cli --network testnet fhe-test init
 pnpm --silent run cli --network testnet fhe-test init --type uint256 --force
 ```

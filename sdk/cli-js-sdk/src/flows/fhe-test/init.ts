@@ -1,16 +1,16 @@
 import type { Hex } from "viem";
 
-import { createWalletContext, type ClientOptions } from "../config";
-import { hasFheTestHandle, readFheTestHandle } from "../fhe-test/handles";
+import { createWalletContext, type ClientOptions } from "../../config";
+import { hasFheTestHandle, readFheTestHandle } from "../../fhe-test/handles";
 import {
   getSetClearFunctionName,
   simulateSetClearValue,
-} from "../fhe-test/writes";
-import type { ProgressReporter } from "../shared/progress";
-import { sendAndWait } from "../shared/transactions";
-import type { FheTestHandle, FheValueType } from "../types";
-import { FHE_VALUE_TYPES } from "../types";
-import { createInitValue } from "../values";
+} from "../../fhe-test/writes";
+import type { ProgressReporter } from "../../shared/progress";
+import { sendAndWait } from "../../shared/transactions";
+import type { FheTestHandle, FheValueType } from "../../types";
+import { FHE_VALUE_TYPES } from "../../types";
+import { createInitValue } from "../../values";
 
 export type InitFheTestOptions = ClientOptions &
   Readonly<{

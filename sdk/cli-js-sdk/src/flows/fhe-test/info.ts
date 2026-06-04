@@ -4,10 +4,10 @@ import {
   createClientContext,
   resolveChain,
   type ClientOptions,
-} from "../config";
-import { fheTestAbi } from "../fhe-test/abi";
-import type { ProgressReporter } from "../shared/progress";
-import type { NetworkName } from "../types";
+} from "../../config";
+import { fheTestAbi } from "../../fhe-test/abi";
+import type { ProgressReporter } from "../../shared/progress";
+import type { NetworkName } from "../../types";
 
 export type FheTestInfoOptions = ClientOptions &
   Readonly<{

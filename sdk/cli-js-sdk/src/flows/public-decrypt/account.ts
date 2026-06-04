@@ -1,6 +1,6 @@
 import type { Hex } from "viem";
 
-import { loadAccount } from "../config";
+import { loadAccount } from "../../config";
 
 export const resolveAccountAddress = (
   options: Readonly<{ account?: Hex; privateKey?: Hex; mnemonic?: string }>,

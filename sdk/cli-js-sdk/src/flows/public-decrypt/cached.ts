@@ -1,14 +1,14 @@
 import type { Hex } from "viem";
 
-import { createClientContext, type ClientOptions } from "../config";
-import { readFheTestHandle } from "../fhe-test/handles";
-import { readPublicValues } from "../fhevm/public-decrypt";
-import type { ProgressReporter } from "../shared/progress";
+import { createClientContext, type ClientOptions } from "../../config";
+import { readFheTestHandle } from "../../fhe-test/handles";
+import { readPublicValues } from "../../fhevm/public-decrypt";
+import type { ProgressReporter } from "../../shared/progress";
 import type {
   FheTestHandle,
   FheValueType,
   PublicDecryptResult,
-} from "../types";
+} from "../../types";
 import { resolveAccountAddress } from "./account";
 
 export type PublicDecryptOptions = ClientOptions &

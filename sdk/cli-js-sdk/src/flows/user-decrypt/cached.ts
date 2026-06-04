@@ -1,10 +1,10 @@
 import type { Hex } from "viem";
 
-import { createWalletContext, type ClientOptions } from "../config";
-import { readFheTestHandle } from "../fhe-test/handles";
-import { decryptUserValues } from "../fhevm/user-decrypt";
-import type { ProgressReporter } from "../shared/progress";
-import type { FheTestHandle, FheValueType, UserDecryptResult } from "../types";
+import { createWalletContext, type ClientOptions } from "../../config";
+import { readFheTestHandle } from "../../fhe-test/handles";
+import { decryptUserValues } from "../../fhevm/user-decrypt";
+import type { ProgressReporter } from "../../shared/progress";
+import type { FheTestHandle, FheValueType, UserDecryptResult } from "../../types";
 
 export type UserDecryptOptions = ClientOptions &
   Readonly<{
