@@ -960,8 +960,6 @@ async fn db_insert_block(
     tfhe_contract_address: &Option<Address>,
     kms_generation_address: &Option<Address>,
     args: &Args,
-    gcs_mode: bool,
-    gcs_start_block: &std::sync::Arc<std::sync::atomic::AtomicI64>,
 ) -> anyhow::Result<()> {
     info!(
         block = ?block_logs.summary,
@@ -982,8 +980,6 @@ async fn db_insert_block(
                 dependence_by_connexity: args.dependence_by_connexity,
                 dependence_cross_block: args.dependence_cross_block,
                 dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
-                gcs_mode,
-                gcs_start_block: gcs_start_block.clone(),
             },
         )
         .await;
@@ -1102,16 +1098,6 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     )
     .await?;
 
-    // GCS activation: long-lived watcher mirrors `upgrade_state.start_block`
-    // into a shared atomic; the ingest path reads it to decide between paused,
-    // BCS, and GCS-staging modes. No-op when --gcs-mode is false.
-    let gcs_start_block = crate::database::gcs_activation::new_state();
-    crate::database::gcs_activation::spawn_watcher(
-        gcs_mode,
-        db.pool().await,
-        gcs_start_block.clone(),
-    );
-
     let health_check = HealthCheck {
         blockchain_timeout_tick: log_iter.tick_timeout.clone(),
         blockchain_tick: log_iter.tick_block.clone(),
@@ -1208,8 +1194,6 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                 &tfhe_contract_address,
                 &kms_generation_address,
                 &args,
-                gcs_mode,
-                &gcs_start_block,
             )
             .await;
             if status.is_err() {

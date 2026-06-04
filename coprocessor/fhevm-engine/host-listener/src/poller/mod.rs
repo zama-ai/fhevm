@@ -22,7 +22,6 @@ use fhevm_engine_common::versioning::{run_stack_version_listener, StackMode};
 use sqlx::postgres::PgPoolOptions;
 
 use crate::cmd::block_history::BlockSummary;
-use crate::database::gcs_activation;
 use crate::database::ingest::{
     ingest_block_logs, update_finalized_blocks_aux, BlockLogs, IngestOptions,
 };
@@ -193,16 +192,6 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         }
     }
 
-    // GCS activation: long-lived watcher mirrors `upgrade_state.start_block`
-    // into a shared atomic; the ingest path reads it to decide between paused,
-    // BCS, and GCS-staging modes. No-op when --gcs-mode is false.
-    let gcs_start_block = gcs_activation::new_state();
-    gcs_activation::spawn_watcher(
-        config.gcs_mode,
-        db.pool().await,
-        gcs_start_block.clone(),
-    );
-
     // Runtime stack mode + `event_stack_version_upgraded` listener: at cutover
     // this (blue) stack is retired and `stack_mode` flips to paused, turning
     // the poll loop below into a no-op (stops polling/producing blocks).
@@ -354,8 +343,6 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 dependence_by_connexity: config.dependence_by_connexity,
                 dependence_cross_block: config.dependence_cross_block,
                 dependent_ops_max_per_chain: config.dependent_ops_max_per_chain,
-                gcs_mode: config.gcs_mode,
-                gcs_start_block: gcs_start_block.clone(),
             };
             match ingest_with_retry(
                 chain_id,

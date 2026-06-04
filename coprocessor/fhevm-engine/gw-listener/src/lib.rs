@@ -41,10 +41,11 @@ pub struct ConfigSettings {
     /// a consensus mismatch. If false, drift is still detected and logged,
     /// but no signal is created.
     pub drift_auto_revert_enabled: bool,
-    /// When true, the gw-listener runs in GCS mode and starts paused: it
-    /// brings up health, drift-revert init and metrics, but does not poll for
-    /// or process any events. Used by the GCS stack during the blue/green
-    /// upgrade flow before cutover.
+    /// When true, the gw-listener runs in GCS mode: its DB connections are
+    /// pinned to `search_path = "gcs-<version>",public` so writes land in the
+    /// versioned GCS schema. It is not paused before activation — it processes
+    /// events from startup; only the cutover transition retires it. Used by the
+    /// GCS stack during the blue/green upgrade flow.
     pub gcs_mode: bool,
 }
 

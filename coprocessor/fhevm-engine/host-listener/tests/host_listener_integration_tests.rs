@@ -380,8 +380,6 @@ async fn ingest_dependent_burst_seeded(
             dependence_by_connexity: false,
             dependence_cross_block: true,
             dependent_ops_max_per_chain,
-            gcs_mode: false,
-            gcs_start_block: std::sync::Arc::new(std::sync::atomic::AtomicI64::new(-1)),
         },
     )
     .await?;
@@ -701,10 +699,6 @@ async fn test_slow_lane_cross_block_sustained_below_cap_stays_fast_locally(
                 dependence_by_connexity: false,
                 dependence_cross_block: true,
                 dependent_ops_max_per_chain: cap,
-                gcs_mode: false,
-                gcs_start_block: std::sync::Arc::new(
-                    std::sync::atomic::AtomicI64::new(-1),
-                ),
             },
         )
         .await?;

@@ -1,7 +1,5 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::Future;
-use std::sync::atomic::AtomicI64;
-use std::sync::Arc;
 
 use alloy::primitives::Address;
 use alloy::rpc::types::Log;
@@ -15,7 +13,6 @@ use crate::cmd::block_history::{BlockHash, BlockSummary};
 use crate::cmd::InfiniteLogIter;
 use crate::contracts::{AclContract, KMSGeneration, TfheContract};
 use crate::database::dependence_chains::dependence_chains;
-use crate::database::gcs_activation;
 use crate::database::tfhe_event_propagate::{
     acl_result_handles, tfhe_result_handle, Chain, ChainHash, Database, LogTfhe,
 };
@@ -34,30 +31,6 @@ pub struct IngestOptions {
     pub dependence_by_connexity: bool,
     pub dependence_cross_block: bool,
     pub dependent_ops_max_per_chain: u32,
-    /// When true, the listener runs in GCS mode. Behavior depends on
-    /// `gcs_start_block`:
-    ///   - sentinel (`GCS_NOT_ACTIVATED`): the listener is paused — only the
-    ///     `UpgradeActivated` ProtocolConfig event is acted on; all TFHE /
-    ///     ACL / KMS-generation events in the block are skipped.
-    ///   - real start_block: the listener is activated — events are
-    ///     processed normally. Writes are routed to the `gcs` schema by
-    ///     the connection's `search_path = gcs,public`, not by per-statement
-    ///     table-name swaps.
-    /// When false (default), writes go to the `public` schema (BCS).
-    pub gcs_mode: bool,
-    /// Shared activation state populated by `gcs_activation::watch_gcs_activation`.
-    /// Holds `GCS_NOT_ACTIVATED` until the watcher observes a real start_block.
-    /// Unused when `gcs_mode = false`.
-    pub gcs_start_block: Arc<AtomicI64>,
-}
-
-impl IngestOptions {
-    /// Returns true iff the listener is running in GCS mode AND the
-    /// activation watcher has populated a real start_block. When true, all
-    /// new computations rows are routed to `computations_staging`.
-    pub fn gcs_active(&self) -> bool {
-        self.gcs_mode && gcs_activation::is_active(&self.gcs_start_block)
-    }
 }
 
 /// Converts a block timestamp to a UTC `PrimitiveDateTime`.
@@ -208,34 +181,11 @@ pub async fn ingest_block_logs(
         .execute(&mut *tx)
         .await?;
 
-    // GCS mode, pre-activation: the listener starts paused — only the
-    // ProtocolConfig `UpgradeActivated` event is acted on. TFHE/ACL/KMS
-    // events are skipped. Once the activation watcher populates
-    // `gcs_start_block`, this branch is skipped and the events are processed
-    // below. Writes are routed to `gcs.*` via the connection's `search_path`
-    // (no per-statement table-name swaps needed).
-    if options.gcs_mode && !options.gcs_active() {
-        info!(
-            block_number = block_logs.summary.number,
-            nb_logs = block_logs.logs.len(),
-            "Listener in --gcs-mode (paused, not yet activated) — only UpgradeActivated will be processed"
-        );
-        for log in &block_logs.logs {
-            // TODO(upgrade): decode ProtocolConfig::UpgradeActivated from
-            // `log.inner` and emit `event_upgrade_activated` via pg_notify
-            // (see RFC 021). Until the binding lands, this is a no-op.
-            let _ = log;
-        }
-        db.mark_block_as_valid(
-            &mut tx,
-            &block_logs.summary,
-            block_logs.finalized,
-            0,
-            0,
-        )
-        .await?;
-        return tx.commit().await;
-    }
+    // In GCS mode the listener is NOT paused before activation: it processes
+    // events from startup, writing to the `gcs.*` schema via the connection's
+    // `search_path`. Pre-`start_block` rows are cleaned up by the
+    // upgrade-controller after the readiness check (see
+    // `prune_gcs_computations_before_start`).
 
     let mut is_allowed = HashSet::<Handle>::new();
     let mut tfhe_event_log = vec![];
