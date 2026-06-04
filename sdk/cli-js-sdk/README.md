@@ -50,12 +50,12 @@ Global options such as `-n devnet`, `--rpc-url`, and `--relayer-url` can be plac
 | --- | --- | --- |
 | `input-proof` | Encrypts clear values and requests a verified input proof. Does not write to FHETest. | No |
 | `public-decrypt fresh` | Encrypts a value, stores it in FHETest with `makePublic=true`, then public decrypts it. | Yes |
-| `public-decrypt cached` | Public decrypts direct `--handle` values, an explicit `--account`/`--type` slot, or the wallet's default account/type slot. | Only when using the wallet default |
+| `public-decrypt cached` | Public decrypts direct `--handle` values, explicit `--account`/`--type` slots, or the wallet's default account/type slot. | Only when using the wallet default |
 | `public-decrypt make-public` | Marks the caller's stored FHETest handle public, then public decrypts it. | Yes |
 | `user-decrypt fresh` | Encrypts a value, stores it in FHETest with `makePublic=false`, then decrypts it as the owner. | Yes |
-| `user-decrypt cached` | User decrypts direct `--handle` values, or the caller's stored FHETest handle for `--type`. | Yes |
+| `user-decrypt cached` | User decrypts direct `--handle` values, or the caller's stored FHETest handles for `--type` values. | Yes |
 | `delegated-user-decrypt fresh` | Delegator creates a private handle; delegate gets ACL permission and decrypts it. | Delegate and delegator |
-| `delegated-user-decrypt cached` | Delegate decrypts direct `--handle` values, or a delegator's stored handle for `--type`. | Delegate; delegator only if creating ACL permission |
+| `delegated-user-decrypt cached` | Delegate decrypts direct `--handle` values, or a delegator's stored handles for `--type` values. | Delegate; delegator only if creating ACL permission |
 | `fhe-test info` | Shows resolved network, host chain, relayer, and FHETest metadata. | No |
 | `fhe-test inspect` | Reads FHETest state for a raw handle, an explicit account/type slot, or the wallet's default account/type slot. | Only when using the wallet default |
 | `fhe-test init` | Creates public FHETest handles for one or all supported types. | Yes |
@@ -70,6 +70,32 @@ fhevm-sdk public-decrypt cached --help
 fhevm-sdk delegated-user-decrypt fresh --help
 fhevm-sdk fhe-test op --help
 ```
+
+## Cached Decrypt Modes
+
+Cached decrypt commands have two mutually exclusive modes.
+
+Direct handle mode accepts repeated `--handle` flags and sends all provided handles in one SDK decrypt request:
+
+```bash
+fhevm-sdk public-decrypt cached --handle 0x... --handle 0x...
+fhevm-sdk user-decrypt cached --handle 0x... --handle 0x...
+fhevm-sdk delegated-user-decrypt cached --delegator 0x... --handle 0x... --handle 0x...
+```
+
+All handles in one command should belong to the selected FHETest contract. For user decrypt, they should be decryptable by the wallet owner. For delegated user decrypt, they should be decryptable through the same delegator/delegate relationship.
+
+Stored slot mode accepts repeated `--type` flags, reads one FHETest handle per account/type slot, and sends those handles in one SDK decrypt request:
+
+```bash
+fhevm-sdk public-decrypt cached --type uint16 --type uint32
+fhevm-sdk user-decrypt cached --type uint16 --type uint32
+fhevm-sdk delegated-user-decrypt cached --delegator 0x... --type uint16 --type uint32
+```
+
+Do not mix `--handle` and `--type` in the same cached decrypt command. When neither is provided, cached decrypt defaults to the `bool` stored slot.
+
+`fresh` commands create one new stored FHETest handle and decrypt that handle. They are intentionally single-value flows.
 
 ## Networks And Global Options
 
@@ -128,6 +154,7 @@ Use `cached` to decrypt an existing public handle:
 ```bash
 fhevm-sdk public-decrypt cached --type uint8
 fhevm-sdk public-decrypt cached --account 0x... --type uint8
+fhevm-sdk public-decrypt cached --type uint16 --type uint32
 fhevm-sdk public-decrypt cached --handle 0x... --handle 0x...
 ```
 
@@ -150,6 +177,7 @@ Use `cached` to decrypt an existing private handle owned by the wallet:
 
 ```bash
 fhevm-sdk user-decrypt cached --type uint8
+fhevm-sdk user-decrypt cached --type uint16 --type uint32
 fhevm-sdk user-decrypt cached --handle 0x... --handle 0x...
 ```
 
@@ -168,6 +196,7 @@ Use `cached` when the delegator already has a stored handle or when you have raw
 
 ```bash
 fhevm-sdk delegated-user-decrypt cached --delegator 0x... --type uint8
+fhevm-sdk delegated-user-decrypt cached --delegator 0x... --type uint16 --type uint32
 fhevm-sdk delegated-user-decrypt cached --delegator 0x... --handle 0x... --handle 0x...
 ```
 

@@ -10,6 +10,7 @@ import { getGlobalOptions } from "../options";
 import { printJson } from "../output";
 import {
   collectHandle,
+  collectValueType,
   parseAddress,
   parsePositiveInteger,
   parsePrivateKey,
@@ -37,13 +38,12 @@ export const registerDelegatedUserDecryptCommands = (program: Command): void => 
   delegatedCommand
     .command("cached")
     .description(
-      "Delegated user decrypt an FHETest handle from delegator/type, or direct handles",
+      "Delegated user decrypt FHETest handles from delegator/type slots, or direct handles",
     )
     .option(
       "-t, --type <type>",
-      `value type (${supportedValueTypes})`,
-      parseValueType,
-      "bool",
+      `stored value type to read; repeat for multiple (${supportedValueTypes})`,
+      collectValueType,
     )
     .option(
       "--contract <address>",
@@ -90,7 +90,7 @@ export const registerDelegatedUserDecryptCommands = (program: Command): void => 
         network: globals.network,
         relayerUrl: globals.relayerUrl,
         rpcUrl: globals.rpcUrl,
-        type: options.type,
+        types: options.type,
         contractAddress: options.contract,
         delegatorAddress: options.delegator,
         handles: options.handle,

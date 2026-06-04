@@ -7,9 +7,11 @@ import type { DelegatedUserDecryptBaseOptions } from "./types";
 const DELEGATOR_PRIVATE_KEY_ENV = "DELEGATOR_PRIVATE_KEY";
 const DELEGATOR_MNEMONIC_ENV = "DELEGATOR_MNEMONIC";
 
+type DelegatedAccountOptions = Omit<DelegatedUserDecryptBaseOptions, "type">;
+
 /** Loads delegator credentials only when explicitly supplied by flags or env. */
 export const loadOptionalDelegatorAccount = (
-  options: DelegatedUserDecryptBaseOptions,
+  options: DelegatedAccountOptions,
 ): Account | undefined => {
   if (
     !options.delegatorPrivateKey &&
@@ -25,7 +27,7 @@ export const loadOptionalDelegatorAccount = (
 
 /** Loads the encrypted data owner's credentials for delegated writes or grants. */
 export const loadRequiredDelegatorAccount = (
-  options: DelegatedUserDecryptBaseOptions,
+  options: DelegatedAccountOptions,
 ): Account =>
   loadNamedAccount({
     privateKey: options.delegatorPrivateKey,
@@ -42,7 +44,7 @@ export const loadRequiredDelegatorAccount = (
  * account to avoid granting/decrypting on behalf of the wrong owner.
  */
 export const resolveDelegatorAddress = (
-  options: DelegatedUserDecryptBaseOptions,
+  options: DelegatedAccountOptions,
   account?: Account,
 ): Hex => {
   if (options.delegatorAddress && account) {

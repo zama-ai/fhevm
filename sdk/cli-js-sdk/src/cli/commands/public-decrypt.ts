@@ -11,6 +11,7 @@ import { getGlobalOptions } from "../options";
 import { printJson } from "../output";
 import {
   collectHandle,
+  collectValueType,
   parseAddress,
   parsePrivateKey,
   parseValueType,
@@ -29,13 +30,12 @@ export const registerPublicDecryptCommands = (program: Command): void => {
   publicDecryptCommand
     .command("cached")
     .description(
-      "Public decrypt an FHETest handle from account/type, or direct handles",
+      "Public decrypt FHETest handles from account/type slots, or direct handles",
     )
     .option(
       "-t, --type <type>",
-      `value type (${supportedValueTypes})`,
-      parseValueType,
-      "bool",
+      `stored value type to read; repeat for multiple (${supportedValueTypes})`,
+      collectValueType,
     )
     .option(
       "--account <address>",
@@ -65,7 +65,7 @@ export const registerPublicDecryptCommands = (program: Command): void => {
         network: globals.network,
         relayerUrl: globals.relayerUrl,
         rpcUrl: globals.rpcUrl,
-        type: options.type,
+        types: options.type,
         contractAddress: options.contract,
         account: options.account,
         handles: options.handle,

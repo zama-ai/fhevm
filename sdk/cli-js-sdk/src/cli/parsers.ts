@@ -38,3 +38,8 @@ export const collectHandle = (value: string, previous: Hex[] = []): Hex[] => [
   ...previous,
   parseBytes32(value),
 ];
+
+export const collectValueType = (
+  value: string,
+  previous: FheValueType[] = [],
+): FheValueType[] => [...previous, parseValueType(value)];

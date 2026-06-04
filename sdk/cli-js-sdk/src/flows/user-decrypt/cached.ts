@@ -7,15 +7,18 @@ import type { ProgressReporter } from "../../shared/progress";
 import type { FheTestHandle, FheValueType, UserDecryptResult } from "../../types";
 import { describeHandle } from "../progress";
 
+const DEFAULT_CACHED_TYPES: readonly FheValueType[] = ["bool"];
+
 /**
  * User-decrypt options for existing private handles.
  *
- * Direct `handles` are decrypted as-is. Without direct handles, the flow reads
- * the FHETest handle stored for the signer wallet and selected `type`.
+ * `handles` and `types` are mutually exclusive modes. Direct handles are
+ * decrypted as-is. Without direct handles, the flow reads FHETest handles stored
+ * for the signer wallet and each selected type.
  */
 export type UserDecryptOptions = ClientOptions &
   Readonly<{
-    type: FheValueType;
+    types?: readonly FheValueType[];
     contractAddress?: Hex;
     handles?: readonly Hex[];
     privateKey?: Hex;
@@ -28,19 +31,24 @@ export type UserDecryptOptions = ClientOptions &
 export const userDecrypt = async (
   options: UserDecryptOptions,
 ): Promise<UserDecryptResult & { handles?: readonly FheTestHandle[] }> => {
+  const handles = options.handles ?? [];
+  const types = options.types ?? [];
+
+  if (handles.length > 0 && types.length > 0) {
+    throw new Error("Use either --handle or --type for cached decrypt, not both.");
+  }
+
   options.onProgress?.("Loading wallet and creating clients");
   const { account, contractAddress, publicClient, ...context } =
     createWalletContext(options);
 
-  if (options.handles && options.handles.length > 0) {
-    options.onProgress?.(
-      `Using ${options.handles.length.toString()} provided handle(s)`,
-    );
-    options.onProgress?.(`Provided handle(s): ${options.handles.join(", ")}`);
+  if (handles.length > 0) {
+    options.onProgress?.(`Using ${handles.length.toString()} provided handle(s)`);
+    options.onProgress?.(`Provided handle(s): ${handles.join(", ")}`);
     return decryptUserValues(
       { ...context, contractAddress, publicClient },
       {
-        encryptedValues: options.handles,
+        encryptedValues: handles,
         signer: account,
         ownerAddress: account.address,
         durationDays: options.durationDays,
@@ -49,20 +57,23 @@ export const userDecrypt = async (
     );
   }
 
-  const handle = await readFheTestHandle({
-    publicClient,
-    contractAddress,
-    account: account.address,
-    type: options.type,
-    onProgress: options.onProgress,
-  });
-  options.onProgress?.(
-    `Using stored ${options.type} handle: ${describeHandle(handle)}`,
-  );
+  const selectedTypes = types.length > 0 ? types : DEFAULT_CACHED_TYPES;
+  const storedHandles: FheTestHandle[] = [];
+  for (const type of selectedTypes) {
+    const handle = await readFheTestHandle({
+      publicClient,
+      contractAddress,
+      account: account.address,
+      type,
+      onProgress: options.onProgress,
+    });
+    options.onProgress?.(`Using stored ${type} handle: ${describeHandle(handle)}`);
+    storedHandles.push(handle);
+  }
   const decrypted = await decryptUserValues(
     { ...context, contractAddress, publicClient },
     {
-      encryptedValues: [handle.handle],
+      encryptedValues: storedHandles.map((handle) => handle.handle),
       signer: account,
       ownerAddress: account.address,
       durationDays: options.durationDays,
@@ -70,5 +81,5 @@ export const userDecrypt = async (
     },
   );
 
-  return { ...decrypted, handles: [handle] };
+  return { ...decrypted, handles: storedHandles };
 };

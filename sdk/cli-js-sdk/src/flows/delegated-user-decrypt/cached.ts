@@ -19,8 +19,16 @@ import type {
   DelegatedUserDecryptResult,
 } from "./types";
 
-export type DelegatedUserDecryptOptions = DelegatedUserDecryptBaseOptions &
+type DelegatedValueType = DelegatedUserDecryptBaseOptions["type"];
+
+const DEFAULT_CACHED_TYPES: readonly DelegatedValueType[] = ["bool"];
+
+export type DelegatedUserDecryptOptions = Omit<
+  DelegatedUserDecryptBaseOptions,
+  "type"
+> &
   Readonly<{
+    types?: readonly DelegatedValueType[];
     handles?: readonly Hex[];
   }>;
 
@@ -33,6 +41,12 @@ export type DelegatedUserDecryptOptions = DelegatedUserDecryptBaseOptions &
 export const delegatedUserDecrypt = async (
   options: DelegatedUserDecryptOptions,
 ): Promise<DelegatedUserDecryptResult & { handles?: readonly FheTestHandle[] }> => {
+  const handles = options.handles ?? [];
+  const types = options.types ?? [];
+  if (handles.length > 0 && types.length > 0) {
+    throw new Error("Use either --handle or --type for cached decrypt, not both.");
+  }
+
   options.onProgress?.("Loading delegate wallet and creating clients");
   const delegateContext = createWalletContext(options);
   const delegatorAccount = loadOptionalDelegatorAccount(options);
@@ -55,13 +69,11 @@ export const delegatedUserDecrypt = async (
     onProgress: options.onProgress,
   });
 
-  if (options.handles && options.handles.length > 0) {
-    options.onProgress?.(
-      `Using ${options.handles.length.toString()} provided handle(s)`,
-    );
-    options.onProgress?.(`Provided handle(s): ${options.handles.join(", ")}`);
+  if (handles.length > 0) {
+    options.onProgress?.(`Using ${handles.length.toString()} provided handle(s)`);
+    options.onProgress?.(`Provided handle(s): ${handles.join(", ")}`);
     const decrypted = await decryptDelegatedHandles(delegateContext, {
-      encryptedValues: options.handles,
+      encryptedValues: handles,
       delegatorAddress,
       durationDays: options.durationDays,
       onProgress: options.onProgress,
@@ -74,18 +86,23 @@ export const delegatedUserDecrypt = async (
     };
   }
 
-  const handle = await readFheTestHandle({
-    publicClient: delegateContext.publicClient,
-    contractAddress: delegateContext.contractAddress,
-    account: delegatorAddress,
-    type: options.type,
-    onProgress: options.onProgress,
-  });
-  options.onProgress?.(
-    `Using stored delegator ${options.type} handle: ${describeHandle(handle)}`,
-  );
+  const selectedTypes = types.length > 0 ? types : DEFAULT_CACHED_TYPES;
+  const storedHandles: FheTestHandle[] = [];
+  for (const type of selectedTypes) {
+    const handle = await readFheTestHandle({
+      publicClient: delegateContext.publicClient,
+      contractAddress: delegateContext.contractAddress,
+      account: delegatorAddress,
+      type,
+      onProgress: options.onProgress,
+    });
+    options.onProgress?.(
+      `Using stored delegator ${type} handle: ${describeHandle(handle)}`,
+    );
+    storedHandles.push(handle);
+  }
   const decrypted = await decryptDelegatedHandles(delegateContext, {
-    encryptedValues: [handle.handle],
+    encryptedValues: storedHandles.map((handle) => handle.handle),
     delegatorAddress,
     durationDays: options.durationDays,
     onProgress: options.onProgress,
@@ -93,7 +110,7 @@ export const delegatedUserDecrypt = async (
 
   return {
     ...decrypted,
-    handles: [handle],
+    handles: storedHandles,
     delegatorAddress,
     delegateAddress: delegateContext.account.address,
     delegation,
