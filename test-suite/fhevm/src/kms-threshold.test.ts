@@ -114,11 +114,15 @@ describe("buildKmsThresholdOverride", () => {
     expect(() => buildKmsThresholdOverride(resolveKmsTopology(undefined), RENDER_OPTS)).toThrow();
   });
 
-  test("each core gets per-party env overrides and mounts the one shared config", () => {
+  test("each core runs the binary directly (no shell), with config + creds from env", () => {
     const core = buildKmsThresholdOverride(fourParty, RENDER_OPTS).services["kms-core-3"];
-    expect((core.environment as Record<string, string>).KMS_CORE__THRESHOLD__MY_ID).toBe("3");
+    const env = core.environment as Record<string, string>;
+    expect(env.KMS_CORE__THRESHOLD__MY_ID).toBe("3");
+    expect(env.AWS_ACCESS_KEY_ID).toBe("fhevm-access-key");
     expect(JSON.stringify(core.volumes)).toContain(KMS_THRESHOLD_CONFIG_NAME);
     expect(JSON.stringify(core.entrypoint)).toContain(KMS_THRESHOLD_CONFIG_NAME);
+    expect(JSON.stringify(core.entrypoint)).not.toContain("/bin/sh");
+    expect(JSON.stringify(core.volumes)).not.toContain("minio_secrets");
   });
 });
 
@@ -150,6 +154,7 @@ describe("threshold core config", () => {
     expect(env.KMS_CORE__THRESHOLD__LISTEN_PORT).toBe("50002");
     expect(env.KMS_CORE__PUBLIC_VAULT__STORAGE__S3__PREFIX).toBe("PUB-p2");
     expect(env.KMS_CORE__PRIVATE_VAULT__STORAGE__S3__PREFIX).toBe("PRIV-p2");
+    expect(env.AWS_ACCESS_KEY_ID).toBe("fhevm-access-key");
   });
 });
 

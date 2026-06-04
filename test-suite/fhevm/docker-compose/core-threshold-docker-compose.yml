@@ -2,12 +2,8 @@
 #
 # All services (kms-core-gen-keys + N cores + kms-core-init) are GENERATED into
 # the compose override at .fhevm/runtime/compose/core-threshold.yml by
-# buildKmsThresholdOverride() — this base template only declares the external
-# minio-secrets volume the generated services mount. Used only by the
-# `four-party-threshold-kms` (and similar) scenarios; the centralized path uses
-# core-docker-compose.yml instead.
+# buildKmsThresholdOverride(). The cores and gen-keys receive their minio/AWS
+# credentials via the environment (KMS_CORE__* + AWS_*), so no shared secrets
+# volume is mounted. Used only by the `four-party-threshold-kms` (and similar)
+# scenarios; the centralized path uses core-docker-compose.yml instead.
 services: {}
-
-volumes:
-  fhevm_minio_secrets:
-    external: true

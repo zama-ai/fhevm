@@ -37,14 +37,19 @@ export type KmsRenderOptions = {
   s3Endpoint: string; // e.g. http://minio:9000
   s3Bucket: string; // e.g. kms-public
   s3Region: string; // e.g. eu-west-1
+  s3AccessKey: string; // minio access key (shared with the rest of the stack)
+  s3SecretKey: string; // minio secret key
 };
 
-/** Render options from the resolved core image version + fhevm minio defaults. */
+/** Render options from the resolved core image version + fhevm minio defaults
+ * (the static test credentials from templates/env/.env.minio). */
 export const kmsRenderOptionsFor = (coreVersion: string): KmsRenderOptions => ({
   coreImage: `ghcr.io/zama-ai/kms/core-service:${coreVersion}`,
   s3Endpoint: "http://minio:9000",
   s3Bucket: "kms-public",
   s3Region: "eu-west-1",
+  s3AccessKey: "fhevm-access-key",
+  s3SecretKey: "fhevm-access-secret-key",
 });
 
 /**
@@ -113,6 +118,10 @@ export const thresholdCoreEnv = (
   KMS_CORE__PRIVATE_VAULT__STORAGE__S3__PREFIX: `PRIV-p${partyId}`,
   KMS_CORE__BACKUP_VAULT__STORAGE__FILE__PREFIX: `BACKUP-p${partyId}`,
   KMS_CORE__TELEMETRY__TRACING_SERVICE_NAME: `kms-threshold-${partyId}`,
+  // The core's AWS SDK reads the minio creds straight from the environment — no
+  // need to shell out and `cat` them from the shared secrets volume at startup.
+  AWS_ACCESS_KEY_ID: opts.s3AccessKey,
+  AWS_SECRET_ACCESS_KEY: opts.s3SecretKey,
 });
 
 /** Shell for the signing-key setup container (loops over all parties). Generates ONLY each
@@ -120,12 +129,10 @@ export const thresholdCoreEnv = (
  * threshold compose. The FHE key shares and CRS are NOT pre-generated here; they come from the
  * real on-chain DKG (keygen/crsgen). `--num-parties` must match the cluster size (the CLI rejects
  * a signing-key-party-id greater than num-parties; it also defaults to 4). No TLS certs are needed
- * (mTLS disabled), so nothing is fetched back locally. */
+ * (mTLS disabled), so nothing is fetched back locally. AWS creds come from the container env. */
 const genKeysCommand = (topology: ResolvedKmsTopology, opts: KmsRenderOptions) =>
   [
     "set -e",
-    "export AWS_ACCESS_KEY_ID=$$(cat /minio_secrets/access_key)",
-    "export AWS_SECRET_ACCESS_KEY=$$(cat /minio_secrets/secret_key)",
     `echo "=== generating signing keys for ${topology.parties} parties ==="`,
     `for i in $(seq 1 ${topology.parties}); do \\
   kms-gen-keys --aws-region ${opts.s3Region} \\
@@ -136,11 +143,6 @@ const genKeysCommand = (topology: ResolvedKmsTopology, opts: KmsRenderOptions) =
     threshold --signing-key-party-id $$i --tls-subject kms-core-$$i --tls-wildcard --num-parties ${topology.parties}; \\
 done`,
   ].join("\n");
-
-/** Entrypoint shell for a core: export AWS creds from the minio-secrets volume, then run kms-server
- * against the shared threshold config (per-party values come from KMS_CORE__* env). */
-const coreEntrypoint = () =>
-  `export AWS_ACCESS_KEY_ID=$$(cat /minio_secrets/access_key); export AWS_SECRET_ACCESS_KEY=$$(cat /minio_secrets/secret_key); exec kms-server --config-file config/${KMS_THRESHOLD_CONFIG_NAME}`;
 
 /**
  * Builds the threshold cluster compose doc: 1 gen-keys container + N cores +
@@ -161,7 +163,7 @@ export const buildKmsThresholdOverride = (
     container_name: "kms-core-gen-keys",
     image: opts.coreImage,
     entrypoint: ["/bin/sh", "-c", genKeysCommand(topology, opts)],
-    volumes: ["fhevm_minio_secrets:/minio_secrets"],
+    environment: { AWS_ACCESS_KEY_ID: opts.s3AccessKey, AWS_SECRET_ACCESS_KEY: opts.s3SecretKey },
   };
 
   const sharedConfigMount = `${path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_CONFIG_NAME)}:/app/kms/core/service/config/${KMS_THRESHOLD_CONFIG_NAME}`;
@@ -171,10 +173,12 @@ export const buildKmsThresholdOverride = (
     services[name] = {
       container_name: name,
       image: opts.coreImage,
-      entrypoint: ["/bin/sh", "-c", coreEntrypoint()],
-      // Per-party identity/ports/prefixes override the template's placeholders.
+      // No shell wrapper: per-party config comes from KMS_CORE__* env and AWS creds
+      // come from the environment, so the core binary runs directly.
+      entrypoint: ["kms-server", "--config-file", `config/${KMS_THRESHOLD_CONFIG_NAME}`],
+      // Per-party identity/ports/prefixes (override the template placeholders) + AWS creds.
       environment: thresholdCoreEnv(partyId, topology, opts),
-      volumes: [sharedConfigMount, "fhevm_minio_secrets:/minio_secrets"],
+      volumes: [sharedConfigMount],
       ports: [
         `${kmsServicePort(partyId)}:${kmsServicePort(partyId)}`,
         `${kmsMpcPort(partyId)}:${kmsMpcPort(partyId)}`,
@@ -210,8 +214,5 @@ export const buildKmsThresholdOverride = (
     ),
   };
 
-  return {
-    services,
-    volumes: { fhevm_minio_secrets: { external: true } },
-  } as ComposeDoc;
+  return { services } as ComposeDoc;
 };
