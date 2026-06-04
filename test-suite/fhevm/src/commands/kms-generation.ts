@@ -4,12 +4,13 @@
  * It turns the implicit "the boot didn't fail" signal into named, on-chain assertions about the
  * KMSGeneration flow, then proves the threshold property is real by varying the live-party count
  * around the 2t+1 quorum. (KMS-context guarantees — epoch activation, cross-context replay,
- * resharing — are deferred to RFC-005 and are not modelled here.)
+ * resharing — are deferred to RFC-005 and are not modeled here.)
  */
 import { PreflightError } from "../errors";
-import { discoverKmsSigners, kmsConnectorPrefix, probeBootstrap, waitForContainer } from "../flow/readiness";
+import { castCall, kmsConnectorPrefix, probeBootstrap, resolveKmsGenerationTarget, waitForContainer } from "../flow/readiness";
 import { kmsCoreName, reconstructionThreshold } from "../generate/kms-core";
 import type { State } from "../types";
+import { withHexPrefix } from "../utils/fs";
 import { run } from "../utils/process";
 
 /** Runs a user-decryption probe; resolves true when it decrypts, false when it does not. */
@@ -44,7 +45,7 @@ const setRunning = async (containers: string[], action: "start" | "stop") => {
 
 /** Asserts the on-chain KMSGeneration state and returns the verified topology numbers. */
 export const auditKmsGeneration = async (state: State) => {
-  const { parties, threshold } = state.scenario.kms;
+  const { parties, threshold, fheParams } = state.scenario.kms;
   if (parties !== 3 * threshold + 1) {
     throw new PreflightError(`kms-generation: parties ${parties} must equal 3*threshold+1 (threshold=${threshold})`);
   }
@@ -56,20 +57,42 @@ export const auditKmsGeneration = async (state: State) => {
       "kms-generation: activeKeyId/activeCrsId are not set on chain — secure threshold keygen/crsgen did not finalize",
     );
   }
-  // Each party must have published a verifying address derived from the on-chain signing-key handle.
-  const { signers } = await discoverKmsSigners(parties);
-  const distinct = new Set(signers.map((address) => address.toLowerCase()));
-  if (distinct.size !== parties) {
+
+  const { rpcUrl, kmsGenerationAddress, configAddress, where } = resolveKmsGenerationTarget(state);
+  if (!configAddress) {
     throw new PreflightError(
-      `kms-generation: expected ${parties} distinct registered KMS signers, found ${distinct.size} (${[...distinct].join(", ")})`,
+      `kms-generation: no ProtocolConfig/GatewayConfig address on ${where} — cannot read the registered KMS context`,
     );
   }
+
+  // KMSGeneration must have run with the params type the scenario generated (Test=1, Default=0):
+  // proves the on-chain keygen/crsgen used the intended FHE parameters, not just that ids exist.
+  const expectedParams = fheParams === "Test" ? "1" : "0";
+  const keyParams = await castCall(rpcUrl, kmsGenerationAddress, "getKeyParamsType(uint256)(uint8)", withHexPrefix(probe.actualFheKeyId));
+  const crsParams = await castCall(rpcUrl, kmsGenerationAddress, "getCrsParamsType(uint256)(uint8)", withHexPrefix(probe.actualCrsKeyId));
+  if (keyParams !== expectedParams || crsParams !== expectedParams) {
+    throw new PreflightError(
+      `kms-generation: on-chain params type mismatch — expected ${fheParams}(${expectedParams}), got key=${keyParams} crs=${crsParams}`,
+    );
+  }
+
+  // ProtocolConfig must register exactly one distinct signer per party (the verifying addresses
+  // derived from the threshold DKG). Reading getKmsSigners() on chain is the authoritative
+  // registration check — unlike scraping KMS-core logs, it confirms the deploy wired N signers.
+  const onChainSigners = (await castCall(rpcUrl, configAddress, "getKmsSigners()(address[])")).match(/0x[0-9a-fA-F]{40}/g) ?? [];
+  const distinct = new Set(onChainSigners.map((address) => address.toLowerCase()));
+  if (distinct.size !== parties) {
+    throw new PreflightError(
+      `kms-generation: ProtocolConfig registered ${distinct.size} distinct KMS signer(s), expected ${parties} (${[...distinct].join(", ")})`,
+    );
+  }
+
   const reconstruct = reconstructionThreshold(threshold);
   console.log(
-    `[kms-generation] on-chain audit OK: activeKeyId=0x${probe.actualFheKeyId} activeCrsId=0x${probe.actualCrsKeyId}`,
+    `[kms-generation] on-chain audit OK: activeKeyId=0x${probe.actualFheKeyId} activeCrsId=0x${probe.actualCrsKeyId} paramsType=${fheParams}(${expectedParams})`,
   );
   console.log(
-    `[kms-generation] ${parties} parties, t=${threshold}, reconstruction=${reconstruct} (2t+1), ${distinct.size} distinct registered signers`,
+    `[kms-generation] ${parties} parties, t=${threshold}, reconstruction=${reconstruct} (2t+1), ${distinct.size} signers registered in ProtocolConfig on ${where}`,
   );
   return { parties, threshold, reconstruct };
 };

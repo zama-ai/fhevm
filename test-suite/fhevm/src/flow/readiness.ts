@@ -329,34 +329,49 @@ export const castBool = async (rpcUrl: string, to: string, signature: string, ..
   }
 };
 
+/** Calls a contract view through cast and returns its decoded stdout (per the signature's return type). */
+export const castCall = async (rpcUrl: string, to: string, signature: string, ...args: string[]) => {
+  const result = await run(["cast", "call", to, signature, ...args, "--rpc-url", hostReachableRpcUrl(rpcUrl)]);
+  return result.stdout.trim();
+};
+
+/**
+ * Resolves the chain the KMSGeneration flow is wired to (host on v0.13+, else gateway) and the
+ * contract addresses on it. Throws PreflightError when a required endpoint/address is missing;
+ * `configAddress` (ProtocolConfig / GatewayConfig) is optional on pre-v0.13 bundles.
+ */
+export const resolveKmsGenerationTarget = (state: State) => {
+  const discovery = state.discovery!;
+  const useHostKms = bootstrapUsesHostKmsGeneration(state);
+  const defaultHostKey = defaultHostChainKey(state.scenario.hostChains);
+  const where = useHostKms ? `host chain "${defaultHostKey}"` : "gateway";
+  const rawRpcUrl = useHostKms ? discovery.endpoints.hosts[defaultHostKey]?.http : discovery.endpoints.gateway.http;
+  if (!rawRpcUrl) {
+    throw new PreflightError(`Missing ${where} RPC endpoint for the KMSGeneration probe`);
+  }
+  const kmsGenerationAddress = useHostKms
+    ? discovery.hosts[defaultHostKey]?.KMS_GENERATION_CONTRACT_ADDRESS
+    : discovery.gateway.KMS_GENERATION_ADDRESS;
+  if (!kmsGenerationAddress) {
+    throw new PreflightError(`Missing ${where} KMSGeneration contract address for the KMSGeneration probe`);
+  }
+  const configAddress = useHostKms
+    ? discovery.hosts[defaultHostKey]?.PROTOCOL_CONFIG_CONTRACT_ADDRESS
+    : discovery.gateway.GATEWAY_CONFIG_ADDRESS;
+  return {
+    rpcUrl: hostReachableRpcUrl(rawRpcUrl),
+    kmsGenerationAddress: withHexPrefix(kmsGenerationAddress),
+    configAddress: configAddress ? withHexPrefix(configAddress) : undefined,
+    where,
+  };
+};
+
 /** Probes whether bootstrap produced stable key ids and published materials. */
 export const probeBootstrap = async (state: State) => {
   const discovery = state.discovery!;
   const keyPrefix = discovery.minioKeyPrefix ?? "PUB";
   try {
-    const defaultHostKey = defaultHostChainKey(state.scenario.hostChains);
-    const useHostKms = bootstrapUsesHostKmsGeneration(state);
-    const rawRpcUrl = useHostKms
-      ? discovery.endpoints.hosts[defaultHostKey]?.http
-      : discovery.endpoints.gateway.http;
-    const contractAddress = useHostKms
-      ? discovery.hosts[defaultHostKey]?.KMS_GENERATION_CONTRACT_ADDRESS
-      : discovery.gateway.KMS_GENERATION_ADDRESS;
-    if (!rawRpcUrl) {
-      throw new PreflightError(
-        useHostKms
-          ? `Missing host RPC endpoint for chain "${defaultHostKey}" during bootstrap probe`
-          : "Missing gateway RPC endpoint for bootstrap probe",
-      );
-    }
-    const rpcUrl = hostReachableRpcUrl(rawRpcUrl);
-    if (!contractAddress) {
-      throw new PreflightError(
-        useHostKms
-          ? `Missing host KMS_GENERATION_CONTRACT_ADDRESS for chain "${defaultHostKey}" during bootstrap probe`
-          : "Missing gateway KMS_GENERATION_ADDRESS for bootstrap probe",
-      );
-    }
+    const { rpcUrl, kmsGenerationAddress } = resolveKmsGenerationTarget(state);
     const ethCallRaw = async (data: string) => {
       const response = await fetch(rpcUrl, {
         method: "POST",
@@ -365,7 +380,7 @@ export const probeBootstrap = async (state: State) => {
           jsonrpc: "2.0",
           id: 1,
           method: "eth_call",
-          params: [{ to: withHexPrefix(contractAddress), data }, "latest"],
+          params: [{ to: kmsGenerationAddress, data }, "latest"],
         }),
       });
       if (!response.ok) return 0n;
