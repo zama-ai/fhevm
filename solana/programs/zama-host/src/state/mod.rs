@@ -5,6 +5,7 @@
 //! needed to prepare CPI accounts and to verify host-owned ACL state off-chain.
 
 use anchor_lang::prelude::*;
+use solana_keccak_hasher::hashv as keccak_hashv;
 use solana_sha256_hasher::hashv;
 use solana_sysvar::slot_hashes::PodSlotHashes;
 
@@ -1043,7 +1044,7 @@ pub fn computed_binary_handle(
     let scalar_byte = [u8::from(scalar)];
     let chain_id_bytes = chain_id.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let mut result = hashv(&[
+    let mut result = keccak_hashv(&[
         COMPUTATION_DOMAIN_SEPARATOR,
         &op_byte,
         &lhs,
@@ -1094,7 +1095,7 @@ pub fn computed_bound_binary_handle(
     );
     let mut result = base_result;
     result[..21].copy_from_slice(
-        &hashv(&[
+        &keccak_hashv(&[
             b"FHE_bound_output",
             &base_result,
             &output_nonce_key,
@@ -1119,7 +1120,7 @@ pub fn computed_ternary_handle(
     let op_byte = [op.as_u8()];
     let chain_id_bytes = chain_id.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let mut result = hashv(&[
+    let mut result = keccak_hashv(&[
         COMPUTATION_DOMAIN_SEPARATOR,
         &op_byte,
         &control,
@@ -1166,7 +1167,7 @@ pub fn computed_bound_ternary_handle(
     );
     let mut result = base_result;
     result[..21].copy_from_slice(
-        &hashv(&[
+        &keccak_hashv(&[
             b"FHE_bound_ternary_output",
             &base_result,
             &output_nonce_key,
@@ -1195,7 +1196,7 @@ pub fn computed_eval_handle(
     let chain_id_bytes = chain_id.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let op_index_bytes = op_index.to_be_bytes();
-    let mut result = hashv(&[
+    let mut result = keccak_hashv(&[
         b"FHE_eval",
         &context_id,
         &op_index_bytes,
@@ -1248,7 +1249,7 @@ pub fn computed_bound_eval_handle(
     );
     let mut result = base_result;
     result[..21].copy_from_slice(
-        &hashv(&[
+        &keccak_hashv(&[
             b"FHE_bound_eval_output",
             &base_result,
             &output_nonce_key,
@@ -1273,7 +1274,7 @@ pub fn computed_trivial_handle(
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let sequence_bytes = output_nonce_sequence.to_be_bytes();
     let fhe_type_bytes = [fhe_type];
-    let mut result = hashv(&[
+    let mut result = keccak_hashv(&[
         COMPUTATION_DOMAIN_SEPARATOR,
         &[2],
         &plaintext,
@@ -1306,7 +1307,7 @@ pub fn computed_rand_seed(
     let chain_id_bytes = chain_id.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let sequence_bytes = output_nonce_sequence.to_be_bytes();
-    let hash = hashv(&[
+    let hash = keccak_hashv(&[
         RANDOM_SEED_DOMAIN_SEPARATOR,
         crate::ID.as_ref(),
         &chain_id_bytes,
@@ -1325,7 +1326,7 @@ pub fn computed_rand_seed(
 pub fn computed_rand_handle(seed: [u8; 16], fhe_type: u8, chain_id: u64) -> [u8; 32] {
     let chain_id_bytes = chain_id.to_be_bytes();
     let fhe_type_bytes = [fhe_type];
-    let mut result = hashv(&[
+    let mut result = keccak_hashv(&[
         COMPUTATION_DOMAIN_SEPARATOR,
         &[3],
         &fhe_type_bytes,
@@ -1352,7 +1353,7 @@ pub fn computed_rand_bounded_handle(
 ) -> [u8; 32] {
     let chain_id_bytes = chain_id.to_be_bytes();
     let fhe_type_bytes = [fhe_type];
-    let mut result = hashv(&[
+    let mut result = keccak_hashv(&[
         COMPUTATION_DOMAIN_SEPARATOR,
         &[4],
         &upper_bound,
@@ -1419,63 +1420,4 @@ pub fn record_allows(record: &AclRecord, subject: Pubkey) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn latest_prior_bank_hash_tolerates_skipped_slots() {
-        let entries = vec![(8, [8; 32]), (6, [6; 32]), (3, [3; 32])];
-
-        assert_eq!(
-            latest_prior_bank_hash_from_entries(10, entries.clone()),
-            Some([8; 32])
-        );
-        assert_eq!(
-            latest_prior_bank_hash_from_entries(8, entries.clone()),
-            Some([6; 32])
-        );
-        assert_eq!(latest_prior_bank_hash_from_entries(3, entries), None);
-    }
-
-    fn host_config_with(
-        chain_id: u64,
-        test_shims_enabled: bool,
-        mock_input_enabled: bool,
-    ) -> HostConfig {
-        HostConfig {
-            admin: Pubkey::default(),
-            chain_id,
-            input_verifier_authority: Pubkey::default(),
-            material_authority: Pubkey::default(),
-            test_authority: Pubkey::default(),
-            paused: false,
-            mock_input_enabled,
-            test_shims_enabled,
-            grant_deny_list_enabled: false,
-            updated_slot: 0,
-            bump: 0,
-        }
-    }
-
-    #[test]
-    fn zero_birth_entropy_requires_poc_chain_and_test_shims() {
-        // Local PoC chain with the shim flag: relaxation allowed.
-        assert!(host_config_with(SOLANA_POC_CHAIN_ID, true, false).zero_birth_entropy_allowed());
-        // Local PoC chain without the shim flag: fails closed (drives the
-        // PreviousBankHashUnavailable negative test).
-        assert!(!host_config_with(SOLANA_POC_CHAIN_ID, false, false).zero_birth_entropy_allowed());
-        // A deployed chain can NEVER zero birth entropy, even with the shim flag
-        // toggled on by an admin — this is the security boundary.
-        assert!(!host_config_with(101, true, false).zero_birth_entropy_allowed());
-        assert!(!host_config_with(1, true, false).zero_birth_entropy_allowed());
-    }
-
-    #[test]
-    fn mock_input_requires_poc_chain() {
-        assert!(host_config_with(SOLANA_POC_CHAIN_ID, false, true).mock_input_allowed());
-        assert!(!host_config_with(SOLANA_POC_CHAIN_ID, false, false).mock_input_allowed());
-        // A deployed chain can never run the mock input bind path, even if an
-        // admin sets mock_input_enabled.
-        assert!(!host_config_with(101, false, true).mock_input_allowed());
-    }
-}
+mod tests;

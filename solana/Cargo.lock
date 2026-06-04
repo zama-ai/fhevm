@@ -4936,6 +4936,7 @@ dependencies = [
  "anchor-lang",
  "solana-ed25519-instruction",
  "solana-instructions-sysvar",
+ "solana-keccak-hasher",
  "solana-sha256-hasher",
  "solana-sysvar",
 ]
