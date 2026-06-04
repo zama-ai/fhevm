@@ -42,6 +42,12 @@ pub struct InitializeHostConfigArgs {
     pub chain_id: u64,
     /// Authority used by mock and signed encrypted-input bind paths.
     pub input_verifier_authority: Pubkey,
+    /// EVM gateway chain id used in the coprocessor/KMS EIP-712 domain separators.
+    pub gateway_chain_id: u64,
+    /// EVM `InputVerification` contract address (EIP-712 verifying contract).
+    pub input_verification_contract: [u8; 20],
+    /// Authorized coprocessor EVM signer for input attestations (v0: single signer).
+    pub coprocessor_signer: [u8; 20],
     /// Authority allowed to commit ciphertext material readiness.
     pub material_authority: Pubkey,
     /// Authority allowed to call `test_emit_*` event shims.

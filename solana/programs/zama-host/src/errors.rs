@@ -54,6 +54,12 @@ pub enum ZamaHostError {
     /// The selected input handle does not match the requested handle.
     #[msg("input proof selected handle does not match")]
     InvalidInputHandle,
+    /// The coprocessor EIP-712 input attestation failed secp256k1 threshold verification.
+    #[msg("coprocessor input attestation is invalid")]
+    InvalidInputAttestation,
+    /// The gateway verifier config (coprocessor signer / verifying contract) is unset.
+    #[msg("gateway verifier config is not set")]
+    GatewayVerifierConfigUnset,
     /// The input handle version byte is unsupported.
     #[msg("input handle version is unsupported")]
     InvalidInputHandleVersion,

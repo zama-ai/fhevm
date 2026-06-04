@@ -40,7 +40,7 @@ pub use state::*;
 
 use instructions::*;
 
-declare_id!("7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE");
+declare_id!("6rQaBev7B67LrQW7nJPBhJYt7rHSK38DWuz1LdiQRFcf");
 
 /// Anchor entrypoint module generated into the ZamaHost IDL.
 #[program]
@@ -253,6 +253,45 @@ pub mod zama_host {
             ctx,
             input_handle,
             proof,
+            output_nonce_key,
+            output_nonce_sequence,
+            output_acl_domain_key,
+            output_app_account,
+            output_encrypted_value_label,
+            output_subjects,
+            output_public_decrypt,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn verify_coprocessor_input_and_bind(
+        ctx: Context<VerifyCoprocessorInputAndBind>,
+        input_handle: [u8; 32],
+        ct_handles: Vec<[u8; 32]>,
+        handle_index: u8,
+        user_address: [u8; 32],
+        contract_address: [u8; 32],
+        contract_chain_id: u64,
+        extra_data: Vec<u8>,
+        signatures: Vec<[u8; 65]>,
+        output_nonce_key: [u8; 32],
+        output_nonce_sequence: u64,
+        output_acl_domain_key: Pubkey,
+        output_app_account: Pubkey,
+        output_encrypted_value_label: [u8; 32],
+        output_subjects: Vec<AclSubjectEntry>,
+        output_public_decrypt: bool,
+    ) -> Result<()> {
+        instructions::verify_coprocessor_input_and_bind(
+            ctx,
+            input_handle,
+            ct_handles,
+            handle_index,
+            user_address,
+            contract_address,
+            contract_chain_id,
+            extra_data,
+            signatures,
             output_nonce_key,
             output_nonce_sequence,
             output_acl_domain_key,

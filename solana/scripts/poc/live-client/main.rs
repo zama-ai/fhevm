@@ -59,6 +59,9 @@ fn ensure_host_config(
             args: zama_host::InitializeHostConfigArgs {
                 chain_id: zama_host::SOLANA_POC_CHAIN_ID,
                 input_verifier_authority: payer.pubkey(),
+                gateway_chain_id: 0,
+                input_verification_contract: [0u8; 20],
+                coprocessor_signer: [0u8; 20],
                 material_authority: payer.pubkey(),
                 test_authority: payer.pubkey(),
                 mock_input_enabled: true,

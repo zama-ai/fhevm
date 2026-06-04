@@ -1756,6 +1756,9 @@ fn mollusk_host_config_initialize_creates_state_and_rejects_zero_profile_fields(
     let args = host::InitializeHostConfigArgs {
         chain_id: host::SOLANA_POC_CHAIN_ID,
         input_verifier_authority,
+        gateway_chain_id: 0,
+        input_verification_contract: [0u8; 20],
+        coprocessor_signer: [0u8; 20],
         material_authority,
         test_authority,
         mock_input_enabled: false,
@@ -1797,6 +1800,9 @@ fn mollusk_host_config_initialize_creates_state_and_rejects_zero_profile_fields(
         let mut args = host::InitializeHostConfigArgs {
             chain_id: host::SOLANA_POC_CHAIN_ID,
             input_verifier_authority,
+            gateway_chain_id: 0,
+            input_verification_contract: [0u8; 20],
+            coprocessor_signer: [0u8; 20],
             material_authority,
             test_authority,
             mock_input_enabled: true,
@@ -3989,6 +3995,9 @@ fn host_config_account_with_options(
                 admin,
                 chain_id: host::SOLANA_POC_CHAIN_ID,
                 input_verifier_authority,
+                gateway_chain_id: 0,
+                input_verification_contract: [0u8; 20],
+                coprocessor_signer: [0u8; 20],
                 material_authority: admin,
                 test_authority: admin,
                 paused: false,
@@ -5184,6 +5193,254 @@ fn assert_acl_allowed_transaction_event(
     assert_eq!(events[0].version, host::EVENT_VERSION);
     assert_eq!(events[0].handle, handle);
     assert_eq!(events[0].subject, subject.to_bytes());
+}
+
+// --- Coprocessor EIP-712 input-bind (secp256k1_recover) — #1494 Phase 3 ---
+
+const GATEWAY_CHAIN_ID: u64 = 31337;
+const INPUT_VERIFICATION_CONTRACT: [u8; 20] = [0xCDu8; 20];
+
+/// Recovers the EVM address (keccak(pubkey)[12..]) for a coprocessor signing key,
+/// matching the on-chain `secp256k1_recover` derivation.
+fn evm_address_of(key: &k256::ecdsa::SigningKey) -> [u8; 20] {
+    let encoded = key.verifying_key().to_encoded_point(false); // 0x04 || X || Y
+    let hash = solana_program::keccak::hash(&encoded.as_bytes()[1..]).to_bytes();
+    let mut address = [0u8; 20];
+    address.copy_from_slice(&hash[12..]);
+    address
+}
+
+/// Produces a 65-byte `[r || s || v]` recoverable signature over an EIP-712 digest.
+fn sign_eip712(key: &k256::ecdsa::SigningKey, digest: &[u8; 32]) -> [u8; 65] {
+    let (signature, recovery_id) = key.sign_prehash_recoverable(digest).unwrap();
+    let mut out = [0u8; 65];
+    out[..64].copy_from_slice(&signature.to_bytes());
+    out[64] = 27 + recovery_id.to_byte();
+    out
+}
+
+/// Host config seeded with a coprocessor EIP-712 verifier (single signer, threshold 1).
+fn host_config_account_with_verifier(
+    admin: Pubkey,
+    coprocessor_signer: [u8; 20],
+) -> (Pubkey, Account) {
+    let (host_config, bump) = host::host_config_address();
+    (
+        host_config,
+        Account {
+            lamports: 1_000_000_000,
+            data: serialized_account(HostConfig {
+                admin,
+                chain_id: host::SOLANA_POC_CHAIN_ID,
+                input_verifier_authority: admin,
+                gateway_chain_id: GATEWAY_CHAIN_ID,
+                input_verification_contract: INPUT_VERIFICATION_CONTRACT,
+                coprocessor_signer,
+                material_authority: admin,
+                test_authority: admin,
+                paused: false,
+                mock_input_enabled: false,
+                test_shims_enabled: false,
+                grant_deny_list_enabled: false,
+                updated_slot: 0,
+                bump,
+            }),
+            owner: host::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn verify_coprocessor_input_and_bind_ix(
+    program_id: Pubkey,
+    payer: Pubkey,
+    host_config: Pubkey,
+    output_acl_record: Pubkey,
+    input_handle: [u8; 32],
+    ct_handles: Vec<[u8; 32]>,
+    user_address: [u8; 32],
+    contract_address: [u8; 32],
+    extra_data: Vec<u8>,
+    signatures: Vec<[u8; 65]>,
+    output_nonce_key: [u8; 32],
+    output_acl_domain_key: Pubkey,
+    output_app_account: Pubkey,
+    output_encrypted_value_label: [u8; 32],
+    output_subjects: Vec<AclSubjectEntry>,
+) -> Instruction {
+    Instruction {
+        program_id,
+        accounts: host::accounts::VerifyCoprocessorInputAndBind {
+            payer,
+            app_account_authority: output_app_account,
+            host_config,
+            output_acl_record,
+            system_program: system_program::ID,
+            event_authority: event_authority(program_id),
+            program: program_id,
+        }
+        .to_account_metas(None),
+        data: host::instruction::VerifyCoprocessorInputAndBind {
+            input_handle,
+            ct_handles,
+            handle_index: 0,
+            user_address,
+            contract_address,
+            contract_chain_id: 12345,
+            extra_data,
+            signatures,
+            output_nonce_key,
+            output_nonce_sequence: 0,
+            output_acl_domain_key,
+            output_app_account,
+            output_encrypted_value_label,
+            output_subjects,
+            output_public_decrypt: false,
+        }
+        .data(),
+    }
+}
+
+/// End-to-end: a real coprocessor secp256k1 EIP-712 attestation binds the handle.
+#[test]
+fn mollusk_verify_coprocessor_input_and_bind_accepts_real_secp256k1_attestation() {
+    let program_id = host::id();
+    let authority = Pubkey::new_unique();
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
+    let (host_config, host_config_account) =
+        host_config_account_with_verifier(authority, evm_address_of(&key));
+
+    let acl_domain_key = Pubkey::new_unique();
+    let label = label("balance");
+    let nonce_key = host::acl_nonce_key(acl_domain_key, authority, label);
+    let output_acl_record = host::acl_record_address(nonce_key, 0).0;
+
+    let input_handle = input_handle_for_chain(0x01, 0, 5);
+    let ct_handles = vec![input_handle];
+    let user_address = [0x07u8; 32];
+    let contract_address = [0x08u8; 32];
+    let extra_data = vec![0x00u8];
+
+    let digest = host::eip712::typed_data_digest(
+        &host::eip712::domain_separator(
+            b"InputVerification",
+            b"1",
+            GATEWAY_CHAIN_ID,
+            &INPUT_VERIFICATION_CONTRACT,
+        ),
+        &host::eip712::ciphertext_verification_struct_hash(
+            &ct_handles,
+            &user_address,
+            &contract_address,
+            12345,
+            &extra_data,
+        ),
+    );
+    let signatures = vec![sign_eip712(&key, &digest)];
+
+    let context = transient_context(
+        authority,
+        vec![
+            (host_config, host_config_account),
+            (output_acl_record, system_account(0)),
+        ],
+    );
+    let ix = verify_coprocessor_input_and_bind_ix(
+        program_id,
+        authority,
+        host_config,
+        output_acl_record,
+        input_handle,
+        ct_handles,
+        user_address,
+        contract_address,
+        extra_data,
+        signatures,
+        nonce_key,
+        acl_domain_key,
+        authority,
+        label,
+        vec![AclSubjectEntry::user(authority)],
+    );
+
+    context.process_and_validate_instruction(&ix, &[Check::success()]);
+
+    let record = read_acl_record(&context, output_acl_record).expect("expected bound ACL record");
+    assert_eq!(record.handle, input_handle);
+    assert_eq!(record.app_account, authority);
+    assert_eq!(record.nonce_key, nonce_key);
+    assert!(!record.public_decrypt);
+}
+
+/// A signature from a key not in the configured signer set is rejected; no ACL is bound.
+#[test]
+fn mollusk_verify_coprocessor_input_and_bind_rejects_unauthorized_signer() {
+    let program_id = host::id();
+    let authority = Pubkey::new_unique();
+    let configured = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
+    let attacker = k256::ecdsa::SigningKey::from_bytes(&[0x99u8; 32].into()).unwrap();
+    let (host_config, host_config_account) =
+        host_config_account_with_verifier(authority, evm_address_of(&configured));
+
+    let acl_domain_key = Pubkey::new_unique();
+    let label = label("balance");
+    let nonce_key = host::acl_nonce_key(acl_domain_key, authority, label);
+    let output_acl_record = host::acl_record_address(nonce_key, 0).0;
+
+    let input_handle = input_handle_for_chain(0x01, 0, 5);
+    let ct_handles = vec![input_handle];
+    let user_address = [0x07u8; 32];
+    let contract_address = [0x08u8; 32];
+    let extra_data = vec![0x00u8];
+
+    let digest = host::eip712::typed_data_digest(
+        &host::eip712::domain_separator(
+            b"InputVerification",
+            b"1",
+            GATEWAY_CHAIN_ID,
+            &INPUT_VERIFICATION_CONTRACT,
+        ),
+        &host::eip712::ciphertext_verification_struct_hash(
+            &ct_handles,
+            &user_address,
+            &contract_address,
+            12345,
+            &extra_data,
+        ),
+    );
+    let signatures = vec![sign_eip712(&attacker, &digest)];
+
+    let context = transient_context(
+        authority,
+        vec![
+            (host_config, host_config_account),
+            (output_acl_record, system_account(0)),
+        ],
+    );
+    let ix = verify_coprocessor_input_and_bind_ix(
+        program_id,
+        authority,
+        host_config,
+        output_acl_record,
+        input_handle,
+        ct_handles,
+        user_address,
+        contract_address,
+        extra_data,
+        signatures,
+        nonce_key,
+        acl_domain_key,
+        authority,
+        label,
+        vec![AclSubjectEntry::user(authority)],
+    );
+
+    let result = context.process_instruction(&ix);
+
+    assert!(result.raw_result.is_err());
+    assert!(read_acl_record(&context, output_acl_record).is_none());
 }
 
 fn amount_plaintext(amount: u64) -> [u8; 32] {

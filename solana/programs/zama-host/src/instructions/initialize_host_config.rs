@@ -45,6 +45,9 @@ pub fn initialize_host_config(
     config.admin = ctx.accounts.admin.key();
     config.chain_id = args.chain_id;
     config.input_verifier_authority = args.input_verifier_authority;
+    config.gateway_chain_id = args.gateway_chain_id;
+    config.input_verification_contract = args.input_verification_contract;
+    config.coprocessor_signer = args.coprocessor_signer;
     config.material_authority = args.material_authority;
     config.test_authority = args.test_authority;
     config.paused = false;

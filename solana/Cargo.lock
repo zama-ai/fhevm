@@ -4952,6 +4952,7 @@ dependencies = [
  "base64 0.22.1",
  "confidential-token",
  "confidential-token-receiver",
+ "k256",
  "mollusk-svm",
  "mollusk-svm-programs-token",
  "solana-compute-budget-interface",

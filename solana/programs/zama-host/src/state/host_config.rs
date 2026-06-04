@@ -15,6 +15,14 @@ pub struct HostConfig {
     pub chain_id: u64,
     /// Configured authority for input verification paths.
     pub input_verifier_authority: Pubkey,
+    /// EVM gateway chain id used in the coprocessor/KMS EIP-712 domain separators.
+    pub gateway_chain_id: u64,
+    /// EVM `InputVerification` contract address: the EIP-712 verifying contract for
+    /// coprocessor `CiphertextVerification` input attestations.
+    pub input_verification_contract: [u8; 20],
+    /// Authorized coprocessor EVM signer for input attestations (v0: single signer,
+    /// threshold 1).
+    pub coprocessor_signer: [u8; 20],
     /// Configured authority for material-commitment paths.
     pub material_authority: Pubkey,
     /// Configured signer for `test_emit_*` shims.
@@ -34,7 +42,7 @@ pub struct HostConfig {
 }
 
 impl HostConfig {
-    pub const SPACE: usize = 32 + 8 + 32 + 32 + 32 + 1 + 1 + 1 + 1 + 8 + 1;
+    pub const SPACE: usize = 32 + 8 + 32 + 8 + 20 + 20 + 32 + 32 + 1 + 1 + 1 + 1 + 8 + 1;
 
     /// True only for the local PoC sentinel chain id.
     ///

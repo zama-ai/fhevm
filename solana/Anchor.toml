@@ -6,9 +6,9 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-confidential_token = "5c9FeFEgjdwZJ5kasqUrHbijgFWXVzNoumYWsKvvMUt9"
-confidential_token_receiver = "8NX5n69T6uLxTS8kgp1LFwfC3XmoYcXDskkxFTt9tGyG"
-zama_host = "7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE"
+confidential_token = "4Pw6ErxDpRJej1C39tCeEdB67TBjqshHAQUtB5t3qv4G"
+confidential_token_receiver = "AqDCpQLQQgLLHyce1egJ9oDjLAbFSC5hPaSssxZvaG8D"
+zama_host = "6rQaBev7B67LrQW7nJPBhJYt7rHSK38DWuz1LdiQRFcf"
 
 [provider]
 cluster = "localnet"
