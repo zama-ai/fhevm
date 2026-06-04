@@ -116,7 +116,7 @@ Pick the flow for your situation; the table below is the per-task reference.
   `task:prepareDeployProtocolConfigFromMigration` / `task:prepareDeployKMSGenerationFromMigration` → DAO executes.
 - **Upgrade one contract** → `task:prepareUpgrade<Contract>` → DAO executes (or `task:upgrade<Contract>` locally).
 - **Verify on the block explorer** → `task:verifyCanonicalHost` / `task:verifySecondaryHost`.
-- **Audit & hand off** → `task:exportCanonicalProtocolConfig` writes a hashed snapshot for the DAO, then
+- **Audit & hand off** → `task:exportCanonicalProtocolConfig` writes a snapshot for the DAO, then
   `task:transferHostOwnership` → `task:acceptHostOwnership`.
 
 | Task | Role | Standalone? | What it does |
@@ -183,10 +183,10 @@ npx hardhat task:exportCanonicalProtocolConfig \
   --out canonical-protocol-config-snapshot.json
 ```
 
-This writes the canonical KMS context at a pinned block, plus a `hash` over the chain id,
-ProtocolConfig address, context id, KMS nodes, and thresholds. Before accepting
-secondary-host ownership, DAO signers re-run the export at the same `blockNumber` and confirm
-the `hash` matches the deployed secondary's context.
+This writes the canonical KMS context (chain id, block number, ProtocolConfig address, context id,
+KMS nodes, thresholds) at a pinned block. Before accepting secondary-host ownership, DAO signers
+re-run the export at the same `blockNumber` and diff the snapshot against the deployed secondary's
+context.
 
 ### Ownership hand-off
 

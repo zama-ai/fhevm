@@ -8,7 +8,6 @@ import path from 'path';
 
 import {
   type SecondaryDeployArgs,
-  computeCanonicalSnapshotHash,
   mirrorProtocolConfigFromCanonical,
   readCanonicalSnapshot,
 } from './protocolConfigMirror';
@@ -573,12 +572,12 @@ task(
     );
   });
 
-// Reads the canonical ProtocolConfig context at a pinned block and writes a hashed JSON snapshot,
-// without deploying anything. The deployer pins the block; DAO signers re-run this at the same block
-// and diff the hash before accepting secondary-host ownership.
+// Reads the canonical ProtocolConfig context at a pinned block and writes a JSON snapshot, without
+// deploying anything. DAO signers re-run this at the same block and diff the snapshot against
+// canonical before accepting secondary-host ownership.
 task(
   'task:exportCanonicalProtocolConfig',
-  'Exports the canonical ProtocolConfig KMS context to a hashed JSON snapshot for DAO review.',
+  'Exports the canonical ProtocolConfig KMS context to a JSON snapshot for DAO review.',
 )
   .addParam(
     'canonicalRpcUrl',
@@ -594,12 +593,15 @@ task(
   )
   .addOptionalParam('out', 'Path to write the snapshot JSON.', 'canonical-protocol-config-snapshot.json', types.string)
   .setAction(async function (
-    { canonicalRpcUrl, canonicalProtocolConfigAddress, out }: SecondaryDeployArgs & { out: string },
+    {
+      canonicalRpcUrl,
+      canonicalProtocolConfigAddress,
+      out,
+    }: { canonicalRpcUrl: string; canonicalProtocolConfigAddress: string; out: string },
     hre,
   ) {
     const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
     const snapshot = await readCanonicalSnapshot(hre, { canonicalProvider, canonicalProtocolConfigAddress });
-    const hash = computeCanonicalSnapshotHash(canonicalProtocolConfigAddress, snapshot);
 
     const artifact = {
       canonicalChainId: snapshot.canonicalChainId,
@@ -608,14 +610,13 @@ task(
       currentKmsContextId: snapshot.currentContextId,
       kmsNodes: snapshot.kmsNodes,
       thresholds: snapshot.thresholds,
-      hash,
     };
     fs.writeFileSync(
       out,
       JSON.stringify(artifact, (_, value) => (typeof value === 'bigint' ? value.toString() : value), 2),
     );
     console.log(
-      `Canonical ProtocolConfig snapshot written to ${out}: chain ${snapshot.canonicalChainId}, block ${snapshot.canonicalBlockTag}, context ${snapshot.currentContextId}, ${snapshot.kmsNodes.length} KMS nodes.\nSnapshot hash: ${hash}`,
+      `Canonical ProtocolConfig snapshot written to ${out}: chain ${snapshot.canonicalChainId}, block ${snapshot.canonicalBlockTag}, context ${snapshot.currentContextId}, ${snapshot.kmsNodes.length} KMS nodes.`,
     );
     return artifact;
   });

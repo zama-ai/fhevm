@@ -1,4 +1,4 @@
-import { AbiCoder, type Provider, keccak256 } from 'ethers';
+import type { Provider } from 'ethers';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
 import type { ProtocolConfig } from '../types';
@@ -97,33 +97,6 @@ export async function readCanonicalSnapshot(
   const thresholds: KmsThresholds = { publicDecryption, userDecryption, kmsGen, mpc };
 
   return { currentContextId, kmsNodes, thresholds, canonicalChainId, canonicalBlockTag };
-}
-
-// Deterministic digest of the seeded context. Re-running the export at the same block reproduces it,
-// so DAO signers can diff the artifact against canonical before accepting secondary-host ownership.
-export function computeCanonicalSnapshotHash(protocolConfigAddress: string, snapshot: CanonicalSnapshot): string {
-  const encoded = AbiCoder.defaultAbiCoder().encode(
-    [
-      'uint256',
-      'address',
-      'uint256',
-      'tuple(address,address,string,string)[]',
-      'tuple(uint256,uint256,uint256,uint256)',
-    ],
-    [
-      snapshot.canonicalChainId,
-      protocolConfigAddress,
-      snapshot.currentContextId,
-      snapshot.kmsNodes.map((n) => [n.txSenderAddress, n.signerAddress, n.ipAddress, n.storageUrl]),
-      [
-        snapshot.thresholds.publicDecryption,
-        snapshot.thresholds.userDecryption,
-        snapshot.thresholds.kmsGen,
-        snapshot.thresholds.mpc,
-      ],
-    ],
-  );
-  return keccak256(encoded);
 }
 
 // Upgrades the secondary ProtocolConfig proxy and initializes it from the canonical snapshot. Reuses

@@ -1,11 +1,7 @@
 import { expect } from 'chai';
 import hre, { ethers, run } from 'hardhat';
 
-import {
-  computeCanonicalSnapshotHash,
-  mirrorProtocolConfigFromCanonical,
-  readCanonicalSnapshot,
-} from '../../tasks/protocolConfigMirror';
+import { mirrorProtocolConfigFromCanonical, readCanonicalSnapshot } from '../../tasks/protocolConfigMirror';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE, PREP_KEYGEN_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import type { KMSGeneration, ProtocolConfig } from '../../types';
@@ -200,10 +196,10 @@ describe('mirrorProtocolConfigFromCanonical (canonical → secondary deploy flow
   });
 });
 
-describe('canonical snapshot export (readCanonicalSnapshot + computeCanonicalSnapshotHash)', function () {
+describe('canonical snapshot export (readCanonicalSnapshot)', function () {
   const deployer = new ethers.Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
 
-  it('reads the canonical context and hashes it reproducibly', async function () {
+  it('reads the canonical context and reproduces it on re-read', async function () {
     const canonicalNodes = buildProtocolConfigNodes();
     const canonicalAddress = await deployFreshProtocolConfigProxy(
       deployer,
@@ -216,19 +212,14 @@ describe('canonical snapshot export (readCanonicalSnapshot + computeCanonicalSna
       canonicalProtocolConfigAddress: canonicalAddress,
     });
     expect(snapshot.kmsNodes.length).to.equal(canonicalNodes.length);
+    expect(snapshot.currentContextId).to.not.equal(0n);
     expect(snapshot.canonicalChainId).to.equal((await ethers.provider.getNetwork()).chainId);
 
-    const hash = computeCanonicalSnapshotHash(canonicalAddress, snapshot);
-    expect(hash).to.match(/^0x[0-9a-f]{64}$/);
-
-    // A DAO signer re-reading the same pinned block must reproduce the hash.
+    // The DAO's review check: re-reading the same pinned block reproduces the snapshot exactly.
     const reread = await readCanonicalSnapshot(hre, {
       canonicalProvider: ethers.provider,
       canonicalProtocolConfigAddress: canonicalAddress,
     });
-    expect(computeCanonicalSnapshotHash(canonicalAddress, reread)).to.equal(hash);
-
-    // The ProtocolConfig address is part of the digest.
-    expect(computeCanonicalSnapshotHash(ethers.ZeroAddress, snapshot)).to.not.equal(hash);
+    expect(reread).to.deep.equal(snapshot);
   });
 });
