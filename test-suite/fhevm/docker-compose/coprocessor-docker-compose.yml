@@ -218,7 +218,6 @@ services:
     command:
       - upgrade-controller
       - --database-url=${DATABASE_URL}
-      - --initial-mode=${UPGRADE_CONTROLLER_INITIAL_MODE:-bcs}
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully
