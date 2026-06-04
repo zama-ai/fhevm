@@ -10,8 +10,7 @@ import type { NetworkName } from "../types";
 import type { NetworkConfig } from "./types";
 
 export const DEFAULT_NETWORK: NetworkName = "testnet";
-export const DEFAULT_SEPOLIA_RPC_URL =
-  "https://ethereum-sepolia-rpc.publicnode.com";
+export const DEFAULT_SEPOLIA_RPC_URL = "https://sepolia.drpc.org";
 export const DEFAULT_POLYGON_AMOY_RPC_URL =
   "https://rpc-amoy.polygon.technology";
 
@@ -64,14 +63,14 @@ const devnetAmoy = defineFhevmChain({
 });
 
 const NETWORK_CONFIGS = {
-  testnet: {
+  "testnet": {
     fhevmChain: sepolia,
     hostChain: viemSepolia,
     defaultRpcUrl: DEFAULT_SEPOLIA_RPC_URL,
     envRpcUrl: "SEPOLIA_RPC_URL",
     fheTestAddress: "0x94B9d3aF050687D1F76251aD7D09a1F216a19845",
   },
-  devnet: {
+  "devnet": {
     fhevmChain: devnet,
     hostChain: viemSepolia,
     defaultRpcUrl: DEFAULT_SEPOLIA_RPC_URL,
