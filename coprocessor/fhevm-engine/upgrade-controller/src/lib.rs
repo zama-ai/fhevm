@@ -7,6 +7,7 @@
 
 use std::time::Duration;
 
+use fhevm_engine_common::database::GCS_SCHEMA_QUOTED;
 use fhevm_engine_common::utils::DatabaseURL;
 use serde::Deserialize;
 use sqlx::{postgres::PgListener, Pool, Postgres};
@@ -31,7 +32,7 @@ pub use fhevm_engine_common::versioning::EVENT_STACK_VERSION_UPGRADED;
 /// Number of host-chain blocks below `start_block` whose computations must
 /// also be fully settled before GCS can leave `UpgradeActivated`. Hard-coded
 /// for now; expected to become configurable.
-const READINESS_CONFIRMATIONS: i64 = 10;
+const READINESS_CONFIRMATIONS: i64 = 100;
 
 /// PostgreSQL advisory-lock key used to serialize cutover against in-flight
 /// BCS writes. `execute_cutover` takes the exclusive form; the BCS-mode
@@ -208,21 +209,49 @@ pub async fn handle_upgrade_activated(
     .execute(pool)
     .await?;
 
-    // Create the GCS schema (empty duplicates of every BCS-owned data table)
-    // so the GCS services have a write target the moment they observe
-    // activation. Idempotent: safe to run from either side and on retry.
-    create_gcs_schema(pool).await?;
+    // Note: the `gcs` schema and its table duplicates are created once at
+    // upgrade-controller startup (see `run`), not here — the GCS services start
+    // tailing the chain before activation and need the write target to already
+    // exist so their `search_path = gcs,public` writes don't fall back to the
+    // live `public` schema.
 
     // Only GCS gates on the pre-snapshot completeness check; BCS keeps
     // serving live traffic untouched until cutover.
     if gcs_mode {
-        let pool = pool.clone();
-        let cancel = cancel.child_token();
         let chain_id = payload.chain_id;
         let start_block = payload.start_block;
 
-        if let Err(e) = wait_until_dry_run_ready(pool, cancel, chain_id, start_block).await {
-            error!(error = %e, "GCS dry-run readiness loop failed");
+        // 1. Wait until BCS has fully settled every computation up to start_block.
+        match wait_until_dry_run_ready(pool.clone(), cancel.child_token(), chain_id, start_block)
+            .await
+        {
+            Ok(true) => {
+                // 2. Prune: the GCS stack tails the chain before activation, so
+                //    gcs.computations may hold rows for blocks below start_block.
+                //    Clear them — after readiness, before the internal
+                //    upgrade-activated spawn — so the dry-run snapshot begins
+                //    cleanly at start_block.
+                let deleted =
+                    prune_gcs_computations_before_start(pool, chain_id, start_block).await?;
+                info!(
+                    chain_id,
+                    start_block, deleted, "pruned pre-start_block rows from gcs.computations"
+                );
+
+                // 3. Spawn upgrade_activated internally: flip the GCS row to
+                //    DryRunStarted, releasing the GCS stack into the dry-run.
+                transition_to_dry_run_started(pool).await?;
+            }
+            Ok(false) => {
+                info!(
+                    chain_id,
+                    start_block,
+                    "readiness loop exited without satisfying readiness — skipping prune and transition"
+                );
+            }
+            Err(e) => {
+                error!(error = %e, "GCS dry-run readiness loop failed");
+            }
         }
     }
 
@@ -231,8 +260,8 @@ pub async fn handle_upgrade_activated(
 
 /// Tables that the GCS stack writes to during the dry-run phase. Each gets
 /// duplicated into the `gcs` schema with `CREATE TABLE gcs.X (LIKE public.X
-/// INCLUDING ALL)` at activation, then merged back into `public.X` at
-/// cutover.
+/// INCLUDING ALL)` at upgrade-controller startup (gated on `gcs_mode`), then
+/// merged back into `public.X` at cutover.
 ///
 /// `INCLUDING ALL` copies defaults, identity, constraints (incl. PKs/uniques),
 /// generated columns, indexes, statistics, storage, comments, and compression
@@ -260,18 +289,19 @@ pub const GCS_DUPLICATED_TABLES: &[&str] = &[
     "gw_listener_last_block",
 ];
 
-/// Create schema `gcs` and a `CREATE TABLE gcs.X (LIKE public.X INCLUDING ALL)`
-/// for every table listed in [`GCS_DUPLICATED_TABLES`]. Idempotent.
+/// Create the versioned GCS schema (e.g. `"gcs-0.14.0"`) and a
+/// `CREATE TABLE <schema>.X (LIKE public.X INCLUDING ALL)` for every table
+/// listed in [`GCS_DUPLICATED_TABLES`]. The schema name is [`GCS_SCHEMA_QUOTED`]
+/// so it stays in lockstep with the GCS services' `search_path`. Idempotent.
 pub async fn create_gcs_schema(pool: &Pool<Postgres>) -> Result<(), Error> {
     let mut tx = pool.begin().await?;
 
-    sqlx::query("CREATE SCHEMA IF NOT EXISTS gcs")
-        .execute(&mut *tx)
-        .await?;
+    let create_schema = format!("CREATE SCHEMA IF NOT EXISTS {GCS_SCHEMA_QUOTED}");
+    sqlx::query(&create_schema).execute(&mut *tx).await?;
 
     for table in GCS_DUPLICATED_TABLES {
         let sql = format!(
-            "CREATE TABLE IF NOT EXISTS gcs.{table} \
+            "CREATE TABLE IF NOT EXISTS {GCS_SCHEMA_QUOTED}.{table} \
              (LIKE public.{table} INCLUDING ALL)"
         );
         sqlx::query(&sql).execute(&mut *tx).await?;
@@ -279,10 +309,36 @@ pub async fn create_gcs_schema(pool: &Pool<Postgres>) -> Result<(), Error> {
 
     tx.commit().await?;
     info!(
+        schema = GCS_SCHEMA_QUOTED,
         tables = ?GCS_DUPLICATED_TABLES,
         "GCS schema created with empty table duplicates"
     );
     Ok(())
+}
+
+/// Delete from `gcs.computations` every row for `chain_id` whose `block_number`
+/// is below `start_block`. The GCS stack starts tailing the chain before
+/// activation, so its schema may hold computations for blocks that precede the
+/// upgrade window; clearing them makes the dry-run snapshot start cleanly at
+/// `start_block`. Rows with a NULL `block_number` (not yet bound to a block) are
+/// left untouched. Returns the number of rows removed. Idempotent.
+async fn prune_gcs_computations_before_start(
+    pool: &Pool<Postgres>,
+    chain_id: i64,
+    start_block: i64,
+) -> Result<u64, Error> {
+    let sql = format!(
+        "DELETE FROM {GCS_SCHEMA_QUOTED}.computations \
+         WHERE host_chain_id = $1 \
+           AND block_number IS NOT NULL \
+           AND block_number < $2"
+    );
+    let result = sqlx::query(&sql)
+        .bind(chain_id)
+        .bind(start_block)
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected())
 }
 
 /// True iff for every block in `[start_block - READINESS_CONFIRMATIONS, start_block]`
@@ -329,16 +385,20 @@ async fn check_dry_run_ready(
 }
 
 /// GCS-only loop. Polls `check_dry_run_ready`, re-triggered by every
-/// `event_new_block` and `event_ciphertext_computed` notification. On success,
-/// flips `upgrade_state` to `DryRunStarted`.
-/// Exits on cancellation, or if another path has already moved the GCS row
-/// out of `UpgradeActivated`.
+/// `event_new_block` and `event_ciphertext_computed` notification.
+///
+/// Returns `Ok(true)` once readiness is satisfied — the caller then prunes the
+/// GCS snapshot and performs the `DryRunStarted` transition (the internal
+/// "upgrade activated" spawn). Returns `Ok(false)` if it exits for any other
+/// reason: cancellation, or another path having already moved the GCS row out
+/// of `UpgradeActivated`. In the `false` case the caller skips pruning and the
+/// transition.
 async fn wait_until_dry_run_ready(
     pool: Pool<Postgres>,
     cancel: CancellationToken,
     chain_id: i64,
     start_block: i64,
-) -> Result<(), Error> {
+) -> Result<bool, Error> {
     let from_block = start_block.saturating_sub(READINESS_CONFIRMATIONS);
     info!(
         chain_id,
@@ -357,7 +417,7 @@ async fn wait_until_dry_run_ready(
     loop {
         if cancel.is_cancelled() {
             info!("readiness loop cancelled");
-            return Ok(());
+            return Ok(false);
         }
 
         // Idempotency: if a parallel firing of event_upgrade_activated already
@@ -373,22 +433,18 @@ async fn wait_until_dry_run_ready(
                     state = other,
                     "GCS state is not UpgradeActivated — readiness loop exiting"
                 );
-                return Ok(());
+                return Ok(false);
             }
             None => {
                 warn!("No GCS row in upgrade_state — readiness loop exiting");
-                return Ok(());
+                return Ok(false);
             }
         }
 
         match check_dry_run_ready(&pool, chain_id, start_block).await {
             Ok(true) => {
-                info!(
-                    chain_id,
-                    start_block, "Dry-run readiness satisfied — transitioning state"
-                );
-                transition_to_dry_run_started(&pool).await?;
-                return Ok(());
+                info!(chain_id, start_block, "Dry-run readiness satisfied");
+                return Ok(true);
             }
             Ok(false) => {
                 debug!(
@@ -406,7 +462,7 @@ async fn wait_until_dry_run_ready(
         select! {
             _ = cancel.cancelled() => {
                 info!("readiness loop cancelled");
-                return Ok(());
+                return Ok(false);
             }
             recv = listener.recv() => {
                 match recv {
@@ -561,13 +617,13 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     //
     //    `ON CONFLICT DO UPDATE` lets the GCS rows win on PK collisions: GCS is
     //    the canonical writer for its window.
-    let merged = sqlx::query(
+    let merge_sql = format!(
         "INSERT INTO public.ciphertexts
              (tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type,
               input_blob_hash, input_blob_index, created_at, ciphertext128, is_input)
          SELECT tenant_id, handle, ciphertext, $1::smallint, ciphertext_type,
                 input_blob_hash, input_blob_index, created_at, ciphertext128, is_input
-         FROM gcs.ciphertexts
+         FROM {GCS_SCHEMA_QUOTED}.ciphertexts
          ON CONFLICT (tenant_id, handle, ciphertext_version) DO UPDATE
          SET ciphertext       = EXCLUDED.ciphertext,
              ciphertext_type  = EXCLUDED.ciphertext_type,
@@ -575,11 +631,12 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
              input_blob_index = EXCLUDED.input_blob_index,
              created_at       = EXCLUDED.created_at,
              ciphertext128    = EXCLUDED.ciphertext128,
-             is_input         = EXCLUDED.is_input",
-    )
-    .bind(new_ciphertext_version)
-    .execute(&mut *tx)
-    .await?;
+             is_input         = EXCLUDED.is_input"
+    );
+    let merged = sqlx::query(&merge_sql)
+        .bind(new_ciphertext_version)
+        .execute(&mut *tx)
+        .await?;
     info!(
         merged = merged.rows_affected(),
         ciphertext_version = new_ciphertext_version,
@@ -587,13 +644,11 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     );
 
     // 5. Drop the gcs schema (and everything in it) now that its data has been
-    //    merged back into public. `gcs.state_hash` is dropped here too — by
-    //    this point every row consensus required has been uploaded to S3 and
-    //    consumed by the unanimity poll, so the table is no longer needed.
-    sqlx::query("DROP SCHEMA gcs CASCADE")
-        .execute(&mut *tx)
-        .await?;
-    info!("dropped gcs schema");
+
+    //    merged back into public.
+    let drop_sql = format!("DROP SCHEMA {GCS_SCHEMA_QUOTED} CASCADE");
+    sqlx::query(&drop_sql).execute(&mut *tx).await?;
+    info!(schema = GCS_SCHEMA_QUOTED, "dropped gcs schema");
 
     // 6. Flip FSM rows.
     sqlx::query(
@@ -759,6 +814,16 @@ pub async fn run(
         gcs_mode = config.gcs_mode,
         "Starting upgrade-controller"
     );
+
+    // Create the GCS schema (empty duplicates of every BCS-owned data table)
+    // once at startup, gated on gcs_mode. The GCS services begin tailing the
+    // chain in paused mode before any activation, writing via
+    // `search_path = gcs,public`; the `gcs.*` tables must already exist or those
+    // writes would silently fall back to the live `public` schema. Idempotent —
+    // only the GCS stack owns this schema; BCS leaves it untouched.
+    if config.gcs_mode {
+        create_gcs_schema(&pool).await?;
+    }
 
     let mut listener = PgListener::connect_with(&pool).await?;
     listener
