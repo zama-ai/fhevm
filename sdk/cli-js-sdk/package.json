@@ -2,13 +2,16 @@
   "name": "cli-fhevm-sdk",
   "type": "module",
   "private": true,
+  "bin": {
+    "fhevm-sdk": "./bin/fhevm-sdk.mjs"
+  },
   "packageManager": "pnpm@10.28.2",
   "engines": {
     "node": ">=22.0.0",
     "pnpm": ">=10.0.0"
   },
   "scripts": {
-    "cli": "node --env-file=.env --import tsx index.ts",
+    "cli": "node --import tsx index.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
@@ -19,6 +22,7 @@
   "dependencies": {
     "@commander-js/extra-typings": "^14.0.0",
     "@fhevm/sdk": "1.1.0-alpha.4",
+    "@pnpm/tabtab": "^0.5.4",
     "commander": "^14.0.3",
     "consola": "^3.4.2",
     "viem": "^2.50.4"

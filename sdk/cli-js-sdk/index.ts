@@ -1,24 +1,27 @@
-#!/usr/bin/env -S node --env-file=.env --import tsx
-import { Command } from "@commander-js/extra-typings";
+#!/usr/bin/env -S node --import tsx
+// Must stay first so the project .env is loaded before any module reads env.
+import "./src/env";
+
+import { Command, Option } from "@commander-js/extra-typings";
 import { consola } from "consola";
 
 import { DEFAULT_NETWORK } from "./src/config";
+import { registerCompletionCommands } from "./src/cli/commands/completion";
 import { registerDelegatedUserDecryptCommands } from "./src/cli/commands/delegated-user-decrypt";
 import { registerFheTestCommands } from "./src/cli/commands/fhe-test";
 import { registerInputProofCommand } from "./src/cli/commands/input-proof";
 import { registerPublicDecryptCommands } from "./src/cli/commands/public-decrypt";
 import { registerUserDecryptCommands } from "./src/cli/commands/user-decrypt";
-import { parseNetwork } from "./src/cli/parsers";
+import { NETWORKS } from "./src/types";
 
 const program = new Command()
-  .name("cli-fhevm-sdk")
+  .name("fhevm-sdk")
   .description("CLI for @fhevm/sdk flows against FHETest")
   .version("0.1.0")
-  .option(
-    "-n, --network <network>",
-    "network to target",
-    parseNetwork,
-    DEFAULT_NETWORK,
+  .addOption(
+    new Option("-n, --network <network>", "network to target")
+      .choices(NETWORKS)
+      .default(DEFAULT_NETWORK),
   )
   .option(
     "--relayer-url <url>",
@@ -31,6 +34,7 @@ registerPublicDecryptCommands(program);
 registerUserDecryptCommands(program);
 registerDelegatedUserDecryptCommands(program);
 registerFheTestCommands(program);
+registerCompletionCommands(program);
 
 program.parseAsync().catch((error: unknown) => {
   consola.error(error instanceof Error ? error.message : error);

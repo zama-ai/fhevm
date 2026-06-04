@@ -7,10 +7,23 @@ CLI for `@fhevm/sdk` viem flows against FHETest.
 ```bash
 pnpm install
 cp .env.example .env
-pnpm --silent run cli --help
+pnpm link --global
+fhevm-sdk --help
 ```
 
-The `cli` script uses Node's native `--env-file=.env`, so create `.env` from `.env.example` before running commands that rely on environment variables.
+`pnpm link --global` exposes the CLI as the `fhevm-sdk` binary. Without linking, every `fhevm-sdk` invocation below also works as `pnpm --silent run cli`.
+
+The project-level `.env` is loaded automatically from any working directory, so create it from `.env.example` before running commands that rely on environment variables. Variables already set in the shell take precedence over `.env` values.
+
+## Shell Completion
+
+```bash
+fhevm-sdk completion install            # prompts for the shell
+fhevm-sdk completion install --shell zsh
+fhevm-sdk completion uninstall
+```
+
+Completion covers subcommands, options, and option values with choices (for example `--network`). Supported shells are `bash`, `zsh`, `fish`, and `pwsh`. Restart the shell or source its profile after installing.
 
 ## Environment
 
@@ -59,48 +72,48 @@ Public decrypt `fresh` stores with `makePublic=true`. User decrypt and delegated
 Input proof:
 
 ```bash
-pnpm --silent run cli --network testnet input-proof
-pnpm --silent run cli --network testnet input-proof --type uint32
-pnpm --silent run cli --network testnet input-proof --type uint64 --value 42
+fhevm-sdk --network testnet input-proof
+fhevm-sdk --network testnet input-proof --type uint32
+fhevm-sdk --network testnet input-proof --type uint64 --value 42
 ```
 
 Public decrypt:
 
 ```bash
-pnpm --silent run cli --network testnet public-decrypt fresh --type uint8
-pnpm --silent run cli --network testnet public-decrypt cached --type uint8
-pnpm --silent run cli --network testnet public-decrypt cached --handle 0x...
-pnpm --silent run cli --network testnet public-decrypt make-public --type uint64
+fhevm-sdk --network testnet public-decrypt fresh --type uint8
+fhevm-sdk --network testnet public-decrypt cached --type uint8
+fhevm-sdk --network testnet public-decrypt cached --handle 0x...
+fhevm-sdk --network testnet public-decrypt make-public --type uint64
 ```
 
 User decrypt:
 
 ```bash
-pnpm --silent run cli --network testnet user-decrypt fresh --type uint8
-pnpm --silent run cli --network testnet user-decrypt cached --type uint8
-pnpm --silent run cli --network testnet user-decrypt cached --handle 0x...
+fhevm-sdk --network testnet user-decrypt fresh --type uint8
+fhevm-sdk --network testnet user-decrypt cached --type uint8
+fhevm-sdk --network testnet user-decrypt cached --handle 0x...
 ```
 
 Delegated user decrypt:
 
 ```bash
-pnpm --silent run cli --network testnet delegated-user-decrypt fresh --type uint8
-pnpm --silent run cli --network testnet delegated-user-decrypt cached --delegator 0x... --type uint8
-pnpm --silent run cli --network testnet delegated-user-decrypt cached --delegator 0x... --handle 0x...
+fhevm-sdk --network testnet delegated-user-decrypt fresh --type uint8
+fhevm-sdk --network testnet delegated-user-decrypt cached --delegator 0x... --type uint8
+fhevm-sdk --network testnet delegated-user-decrypt cached --delegator 0x... --handle 0x...
 ```
 
 FHETest utilities:
 
 ```bash
-pnpm --silent run cli --network testnet fhe-test info
-pnpm --silent run cli --network testnet fhe-test inspect --type uint64
-pnpm --silent run cli --network testnet fhe-test inspect --account 0x... --type uint64
-pnpm --silent run cli --network testnet fhe-test inspect --handle 0x...
-pnpm --silent run cli --network testnet fhe-test init
-pnpm --silent run cli --network testnet fhe-test init --bulk
-pnpm --silent run cli --network testnet fhe-test init --type uint256 --force
-pnpm --silent run cli --network testnet fhe-test op add-uint64 --value 42
-pnpm --silent run cli --network testnet fhe-test op xor-bool --value true --public
+fhevm-sdk --network testnet fhe-test info
+fhevm-sdk --network testnet fhe-test inspect --type uint64
+fhevm-sdk --network testnet fhe-test inspect --account 0x... --type uint64
+fhevm-sdk --network testnet fhe-test inspect --handle 0x...
+fhevm-sdk --network testnet fhe-test init
+fhevm-sdk --network testnet fhe-test init --bulk
+fhevm-sdk --network testnet fhe-test init --type uint256 --force
+fhevm-sdk --network testnet fhe-test op add-uint64 --value 42
+fhevm-sdk --network testnet fhe-test op xor-bool --value true --public
 ```
 
 ## Development

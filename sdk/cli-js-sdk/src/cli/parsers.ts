@@ -1,15 +1,8 @@
 import { InvalidArgumentError } from "@commander-js/extra-typings";
 import { isAddress, isHex, type Hex } from "viem";
 
-import { FHE_VALUE_TYPES, NETWORKS } from "../types";
-import type { FheValueType, NetworkName } from "../types";
-
-export const parseNetwork = (value: string): NetworkName => {
-  if (NETWORKS.includes(value as NetworkName)) return value as NetworkName;
-  throw new InvalidArgumentError(
-    `Unsupported network "${value}". Supported: ${NETWORKS.join(", ")}`,
-  );
-};
+import { FHE_VALUE_TYPES } from "../types";
+import type { FheValueType } from "../types";
 
 export const parseValueType = (value: string): FheValueType => {
   if (FHE_VALUE_TYPES.includes(value as FheValueType)) {
