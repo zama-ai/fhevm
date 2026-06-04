@@ -10,10 +10,9 @@ import type { NetworkName } from "../types";
 import type { NetworkConfig } from "./types";
 
 export const DEFAULT_NETWORK: NetworkName = "testnet";
-export const DEFAULT_TESTNET_RPC_URL =
+export const DEFAULT_SEPOLIA_RPC_URL =
   "https://ethereum-sepolia-rpc.publicnode.com";
-export const DEFAULT_DEVNET_RPC_URL = DEFAULT_TESTNET_RPC_URL;
-export const DEFAULT_DEVNET_AMOY_RPC_URL =
+export const DEFAULT_POLYGON_AMOY_RPC_URL =
   "https://rpc-amoy.polygon.technology";
 
 const devnet = defineFhevmChain({
@@ -68,21 +67,21 @@ const NETWORK_CONFIGS = {
   testnet: {
     fhevmChain: sepolia,
     hostChain: viemSepolia,
-    defaultRpcUrl: DEFAULT_TESTNET_RPC_URL,
+    defaultRpcUrl: DEFAULT_SEPOLIA_RPC_URL,
     envRpcUrl: "SEPOLIA_RPC_URL",
     fheTestAddress: "0x94B9d3aF050687D1F76251aD7D09a1F216a19845",
   },
   devnet: {
     fhevmChain: devnet,
     hostChain: viemSepolia,
-    defaultRpcUrl: DEFAULT_DEVNET_RPC_URL,
-    envRpcUrl: "DEVNET_RPC_URL",
-    fheTestAddress: "0xD26bB032e2F06A5382902559c4EbBB82C35C6dDF",
+    defaultRpcUrl: DEFAULT_SEPOLIA_RPC_URL,
+    envRpcUrl: "SEPOLIA_RPC_URL",
+    fheTestAddress: "0xf56a7990E63a63eC75aD9Aa07De8cB6bF7baa805",
   },
   "devnet-amoy": {
     fhevmChain: devnetAmoy,
     hostChain: polygonAmoy,
-    defaultRpcUrl: DEFAULT_DEVNET_AMOY_RPC_URL,
+    defaultRpcUrl: DEFAULT_POLYGON_AMOY_RPC_URL,
     envRpcUrl: "POLYGON_AMOY_RPC_URL",
     fheTestAddress: "0x7553CB9124f974Ee475E5cE45482F90d5B6076BC",
   },

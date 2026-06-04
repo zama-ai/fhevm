@@ -16,8 +16,7 @@ The `cli` script uses Node's native `--env-file=.env`, so create `.env` from `.e
 
 | Variable                | Purpose                                                                             |
 | ----------------------- | ----------------------------------------------------------------------------------- |
-| `SEPOLIA_RPC_URL`       | Testnet host chain RPC override.                                                    |
-| `DEVNET_RPC_URL`        | Devnet host chain RPC override.                                                     |
+| `SEPOLIA_RPC_URL`       | Ethereum Sepolia host chain RPC override for testnet and devnet.                    |
 | `POLYGON_AMOY_RPC_URL`  | Devnet Polygon Amoy host chain RPC override.                                        |
 | `ZAMA_FHEVM_API_KEY`    | Optional SDK relayer auth, required where the target environment enforces API keys. |
 | `PRIVATE_KEY`           | Default wallet private key for transaction/decryption commands.                     |
@@ -28,10 +27,10 @@ The `cli` script uses Node's native `--env-file=.env`, so create `.env` from `.e
 Global options must be passed before the subcommand:
 
 - `--network testnet`: uses FHETest `0x94B9d3aF050687D1F76251aD7D09a1F216a19845` on Ethereum Sepolia.
-- `--network devnet`: uses FHETest `0xD26bB032e2F06A5382902559c4EbBB82C35C6dDF` on Ethereum Sepolia with the dev relayer config.
+- `--network devnet`: uses FHETest `0xf56a7990E63a63eC75aD9Aa07De8cB6bF7baa805` on Ethereum Sepolia with the dev relayer config.
 - `--network devnet-amoy`: uses FHETest `0x7553CB9124f974Ee475E5cE45482F90d5B6076BC` on Polygon Amoy with the dev relayer config.
 - `--relayer-url <url>`: relayer base URL override. `localhost:3000` is normalized to `http://localhost:3000`.
-- `--rpc-url <url>`: host chain RPC URL override. Defaults to `SEPOLIA_RPC_URL` for testnet, `DEVNET_RPC_URL` for devnet, `POLYGON_AMOY_RPC_URL` for devnet-amoy, then the network public RPC fallback.
+- `--rpc-url <url>`: host chain RPC URL override. Defaults to `SEPOLIA_RPC_URL` for Sepolia-backed networks, `POLYGON_AMOY_RPC_URL` for devnet-amoy, then the network public RPC fallback.
 
 Progress is written to stderr. The final machine-readable payload is written to stdout as JSON, so commands remain pipeable.
 
