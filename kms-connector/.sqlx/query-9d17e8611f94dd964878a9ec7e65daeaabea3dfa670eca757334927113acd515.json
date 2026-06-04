@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO new_kms_epoch(\n            context_id, previous_context_id, epoch_id, previous_epoch_id, keys, crs_list,\n            tx_hash, created_at, otlp_context\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Timestamptz",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9d17e8611f94dd964878a9ec7e65daeaabea3dfa670eca757334927113acd515"
+}

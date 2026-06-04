@@ -33,7 +33,7 @@ pub enum ChainName {
 }
 
 impl ChainName {
-    pub fn as_str(self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             Self::Ethereum => "ethereum",
             Self::Gateway => "gateway",
@@ -122,9 +122,9 @@ async fn publish_public_decryption<'e>(
         .collect::<Vec<SnsCiphertextMaterialDbItem>>();
 
     sqlx::query!(
-        "INSERT INTO public_decryption_requests(\
-            decryption_id, sns_ct_materials, extra_data, tx_hash, created_at, otlp_context\
-        ) \
+        "INSERT INTO public_decryption_requests(
+            decryption_id, sns_ct_materials, extra_data, tx_hash, created_at, otlp_context
+        )
         VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
         request.decryptionId.as_le_slice(),
         sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
@@ -155,10 +155,10 @@ async fn publish_user_decryption<'e>(
     // `allowed_contracts`, `start_timestamp`, `duration_seconds`, `signature`) are left unset —
     // they default to NULL for legacy rows, which is what the reader uses to identify the variant.
     sqlx::query!(
-        "INSERT INTO user_decryption_requests(\
-            decryption_id, sns_ct_materials, user_address, public_key, extra_data, tx_hash,\
-            created_at, otlp_context\
-        ) \
+        "INSERT INTO user_decryption_requests(
+            decryption_id, sns_ct_materials, user_address, public_key, extra_data, tx_hash,
+            created_at, otlp_context
+        )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
         request.decryptionId.as_le_slice(),
         sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
@@ -219,12 +219,12 @@ async fn publish_user_decryption_v2<'e>(
         .map_err(|_| anyhow!("RFC016 durationSeconds does not fit in i64"))?;
 
     sqlx::query!(
-        "INSERT INTO user_decryption_requests(\
-            decryption_id, sns_ct_materials, user_address, public_key, extra_data, tx_hash,\
-            created_at, otlp_context, handle_owner_addresses, handle_contract_addresses,\
-            allowed_contracts, start_timestamp, duration_seconds, signature\
-        ) \
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) \
+        "INSERT INTO user_decryption_requests(
+            decryption_id, sns_ct_materials, user_address, public_key, extra_data, tx_hash,
+            created_at, otlp_context, handle_owner_addresses, handle_contract_addresses,
+            allowed_contracts, start_timestamp, duration_seconds, signature
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         ON CONFLICT DO NOTHING",
         request.decryptionId.as_le_slice(),
         sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
@@ -255,9 +255,9 @@ async fn publish_prep_keygen_request<'e>(
     otlp_ctx: PropagationContext,
 ) -> anyhow::Result<PgQueryResult> {
     sqlx::query!(
-        "INSERT INTO prep_keygen_requests(\
-            prep_keygen_id, params_type, extra_data, tx_hash, created_at, otlp_context\
-        ) \
+        "INSERT INTO prep_keygen_requests(
+            prep_keygen_id, params_type, extra_data, tx_hash, created_at, otlp_context
+        )
         VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
         request.prepKeygenId.as_le_slice(),
         params_type as ParamsTypeDb,
@@ -279,7 +279,7 @@ async fn publish_keygen_request<'e>(
     otlp_ctx: PropagationContext,
 ) -> anyhow::Result<PgQueryResult> {
     sqlx::query!(
-        "INSERT INTO keygen_requests(prep_keygen_id, key_id, extra_data, tx_hash, created_at, otlp_context) \
+        "INSERT INTO keygen_requests(prep_keygen_id, key_id, extra_data, tx_hash, created_at, otlp_context)
             VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
         request.prepKeygenId.as_le_slice(),
         request.keyId.as_le_slice(),
@@ -302,9 +302,9 @@ async fn publish_crsgen_request<'e>(
     otlp_ctx: PropagationContext,
 ) -> anyhow::Result<PgQueryResult> {
     sqlx::query!(
-        "INSERT INTO crsgen_requests(\
-            crs_id, max_bit_length, params_type, extra_data, tx_hash, created_at, otlp_context\
-        ) \
+        "INSERT INTO crsgen_requests(
+            crs_id, max_bit_length, params_type, extra_data, tx_hash, created_at, otlp_context
+        )
         VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
         request.crsId.as_le_slice(),
         request.maxBitLength.as_le_slice(),
@@ -332,7 +332,7 @@ pub async fn update_last_block_polled<'e>(
         "Updating last block polled in DB for chain {chain_name}"
     );
     let query_result = sqlx::query!(
-        "UPDATE last_block_polled_by_chain SET block_number = $2, updated_at = $3 \
+        "UPDATE last_block_polled_by_chain SET block_number = $2, updated_at = $3
         WHERE chain_name = $1 AND (block_number IS NULL OR block_number < $2)",
         chain_name,
         last_block_polled.map(|n| n as i64),
@@ -357,7 +357,7 @@ pub async fn update_last_block_polled<'e>(
 }
 
 /// Persists the active `(context_id, epoch_id)` pair fetched at startup via
-/// `KMSVerifier::getActiveKmsContextAndEpoch()` (RFC 005). Inserted into `kms_context` with the
+/// `ProtocolConfig::getActiveKmsContextAndEpoch()` (RFC 005). Inserted into `kms_context` with the
 /// `epoch_id` column populated.
 pub async fn publish_active_context_and_epoch(
     db_pool: &Pool<Postgres>,
@@ -367,7 +367,7 @@ pub async fn publish_active_context_and_epoch(
     info!("Publishing active KMS context #{context_id} (epoch #{epoch_id}) in DB...");
     let now = Utc::now();
     let query_result = sqlx::query!(
-        "INSERT INTO kms_context(id, epoch_id, is_valid, created_at, updated_at) \
+        "INSERT INTO kms_context(id, epoch_id, is_valid, created_at, updated_at)
         VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
         context_id.as_le_slice(),
         epoch_id.as_le_slice(),
@@ -403,10 +403,10 @@ async fn publish_new_kms_context<'e>(
     let pcr_values = event.pcrValues.abi_encode();
 
     sqlx::query!(
-        "INSERT INTO new_kms_context(\
-            context_id, previous_context_id, kms_node_params, thresholds, software_version, \
-            pcr_values, tx_hash, created_at, otlp_context\
-        ) \
+        "INSERT INTO new_kms_context(
+            context_id, previous_context_id, kms_node_params, thresholds, software_version,
+            pcr_values, tx_hash, created_at, otlp_context
+        )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT DO NOTHING",
         event.contextId.as_le_slice(),
         event.previousContextId.as_le_slice(),
@@ -434,10 +434,10 @@ async fn publish_new_kms_epoch<'e>(
     let crs_list = event.crsList.abi_encode();
 
     sqlx::query!(
-        "INSERT INTO new_kms_epoch(\
-            context_id, previous_context_id, epoch_id, previous_epoch_id, keys, crs_list, \
-            tx_hash, created_at, otlp_context\
-        ) \
+        "INSERT INTO new_kms_epoch(
+            context_id, previous_context_id, epoch_id, previous_epoch_id, keys, crs_list,
+            tx_hash, created_at, otlp_context
+        )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT DO NOTHING",
         event.kmsContextId.as_le_slice(),
         event.previousContextId.as_le_slice(),

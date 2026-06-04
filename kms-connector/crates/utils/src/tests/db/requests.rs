@@ -121,10 +121,10 @@ pub async fn insert_rand_public_decryption_request(
         .collect::<Vec<SnsCiphertextMaterialDbItem>>();
 
     sqlx::query!(
-        "INSERT INTO public_decryption_requests(\
+        "INSERT INTO public_decryption_requests(
             decryption_id, sns_ct_materials, extra_data, tx_hash, created_at, otlp_context,
-            already_sent, status\
-        ) \
+            already_sent, status
+        )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
         sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
@@ -170,10 +170,10 @@ pub async fn insert_rand_user_decryption_request(
         .collect::<Vec<SnsCiphertextMaterialDbItem>>();
 
     sqlx::query!(
-        "INSERT INTO user_decryption_requests(\
-            decryption_id, sns_ct_materials, user_address, public_key, extra_data, tx_hash,\
-            created_at, otlp_context, already_sent, status\
-        ) \
+        "INSERT INTO user_decryption_requests(
+            decryption_id, sns_ct_materials, user_address, public_key, extra_data, tx_hash,
+            created_at, otlp_context, already_sent, status
+        )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
         sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
@@ -254,13 +254,13 @@ pub async fn insert_rand_user_decryption_request_v2(
         .collect::<Vec<SnsCiphertextMaterialDbItem>>();
 
     sqlx::query!(
-        "INSERT INTO user_decryption_requests(\
-            decryption_id, sns_ct_materials, user_address, public_key, extra_data, tx_hash,\
-            created_at, otlp_context, already_sent, status, handle_owner_addresses,\
-            handle_contract_addresses, allowed_contracts, start_timestamp, duration_seconds,\
-            signature\
-        ) \
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) \
+        "INSERT INTO user_decryption_requests(
+            decryption_id, sns_ct_materials, user_address, public_key, extra_data, tx_hash,
+            created_at, otlp_context, already_sent, status, handle_owner_addresses,
+            handle_contract_addresses, allowed_contracts, start_timestamp, duration_seconds,
+            signature
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
         sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
@@ -310,9 +310,9 @@ pub async fn insert_rand_prep_keygen_request(
     let extra_data = options.build_extra_data();
 
     sqlx::query!(
-        "INSERT INTO prep_keygen_requests(\
-            prep_keygen_id, params_type, extra_data, otlp_context, created_at, already_sent, status\
-        ) \
+        "INSERT INTO prep_keygen_requests(
+            prep_keygen_id, params_type, extra_data, otlp_context, created_at, already_sent, status
+        )
         VALUES ($1, $2, $3, $4, $5, $6, $7)",
         prep_keygen_request_id.as_le_slice(),
         params_type as ParamsTypeDb,
@@ -342,9 +342,9 @@ pub async fn insert_rand_keygen_request(
     let extra_data = options.build_extra_data();
 
     sqlx::query!(
-        "INSERT INTO keygen_requests(\
-            prep_keygen_id, key_id, extra_data, created_at, otlp_context, already_sent, status\
-        ) \
+        "INSERT INTO keygen_requests(
+            prep_keygen_id, key_id, extra_data, created_at, otlp_context, already_sent, status
+        )
         VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
         prep_key_id.as_le_slice(),
         key_id.as_le_slice(),
@@ -375,10 +375,10 @@ pub async fn insert_rand_crsgen_request(
     let extra_data = options.build_extra_data();
 
     sqlx::query!(
-        "INSERT INTO crsgen_requests(\
-            crs_id, max_bit_length, params_type, extra_data, created_at, otlp_context, \
-            already_sent, status\
-        ) \
+        "INSERT INTO crsgen_requests(
+            crs_id, max_bit_length, params_type, extra_data, created_at, otlp_context,
+            already_sent, status
+        )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
         crs_id.as_le_slice(),
         max_bit_length.as_le_slice(),
@@ -422,10 +422,10 @@ pub async fn insert_rand_new_kms_context(
     let software_version = "v1".to_string();
 
     sqlx::query!(
-        "INSERT INTO new_kms_context(\
-            context_id, previous_context_id, kms_node_params, thresholds, software_version, \
-            pcr_values, tx_hash, created_at, otlp_context, already_sent, status\
-        ) \
+        "INSERT INTO new_kms_context(
+            context_id, previous_context_id, kms_node_params, thresholds, software_version,
+            pcr_values, tx_hash, created_at, otlp_context, already_sent, status
+        )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT DO NOTHING",
         context_id.as_le_slice(),
         previous_context_id.as_le_slice(),
@@ -466,10 +466,10 @@ pub async fn insert_rand_new_kms_epoch(
     let crs_list: Vec<PreviousCrsInfo> = vec![];
 
     sqlx::query!(
-        "INSERT INTO new_kms_epoch(\
-            context_id, previous_context_id, epoch_id, previous_epoch_id, keys, crs_list, \
-            tx_hash, created_at, otlp_context, already_sent, status\
-        ) \
+        "INSERT INTO new_kms_epoch(
+            context_id, previous_context_id, epoch_id, previous_epoch_id, keys, crs_list,
+            tx_hash, created_at, otlp_context, already_sent, status
+        )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT DO NOTHING",
         context_id.as_le_slice(),
         previous_context_id.as_le_slice(),
@@ -503,15 +503,15 @@ pub async fn check_no_uncompleted_request_in_db(
     info!("Checking no pending requests are remaining in DB...");
     let query = match kind.event_type() {
         EventType::PublicDecryptionRequest => {
-            "SELECT COUNT(decryption_id) FROM public_decryption_requests \
+            "SELECT COUNT(decryption_id) FROM public_decryption_requests
             WHERE status NOT IN ('completed', 'failed')"
         }
         EventType::UserDecryptionRequest => {
-            "SELECT COUNT(decryption_id) FROM user_decryption_requests \
+            "SELECT COUNT(decryption_id) FROM user_decryption_requests
             WHERE status NOT IN ('completed', 'failed')"
         }
         EventType::PrepKeygenRequest => {
-            "SELECT COUNT(prep_keygen_id) FROM prep_keygen_requests \
+            "SELECT COUNT(prep_keygen_id) FROM prep_keygen_requests
             WHERE status NOT IN ('completed', 'failed')"
         }
         EventType::KeygenRequest => {
@@ -521,7 +521,7 @@ pub async fn check_no_uncompleted_request_in_db(
             "SELECT COUNT(crs_id) FROM crsgen_requests WHERE status NOT IN ('completed', 'failed')"
         }
         EventType::NewKmsContext => {
-            "SELECT COUNT(context_id) FROM new_kms_context \
+            "SELECT COUNT(context_id) FROM new_kms_context
             WHERE status NOT IN ('completed', 'failed')"
         }
         EventType::NewKmsEpoch => {

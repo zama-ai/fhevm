@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO epoch_result_responses(\n                context_id, epoch_id, keys, crs_list, created_at, otlp_context\n            )\n            VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Timestamptz",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3df2ad74b0a730627e64691bf1ea8d5aefbb08c8ec971accb4f419b5c9d5ba76"
+}

@@ -82,9 +82,9 @@ pub async fn insert_rand_public_decrypt_response(
     let status = status.unwrap_or(OperationStatus::Pending);
 
     sqlx::query!(
-        "INSERT INTO public_decryption_responses(\
-            decryption_id, decrypted_result, signature, extra_data, created_at, otlp_context, status\
-        ) \
+        "INSERT INTO public_decryption_responses(
+            decryption_id, decrypted_result, signature, extra_data, created_at, otlp_context, status
+        )
         VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
         decrypted_result,
@@ -116,9 +116,9 @@ pub async fn insert_rand_user_decrypt_response(
     let status = status.unwrap_or(OperationStatus::Pending);
 
     sqlx::query!(
-        "INSERT INTO user_decryption_responses(\
-            decryption_id, user_decrypted_shares, signature, extra_data, created_at, otlp_context, status\
-        ) \
+        "INSERT INTO user_decryption_responses(
+            decryption_id, user_decrypted_shares, signature, extra_data, created_at, otlp_context, status
+        )
         VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
         user_decrypted_shares,
@@ -149,7 +149,7 @@ pub async fn insert_rand_prep_keygen_response(
     let status = status.unwrap_or(OperationStatus::Pending);
 
     sqlx::query!(
-        "INSERT INTO prep_keygen_responses(prep_keygen_id, signature, created_at, otlp_context, status) \
+        "INSERT INTO prep_keygen_responses(prep_keygen_id, signature, created_at, otlp_context, status)
         VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
         prep_keygen_id.as_le_slice(),
         signature,
@@ -180,7 +180,7 @@ pub async fn insert_rand_keygen_response(
     let status = status.unwrap_or(OperationStatus::Pending);
 
     sqlx::query!(
-        "INSERT INTO keygen_responses(key_id, key_digests, signature, created_at, otlp_context, status) \
+        "INSERT INTO keygen_responses(key_id, key_digests, signature, created_at, otlp_context, status)
         VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
         key_id.as_le_slice(),
         key_digests.clone() as Vec<KeyDigestDbItem>,
@@ -210,7 +210,7 @@ pub async fn insert_rand_crsgen_response(
     let status = status.unwrap_or(OperationStatus::Pending);
 
     sqlx::query!(
-        "INSERT INTO crsgen_responses(crs_id, crs_digest, signature, created_at, otlp_context, status) \
+        "INSERT INTO crsgen_responses(crs_id, crs_digest, signature, created_at, otlp_context, status)
         VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
         crs_id.as_le_slice(),
         crs_digest.clone(),
@@ -238,7 +238,7 @@ pub async fn insert_rand_new_kms_context_response(
     let status = status.unwrap_or(OperationStatus::Pending);
 
     sqlx::query!(
-        "INSERT INTO new_kms_context_responses(context_id, created_at, otlp_context, status) \
+        "INSERT INTO new_kms_context_responses(context_id, created_at, otlp_context, status)
         VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
         context_id.as_le_slice(),
         Utc::now(),
@@ -263,9 +263,9 @@ pub async fn insert_rand_epoch_result_response(
     let status = status.unwrap_or(OperationStatus::Pending);
 
     sqlx::query!(
-        "INSERT INTO epoch_result_responses(\
-            context_id, epoch_id, keys, crs_list, created_at, otlp_context, status\
-        ) \
+        "INSERT INTO epoch_result_responses(
+            context_id, epoch_id, keys, crs_list, created_at, otlp_context, status
+        )
         VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
         context_id.as_le_slice(),
         epoch_id.as_le_slice(),

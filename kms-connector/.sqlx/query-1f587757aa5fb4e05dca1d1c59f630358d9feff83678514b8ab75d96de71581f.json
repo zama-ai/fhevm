@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO new_kms_context(\n            context_id, previous_context_id, kms_node_params, thresholds, software_version,\n            pcr_values, tx_hash, created_at, otlp_context\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Text",
+        "Bytea",
+        "Bytea",
+        "Timestamptz",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1f587757aa5fb4e05dca1d1c59f630358d9feff83678514b8ab75d96de71581f"
+}

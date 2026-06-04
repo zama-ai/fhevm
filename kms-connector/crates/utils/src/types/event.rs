@@ -436,7 +436,7 @@ async fn update_public_decryption_status(
     error_counter: i16,
 ) {
     let query = sqlx::query!(
-        "UPDATE public_decryption_requests SET status = $1, already_sent = $2, error_counter = $3 \
+        "UPDATE public_decryption_requests SET status = $1, already_sent = $2, error_counter = $3
         WHERE decryption_id = $4",
         status as OperationStatus,
         already_sent,
@@ -454,7 +454,7 @@ async fn update_user_decryption_status(
     error_counter: i16,
 ) {
     let query = sqlx::query!(
-        "UPDATE user_decryption_requests SET status = $1, already_sent = $2, error_counter = $3 \
+        "UPDATE user_decryption_requests SET status = $1, already_sent = $2, error_counter = $3
         WHERE decryption_id = $4",
         status as OperationStatus,
         already_sent,
@@ -471,8 +471,7 @@ async fn update_prep_keygen_status(
     already_sent: bool,
 ) {
     let query = sqlx::query!(
-        "UPDATE prep_keygen_requests SET status = $1, already_sent = $2 \
-        WHERE prep_keygen_id = $3",
+        "UPDATE prep_keygen_requests SET status = $1, already_sent = $2 WHERE prep_keygen_id = $3",
         status as OperationStatus,
         already_sent,
         id.as_le_slice()
@@ -487,8 +486,7 @@ async fn update_keygen_status(
     already_sent: bool,
 ) {
     let query = sqlx::query!(
-        "UPDATE keygen_requests SET status = $1, already_sent = $2 \
-        WHERE key_id = $3",
+        "UPDATE keygen_requests SET status = $1, already_sent = $2 WHERE key_id = $3",
         status as OperationStatus,
         already_sent,
         id.as_le_slice()
@@ -503,8 +501,7 @@ async fn update_crsgen_status(
     already_sent: bool,
 ) {
     let query = sqlx::query!(
-        "UPDATE crsgen_requests SET status = $1, already_sent = $2 \
-        WHERE crs_id = $3",
+        "UPDATE crsgen_requests SET status = $1, already_sent = $2 WHERE crs_id = $3",
         status as OperationStatus,
         already_sent,
         id.as_le_slice()
@@ -519,8 +516,7 @@ async fn update_new_kms_context_status(
     already_sent: bool,
 ) {
     let query = sqlx::query!(
-        "UPDATE new_kms_context SET status = $1, already_sent = $2 \
-        WHERE context_id = $3",
+        "UPDATE new_kms_context SET status = $1, already_sent = $2 WHERE context_id = $3",
         status as OperationStatus,
         already_sent,
         context_id.as_le_slice()
@@ -535,8 +531,7 @@ async fn update_new_kms_epoch_status(
     already_sent: bool,
 ) {
     let query = sqlx::query!(
-        "UPDATE new_kms_epoch SET status = $1, already_sent = $2 \
-        WHERE epoch_id = $3",
+        "UPDATE new_kms_epoch SET status = $1, already_sent = $2 WHERE epoch_id = $3",
         status as OperationStatus,
         already_sent,
         epoch_id.as_le_slice()

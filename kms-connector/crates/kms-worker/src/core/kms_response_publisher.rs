@@ -82,9 +82,9 @@ impl DbKmsResponsePublisher {
         otlp_ctx: PropagationContext,
     ) -> anyhow::Result<PgQueryResult> {
         sqlx::query!(
-            "INSERT INTO public_decryption_responses(\
-                decryption_id, decrypted_result, signature, extra_data, created_at, otlp_context\
-            ) \
+            "INSERT INTO public_decryption_responses(
+                decryption_id, decrypted_result, signature, extra_data, created_at, otlp_context
+            )
             VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
             response.decryption_id.as_le_slice(),
             response.decrypted_result,
@@ -105,10 +105,10 @@ impl DbKmsResponsePublisher {
         otlp_ctx: PropagationContext,
     ) -> anyhow::Result<PgQueryResult> {
         sqlx::query!(
-            "INSERT INTO user_decryption_responses(\
-                decryption_id, user_decrypted_shares, signature, extra_data, created_at, \
-                otlp_context\
-            ) \
+            "INSERT INTO user_decryption_responses(
+                decryption_id, user_decrypted_shares, signature, extra_data, created_at,
+                otlp_context
+            )
             VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
             response.decryption_id.as_le_slice(),
             response.user_decrypted_shares,
@@ -129,8 +129,7 @@ impl DbKmsResponsePublisher {
         otlp_ctx: PropagationContext,
     ) -> anyhow::Result<PgQueryResult> {
         sqlx::query!(
-
-            "INSERT INTO prep_keygen_responses(prep_keygen_id, signature, created_at, otlp_context) \
+            "INSERT INTO prep_keygen_responses(prep_keygen_id, signature, created_at, otlp_context)
             VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
             response.prep_keygen_id.as_le_slice(),
             response.signature,
@@ -149,8 +148,7 @@ impl DbKmsResponsePublisher {
         otlp_ctx: PropagationContext,
     ) -> anyhow::Result<PgQueryResult> {
         sqlx::query!(
-
-            "INSERT INTO keygen_responses(key_id, key_digests, signature, created_at, otlp_context) \
+            "INSERT INTO keygen_responses(key_id, key_digests, signature, created_at, otlp_context)
             VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
             response.key_id.as_le_slice(),
             response.key_digests as Vec<KeyDigestDbItem>,
@@ -170,7 +168,7 @@ impl DbKmsResponsePublisher {
         otlp_ctx: PropagationContext,
     ) -> anyhow::Result<PgQueryResult> {
         sqlx::query!(
-            "INSERT INTO crsgen_responses(crs_id, crs_digest, signature, created_at, otlp_context) \
+            "INSERT INTO crsgen_responses(crs_id, crs_digest, signature, created_at, otlp_context)
             VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
             response.crs_id.as_le_slice(),
             response.crs_digest,
@@ -190,9 +188,7 @@ impl DbKmsResponsePublisher {
         otlp_ctx: PropagationContext,
     ) -> anyhow::Result<PgQueryResult> {
         sqlx::query!(
-            "INSERT INTO new_kms_context_responses(\
-                context_id, created_at, otlp_context\
-            ) \
+            "INSERT INTO new_kms_context_responses(context_id, created_at, otlp_context)
             VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
             response.context_id.as_le_slice(),
             created_at,
@@ -210,9 +206,9 @@ impl DbKmsResponsePublisher {
         otlp_ctx: PropagationContext,
     ) -> anyhow::Result<PgQueryResult> {
         sqlx::query!(
-            "INSERT INTO epoch_result_responses(\
-                context_id, epoch_id, keys, crs_list, created_at, otlp_context\
-            ) \
+            "INSERT INTO epoch_result_responses(
+                context_id, epoch_id, keys, crs_list, created_at, otlp_context
+            )
             VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
             response.context_id.as_le_slice(),
             response.epoch_id.as_le_slice(),

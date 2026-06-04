@@ -55,7 +55,7 @@ impl DbInstance {
         info!("Inserting context #{TESTING_KMS_CONTEXT} for tests...");
         let now = Utc::now();
         sqlx::query!(
-            "INSERT INTO kms_context(id, is_valid, created_at, updated_at) \
+            "INSERT INTO kms_context(id, is_valid, created_at, updated_at)
             VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
             TESTING_KMS_CONTEXT.as_le_slice(),
             true,
