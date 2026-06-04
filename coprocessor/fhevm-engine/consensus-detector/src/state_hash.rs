@@ -35,13 +35,14 @@ async fn compute_and_insert_gcs(
     end: i64,
     batch_limit: i64,
 ) -> anyhow::Result<()> {
-    // `bool_and` guards against orphan rows: a block is treated as empty only
-    // if every `host_chain_blocks_valid` row for it reports zero FHE events.
+    // Sourced from `gcs.host_chain_blocks_valid` (not `public.*`): only the
+    // GCS schema is guaranteed populated for the active window. `bool_and`
+    // treats a block as empty iff every row reports zero FHE events.
     let pending = sqlx::query!(
         r#"
         SELECT b.chain_id AS "chain_id!", b.block_number AS "block_number!",
                bool_and(b.fhe_event_count = 0) AS "is_empty!"
-          FROM public.host_chain_blocks_valid b
+          FROM gcs.host_chain_blocks_valid b
          WHERE b.block_number BETWEEN $1 AND $2
            AND NOT EXISTS (
                SELECT 1 FROM gcs.state_hash sh
@@ -200,7 +201,10 @@ async fn sweep(
     Ok(())
 }
 
-/// Pure pg-notify driven: startup sweep + sweep on each `event_ciphertext_computed`.
+/// Pure pg-notify driven: startup sweep + sweep on `event_ciphertext_computed`
+/// or `event_new_block`. Listening on `event_new_block` covers windows with no
+/// FHE activity — `event_ciphertext_computed` only fires when work happens, so
+/// empty dry-run windows would otherwise never produce sentinel rows.
 pub async fn run(
     pool: Pool<Postgres>,
     s3: Option<Arc<aws_sdk_s3::Client>>,
@@ -211,7 +215,9 @@ pub async fn run(
     info!(batch_limit, bucket = %my_bucket, "starting state_hash worker");
 
     let mut listener = PgListener::connect_with(&pool).await?;
-    listener.listen(EVENT_CIPHERTEXT_COMPUTED).await?;
+    listener
+        .listen_all([EVENT_CIPHERTEXT_COMPUTED, crate::NEW_BLOCK_CHANNEL])
+        .await?;
 
     if let Err(e) = sweep(&pool, s3.as_deref(), &my_bucket, batch_limit).await {
         warn!(error = %e, "initial sweep failed");
@@ -220,8 +226,8 @@ pub async fn run(
         select! {
             _ = cancel.cancelled() => return Ok(()),
             recv = listener.recv() => match recv {
-                Ok(_) => {
-                    debug!("event_ciphertext_computed received");
+                Ok(n) => {
+                    debug!(channel = n.channel(), "sweep trigger received");
                     if let Err(e) = sweep(&pool, s3.as_deref(), &my_bucket, batch_limit).await {
                         warn!(error = %e, "sweep failed");
                     }
