@@ -1,0 +1,22 @@
+# Standalone live-flow client for the local validator. Reuses the program crates'
+# anchor-generated instruction/accounts types + pub PDA derivations (authoritative,
+# not hand-replicated). Kept OUT of the Anchor workspace so it never bloats the
+# on-chain build; its own target dir.
+[package]
+name = "poc-live-client"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "poc-live-client"
+path = "main.rs"
+
+[dependencies]
+anchor-lang = "1.0.2"
+anchor-client = "1.0.2"
+solana-keypair = "3.1.2"
+zama-host = { path = "../../../programs/zama-host", features = ["no-entrypoint"] }
+confidential-token = { path = "../../../programs/confidential-token", features = ["no-entrypoint"] }
+
+[workspace]
