@@ -13,6 +13,7 @@ import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
 import type { EncryptionBits, FheTypeId } from '../types/fheType.js';
 import type { ParseTFHEProvenCompactCiphertextListModuleFunction } from '../modules/encrypt/types.js';
 import type { InputHandle } from '../types/encryptedTypes-p.js';
+import type { TfheVersion } from '../../wasm/tfhe/TfheApi.js';
 import {
   addressToChecksummedAddress,
   assertIsAddress,
@@ -230,7 +231,10 @@ export async function toZkProof(
   zkProofLike: ZkProofLike,
   extraData: BytesHex,
   options?: {
-    readonly zkProofParser?: ParseTFHEProvenCompactCiphertextListModuleFunction;
+    readonly zkProofParser?: {
+      readonly parserFn: ParseTFHEProvenCompactCiphertextListModuleFunction;
+      readonly tfheVersion: TfheVersion;
+    };
     readonly copy?: boolean;
   },
 ): Promise<ZkProof> {
@@ -290,7 +294,10 @@ export async function zkProofToExternalEncryptedValues(
   zkProofLike: ZkProofLike,
   options?: {
     readonly version?: number;
-    readonly zkProofParser?: ParseTFHEProvenCompactCiphertextListModuleFunction;
+    readonly zkProofParser?: {
+      readonly parserFn: ParseTFHEProvenCompactCiphertextListModuleFunction;
+      readonly tfheVersion: TfheVersion;
+    };
   },
 ): Promise<readonly InputHandle[]> {
   if (zkProofLike instanceof ZkProofImpl) {
@@ -397,7 +404,10 @@ function _zkProofToInputHandles(
 async function _getOrParseEncryptionBits(
   encryptionBits: readonly number[] | undefined,
   ciphertextWithZkProof: Uint8Array | string,
-  zkProofParser?: ParseTFHEProvenCompactCiphertextListModuleFunction,
+  zkProofParser?: {
+    readonly parserFn: ParseTFHEProvenCompactCiphertextListModuleFunction;
+    readonly tfheVersion: TfheVersion;
+  },
 ): Promise<readonly EncryptionBits[]> {
   // Case 1: encryptionBits provided — validate, and verify against parsed if possible
   if (encryptionBits != null) {
@@ -406,8 +416,9 @@ async function _getOrParseEncryptionBits(
     });
 
     if (zkProofParser != null) {
-      const parsed = await zkProofParser.parseTFHEProvenCompactCiphertextList({
+      const parsed = await zkProofParser.parserFn.parseTFHEProvenCompactCiphertextList({
         ciphertextWithZkProof: ciphertextWithZkProof,
+        tfheVersion: zkProofParser.tfheVersion,
       });
       _assertEncryptionBitsMatch(parsed.encryptionBits, encryptionBits);
     }
@@ -417,8 +428,9 @@ async function _getOrParseEncryptionBits(
 
   // Case 2: encryptionBits not provided — extract if parse function available
   if (zkProofParser != null) {
-    const parsed = await zkProofParser.parseTFHEProvenCompactCiphertextList({
+    const parsed = await zkProofParser.parserFn.parseTFHEProvenCompactCiphertextList({
       ciphertextWithZkProof: ciphertextWithZkProof,
+      tfheVersion: zkProofParser.tfheVersion,
     });
     return parsed.encryptionBits;
   }

@@ -116,7 +116,7 @@ export function defineClientBaseTests(
     });
 
     it('should fetch FheEncryptionKey in bytes format', async () => {
-      clearKeyCache('sepolia');
+      clearKeyCache(config.chainName);
 
       const client = options.createClient({
         chain: config.fhevmChain,
@@ -155,9 +155,14 @@ export function defineClientBaseTests(
       }
       console.log(`  crsBytes: ${fheEncryptionKeyBytes.crsBytes.bytes.length} bytes`);
 
-      writeKeyToCache('sepolia', fheEncryptionKeyBytes);
-      const cachedFheEncryptionKeyBytes = readKeyFromCache('sepolia');
+      writeKeyToCache(config.chainName, fheEncryptionKeyBytes, config.fheEncryptionKeyTfheVersion);
+      const cachedFheEncryptionKeyBytes = readKeyFromCache(config.chainName, {
+        metadata: fheEncryptionKeyBytes.metadata,
+        tfheVersion: config.fheEncryptionKeyTfheVersion,
+      });
       expect(cachedFheEncryptionKeyBytes).toBeDefined();
+      expect(cachedFheEncryptionKeyBytes!.chain).toBe(config.chainName);
+      expect(cachedFheEncryptionKeyBytes!.tfheVersion).toBe(config.fheEncryptionKeyTfheVersion);
       expect(cachedFheEncryptionKeyBytes!.metadata).toEqual(fheEncryptionKeyBytes.metadata);
       expect(cachedFheEncryptionKeyBytes!.publicKeyBytes.id).toBe(fheEncryptionKeyBytes.publicKeyBytes.id);
       expect(cachedFheEncryptionKeyBytes!.publicKeyBytes.bytes).toEqual(fheEncryptionKeyBytes.publicKeyBytes.bytes);

@@ -27,9 +27,9 @@ const PRIVATE_TOKEN = Symbol('CoreFhevmHostClient.token');
 ////////////////////////////////////////////////////////////////////////////////
 
 class CoreFhevmImpl<
-  chain extends FhevmChain | undefined,
+  chain extends FhevmChain,
   runtime extends FhevmRuntime,
-  client extends OptionalNativeClient,
+  client extends NativeClient,
 > implements Fhevm<chain, FhevmRuntime, client> {
   // Private fields (truly inaccessible from outside)
   readonly #uid: string;
@@ -37,9 +37,7 @@ class CoreFhevmImpl<
   readonly #trustedClient: TrustedClient<client> | undefined;
   readonly #chain: chain | undefined;
   readonly #options: ResolvedFhevmOptions;
-  readonly #initFns: Set<
-    (client: FhevmBase<FhevmChain | undefined, FhevmRuntime, OptionalNativeClient>) => Promise<void>
-  >;
+  readonly #initFns: Set<(client: FhevmBase<FhevmChain>) => Promise<void>>;
   #readyPromise: Promise<void> | undefined;
 
   // Declared for TypeScript — defined at runtime via Object.defineProperties
@@ -335,9 +333,9 @@ export function getTrustedClient<client extends NonNullable<object>>(value: {
 ////////////////////////////////////////////////////////////////////////////////
 
 export type CreateCoreFhevmParameters<
-  chain extends FhevmChain | undefined = FhevmChain | undefined,
-  runtime extends FhevmRuntime = FhevmRuntime,
-  client extends OptionalNativeClient = OptionalNativeClient,
+  chain extends FhevmChain,
+  runtime extends FhevmRuntime,
+  client extends NativeClient,
 > = {
   readonly chain?: chain | undefined;
   readonly client?: client | undefined;
@@ -345,11 +343,10 @@ export type CreateCoreFhevmParameters<
   readonly options?: FhevmOptions | undefined;
 };
 
-export function createCoreFhevm<
-  chain extends FhevmChain | undefined = FhevmChain | undefined,
-  runtime extends FhevmRuntime = FhevmRuntime,
-  client extends OptionalNativeClient = OptionalNativeClient,
->(ownerToken: symbol, parameters: CreateCoreFhevmParameters<chain, runtime, client>): Fhevm<chain, runtime, client> {
+export function createCoreFhevm<chain extends FhevmChain, runtime extends FhevmRuntime, client extends NativeClient>(
+  ownerToken: symbol,
+  parameters: CreateCoreFhevmParameters<chain, runtime, client>,
+): Fhevm<chain, runtime, client> {
   // Pre-populate the global FheEncryptionKey cache if the caller provided one.
   // Avoids a 50MB fetch later when encrypt is first called.
   // No-op if an entry already exists for this relayerUrl (first write wins).
@@ -371,9 +368,7 @@ export function createCoreFhevm<
 function extendCoreFhevm<T extends Fhevm<FhevmChain | undefined, FhevmRuntime, OptionalNativeClient>>(
   client: T,
   actionsFactory: (client: T) => FhevmExtension,
-  pushInitFn: (
-    fn: (client: FhevmBase<FhevmChain | undefined, FhevmRuntime, OptionalNativeClient>) => Promise<void>,
-  ) => void,
+  pushInitFn: (fn: (client: FhevmBase<FhevmChain>) => Promise<void>) => void,
 ): T {
   const { actions, runtime, init } = actionsFactory(client);
 

@@ -8,6 +8,7 @@ import { addressToChecksummedAddress, assertIsAddress } from '../../base/address
 import { toArray } from '../../base/object.js';
 import { createTypedValue } from '../../base/typedValue.js';
 import { encrypt as encrypt_ } from '../../coprocessor/encrypt.js';
+import { hyperWasmResolveTfheModuleVersion } from '../../runtime/HyperWasmSolver-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -37,12 +38,23 @@ export async function encryptValue(
   assertIsAddress(contractAddress, {});
   assertIsAddress(userAddress, {});
 
-  const result = await encrypt_(fhevm, {
-    contractAddress: addressToChecksummedAddress(contractAddress),
-    userAddress: addressToChecksummedAddress(userAddress),
-    values,
-    options,
-  });
+  const tfheVersion = await hyperWasmResolveTfheModuleVersion(fhevm);
+
+  const result = await encrypt_(
+    {
+      chain: fhevm.chain,
+      runtime: fhevm.runtime,
+      client: fhevm.client,
+      tfheVersion,
+      options: fhevm.options,
+    },
+    {
+      contractAddress: addressToChecksummedAddress(contractAddress),
+      userAddress: addressToChecksummedAddress(userAddress),
+      values,
+      options,
+    },
+  );
 
   return {
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion

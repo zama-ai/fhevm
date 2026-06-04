@@ -11,6 +11,10 @@ export function getWasmInfo(): {
     filename: string;
     sha256: string;
   }[];
+  memory?: {
+    byteLength: number;
+    pages: number;
+  };
 };
 export function getTfheWorkers(): object[];
 export function terminateWorkers(): Promise<unknown>;

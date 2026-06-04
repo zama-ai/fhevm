@@ -1,3 +1,4 @@
+import type { TfheVersion } from '../../wasm/tfhe/TfheApi.js';
 import type { Bytes, UintNumber } from './primitives.js';
 import type { Prettify } from './utils.js';
 
@@ -87,6 +88,7 @@ export type FheEncryptionKeyWasm = {
   readonly publicKey: FheEncryptionPublicKey;
   readonly crs: FheEncryptionCrs;
   readonly metadata: FheEncryptionKeyMetadata;
+  readonly tfheVersion: TfheVersion;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -3,6 +3,7 @@ import type { FhevmChain } from '../types/fhevmChain.js';
 import type { BytesHex, ChecksummedAddress, TypedValue } from '../types/primitives.js';
 import type { RelayerInputProofOptions } from '../types/relayer.js';
 import type { InputHandle } from '../types/encryptedTypes-p.js';
+import type { TfheVersion } from '../../wasm/tfhe/TfheApi.js';
 import { fetchVerifiedInputProof } from './fetchVerifiedInputProof.js';
 import { createZkProof } from './ZkProofBuilder-p.js';
 
@@ -12,6 +13,7 @@ type Context = {
   readonly chain: FhevmChain;
   readonly runtime: WithEncrypt;
   readonly client: NonNullable<object>;
+  readonly tfheVersion: TfheVersion;
   readonly options: { readonly batchRpcCalls: boolean };
 };
 
@@ -32,7 +34,10 @@ type ReturnType = {
 export async function encrypt(context: Context, parameters: Parameters): Promise<ReturnType> {
   const hardCodedExtraData = '0x00' as BytesHex;
 
-  const zkProof = await createZkProof(context, { ...parameters, extraData: hardCodedExtraData });
+  const zkProof = await createZkProof(
+    { chain: context.chain, runtime: context.runtime, tfheVersion: context.tfheVersion },
+    { ...parameters, extraData: hardCodedExtraData },
+  );
 
   const inputProof = await fetchVerifiedInputProof(context, {
     zkProof,

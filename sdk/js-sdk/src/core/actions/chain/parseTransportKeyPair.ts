@@ -1,7 +1,8 @@
 import type { Fhevm, OptionalNativeClient } from '../../types/coreFhevmClient.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
-import { toTransportKeyPair, type TransportKeyPair } from '../../kms/TransportKeyPair-p.js';
+import type { TransportKeyPair } from '../../kms/TransportKeyPair-p.js';
+import { toTransportKeyPair } from '../../kms/TransportKeyPair-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 

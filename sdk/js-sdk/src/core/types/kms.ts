@@ -1,3 +1,4 @@
+import type { TkmsVersion } from '../../wasm/tkms/KmsLibApi.js';
 import type { HostContractData } from './hostContract.js';
 import type { Bytes32Hex, BytesHex, ChecksummedAddress, Uint64BigInt } from './primitives.js';
 import type { Prettify } from './utils.js';
@@ -147,5 +148,6 @@ export type KmsPublicDecryptEip712 = Prettify<{
 
 export declare const KmsSigncryptedSharesBrand: unique symbol;
 export interface KmsSigncryptedShares {
+  readonly tkmsVersion: TkmsVersion;
   readonly [KmsSigncryptedSharesBrand]: never;
 }

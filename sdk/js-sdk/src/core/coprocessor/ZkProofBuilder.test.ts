@@ -32,15 +32,18 @@ const contractAddress = '0xa5e1defb98EFe38EBb2D958CEe052410247F4c80' as Checksum
 const userAddress = '0x8ba1f109551bD432803012645Ac136ddd64DBA72' as ChecksummedAddress;
 
 function makeMockContext(overrides?: { aclAddress?: string; chainId?: number }) {
+  const acl = { address: overrides?.aclAddress ?? aclContractAddress };
   return {
     chain: {
       id: overrides?.chainId ?? chainId,
       fhevm: {
         relayerUrl: 'http://mock',
-        contracts: { acl: { address: overrides?.aclAddress ?? aclContractAddress } },
+        contracts: { acl },
       },
     },
-    runtime: {},
+    runtime: {
+      config: { moduleVersions: { tfhe: '1.6.1' } },
+    },
   } as any;
 }
 
@@ -208,7 +211,10 @@ const EXTRA_DATA = asBytesHex('0x00');
 
 function makeMockParser(encryptionBits: number[]) {
   return {
-    parseTFHEProvenCompactCiphertextList: vi.fn().mockResolvedValue({ encryptionBits }),
+    parserFn: {
+      parseTFHEProvenCompactCiphertextList: vi.fn().mockResolvedValue({ encryptionBits }),
+    },
+    tfheVersion: '1.6.1',
   } as any;
 }
 

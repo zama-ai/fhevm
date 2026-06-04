@@ -26,6 +26,7 @@ export type FheTestEthersConfig = {
   readonly zamaApiKey: string;
   readonly fheTestAddress: string;
   readonly fheTestContract: ethers.Contract;
+  readonly fheEncryptionKeyTfheVersion: string;
   readonly moduleVersions?: WasmModuleVersions | undefined;
 };
 
@@ -74,6 +75,7 @@ function _buildConfig(env: FheTestBaseEnv): FheTestEthersConfig {
     zamaApiKey: env.zamaApiKey,
     fheTestAddress: env.fheTestAddress,
     fheTestContract,
+    fheEncryptionKeyTfheVersion: env.fheEncryptionKeyTfheVersion,
     moduleVersions: env.moduleVersions,
   };
 }

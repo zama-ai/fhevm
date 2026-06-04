@@ -1475,6 +1475,7 @@ async function __wbg_init(module_or_path, memory) {
 }
 
 function getWasmInfo() {
+  const memory = wasm?.memory;
   return {
     name: 'tfhe',
     version: "1.6.0-dev",
@@ -1488,6 +1489,13 @@ function getWasmInfo() {
         sha256: "2c2ef02437e5b7a41f4c5c1defa0a24dcfae737037a59a145a972bb4191571b8",
       }
     ],
+    memory:
+      memory === undefined
+        ? undefined
+        : {
+            byteLength: memory.buffer.byteLength,
+            pages: memory.buffer.byteLength / 65536,
+          },
   };
 }
 

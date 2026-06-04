@@ -24,6 +24,10 @@ type ReturnType = readonly ClearValue[];
 export async function decryptKmsSignedcryptedShares(context: Context, parameters: Parameters): Promise<ReturnType> {
   const { transportKeyPair: transportKeyPair, kmsSigncryptedShares } = parameters;
 
+  if (transportKeyPair.tkmsVersion !== kmsSigncryptedShares.tkmsVersion) {
+    throw new Error('TkmsVersion mismatch');
+  }
+
   // also validates `transportKeyPair`
   const tkmsPrivateKey = await transportKeyPairToTkmsPrivateKey(context, transportKeyPair);
 
@@ -31,6 +35,7 @@ export async function decryptKmsSignedcryptedShares(context: Context, parameters
   const orderedDecryptedHandles: readonly ClearValue[] = await context.runtime.decrypt.decryptAndReconstruct({
     shares: kmsSigncryptedShares,
     tkmsPrivateKey,
+    tkmsVersion: kmsSigncryptedShares.tkmsVersion,
   });
 
   return orderedDecryptedHandles;

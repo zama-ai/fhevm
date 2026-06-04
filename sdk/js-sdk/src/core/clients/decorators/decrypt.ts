@@ -1,5 +1,5 @@
-import type { Fhevm, FhevmBase, FhevmExtension, OptionalNativeClient } from '../../types/coreFhevmClient.js';
-import type { FhevmRuntime, WithDecrypt } from '../../types/coreFhevmRuntime.js';
+import type { Fhevm, FhevmBase, FhevmExtension } from '../../types/coreFhevmClient.js';
+import type { WithDecrypt } from '../../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { GenerateTransportKeyPairReturnType } from '../../actions/decrypt/generateTransportKeyPair.js';
 import type { DecryptModuleFactory } from '../../modules/decrypt/types.js';
@@ -20,6 +20,7 @@ import {
   type DecryptValuesFromPairsParameters,
   type DecryptValuesFromPairsReturnType,
 } from '../../actions/decrypt/decryptValuesFromPairs.js';
+import { hyperWasmResolveTkmsModuleVersion } from '../../runtime/HyperWasmSolver-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -48,9 +49,11 @@ function _decryptActions(fhevm: Fhevm<FhevmChain, WithDecrypt>): DecryptActions 
 
 ////////////////////////////////////////////////////////////////////////////////
 
-function _initDecrypt(fhevm: FhevmBase<FhevmChain | undefined, FhevmRuntime, OptionalNativeClient>): Promise<void> {
+async function _initDecrypt(fhevm: FhevmBase<FhevmChain>): Promise<void> {
   const f = asFhevmClientWith(fhevm, 'decrypt');
-  return f.runtime.decrypt.initTkmsModule();
+  const tkmsVersion = await hyperWasmResolveTkmsModuleVersion(f);
+
+  return f.runtime.decrypt.initTkmsModule({ tkmsVersion });
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -1,4 +1,4 @@
-import type { Fhevm, OptionalNativeClient } from '../../types/coreFhevmClient.js';
+import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { WithDecrypt } from '../../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import {
@@ -11,7 +11,7 @@ import {
 export type GenerateTransportKeyPairReturnType = TransportKeyPair;
 
 export async function generateTransportKeyPair(
-  fhevm: Fhevm<FhevmChain | undefined, WithDecrypt, OptionalNativeClient>,
+  fhevm: Fhevm<FhevmChain, WithDecrypt>,
 ): Promise<GenerateTransportKeyPairReturnType> {
   return await generateTransportKeyPair_(fhevm);
 }

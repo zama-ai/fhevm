@@ -1,13 +1,16 @@
 import type { FhevmRuntime } from '../../../types/coreFhevmRuntime.js';
 import type {
   DecryptAndReconstructParameters,
-  DecryptAndReconstructUserParameters,
+  //DecryptAndReconstructUserParameters,
   DecryptModuleFactory,
   DeserializeTkmsPrivateKeyParameters,
+  GenerateTkmsPrivateKeyParameters,
+  GetTkmsModuleInfoParameters,
   GetTkmsPublicKeyHexParameters,
+  InitTkmsModuleParameters,
   SerializeTkmsPrivateKeyParameters,
-  UserDecryptModuleFactory,
-  UserDecryptModuleParameters,
+  //UserDecryptModuleFactory,
+  //UserDecryptModuleParameters,
   VerifyTkmsPrivateKeyParameters,
 } from '../types.js';
 import {
@@ -27,12 +30,12 @@ import { getTkmsModuleInfo, initTkmsModule } from './init-p.js';
 export const decryptModule: DecryptModuleFactory = (runtime: FhevmRuntime) => {
   return Object.freeze({
     decrypt: Object.freeze({
-      initTkmsModule: async () => {
-        await initTkmsModule(runtime);
+      initTkmsModule: async (args: InitTkmsModuleParameters) => {
+        await initTkmsModule(runtime, args);
       },
-      getTkmsModuleInfo: () => getTkmsModuleInfo(),
+      getTkmsModuleInfo: (args: GetTkmsModuleInfoParameters) => getTkmsModuleInfo(args),
       decryptAndReconstruct: (args: DecryptAndReconstructParameters) => decryptAndReconstruct(runtime, args),
-      generateTkmsPrivateKey: () => generateTkmsPrivateKey(runtime),
+      generateTkmsPrivateKey: (args: GenerateTkmsPrivateKeyParameters) => generateTkmsPrivateKey(runtime, args),
       serializeTkmsPrivateKey: (args: SerializeTkmsPrivateKeyParameters) => serializeTkmsPrivateKey(runtime, args),
       deserializeTkmsPrivateKey: (args: DeserializeTkmsPrivateKeyParameters) =>
         deserializeTkmsPrivateKey(runtime, args),
@@ -48,30 +51,30 @@ export const decryptModule: DecryptModuleFactory = (runtime: FhevmRuntime) => {
 // userDecryptModule
 //////////////////////////////////////////////////////////////////////////////
 
-export const userDecryptModule: UserDecryptModuleFactory = (
-  runtime: FhevmRuntime,
-  parameters: UserDecryptModuleParameters,
-) => {
-  const { privateKey } = parameters;
-  return Object.freeze({
-    userDecrypt: Object.freeze({
-      initTkmsModule: async () => {
-        await initTkmsModule(runtime);
-      },
-      getTkmsModuleInfo: () => getTkmsModuleInfo(),
-      decryptAndReconstruct: (args: DecryptAndReconstructUserParameters) =>
-        decryptAndReconstruct(runtime, {
-          ...args,
-          tkmsPrivateKey: privateKey,
-        }),
-      getTkmsPublicKeyHex: () =>
-        getTkmsPublicKeyHex(runtime, {
-          tkmsPrivateKey: privateKey,
-        }),
-      serializeTkmsPrivateKey: () =>
-        serializeTkmsPrivateKey(runtime, {
-          tkmsPrivateKey: privateKey,
-        }),
-    }),
-  });
-};
+// export const userDecryptModule: UserDecryptModuleFactory = (
+//   runtime: FhevmRuntime,
+//   parameters: UserDecryptModuleParameters,
+// ) => {
+//   const { privateKey } = parameters;
+//   return Object.freeze({
+//     userDecrypt: Object.freeze({
+//       initTkmsModule: async () => {
+//         await initTkmsModule(runtime);
+//       },
+//       getTkmsModuleInfo: () => getTkmsModuleInfo(),
+//       decryptAndReconstruct: (args: DecryptAndReconstructUserParameters) =>
+//         decryptAndReconstruct(runtime, {
+//           ...args,
+//           tkmsPrivateKey: privateKey,
+//         }),
+//       getTkmsPublicKeyHex: () =>
+//         getTkmsPublicKeyHex(runtime, {
+//           tkmsPrivateKey: privateKey,
+//         }),
+//       serializeTkmsPrivateKey: () =>
+//         serializeTkmsPrivateKey(runtime, {
+//           tkmsPrivateKey: privateKey,
+//         }),
+//     }),
+//   });
+// };

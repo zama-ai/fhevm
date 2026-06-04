@@ -37,6 +37,11 @@ Options:
   --dry-run, -n         Print the resolved configuration and the commands that
                         would be executed, then exit without doing anything.
   --help, -h            Print this help message and exit.
+
+Example:
+  ./localstack-restart.sh --chain localstack_v11 --fhevm-cli-profile v0.11.0-mainnet.json
+  ./localstack-restart.sh --chain localstack_v12 --fhevm-cli-profile v0.12.0-testnet.json
+  ./localstack-restart.sh --chain localstack_v13 --fhevm-cli-profile v0.13.0.json
 EOF
 }
 

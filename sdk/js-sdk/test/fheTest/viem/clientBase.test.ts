@@ -3,6 +3,14 @@ import { getViemTestConfig } from '../setup-viem.js';
 import { isCleartext } from '../setupCommon.js';
 import { defineClientBaseTests } from '../viem-common/clientBase.tests.js';
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// CHAIN=testnet npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.test.ts
+// CHAIN=devnet npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.test.ts
+// CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.test.ts
+//
+////////////////////////////////////////////////////////////////////////////////
+
 defineClientBaseTests(!isCleartext(getViemTestConfig().chainName), {
   createClient: (params) => createFhevmBaseClient(params),
   keyMode: 'fhe',
