@@ -219,6 +219,19 @@ fhevm-sdk completion uninstall
 
 Supported shells are `bash`, `zsh`, `fish`, and `pwsh`. Restart the shell or source its profile after installing.
 
+## Not Yet Exposed
+
+`FHETest.sol` has a few capabilities that are not currently available as first-class CLI commands:
+
+| FHETest capability | Possible CLI addition |
+| --- | --- |
+| `verify(handles, cleartexts, decryptionProof)` | Verify public decrypt proof material on-chain. |
+| `createPublicHandle(inputHandle, inputProof)` | Verify an externally created encrypted input and make that handle publicly decryptable without storing it by account/type. |
+| Typed getters such as `getEuint64()` and `getEuint64Of(account)` | Read typed encrypted handles directly instead of using only generic account/type inspection. |
+| `getHandle(type)` | Read the caller's raw handle without passing an account. |
+
+The current CLI focuses on SDK demo flows: input proof, public decrypt, user decrypt, delegated user decrypt, FHETest initialization, inspection, and selected operation demos.
+
 ## Development
 
 ```bash
