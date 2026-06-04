@@ -6,3 +6,9 @@
 #   used by zama-host; version 3.1.0 is already in Cargo.lock. Required for the
 #   #1494 handles-keccak item (canonical keccak handle derivation, dropping sha256).
 solana-keccak-hasher 3.1.0
+# solana-secp256k1-recover: on-chain ecrecover (syscall) for verifying EVM-signed KMS
+#   public-decrypt certs + coprocessor input attestations; 3.1.1 already in Cargo.lock.
+solana-secp256k1-recover 3.1.1
+# k256: DEV-ONLY. Lets the eip712 tests sign with a real secp256k1 key (the test plays
+#   the KMS/coprocessor signer) so recovery is verified against a genuine signature.
+k256 0.13.4

@@ -4934,9 +4934,11 @@ name = "zama-host"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
+ "k256",
  "solana-ed25519-instruction",
  "solana-instructions-sysvar",
  "solana-keccak-hasher",
+ "solana-secp256k1-recover",
  "solana-sha256-hasher",
  "solana-sysvar",
 ]

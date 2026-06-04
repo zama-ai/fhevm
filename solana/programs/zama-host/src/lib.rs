@@ -16,6 +16,8 @@
 
 /// Shared constants, seed bytes, role flags, and fixed protocol sizes.
 pub mod constants;
+/// EIP-712 v4 verification of EVM-signed KMS / coprocessor certificates.
+pub mod eip712;
 /// Program-specific errors returned by ZamaHost instructions.
 pub mod errors;
 /// Anchor events emitted by protocol and test-shim instructions.
