@@ -4,12 +4,15 @@ use zama_fhe as fhe;
 use zama_host::{self, program::ZamaHost};
 
 use crate::{
-    APP_EVENT_VERSION, BALANCE_FHE_TYPE, BalanceHandleUpdateReason, BalanceHandleUpdatedEvent,
-    ConfidentialMint, ConfidentialTokenAccount, ConfidentialTokenError, WithdrawalRequestedEvent,
-    balance_acl_subjects, balance_label, balance_nonce_key, constant::{
+    balance_acl_subjects, balance_label, balance_nonce_key,
+    constant::{
         CONFIDENTIAL_MINT, CONFIDENTIAL_TOKEN_ACCOUNT, FHE_COMPUTE, FHE_RAND_COUNTER,
         VAULT_AUTHORITY,
-    }, durable_acl_handle, fhe_context, token_app_account, withdrawal_label, withdrawal_nonce_key
+    },
+    durable_acl_handle, fhe_context, token_app_account, withdrawal_label, withdrawal_nonce_key,
+    BalanceHandleUpdateReason, BalanceHandleUpdatedEvent, ConfidentialMint,
+    ConfidentialTokenAccount, ConfidentialTokenError, WithdrawalRequestedEvent, APP_EVENT_VERSION,
+    BALANCE_FHE_TYPE,
 };
 
 pub fn request_unwrap_usdc(ctx: Context<RequestUnwrapUsdc>, amount: u64) -> Result<()> {
@@ -46,6 +49,16 @@ pub fn request_unwrap_usdc(ctx: Context<RequestUnwrapUsdc>, amount: u64) -> Resu
         ConfidentialTokenError::CurrentAclRecordMismatch
     );
 
+    require!(
+        token_account.pending_withdrawal_handle == [0u8; 32],
+        ConfidentialTokenError::PendingWithdrawal
+    );
+    require_keys_eq!(
+        Pubkey::default(),
+        token_account.pending_withdrawal_acl_record,
+        ConfidentialTokenError::PendingWithdrawal
+    );
+
     fhe::execute(
         fhe_context(
             &ctx.accounts.owner,
@@ -65,7 +78,8 @@ pub fn request_unwrap_usdc(ctx: Context<RequestUnwrapUsdc>, amount: u64) -> Resu
             let amount = fhe.trivial_encrypt_u64(amount, BALANCE_FHE_TYPE)?;
             let zero = fhe.trivial_encrypt_u64(0, BALANCE_FHE_TYPE)?;
             let unwrap_allowed = fhe.ge(current_balance, amount.clone())?;
-            let allowed_withdrawal = fhe.if_then_else(unwrap_allowed, amount, zero, BALANCE_FHE_TYPE)?;
+            let allowed_withdrawal =
+                fhe.if_then_else(unwrap_allowed, amount, zero, BALANCE_FHE_TYPE)?;
             fhe.allow(
                 &allowed_withdrawal,
                 fhe::DurableAllow {

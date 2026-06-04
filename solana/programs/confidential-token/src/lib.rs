@@ -251,6 +251,21 @@ pub mod confidential_token {
             to.balance_acl_record,
             ConfidentialTokenError::CurrentAclRecordMismatch
         );
+
+        // PoC simplification: transfers are blocked while the sender has an
+        // unwrap in progress. Otherwise the in-flight withdrawal amount was
+        // computed against a stale balance and finalize_unwrap could release
+        // more than the account still holds.
+        require!(
+            from.pending_withdrawal_handle == [0u8; 32],
+            ConfidentialTokenError::PendingWithdrawal
+        );
+        require_keys_eq!(
+            Pubkey::default(),
+            from.pending_withdrawal_acl_record,
+            ConfidentialTokenError::PendingWithdrawal
+        );
+
         if from.key() == to.key() {
             return Ok(());
         }
@@ -701,6 +716,8 @@ pub enum ConfidentialTokenError {
     CurrentAclRecordMismatch,
     #[msg("no pending withdrawal to finalize")]
     NoPendingWithdrawal,
+    #[msg("pending withdrawal")]
+    PendingWithdrawal,
     #[msg("withdrawal ACL record does not match the pending withdrawal")]
     PendingWithdrawalMismatch,
 }
