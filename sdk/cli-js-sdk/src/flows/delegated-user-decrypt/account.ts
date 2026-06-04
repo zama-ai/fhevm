@@ -7,6 +7,7 @@ import type { DelegatedUserDecryptBaseOptions } from "./types";
 const DELEGATOR_PRIVATE_KEY_ENV = "DELEGATOR_PRIVATE_KEY";
 const DELEGATOR_MNEMONIC_ENV = "DELEGATOR_MNEMONIC";
 
+/** Loads delegator credentials only when explicitly supplied by flags or env. */
 export const loadOptionalDelegatorAccount = (
   options: DelegatedUserDecryptBaseOptions,
 ): Account | undefined => {
@@ -22,6 +23,7 @@ export const loadOptionalDelegatorAccount = (
   return loadRequiredDelegatorAccount(options);
 };
 
+/** Loads the encrypted data owner's credentials for delegated writes or grants. */
 export const loadRequiredDelegatorAccount = (
   options: DelegatedUserDecryptBaseOptions,
 ): Account =>
@@ -33,6 +35,12 @@ export const loadRequiredDelegatorAccount = (
     label: "delegator",
   });
 
+/**
+ * Resolves and cross-checks the encrypted data owner address.
+ *
+ * When both an address and credentials are present, they must describe the same
+ * account to avoid granting/decrypting on behalf of the wrong owner.
+ */
 export const resolveDelegatorAddress = (
   options: DelegatedUserDecryptBaseOptions,
   account?: Account,
@@ -55,6 +63,7 @@ export const resolveDelegatorAddress = (
   );
 };
 
+/** Rejects self-delegation; the regular user-decrypt path handles that case. */
 export const validateDistinctDelegatedAccounts = (
   delegatorAddress: Hex,
   delegateAddress: Hex,

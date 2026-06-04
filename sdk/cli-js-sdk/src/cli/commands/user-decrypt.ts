@@ -16,6 +16,7 @@ import { createProgressReporter } from "../progress";
 
 const DEFAULT_PERMIT_DURATION_DAYS = 1;
 
+/** Registers owner-signed user decrypt commands for cached and fresh handles. */
 export const registerUserDecryptCommands = (program: Command): void => {
   const supportedValueTypes = FHE_VALUE_TYPES.join(", ");
   const userDecryptCommand = program

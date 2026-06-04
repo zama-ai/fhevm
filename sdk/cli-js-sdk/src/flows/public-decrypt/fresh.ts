@@ -19,6 +19,12 @@ import type {
 } from "../../types";
 import { createFreshDecryptValues } from "../../values";
 
+/**
+ * Options for the fresh public-decrypt demo flow.
+ *
+ * The flow encrypts one value for the wallet, writes it to FHETest with
+ * `makePublic=true`, then public-decrypts the stored handle.
+ */
 export type FreshPublicDecryptOptions = ClientOptions &
   Readonly<{
     type: FheValueType;
@@ -29,6 +35,7 @@ export type FreshPublicDecryptOptions = ClientOptions &
     onProgress?: ProgressReporter;
   }>;
 
+/** Creates a new public FHETest handle and decrypts it through the public API. */
 export const freshPublicDecrypt = async (
   options: FreshPublicDecryptOptions,
 ): Promise<

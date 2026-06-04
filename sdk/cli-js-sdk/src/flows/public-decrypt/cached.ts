@@ -11,6 +11,13 @@ import type {
 } from "../../types";
 import { resolveAccountAddress } from "./account";
 
+/**
+ * Public-decrypt options for existing ciphertext handles.
+ *
+ * If `handles` is provided, the flow decrypts them directly. Otherwise it reads
+ * the FHETest handle for `account`/`type`; `account` may be inferred from wallet
+ * credentials by the CLI layer.
+ */
 export type PublicDecryptOptions = ClientOptions &
   Readonly<{
     type: FheValueType;
@@ -22,6 +29,7 @@ export type PublicDecryptOptions = ClientOptions &
     onProgress?: ProgressReporter;
   }>;
 
+/** Reads existing public handles and requests relayer-backed public decryption. */
 export const publicDecrypt = async (
   options: PublicDecryptOptions,
 ): Promise<PublicDecryptResult & { handles?: readonly FheTestHandle[] }> => {

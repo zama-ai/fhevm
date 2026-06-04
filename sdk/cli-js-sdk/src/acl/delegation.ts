@@ -11,6 +11,7 @@ type DelegatorContext = Pick<
   "account" | "chain" | "contractAddress" | "publicClient" | "walletClient"
 >;
 
+/** ACL delegation state for one delegator/delegate/contract tuple. */
 export type DelegationStatus = Readonly<{
   aclAddress: Hex;
   delegatorAddress: Hex;
@@ -23,6 +24,7 @@ export type DelegationStatus = Readonly<{
 const aclAddressOf = (context: Pick<ClientContext, "chain">): Hex =>
   context.chain.fhevm.contracts.acl.address as Hex;
 
+/** Reads the current ACL user-decryption delegation expiration timestamp. */
 export const getUserDecryptionDelegationExpirationDate = async (
   context: PublicContext,
   options: {
@@ -41,6 +43,7 @@ export const getUserDecryptionDelegationExpirationDate = async (
     ],
   })) as bigint;
 
+/** Creates or extends ACL permission for a delegate to user-decrypt owner data. */
 export const delegateForUserDecryption = async (
   context: DelegatorContext,
   options: {
@@ -72,6 +75,12 @@ export const delegateForUserDecryption = async (
   });
 };
 
+/**
+ * Reuses an active user-decryption delegation or creates one when possible.
+ *
+ * Cached delegated flows can call this without delegator credentials only when
+ * the ACL already has an unexpired delegation.
+ */
 export const ensureUserDecryptionDelegation = async (
   context: PublicContext,
   options: {

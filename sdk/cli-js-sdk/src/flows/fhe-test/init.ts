@@ -13,6 +13,12 @@ import type { FheTestHandle, FheValueType } from "../../types";
 import { FHE_VALUE_TYPES } from "../../types";
 import { createInitValue } from "../../values";
 
+/**
+ * Options for initializing FHETest handles for the wallet account.
+ *
+ * `bulk` uses FHETest's all-types initializer and is mutually exclusive with
+ * `type`; without `bulk`, each type is initialized through its clear setter.
+ */
 export type InitFheTestOptions = ClientOptions &
   Readonly<{
     contractAddress?: Hex;
@@ -24,6 +30,7 @@ export type InitFheTestOptions = ClientOptions &
     onProgress?: ProgressReporter;
   }>;
 
+/** Ensures FHETest has stored handles for one or more types. */
 export const initFheTest = async (
   options: InitFheTestOptions,
 ): Promise<{

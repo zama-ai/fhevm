@@ -23,6 +23,12 @@ export type DelegatedUserDecryptOptions = DelegatedUserDecryptBaseOptions &
     handles?: readonly Hex[];
   }>;
 
+/**
+ * Decrypts existing handles as a delegate.
+ *
+ * The flow ensures the delegate has ACL permission from the delegator before it
+ * signs the delegated user decryption permit.
+ */
 export const delegatedUserDecrypt = async (
   options: DelegatedUserDecryptOptions,
 ): Promise<DelegatedUserDecryptResult & { handles?: readonly FheTestHandle[] }> => {

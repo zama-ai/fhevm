@@ -6,6 +6,12 @@ import { decryptUserValues } from "../../fhevm/user-decrypt";
 import type { ProgressReporter } from "../../shared/progress";
 import type { FheTestHandle, FheValueType, UserDecryptResult } from "../../types";
 
+/**
+ * User-decrypt options for existing private handles.
+ *
+ * Direct `handles` are decrypted as-is. Without direct handles, the flow reads
+ * the FHETest handle stored for the signer wallet and selected `type`.
+ */
 export type UserDecryptOptions = ClientOptions &
   Readonly<{
     type: FheValueType;
@@ -17,6 +23,7 @@ export type UserDecryptOptions = ClientOptions &
     onProgress?: ProgressReporter;
   }>;
 
+/** Decrypts private handles owned by the signing wallet. */
 export const userDecrypt = async (
   options: UserDecryptOptions,
 ): Promise<UserDecryptResult & { handles?: readonly FheTestHandle[] }> => {

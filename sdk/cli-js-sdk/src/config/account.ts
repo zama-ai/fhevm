@@ -5,6 +5,11 @@ import {
   type Account,
 } from "viem/accounts";
 
+/**
+ * Loads the default wallet account from explicit options, then environment.
+ *
+ * Mnemonic takes precedence over private key when both are present.
+ */
 export const loadAccount = (privateKey?: Hex, mnemonic?: string): Account => {
   return loadNamedAccount({
     privateKey,
@@ -15,6 +20,12 @@ export const loadAccount = (privateKey?: Hex, mnemonic?: string): Account => {
   });
 };
 
+/**
+ * Loads a named account using caller-provided env variable names for fallback.
+ *
+ * Used to keep delegate (`PRIVATE_KEY`/`MNEMONIC`) and delegator
+ * (`DELEGATOR_PRIVATE_KEY`/`DELEGATOR_MNEMONIC`) credentials separate.
+ */
 export const loadNamedAccount = (options: {
   privateKey?: Hex;
   mnemonic?: string;

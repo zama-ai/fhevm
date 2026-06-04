@@ -34,6 +34,7 @@ export type FreshDelegatedUserDecryptOptions = DelegatedUserDecryptBaseOptions &
     value?: FheClearValue;
   }>;
 
+/** Result for a fresh delegated flow, including the write that created the handle. */
 export type FreshDelegatedUserDecryptResult = DelegatedUserDecryptResult &
   Readonly<{
     transactionHash: Hex;
@@ -42,6 +43,10 @@ export type FreshDelegatedUserDecryptResult = DelegatedUserDecryptResult &
     handle: FheTestHandle;
   }>;
 
+/**
+ * Creates a new private handle owned by the delegator, grants delegate ACL
+ * access if needed, then decrypts the handle with a delegated permit.
+ */
 export const freshDelegatedUserDecrypt = async (
   options: FreshDelegatedUserDecryptOptions,
 ): Promise<FreshDelegatedUserDecryptResult> => {

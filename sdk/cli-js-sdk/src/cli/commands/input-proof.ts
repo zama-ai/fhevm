@@ -8,6 +8,7 @@ import { printJson } from "../output";
 import { parseAddress, parseValueType } from "../parsers";
 import { createProgressReporter } from "../progress";
 
+/** Registers the JSON-producing input-proof smoke-test command. */
 export const registerInputProofCommand = (program: Command): void => {
   const supportedValueTypes = FHE_VALUE_TYPES.join(", ");
 

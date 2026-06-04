@@ -26,6 +26,13 @@ const serializeTypedValues = (
         : String(value.value),
   }));
 
+/**
+ * Signs a user-decryption permit and decrypts private handles.
+ *
+ * When `ownerAddress` differs from the signer, the permit is created as a
+ * delegated permit for the encrypted data owner. Callers are responsible for
+ * ensuring ACL delegation exists before invoking this adapter.
+ */
 export const decryptUserValues = async (
   context: DecryptContext,
   options: {

@@ -96,6 +96,13 @@ const optionItems = (command: CommandTree): CompletionItem[] => [
   { name: "--help", description: "display help for command" },
 ];
 
+/**
+ * Returns completion candidates by walking the Commander command tree.
+ *
+ * Options with `.choices()` produce value completions. Free-form option values
+ * intentionally return no items so the shell can fall back to file/path
+ * completion instead of suggesting subcommands.
+ */
 export const getCompletionItems = (
   program: Command,
   env: ParseEnvResult,

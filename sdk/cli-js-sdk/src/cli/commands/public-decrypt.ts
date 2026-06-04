@@ -17,6 +17,7 @@ import {
 } from "../parsers";
 import { createProgressReporter } from "../progress";
 
+/** Registers public decrypt commands for cached, fresh, and make-public flows. */
 export const registerPublicDecryptCommands = (program: Command): void => {
   const supportedValueTypes = FHE_VALUE_TYPES.join(", ");
   const publicDecryptCommand = program

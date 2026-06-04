@@ -20,6 +20,12 @@ import { createProgressReporter } from "../progress";
 const DEFAULT_PERMIT_DURATION_DAYS = 1;
 const DEFAULT_DELEGATION_DURATION_DAYS = 360;
 
+/**
+ * Registers delegated decrypt commands.
+ *
+ * Delegate credentials come from `PRIVATE_KEY`/`MNEMONIC`; encrypted data owner
+ * credentials come from `DELEGATOR_PRIVATE_KEY`/`DELEGATOR_MNEMONIC`.
+ */
 export const registerDelegatedUserDecryptCommands = (program: Command): void => {
   const supportedValueTypes = FHE_VALUE_TYPES.join(", ");
   const delegatedCommand = program

@@ -22,6 +22,12 @@ import { createRandomValue } from "../../values";
 export { FHE_TEST_OPERATIONS, getFheTestOperationType };
 export type { FheTestOperation };
 
+/**
+ * Options for FHETest operator demos.
+ *
+ * Each operation has a fixed encrypted type. The command encrypts one operand,
+ * applies the operation to the existing stored handle, and stores the result.
+ */
 export type RunFheTestOperationOptions = ClientOptions &
   Readonly<{
     operation: FheTestOperation;
@@ -33,6 +39,7 @@ export type RunFheTestOperationOptions = ClientOptions &
     onProgress?: ProgressReporter;
   }>;
 
+/** Result for a FHETest operation write, including before/after handles. */
 export type RunFheTestOperationResult = Readonly<{
   operation: FheTestOperation;
   functionName: string;
@@ -47,6 +54,7 @@ export type RunFheTestOperationResult = Readonly<{
   makePublic: boolean;
 }>;
 
+/** Runs one explicit FHETest operator demo against the wallet's stored handle. */
 export const runFheTestOperation = async (
   options: RunFheTestOperationOptions,
 ): Promise<RunFheTestOperationResult> => {

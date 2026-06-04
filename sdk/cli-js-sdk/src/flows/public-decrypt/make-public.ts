@@ -12,6 +12,10 @@ import type {
   PublicDecryptResult,
 } from "../../types";
 
+/**
+ * Options for converting an existing wallet-owned FHETest handle to public
+ * decryptability.
+ */
 export type MakePublicOptions = ClientOptions &
   Readonly<{
     type: FheValueType;
@@ -21,6 +25,10 @@ export type MakePublicOptions = ClientOptions &
     onProgress?: ProgressReporter;
   }>;
 
+/**
+ * Marks the wallet's stored FHETest handle as publicly decryptable, then
+ * verifies it through the public decrypt API.
+ */
 export const makePublicAndDecrypt = async (
   options: MakePublicOptions,
 ): Promise<

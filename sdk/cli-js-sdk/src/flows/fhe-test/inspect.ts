@@ -17,6 +17,12 @@ import type { ProgressReporter } from "../../shared/progress";
 import type { FheValueType } from "../../types";
 import { FHE_TYPE_IDS } from "../../types";
 
+/**
+ * Options for read-only FHETest inspection.
+ *
+ * `handle` mode is mutually exclusive with account/type mode. In account/type
+ * mode, account can be inferred from wallet credentials.
+ */
 export type InspectFheTestOptions = ClientOptions &
   Readonly<{
     account?: Hex;
@@ -28,6 +34,7 @@ export type InspectFheTestOptions = ClientOptions &
     onProgress?: ProgressReporter;
   }>;
 
+/** Inspection result for a raw handle, independent of any account mapping. */
 export type InspectFheTestHandleResult = Readonly<{
   mode: "handle";
   contractAddress: Hex;
@@ -38,6 +45,7 @@ export type InspectFheTestHandleResult = Readonly<{
   clearText?: string;
 }>;
 
+/** Inspection result for the handle FHETest stores for one account/type pair. */
 export type InspectFheTestAccountResult = Readonly<{
   mode: "account";
   contractAddress: Hex;
@@ -56,6 +64,7 @@ export type InspectFheTestResult =
   | InspectFheTestHandleResult
   | InspectFheTestAccountResult;
 
+/** Performs read-only FHETest handle or account/type inspection. */
 export const inspectFheTest = async (
   options: InspectFheTestOptions,
 ): Promise<InspectFheTestResult> => {

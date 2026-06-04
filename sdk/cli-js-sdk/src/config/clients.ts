@@ -17,6 +17,12 @@ import {
 import { configureFhevmRuntime } from "./runtime";
 import type { ClientOptions } from "./types";
 
+/**
+ * Creates read-only viem and FHEVM SDK clients for the selected network.
+ *
+ * The viem host chain can differ from the FHEVM gateway chain; use the returned
+ * `chain` for SDK calls and `publicClient` for host-chain contract reads.
+ */
 export const createClients = (options: ClientOptions) => {
   const networkConfig = resolveNetworkConfig(options.network);
   configureFhevmRuntime(networkConfig);
@@ -33,16 +39,19 @@ export const createClients = (options: ClientOptions) => {
   return { chain, fhevm, publicClient, rpcUrl, transport };
 };
 
+/** Read-only client context plus the resolved FHETest contract address. */
 export type ClientContext = ReturnType<typeof createClients> &
   Readonly<{
     contractAddress: Hex;
   }>;
 
+/** Creates a read-only client context for the resolved FHETest contract. */
 export const createClientContext = (options: ClientOptions): ClientContext => ({
   ...createClients(options),
   contractAddress: resolveContractAddress(options),
 });
 
+/** Creates a wallet client from default wallet credentials. */
 export const createWallet = (
   options: ClientOptions & { privateKey?: Hex; mnemonic?: string },
 ) => {
@@ -50,6 +59,7 @@ export const createWallet = (
   return createWalletForAccount(options, account);
 };
 
+/** Creates a wallet client for an already resolved account. */
 export const createWalletForAccount = (
   options: ClientOptions,
   account: Account,
@@ -65,11 +75,13 @@ export const createWalletForAccount = (
   return { account, chain, fhevm, publicClient, rpcUrl, walletClient };
 };
 
+/** Wallet client context plus the resolved FHETest contract address. */
 export type WalletContext = ReturnType<typeof createWallet> &
   Readonly<{
     contractAddress: Hex;
   }>;
 
+/** Creates a wallet context from default wallet credentials. */
 export const createWalletContext = (
   options: ClientOptions & { privateKey?: Hex; mnemonic?: string },
 ): WalletContext => ({
@@ -77,6 +89,7 @@ export const createWalletContext = (
   contractAddress: resolveContractAddress(options),
 });
 
+/** Creates a wallet context for a caller-supplied account. */
 export const createWalletContextForAccount = (
   options: ClientOptions,
   account: Account,

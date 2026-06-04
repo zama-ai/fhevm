@@ -20,6 +20,7 @@ import {
 } from "../parsers";
 import { createProgressReporter } from "../progress";
 
+/** Registers FHETest utility commands for info, inspect, init, and operations. */
 export const registerFheTestCommands = (program: Command): void => {
   const supportedValueTypes = FHE_VALUE_TYPES.join(", ");
   const fheTestCommand = program

@@ -12,6 +12,7 @@ import {
 import { getCompletionItems } from "../completion";
 import { printJson } from "../output";
 
+/** Registers shell completion install/uninstall and hidden completion server. */
 export const registerCompletionCommands = (program: Command): void => {
   const completionCommand = program
     .command("completion")

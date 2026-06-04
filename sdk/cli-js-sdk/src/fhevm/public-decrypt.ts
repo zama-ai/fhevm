@@ -6,6 +6,12 @@ import type { PublicDecryptResult } from "../types";
 
 type FhevmClient = ClientContext["fhevm"];
 
+/**
+ * Requests public decryption and returns proof material needed for verification.
+ *
+ * SDK value objects are converted to strings so stdout JSON is stable for
+ * bigint-sized FHE integer types.
+ */
 export const readPublicValues = async (
   fhevm: FhevmClient,
   encryptedValues: readonly Hex[],

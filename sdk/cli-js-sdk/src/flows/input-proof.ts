@@ -11,6 +11,12 @@ import type {
 } from "../types";
 import { createRandomValue } from "../values";
 
+/**
+ * Options for requesting an input proof without writing anything to FHETest.
+ *
+ * `values` wins over `value`; when neither is supplied the flow generates one
+ * random value of `type` so the command can be used as a smoke test.
+ */
 export type RequestInputProofOptions = ClientOptions &
   Readonly<{
     type?: FheValueType;
@@ -21,6 +27,12 @@ export type RequestInputProofOptions = ClientOptions &
     onProgress?: ProgressReporter;
   }>;
 
+/**
+ * Encrypts clear values for a user/contract pair and returns the SDK input proof.
+ *
+ * This is the pure input-proof flow: it does not submit a transaction and does
+ * not persist handles into FHETest.
+ */
 export const requestInputProof = async (
   options: RequestInputProofOptions,
 ): Promise<InputProofResult> => {

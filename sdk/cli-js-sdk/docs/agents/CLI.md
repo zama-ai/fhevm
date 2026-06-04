@@ -12,7 +12,7 @@ Behavioral guidance:
 - Keep progress and status logs on stderr.
 - Keep the final machine-readable response on stdout as JSON.
 - Update `README.md` examples and this guidance when changing command behavior, options, outputs, defaults, or supported flows.
-- Global options are passed before the subcommand.
+- Global options may be passed before or after subcommands; use `optsWithGlobals()` from the command action context.
 - The CLI ships as the `fhevm-sdk` binary (`bin/fhevm-sdk.mjs`, exposed via `pnpm link --global`); `pnpm run cli` remains equivalent.
 - The project-level `.env` is loaded by `src/env.ts` relative to the repository, not the working directory; shell variables take precedence.
 - `completion-server` is a hidden command invoked by tabtab's shell templates; keep its stdout limited to completion items.

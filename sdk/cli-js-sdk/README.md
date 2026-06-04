@@ -37,7 +37,7 @@ Completion covers subcommands, options, and option values with choices (for exam
 | `DELEGATOR_PRIVATE_KEY` | Delegator private key for delegated user decrypt flows.                             |
 | `DELEGATOR_MNEMONIC`    | Delegator mnemonic when `DELEGATOR_PRIVATE_KEY` is not set.                         |
 
-Global options must be passed before the subcommand:
+Global options may be passed before or after subcommands:
 
 - `--network testnet`: uses FHETest `0x94B9d3aF050687D1F76251aD7D09a1F216a19845` on Ethereum Sepolia.
 - `--network devnet`: uses FHETest `0xf56a7990E63a63eC75aD9Aa07De8cB6bF7baa805` on Ethereum Sepolia with the dev relayer config.

@@ -38,6 +38,7 @@ export const FHE_TEST_OPERATIONS = [
   "eq-address",
 ] as const;
 
+/** Explicit FHETest operator demos supported by the CLI. */
 export type FheTestOperation = (typeof FHE_TEST_OPERATIONS)[number];
 
 const operationConfig = {
@@ -59,6 +60,7 @@ type WriteContext = Pick<
   "account" | "contractAddress" | "publicClient"
 >;
 
+/** Simulates an encrypted setter call and returns the viem write request. */
 export const simulateSetEncryptedValue = async (
   context: WriteContext,
   options: {
@@ -84,6 +86,7 @@ export const simulateSetEncryptedValue = async (
   return request;
 };
 
+/** Simulates a clear setter call used by FHETest initialization. */
 export const simulateSetClearValue = async (
   context: WriteContext,
   options: {
@@ -102,6 +105,7 @@ export const simulateSetClearValue = async (
   return request;
 };
 
+/** Simulates marking an existing stored FHETest handle publicly decryptable. */
 export const simulateMakePubliclyDecryptable = async (
   context: WriteContext,
   type: FheValueType,
@@ -117,6 +121,7 @@ export const simulateMakePubliclyDecryptable = async (
   return request;
 };
 
+/** Simulates FHETest's contract-level all-types initializer. */
 export const simulateInitFheTest = async (
   context: WriteContext,
   force: boolean,
@@ -132,6 +137,12 @@ export const simulateInitFheTest = async (
   return request;
 };
 
+/**
+ * Simulates a supported FHETest operation and validates its operand type.
+ *
+ * Operation names intentionally map to concrete contract functions instead of a
+ * generic `type` flag, keeping CLI completion and help aligned with FHETest.sol.
+ */
 export const simulateFheTestOperation = async (
   context: WriteContext,
   options: {
@@ -165,16 +176,20 @@ export const simulateFheTestOperation = async (
   return request;
 };
 
+/** Returns the FHETest encrypted setter name for a value type. */
 export const getSetEncryptedFunctionName = (type: FheValueType): string =>
   setEncryptedFunctionByType[type];
 
+/** Returns the FHETest clear setter name for a value type. */
 export const getSetClearFunctionName = (type: FheValueType): string =>
   setClearFunctionByType[type];
 
+/** Returns the value type required by a supported FHETest operation. */
 export const getFheTestOperationType = (
   operation: FheTestOperation,
 ): FheValueType => operationConfig[operation].type;
 
+/** Returns the FHETest contract function name for a supported operation. */
 export const getFheTestOperationFunctionName = (
   operation: FheTestOperation,
 ): string => operationConfig[operation].functionName;

@@ -6,11 +6,18 @@ import type { EncryptValue } from "../types";
 
 type FhevmClient = ClientContext["fhevm"];
 
+/** Normalized SDK encryption response used by flow code and JSON output. */
 export type EncryptedInput = Readonly<{
   encryptedValues: readonly Hex[];
   inputProof: Hex;
 }>;
 
+/**
+ * Encrypts typed clear values with the FHEVM SDK and normalizes SDK output.
+ *
+ * Raw SDK values are cast at this adapter boundary so flow code can treat
+ * handles and proofs as viem `Hex` values.
+ */
 export const encryptValues = async (
   fhevm: FhevmClient,
   options: {
