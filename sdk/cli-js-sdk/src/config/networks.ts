@@ -1,5 +1,9 @@
 import { defineFhevmChain, sepolia } from "@fhevm/sdk/chains";
-import { mainnet as viemMainnet, sepolia as viemSepolia } from "viem/chains";
+import {
+  mainnet as viemMainnet,
+  polygonAmoy,
+  sepolia as viemSepolia,
+} from "viem/chains";
 import type { Chain } from "viem";
 
 import type { NetworkName } from "../types";
@@ -9,6 +13,8 @@ export const DEFAULT_NETWORK: NetworkName = "testnet";
 export const DEFAULT_TESTNET_RPC_URL =
   "https://ethereum-sepolia-rpc.publicnode.com";
 export const DEFAULT_DEVNET_RPC_URL = DEFAULT_TESTNET_RPC_URL;
+export const DEFAULT_DEVNET_AMOY_RPC_URL =
+  "https://rpc-amoy.polygon.technology";
 
 const devnet = defineFhevmChain({
   id: 11_155_111,
@@ -39,6 +45,25 @@ const devnet = defineFhevmChain({
   },
 });
 
+const devnetAmoy = defineFhevmChain({
+  id: 80_002,
+  fhevm: {
+    contracts: {
+      acl: {
+        address: "0x21d5fcabee8260b8aC18A2f0cEe6869AE08cc44b",
+      },
+      inputVerifier: {
+        address: "0x371B9661c6DCd849E2779d532CA74d75A171dfa9",
+      },
+      kmsVerifier: {
+        address: "0x2D7Ae863BF7537402AB6025bEbB4668dd9F9F4b6",
+      },
+    },
+    relayerUrl: "https://relayer.dev.zama.cloud",
+    gateway: devnet.fhevm.gateway,
+  },
+});
+
 const NETWORK_CONFIGS = {
   testnet: {
     fhevmChain: sepolia,
@@ -53,6 +78,13 @@ const NETWORK_CONFIGS = {
     defaultRpcUrl: DEFAULT_DEVNET_RPC_URL,
     envRpcUrl: "DEVNET_RPC_URL",
     fheTestAddress: "0xD26bB032e2F06A5382902559c4EbBB82C35C6dDF",
+  },
+  "devnet-amoy": {
+    fhevmChain: devnetAmoy,
+    hostChain: polygonAmoy,
+    defaultRpcUrl: DEFAULT_DEVNET_AMOY_RPC_URL,
+    envRpcUrl: "POLYGON_AMOY_RPC_URL",
+    fheTestAddress: "0x7553CB9124f974Ee475E5cE45482F90d5B6076BC",
   },
 } as const satisfies Record<NetworkName, NetworkConfig>;
 

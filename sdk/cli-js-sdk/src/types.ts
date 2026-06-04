@@ -1,6 +1,6 @@
 import type { Hex } from "viem";
 
-export const NETWORKS = ["testnet", "devnet"] as const;
+export const NETWORKS = ["testnet", "devnet", "devnet-amoy"] as const;
 export type NetworkName = (typeof NETWORKS)[number];
 
 export const FHE_VALUE_TYPES = [
