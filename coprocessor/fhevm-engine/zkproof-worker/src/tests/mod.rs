@@ -141,7 +141,7 @@ async fn test_worker_recovers_after_backend_termination() {
         pg_pool_connections: 10,
         pg_polling_interval: 60,
         worker_thread_count: 1,
-        pg_timeout: Duration::from_secs(15),
+        pg_timeout: Duration::from_secs(60),
         pg_auto_explain_with_min_duration: None,
     };
 
@@ -157,6 +157,13 @@ async fn test_worker_recovers_after_backend_termination() {
     .expect("pool should connect");
 
     let pool = pool_mngr.pool();
+
+    // Build the proof before starting the worker. Generating it loads the large
+    // keyset and CRS; doing that while the worker is also loading them contends
+    // for the shared pool and can exhaust the acquire timeout on a slow runner.
+    let aux = utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
+    let zk_pok = utils::generate_sample_zk_pok(&pool, &aux.1).await;
+
     let _service_task = tokio::spawn(crate::verifier::execute_verify_proofs_loop(
         pool_mngr,
         conf,
@@ -164,8 +171,6 @@ async fn test_worker_recovers_after_backend_termination() {
     ));
 
     // Process one proof so the worker is fully up and running.
-    let aux = utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
-    let zk_pok = utils::generate_sample_zk_pok(&pool, &aux.1).await;
     let first = utils::insert_proof(&pool, 301, &zk_pok, &aux.0)
         .await
         .unwrap();
