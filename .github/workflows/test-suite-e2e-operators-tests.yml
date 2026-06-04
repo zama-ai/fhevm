@@ -210,6 +210,22 @@ jobs:
           snapshot_logs "Coprocessor 2 - ZKProof Worker" coprocessor1-zkproof-worker
           snapshot_logs "Coprocessor 2 - TFHE Worker" coprocessor1-tfhe-worker
 
+          dump_digest_race() {
+            local container="$1"
+            echo "::group::${container} - ciphertext_digest race (full grep)"
+            docker logs "${container}" 2>&1 \
+              | grep -E "enqueue ciphertext_digest|ciphertext_digest_pkey|Non-transient DB error|Worker stopped" \
+              | tail -300 || true
+            echo "::endgroup::"
+            echo "::group::${container} - ciphertext_digest race (counts)"
+            echo "enqueue lines: $(docker logs "${container}" 2>&1 | grep -c 'enqueue ciphertext_digest' || true)"
+            echo "pkey 23505:    $(docker logs "${container}" 2>&1 | grep -c 'ciphertext_digest_pkey' || true)"
+            echo "worker stopped:$(docker logs "${container}" 2>&1 | grep -c 'Worker stopped' || true)"
+            echo "::endgroup::"
+          }
+          dump_digest_race coprocessor-sns-worker
+          dump_digest_race coprocessor1-sns-worker
+
       - name: Cleanup
         working-directory: test-suite/fhevm
         if: always()
