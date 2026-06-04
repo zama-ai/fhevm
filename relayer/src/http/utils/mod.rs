@@ -3,6 +3,7 @@ pub mod parsing;
 pub mod redact;
 pub mod responses;
 pub mod serialization;
+pub mod solana_address;
 pub mod validations;
 
 // Re-export all utilities for convenient access
@@ -11,4 +12,5 @@ pub use parsing::*;
 pub use redact::*;
 pub use responses::*;
 pub use serialization::*;
+pub use solana_address::*;
 pub use validations::*;
