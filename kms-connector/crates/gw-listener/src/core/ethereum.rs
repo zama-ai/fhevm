@@ -119,9 +119,13 @@ where
             ])
             .event_signature(event_signatures);
 
-        let mut from_block = self
-            .get_start_block(self.config.kms_operation_from_block_number)
-            .await?;
+        let mut from_block = match self.config.kms_operation_from_block_number {
+            Some(from_block) => {
+                info!("Found configured from_block_number ({from_block}) for Ethereum polling");
+                from_block
+            }
+            None => self.fetch_start_block().await?,
+        };
         info!("Started Ethereum polling from block {from_block}");
 
         let mut ticker = tokio::time::interval(self.config.key_management_polling);
@@ -240,23 +244,21 @@ where
     }
 
     /// Determines the block to start event listening from.
-    async fn get_start_block(&self, from_block_config: Option<u64>) -> anyhow::Result<u64> {
-        if let Some(from_block) = from_block_config {
-            info!("Found configured from_block_number ({from_block}) for Ethereum polling");
-            return Ok(from_block);
-        }
-
+    async fn fetch_start_block(&self) -> anyhow::Result<u64> {
         let chain = ChainName::Ethereum.as_str();
         info!("Fetching last block polled from DB for chain {chain}...");
-        let last_block = sqlx::query_scalar!(
+        let last_block_polled = sqlx::query_scalar!(
             "SELECT block_number FROM last_block_polled_by_chain WHERE chain_name = $1",
             chain,
         )
         .fetch_one(&self.db_pool)
         .await?;
 
-        match last_block {
-            Some(last_block_polled) => Ok(last_block_polled as u64 + 1),
+        match last_block_polled {
+            Some(block_i64) => {
+                let block = u64::try_from(block_i64).expect("block_number should be a valid u64");
+                Ok(block.checked_add(1).expect("block < u64::MAX"))
+            }
             None => {
                 info!("No block polled yet. Listening from finalized block number instead...");
                 let finalized = self
