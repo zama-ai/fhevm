@@ -77,7 +77,7 @@ GUARDRAILS (hard):
 - run-oracle.sh is the source of truth. NEVER weaken a test, stub a check, or add glue to go green. If you cannot pass honestly, set oracleGreen=false (the loop will retry/park) — do not cheat.
 - Work in your worktree; keep the diff minimal and in our code-quality contract (no new >500-line files, no unwrap/panic/TODO/glue — check-form enforces this).
 - If your change would grow a file listed in scripts/poc/form-allow.txt (e.g. zama-host/src/state/mod.rs, which currently holds the handle-derivation code), do NOT grow it: EXTRACT the code you touch into a new focused <500-line module so the allowlisted file shrinks. Editing form-allow.txt or check-form.sh is never allowed, and hitting this is NOT a scope-conflict — splitting the god-file is the intended path and advances our quality goal.
-- Need keccak256? Use solana_program::keccak (works on-chain AND off-chain; already a workspace dependency). Do NOT add a new crate — the dep-guard will (correctly) block it.`;
+- Need keccak256 in zama-host? Add \`solana-keccak-hasher = "3.1.0"\` to programs/zama-host/Cargo.toml (the keccak twin of the existing solana-sha256-hasher; that version is already in Cargo.lock) and use its hashv. This crate is PRE-APPROVED in scripts/poc/dep-allow.txt, so the dep-guard allows it. Do NOT add any OTHER crate. NOTE: anchor_lang::solana_program does NOT re-export keccak — do not rely on it.`;
 
 const implPrompt = (it) => `Implement #1494 item "${it.id}" (${it.kind}, phase ${it.phase}) on test/solana-e2e.
 Task: ${it.desc}

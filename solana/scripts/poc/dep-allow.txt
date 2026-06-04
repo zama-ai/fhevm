@@ -1,0 +1,8 @@
+# Pre-approved (human-signed-off) new dependencies for the PoC.
+# check-form.sh rule 4 blocks ANY new Cargo dependency except crates listed here.
+# Format: <crate-name> [version/justification]. One crate per line.
+#
+# solana-keccak-hasher: keccak256 twin of the existing solana-sha256-hasher already
+#   used by zama-host; version 3.1.0 is already in Cargo.lock. Required for the
+#   #1494 handles-keccak item (canonical keccak handle derivation, dropping sha256).
+solana-keccak-hasher 3.1.0

@@ -56,10 +56,16 @@ if git diff --name-only --diff-filter=MD "$BASE" | grep -qE '^solana/(runtime-te
 	violate "changeset modifies/deletes tests or oracle scripts — fix the code, not the goalposts"
 fi
 
-# 4. No silent new dependencies.
-if git diff "$BASE" -- '*/Cargo.toml' 'Cargo.toml' | grep -E '^\+' | grep -vE '^\+\+\+' |
-	grep -qE '^\+[a-zA-Z0-9_-]+ *= *.*(version|git|path|"[0-9])'; then
-	violate "Cargo.toml dependency change introduced — needs explicit sign-off"
+# 4. No silent new dependencies — except crates pre-approved (signed off) in dep-allow.txt.
+DEP_ALLOW="scripts/poc/dep-allow.txt"
+dep_allowed() { grep -qE "^$1( |\$)" "$DEP_ALLOW" 2>/dev/null; }
+added_deps=$(git diff "$BASE" -- '*/Cargo.toml' 'Cargo.toml' | grep -E '^\+' | grep -vE '^\+\+\+' |
+	grep -E '^\+[a-zA-Z0-9_-]+ *= *.*(version|git|path|"[0-9])' | sed -E 's/^\+([a-zA-Z0-9_-]+).*/\1/' | sort -u || true)
+if [[ -n "$added_deps" ]]; then
+	while IFS= read -r dep; do
+		[[ -z "$dep" ]] && continue
+		dep_allowed "$dep" || violate "new dependency '$dep' is not pre-approved in $DEP_ALLOW — needs explicit sign-off"
+	done <<<"$added_deps"
 fi
 
 ((fail)) && {
