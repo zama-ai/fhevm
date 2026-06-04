@@ -460,14 +460,6 @@ where
         "starting consensus-detector"
     );
 
-    let gw_chain_id: i64 = provider
-        .get_chain_id()
-        .await
-        .map_err(|e| anyhow::anyhow!("failed to fetch Gateway chain id: {e}"))?
-        .try_into()
-        .map_err(|e| anyhow::anyhow!("Gateway chain id does not fit in i64: {e}"))?;
-    info!(gw_chain_id, "resolved Gateway chain id from provider");
-
     let s3_service = S3Service::new(provider, config.gateway_config_address);
     let urls = s3_service.refresh_signer_urls().await?;
     if urls.is_empty() {
@@ -486,7 +478,7 @@ where
         .timeout(Duration::from_secs(5))
         .build()?;
 
-    // GCS upload only when --my-bucket is set; BCS hash compute always runs.
+    // GCS upload only when --my-bucket is set.
     let s3 = if config.my_bucket.is_empty() {
         info!("--my-bucket not set; GCS upload disabled");
         None
@@ -504,7 +496,7 @@ where
             // it, no GCS state hashes get uploaded and the poll always times
             // out. If it exits unexpectedly, cancel the parent so the service
             // crashes and is restarted by its supervisor.
-            if let Err(e) = state_hash::run(pool, s3, bucket, gw_chain_id, batch_limit, worker_cancel).await {
+            if let Err(e) = state_hash::run(pool, s3, bucket, batch_limit, worker_cancel).await {
                 error!(error = %e, "state_hash worker exited with error; shutting down consensus-detector");
                 parent_cancel.cancel();
             }
