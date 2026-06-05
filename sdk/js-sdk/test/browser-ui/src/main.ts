@@ -1,5 +1,6 @@
 import type { FhevmChain } from '../../../src/core/chains/index.js';
-import type { WasmAssetLoadMode, WasmModuleVersions } from '../../../src/core/types/coreFhevmRuntime.js';
+import type { FhevmModuleVersions } from '../../../src/core/types/moduleVersions.js';
+import type { WasmAssetLoadMode } from '../../../src/core/types/wasmAssets.js';
 import type { TkmsVersion } from '../../../src/wasm/tkms/loadKmsLib.js';
 import type { TfheVersion } from '../../../src/wasm/tfhe/loadTfheLib.js';
 import { defineFhevmChain, sepolia } from '../../../src/core/chains/index.js';
@@ -325,6 +326,10 @@ async function createClientContext(
 
   const versionPair = resolveVersionPair(loadedMatrix, options.tfhe, options.kms, options.assetSource);
   applyRuntimeConfig(loadedMatrix, versionPair, options);
+  const moduleVersions: FhevmModuleVersions = {
+    tfhe: versionPair.tfhe,
+    kms: versionPair.kms,
+  };
 
   const provider = new ethers.JsonRpcProvider(targetConfig.rpcUrl);
   await assertContractDeployed(provider, targetConfig.fheTestAddress, 'FHETest', options.chainTarget);
@@ -335,8 +340,8 @@ async function createClientContext(
   const chain = resolveChain(options.chainTarget);
   const client =
     options.chainTarget === 'localcleartext'
-      ? createFhevmCleartextClient({ chain, provider })
-      : createFhevmClient({ chain, provider });
+      ? createFhevmCleartextClient({ chain, provider, options: { moduleVersions } })
+      : createFhevmClient({ chain, provider, options: { moduleVersions } });
 
   log(`Target: ${options.chainTarget}`);
   log(`RPC URL: ${targetConfig.rpcUrl}`);
@@ -393,16 +398,11 @@ async function ensureSignerFunds(chainTarget: ChainTarget, address: string): Pro
 }
 
 function applyRuntimeConfig(matrix_: Matrix, versionPair: VersionPair, options: FormOptions): void {
-  const moduleVersions: WasmModuleVersions = {
-    tfhe: versionPair.tfhe,
-    kms: versionPair.kms,
-  };
   const assetUrls =
     options.wasmAssetLoadMode === 'embedded-base64'
       ? undefined
       : resolveAssetUrls(matrix_, versionPair, options.assetSource);
   const key = JSON.stringify({
-    moduleVersions,
     mode: options.wasmAssetLoadMode,
     assetUrls,
     threaded: options.threaded,
@@ -416,7 +416,6 @@ function applyRuntimeConfig(matrix_: Matrix, versionPair: VersionPair, options: 
   }
 
   setFhevmRuntimeConfig({
-    moduleVersions,
     wasmAssetLoadMode: options.wasmAssetLoadMode,
     singleThread: !options.threaded,
     numberOfThreads: options.threaded ? Math.max(2, Math.min(navigator.hardwareConcurrency || 4, 8)) : undefined,

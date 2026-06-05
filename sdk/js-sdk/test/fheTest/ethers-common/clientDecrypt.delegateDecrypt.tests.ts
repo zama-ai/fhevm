@@ -2,7 +2,7 @@ import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
 import { ethers } from 'ethers';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import { getEthersTestConfig, type CreateEthersClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
+import { getEthersTestConfig, type CreateEthersDecryptClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
 import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle, fheTypeIdFromHandle } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -87,7 +87,7 @@ async function getUserDecryptionDelegationExpirationDate(parameters: {
 
 export function defineClientDecryptDelegateDecryptTests(parameters: {
   readonly runIf: boolean;
-  readonly createFhevmDecryptClient: CreateEthersClientFn;
+  readonly createFhevmDecryptClient: CreateEthersDecryptClientFn;
 }): void {
   describe.runIf(parameters.runIf)(
     'Decrypt client — delegated decrypt',

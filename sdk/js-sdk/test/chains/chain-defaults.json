@@ -47,8 +47,8 @@
   },
   "mainnet": {
     "rpcUrl": "https://ethereum-rpc.publicnode.com",
-    "fheTestAddress": "0x7553CB9124f974Ee475E5cE45482F90d5B6076BC",
-    "fheTestVersion": "v1"
+    "fheTestAddress": "0xba4d707745689eD409d4Afac8722224f5FD78C63",
+    "fheTestVersion": "v2"
   },
   "devnet": {
     "rpcUrl": "https://ethereum-sepolia-rpc.publicnode.com",

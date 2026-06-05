@@ -86,6 +86,10 @@ fhevm_chain_file() {
     sdk_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
     case "$chain" in
+        mainnet)
+            # SDK file is named after the network (sepolia); testnet is an alias.
+            printf '%s/src/core/chains/definitions/mainnet.ts\n' "$sdk_root"
+            ;;
         sepolia|testnet)
             # SDK file is named after the network (sepolia); testnet is an alias.
             printf '%s/src/core/chains/definitions/sepolia.ts\n' "$sdk_root"

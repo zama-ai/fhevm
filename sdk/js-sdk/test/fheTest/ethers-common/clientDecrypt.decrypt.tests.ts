@@ -4,7 +4,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle, fheTypeIdFromHandle } from '../setupCommon.js';
 import { asEncryptedValue } from '@fhevm/sdk/types';
-import { getEthersTestConfig, type CreateEthersClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
+import { getEthersTestConfig, type CreateEthersDecryptClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -17,7 +17,7 @@ import { getEthersTestConfig, type CreateEthersClientFn, type FheTestEthersConfi
 
 export function defineClientDecryptDecryptTests(parameters: {
   readonly runIf: boolean;
-  readonly createFhevmDecryptClient: CreateEthersClientFn;
+  readonly createFhevmDecryptClient: CreateEthersDecryptClientFn;
 }): void {
   describe.runIf(parameters.runIf)('Decrypt client — user decrypt', () => {
     let config: FheTestEthersConfig;

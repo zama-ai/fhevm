@@ -1,7 +1,12 @@
 import { resolveFhevmConfig } from '@fhevm/sdk/actions/host';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { type CreateViemClientFn, type FheTestViemConfig, getViemTestConfig } from '../setup-viem.js';
+import {
+  getViemClientOptions,
+  type CreateViemBaseClientFn,
+  type FheTestViemConfig,
+  getViemTestConfig,
+} from '../setup-viem.js';
 import { safeJSONstringify } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -15,7 +20,7 @@ import { safeJSONstringify } from '../setupCommon.js';
 
 export function defineClientBaseChainTests(parameters: {
   readonly runIf: boolean;
-  readonly createFhevmBaseClient: CreateViemClientFn;
+  readonly createFhevmBaseClient: CreateViemBaseClientFn;
 }): void {
   describe.runIf(parameters.runIf)('Base client — chain resolution', () => {
     let config: FheTestViemConfig;
@@ -27,7 +32,6 @@ export function defineClientBaseChainTests(parameters: {
           type: 'ApiKeyHeader',
           value: config.zamaApiKey,
         },
-        moduleVersions: config.moduleVersions,
       });
     });
 
@@ -36,6 +40,7 @@ export function defineClientBaseChainTests(parameters: {
       const client = parameters.createFhevmBaseClient({
         chain,
         publicClient: config.publicClient,
+        options: getViemClientOptions(config),
       });
       const cfg = await resolveFhevmConfig(client, chain);
       console.log(safeJSONstringify(cfg, 2));

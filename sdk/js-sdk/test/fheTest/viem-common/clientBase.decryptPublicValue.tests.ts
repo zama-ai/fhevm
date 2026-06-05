@@ -1,7 +1,12 @@
 import type { Hex } from 'viem';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import { getViemTestConfig, type CreateViemClientFn, type FheTestViemConfig } from '../setup-viem.js';
+import {
+  getViemClientOptions,
+  getViemTestConfig,
+  type CreateViemBaseClientFn,
+  type FheTestViemConfig,
+} from '../setup-viem.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
 import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle, fheTypeIdFromHandle } from '../setupCommon.js';
 import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
@@ -17,7 +22,7 @@ import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
 
 export function defineClientBaseDecryptPublicValueTests(parameters: {
   readonly runIf: boolean;
-  readonly createFhevmBaseClient: CreateViemClientFn;
+  readonly createFhevmBaseClient: CreateViemBaseClientFn;
 }): void {
   describe.runIf(parameters.runIf)('Base client — decryptPublicValue', () => {
     let config: FheTestViemConfig;
@@ -29,7 +34,6 @@ export function defineClientBaseDecryptPublicValueTests(parameters: {
           type: 'ApiKeyHeader',
           value: config.zamaApiKey,
         },
-        moduleVersions: config.moduleVersions,
       });
     });
 
@@ -71,6 +75,7 @@ export function defineClientBaseDecryptPublicValueTests(parameters: {
         const client = parameters.createFhevmBaseClient({
           chain: config.fhevmChain,
           publicClient: config.publicClient,
+          options: getViemClientOptions(config),
         });
 
         const typedValue = await client.decryptPublicValue({
@@ -130,6 +135,7 @@ export function defineClientBaseDecryptPublicValueTests(parameters: {
       const client = parameters.createFhevmBaseClient({
         chain: config.fhevmChain,
         publicClient: config.publicClient,
+        options: getViemClientOptions(config),
       });
 
       const allEncryptedValues = entries.map((e) => asEncryptedValue(e.encryptedValue));

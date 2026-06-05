@@ -2,7 +2,12 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { ethers } from 'ethers';
 import { sepolia as fhevmSepolia } from '@fhevm/sdk/chains';
-import { getEthersTestConfig, type CreateEthersClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
+import {
+  getEthersClientOptions,
+  getEthersTestConfig,
+  type CreateEthersBaseClientFn,
+  type FheTestEthersConfig,
+} from '../setup-ethers.js';
 import { clearKeyCache, readKeyFromCache, writeKeyToCache } from '../keyCache.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -16,7 +21,7 @@ import { clearKeyCache, readKeyFromCache, writeKeyToCache } from '../keyCache.js
 
 export function defineClientBaseTests(parameters: {
   readonly runIf: boolean;
-  readonly createFhevmBaseClient: CreateEthersClientFn;
+  readonly createFhevmBaseClient: CreateEthersBaseClientFn;
   readonly keyMode: 'fhe' | 'cleartext';
 }): void {
   describe.runIf(parameters.runIf)('createFhevmBaseClient', () => {
@@ -52,6 +57,7 @@ export function defineClientBaseTests(parameters: {
       const client = parameters.createFhevmBaseClient({
         chain: config.fhevmChain,
         provider: config.provider,
+        options: getEthersClientOptions(config),
       });
       expect(typeof client.decryptPublicValue).toBe('function');
       expect(typeof client.decryptPublicValues).toBe('function');
@@ -65,6 +71,7 @@ export function defineClientBaseTests(parameters: {
       const client = parameters.createFhevmBaseClient({
         chain: config.fhevmChain,
         provider: config.provider,
+        options: getEthersClientOptions(config),
       });
       expect(typeof client.init).toBe('function');
     });
@@ -81,10 +88,12 @@ export function defineClientBaseTests(parameters: {
       const client1 = parameters.createFhevmBaseClient({
         chain: config.fhevmChain,
         provider: config.provider,
+        options: getEthersClientOptions(config),
       });
       const client2 = parameters.createFhevmBaseClient({
         chain: config.fhevmChain,
         provider: config.provider,
+        options: getEthersClientOptions(config),
       });
       expect(client1.uid).toBeDefined();
       expect(client2.uid).toBeDefined();
@@ -106,6 +115,7 @@ export function defineClientBaseTests(parameters: {
       const client = parameters.createFhevmBaseClient({
         chain: config.fhevmChain,
         provider: config.provider,
+        options: getEthersClientOptions(config),
       });
       const readyPromise = client.ready;
       const initPromise = client.init();
@@ -119,6 +129,7 @@ export function defineClientBaseTests(parameters: {
       const client = parameters.createFhevmBaseClient({
         chain: config.fhevmChain,
         provider: config.provider,
+        options: getEthersClientOptions(config),
       });
       await client.ready;
       const fheEncryptionKeyBytes = await client.fetchFheEncryptionKeyBytes();

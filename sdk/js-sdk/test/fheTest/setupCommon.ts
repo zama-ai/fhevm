@@ -1,6 +1,6 @@
 import type { FhevmChain } from '@fhevm/sdk/chains';
 import type { EncryptedValue, TypedValue } from '@fhevm/sdk/types';
-import type { WasmModuleVersions } from '../../src/core/types/coreFhevmRuntime.js';
+import type { FhevmModuleVersions } from '../../src/core/types/moduleVersions.js';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -46,7 +46,7 @@ export type FheTestBaseEnv = {
   readonly fheTestAddress: string;
   readonly fheTestVersion: FheTestVersion;
   readonly fheEncryptionKeyTfheVersion: string;
-  readonly moduleVersions?: WasmModuleVersions | undefined;
+  readonly moduleVersions?: FhevmModuleVersions | undefined;
 };
 
 // ---------------------------------------------------------------------------
@@ -451,6 +451,7 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
 
   runPreliminaryFheTestSetup(chainName, mnemonic, rpcUrl, fheTestAddress);
 
+  const tfheVersion = getTfheVersion(chainName);
   _baseEnv = {
     chainName,
     fhevmChain,
@@ -460,9 +461,7 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
     fheTestAddress,
     fheTestVersion,
     fheEncryptionKeyTfheVersion: getFheEncryptionKeyTfheVersion(chainName),
-    moduleVersions: {
-      tfhe: getTfheVersion(chainName),
-    },
+    moduleVersions: tfheVersion === undefined ? undefined : { tfhe: tfheVersion },
   };
 
   return _baseEnv;

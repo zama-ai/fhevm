@@ -1,9 +1,8 @@
-import type { TfheVersion } from '../../wasm/tfhe/TfheApi.js';
-import type { TkmsVersion } from '../../wasm/tkms/KmsLibApi.js';
+import type { TfheVersion, TkmsVersion } from '../types/moduleVersions.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { HostContractVersion } from '../types/hostContract.js';
-import type { NativeClient, OptionalNativeClient } from '../types/coreFhevmClient.js';
+import type { NativeClient, OptionalNativeClient, ResolvedFhevmOptions } from '../types/coreFhevmClient.js';
 import { asAddress, addressToChecksummedAddress } from '../base/address.js';
 import {
   assertIsHostContractVersionOf,
@@ -17,18 +16,30 @@ type ResolveParameters = {
   readonly runtime: FhevmRuntime;
   readonly chain: FhevmChain;
   readonly client?: OptionalNativeClient;
+  readonly options: ResolvedFhevmOptions;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function hyperWasmResolveTfheModuleVersion(parameters: ResolveParameters): Promise<TfheVersion> {
-  const moduleVersions = parameters.runtime.config.moduleVersions;
-  const tfheChoice = moduleVersions === 'auto' ? 'auto' : moduleVersions?.tfhe;
-
-  if (tfheChoice !== undefined && tfheChoice !== 'auto') {
-    return tfheChoice;
+  const clientVersions = parameters.options.moduleVersions;
+  if (clientVersions === 'auto') {
+    return _autoResolveTfheModuleVersion(parameters);
   }
 
+  if (clientVersions?.tfhe !== undefined) {
+    return clientVersions.tfhe;
+  }
+
+  const runtimeVersions = parameters.runtime.config.moduleVersions;
+  if (runtimeVersions !== 'auto' && runtimeVersions?.tfhe !== undefined) {
+    return runtimeVersions.tfhe;
+  }
+
+  return _autoResolveTfheModuleVersion(parameters);
+}
+
+async function _autoResolveTfheModuleVersion(parameters: ResolveParameters): Promise<TfheVersion> {
   const aclVersion = await _resolveAclVersion(parameters, 'TFHE');
   return isVersionStrictlyBefore(aclVersion, { major: 0, minor: 4 }) ? '1.5.3' : '1.6.1';
 }
@@ -36,13 +47,24 @@ export async function hyperWasmResolveTfheModuleVersion(parameters: ResolveParam
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function hyperWasmResolveTkmsModuleVersion(parameters: ResolveParameters): Promise<TkmsVersion> {
-  const moduleVersions = parameters.runtime.config.moduleVersions;
-  const kmsChoice = moduleVersions === 'auto' ? 'auto' : moduleVersions?.kms;
-
-  if (kmsChoice !== undefined && kmsChoice !== 'auto') {
-    return kmsChoice;
+  const clientVersions = parameters.options.moduleVersions;
+  if (clientVersions === 'auto') {
+    return _autoResolveTkmsModuleVersion(parameters);
   }
 
+  if (clientVersions?.kms !== undefined) {
+    return clientVersions.kms;
+  }
+
+  const runtimeVersions = parameters.runtime.config.moduleVersions;
+  if (runtimeVersions !== 'auto' && runtimeVersions?.kms !== undefined) {
+    return runtimeVersions.kms;
+  }
+
+  return _autoResolveTkmsModuleVersion(parameters);
+}
+
+async function _autoResolveTkmsModuleVersion(parameters: ResolveParameters): Promise<TkmsVersion> {
   const aclVersion = await _resolveAclVersion(parameters, 'TKMS');
   return isVersionStrictlyBefore(aclVersion, { major: 0, minor: 4 }) ? '0.13.10' : '0.13.20-0';
 }

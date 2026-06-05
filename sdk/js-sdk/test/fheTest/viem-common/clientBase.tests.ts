@@ -2,7 +2,12 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { createPublicClient, http } from 'viem';
 import { sepolia as viemSepolia } from 'viem/chains';
-import { getViemTestConfig, type FheTestViemConfig } from '../setup-viem.js';
+import {
+  getViemClientOptions,
+  getViemTestConfig,
+  type CreateViemBaseClientFn,
+  type FheTestViemConfig,
+} from '../setup-viem.js';
 import { clearKeyCache, readKeyFromCache, writeKeyToCache } from '../keyCache.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -14,15 +19,10 @@ import { clearKeyCache, readKeyFromCache, writeKeyToCache } from '../keyCache.js
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-type ClientFactory = (params: {
-  chain: FheTestViemConfig['fhevmChain'];
-  publicClient: FheTestViemConfig['publicClient'];
-}) => any;
-
 export function defineClientBaseTests(
   runIf: boolean,
   options: {
-    createClient: ClientFactory;
+    createClient: CreateViemBaseClientFn;
     keyMode: 'fhe' | 'cleartext';
   },
 ): void {
@@ -36,7 +36,6 @@ export function defineClientBaseTests(
           type: 'ApiKeyHeader',
           value: config.zamaApiKey,
         },
-        moduleVersions: config.moduleVersions,
       });
     });
 
@@ -49,6 +48,7 @@ export function defineClientBaseTests(
       const client = options.createClient({
         chain: config.fhevmChain,
         publicClient: config.publicClient,
+        options: getViemClientOptions(config),
       });
       expect(client).toBeDefined();
       expect(client.chain).toBe(config.fhevmChain);
@@ -60,6 +60,7 @@ export function defineClientBaseTests(
       const client = options.createClient({
         chain: config.fhevmChain,
         publicClient: config.publicClient,
+        options: getViemClientOptions(config),
       });
       expect(typeof client.decryptPublicValue).toBe('function');
       expect(typeof client.decryptPublicValues).toBe('function');
@@ -73,6 +74,7 @@ export function defineClientBaseTests(
       const client = options.createClient({
         chain: config.fhevmChain,
         publicClient: config.publicClient,
+        options: getViemClientOptions(config),
       });
       expect(typeof client.init).toBe('function');
     });
@@ -89,10 +91,12 @@ export function defineClientBaseTests(
       const client1 = options.createClient({
         chain: config.fhevmChain,
         publicClient: config.publicClient,
+        options: getViemClientOptions(config),
       });
       const client2 = options.createClient({
         chain: config.fhevmChain,
         publicClient: config.publicClient,
+        options: getViemClientOptions(config),
       });
       expect(client1.uid).toBeDefined();
       expect(client2.uid).toBeDefined();
@@ -117,6 +121,7 @@ export function defineClientBaseTests(
       const client = options.createClient({
         chain: config.fhevmChain,
         publicClient: config.publicClient,
+        options: getViemClientOptions(config),
       });
       const readyPromise = client.ready;
       const initPromise = client.init();
@@ -130,6 +135,7 @@ export function defineClientBaseTests(
       const client = options.createClient({
         chain: config.fhevmChain,
         publicClient: config.publicClient,
+        options: getViemClientOptions(config),
       });
       await client.ready;
       const fheEncryptionKeyBytes = await client.fetchFheEncryptionKeyBytes();

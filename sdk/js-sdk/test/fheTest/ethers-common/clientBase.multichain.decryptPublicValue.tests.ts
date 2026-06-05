@@ -1,9 +1,9 @@
 import type { ethers } from 'ethers';
 import type { EncryptedValue } from '@fhevm/sdk/types';
-import type { CreateEthersClientFn, FheTestEthersConfig } from '../setup-ethers.js';
+import type { CreateEthersBaseClientFn, FheTestEthersConfig } from '../setup-ethers.js';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import { getEthersTestConfigs } from '../setup-ethers.js';
+import { getEthersClientOptions, getEthersTestConfigs } from '../setup-ethers.js';
 import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle, fheTypeIdFromHandle } from '../setupCommon.js';
 import { asEncryptedValue } from '@fhevm/sdk/types';
 
@@ -15,7 +15,7 @@ import { asEncryptedValue } from '@fhevm/sdk/types';
 
 export function defineClientBaseMultichainDecryptPublicValueTests(parameters: {
   readonly runIf: boolean;
-  readonly createFhevmBaseClient: CreateEthersClientFn;
+  readonly createFhevmBaseClient: CreateEthersBaseClientFn;
 }): void {
   describe.runIf(parameters.runIf)('Base client — decryptPublicValue', () => {
     let configs: FheTestEthersConfig[];
@@ -27,7 +27,6 @@ export function defineClientBaseMultichainDecryptPublicValueTests(parameters: {
           type: 'ApiKeyHeader',
           value: configs[0]!.zamaApiKey,
         },
-        moduleVersions: { tfhe: '1.6.1' },
       });
     });
 
@@ -78,10 +77,12 @@ export function defineClientBaseMultichainDecryptPublicValueTests(parameters: {
         const client0 = parameters.createFhevmBaseClient({
           chain: config0.fhevmChain,
           provider: config0.provider,
+          options: getEthersClientOptions(config0),
         });
         const client1 = parameters.createFhevmBaseClient({
           chain: config1.fhevmChain,
           provider: config1.provider,
+          options: getEthersClientOptions(config1),
         });
 
         const typedValue0 = await client0.decryptPublicValue({

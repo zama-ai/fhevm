@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { serializeTransportKeyPair, parseTransportKeyPair } from '@fhevm/sdk/actions/chain';
-import { getViemTestConfig, type CreateViemClientFn, type FheTestViemConfig } from '../setup-viem.js';
+import { getViemTestConfig, type CreateViemDecryptClientFn, type FheTestViemConfig } from '../setup-viem.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -14,7 +14,7 @@ import { getViemTestConfig, type CreateViemClientFn, type FheTestViemConfig } fr
 
 export function defineClientDecryptTransportKeyPairTests(parameters: {
   readonly runIf: boolean;
-  createFhevmDecryptClient: CreateViemClientFn;
+  createFhevmDecryptClient: CreateViemDecryptClientFn;
 }): void {
   describe.runIf(parameters.runIf)('Decrypt client — e2e transport key pair', () => {
     let config: FheTestViemConfig;
@@ -26,7 +26,6 @@ export function defineClientDecryptTransportKeyPairTests(parameters: {
           type: 'ApiKeyHeader',
           value: config.zamaApiKey,
         },
-        moduleVersions: config.moduleVersions,
       });
     });
 

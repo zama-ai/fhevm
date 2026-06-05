@@ -1,7 +1,13 @@
 import type { EncryptedValue } from '@fhevm/sdk/types';
+import type { FhevmModuleVersions } from '../../../src/core/types/moduleVersions.js';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import { getEthersTestConfig, type CreateEthersClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
+import {
+  getEthersEncryptClientOptions,
+  getEthersTestConfig,
+  type CreateEthersEncryptClientFn,
+  type FheTestEthersConfig,
+} from '../setup-ethers.js';
 import { chainIdFromHandle, clearTypeFromHandle, encryptTestCases, isBytes32Hex } from '../setupCommon.js';
 import { asEncryptedValue } from '@fhevm/sdk/types';
 
@@ -14,12 +20,10 @@ import { asEncryptedValue } from '@fhevm/sdk/types';
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-type ModuleVersions = Parameters<typeof setFhevmRuntimeConfig>[0]['moduleVersions'];
-
 export function defineClientEncryptEncryptTests(parameters: {
   readonly runIf: boolean;
-  readonly createFhevmEncryptClient: CreateEthersClientFn;
-  readonly moduleVersions?: ModuleVersions;
+  readonly createFhevmEncryptClient: CreateEthersEncryptClientFn;
+  readonly moduleVersions?: FhevmModuleVersions | undefined;
 }): void {
   describe.runIf(parameters.runIf)('Encrypt', () => {
     let config: FheTestEthersConfig;
@@ -31,7 +35,6 @@ export function defineClientEncryptEncryptTests(parameters: {
           type: 'ApiKeyHeader',
           value: config.zamaApiKey,
         },
-        moduleVersions: parameters.moduleVersions,
       });
     });
 
@@ -44,6 +47,7 @@ export function defineClientEncryptEncryptTests(parameters: {
       const client = parameters.createFhevmEncryptClient({
         chain: config.fhevmChain,
         provider: config.provider,
+        options: getEthersEncryptClientOptions(config, parameters.moduleVersions),
       });
       await client.ready;
 
@@ -79,6 +83,7 @@ export function defineClientEncryptEncryptTests(parameters: {
         const client = parameters.createFhevmEncryptClient({
           chain: config.fhevmChain,
           provider: config.provider,
+          options: getEthersEncryptClientOptions(config, parameters.moduleVersions),
         });
         await client.ready;
 

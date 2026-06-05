@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { serializeTransportKeyPair, parseTransportKeyPair } from '@fhevm/sdk/actions/chain';
-import { getEthersTestConfig, type CreateEthersClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
+import { getEthersTestConfig, type CreateEthersDecryptClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -14,7 +14,7 @@ import { getEthersTestConfig, type CreateEthersClientFn, type FheTestEthersConfi
 
 export function defineClientDecryptTransportKeyPairTests(parameters: {
   readonly runIf: boolean;
-  readonly createFhevmDecryptClient: CreateEthersClientFn;
+  readonly createFhevmDecryptClient: CreateEthersDecryptClientFn;
 }): void {
   describe.runIf(parameters.runIf)('Decrypt client — e2e transport key pair', () => {
     let config: FheTestEthersConfig;

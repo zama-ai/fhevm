@@ -1,5 +1,6 @@
 import type { FhevmChain } from '@fhevm/sdk/chains';
-import type { WasmModuleVersions } from '../../src/core/types/coreFhevmRuntime.js';
+import type { FhevmDecryptOptions, FhevmEncryptOptions, FhevmOptions } from '../../src/core/types/coreFhevmClient.js';
+import type { FhevmModuleVersions } from '../../src/core/types/moduleVersions.js';
 import type { FheTestBaseEnv, FheTestChainName } from './setupCommon.js';
 import { createPublicClient, http, type PublicClient, type Transport, type Chain } from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';
@@ -29,13 +30,31 @@ export type FheTestViemConfig = {
   readonly zamaApiKey: string;
   readonly fheTestAddress: string;
   readonly fheEncryptionKeyTfheVersion: string;
-  readonly moduleVersions?: WasmModuleVersions | undefined;
+  readonly moduleVersions?: FhevmModuleVersions | undefined;
 };
 
-export type CreateViemClientFn = (params: {
+type CreateViemClientParameters = {
   chain: FheTestViemConfig['fhevmChain'];
   publicClient: FheTestViemConfig['publicClient'];
-}) => any;
+};
+
+export type CreateViemBaseClientFn = (
+  params: CreateViemClientParameters & {
+    readonly options?: FhevmOptions | undefined;
+  },
+) => any;
+
+export type CreateViemEncryptClientFn = (
+  params: CreateViemClientParameters & {
+    readonly options?: FhevmEncryptOptions | undefined;
+  },
+) => any;
+
+export type CreateViemDecryptClientFn = (
+  params: CreateViemClientParameters & {
+    readonly options?: FhevmDecryptOptions | undefined;
+  },
+) => any;
 
 // ---------------------------------------------------------------------------
 // Build config
@@ -109,4 +128,52 @@ export function areAllViemTestConfigsCleartext(): boolean {
 
 export function isMultichain(): boolean {
   return getViemTestConfigs().length > 1;
+}
+
+export function getViemClientOptions(
+  config: FheTestViemConfig,
+  moduleVersions: FhevmModuleVersions | undefined = config.moduleVersions,
+): FhevmOptions | undefined {
+  return moduleVersions === undefined ? undefined : { moduleVersions };
+}
+
+export function getViemEncryptClientOptions(
+  config: FheTestViemConfig,
+  moduleVersions: FhevmModuleVersions | undefined = config.moduleVersions,
+): FhevmEncryptOptions | undefined {
+  if (moduleVersions === undefined) {
+    return undefined;
+  }
+  if (moduleVersions === 'auto') {
+    return { moduleVersions };
+  }
+  if (moduleVersions.tfhe === undefined && moduleVersions.checkCompatibility === undefined) {
+    return undefined;
+  }
+  return {
+    moduleVersions: {
+      tfhe: moduleVersions.tfhe,
+      checkCompatibility: moduleVersions.checkCompatibility,
+    },
+  };
+}
+
+export function getViemDecryptClientOptions(
+  moduleVersions: FhevmModuleVersions | undefined,
+): FhevmDecryptOptions | undefined {
+  if (moduleVersions === undefined) {
+    return undefined;
+  }
+  if (moduleVersions === 'auto') {
+    return { moduleVersions };
+  }
+  if (moduleVersions.kms === undefined && moduleVersions.checkCompatibility === undefined) {
+    return undefined;
+  }
+  return {
+    moduleVersions: {
+      kms: moduleVersions.kms,
+      checkCompatibility: moduleVersions.checkCompatibility,
+    },
+  };
 }
