@@ -65,6 +65,12 @@ pub enum ConfidentialTokenError {
     /// Disclosure certificate was not signed by the mint KMS verifier authority.
     #[msg("disclosure proof signature is missing or invalid")]
     DisclosureProofSignatureMissing,
+    /// The KMS EIP-712 public-decrypt certificate failed secp256k1 threshold verification.
+    #[msg("KMS public-decrypt certificate is invalid")]
+    InvalidKmsCertificate,
+    /// The host gateway verifier config (KMS signer / decryption contract) is unset.
+    #[msg("gateway verifier config is not set")]
+    GatewayVerifierConfigUnset,
     /// Material commitment witness did not match the disclosed handle.
     #[msg("material commitment witness does not match")]
     MaterialCommitmentMismatch,

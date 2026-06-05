@@ -32,6 +32,8 @@ const args = Buffer.concat([
   Buffer.alloc(8), // gateway_chain_id
   Buffer.alloc(20), // input_verification_contract
   Buffer.alloc(20), // coprocessor_signer
+  Buffer.alloc(20), // decryption_contract
+  Buffer.alloc(20), // kms_signer
   wallet.publicKey.toBuffer(), // material_authority
   wallet.publicKey.toBuffer(), // test_authority
   Buffer.from([1]), // mock_input_enabled

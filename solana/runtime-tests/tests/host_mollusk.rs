@@ -1759,6 +1759,8 @@ fn mollusk_host_config_initialize_creates_state_and_rejects_zero_profile_fields(
         gateway_chain_id: 0,
         input_verification_contract: [0u8; 20],
         coprocessor_signer: [0u8; 20],
+        decryption_contract: [0u8; 20],
+        kms_signer: [0u8; 20],
         material_authority,
         test_authority,
         mock_input_enabled: false,
@@ -1803,6 +1805,8 @@ fn mollusk_host_config_initialize_creates_state_and_rejects_zero_profile_fields(
             gateway_chain_id: 0,
             input_verification_contract: [0u8; 20],
             coprocessor_signer: [0u8; 20],
+            decryption_contract: [0u8; 20],
+            kms_signer: [0u8; 20],
             material_authority,
             test_authority,
             mock_input_enabled: true,
@@ -3998,6 +4002,8 @@ fn host_config_account_with_options(
                 gateway_chain_id: 0,
                 input_verification_contract: [0u8; 20],
                 coprocessor_signer: [0u8; 20],
+                decryption_contract: [0u8; 20],
+                kms_signer: [0u8; 20],
                 material_authority: admin,
                 test_authority: admin,
                 paused: false,
@@ -5199,6 +5205,7 @@ fn assert_acl_allowed_transaction_event(
 
 const GATEWAY_CHAIN_ID: u64 = 31337;
 const INPUT_VERIFICATION_CONTRACT: [u8; 20] = [0xCDu8; 20];
+const DECRYPTION_CONTRACT: [u8; 20] = [0xDEu8; 20];
 
 /// Recovers the EVM address (keccak(pubkey)[12..]) for a coprocessor signing key,
 /// matching the on-chain `secp256k1_recover` derivation.
@@ -5219,10 +5226,11 @@ fn sign_eip712(key: &k256::ecdsa::SigningKey, digest: &[u8; 32]) -> [u8; 65] {
     out
 }
 
-/// Host config seeded with a coprocessor EIP-712 verifier (single signer, threshold 1).
+/// Host config seeded with coprocessor + KMS EIP-712 verifiers (single signer, threshold 1).
 fn host_config_account_with_verifier(
     admin: Pubkey,
     coprocessor_signer: [u8; 20],
+    kms_signer: [u8; 20],
 ) -> (Pubkey, Account) {
     let (host_config, bump) = host::host_config_address();
     (
@@ -5236,6 +5244,8 @@ fn host_config_account_with_verifier(
                 gateway_chain_id: GATEWAY_CHAIN_ID,
                 input_verification_contract: INPUT_VERIFICATION_CONTRACT,
                 coprocessor_signer,
+                decryption_contract: DECRYPTION_CONTRACT,
+                kms_signer,
                 material_authority: admin,
                 test_authority: admin,
                 paused: false,
@@ -5310,7 +5320,7 @@ fn mollusk_verify_coprocessor_input_and_bind_accepts_real_secp256k1_attestation(
     let authority = Pubkey::new_unique();
     let key = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
     let (host_config, host_config_account) =
-        host_config_account_with_verifier(authority, evm_address_of(&key));
+        host_config_account_with_verifier(authority, evm_address_of(&key), [0u8; 20]);
 
     let acl_domain_key = Pubkey::new_unique();
     let label = label("balance");
@@ -5382,7 +5392,7 @@ fn mollusk_verify_coprocessor_input_and_bind_rejects_unauthorized_signer() {
     let configured = k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap();
     let attacker = k256::ecdsa::SigningKey::from_bytes(&[0x99u8; 32].into()).unwrap();
     let (host_config, host_config_account) =
-        host_config_account_with_verifier(authority, evm_address_of(&configured));
+        host_config_account_with_verifier(authority, evm_address_of(&configured), [0u8; 20]);
 
     let acl_domain_key = Pubkey::new_unique();
     let label = label("balance");

@@ -62,6 +62,8 @@ fn ensure_host_config(
                 gateway_chain_id: 0,
                 input_verification_contract: [0u8; 20],
                 coprocessor_signer: [0u8; 20],
+                decryption_contract: [0u8; 20],
+                kms_signer: [0u8; 20],
                 material_authority: payer.pubkey(),
                 test_authority: payer.pubkey(),
                 mock_input_enabled: true,

@@ -218,6 +218,17 @@ pub mod confidential_token {
         instructions::disclose_balance(ctx, cleartext_amount)
     }
 
+    /// Gateway-compatible balance disclosure: verifies the KMS `PublicDecryptVerification`
+    /// EIP-712 certificate on-chain via secp256k1_recover against the HostConfig KMS signer.
+    pub fn disclose_balance_secp(
+        ctx: Context<DiscloseBalanceSecp>,
+        cleartext_amount: u64,
+        signatures: Vec<[u8; 65]>,
+        extra_data: Vec<u8>,
+    ) -> Result<()> {
+        instructions::disclose_balance_secp(ctx, cleartext_amount, signatures, extra_data)
+    }
+
     /// Emits a KMS-certified cleartext for any token-scoped encrypted amount.
     pub fn disclose_amount(
         ctx: Context<DiscloseAmount>,

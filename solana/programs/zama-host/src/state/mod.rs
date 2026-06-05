@@ -48,6 +48,10 @@ pub struct InitializeHostConfigArgs {
     pub input_verification_contract: [u8; 20],
     /// Authorized coprocessor EVM signer for input attestations (v0: single signer).
     pub coprocessor_signer: [u8; 20],
+    /// EVM `Decryption` contract address (EIP-712 verifying contract for KMS certs).
+    pub decryption_contract: [u8; 20],
+    /// Authorized KMS EVM signer for public-decrypt certificates (v0: single signer).
+    pub kms_signer: [u8; 20],
     /// Authority allowed to commit ciphertext material readiness.
     pub material_authority: Pubkey,
     /// Authority allowed to call `test_emit_*` event shims.

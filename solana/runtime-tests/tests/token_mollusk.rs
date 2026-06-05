@@ -4574,6 +4574,182 @@ fn request_disclose_balance_ix_with_owner_and_deny_record(
     )
 }
 
+// --- KMS EIP-712 disclose (secp256k1_recover) — #1494 Phase 3 cert-secp ---
+
+const SECP_GATEWAY_CHAIN_ID: u64 = 31337;
+const SECP_DECRYPTION_CONTRACT: [u8; 20] = [0xDEu8; 20];
+
+/// Recovers the EVM address (keccak(pubkey)[12..]) for a KMS signing key.
+fn secp_evm_address(key: &k256::ecdsa::SigningKey) -> [u8; 20] {
+    let encoded = key.verifying_key().to_encoded_point(false);
+    let hash = solana_program::keccak::hash(&encoded.as_bytes()[1..]).to_bytes();
+    let mut address = [0u8; 20];
+    address.copy_from_slice(&hash[12..]);
+    address
+}
+
+/// 65-byte `[r || s || v]` recoverable signature over an EIP-712 digest.
+fn secp_sign(key: &k256::ecdsa::SigningKey, digest: &[u8; 32]) -> [u8; 65] {
+    let (signature, recovery_id) = key.sign_prehash_recoverable(digest).unwrap();
+    let mut out = [0u8; 65];
+    out[..64].copy_from_slice(&signature.to_bytes());
+    out[64] = 27 + recovery_id.to_byte();
+    out
+}
+
+fn decrypted_u64_bytes(value: u64) -> [u8; 32] {
+    let mut decrypted = [0u8; 32];
+    decrypted[24..].copy_from_slice(&value.to_be_bytes());
+    decrypted
+}
+
+/// Host config seeded with a gateway KMS verifier (single signer, threshold 1).
+fn kms_host_config_account(authority: Pubkey, kms_signer: [u8; 20]) -> Account {
+    Account {
+        lamports: 1_000_000_000,
+        data: serialized_account(host::HostConfig {
+            admin: authority,
+            chain_id: host::SOLANA_POC_CHAIN_ID,
+            input_verifier_authority: authority,
+            gateway_chain_id: SECP_GATEWAY_CHAIN_ID,
+            input_verification_contract: [0u8; 20],
+            coprocessor_signer: [0u8; 20],
+            decryption_contract: SECP_DECRYPTION_CONTRACT,
+            kms_signer,
+            material_authority: Pubkey::new_unique(),
+            test_authority: authority,
+            paused: false,
+            mock_input_enabled: true,
+            test_shims_enabled: true,
+            grant_deny_list_enabled: false,
+            updated_slot: 0,
+            bump: host::host_config_address().1,
+        }),
+        owner: host::id(),
+        executable: false,
+        rent_epoch: 0,
+    }
+}
+
+/// KMS `PublicDecryptVerification` signature set over a single handle + cleartext.
+fn kms_public_decrypt_signatures(
+    key: &k256::ecdsa::SigningKey,
+    handle: [u8; 32],
+    cleartext_amount: u64,
+) -> Vec<[u8; 65]> {
+    let digest = host::eip712::typed_data_digest(
+        &host::eip712::domain_separator(
+            b"Decryption",
+            b"1",
+            SECP_GATEWAY_CHAIN_ID,
+            &SECP_DECRYPTION_CONTRACT,
+        ),
+        &host::eip712::public_decrypt_struct_hash(
+            &[handle],
+            &decrypted_u64_bytes(cleartext_amount),
+            &[],
+        ),
+    );
+    vec![secp_sign(key, &digest)]
+}
+
+fn disclose_balance_secp_ix(
+    fixture: &TokenMolluskFixture,
+    cleartext_amount: u64,
+    signatures: Vec<[u8; 65]>,
+) -> Instruction {
+    anchor_ix(
+        token::id(),
+        token::accounts::DiscloseBalanceSecp {
+            mint: fixture.mint,
+            token_account: fixture.alice_token,
+            balance_acl_record: fixture.alice_current_compute_acl,
+            balance_material_commitment: host::handle_material_address(
+                fixture.alice_current_compute_acl,
+            )
+            .0,
+            host_config: fixture.host_config,
+            event_authority: event_authority(token::id()),
+            program: token::id(),
+        },
+        token::instruction::DiscloseBalanceSecp {
+            cleartext_amount,
+            signatures,
+            extra_data: vec![],
+        },
+    )
+}
+
+#[test]
+fn mollusk_disclose_balance_secp_accepts_real_kms_certificate() {
+    let fixture = TokenMolluskFixture::new();
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x55u8; 32].into()).unwrap();
+    let cleartext_amount = 125;
+    let mut accounts = fixture.base_accounts();
+    accounts.insert(
+        fixture.host_config,
+        kms_host_config_account(fixture.owner, secp_evm_address(&key)),
+    );
+    let context = mollusk().with_context(accounts);
+
+    let request_result = process_transaction(&context, &[request_disclose_balance_ix(&fixture)]);
+    assert!(request_result.raw_result.is_ok());
+    seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 120);
+
+    let signatures = kms_public_decrypt_signatures(&key, fixture.alice_initial, cleartext_amount);
+    let result = process_transaction(
+        &context,
+        &[disclose_balance_secp_ix(
+            &fixture,
+            cleartext_amount,
+            signatures,
+        )],
+    );
+
+    assert!(result.raw_result.is_ok());
+    let events: Vec<token::BalanceDisclosedEvent> = result
+        .inner_instructions
+        .iter()
+        .flat_map(|group| group.iter())
+        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
+        .collect();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].mint, fixture.mint);
+    assert_eq!(events[0].handle, fixture.alice_initial);
+    assert_eq!(events[0].cleartext_amount, cleartext_amount);
+}
+
+#[test]
+fn mollusk_disclose_balance_secp_rejects_unauthorized_signer() {
+    let fixture = TokenMolluskFixture::new();
+    let configured = k256::ecdsa::SigningKey::from_bytes(&[0x55u8; 32].into()).unwrap();
+    let attacker = k256::ecdsa::SigningKey::from_bytes(&[0x66u8; 32].into()).unwrap();
+    let cleartext_amount = 125;
+    let mut accounts = fixture.base_accounts();
+    accounts.insert(
+        fixture.host_config,
+        kms_host_config_account(fixture.owner, secp_evm_address(&configured)),
+    );
+    let context = mollusk().with_context(accounts);
+
+    let request_result = process_transaction(&context, &[request_disclose_balance_ix(&fixture)]);
+    assert!(request_result.raw_result.is_ok());
+    seed_material_commitment_for_acl(&context, fixture.alice_current_compute_acl, 120);
+
+    let signatures =
+        kms_public_decrypt_signatures(&attacker, fixture.alice_initial, cleartext_amount);
+    let result = process_transaction(
+        &context,
+        &[disclose_balance_secp_ix(
+            &fixture,
+            cleartext_amount,
+            signatures,
+        )],
+    );
+
+    assert!(result.raw_result.is_err());
+}
+
 fn disclose_balance_ix(fixture: &TokenMolluskFixture, cleartext_amount: u64) -> Instruction {
     anchor_ix(
         token::id(),
@@ -5054,6 +5230,8 @@ fn host_config_account(authority: Pubkey) -> Account {
             gateway_chain_id: 0,
             input_verification_contract: [0u8; 20],
             coprocessor_signer: [0u8; 20],
+            decryption_contract: [0u8; 20],
+            kms_signer: [0u8; 20],
             material_authority: Pubkey::new_unique(),
             test_authority: authority,
             paused: false,
