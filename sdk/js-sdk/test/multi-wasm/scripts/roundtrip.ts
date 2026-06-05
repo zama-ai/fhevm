@@ -229,7 +229,7 @@ async function run() {
       transportKeyPair,
       contractAddresses: [fheTestAddress],
       durationDays: 1,
-      startTimestamp: Math.floor(Date.now() / 1000),
+      startTimestamp: Math.floor(Date.now() / 1000) - 5,
       signerAddress: wallet.address,
       signer,
     });

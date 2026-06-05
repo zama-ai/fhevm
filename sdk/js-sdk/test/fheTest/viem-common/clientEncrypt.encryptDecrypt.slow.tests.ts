@@ -140,7 +140,7 @@ export function defineClientEncryptDecryptSlowTests(parameters: {
           transportKeyPair: transportKeyPair,
           contractAddresses: [config.fheTestAddress],
           durationDays: 1,
-          startTimestamp: Math.floor(Date.now() / 1000),
+          startTimestamp: Math.floor(Date.now() / 1000) - 5,
           signerAddress: config.account.address,
           signer: config.account,
         });

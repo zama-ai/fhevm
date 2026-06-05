@@ -283,7 +283,7 @@ async function decrypt(): Promise<void> {
         transportKeyPair,
         contractAddresses: [state.fheTestAddress],
         durationDays: 1,
-        startTimestamp: Math.floor(Date.now() / 1000),
+        startTimestamp: Math.floor(Date.now() / 1000) - 5,
         signerAddress: state.walletAddress,
         signer: state.signer,
       });
