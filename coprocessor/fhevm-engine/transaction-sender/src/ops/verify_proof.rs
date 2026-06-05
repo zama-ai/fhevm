@@ -10,6 +10,7 @@ use alloy::rpc::types::TransactionRequest;
 use alloy::sol;
 use alloy::{network::Ethereum, primitives::FixedBytes, sol_types::SolStruct};
 use async_trait::async_trait;
+use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::telemetry;
 use sqlx::{Pool, Postgres};
 use std::convert::TryInto;
@@ -25,6 +26,18 @@ sol! {
         bytes32[] ctHandles;
         address userAddress;
         address contractAddress;
+        uint256 contractChainId;
+        bytes extraData;
+    }
+}
+
+sol! {
+    // RFC-021 (Solana host) counterpart with bytes32 host identities. Must match the gateway's
+    // EIP712_SOLANA_ZKPOK_TYPE and the zama-host program's CiphertextVerification byte-for-byte.
+    struct SolanaCiphertextVerification {
+        bytes32[] ctHandles;
+        bytes32 userAddress;
+        bytes32 contractAddress;
         uint256 contractChainId;
         bytes extraData;
     }
@@ -334,48 +347,89 @@ where
                         chain_id: self.gw_chain_id,
                         verifying_contract: self.input_verification_address,
                     };
-                    let signing_hash = CiphertextVerification {
-                        ctHandles: handles.clone(),
-                        userAddress: row.user_address.parse().expect("invalid user address"),
-                        contractAddress: row
-                            .contract_address
-                            .parse()
-                            .expect("invalid contract address"),
-                        contractChainId: U256::from(row.chain_id),
-                        extraData: row.extra_data.clone().into(),
-                    }
-                    .eip712_signing_hash(&domain);
-                    let signature = self
-                        .signer
-                        .sign_hash(&signing_hash)
-                        .instrument(span.clone())
-                        .await?;
 
-                    if let Some(gas) = self.gas {
-                        (
-                            row.zk_proof_id,
-                            input_verification
-                                .verifyProofResponse(
-                                    U256::from(row.zk_proof_id),
-                                    handles,
-                                    signature.as_bytes().into(),
-                                    row.extra_data.into(),
-                                )
-                                .into_transaction_request()
-                                .with_gas_limit(gas),
-                        )
+                    // RFC-021 Solana hosts carry the chain-type high bit; they use bytes32 dapp/user
+                    // identities and the verifyProofResponseSolana entrypoint, signing the matching
+                    // bytes32 CiphertextVerification typed data. EVM hosts keep the 20-byte path.
+                    if ChainId::from_canonical_u64(row.chain_id as u64).is_solana_host() {
+                        let signing_hash = SolanaCiphertextVerification {
+                            ctHandles: handles.clone(),
+                            userAddress: row
+                                .user_address
+                                .parse()
+                                .expect("invalid bytes32 user identity"),
+                            contractAddress: row
+                                .contract_address
+                                .parse()
+                                .expect("invalid bytes32 contract identity"),
+                            contractChainId: U256::from(row.chain_id as u64),
+                            extraData: row.extra_data.clone().into(),
+                        }
+                        .eip712_signing_hash(&domain);
+                        let signature = self
+                            .signer
+                            .sign_hash(&signing_hash)
+                            .instrument(span.clone())
+                            .await?;
+
+                        let call = input_verification.verifyProofResponseSolana(
+                            U256::from(row.zk_proof_id),
+                            handles,
+                            signature.as_bytes().into(),
+                            row.extra_data.into(),
+                        );
+                        if let Some(gas) = self.gas {
+                            (
+                                row.zk_proof_id,
+                                call.into_transaction_request().with_gas_limit(gas),
+                            )
+                        } else {
+                            (row.zk_proof_id, call.into_transaction_request())
+                        }
                     } else {
-                        (
-                            row.zk_proof_id,
-                            input_verification
-                                .verifyProofResponse(
-                                    U256::from(row.zk_proof_id),
-                                    handles,
-                                    signature.as_bytes().into(),
-                                    row.extra_data.into(),
-                                )
-                                .into_transaction_request(),
-                        )
+                        let signing_hash = CiphertextVerification {
+                            ctHandles: handles.clone(),
+                            userAddress: row.user_address.parse().expect("invalid user address"),
+                            contractAddress: row
+                                .contract_address
+                                .parse()
+                                .expect("invalid contract address"),
+                            contractChainId: U256::from(row.chain_id),
+                            extraData: row.extra_data.clone().into(),
+                        }
+                        .eip712_signing_hash(&domain);
+                        let signature = self
+                            .signer
+                            .sign_hash(&signing_hash)
+                            .instrument(span.clone())
+                            .await?;
+
+                        if let Some(gas) = self.gas {
+                            (
+                                row.zk_proof_id,
+                                input_verification
+                                    .verifyProofResponse(
+                                        U256::from(row.zk_proof_id),
+                                        handles,
+                                        signature.as_bytes().into(),
+                                        row.extra_data.into(),
+                                    )
+                                    .into_transaction_request()
+                                    .with_gas_limit(gas),
+                            )
+                        } else {
+                            (
+                                row.zk_proof_id,
+                                input_verification
+                                    .verifyProofResponse(
+                                        U256::from(row.zk_proof_id),
+                                        handles,
+                                        signature.as_bytes().into(),
+                                        row.extra_data.into(),
+                                    )
+                                    .into_transaction_request(),
+                            )
+                        }
                     }
                 }
                 Some(false) => {
