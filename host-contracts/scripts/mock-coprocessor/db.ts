@@ -9,7 +9,7 @@
  *     event is the single source of truth for a fresh random.
  *
  * sqlite3 is async — we wrap every call in a Promise. A single connection is
- * shared across all chain workers; sqlite serialises writes internally and
+ * shared across all chain workers; sqlite serializes writes internally and
  * concurrent reads are fine.
  *
  * The daemon is live-event-only: it does NOT persist a per-chain block cursor
