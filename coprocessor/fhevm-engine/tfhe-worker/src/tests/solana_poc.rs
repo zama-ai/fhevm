@@ -1187,8 +1187,7 @@ fn send_with_meta(
     // Confidential transfer's real euint64 FHE ops exceed the default 200k CU limit
     // (mollusk measures ~258k); raise it like a real client would.
     let ixs = [set_compute_unit_limit_ix(400_000), ix];
-    let message =
-        Message::new_with_blockhash(&ixs, Some(&payer.pubkey()), &svm.latest_blockhash());
+    let message = Message::new_with_blockhash(&ixs, Some(&payer.pubkey()), &svm.latest_blockhash());
     let account_keys = message.account_keys.clone();
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(message), &[payer]).unwrap();
     let signature = tx.signatures[0];

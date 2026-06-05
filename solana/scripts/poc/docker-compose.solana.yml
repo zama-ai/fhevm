@@ -33,12 +33,13 @@ services:
       timeout: 3s
       retries: 30
 
-  # Solana host-listener: same binary/image as the EVM coprocessor host-listener,
-  # run in a SOLANA decode mode. It writes the SAME normalized rows into the SAME
-  # coprocessor DB, so tfhe-worker / sns-worker / transaction-sender downstream are
-  # unchanged. Built from this branch because the `solana_host_listener` subcommand
-  # (wrapping solana_adapter) is the #1494 "listener-wire" work-item — the published
-  # image does not have it yet. This is the one genuine dependency, called out, not faked.
+  # Solana host-listener: from the SAME host-listener image as the EVM coprocessor,
+  # running its `solana_host_listener` binary. That binary polls the validator for
+  # zama-host CPI events and writes the SAME normalized rows into the SAME coprocessor
+  # DB (via solana_adapter), so tfhe-worker / sns-worker / transaction-sender
+  # downstream are unchanged. Built from this branch because the binary is the #1494
+  # "listener-wire" work-item — the published image does not have it yet. This is the
+  # one genuine dependency, called out, not faked.
   solana-host-listener:
     build:
       context: ../../.. # repo root
@@ -47,11 +48,13 @@ services:
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env # DATABASE_URL -> db:5432/coprocessor
     command:
-      - solana_host_listener # TODO(#1494 listener-wire): add this mode to the host-listener binary
+      - solana_host_listener
       - --database-url=${DATABASE_URL}
       - --url=http://poc-solana-validator:8899
-      - --acl-program-id=${ZAMA_HOST_PROGRAM_ID:-7fNskHjCN1DBrgsSKs3a6ZujTg4MJcKf2vCCK5DuvUaE}
-      - --host-chain-id=${SOLANA_HOST_CHAIN_ID:?set the Solana high-bit chain id}
+      - --program-id=${ZAMA_HOST_PROGRAM_ID:-6rQaBev7B67LrQW7nJPBhJYt7rHSK38DWuz1LdiQRFcf}
+      # Coprocessor tenant chain id recorded against ingested handles; must match the
+      # on-chain HostConfig chain_id and the configured Solana tenant in the coprocessor DB.
+      - --host-chain-id=${SOLANA_HOST_CHAIN_ID:?set the Solana coprocessor tenant chain id}
     depends_on:
       solana-validator:
         condition: service_healthy
