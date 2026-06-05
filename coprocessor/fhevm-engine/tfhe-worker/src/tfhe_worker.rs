@@ -2,6 +2,7 @@ use crate::dependence_chain::{self};
 use crate::types::CoprocessorError;
 use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
 use fhevm_engine_common::db_keys::DbKeyCache;
+use fhevm_engine_common::pg_pool::is_fatal_connection_error;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
 use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
@@ -74,17 +75,22 @@ pub async fn run_tfhe_worker(
         // here we log the errors and make sure we retry
         if let Err(cycle_error) = tfhe_worker_cycle(&args, worker_id, health_check.clone()).await {
             WORKER_ERRORS_COUNTER.inc();
-            if let Some(db_err) = cycle_error.downcast_ref::<sqlx::Error>() {
-                if fhevm_engine_common::pg_pool::is_fatal_connection_error(db_err) {
-                    error!(target: "tfhe_worker", error = %db_err, "Fatal DB connection error; exiting for k8s restart");
-                    fhevm_engine_common::telemetry::flush();
-                    std::process::exit(1);
-                }
+            if has_fatal_db_error(cycle_error.as_ref()) {
+                error!(target: "tfhe_worker", error = %cycle_error, "Fatal DB connection error; exiting for k8s restart");
+                fhevm_engine_common::telemetry::flush();
+                std::process::exit(1);
             }
             error!(target: "tfhe_worker", { error = cycle_error }, "Error in background worker, retrying shortly");
         }
         tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
     }
+}
+
+fn has_fatal_db_error(err: &(dyn std::error::Error + 'static)) -> bool {
+    std::iter::successors(Some(err), |e| e.source()).any(|e| {
+        e.downcast_ref::<sqlx::Error>()
+            .is_some_and(is_fatal_connection_error)
+    })
 }
 
 async fn tfhe_worker_cycle(
@@ -511,8 +517,12 @@ async fn build_transaction_graph_and_execute<'a>(
         let keys = match db_key_cache.fetch_latest(trx.as_mut()).await {
             Ok(k) => k,
             Err(err) => {
-                let cerr = CoprocessorError::MissingKeys {
-                    reason: err.to_string(),
+                // Preserve the typed sqlx::Error so `has_fatal_db_error` can find it.
+                let cerr: CoprocessorError = match err.downcast::<sqlx::Error>() {
+                    Ok(sqlx_err) => sqlx_err.into(),
+                    Err(other) => CoprocessorError::MissingKeys {
+                        reason: other.to_string(),
+                    },
                 };
                 error!(target: "tfhe_worker", { error = %cerr }, "failed to fetch latest key");
                 telemetry::set_current_span_error(&cerr);

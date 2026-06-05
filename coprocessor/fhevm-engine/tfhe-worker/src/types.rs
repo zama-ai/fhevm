@@ -28,7 +28,14 @@ impl std::fmt::Display for CoprocessorError {
     }
 }
 
-impl std::error::Error for CoprocessorError {}
+impl std::error::Error for CoprocessorError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::DbError(e) => Some(e),
+            Self::SchedulerError(_) | Self::FhevmError(_) | Self::MissingKeys { .. } => None,
+        }
+    }
+}
 
 impl From<sqlx::Error> for CoprocessorError {
     fn from(err: sqlx::Error) -> Self {
