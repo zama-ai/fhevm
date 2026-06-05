@@ -275,6 +275,7 @@ fhevm_chain_address() {
 
     local file
     file="$(fhevm_chain_file "$chain")" || return 1
+    
     if [[ ! -f "$file" ]]; then
         echo "fhevm_chain_address: chain file not found: $file" >&2
         return 1

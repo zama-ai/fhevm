@@ -1,9 +1,9 @@
 import type { Hex } from 'viem';
-import type { CreateViemClientFn, FheTestViemConfig } from '../setup-viem.js';
+import type { CreateViemBaseClientFn, FheTestViemConfig } from '../setup-viem.js';
 import type { EncryptedValue } from '@fhevm/sdk/types';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import { getViemTestConfigs } from '../setup-viem.js';
+import { getViemClientOptions, getViemTestConfigs } from '../setup-viem.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
 import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle, fheTypeIdFromHandle } from '../setupCommon.js';
 import { asEncryptedValue } from '@fhevm/sdk/types';
@@ -16,7 +16,7 @@ import { asEncryptedValue } from '@fhevm/sdk/types';
 
 export function defineClientBaseMultichainDecryptPublicValueTests(parameters: {
   readonly runIf: boolean;
-  readonly createFhevmBaseClient: CreateViemClientFn;
+  readonly createFhevmBaseClient: CreateViemBaseClientFn;
 }): void {
   describe.runIf(parameters.runIf)('Base client — decryptPublicValue', () => {
     let configs: FheTestViemConfig[];
@@ -28,7 +28,6 @@ export function defineClientBaseMultichainDecryptPublicValueTests(parameters: {
           type: 'ApiKeyHeader',
           value: configs[0]!.zamaApiKey,
         },
-        moduleVersions: configs[0]!.moduleVersions,
       });
     });
 
@@ -96,10 +95,12 @@ export function defineClientBaseMultichainDecryptPublicValueTests(parameters: {
         const client0 = parameters.createFhevmBaseClient({
           chain: config0.fhevmChain,
           publicClient: config0.publicClient,
+          options: getViemClientOptions(config0),
         });
         const client1 = parameters.createFhevmBaseClient({
           chain: config1.fhevmChain,
           publicClient: config1.publicClient,
+          options: getViemClientOptions(config1),
         });
 
         const typedValue0 = await client0.decryptPublicValue({

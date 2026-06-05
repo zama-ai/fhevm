@@ -1,5 +1,6 @@
 import type { FhevmChain } from '@fhevm/sdk/chains';
-import type { WasmModuleVersions } from '../../src/core/types/coreFhevmRuntime.js';
+import type { FhevmDecryptOptions, FhevmEncryptOptions, FhevmOptions } from '../../src/core/types/coreFhevmClient.js';
+import type { FhevmModuleVersions } from '../../src/core/types/moduleVersions.js';
 import type { FheTestBaseEnv, FheTestChainName } from './setupCommon.js';
 import { ethers } from 'ethers';
 import { FHETestABI } from './FheTest-abi-v2.js';
@@ -26,13 +27,32 @@ export type FheTestEthersConfig = {
   readonly zamaApiKey: string;
   readonly fheTestAddress: string;
   readonly fheTestContract: ethers.Contract;
-  readonly moduleVersions?: WasmModuleVersions | undefined;
+  readonly fheEncryptionKeyTfheVersion: string;
+  readonly moduleVersions?: FhevmModuleVersions | undefined;
 };
 
-export type CreateEthersClientFn = (params: {
+type CreateEthersClientParameters = {
   chain: FheTestEthersConfig['fhevmChain'];
   provider: FheTestEthersConfig['provider'];
-}) => any;
+};
+
+export type CreateEthersBaseClientFn = (
+  params: CreateEthersClientParameters & {
+    readonly options?: FhevmOptions | undefined;
+  },
+) => any;
+
+export type CreateEthersEncryptClientFn = (
+  params: CreateEthersClientParameters & {
+    readonly options?: FhevmEncryptOptions | undefined;
+  },
+) => any;
+
+export type CreateEthersDecryptClientFn = (
+  params: CreateEthersClientParameters & {
+    readonly options?: FhevmDecryptOptions | undefined;
+  },
+) => any;
 
 // ---------------------------------------------------------------------------
 // Build config
@@ -74,6 +94,7 @@ function _buildConfig(env: FheTestBaseEnv): FheTestEthersConfig {
     zamaApiKey: env.zamaApiKey,
     fheTestAddress: env.fheTestAddress,
     fheTestContract,
+    fheEncryptionKeyTfheVersion: env.fheEncryptionKeyTfheVersion,
     moduleVersions: env.moduleVersions,
   };
 }
@@ -101,4 +122,52 @@ export function areAllEthersTestConfigsCleartext(): boolean {
 
 export function isMultichain(): boolean {
   return getEthersTestConfigs().length > 1;
+}
+
+export function getEthersClientOptions(
+  config: FheTestEthersConfig,
+  moduleVersions: FhevmModuleVersions | undefined = config.moduleVersions,
+): FhevmOptions | undefined {
+  return moduleVersions === undefined ? undefined : { moduleVersions };
+}
+
+export function getEthersEncryptClientOptions(
+  config: FheTestEthersConfig,
+  moduleVersions: FhevmModuleVersions | undefined = config.moduleVersions,
+): FhevmEncryptOptions | undefined {
+  if (moduleVersions === undefined) {
+    return undefined;
+  }
+  if (moduleVersions === 'auto') {
+    return { moduleVersions };
+  }
+  if (moduleVersions.tfhe === undefined && moduleVersions.checkCompatibility === undefined) {
+    return undefined;
+  }
+  return {
+    moduleVersions: {
+      tfhe: moduleVersions.tfhe,
+      checkCompatibility: moduleVersions.checkCompatibility,
+    },
+  };
+}
+
+export function getEthersDecryptClientOptions(
+  moduleVersions: FhevmModuleVersions | undefined,
+): FhevmDecryptOptions | undefined {
+  if (moduleVersions === undefined) {
+    return undefined;
+  }
+  if (moduleVersions === 'auto') {
+    return { moduleVersions };
+  }
+  if (moduleVersions.kms === undefined && moduleVersions.checkCompatibility === undefined) {
+    return undefined;
+  }
+  return {
+    moduleVersions: {
+      kms: moduleVersions.kms,
+      checkCompatibility: moduleVersions.checkCompatibility,
+    },
+  };
 }

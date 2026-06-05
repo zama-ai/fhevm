@@ -2,7 +2,6 @@ import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 import type {
   DecryptAndReconstructParameters,
   DecryptAndReconstructReturnType,
-  DecryptAndReconstructUserParameters,
   DeserializeTkmsPrivateKeyParameters,
   DeserializeTkmsPrivateKeyReturnType,
   GenerateTkmsPrivateKeyReturnType,
@@ -11,9 +10,7 @@ import type {
   SerializeTkmsPrivateKeyParameters,
   SerializeTkmsPrivateKeyReturnType,
   VerifyTkmsPrivateKeyParameters,
-  UserDecryptModuleParameters,
   DecryptModuleFactory,
-  UserDecryptModuleFactory,
 } from './types.js';
 import type { CleartextEthereumModule } from '../ethereum/types-ct.js';
 import type { TkmsPrivateKey } from '../../types/tkms-p.js';
@@ -210,38 +207,6 @@ export const decryptModule: DecryptModuleFactory = (runtime: FhevmRuntime) => {
         verifyTkmsPrivateKey(runtime, args);
       },
       getTkmsPublicKeyHex: (args: GetTkmsPublicKeyHexParameters) => getTkmsPublicKeyHex(runtime, args),
-    }),
-  });
-};
-
-//////////////////////////////////////////////////////////////////////////////
-// userDecryptActions
-//////////////////////////////////////////////////////////////////////////////
-
-export const userDecryptModule: UserDecryptModuleFactory = (
-  runtime: FhevmRuntime,
-  parameters: UserDecryptModuleParameters,
-) => {
-  const { privateKey } = parameters;
-  return Object.freeze({
-    userDecrypt: Object.freeze({
-      initTkmsModule: () => Promise.resolve(),
-      getTkmsModuleInfo: () => {
-        throw new Error('Not yet implemented');
-      },
-      decryptAndReconstruct: (args: DecryptAndReconstructUserParameters) =>
-        decryptAndReconstruct(runtime, {
-          ...args,
-          tkmsPrivateKey: privateKey,
-        }),
-      getTkmsPublicKeyHex: () =>
-        getTkmsPublicKeyHex(runtime, {
-          tkmsPrivateKey: privateKey,
-        }),
-      serializeTkmsPrivateKey: () =>
-        serializeTkmsPrivateKey(runtime, {
-          tkmsPrivateKey: privateKey,
-        }),
     }),
   });
 };

@@ -4,10 +4,18 @@ import { startWorkers, getTfheWorkers, terminateWorkers, setWorkerUrlConfig } fr
 /* __TFHE_JS_BODY__ */
 
 function getWasmInfo() {
+  const memory = wasm?.memory;
   return {
     name: 'tfhe',
     version: __TFHE_VERSION_JSON__,
     downloadFiles: __TFHE_DOWNLOAD_FILES_JSON__,
+    memory:
+      memory === undefined
+        ? undefined
+        : {
+            byteLength: memory.buffer.byteLength,
+            pages: memory.buffer.byteLength / 65536,
+          },
   };
 }
 

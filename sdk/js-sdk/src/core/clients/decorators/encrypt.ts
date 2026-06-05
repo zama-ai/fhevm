@@ -1,4 +1,4 @@
-import type { Fhevm, FhevmBase, FhevmExtension } from '../../types/coreFhevmClient.js';
+import type { Fhevm, FhevmBase, FhevmExtension, WithTfheVersion } from '../../types/coreFhevmClient.js';
 import type { WithEncrypt } from '../../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { EncryptModuleFactory } from '../../modules/encrypt/types.js';
@@ -17,14 +17,16 @@ import { _initEncrypt } from './encrypt-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type EncryptActions = {
+type EncryptActionMethods = {
   readonly encryptValue: (parameters: EncryptValueParameters) => Promise<EncryptValueReturnType>;
   readonly encryptValues: (parameters: EncryptValuesParameters) => Promise<EncryptValuesReturnType>;
 };
 
+export type EncryptActions = EncryptActionMethods & WithTfheVersion;
+
 ////////////////////////////////////////////////////////////////////////////////
 
-function _encryptActions(fhevm: Fhevm<FhevmChain, WithEncrypt>): EncryptActions {
+function _encryptActions(fhevm: Fhevm<FhevmChain, WithEncrypt>): EncryptActionMethods {
   return {
     encryptValue: (parameters) => encryptValue(fhevm, parameters),
     encryptValues: (parameters) => encryptValues(fhevm, parameters),
@@ -40,7 +42,7 @@ export function encryptActionsWithModule(
   const runtime = fhevm.runtime.extend(factory);
   assertIsFhevmClientWith(fhevm, 'encrypt');
   return {
-    actions: _encryptActions(fhevm),
+    actions: _encryptActions(fhevm) as EncryptActions,
     runtime,
     init: _initEncrypt,
   };

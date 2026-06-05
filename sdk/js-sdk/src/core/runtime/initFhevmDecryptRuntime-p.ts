@@ -5,5 +5,5 @@ import { decryptModule } from '../modules/decrypt/module/index.js';
 export async function initFhevmDecryptRuntime(runtime: FhevmRuntime, ownerToken: symbol): Promise<void> {
   verifyFhevmRuntime(runtime, ownerToken);
   const decryptRuntime = runtime.extend(decryptModule);
-  await decryptRuntime.decrypt.initTkmsModule();
+  await decryptRuntime.decrypt.initTkmsModule({ tkmsVersion: '0.13.20-0' });
 }

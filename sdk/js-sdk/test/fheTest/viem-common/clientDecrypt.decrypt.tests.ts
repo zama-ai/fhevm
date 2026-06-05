@@ -1,14 +1,23 @@
 import type { Hex } from 'viem';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import { getViemTestConfig, type CreateViemClientFn, type FheTestViemConfig } from '../setup-viem.js';
+import { getViemTestConfig, type CreateViemDecryptClientFn, type FheTestViemConfig } from '../setup-viem.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
 import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle } from '../setupCommon.js';
 import { asEncryptedValue, type EncryptedValue, type TypedValue } from '@fhevm/sdk/types';
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/clientDecrypt.decrypt.test.ts
+// CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.decrypt.test.ts
+// CHAIN=testnet        npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.decrypt.test.ts
+// CHAIN=devnet         npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.decrypt.test.ts
+//
+////////////////////////////////////////////////////////////////////////////////
+
 export function defineClientDecryptDecryptTests(parameters: {
   readonly runIf: boolean;
-  createFhevmDecryptClient: CreateViemClientFn;
+  createFhevmDecryptClient: CreateViemDecryptClientFn;
 }): void {
   describe.runIf(parameters.runIf)('Decrypt client — user decrypt', () => {
     let config: FheTestViemConfig;
@@ -24,7 +33,6 @@ export function defineClientDecryptDecryptTests(parameters: {
           debug: (message: string) => console.log(message),
           error: (message: string) => console.log(message),
         },
-        moduleVersions: config.moduleVersions,
       });
     });
 

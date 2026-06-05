@@ -6,6 +6,7 @@ import type { TransportKeyPair } from '../../kms/TransportKeyPair-p.js';
 import type { TypedValue } from '../../types/primitives.js';
 import { decryptKmsSignedcryptedShares as decryptKmsSignedcryptedShares_ } from '../../kms/decryptKmsSignedcryptedShares-p.js';
 import { clearValueToTypedValue } from '../../handle/ClearValue.js';
+import { asFhevmWithTkmsVersion } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // decryptKmsSignedcryptedShares (with privateKey)
@@ -24,7 +25,9 @@ export async function decryptKmsSignedcryptedShares(
   fhevm: Fhevm<FhevmChain, WithDecrypt>,
   parameters: DecryptKmsSignedcryptedSharesParameters,
 ): Promise<DecryptKmsSignedcryptedSharesReturnType> {
-  const clearValues = await decryptKmsSignedcryptedShares_(fhevm, parameters);
+  const f = asFhevmWithTkmsVersion(fhevm);
+
+  const clearValues = await decryptKmsSignedcryptedShares_(f, parameters);
 
   const originToken = Symbol('decryptKmsSignedcryptedShares');
   return clearValues.map((cv) => clearValueToTypedValue(cv, originToken));

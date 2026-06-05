@@ -2,7 +2,7 @@ import type { Account, Hex, PublicClient, Transport, Chain } from 'viem';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import { getViemTestConfig, type CreateViemClientFn, type FheTestViemConfig } from '../setup-viem.js';
+import { getViemTestConfig, type CreateViemDecryptClientFn, type FheTestViemConfig } from '../setup-viem.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
 import { createWalletClient, http } from 'viem';
 import {
@@ -12,6 +12,15 @@ import {
   fheTypeIdFromHandle,
   prepareSingleChain,
 } from '../setupCommon.js';
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/clientDecrypt.delegateDecrypt.test.ts
+// CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.delegateDecrypt.test.ts
+// CHAIN=testnet        npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.delegateDecrypt.test.ts
+// CHAIN=devnet         npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.delegateDecrypt.test.ts
+//
+////////////////////////////////////////////////////////////////////////////////
 
 // Alice (config.alice) — owns the handles, delegates to Bob
 // Bob (config.bob) — signs the delegated permit and decrypts
@@ -92,7 +101,7 @@ async function getUserDecryptionDelegationExpirationDate(parameters: {
 
 export function defineClientDecryptDelegateDecryptTests(parameters: {
   readonly runIf: boolean;
-  createFhevmDecryptClient: CreateViemClientFn;
+  createFhevmDecryptClient: CreateViemDecryptClientFn;
 }): void {
   describe.runIf(parameters.runIf)(
     'Decrypt client — delegated decrypt',
@@ -106,7 +115,6 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
             type: 'ApiKeyHeader',
             value: config.zamaApiKey,
           },
-          moduleVersions: config.moduleVersions,
         });
         console.log(`  Alice: ${config.alice.account.address}`);
         console.log(`  Bob:   ${config.bob.account.address}`);

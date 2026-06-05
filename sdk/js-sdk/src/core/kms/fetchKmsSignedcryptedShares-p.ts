@@ -16,6 +16,7 @@ import { checkPersistAllowed } from '../host-contracts/checkPersistAllowed.js';
 import { assertExtraDataMatchesKmsSingersContext } from '../host-contracts/KmsSignersContext-p.js';
 import { createKmsEip712Domain } from './createKmsEip712Domain.js';
 import { checkDelegation } from '../host-contracts/checkDelegation.js';
+import { resolveFhevmTkmsVersion } from '../runtime/CoreFhevm-p.js';
 
 /*
     See: in KMS (eip712Domain)
@@ -69,6 +70,10 @@ const MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10;
 
 export async function fetchKmsSignedcryptedShares(context: Context, parameters: Parameters): Promise<ReturnType> {
   const { signedPermit, options, pairs } = parameters;
+
+  // This helper must support base clients, where TKMS is not mandatory
+  // and tkmsVersion may not be initialized in the CoreFhevm instance yet.
+  const tkmsVersion = await resolveFhevmTkmsVersion(context);
 
   // Check: every requested contractAddress is listed in the permit
   assertPermitIncludesContractAddresses(
@@ -201,6 +206,7 @@ export async function fetchKmsSignedcryptedShares(context: Context, parameters: 
     eip712Signature: signature,
     eip712SignerAddress: signerAddress,
     handles,
+    tkmsVersion,
   };
 
   // 12. The returned KmsSigncryptedShares is guaranteed to be fully verified:

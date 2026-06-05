@@ -1,25 +1,32 @@
 import type { ethers } from 'ethers';
 import type { EncryptedValue } from '@fhevm/sdk/types';
+import type { FhevmModuleVersions } from '../../../src/core/types/moduleVersions.js';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import { getEthersTestConfig, type CreateEthersClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
+import {
+  getEthersDecryptClientOptions,
+  getEthersEncryptClientOptions,
+  getEthersTestConfig,
+  type CreateEthersDecryptClientFn,
+  type CreateEthersEncryptClientFn,
+  type FheTestEthersConfig,
+} from '../setup-ethers.js';
 import { clearTypeFromHandle, encryptTestCases, isBytes32Hex } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=testnet npx vitest run --config test/fheTest/vitest.config.ts ethers/clientEncrypt.encryptDecrypt.slow.test.ts
-// CHAIN=devnet npx vitest run --config test/fheTest/vitest.config.ts ethers/clientEncrypt.encryptDecrypt.slow.test.ts
-// CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts ethers/clientEncrypt.encryptDecrypt.slow.test.ts
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts ethers-cleartext/clientEncrypt.encryptDecrypt.slow.test.ts
+// CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts ethers/clientEncrypt.encryptDecrypt.slow.test.ts
+// CHAIN=testnet        npx vitest run --config test/fheTest/vitest.config.ts ethers/clientEncrypt.encryptDecrypt.slow.test.ts
+// CHAIN=devnet         npx vitest run --config test/fheTest/vitest.config.ts ethers/clientEncrypt.encryptDecrypt.slow.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-type ModuleVersions = Parameters<typeof setFhevmRuntimeConfig>[0]['moduleVersions'];
-
 export function defineClientEncryptDecryptSlowTests(parameters: {
   readonly runIf: boolean;
-  readonly createFhevmEncryptClient: CreateEthersClientFn;
-  readonly createFhevmDecryptClient: CreateEthersClientFn;
-  readonly moduleVersions?: ModuleVersions;
+  readonly createFhevmEncryptClient: CreateEthersEncryptClientFn;
+  readonly createFhevmDecryptClient: CreateEthersDecryptClientFn;
+  readonly moduleVersions?: FhevmModuleVersions | undefined;
 }): void {
   describe.runIf(parameters.runIf)(
     'Encrypt-Decrypt',
@@ -37,7 +44,6 @@ export function defineClientEncryptDecryptSlowTests(parameters: {
             debug: (message: string) => console.log(message),
             error: (message: string) => console.log(message),
           },
-          moduleVersions: parameters.moduleVersions,
         });
       });
 
@@ -49,6 +55,7 @@ export function defineClientEncryptDecryptSlowTests(parameters: {
         const client = parameters.createFhevmEncryptClient({
           chain: config.fhevmChain,
           provider: config.provider,
+          options: getEthersEncryptClientOptions(config, parameters.moduleVersions),
         });
         await client.ready;
 
@@ -129,6 +136,7 @@ export function defineClientEncryptDecryptSlowTests(parameters: {
         const decryptClient = parameters.createFhevmDecryptClient({
           chain: config.fhevmChain,
           provider: config.provider,
+          options: getEthersDecryptClientOptions(parameters.moduleVersions),
         });
 
         await decryptClient.ready;

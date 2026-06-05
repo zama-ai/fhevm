@@ -1,6 +1,6 @@
 import type { FhevmChain } from '@fhevm/sdk/chains';
 import type { EncryptedValue, TypedValue } from '@fhevm/sdk/types';
-import type { WasmModuleVersions } from '../../src/core/types/coreFhevmRuntime.js';
+import type { FhevmModuleVersions } from '../../src/core/types/moduleVersions.js';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -45,7 +45,8 @@ export type FheTestBaseEnv = {
   readonly zamaApiKey: string;
   readonly fheTestAddress: string;
   readonly fheTestVersion: FheTestVersion;
-  readonly moduleVersions?: WasmModuleVersions | undefined;
+  readonly fheEncryptionKeyTfheVersion: string;
+  readonly moduleVersions?: FhevmModuleVersions | undefined;
 };
 
 // ---------------------------------------------------------------------------
@@ -79,6 +80,19 @@ const TFHE_VERSION_BY_CHAIN: Readonly<Record<FheTestChainName, TfheVersion | und
 /** Returns the TFHE wasm version for a given test chain, or `undefined` for cleartext chains. */
 export function getTfheVersion(chainName: FheTestChainName): TfheVersion | undefined {
   return TFHE_VERSION_BY_CHAIN[chainName];
+}
+
+const FHE_ENCRYPTION_KEY_TFHE_VERSION_BY_CHAIN: Readonly<Partial<Record<FheTestChainName, string>>> = {
+  sepolia: '1.4.0-alpha.3',
+  testnet: '1.4.0-alpha.3',
+  localcleartext: 'cleartext',
+  localstack_v11: '1.5.1',
+  localstack_v12: '1.5.4',
+  localstack_v13: '1.6.1',
+};
+
+export function getFheEncryptionKeyTfheVersion(chainName: FheTestChainName): string {
+  return FHE_ENCRYPTION_KEY_TFHE_VERSION_BY_CHAIN[chainName] ?? getTfheVersion(chainName) ?? 'unknown';
 }
 
 // ---------------------------------------------------------------------------
@@ -437,6 +451,7 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
 
   runPreliminaryFheTestSetup(chainName, mnemonic, rpcUrl, fheTestAddress);
 
+  const tfheVersion = getTfheVersion(chainName);
   _baseEnv = {
     chainName,
     fhevmChain,
@@ -445,9 +460,8 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
     zamaApiKey,
     fheTestAddress,
     fheTestVersion,
-    moduleVersions: {
-      tfhe: getTfheVersion(chainName),
-    },
+    fheEncryptionKeyTfheVersion: getFheEncryptionKeyTfheVersion(chainName),
+    moduleVersions: tfheVersion === undefined ? undefined : { tfhe: tfheVersion },
   };
 
   return _baseEnv;

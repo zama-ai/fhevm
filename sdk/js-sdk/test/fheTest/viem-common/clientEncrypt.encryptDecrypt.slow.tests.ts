@@ -1,26 +1,33 @@
 import type { EncryptedValue } from '@fhevm/sdk/types';
+import type { FhevmModuleVersions } from '../../../src/core/types/moduleVersions.js';
+import {
+  getViemDecryptClientOptions,
+  getViemEncryptClientOptions,
+  getViemTestConfig,
+  type CreateViemDecryptClientFn,
+  type CreateViemEncryptClientFn,
+  type FheTestViemConfig,
+} from '../setup-viem.js';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import { getViemTestConfig, type CreateViemClientFn, type FheTestViemConfig } from '../setup-viem.js';
 import { clearTypeFromHandle, encryptTestCases, prepareSingleChain, isBytes32Hex } from '../setupCommon.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
 import { createWalletClient, http, type Hex } from 'viem';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=testnet npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encryptDecrypt.slow.test.ts
-// CHAIN=devnet npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encryptDecrypt.slow.test.ts
-// CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encryptDecrypt.slow.test.ts
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/clientEncrypt.encryptDecrypt.slow.test.ts
+// CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encryptDecrypt.slow.test.ts
+// CHAIN=testnet        npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encryptDecrypt.slow.test.ts
+// CHAIN=devnet         npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encryptDecrypt.slow.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-type ModuleVersions = Parameters<typeof setFhevmRuntimeConfig>[0]['moduleVersions'];
-
 export function defineClientEncryptDecryptSlowTests(parameters: {
   readonly runIf: boolean;
-  readonly createFhevmEncryptClient: CreateViemClientFn;
-  readonly createFhevmDecryptClient: CreateViemClientFn;
-  readonly moduleVersions?: ModuleVersions;
+  readonly createFhevmEncryptClient: CreateViemEncryptClientFn;
+  readonly createFhevmDecryptClient: CreateViemDecryptClientFn;
+  readonly moduleVersions?: FhevmModuleVersions | undefined;
 }): void {
   describe.runIf(parameters.runIf)(
     'Encrypt-Decrypt',
@@ -38,7 +45,6 @@ export function defineClientEncryptDecryptSlowTests(parameters: {
             debug: (message: string) => console.log(message),
             error: (message: string) => console.log(message),
           },
-          moduleVersions: parameters.moduleVersions ?? config.moduleVersions,
         });
       });
 
@@ -50,6 +56,7 @@ export function defineClientEncryptDecryptSlowTests(parameters: {
         const client = parameters.createFhevmEncryptClient({
           chain: config.fhevmChain,
           publicClient: config.publicClient,
+          options: getViemEncryptClientOptions(config, parameters.moduleVersions),
         });
         await client.ready;
 
@@ -123,6 +130,7 @@ export function defineClientEncryptDecryptSlowTests(parameters: {
         const decryptClient = parameters.createFhevmDecryptClient({
           chain: config.fhevmChain,
           publicClient: config.publicClient,
+          options: getViemDecryptClientOptions(parameters.moduleVersions),
         });
 
         await decryptClient.ready;

@@ -1,6 +1,6 @@
 import type { TkmsVersion } from '../../../src/wasm/tkms/loadKmsLib.js';
 import type { TfheVersion } from '../../../src/wasm/tfhe/loadTfheLib.js';
-import type { WasmAssetLoadMode } from '../../../src/core/types/coreFhevmRuntime.js';
+import type { WasmAssetLoadMode } from '../../../src/core/types/wasmAssets.js';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 

@@ -1,5 +1,6 @@
 import type { FhevmChain } from '../../../src/core/chains/index.js';
-import type { WasmAssetLoadMode, WasmModuleVersions } from '../../../src/core/types/coreFhevmRuntime.js';
+import type { FhevmModuleVersions } from '../../../src/core/types/moduleVersions.js';
+import type { WasmAssetLoadMode } from '../../../src/core/types/wasmAssets.js';
 import type { TypedValue } from '../../../src/core/types/index.js';
 import type { TkmsVersion } from '../../../src/wasm/tkms/loadKmsLib.js';
 import type { TfheVersion } from '../../../src/wasm/tfhe/loadTfheLib.js';
@@ -150,7 +151,7 @@ async function run() {
     const wasmAssetLoadMode = mode as WasmAssetLoadMode;
     const roundTrip = matrix.defaults.roundTrip;
     const value = normalizeRoundTripValue(roundTrip);
-    const moduleVersions: WasmModuleVersions = { tfhe, kms };
+    const moduleVersions: FhevmModuleVersions = { tfhe, kms };
     const typedValue = { type: roundTrip.clearType, value } as TypedValue;
     const assetUrls = wasmAssetLoadMode === 'embedded-base64' ? undefined : resolveAssetUrls(matrix, versionPair, cdn);
 
@@ -161,7 +162,6 @@ async function run() {
     log(`assetUrls: ${assetUrls === undefined ? 'embedded/default' : JSON.stringify(assetUrls)}`);
 
     setFhevmRuntimeConfig({
-      moduleVersions,
       wasmAssetLoadMode,
       locateFile:
         assetUrls === undefined
@@ -192,6 +192,7 @@ async function run() {
     const client = createFhevmClient({
       chain: fhevmChain,
       provider,
+      options: { moduleVersions },
     });
 
     log('Initializing FHEVM client...');

@@ -2,19 +2,27 @@ import type { ethers } from 'ethers';
 import type { EncryptedValue, TypedValue } from '@fhevm/sdk/types';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import { getEthersTestConfig, type CreateEthersClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
+import {
+  getEthersClientOptions,
+  getEthersTestConfig,
+  type CreateEthersBaseClientFn,
+  type FheTestEthersConfig,
+} from '../setup-ethers.js';
 import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle, fheTypeIdFromHandle } from '../setupCommon.js';
 import { asEncryptedValue } from '@fhevm/sdk/types';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.decryptPublicValue.test.ts
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts ethers-cleartext/clientBase.decryptPublicValue.test.ts
+// CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.decryptPublicValue.test.ts
+// CHAIN=testnet        npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.decryptPublicValue.test.ts
+// CHAIN=devnet         npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.decryptPublicValue.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 
 export function defineClientBaseDecryptPublicValueTests(parameters: {
   readonly runIf: boolean;
-  readonly createFhevmBaseClient: CreateEthersClientFn;
+  readonly createFhevmBaseClient: CreateEthersBaseClientFn;
 }): void {
   describe.runIf(parameters.runIf)('Base client — decryptPublicValue', () => {
     let config: FheTestEthersConfig;
@@ -58,6 +66,7 @@ export function defineClientBaseDecryptPublicValueTests(parameters: {
         const client = parameters.createFhevmBaseClient({
           chain: config.fhevmChain,
           provider: config.provider,
+          options: getEthersClientOptions(config),
         });
 
         const typedValue: TypedValue = await client.decryptPublicValue({
@@ -110,6 +119,7 @@ export function defineClientBaseDecryptPublicValueTests(parameters: {
       const client = parameters.createFhevmBaseClient({
         chain: config.fhevmChain,
         provider: config.provider,
+        options: getEthersClientOptions(config),
       });
 
       const allEncryptedValues = entries.map((e) => asEncryptedValue(e.encryptedValue));

@@ -2114,6 +2114,7 @@ async function __wbg_init(module_or_path) {
 }
 
 function getWasmInfo() {
+  const memory = wasm?.memory;
   return {
     name: 'tkms',
     version: '0.13.20-0',
@@ -2123,6 +2124,13 @@ function getWasmInfo() {
         sha256: "be54c8f11daf048b897b41cf6e6735895490cdca77f2a01c01be0d6fbf369c81",
       }
     ],
+    memory:
+      memory === undefined
+        ? undefined
+        : {
+            byteLength: memory.buffer.byteLength,
+            pages: memory.buffer.byteLength / 65536,
+          },
   };
 }
 

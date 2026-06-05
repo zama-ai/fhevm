@@ -1,5 +1,5 @@
 import type { FhevmRuntimeConfig } from '../../core/types/coreFhevmRuntime.js';
-import { cloneModuleVersions } from '../../core/runtimeConfig-p.js';
+import { cloneModuleVersions, moduleVersionsAreEqual } from '../../core/runtimeConfig-p.js';
 
 let ethersFhevmRuntimeConfig: FhevmRuntimeConfig | undefined;
 
@@ -17,7 +17,7 @@ let ethersFhevmRuntimeConfig: FhevmRuntimeConfig | undefined;
  */
 export function setFhevmRuntimeConfig(config: FhevmRuntimeConfig): void {
   if (ethersFhevmRuntimeConfig === undefined) {
-    ethersFhevmRuntimeConfig = Object.freeze({
+    ethersFhevmRuntimeConfig = Object.freeze<FhevmRuntimeConfig>({
       ...config,
       logger: config.logger ? Object.freeze({ ...config.logger }) : undefined,
       moduleVersions: cloneModuleVersions(config.moduleVersions),
@@ -51,32 +51,4 @@ export function getFhevmRuntimeConfig(): FhevmRuntimeConfig {
     );
   }
   return ethersFhevmRuntimeConfig;
-}
-
-function moduleVersionsAreEqual(
-  a: FhevmRuntimeConfig['moduleVersions'],
-  b: FhevmRuntimeConfig['moduleVersions'],
-): boolean {
-  const normalizedA = normalizeModuleVersions(a);
-  const normalizedB = normalizeModuleVersions(b);
-  return (
-    normalizedA.tfhe === normalizedB.tfhe &&
-    normalizedA.kms === normalizedB.kms &&
-    normalizedA.checkCompatibility === normalizedB.checkCompatibility
-  );
-}
-
-function normalizeModuleVersions(moduleVersions: FhevmRuntimeConfig['moduleVersions']): {
-  readonly tfhe: 'auto' | NonNullable<Exclude<FhevmRuntimeConfig['moduleVersions'], 'auto'>>['tfhe'];
-  readonly kms: 'auto' | NonNullable<Exclude<FhevmRuntimeConfig['moduleVersions'], 'auto'>>['kms'];
-  readonly checkCompatibility: NonNullable<Exclude<FhevmRuntimeConfig['moduleVersions'], 'auto'>>['checkCompatibility'];
-} {
-  if (moduleVersions === undefined || moduleVersions === 'auto') {
-    return { tfhe: 'auto', kms: 'auto', checkCompatibility: undefined };
-  }
-  return {
-    tfhe: moduleVersions.tfhe ?? 'auto',
-    kms: moduleVersions.kms ?? 'auto',
-    checkCompatibility: moduleVersions.checkCompatibility,
-  };
 }

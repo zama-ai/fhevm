@@ -1,13 +1,23 @@
 import type { FhevmRuntime, FhevmRuntimeConfig } from '../../../types/coreFhevmRuntime.js';
-import type { GetTkmsModuleInfoReturnType, TkmsModuleInfo } from '../types.js';
+import type {
+  GetTkmsModuleInfoParameters,
+  GetTkmsModuleInfoReturnType,
+  InitTkmsModuleParameters,
+  TkmsModuleInfo,
+} from '../types.js';
 import type { KmsLibApi, TkmsVersion } from '../../../../wasm/tkms/KmsLibApi.js';
 import type { KmsAssetMetadata } from '../../../../wasm/tkms/loadKmsLib.js';
 import { isBrowserLike } from '../../../base/isomorphicWorker.js';
 import { isomorphicCompileVerifiedWasm, isomorphicCompileWasmFromBase64 } from '../../../base/wasm.js';
 import { assertIsFhevmRuntime } from '../../../runtime/CoreFhevmRuntime-p.js';
-import { resolveTkmsModuleVersion } from '../../../../wasm/tkmsModuleVersion-p.js';
 import { wasmBaseUrl } from '../../../../wasm/wasmBaseUrl.js';
 import { kmsAssetsWithVersion, loadKmsLib, loadKmsWasmBase64 } from '../../../../wasm/tkms/loadKmsLib.js';
+
+////////////////////////////////////////////////////////////////////////////////
+
+const ownerUidByVersion = new Map<TkmsVersion, string>();
+const cachedTkmsModulePromiseByVersion = new Map<TkmsVersion, Promise<KmsLibApi>>();
+const moduleInfoByVersion = new Map<TkmsVersion, TkmsModuleInfo>();
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -41,26 +51,26 @@ type ResolvedTkmsModuleConfig = {
   readonly logger: FhevmRuntimeConfig['logger'];
 };
 
-let resolvedTkmsModuleConfig: ResolvedTkmsModuleConfig | undefined = undefined;
+const resolvedTkmsModuleConfigByVersion = new Map<TkmsVersion, ResolvedTkmsModuleConfig>();
 
 /**
  * @internal
  * Returns the existing resolved config, or resolves it from the runtime config.
  */
-function _getOrResolveTkmsModuleConfig(runtime: FhevmRuntime): ResolvedTkmsModuleConfig {
-  if (resolvedTkmsModuleConfig !== undefined) return resolvedTkmsModuleConfig;
+function _getOrResolveTkmsModuleConfig(runtime: FhevmRuntime, tkmsVersion: TkmsVersion): ResolvedTkmsModuleConfig {
+  let resolvedTkmsModuleConfig = resolvedTkmsModuleConfigByVersion.get(tkmsVersion);
+  if (resolvedTkmsModuleConfig !== undefined) {
+    return resolvedTkmsModuleConfig;
+  }
 
-  const version = resolveTkmsModuleVersion(runtime.config);
+  resolvedTkmsModuleConfig = _resolveTkmsModuleConfig(runtime.config, tkmsVersion);
 
-  resolvedTkmsModuleConfig = _resolveTkmsModuleConfig(runtime.config, version);
+  resolvedTkmsModuleConfigByVersion.set(tkmsVersion, resolvedTkmsModuleConfig);
+
   return resolvedTkmsModuleConfig;
 }
 
 function _resolveTkmsModuleConfig(parameters: FhevmRuntimeConfig, version: TkmsVersion): ResolvedTkmsModuleConfig {
-  if (cachedTkmsModulePromise !== undefined) {
-    throw new Error('Cannot configure module after initialization has started');
-  }
-
   const { locateFile } = parameters;
 
   const assets = kmsAssetsWithVersion(version);
@@ -95,23 +105,21 @@ function _resolveTkmsModuleConfig(parameters: FhevmRuntimeConfig, version: TkmsV
 
 type TkmsInitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
-type InitTkmsModuleParameters = {
+type TkmsLibInitAsyncParameters = {
   readonly module_or_path: TkmsInitInput | Promise<TkmsInitInput>;
 };
 
-let cachedTkmsModulePromise: Promise<KmsLibApi> | undefined;
-let ownerUid: string | undefined = undefined;
-
-export async function initTkmsModule(runtime: FhevmRuntime): Promise<KmsLibApi> {
+export async function initTkmsModule(runtime: FhevmRuntime, parameters: InitTkmsModuleParameters): Promise<KmsLibApi> {
   assertIsFhevmRuntime(runtime, {});
 
+  const ownerUid = ownerUidByVersion.get(parameters.tkmsVersion);
   if (ownerUid !== undefined && runtime.uid !== ownerUid) {
     throw new Error(
       `Decrypt WASM module is already owned by runtime '${ownerUid}' and cannot be shared with runtime '${runtime.uid}'`,
     );
   }
 
-  ownerUid = runtime.uid;
+  ownerUidByVersion.set(parameters.tkmsVersion, runtime.uid);
 
   // Cache the TKMS initialization promise once and keep it cached even if it
   // rejects.
@@ -122,16 +130,17 @@ export async function initTkmsModule(runtime: FhevmRuntime): Promise<KmsLibApi> 
   // keep module-level state that cannot be reset reliably after a partial
   // initialization failure; later callers should observe the original error
   // instead of retrying against half-initialized state.
+
+  let cachedTkmsModulePromise = cachedTkmsModulePromiseByVersion.get(parameters.tkmsVersion);
   if (cachedTkmsModulePromise === undefined) {
     // resolve is sync
-    const cfg = _getOrResolveTkmsModuleConfig(runtime);
+    const cfg = _getOrResolveTkmsModuleConfig(runtime, parameters.tkmsVersion);
     cachedTkmsModulePromise = _initTkmsModule(cfg);
+    cachedTkmsModulePromiseByVersion.set(parameters.tkmsVersion, cachedTkmsModulePromise);
   }
 
   return cachedTkmsModulePromise;
 }
-
-let moduleInfo: TkmsModuleInfo | undefined = undefined;
 
 async function _initTkmsModule(cfg: ResolvedTkmsModuleConfig): Promise<KmsLibApi> {
   const kmsLib = await loadKmsLib(cfg.version);
@@ -147,18 +156,27 @@ async function _initTkmsModule(cfg: ResolvedTkmsModuleConfig): Promise<KmsLibApi
     wasmModule = await isomorphicCompileWasmFromBase64(tkmsWasmBase64, tkmsWasmBase64IsGzipped ? 'gzip' : undefined);
   }
 
-  const input: InitTkmsModuleParameters = { module_or_path: wasmModule };
+  const input: TkmsLibInitAsyncParameters = { module_or_path: wasmModule };
 
   await kmsLib.initAsync(input);
 
   // Note: init_panic_hook is not exposed by kms_lib
   const wasmInfo = kmsLib.getWasmInfo();
+  const memory = { byteLength: 0, pages: 0 };
+  if (wasmInfo.memory !== undefined) {
+    memory.byteLength = wasmInfo.memory.byteLength;
+    memory.pages = wasmInfo.memory.pages;
+  }
 
-  moduleInfo = Object.freeze({
-    wasmUrl: cfg.wasm.url ? new URL(cfg.wasm.url) : undefined,
-    version: wasmInfo.version,
-    name: wasmInfo.name,
-  });
+  moduleInfoByVersion.set(
+    cfg.version,
+    Object.freeze({
+      wasmUrl: cfg.wasm.url ? new URL(cfg.wasm.url) : undefined,
+      version: wasmInfo.version,
+      name: wasmInfo.name,
+      memory,
+    }),
+  );
 
   return kmsLib;
 }
@@ -167,6 +185,20 @@ async function _initTkmsModule(cfg: ResolvedTkmsModuleConfig): Promise<KmsLibApi
 // getTkmsModuleInfo
 ////////////////////////////////////////////////////////////////////////////////
 
-export function getTkmsModuleInfo(): GetTkmsModuleInfoReturnType {
-  return moduleInfo;
+export async function getTkmsModuleInfo(parameters: GetTkmsModuleInfoParameters): Promise<GetTkmsModuleInfoReturnType> {
+  const tkmsLib = await loadKmsLib(parameters.tkmsVersion);
+  const stored = moduleInfoByVersion.get(parameters.tkmsVersion);
+  if (stored === undefined) {
+    throw new Error(`getTkmsModuleInfo: no module info recorded for version "${parameters.tkmsVersion}"`);
+  }
+  const memory: { byteLength: number; pages: number } = {
+    byteLength: stored.memory.byteLength,
+    pages: stored.memory.pages,
+  };
+  const wasmInfo = tkmsLib.getWasmInfo();
+  if (wasmInfo.memory !== undefined) {
+    memory.byteLength = wasmInfo.memory.byteLength;
+    memory.pages = wasmInfo.memory.pages;
+  }
+  return { ...stored, memory };
 }
