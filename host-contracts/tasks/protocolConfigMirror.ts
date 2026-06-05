@@ -33,13 +33,15 @@ export type CanonicalSnapshot = {
 };
 
 // Reads the canonical ProtocolConfig's current KMS context, pinned to one block. Shared by the
-// secondary mirror deploy and the export task so both seed from the exact same read.
+// secondary mirror deploy and the export task so both seed from the exact same read. Pass blockTag
+// to pin to a historical block (the export artifact's blockNumber) so a DAO signer can reproduce a
+// snapshot byte-for-byte even after a later context rotation; omit it to read the latest block.
 export async function readCanonicalSnapshot(
   hre: HardhatRuntimeEnvironment,
-  options: { canonicalProvider: Provider; canonicalProtocolConfigAddress: string },
+  options: { canonicalProvider: Provider; canonicalProtocolConfigAddress: string; blockTag?: number },
 ): Promise<CanonicalSnapshot> {
   const { ethers } = hre;
-  const { canonicalProvider, canonicalProtocolConfigAddress } = options;
+  const { canonicalProvider, canonicalProtocolConfigAddress, blockTag } = options;
 
   const canonicalProtocolConfigBase = await ethers.getContractAt('ProtocolConfig', canonicalProtocolConfigAddress);
   const canonicalProtocolConfig = canonicalProtocolConfigBase.connect(canonicalProvider) as ProtocolConfig;
@@ -62,7 +64,7 @@ export async function readCanonicalSnapshot(
   let canonicalBlockTag: number;
   try {
     canonicalChainId = (await canonicalProvider.getNetwork()).chainId;
-    canonicalBlockTag = await canonicalProvider.getBlockNumber();
+    canonicalBlockTag = blockTag ?? (await canonicalProvider.getBlockNumber());
   } catch (err) {
     throw new Error(`Canonical RPC handshake failed (${formatError(err)}).`);
   }

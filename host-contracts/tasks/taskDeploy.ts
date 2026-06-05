@@ -591,17 +591,28 @@ task(
     undefined,
     types.string,
   )
+  .addOptionalParam(
+    'blockNumber',
+    'Canonical block height to pin the snapshot to. Defaults to latest; pass the artifact\'s blockNumber to reproduce a prior export for DAO review.',
+    undefined,
+    types.int,
+  )
   .addOptionalParam('out', 'Path to write the snapshot JSON.', 'canonical-protocol-config-snapshot.json', types.string)
   .setAction(async function (
     {
       canonicalRpcUrl,
       canonicalProtocolConfigAddress,
+      blockNumber,
       out,
-    }: { canonicalRpcUrl: string; canonicalProtocolConfigAddress: string; out: string },
+    }: { canonicalRpcUrl: string; canonicalProtocolConfigAddress: string; blockNumber?: number; out: string },
     hre,
   ) {
     const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
-    const snapshot = await readCanonicalSnapshot(hre, { canonicalProvider, canonicalProtocolConfigAddress });
+    const snapshot = await readCanonicalSnapshot(hre, {
+      canonicalProvider,
+      canonicalProtocolConfigAddress,
+      blockTag: blockNumber,
+    });
 
     const artifact = {
       canonicalChainId: snapshot.canonicalChainId,

@@ -184,9 +184,21 @@ npx hardhat task:exportCanonicalProtocolConfig \
 ```
 
 This writes the canonical KMS context (chain id, block number, ProtocolConfig address, context id,
-KMS nodes, thresholds) at a pinned block. Before accepting secondary-host ownership, DAO signers
-re-run the export at the same `blockNumber` and diff the snapshot against the deployed secondary's
-context.
+KMS nodes, thresholds) at the latest block. Before accepting secondary-host ownership, DAO signers
+re-run the export pinned to the artifact's `blockNumber` and diff it against both the published
+artifact and the deployed secondary's context:
+
+```bash
+npx hardhat task:exportCanonicalProtocolConfig \
+  --canonical-rpc-url <CANONICAL_RPC_URL> \
+  --canonical-protocol-config-address <CANONICAL_PROTOCOL_CONFIG_ADDRESS> \
+  --block-number <ARTIFACT_BLOCK_NUMBER> \
+  --out canonical-protocol-config-snapshot.reproduced.json
+```
+
+Pinning to `--block-number` makes the re-read reproducible: it still matches even if the canonical
+committee rotated (`defineNewKmsContext`) after the original export. Without it the task reads the
+latest block, which drifts after any rotation.
 
 ### Ownership hand-off
 

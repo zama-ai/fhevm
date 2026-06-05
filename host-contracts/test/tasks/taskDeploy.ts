@@ -215,11 +215,53 @@ describe('canonical snapshot export (readCanonicalSnapshot)', function () {
     expect(snapshot.currentContextId).to.not.equal(0n);
     expect(snapshot.canonicalChainId).to.equal((await ethers.provider.getNetwork()).chainId);
 
-    // The DAO's review check: re-reading the same pinned block reproduces the snapshot exactly.
+    // The DAO's review check: re-reading the artifact's pinned block reproduces the snapshot exactly.
     const reread = await readCanonicalSnapshot(hre, {
       canonicalProvider: ethers.provider,
       canonicalProtocolConfigAddress: canonicalAddress,
+      blockTag: snapshot.canonicalBlockTag,
     });
     expect(reread).to.deep.equal(snapshot);
+  });
+
+  it('reproduces a pinned snapshot after a rotation, while a latest re-read drifts', async function () {
+    const canonicalAddress = await deployFreshProtocolConfigProxy(
+      deployer,
+      buildProtocolConfigNodes(),
+      buildProtocolConfigThresholds(),
+    );
+    const canonical = (await ethers.getContractAt(
+      'ProtocolConfig',
+      canonicalAddress,
+      deployer,
+    )) as unknown as ProtocolConfig;
+
+    const exported = await readCanonicalSnapshot(hre, {
+      canonicalProvider: ethers.provider,
+      canonicalProtocolConfigAddress: canonicalAddress,
+    });
+
+    // Rotate the canonical committee so "latest" no longer matches the exported block.
+    await canonical.defineNewKmsContext(buildProtocolConfigNodes().slice(0, 2), {
+      publicDecryption: 1,
+      userDecryption: 1,
+      kmsGen: 1,
+      mpc: 1,
+    });
+
+    // Re-reading latest drifts: this is exactly what a signer would get with no block pin.
+    const atLatest = await readCanonicalSnapshot(hre, {
+      canonicalProvider: ethers.provider,
+      canonicalProtocolConfigAddress: canonicalAddress,
+    });
+    expect(atLatest.currentContextId).to.not.equal(exported.currentContextId);
+
+    // Re-reading at the artifact's blockNumber reproduces the original snapshot despite the rotation.
+    const atPinned = await readCanonicalSnapshot(hre, {
+      canonicalProvider: ethers.provider,
+      canonicalProtocolConfigAddress: canonicalAddress,
+      blockTag: exported.canonicalBlockTag,
+    });
+    expect(atPinned).to.deep.equal(exported);
   });
 });
