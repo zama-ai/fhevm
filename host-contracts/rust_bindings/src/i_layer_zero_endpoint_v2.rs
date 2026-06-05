@@ -2043,7 +2043,6 @@ struct MessagingFee { uint256 nativeFee; uint256 lzTokenFee; }
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::Uint<256>,
             alloy::sol_types::sol_data::Uint<256>,
@@ -2278,7 +2277,6 @@ struct MessagingParams { uint32 dstEid; bytes32 receiver; bytes message; bytes o
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::Uint<32>,
             alloy::sol_types::sol_data::FixedBytes<32>,
@@ -2566,7 +2564,6 @@ struct MessagingReceipt { bytes32 guid; uint64 nonce; MessagingFee fee; }
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::FixedBytes<32>,
             alloy::sol_types::sol_data::Uint<64>,
@@ -2813,7 +2810,6 @@ struct Origin { uint32 srcEid; bytes32 sender; uint64 nonce; }
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::Uint<32>,
             alloy::sol_types::sol_data::FixedBytes<32>,
@@ -3063,7 +3059,6 @@ struct SetConfigParam { uint32 eid; uint32 configType; bytes config; }
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::Uint<32>,
             alloy::sol_types::sol_data::Uint<32>,
@@ -5750,7 +5745,6 @@ function burn(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce, byt
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
@@ -5806,7 +5800,6 @@ function burn(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce, byt
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -5942,7 +5935,6 @@ function clear(address _oapp, Origin memory _origin, bytes32 _guid, bytes memory
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 Origin,
@@ -5989,7 +5981,6 @@ function clear(address _oapp, Origin memory _origin, bytes32 _guid, bytes memory
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -6124,7 +6115,6 @@ function composeQueue(address _from, address _to, bytes32 _guid, uint16 _index) 
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Address,
@@ -6171,7 +6161,6 @@ function composeQueue(address _from, address _to, bytes32 _guid, uint16 _index) 
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -6305,7 +6294,6 @@ function defaultReceiveLibrary(uint32 _eid) external view returns (address);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (u32,);
@@ -6339,7 +6327,6 @@ function defaultReceiveLibrary(uint32 _eid) external view returns (address);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -6463,7 +6450,6 @@ function defaultReceiveLibraryTimeout(uint32 _eid) external view returns (addres
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (u32,);
@@ -6497,7 +6483,6 @@ function defaultReceiveLibraryTimeout(uint32 _eid) external view returns (addres
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<256>,
@@ -6637,7 +6622,6 @@ function defaultSendLibrary(uint32 _eid) external view returns (address);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (u32,);
@@ -6671,7 +6655,6 @@ function defaultSendLibrary(uint32 _eid) external view returns (address);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -6790,7 +6773,6 @@ function eid() external view returns (uint32);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -6822,7 +6804,6 @@ function eid() external view returns (uint32);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (u32,);
@@ -6944,7 +6925,6 @@ function getConfig(address _oapp, address _lib, uint32 _eid, uint32 _configType)
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Address,
@@ -6991,7 +6971,6 @@ function getConfig(address _oapp, address _lib, uint32 _eid, uint32 _configType)
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bytes,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Bytes,);
@@ -7129,7 +7108,6 @@ function getReceiveLibrary(address _receiver, uint32 _eid) external view returns
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
@@ -7169,7 +7147,6 @@ function getReceiveLibrary(address _receiver, uint32 _eid) external view returns
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Bool,
@@ -7307,7 +7284,6 @@ function getRegisteredLibraries() external view returns (address[] memory);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -7341,7 +7317,6 @@ function getRegisteredLibraries() external view returns (address[] memory);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
             );
@@ -7466,7 +7441,6 @@ function getSendContext() external view returns (uint32 dstEid, address sender);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -7498,7 +7472,6 @@ function getSendContext() external view returns (uint32 dstEid, address sender);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<32>,
                 alloy::sol_types::sol_data::Address,
@@ -7631,7 +7604,6 @@ function getSendLibrary(address _sender, uint32 _eid) external view returns (add
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
@@ -7669,7 +7641,6 @@ function getSendLibrary(address _sender, uint32 _eid) external view returns (add
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -7801,7 +7772,6 @@ function inboundNonce(address _receiver, uint32 _srcEid, bytes32 _sender) extern
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
@@ -7845,7 +7815,6 @@ function inboundNonce(address _receiver, uint32 _srcEid, bytes32 _sender) extern
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<64>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (u64,);
@@ -7981,7 +7950,6 @@ function inboundPayloadHash(address _receiver, uint32 _srcEid, bytes32 _sender, 
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
@@ -8030,7 +7998,6 @@ function inboundPayloadHash(address _receiver, uint32 _srcEid, bytes32 _sender, 
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -8168,7 +8135,6 @@ function initializable(Origin memory _origin, address _receiver) external view r
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (Origin, alloy::sol_types::sol_data::Address);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -8206,7 +8172,6 @@ function initializable(Origin memory _origin, address _receiver) external view r
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (bool,);
@@ -8329,7 +8294,6 @@ function isDefaultSendLibrary(address _sender, uint32 _eid) external view return
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
@@ -8369,7 +8333,6 @@ function isDefaultSendLibrary(address _sender, uint32 _eid) external view return
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (bool,);
@@ -8497,7 +8460,6 @@ function isRegisteredLibrary(address _lib) external view returns (bool);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -8531,7 +8493,6 @@ function isRegisteredLibrary(address _lib) external view returns (bool);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (bool,);
@@ -8650,7 +8611,6 @@ function isSendingMessage() external view returns (bool);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -8684,7 +8644,6 @@ function isSendingMessage() external view returns (bool);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (bool,);
@@ -8802,7 +8761,6 @@ function isSupportedEid(uint32 _eid) external view returns (bool);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (u32,);
@@ -8834,7 +8792,6 @@ function isSupportedEid(uint32 _eid) external view returns (bool);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (bool,);
@@ -8960,7 +8917,6 @@ function isValidReceiveLibrary(address _receiver, uint32 _eid, address _lib) ext
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
@@ -9006,7 +8962,6 @@ function isValidReceiveLibrary(address _receiver, uint32 _eid, address _lib) ext
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (bool,);
@@ -9142,7 +9097,6 @@ function lazyInboundNonce(address _receiver, uint32 _srcEid, bytes32 _sender) ex
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
@@ -9188,7 +9142,6 @@ function lazyInboundNonce(address _receiver, uint32 _srcEid, bytes32 _sender) ex
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<64>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (u64,);
@@ -9325,7 +9278,6 @@ function lzCompose(address _from, address _to, bytes32 _guid, uint16 _index, byt
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Address,
@@ -9385,7 +9337,6 @@ function lzCompose(address _from, address _to, bytes32 _guid, uint16 _index, byt
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -9527,7 +9478,6 @@ function lzReceive(Origin memory _origin, address _receiver, bytes32 _guid, byte
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 Origin,
                 alloy::sol_types::sol_data::Address,
@@ -9583,7 +9533,6 @@ function lzReceive(Origin memory _origin, address _receiver, bytes32 _guid, byte
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -9713,7 +9662,6 @@ function lzToken() external view returns (address);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -9745,7 +9693,6 @@ function lzToken() external view returns (address);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -9858,7 +9805,6 @@ function nativeToken() external view returns (address);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -9890,7 +9836,6 @@ function nativeToken() external view returns (address);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -10010,7 +9955,6 @@ function nextGuid(address _sender, uint32 _dstEid, bytes32 _receiver) external v
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
@@ -10054,7 +9998,6 @@ function nextGuid(address _sender, uint32 _dstEid, bytes32 _receiver) external v
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -10187,7 +10130,6 @@ function nilify(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce, b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
@@ -10243,7 +10185,6 @@ function nilify(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce, b
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -10382,7 +10323,6 @@ function outboundNonce(address _sender, uint32 _dstEid, bytes32 _receiver) exter
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
@@ -10426,7 +10366,6 @@ function outboundNonce(address _sender, uint32 _dstEid, bytes32 _receiver) exter
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<64>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (u64,);
@@ -10558,7 +10497,6 @@ function quote(MessagingParams memory _params, address _sender) external view re
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 MessagingParams,
                 alloy::sol_types::sol_data::Address,
@@ -10599,7 +10537,6 @@ function quote(MessagingParams memory _params, address _sender) external view re
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (MessagingFee,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -10724,7 +10661,6 @@ function receiveLibraryTimeout(address _receiver, uint32 _eid) external view ret
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
@@ -10764,7 +10700,6 @@ function receiveLibraryTimeout(address _receiver, uint32 _eid) external view ret
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<256>,
@@ -10905,7 +10840,6 @@ function registerLibrary(address _lib) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -10937,7 +10871,6 @@ function registerLibrary(address _lib) external;
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -11058,7 +10991,6 @@ function send(MessagingParams memory _params, address _refundAddress) external p
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 MessagingParams,
                 alloy::sol_types::sol_data::Address,
@@ -11099,7 +11031,6 @@ function send(MessagingParams memory _params, address _refundAddress) external p
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (MessagingReceipt,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -11221,7 +11152,6 @@ function sendCompose(address _to, bytes32 _guid, uint16 _index, bytes memory _me
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -11268,7 +11198,6 @@ function sendCompose(address _to, bytes32 _guid, uint16 _index, bytes memory _me
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -11400,7 +11329,6 @@ function setConfig(address _oapp, address _lib, SetConfigParam[] memory _params)
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Address,
@@ -11446,7 +11374,6 @@ function setConfig(address _oapp, address _lib, SetConfigParam[] memory _params)
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -11572,7 +11499,6 @@ function setDefaultReceiveLibrary(uint32 _eid, address _newLib, uint256 _gracePe
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<32>,
                 alloy::sol_types::sol_data::Address,
@@ -11618,7 +11544,6 @@ function setDefaultReceiveLibrary(uint32 _eid, address _newLib, uint256 _gracePe
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -11748,7 +11673,6 @@ function setDefaultReceiveLibraryTimeout(uint32 _eid, address _lib, uint256 _exp
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<32>,
                 alloy::sol_types::sol_data::Address,
@@ -11794,7 +11718,6 @@ function setDefaultReceiveLibraryTimeout(uint32 _eid, address _lib, uint256 _exp
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -11922,7 +11845,6 @@ function setDefaultSendLibrary(uint32 _eid, address _newLib) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<32>,
                 alloy::sol_types::sol_data::Address,
@@ -11962,7 +11884,6 @@ function setDefaultSendLibrary(uint32 _eid, address _newLib) external;
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -12084,7 +12005,6 @@ function setDelegate(address _delegate) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -12116,7 +12036,6 @@ function setDelegate(address _delegate) external;
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -12228,7 +12147,6 @@ function setLzToken(address _lzToken) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -12260,7 +12178,6 @@ function setLzToken(address _lzToken) external;
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -12378,7 +12295,6 @@ function setReceiveLibrary(address _oapp, uint32 _eid, address _newLib, uint256 
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
@@ -12427,7 +12343,6 @@ function setReceiveLibrary(address _oapp, uint32 _eid, address _newLib, uint256 
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -12561,7 +12476,6 @@ function setReceiveLibraryTimeout(address _oapp, uint32 _eid, address _lib, uint
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
@@ -12610,7 +12524,6 @@ function setReceiveLibraryTimeout(address _oapp, uint32 _eid, address _lib, uint
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -12744,7 +12657,6 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
@@ -12788,7 +12700,6 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -12918,7 +12829,6 @@ function skip(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce) ext
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
@@ -12965,7 +12875,6 @@ function skip(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce) ext
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -13098,7 +13007,6 @@ function verifiable(Origin memory _origin, address _receiver) external view retu
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (Origin, alloy::sol_types::sol_data::Address);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -13136,7 +13044,6 @@ function verifiable(Origin memory _origin, address _receiver) external view retu
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (bool,);
@@ -13256,7 +13163,6 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 Origin,
                 alloy::sol_types::sol_data::Address,
@@ -13300,7 +13206,6 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -13395,7 +13300,6 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
         }
     };
     ///Container for all the [`ILayerZeroEndpointV2`](self) function calls.
-    #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive()]
     pub enum ILayerZeroEndpointV2Calls {
@@ -13490,6 +13394,7 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
         #[allow(missing_docs)]
         verify(verifyCall),
     }
+    #[automatically_derived]
     impl ILayerZeroEndpointV2Calls {
         /// All the selectors of this enum.
         ///
@@ -13544,122 +13449,6 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
             [239u8, 102u8, 122u8, 161u8],
             [246u8, 75u8, 228u8, 199u8],
         ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(lzReceive),
-            ::core::stringify!(getSendContext),
-            ::core::stringify!(setReceiveLibraryTimeout),
-            ::core::stringify!(send),
-            ::core::stringify!(clear),
-            ::core::stringify!(getConfig),
-            ::core::stringify!(nilify),
-            ::core::stringify!(composeQueue),
-            ::core::stringify!(getReceiveLibrary),
-            ::core::stringify!(burn),
-            ::core::stringify!(eid),
-            ::core::stringify!(lazyInboundNonce),
-            ::core::stringify!(isSupportedEid),
-            ::core::stringify!(setReceiveLibrary),
-            ::core::stringify!(setConfig),
-            ::core::stringify!(defaultReceiveLibraryTimeout),
-            ::core::stringify!(defaultReceiveLibrary),
-            ::core::stringify!(isSendingMessage),
-            ::core::stringify!(sendCompose),
-            ::core::stringify!(initializable),
-            ::core::stringify!(getRegisteredLibraries),
-            ::core::stringify!(lzCompose),
-            ::core::stringify!(setSendLibrary),
-            ::core::stringify!(outboundNonce),
-            ::core::stringify!(isValidReceiveLibrary),
-            ::core::stringify!(inboundNonce),
-            ::core::stringify!(setDefaultReceiveLibrary),
-            ::core::stringify!(verify),
-            ::core::stringify!(nextGuid),
-            ::core::stringify!(setDefaultSendLibrary),
-            ::core::stringify!(getSendLibrary),
-            ::core::stringify!(setLzToken),
-            ::core::stringify!(verifiable),
-            ::core::stringify!(inboundPayloadHash),
-            ::core::stringify!(setDelegate),
-            ::core::stringify!(setDefaultReceiveLibraryTimeout),
-            ::core::stringify!(skip),
-            ::core::stringify!(isRegisteredLibrary),
-            ::core::stringify!(isDefaultSendLibrary),
-            ::core::stringify!(quote),
-            ::core::stringify!(nativeToken),
-            ::core::stringify!(lzToken),
-            ::core::stringify!(registerLibrary),
-            ::core::stringify!(receiveLibraryTimeout),
-            ::core::stringify!(defaultSendLibrary),
-        ];
-        /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] = &[
-            <lzReceiveCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <getSendContextCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <setReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <sendCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <clearCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <getConfigCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <nilifyCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <composeQueueCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <getReceiveLibraryCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <burnCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <eidCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <lazyInboundNonceCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <isSupportedEidCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <setReceiveLibraryCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <setConfigCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <defaultReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <defaultReceiveLibraryCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <isSendingMessageCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <sendComposeCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <initializableCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <getRegisteredLibrariesCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <lzComposeCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <setSendLibraryCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <outboundNonceCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <isValidReceiveLibraryCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <inboundNonceCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <setDefaultReceiveLibraryCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <verifyCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <nextGuidCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <setDefaultSendLibraryCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <getSendLibraryCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <setLzTokenCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <verifiableCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <inboundPayloadHashCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <setDelegateCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <setDefaultReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <skipCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <isRegisteredLibraryCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <isDefaultSendLibraryCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <quoteCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <nativeTokenCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <lzTokenCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <registerLibraryCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <receiveLibraryTimeoutCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <defaultSendLibraryCall as alloy_sol_types::SolCall>::SIGNATURE,
-        ];
-        /// Returns the signature for the given selector, if known.
-        #[inline]
-        pub fn signature_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
-            match Self::SELECTORS.binary_search(&selector) {
-                ::core::result::Result::Ok(idx) => {
-                    ::core::option::Option::Some(Self::SIGNATURES[idx])
-                }
-                ::core::result::Result::Err(_) => ::core::option::Option::None,
-            }
-        }
-        /// Returns the enum variant name for the given selector, if known.
-        #[inline]
-        pub fn name_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
-            let sig = Self::signature_by_selector(selector)?;
-            sig.split_once('(').map(|(name, _)| name)
-        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for ILayerZeroEndpointV2Calls {
@@ -15248,7 +15037,6 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
         }
     }
     ///Container for all the [`ILayerZeroEndpointV2`](self) events.
-    #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum ILayerZeroEndpointV2Events {
@@ -15291,6 +15079,7 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
         #[allow(missing_docs)]
         SendLibrarySet(SendLibrarySet),
     }
+    #[automatically_derived]
     impl ILayerZeroEndpointV2Events {
         /// All the selectors of this enum.
         ///
@@ -15395,70 +15184,6 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 223u8, 241u8, 190u8, 207u8, 195u8, 227u8, 99u8, 166u8, 35u8, 150u8,
             ],
         ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(ComposeDelivered),
-            ::core::stringify!(PacketVerified),
-            ::core::stringify!(DefaultSendLibrarySet),
-            ::core::stringify!(PacketSent),
-            ::core::stringify!(InboundNonceSkipped),
-            ::core::stringify!(PacketDelivered),
-            ::core::stringify!(ComposeSent),
-            ::core::stringify!(SendLibrarySet),
-            ::core::stringify!(ReceiveLibraryTimeoutSet),
-            ::core::stringify!(DefaultReceiveLibraryTimeoutSet),
-            ::core::stringify!(LibraryRegistered),
-            ::core::stringify!(DelegateSet),
-            ::core::stringify!(LzReceiveAlert),
-            ::core::stringify!(PacketBurnt),
-            ::core::stringify!(LzComposeAlert),
-            ::core::stringify!(PacketNilified),
-            ::core::stringify!(DefaultReceiveLibrarySet),
-            ::core::stringify!(ReceiveLibrarySet),
-            ::core::stringify!(LzTokenSet),
-        ];
-        /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] = &[
-            <ComposeDelivered as alloy_sol_types::SolEvent>::SIGNATURE,
-            <PacketVerified as alloy_sol_types::SolEvent>::SIGNATURE,
-            <DefaultSendLibrarySet as alloy_sol_types::SolEvent>::SIGNATURE,
-            <PacketSent as alloy_sol_types::SolEvent>::SIGNATURE,
-            <InboundNonceSkipped as alloy_sol_types::SolEvent>::SIGNATURE,
-            <PacketDelivered as alloy_sol_types::SolEvent>::SIGNATURE,
-            <ComposeSent as alloy_sol_types::SolEvent>::SIGNATURE,
-            <SendLibrarySet as alloy_sol_types::SolEvent>::SIGNATURE,
-            <ReceiveLibraryTimeoutSet as alloy_sol_types::SolEvent>::SIGNATURE,
-            <DefaultReceiveLibraryTimeoutSet as alloy_sol_types::SolEvent>::SIGNATURE,
-            <LibraryRegistered as alloy_sol_types::SolEvent>::SIGNATURE,
-            <DelegateSet as alloy_sol_types::SolEvent>::SIGNATURE,
-            <LzReceiveAlert as alloy_sol_types::SolEvent>::SIGNATURE,
-            <PacketBurnt as alloy_sol_types::SolEvent>::SIGNATURE,
-            <LzComposeAlert as alloy_sol_types::SolEvent>::SIGNATURE,
-            <PacketNilified as alloy_sol_types::SolEvent>::SIGNATURE,
-            <DefaultReceiveLibrarySet as alloy_sol_types::SolEvent>::SIGNATURE,
-            <ReceiveLibrarySet as alloy_sol_types::SolEvent>::SIGNATURE,
-            <LzTokenSet as alloy_sol_types::SolEvent>::SIGNATURE,
-        ];
-        /// Returns the signature for the given selector, if known.
-        #[inline]
-        pub fn signature_by_selector(
-            selector: [u8; 32usize],
-        ) -> ::core::option::Option<&'static str> {
-            match Self::SELECTORS.binary_search(&selector) {
-                ::core::result::Result::Ok(idx) => {
-                    ::core::option::Option::Some(Self::SIGNATURES[idx])
-                }
-                ::core::result::Result::Err(_) => ::core::option::Option::None,
-            }
-        }
-        /// Returns the enum variant name for the given selector, if known.
-        #[inline]
-        pub fn name_by_selector(
-            selector: [u8; 32usize],
-        ) -> ::core::option::Option<&'static str> {
-            let sig = Self::signature_by_selector(selector)?;
-            sig.split_once('(').map(|(name, _)| name)
-        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for ILayerZeroEndpointV2Events {
@@ -15765,9 +15490,9 @@ See the [wrapper's documentation](`ILayerZeroEndpointV2Instance`) for more detai
         N: alloy_contract::private::Network,
     >(
         address: alloy_sol_types::private::Address,
-        __provider: P,
+        provider: P,
     ) -> ILayerZeroEndpointV2Instance<P, N> {
-        ILayerZeroEndpointV2Instance::<P, N>::new(address, __provider)
+        ILayerZeroEndpointV2Instance::<P, N>::new(address, provider)
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
@@ -15779,11 +15504,11 @@ For more fine-grained control over the deployment process, use [`deploy_builder`
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
-        __provider: P,
+        provider: P,
     ) -> impl ::core::future::Future<
         Output = alloy_contract::Result<ILayerZeroEndpointV2Instance<P, N>>,
     > {
-        ILayerZeroEndpointV2Instance::<P, N>::deploy(__provider)
+        ILayerZeroEndpointV2Instance::<P, N>::deploy(provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
 and constructor arguments, if any.
@@ -15794,8 +15519,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        ILayerZeroEndpointV2Instance::<P, N>::deploy_builder(__provider)
+    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        ILayerZeroEndpointV2Instance::<P, N>::deploy_builder(provider)
     }
     /**A [`ILayerZeroEndpointV2`](self) instance.
 
@@ -15822,6 +15547,7 @@ See the [module-level documentation](self) for all the available methods.*/
         }
     }
     /// Instantiation and getters/setters.
+    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
@@ -15832,11 +15558,11 @@ See the [wrapper's documentation](`ILayerZeroEndpointV2Instance`) for more detai
         #[inline]
         pub const fn new(
             address: alloy_sol_types::private::Address,
-            __provider: P,
+            provider: P,
         ) -> Self {
             Self {
                 address,
-                provider: __provider,
+                provider,
                 _network: ::core::marker::PhantomData,
             }
         }
@@ -15847,9 +15573,9 @@ Returns a new instance of the contract, if the deployment was successful.
 For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
-            __provider: P,
+            provider: P,
         ) -> alloy_contract::Result<ILayerZeroEndpointV2Instance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
+            let call_builder = Self::deploy_builder(provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
@@ -15859,9 +15585,9 @@ and constructor arguments, if any.
 This is a simple wrapper around creating a `RawCallBuilder` with the data set to
 the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
+                provider,
                 ::core::clone::Clone::clone(&BYTECODE),
             )
         }
@@ -15898,6 +15624,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Function calls.
+    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
@@ -16484,6 +16211,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Event filters.
+    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
