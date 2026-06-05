@@ -277,7 +277,7 @@ describe("compat", () => {
     expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
   });
 
-  test("renders mixed pauser flags for v0.12 contract tags", () => {
+  test("keeps legacy pauser flags for v0.12 contract tags", () => {
     const policy = compatPolicyForState({
       versions: {
         target: "latest-supported",
@@ -291,7 +291,7 @@ describe("compat", () => {
       overrides: [],
       scenario: testDefaultScenario(),
     });
-    expect(policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-proxy-address");
+    expect(policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
     expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-pauser-set-address");
   });
 
