@@ -71,11 +71,19 @@ test("reuses the one-node ProtocolConfig mpc threshold normalization", () => {
   expect(JSON.parse(normalizeLocalOneNodeMpcThreshold(env).MIGRATION_KMS_THRESHOLDS).mpc).toBe("1");
 });
 
-test("defaults to rollout-standard at every phase", () => {
+test("defaults to rollout-standard at every phase except the v0.11 baseline", () => {
   expect(resolveRolloutTestMode(undefined)).toBe("rollout-standard");
   expect(rolloutPhaseTestProfiles("contracts", "rollout-standard")).toEqual(["rollout-standard"]);
   expect(rolloutPhaseTestProfiles("final", "rollout-standard")).toEqual(["rollout-standard"]);
   expect(() => resolveRolloutTestMode("standard")).toThrow("Unsupported ROLLOUT_TEST_PROFILE=standard");
+});
+
+test("gates the v0.11 baseline to the decrypt-free input-proof check in both modes", () => {
+  // v0.11 KMSVerifier has no getCurrentKmsContextId (added v0.12); the v0.13
+  // relayer-sdk decrypt path requires it, so decrypt profiles cannot run until
+  // the contracts phase reaches v0.12+.
+  expect(rolloutPhaseTestProfiles("baseline", "rollout-standard")).toEqual(["input-proof"]);
+  expect(rolloutPhaseTestProfiles("baseline", "rollout-heavy")).toEqual(["input-proof"]);
 });
 
 test("loads the checked-in v0.11 to v0.13 runbook", async () => {

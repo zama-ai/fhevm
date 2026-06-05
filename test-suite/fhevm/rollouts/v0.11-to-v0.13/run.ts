@@ -33,8 +33,17 @@ const rolloutTestModes = ["rollout-standard", "rollout-heavy"] as const;
 type RolloutTestMode = (typeof rolloutTestModes)[number];
 type RolloutPhase = "baseline" | "contracts" | "relayer" | "kms" | "final";
 
+// v0.11 contracts predate context-aware KMS (KMSVerifier.getCurrentKmsContextId,
+// added in v0.12), which the v0.13 relayer-sdk decrypt path calls. Only the
+// decrypt-free input-proof check can run against the v0.11 baseline; full
+// decrypt coverage resumes from the contracts phase, once the proxies reach
+// v0.12+. This mirrors how the suite already version-gates v0.11 elsewhere (the
+// HCU per-block tests self-skip on protocol v0.11; coprocessor-db-state-revert
+// is gated below v0.12) -- it is not a shim that fakes v0.11 decryption.
+const baselineProfiles = ["input-proof"];
+
 const heavyPhaseProfiles: Record<RolloutPhase, string[]> = {
-  baseline: ["rollout-standard"],
+  baseline: baselineProfiles,
   contracts: ["rollout-standard", "operators", "random-subset", "hcu-block-cap"],
   relayer: ["rollout-standard", "negative-acl"],
   kms: ["rollout-standard", "public-decryption"],
@@ -60,8 +69,12 @@ export const resolveRolloutTestMode = (value?: string): RolloutTestMode => {
   throw new Error(`Unsupported ROLLOUT_TEST_PROFILE=${selected}; expected ${rolloutTestModes.join(" or ")}`);
 };
 
-export const rolloutPhaseTestProfiles = (phase: RolloutPhase, mode: RolloutTestMode) =>
-  mode === "rollout-heavy" ? heavyPhaseProfiles[phase] : ["rollout-standard"];
+export const rolloutPhaseTestProfiles = (phase: RolloutPhase, mode: RolloutTestMode) => {
+  if (phase === "baseline") {
+    return baselineProfiles;
+  }
+  return mode === "rollout-heavy" ? heavyPhaseProfiles[phase] : ["rollout-standard"];
+};
 
 const testPhase = async (ctx: RolloutRunContext, phase: RolloutPhase, mode: RolloutTestMode) => {
   const profiles = rolloutPhaseTestProfiles(phase, mode);
