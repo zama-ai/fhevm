@@ -2412,7 +2412,7 @@ dependencies = [
  "alloy",
  "anyhow",
  "async-trait",
- "fhevm_gateway_bindings",
+ "fhevm_gateway_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?rev=aa25e2e089da3651f59b8c68a3d32865301ea6bf)",
  "hex",
  "indexmap 2.13.0",
  "jsonrpsee",
@@ -2500,7 +2500,7 @@ dependencies = [
  "dashmap",
  "derivative",
  "ethereum_rpc_mock",
- "fhevm_gateway_bindings",
+ "fhevm_gateway_bindings 0.1.0-rc14",
  "fhevm_host_bindings",
  "futures",
  "governor",
@@ -2530,6 +2530,14 @@ dependencies = [
  "utoipa-redoc",
  "uuid",
  "validator",
+]
+
+[[package]]
+name = "fhevm_gateway_bindings"
+version = "0.1.0-rc14"
+dependencies = [
+ "alloy",
+ "serde",
 ]
 
 [[package]]
