@@ -150,6 +150,12 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
             throw new Error(`Delegation tx failed: ${receipt.transactionHash}`);
           }
           console.log(`  Delegation tx: ${receipt.transactionHash}`);
+          // Wait for the delegation to propagate to the gateway's MultichainACL.
+          // On v0.11.0 stacks the gateway contract checks MultichainACL (a gateway-side
+          // mirror of host ACL delegations) before accepting a delegated decrypt request.
+          // The coprocessor propagates the ACL event asynchronously, so we need a short
+          // settle window after a fresh delegation is created.
+          await new Promise((r) => setTimeout(r, 15000));
         }
       });
 
