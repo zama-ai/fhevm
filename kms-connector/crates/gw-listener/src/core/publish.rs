@@ -356,15 +356,14 @@ pub async fn update_last_block_polled<'e>(
     Ok(())
 }
 
-/// Persists the active `(context_id, epoch_id)` pair fetched at startup via
-/// `ProtocolConfig::getActiveKmsContextAndEpoch()` (RFC 005). Inserted into `kms_context` with the
-/// `epoch_id` column populated.
-pub async fn publish_active_context_and_epoch(
+/// Persists the `(context_id, epoch_id)` pair fetched at startup via
+/// `ProtocolConfig::getActiveKmsContextAndEpoch()`.
+pub async fn publish_context_and_epoch(
     db_pool: &Pool<Postgres>,
     context_id: U256,
     epoch_id: U256,
 ) -> anyhow::Result<()> {
-    info!("Publishing active KMS context #{context_id} (epoch #{epoch_id}) in DB...");
+    info!("Publishing KMS context #{context_id} (epoch #{epoch_id}) in DB...");
     let now = Utc::now();
     let query_result = sqlx::query!(
         "INSERT INTO kms_context(id, epoch_id, is_valid, created_at, updated_at)
@@ -379,11 +378,9 @@ pub async fn publish_active_context_and_epoch(
     .await?;
 
     if query_result.rows_affected() == 1 {
-        info!("Active KMS context #{context_id} (epoch #{epoch_id}) was successfully published!");
+        info!("KMS context #{context_id} (epoch #{epoch_id}) was successfully published!");
     } else {
-        debug!(
-            "Active KMS context #{context_id} (epoch #{epoch_id}) was not published: {query_result:?}"
-        );
+        debug!("KMS context #{context_id} (epoch #{epoch_id}) was not published: {query_result:?}");
     }
     Ok(())
 }

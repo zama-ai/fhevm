@@ -1,7 +1,7 @@
 use crate::{
     core::{
         Config,
-        publish::{ChainName, publish_active_context_and_epoch, publish_batch},
+        publish::{ChainName, publish_batch, publish_context_and_epoch},
     },
     monitoring::metrics::{EVENT_LISTENING_ERRORS, EVENT_RECEIVED_COUNTER},
 };
@@ -102,7 +102,7 @@ where
             .call()
             .await?;
 
-        publish_active_context_and_epoch(&self.db_pool, active.contextId, active.epochId).await
+        publish_context_and_epoch(&self.db_pool, active.contextId, active.epochId).await
     }
 
     /// Polling loop to listen to [`KMSGeneration`] and [`ProtocolConfig`] events on Ethereum.
