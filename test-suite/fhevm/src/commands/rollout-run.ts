@@ -56,7 +56,7 @@ export type RolloutRunContext = {
   refreshDiscovery(): Promise<void>;
   runGatewayContractTask(command: string, options?: RolloutContractTaskOptions): Promise<void>;
   runHostContractTask(command: string, options?: RolloutContractTaskOptions): Promise<void>;
-  snapshotContracts(surface: "host" | "gateway"): Promise<void>;
+  snapshotContracts(surface: "host" | "gateway", options?: { fromLockedImage?: boolean }): Promise<void>;
   stateDir(): string;
   test(profile?: string, options?: RolloutTestOptions): Promise<void>;
   up(options: RolloutUpOptions): Promise<void>;
@@ -117,9 +117,11 @@ export const createRolloutContext = (receipt: RolloutReceipt = createRolloutRece
       details: { envKeys: Object.keys(options.env ?? {}).sort() },
     });
   },
-  async snapshotContracts(surface) {
-    await snapshotContractSources(surface);
-    await receipt.record("snapshot-contracts", surface);
+  async snapshotContracts(surface, options = {}) {
+    await snapshotContractSources(surface, options);
+    await receipt.record("snapshot-contracts", surface, {
+      details: { fromLockedImage: !!options.fromLockedImage },
+    });
   },
   stateDir() {
     return STATE_DIR;
