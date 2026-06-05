@@ -342,6 +342,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice See {IGatewayConfig-updateCoprocessors}.
+     * @dev Applies live; the DAO proposal/runbook must preserve host verifier compatibility
+     *      because InputVerification is not paused here.
      */
     function updateCoprocessors(
         Coprocessor[] calldata newCoprocessors,
@@ -457,6 +459,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice See {IGatewayConfig-updateCoprocessorThreshold}.
+     * @dev Applies live; the DAO proposal/runbook must preserve host verifier compatibility
+     *      because InputVerification is not paused here.
      */
     function updateCoprocessorThreshold(
         uint256 newCoprocessorThreshold
@@ -467,6 +471,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice See {IGatewayConfig-setPriorityCoprocessorTxSender}.
+     * @dev Applies live; the DAO proposal/runbook must preserve host verifier compatibility
+     *      because InputVerification is not paused here.
      */
     function setPriorityCoprocessorTxSender(
         address coprocessorTxSenderAddress
@@ -478,6 +484,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice See {IGatewayConfig-removePriorityCoprocessorTxSender}.
+     * @dev Applies live; the DAO proposal/runbook must preserve host verifier compatibility
+     *      because InputVerification is not paused here.
      */
     function removePriorityCoprocessorTxSender() external virtual onlyOwner {
         _setPriorityCoprocessorTxSender(address(0));

@@ -164,11 +164,12 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
         if (!$.isCiphertextMaterialAdded[ctHandle]) {
-            (bool canFinalize, bool finalizedByPriority) = _canFinalizeCiphertextMaterial(
-                msg.sender,
-                $.addCiphertextHashCounters[addCiphertextHash]
-            );
-            if (canFinalize) {
+            bool finalizedByPriority = msg.sender == GATEWAY_CONFIG.getPriorityCoprocessorTxSender();
+            if (
+                finalizedByPriority ||
+                (GATEWAY_CONFIG.getPriorityCoprocessorTxSender() == address(0) &&
+                    _isConsensusReached($.addCiphertextHashCounters[addCiphertextHash]))
+            ) {
                 $.ciphertextDigests[ctHandle] = ciphertextDigest;
                 $.snsCiphertextDigests[ctHandle] = snsCiphertextDigest;
                 $.keyIds[ctHandle] = keyId;
@@ -322,21 +323,6 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
     function _isConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
         uint256 consensusThreshold = GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
         return coprocessorCounter >= consensusThreshold;
-    }
-
-    /**
-     * @notice Returns whether a ciphertext material call can finalize consensus.
-     */
-    function _canFinalizeCiphertextMaterial(
-        address coprocessorTxSender,
-        uint256 coprocessorCounter
-    ) internal view virtual returns (bool canFinalize, bool finalizedByPriority) {
-        address priorityCoprocessorTxSender = GATEWAY_CONFIG.getPriorityCoprocessorTxSender();
-        if (priorityCoprocessorTxSender != address(0)) {
-            finalizedByPriority = coprocessorTxSender == priorityCoprocessorTxSender;
-            return (finalizedByPriority, finalizedByPriority);
-        }
-        return (_isConsensusReached(coprocessorCounter), false);
     }
 
     /**
