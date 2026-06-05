@@ -18,7 +18,9 @@ import type {
 import { assert } from '../base/errors/InternalError.js';
 import { isUint64 } from '../base/uint.js';
 import { ZkProofError } from '../errors/ZkProofError.js';
-import { buildInputProofMetaData } from './buildInputProofMetaData-p.js';
+import { buildInputProofMetaData, isSolanaHostChainId } from './buildInputProofMetaData-p.js';
+import { toSolanaZkProof } from './SolanaZkProof-p.js';
+import type { SolanaZkProof } from './SolanaZkProof-p.js';
 import { createTypedValue, TypedValueArrayBuilder } from '../base/typedValue.js';
 import { toZkProof } from './ZkProof-p.js';
 import { encryptionBitsFromFheType, fheTypeNameFromTypeName } from '../handle/FheType.js';
@@ -146,6 +148,91 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       readonly userAddress: string;
     },
   ): Promise<ZkProof> {
+    const { chainId, aclContractAddress, ciphertextWithZkProof } = await this.#encodeAndProve(
+      context,
+      contractAddress,
+      userAddress,
+    );
+
+    if (isSolanaHostChainId(chainId)) {
+      throw new ZkProofError({
+        message: 'Use buildSolana() for Solana host chains',
+      });
+    }
+
+    return toZkProof(
+      {
+        chainId: BigInt(chainId),
+        aclContractAddress,
+        contractAddress,
+        userAddress,
+        ciphertextWithZkProof,
+        encryptionBits: this.#bits,
+      },
+      { copy: false }, // Take ownership
+    );
+  }
+
+  /**
+   * Solana counterpart of {@link build}: produces a {@link SolanaZkProof} bound to
+   * RFC-021 bytes32 host identities and the 128-byte aux layout. The proof-generation
+   * core is shared with {@link build}; only the aux layout (selected by host chain
+   * type inside `buildInputProofMetaData`) and the returned proof type differ.
+   */
+  public async buildSolana(
+    context: Context,
+    {
+      contractAddress,
+      userAddress,
+    }: {
+      readonly contractAddress: string;
+      readonly userAddress: string;
+    },
+  ): Promise<SolanaZkProof> {
+    const { chainId, aclContractAddress, ciphertextWithZkProof } = await this.#encodeAndProve(
+      context,
+      contractAddress,
+      userAddress,
+    );
+
+    if (!isSolanaHostChainId(chainId)) {
+      throw new ZkProofError({
+        message: 'buildSolana() requires a Solana host chain (RFC-021 chain-type bit)',
+      });
+    }
+
+    return toSolanaZkProof(
+      {
+        chainId: BigInt(chainId),
+        aclContractAddress,
+        contractAddress,
+        userAddress,
+        ciphertextWithZkProof,
+        encryptionBits: this.#bits,
+      },
+      { copy: false }, // Take ownership
+    );
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  // Private helpers
+  //////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * Shared proof-generation core for {@link build} and {@link buildSolana}: validates
+   * inputs, assembles the host-appropriate input-proof aux, and produces the packed
+   * proven ciphertext. The aux layout is chosen by host chain type inside
+   * `buildInputProofMetaData`; the caller wraps the result in the matching proof type.
+   */
+  async #encodeAndProve(
+    context: Context,
+    contractAddress: string,
+    userAddress: string,
+  ): Promise<{
+    readonly chainId: bigint | number;
+    readonly aclContractAddress: string;
+    readonly ciphertextWithZkProof: Uint8Array;
+  }> {
     // Fetch the FheEncryptionKey (in wasm format) from the global cache.
     const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context);
 
@@ -178,28 +265,14 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       aclContractAddress,
     });
 
-    const ciphertextWithZKProofBytes: Uint8Array = await context.runtime.encrypt.buildWithProofPacked({
+    const ciphertextWithZkProof: Uint8Array = await context.runtime.encrypt.buildWithProofPacked({
       typedValues: [...this.#builder.build()],
       fheEncryptionKey: fheEncryptionKeyWasm,
       metaData,
     });
 
-    return toZkProof(
-      {
-        chainId: BigInt(chainId),
-        aclContractAddress,
-        contractAddress,
-        userAddress,
-        ciphertextWithZkProof: ciphertextWithZKProofBytes,
-        encryptionBits: this.#bits,
-      },
-      { copy: false }, // Take ownership
-    );
+    return { chainId, aclContractAddress, ciphertextWithZkProof };
   }
-
-  //////////////////////////////////////////////////////////////////////////////
-  // Private helpers
-  //////////////////////////////////////////////////////////////////////////////
 
   #checkLimit(encryptionBits: EncryptionBits): void {
     if (this.#totalBits + encryptionBits > this.#bitsCapacity) {
