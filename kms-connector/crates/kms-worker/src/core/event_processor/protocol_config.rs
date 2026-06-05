@@ -25,6 +25,9 @@ pub struct ProtocolConfigProcessor<P: Provider> {
     domain: Eip712DomainMsg,
 
     /// The `ProtocolConfig` contract instance, used to fetch the context event anchors.
+    ///
+    /// See [RFC-005](https://github.com/zama-ai/tech-spec/blob/main/rfcs/005-key-resharing.md#cross-context-party-communication)
+    /// for the anchor definition.
     protocol_config_contract: ProtocolConfigInstance<P>,
 }
 
