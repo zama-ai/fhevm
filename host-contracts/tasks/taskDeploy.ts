@@ -173,18 +173,24 @@ task('task:deployAllHostContracts')
     // __OAppCore_init → endpoint.setDelegate(...) would revert. Test fixtures
     // that need the bridge deploy their own proxies (see test/bridge/fixture.ts
     // and test/bridge/Bridge.t.sol::_deployBridgeProxy).
-    if (process.env.LZ_ENDPOINT_ADDRESS && hre.network.name !== 'hardhat') {
-      await hre.run('task:deployBridge');
-    } else if (!process.env.LZ_ENDPOINT_ADDRESS) {
+    if (!process.env.LZ_ENDPOINT_ADDRESS) {
       console.log(
         '[task:deployAllHostContracts] LZ_ENDPOINT_ADDRESS not set; ' +
           'ConfidentialBridge stays at its empty-proxy stage. Set LZ_ENDPOINT_ADDRESS and run task:deployBridge when ready.'
       );
-    } else {
+    } else if (hre.network.name === 'hardhat') {
       console.log(
         "[task:deployAllHostContracts] Skipping bridge upgrade on the in-memory 'hardhat' network " +
           '(no LayerZero endpoint contract exists there). Run on a real network to upgrade the bridge.'
       );
+    } else if ((await hre.ethers.provider.getCode(process.env.LZ_ENDPOINT_ADDRESS)) === '0x') {
+      console.log(
+        `[task:deployAllHostContracts] No contract deployed at LZ_ENDPOINT_ADDRESS (${process.env.LZ_ENDPOINT_ADDRESS}) ` +
+          'on this network; ConfidentialBridge stays at its empty-proxy stage. ' +
+          'Run task:deployBridge against a network with a real LayerZero endpoint to upgrade the bridge.'
+      );
+    } else {
+      await hre.run('task:deployBridge');
     }
 
     console.log('Contract deployment done!');

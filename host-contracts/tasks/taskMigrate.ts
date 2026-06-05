@@ -85,13 +85,14 @@ task('task:deployEmptyProxiesProtocolConfigKMSGeneration').setAction(async funct
   const targets = [
     { envKey: 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', setterTask: 'task:setProtocolConfigAddress' },
     { envKey: 'KMS_GENERATION_CONTRACT_ADDRESS', setterTask: 'task:setKMSGenerationAddress' },
+    { envKey: 'CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS', setterTask: 'task:setBridgeAddress' },
   ] as const;
 
   const missingTargets = targets.filter(({ envKey }) => !existingEnv[envKey]);
 
   if (missingTargets.length === 0) {
     console.warn(
-      'Migration bootstrap is a no-op; addresses/.env.host already contains ProtocolConfig and KMSGeneration. Remove task:deployEmptyProxiesProtocolConfigKMSGeneration once UPGRADE_FROM_TAG includes #2243.',
+      'Migration bootstrap is a no-op; addresses/.env.host already contains ProtocolConfig, KMSGeneration and ConfidentialBridge. Remove task:deployEmptyProxiesProtocolConfigKMSGeneration once UPGRADE_FROM_TAG includes #2243.',
     );
     return;
   }
