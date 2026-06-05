@@ -168,6 +168,24 @@ describe("compat", () => {
     ).toBe(true);
   });
 
+  test("does not require legacy host chain seed shim for v0.11 coprocessor images", () => {
+    // v0.11 images predate the remove_tenants migration, so host_chains does
+    // not exist and the harness must not try to seed it.
+    expect(
+      requiresLegacyHostChainSeedShim({
+        versions: {
+          target: "latest-supported",
+          lockName: "v0.11.json",
+          env: {
+            COPROCESSOR_DB_MIGRATION_VERSION: "v0.11.0",
+            COPROCESSOR_ZKPROOF_WORKER_VERSION: "v0.11.0",
+          } as Record<string, string>,
+          sources: [],
+        },
+      }),
+    ).toBe(false);
+  });
+
   test("does not require legacy host chain seed shim for v0.13 coprocessor images", () => {
     expect(
       requiresLegacyHostChainSeedShim({
