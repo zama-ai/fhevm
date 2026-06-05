@@ -94,7 +94,7 @@ const validDiscovery = (hostKeys: string[]): Discovery => ({
       },
     ]),
   ),
-  kmsSigner: "0x7",
+  kmsSigners: ["0x7"],
   fheKeyId: "a".repeat(64),
   crsKeyId: "b".repeat(64),
   endpoints: {
@@ -415,7 +415,7 @@ describe("runtime helpers", () => {
         "chain-a": {} as NonNullable<State["discovery"]>["hosts"][string],
         "chain-b": {} as NonNullable<State["discovery"]>["hosts"][string],
       },
-      kmsSigner: "0x1",
+      kmsSigners: ["0x1"],
       fheKeyId: "a".repeat(64),
       crsKeyId: "b".repeat(64),
       endpoints: {

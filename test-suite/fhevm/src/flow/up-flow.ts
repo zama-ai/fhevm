@@ -603,7 +603,6 @@ export const runStep = async (state: State, step: StepName) => {
       const discovery = await ensureDiscovery(state);
       const { signers, minioKeyPrefix } = await discoverKmsSigners(state.scenario.kms.parties);
       discovery.kmsSigners = signers;
-      discovery.kmsSigner = signers[0] ?? "";
       discovery.minioKeyPrefix = minioKeyPrefix;
       await generateRuntime(state, stackSpecForState(state));
       break;

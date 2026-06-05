@@ -145,17 +145,12 @@ const applyDiscoveryEnv = (
   state: Pick<State, "discovery">,
   plan: StackSpec,
 ) => {
-  const kmsSigners = state.discovery?.kmsSigners;
-  if (kmsSigners && kmsSigners.length) {
-    // Threshold: one signer per party (discovered from each PUB-p{i} prefix).
-    kmsSigners.forEach((address, index) => {
-      envs["gateway-sc"][`KMS_SIGNER_ADDRESS_${index}`] = address;
-      envs["host-sc"][`KMS_SIGNER_ADDRESS_${index}`] = address;
-    });
-  } else if (state.discovery?.kmsSigner) {
-    envs["gateway-sc"].KMS_SIGNER_ADDRESS_0 = state.discovery.kmsSigner;
-    envs["host-sc"].KMS_SIGNER_ADDRESS_0 = state.discovery.kmsSigner;
-  }
+  // One registered signer per party; centralized is just the single-signer case. Each address
+  // is discovered from its PUB-p{i} prefix (party 1 = PUB for the centralized core).
+  (state.discovery?.kmsSigners ?? []).forEach((address, index) => {
+    envs["gateway-sc"][`KMS_SIGNER_ADDRESS_${index}`] = address;
+    envs["host-sc"][`KMS_SIGNER_ADDRESS_${index}`] = address;
+  });
   if (!state.discovery) {
     return;
   }

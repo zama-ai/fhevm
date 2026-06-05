@@ -137,8 +137,7 @@ export type RpcEndpoints = {
 export type Discovery = {
   gateway: Record<string, string>;
   hosts: Record<string, Record<string, string>>;
-  kmsSigner: string;
-  kmsSigners?: string[];
+  kmsSigners: string[];
   fheKeyId: string;
   crsKeyId: string;
   actualFheKeyId?: string;

@@ -68,6 +68,8 @@ const ZERO_TESTS_RE = /\b0 passing\b/;
 // Mocha prints "N pending" when tests exist but were skipped. If any are pending,
 // the grep did match — don't treat all-skipped as "matched zero tests".
 const SOME_PENDING_RE = /\b[1-9]\d* pending\b/;
+/** True when the grep actually matched tests (some passed, or some are pending). */
+const matchedTests = (output: string) => !(ZERO_TESTS_RE.test(output) && !SOME_PENDING_RE.test(output));
 const PAUSE_PROFILE_SCOPE: Record<string, string> = {
   "paused-host-contracts": "host",
   "paused-gateway-contracts": "gateway",
@@ -425,7 +427,7 @@ const runTestsCommand = (
 
 /** Runs a narrow e2e grep inside the test-suite container. */
 const assertMatchedTests = (output: string, label: string) => {
-  if (ZERO_TESTS_RE.test(output) && !SOME_PENDING_RE.test(output)) {
+  if (!matchedTests(output)) {
     throw new PreflightError(`${label} matched zero tests`);
   }
 };
@@ -852,8 +854,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       const result = await run(argv, { allowFailure: true, timeoutMs: QUORUM_FLOOR_TIMEOUT_MS });
       if (result.stdout.trim()) console.log(result.stdout);
       if (result.stderr.trim()) console.log(result.stderr);
-      const output = `${result.stdout}\n${result.stderr}`;
-      return result.code === 0 && !(ZERO_TESTS_RE.test(output) && !SOME_PENDING_RE.test(output));
+      return result.code === 0 && matchedTests(`${result.stdout}\n${result.stderr}`);
     }
     // Pass-expected: identical streamed invocation to the normal user-decryption profile
     // (runWithHeartbeat throws on non-zero), wrapped to report pass/fail instead of throwing.

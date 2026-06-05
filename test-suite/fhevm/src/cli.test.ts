@@ -87,7 +87,7 @@ const bootstrappedState = (target: State["target"] = "latest-main"): State => ({
       minioExternal: `http://127.0.0.1:${MINIO_PORT}`,
       minioInternal: `http://minio:${MINIO_PORT}`,
     },
-    kmsSigner: "0x0000000000000000000000000000000000000014",
+    kmsSigners: ["0x0000000000000000000000000000000000000014"],
     fheKeyId: "a".repeat(64),
     crsKeyId: "b".repeat(64),
     actualFheKeyId: "a".repeat(64),

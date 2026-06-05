@@ -5,7 +5,7 @@ import fs from "node:fs/promises";
 
 import { STATE_FILE } from "../layout";
 import { DEFAULT_KMS_TOPOLOGY } from "../scenario/resolve";
-import type { State, StepName } from "../types";
+import type { Discovery, State, StepName } from "../types";
 import { exists, readJson, writeJson } from "../utils/fs";
 
 /** Back-fills fields absent from states written by older CLI versions, so resume/teardown
@@ -14,6 +14,12 @@ const normalizePersistedState = (state: State): State => {
   // Pre-threshold states have no `scenario.kms`; an absent block means today's centralized node.
   if (state.scenario && !state.scenario.kms) {
     state.scenario.kms = { ...DEFAULT_KMS_TOPOLOGY };
+  }
+  // Discovery once held a single `kmsSigner`; fold it into the `kmsSigners` array it replaced so a
+  // resumed centralized stack keeps its registered signer.
+  const legacy = state.discovery as (Discovery & { kmsSigner?: string }) | undefined;
+  if (legacy && !legacy.kmsSigners) {
+    legacy.kmsSigners = legacy.kmsSigner ? [legacy.kmsSigner] : [];
   }
   return state;
 };
