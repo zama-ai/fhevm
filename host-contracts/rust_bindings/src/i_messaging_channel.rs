@@ -854,7 +854,6 @@ function burn(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce, byt
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
@@ -910,7 +909,6 @@ function burn(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce, byt
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -1042,7 +1040,6 @@ function eid() external view returns (uint32);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -1074,7 +1071,6 @@ function eid() external view returns (uint32);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (u32,);
@@ -1194,7 +1190,6 @@ function inboundNonce(address _receiver, uint32 _srcEid, bytes32 _sender) extern
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
@@ -1238,7 +1233,6 @@ function inboundNonce(address _receiver, uint32 _srcEid, bytes32 _sender) extern
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<64>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (u64,);
@@ -1374,7 +1368,6 @@ function inboundPayloadHash(address _receiver, uint32 _srcEid, bytes32 _sender, 
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
@@ -1423,7 +1416,6 @@ function inboundPayloadHash(address _receiver, uint32 _srcEid, bytes32 _sender, 
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -1563,7 +1555,6 @@ function lazyInboundNonce(address _receiver, uint32 _srcEid, bytes32 _sender) ex
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
@@ -1609,7 +1600,6 @@ function lazyInboundNonce(address _receiver, uint32 _srcEid, bytes32 _sender) ex
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<64>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (u64,);
@@ -1745,7 +1735,6 @@ function nextGuid(address _sender, uint32 _dstEid, bytes32 _receiver) external v
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
@@ -1789,7 +1778,6 @@ function nextGuid(address _sender, uint32 _dstEid, bytes32 _receiver) external v
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -1922,7 +1910,6 @@ function nilify(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce, b
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
@@ -1978,7 +1965,6 @@ function nilify(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce, b
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -2117,7 +2103,6 @@ function outboundNonce(address _sender, uint32 _dstEid, bytes32 _receiver) exter
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
@@ -2161,7 +2146,6 @@ function outboundNonce(address _sender, uint32 _dstEid, bytes32 _receiver) exter
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<64>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (u64,);
@@ -2292,7 +2276,6 @@ function skip(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce) ext
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Uint<32>,
@@ -2339,7 +2322,6 @@ function skip(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce) ext
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -2440,7 +2422,6 @@ function skip(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce) ext
         }
     };
     ///Container for all the [`IMessagingChannel`](self) function calls.
-    #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive()]
     pub enum IMessagingChannelCalls {
@@ -2463,6 +2444,7 @@ function skip(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce) ext
         #[allow(missing_docs)]
         skip(skipCall),
     }
+    #[automatically_derived]
     impl IMessagingChannelCalls {
         /// All the selectors of this enum.
         ///
@@ -2481,50 +2463,6 @@ function skip(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce) ext
             [201u8, 252u8, 123u8, 205u8],
             [215u8, 11u8, 137u8, 2u8],
         ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(nilify),
-            ::core::stringify!(burn),
-            ::core::stringify!(eid),
-            ::core::stringify!(lazyInboundNonce),
-            ::core::stringify!(outboundNonce),
-            ::core::stringify!(inboundNonce),
-            ::core::stringify!(nextGuid),
-            ::core::stringify!(inboundPayloadHash),
-            ::core::stringify!(skip),
-        ];
-        /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] = &[
-            <nilifyCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <burnCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <eidCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <lazyInboundNonceCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <outboundNonceCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <inboundNonceCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <nextGuidCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <inboundPayloadHashCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <skipCall as alloy_sol_types::SolCall>::SIGNATURE,
-        ];
-        /// Returns the signature for the given selector, if known.
-        #[inline]
-        pub fn signature_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
-            match Self::SELECTORS.binary_search(&selector) {
-                ::core::result::Result::Ok(idx) => {
-                    ::core::option::Option::Some(Self::SIGNATURES[idx])
-                }
-                ::core::result::Result::Err(_) => ::core::option::Option::None,
-            }
-        }
-        /// Returns the enum variant name for the given selector, if known.
-        #[inline]
-        pub fn name_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
-            let sig = Self::signature_by_selector(selector)?;
-            sig.split_once('(').map(|(name, _)| name)
-        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for IMessagingChannelCalls {
@@ -2878,7 +2816,6 @@ function skip(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce) ext
         }
     }
     ///Container for all the [`IMessagingChannel`](self) events.
-    #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IMessagingChannelEvents {
@@ -2889,6 +2826,7 @@ function skip(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce) ext
         #[allow(missing_docs)]
         PacketNilified(PacketNilified),
     }
+    #[automatically_derived]
     impl IMessagingChannelEvents {
         /// All the selectors of this enum.
         ///
@@ -2913,38 +2851,6 @@ function skip(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce) ext
                 109u8, 4u8, 25u8, 226u8, 72u8, 179u8, 12u8, 181u8, 82u8, 146u8,
             ],
         ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(InboundNonceSkipped),
-            ::core::stringify!(PacketBurnt),
-            ::core::stringify!(PacketNilified),
-        ];
-        /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] = &[
-            <InboundNonceSkipped as alloy_sol_types::SolEvent>::SIGNATURE,
-            <PacketBurnt as alloy_sol_types::SolEvent>::SIGNATURE,
-            <PacketNilified as alloy_sol_types::SolEvent>::SIGNATURE,
-        ];
-        /// Returns the signature for the given selector, if known.
-        #[inline]
-        pub fn signature_by_selector(
-            selector: [u8; 32usize],
-        ) -> ::core::option::Option<&'static str> {
-            match Self::SELECTORS.binary_search(&selector) {
-                ::core::result::Result::Ok(idx) => {
-                    ::core::option::Option::Some(Self::SIGNATURES[idx])
-                }
-                ::core::result::Result::Err(_) => ::core::option::Option::None,
-            }
-        }
-        /// Returns the enum variant name for the given selector, if known.
-        #[inline]
-        pub fn name_by_selector(
-            selector: [u8; 32usize],
-        ) -> ::core::option::Option<&'static str> {
-            let sig = Self::signature_by_selector(selector)?;
-            sig.split_once('(').map(|(name, _)| name)
-        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for IMessagingChannelEvents {
@@ -3031,9 +2937,9 @@ See the [wrapper's documentation](`IMessagingChannelInstance`) for more details.
         N: alloy_contract::private::Network,
     >(
         address: alloy_sol_types::private::Address,
-        __provider: P,
+        provider: P,
     ) -> IMessagingChannelInstance<P, N> {
-        IMessagingChannelInstance::<P, N>::new(address, __provider)
+        IMessagingChannelInstance::<P, N>::new(address, provider)
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
@@ -3045,11 +2951,11 @@ For more fine-grained control over the deployment process, use [`deploy_builder`
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
-        __provider: P,
+        provider: P,
     ) -> impl ::core::future::Future<
         Output = alloy_contract::Result<IMessagingChannelInstance<P, N>>,
     > {
-        IMessagingChannelInstance::<P, N>::deploy(__provider)
+        IMessagingChannelInstance::<P, N>::deploy(provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
 and constructor arguments, if any.
@@ -3060,8 +2966,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        IMessagingChannelInstance::<P, N>::deploy_builder(__provider)
+    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        IMessagingChannelInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`IMessagingChannel`](self) instance.
 
@@ -3088,6 +2994,7 @@ See the [module-level documentation](self) for all the available methods.*/
         }
     }
     /// Instantiation and getters/setters.
+    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
@@ -3098,11 +3005,11 @@ See the [wrapper's documentation](`IMessagingChannelInstance`) for more details.
         #[inline]
         pub const fn new(
             address: alloy_sol_types::private::Address,
-            __provider: P,
+            provider: P,
         ) -> Self {
             Self {
                 address,
-                provider: __provider,
+                provider,
                 _network: ::core::marker::PhantomData,
             }
         }
@@ -3113,9 +3020,9 @@ Returns a new instance of the contract, if the deployment was successful.
 For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
-            __provider: P,
+            provider: P,
         ) -> alloy_contract::Result<IMessagingChannelInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
+            let call_builder = Self::deploy_builder(provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
@@ -3125,9 +3032,9 @@ and constructor arguments, if any.
 This is a simple wrapper around creating a `RawCallBuilder` with the data set to
 the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
+                provider,
                 ::core::clone::Clone::clone(&BYTECODE),
             )
         }
@@ -3164,6 +3071,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Function calls.
+    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
@@ -3316,6 +3224,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Event filters.
+    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,

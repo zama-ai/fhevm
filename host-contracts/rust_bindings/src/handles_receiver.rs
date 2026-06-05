@@ -721,7 +721,6 @@ struct Origin { uint32 srcEid; bytes32 sender; uint64 nonce; }
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::Uint<32>,
             alloy::sol_types::sol_data::FixedBytes<32>,
@@ -965,7 +964,6 @@ error InvalidDelegate();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -1039,7 +1037,6 @@ error InvalidEndpointCall();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -1113,7 +1110,6 @@ error InvalidInitialization();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -1190,7 +1186,6 @@ error NoPeer(uint32 eid);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<32>,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (u32,);
@@ -1271,7 +1266,6 @@ error NotHostOwner(address sender);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -1349,7 +1343,6 @@ error NotInitializing();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -1426,7 +1419,6 @@ error NotLzEndpoint(address caller);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -1507,7 +1499,6 @@ error OnlyEndpoint(address addr);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -1590,7 +1581,6 @@ error OnlyPeer(uint32 eid, bytes32 sender);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::Uint<32>,
             alloy::sol_types::sol_data::FixedBytes<32>,
@@ -1680,7 +1670,6 @@ error OwnableInvalidOwner(address owner);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -1761,7 +1750,6 @@ error OwnableUnauthorizedAccount(address account);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -1841,7 +1829,6 @@ error PlaintextOutOfRange();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -1918,7 +1905,6 @@ error UnexpectedComposeOrigin(address from);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -1996,7 +1982,6 @@ error UnsupportedFheTypeInDstHandle();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -2072,7 +2057,6 @@ error WrongChainIdInDstHandle();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -2146,7 +2130,6 @@ error WrongHandleVersionInDstHandle();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -2222,7 +2205,6 @@ error WrongIndexByteInDstHandle();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -3147,7 +3129,6 @@ function allowInitializePath(Origin memory origin) external view returns (bool);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (Origin,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -3183,7 +3164,6 @@ function allowInitializePath(Origin memory origin) external view returns (bool);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (bool,);
@@ -3298,7 +3278,6 @@ function endpoint() external view returns (address);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -3330,7 +3309,6 @@ function endpoint() external view returns (address);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -3443,7 +3421,6 @@ function grantFallbackPlaintext(bytes32 dstHandle, uint256 plaintext) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<256>,
@@ -3486,7 +3463,6 @@ function grantFallbackPlaintext(bytes32 dstHandle, uint256 plaintext) external;
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -3617,7 +3593,6 @@ function isComposeMsgSender(Origin memory, bytes memory, address _sender) extern
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 Origin,
                 alloy::sol_types::sol_data::Bytes,
@@ -3663,7 +3638,6 @@ function isComposeMsgSender(Origin memory, bytes memory, address _sender) extern
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (bool,);
@@ -3796,7 +3770,6 @@ function lzCompose(address from, bytes32, bytes memory message, address, bytes m
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -3846,7 +3819,6 @@ function lzCompose(address from, bytes32, bytes memory message, address, bytes m
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -3984,7 +3956,6 @@ function lzReceive(Origin memory _origin, bytes32 _guid, bytes memory _message, 
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 Origin,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -4040,7 +4011,6 @@ function lzReceive(Origin memory _origin, bytes32 _guid, bytes memory _message, 
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -4175,7 +4145,6 @@ function nextNonce(uint32, bytes32) external view returns (uint64 nonce);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -4213,7 +4182,6 @@ function nextNonce(uint32, bytes32) external view returns (uint64 nonce);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<64>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (u64,);
@@ -4338,7 +4306,6 @@ function oAppVersion() external pure returns (uint64 senderVersion, uint64 recei
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -4370,7 +4337,6 @@ function oAppVersion() external pure returns (uint64 senderVersion, uint64 recei
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<64>,
                 alloy::sol_types::sol_data::Uint<64>,
@@ -4496,7 +4462,6 @@ function owner() external view returns (address);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -4528,7 +4493,6 @@ function owner() external view returns (address);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -4644,7 +4608,6 @@ function peers(uint32 _eid) external view returns (bytes32);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (u32,);
@@ -4676,7 +4639,6 @@ function peers(uint32 _eid) external view returns (bytes32);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -4788,7 +4750,6 @@ function renounceOwnership() external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -4822,7 +4783,6 @@ function renounceOwnership() external;
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -4932,7 +4892,6 @@ function setDelegate(address _delegate) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -4964,7 +4923,6 @@ function setDelegate(address _delegate) external;
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -5078,7 +5036,6 @@ function setPeer(uint32 _eid, bytes32 _peer) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -5119,7 +5076,6 @@ function setPeer(uint32 _eid, bytes32 _peer) external;
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -5237,7 +5193,6 @@ function transferOwnership(address newOwner) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
@@ -5271,7 +5226,6 @@ function transferOwnership(address newOwner) external;
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -5360,7 +5314,6 @@ function transferOwnership(address newOwner) external;
         }
     };
     ///Container for all the [`HandlesReceiver`](self) function calls.
-    #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive()]
     pub enum HandlesReceiverCalls {
@@ -5393,6 +5346,7 @@ function transferOwnership(address newOwner) external;
         #[allow(missing_docs)]
         transferOwnership(transferOwnershipCall),
     }
+    #[automatically_derived]
     impl HandlesReceiverCalls {
         /// All the selectors of this enum.
         ///
@@ -5416,60 +5370,6 @@ function transferOwnership(address newOwner) external;
             [242u8, 253u8, 227u8, 139u8],
             [255u8, 123u8, 208u8, 61u8],
         ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(lzReceive),
-            ::core::stringify!(oAppVersion),
-            ::core::stringify!(setPeer),
-            ::core::stringify!(endpoint),
-            ::core::stringify!(renounceOwnership),
-            ::core::stringify!(nextNonce),
-            ::core::stringify!(isComposeMsgSender),
-            ::core::stringify!(owner),
-            ::core::stringify!(grantFallbackPlaintext),
-            ::core::stringify!(peers),
-            ::core::stringify!(setDelegate),
-            ::core::stringify!(lzCompose),
-            ::core::stringify!(transferOwnership),
-            ::core::stringify!(allowInitializePath),
-        ];
-        /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] = &[
-            <lzReceiveCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <oAppVersionCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <setPeerCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <endpointCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <renounceOwnershipCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <nextNonceCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <isComposeMsgSenderCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <ownerCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <grantFallbackPlaintextCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <peersCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <setDelegateCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <lzComposeCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <transferOwnershipCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <allowInitializePathCall as alloy_sol_types::SolCall>::SIGNATURE,
-        ];
-        /// Returns the signature for the given selector, if known.
-        #[inline]
-        pub fn signature_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
-            match Self::SELECTORS.binary_search(&selector) {
-                ::core::result::Result::Ok(idx) => {
-                    ::core::option::Option::Some(Self::SIGNATURES[idx])
-                }
-                ::core::result::Result::Err(_) => ::core::option::Option::None,
-            }
-        }
-        /// Returns the enum variant name for the given selector, if known.
-        #[inline]
-        pub fn name_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
-            let sig = Self::signature_by_selector(selector)?;
-            sig.split_once('(').map(|(name, _)| name)
-        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for HandlesReceiverCalls {
@@ -6000,7 +5900,6 @@ function transferOwnership(address newOwner) external;
         }
     }
     ///Container for all the [`HandlesReceiver`](self) custom errors.
-    #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum HandlesReceiverErrors {
@@ -6039,6 +5938,7 @@ function transferOwnership(address newOwner) external;
         #[allow(missing_docs)]
         WrongIndexByteInDstHandle(WrongIndexByteInDstHandle),
     }
+    #[automatically_derived]
     impl HandlesReceiverErrors {
         /// All the selectors of this enum.
         ///
@@ -6065,66 +5965,6 @@ function transferOwnership(address newOwner) external;
             [246u8, 255u8, 79u8, 183u8],
             [249u8, 46u8, 232u8, 169u8],
         ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(InvalidEndpointCall),
-            ::core::stringify!(OwnableUnauthorizedAccount),
-            ::core::stringify!(OwnableInvalidOwner),
-            ::core::stringify!(NotHostOwner),
-            ::core::stringify!(WrongIndexByteInDstHandle),
-            ::core::stringify!(WrongChainIdInDstHandle),
-            ::core::stringify!(UnexpectedComposeOrigin),
-            ::core::stringify!(NotLzEndpoint),
-            ::core::stringify!(OnlyEndpoint),
-            ::core::stringify!(InvalidDelegate),
-            ::core::stringify!(WrongHandleVersionInDstHandle),
-            ::core::stringify!(OnlyPeer),
-            ::core::stringify!(NotInitializing),
-            ::core::stringify!(UnsupportedFheTypeInDstHandle),
-            ::core::stringify!(PlaintextOutOfRange),
-            ::core::stringify!(NoPeer),
-            ::core::stringify!(InvalidInitialization),
-        ];
-        /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] = &[
-            <InvalidEndpointCall as alloy_sol_types::SolError>::SIGNATURE,
-            <OwnableUnauthorizedAccount as alloy_sol_types::SolError>::SIGNATURE,
-            <OwnableInvalidOwner as alloy_sol_types::SolError>::SIGNATURE,
-            <NotHostOwner as alloy_sol_types::SolError>::SIGNATURE,
-            <WrongIndexByteInDstHandle as alloy_sol_types::SolError>::SIGNATURE,
-            <WrongChainIdInDstHandle as alloy_sol_types::SolError>::SIGNATURE,
-            <UnexpectedComposeOrigin as alloy_sol_types::SolError>::SIGNATURE,
-            <NotLzEndpoint as alloy_sol_types::SolError>::SIGNATURE,
-            <OnlyEndpoint as alloy_sol_types::SolError>::SIGNATURE,
-            <InvalidDelegate as alloy_sol_types::SolError>::SIGNATURE,
-            <WrongHandleVersionInDstHandle as alloy_sol_types::SolError>::SIGNATURE,
-            <OnlyPeer as alloy_sol_types::SolError>::SIGNATURE,
-            <NotInitializing as alloy_sol_types::SolError>::SIGNATURE,
-            <UnsupportedFheTypeInDstHandle as alloy_sol_types::SolError>::SIGNATURE,
-            <PlaintextOutOfRange as alloy_sol_types::SolError>::SIGNATURE,
-            <NoPeer as alloy_sol_types::SolError>::SIGNATURE,
-            <InvalidInitialization as alloy_sol_types::SolError>::SIGNATURE,
-        ];
-        /// Returns the signature for the given selector, if known.
-        #[inline]
-        pub fn signature_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
-            match Self::SELECTORS.binary_search(&selector) {
-                ::core::result::Result::Ok(idx) => {
-                    ::core::option::Option::Some(Self::SIGNATURES[idx])
-                }
-                ::core::result::Result::Err(_) => ::core::option::Option::None,
-            }
-        }
-        /// Returns the enum variant name for the given selector, if known.
-        #[inline]
-        pub fn name_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
-            let sig = Self::signature_by_selector(selector)?;
-            sig.split_once('(').map(|(name, _)| name)
-        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for HandlesReceiverErrors {
@@ -6780,7 +6620,6 @@ function transferOwnership(address newOwner) external;
         }
     }
     ///Container for all the [`HandlesReceiver`](self) events.
-    #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum HandlesReceiverEvents {
@@ -6799,6 +6638,7 @@ function transferOwnership(address newOwner) external;
         #[allow(missing_docs)]
         PeerSet(PeerSet),
     }
+    #[automatically_derived]
     impl HandlesReceiverEvents {
         /// All the selectors of this enum.
         ///
@@ -6843,46 +6683,6 @@ function transferOwnership(address newOwner) external;
                 33u8, 238u8, 209u8, 205u8, 174u8, 182u8, 17u8, 81u8, 129u8, 210u8,
             ],
         ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(BridgeHandle),
-            ::core::stringify!(PeerSet),
-            ::core::stringify!(OwnershipTransferred),
-            ::core::stringify!(DstChainIdSet),
-            ::core::stringify!(FallbackGrantedPlaintext),
-            ::core::stringify!(HandleBridged),
-            ::core::stringify!(Initialized),
-        ];
-        /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] = &[
-            <BridgeHandle as alloy_sol_types::SolEvent>::SIGNATURE,
-            <PeerSet as alloy_sol_types::SolEvent>::SIGNATURE,
-            <OwnershipTransferred as alloy_sol_types::SolEvent>::SIGNATURE,
-            <DstChainIdSet as alloy_sol_types::SolEvent>::SIGNATURE,
-            <FallbackGrantedPlaintext as alloy_sol_types::SolEvent>::SIGNATURE,
-            <HandleBridged as alloy_sol_types::SolEvent>::SIGNATURE,
-            <Initialized as alloy_sol_types::SolEvent>::SIGNATURE,
-        ];
-        /// Returns the signature for the given selector, if known.
-        #[inline]
-        pub fn signature_by_selector(
-            selector: [u8; 32usize],
-        ) -> ::core::option::Option<&'static str> {
-            match Self::SELECTORS.binary_search(&selector) {
-                ::core::result::Result::Ok(idx) => {
-                    ::core::option::Option::Some(Self::SIGNATURES[idx])
-                }
-                ::core::result::Result::Err(_) => ::core::option::Option::None,
-            }
-        }
-        /// Returns the enum variant name for the given selector, if known.
-        #[inline]
-        pub fn name_by_selector(
-            selector: [u8; 32usize],
-        ) -> ::core::option::Option<&'static str> {
-            let sig = Self::signature_by_selector(selector)?;
-            sig.split_once('(').map(|(name, _)| name)
-        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for HandlesReceiverEvents {
@@ -7020,9 +6820,9 @@ See the [wrapper's documentation](`HandlesReceiverInstance`) for more details.*/
         N: alloy_contract::private::Network,
     >(
         address: alloy_sol_types::private::Address,
-        __provider: P,
+        provider: P,
     ) -> HandlesReceiverInstance<P, N> {
-        HandlesReceiverInstance::<P, N>::new(address, __provider)
+        HandlesReceiverInstance::<P, N>::new(address, provider)
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
@@ -7034,11 +6834,11 @@ For more fine-grained control over the deployment process, use [`deploy_builder`
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
-        __provider: P,
+        provider: P,
     ) -> impl ::core::future::Future<
         Output = alloy_contract::Result<HandlesReceiverInstance<P, N>>,
     > {
-        HandlesReceiverInstance::<P, N>::deploy(__provider)
+        HandlesReceiverInstance::<P, N>::deploy(provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
 and constructor arguments, if any.
@@ -7049,8 +6849,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        HandlesReceiverInstance::<P, N>::deploy_builder(__provider)
+    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        HandlesReceiverInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`HandlesReceiver`](self) instance.
 
@@ -7077,6 +6877,7 @@ See the [module-level documentation](self) for all the available methods.*/
         }
     }
     /// Instantiation and getters/setters.
+    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
@@ -7087,11 +6888,11 @@ See the [wrapper's documentation](`HandlesReceiverInstance`) for more details.*/
         #[inline]
         pub const fn new(
             address: alloy_sol_types::private::Address,
-            __provider: P,
+            provider: P,
         ) -> Self {
             Self {
                 address,
-                provider: __provider,
+                provider,
                 _network: ::core::marker::PhantomData,
             }
         }
@@ -7102,9 +6903,9 @@ Returns a new instance of the contract, if the deployment was successful.
 For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
-            __provider: P,
+            provider: P,
         ) -> alloy_contract::Result<HandlesReceiverInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
+            let call_builder = Self::deploy_builder(provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
@@ -7114,9 +6915,9 @@ and constructor arguments, if any.
 This is a simple wrapper around creating a `RawCallBuilder` with the data set to
 the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
+                provider,
                 ::core::clone::Clone::clone(&BYTECODE),
             )
         }
@@ -7153,6 +6954,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Function calls.
+    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
@@ -7299,6 +7101,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Event filters.
+    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
