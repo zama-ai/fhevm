@@ -193,7 +193,7 @@ export async function buildEncryptedInput(args: BuildEncryptedInputArgs): Promis
   for (const signer of coprocessorSigners) {
     const sig = await signer.signTypedData(domain, types, message);
     const parts = ethers.Signature.from(sig);
-    // InputVerifier expects {r}{s}{v} with v in {27,28}. ethers normalises to
+    // InputVerifier expects {r}{s}{v} with v in {27,28}. ethers normalizes to
     // yParity ∈ {0,1}, so add 27.
     const v = (27 + parts.yParity).toString(16).padStart(2, '0');
     signaturesHex.push(parts.r.slice(2) + parts.s.slice(2) + v);
