@@ -67,12 +67,15 @@ async fn main() -> Result<()> {
 
     let program_id = Pubkey::from_str(&args.program_id)
         .with_context(|| format!("invalid program id {}", args.program_id))?;
-    let chain_id = ChainId::try_from(args.host_chain_id)
-        .with_context(|| format!("invalid host chain id {}", args.host_chain_id))?;
+    let chain_id =
+        ChainId::try_from(args.host_chain_id).with_context(|| {
+            format!("invalid host chain id {}", args.host_chain_id)
+        })?;
 
-    let db = Database::new(&args.database_url, chain_id, args.dependence_cache_size)
-        .await
-        .context("connect coprocessor database")?;
+    let db =
+        Database::new(&args.database_url, chain_id, args.dependence_cache_size)
+            .await
+            .context("connect coprocessor database")?;
 
     let commitment = CommitmentConfig::confirmed();
     let rpc = RpcClient::new_with_commitment(args.url.clone(), commitment);

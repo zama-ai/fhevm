@@ -21,8 +21,8 @@ use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signature;
 use solana_transaction_status::option_serializer::OptionSerializer;
 use solana_transaction_status::{
-    EncodedConfirmedTransactionWithStatusMeta, EncodedTransaction, UiInstruction,
-    UiMessage, UiTransactionEncoding,
+    EncodedConfirmedTransactionWithStatusMeta, EncodedTransaction,
+    UiInstruction, UiMessage, UiTransactionEncoding,
 };
 use time::{OffsetDateTime, PrimitiveDateTime};
 use tokio_util::sync::CancellationToken;
@@ -140,7 +140,9 @@ async fn fetch_new_signatures(
                 continue;
             }
             let signature = Signature::from_str(&status.signature)
-                .with_context(|| format!("parse signature {}", status.signature))?;
+                .with_context(|| {
+                    format!("parse signature {}", status.signature)
+                })?;
             collected.push(signature);
             before = Some(signature);
         }
@@ -177,10 +179,10 @@ async fn ingest_signature(
         .await
         .with_context(|| format!("get_transaction {signature}"))?;
 
-    let (events, block) =
-        extract_host_events(&confirmed, &config.program_id).with_context(|| {
-            format!("decode CPI events for transaction {signature}")
-        })?;
+    let (events, block) = extract_host_events(&confirmed, &config.program_id)
+        .with_context(|| {
+        format!("decode CPI events for transaction {signature}")
+    })?;
 
     if events.is_empty() {
         return Ok(());
@@ -191,9 +193,10 @@ async fn ingest_signature(
         .new_transaction()
         .await
         .context("open database transaction")?;
-    let stats = insert_solana_events(db, &mut tx, events, transaction_id, block)
-        .await
-        .context("insert_solana_events")?;
+    let stats =
+        insert_solana_events(db, &mut tx, events, transaction_id, block)
+            .await
+            .context("insert_solana_events")?;
     tx.commit().await.context("commit database transaction")?;
 
     info!(
@@ -274,9 +277,11 @@ fn account_keys(
     let mut keys = match &confirmed.transaction.transaction {
         EncodedTransaction::Json(ui_tx) => match &ui_tx.message {
             UiMessage::Raw(raw) => raw.account_keys.clone(),
-            UiMessage::Parsed(parsed) => {
-                parsed.account_keys.iter().map(|k| k.pubkey.clone()).collect()
-            }
+            UiMessage::Parsed(parsed) => parsed
+                .account_keys
+                .iter()
+                .map(|k| k.pubkey.clone())
+                .collect(),
         },
         _ => bail!("expected a JSON-encoded transaction"),
     };
@@ -302,14 +307,19 @@ fn block_meta(
         .with_context(|| format!("invalid block_time {block_time}"))?;
     Ok(SolanaBlockMeta {
         block_number: confirmed.slot,
-        block_timestamp: PrimitiveDateTime::new(datetime.date(), datetime.time()),
+        block_timestamp: PrimitiveDateTime::new(
+            datetime.date(),
+            datetime.time(),
+        ),
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::generated::{anchor_event_discriminator, ANCHOR_EVENT_IX_TAG_LE, EVENT_VERSION};
+    use crate::generated::{
+        anchor_event_discriminator, ANCHOR_EVENT_IX_TAG_LE, EVENT_VERSION,
+    };
     use crate::solana_adapter::SolanaMappedEvent;
 
     const ZAMA_HOST: &str = "6rQaBev7B67LrQW7nJPBhJYt7rHSK38DWuz1LdiQRFcf";
@@ -339,7 +349,10 @@ mod tests {
     /// Builds a confirmed-transaction fixture in the exact JSON shape returned by
     /// `getTransaction(..., encoding=json)`, with one inner instruction whose
     /// program is `program_index` and whose data is `cpi_bytes`.
-    fn confirmed_tx(cpi_bytes: &[u8], program_index: u8) -> EncodedConfirmedTransactionWithStatusMeta {
+    fn confirmed_tx(
+        cpi_bytes: &[u8],
+        program_index: u8,
+    ) -> EncodedConfirmedTransactionWithStatusMeta {
         let data = bs58::encode(cpi_bytes).into_string();
         let json = format!(
             r#"{{
@@ -375,12 +388,14 @@ mod tests {
               }}
             }}"#
         );
-        serde_json::from_str(&json).expect("valid confirmed-transaction fixture")
+        serde_json::from_str(&json)
+            .expect("valid confirmed-transaction fixture")
     }
 
     #[test]
     fn extracts_zama_host_cpi_event_from_inner_instruction() {
-        let bytes = anchor_event_cpi("TrivialEncryptEvent", trivial_encrypt_payload());
+        let bytes =
+            anchor_event_cpi("TrivialEncryptEvent", trivial_encrypt_payload());
         let program_id = Pubkey::from_str(ZAMA_HOST).unwrap();
 
         let (events, block) =
@@ -389,7 +404,9 @@ mod tests {
         assert_eq!(block.block_number, 42);
         assert_eq!(events.len(), 1);
         let SolanaMappedEvent::Tfhe(_) =
-            crate::solana_adapter::map_solana_event(events.into_iter().next().unwrap())
+            crate::solana_adapter::map_solana_event(
+                events.into_iter().next().unwrap(),
+            )
         else {
             panic!("expected a TFHE-mapped event");
         };
@@ -397,23 +414,28 @@ mod tests {
 
     #[test]
     fn ignores_inner_instruction_from_other_program() {
-        let bytes = anchor_event_cpi("TrivialEncryptEvent", trivial_encrypt_payload());
+        let bytes =
+            anchor_event_cpi("TrivialEncryptEvent", trivial_encrypt_payload());
         let program_id = Pubkey::from_str(ZAMA_HOST).unwrap();
 
         // program_index 0 is the foreign account key, not zama-host.
-        let (events, _) = extract_host_events(&confirmed_tx(&bytes, 0), &program_id).unwrap();
+        let (events, _) =
+            extract_host_events(&confirmed_tx(&bytes, 0), &program_id).unwrap();
 
         assert!(events.is_empty());
     }
 
     #[test]
     fn block_meta_uses_slot_and_block_time() {
-        let bytes = anchor_event_cpi("TrivialEncryptEvent", trivial_encrypt_payload());
+        let bytes =
+            anchor_event_cpi("TrivialEncryptEvent", trivial_encrypt_payload());
         let program_id = Pubkey::from_str(ZAMA_HOST).unwrap();
 
-        let (_, block) = extract_host_events(&confirmed_tx(&bytes, 1), &program_id).unwrap();
+        let (_, block) =
+            extract_host_events(&confirmed_tx(&bytes, 1), &program_id).unwrap();
 
-        let expected = OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap();
+        let expected =
+            OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap();
         assert_eq!(
             block.block_timestamp,
             PrimitiveDateTime::new(expected.date(), expected.time())
