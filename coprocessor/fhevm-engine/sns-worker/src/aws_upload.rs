@@ -40,7 +40,7 @@ pub const EVENT_CIPHERTEXTS_UPLOADED: &str = "event_ciphertexts_uploaded";
 // There might be pending uploads in the database
 // with sizes of 32MiB so the batch size is set to 10
 const DEFAULT_BATCH_SIZE: usize = 10;
-const COPROCESSOR_CONTEXT_ID_0: U256 = U256::ZERO;
+const COPROCESSOR_CONTEXT_ID_1: U256 = U256::ONE;
 const NO_SNS_CIPHERTEXT_DIGEST: [u8; 32] = [0; 32];
 
 pub(crate) async fn spawn_resubmit_task(
@@ -513,7 +513,7 @@ async fn upload_ciphertexts(
     conf: &S3Config,
     signer: CoproSigner,
 ) -> anyhow::Result<()> {
-    let context_id = COPROCESSOR_CONTEXT_ID_0;
+    let context_id = COPROCESSOR_CONTEXT_ID_1;
     let handle_as_hex: String = to_hex(&task.handle);
     info!(handle = handle_as_hex, "Received task");
 
@@ -1194,7 +1194,7 @@ mod tests {
         let format = attestation_format(task.ct128.format()).unwrap();
         let expected = build_attestation_payload(
             &task,
-            COPROCESSOR_CONTEXT_ID_0,
+            COPROCESSOR_CONTEXT_ID_1,
             &upload_material.ct64_digest,
             &upload_material.ct128_digest,
             format,
