@@ -15,10 +15,10 @@ pub struct InputProofRequestJson {
     #[schema(value_type = ChainId)]
     #[validate(custom(function = "crate::http::validate_chain_id_string"))]
     pub contract_chain_id: String,
-    #[validate(custom(function = "crate::http::validate_blockchain_address"))]
+    #[validate(custom(function = "crate::http::validate_host_address"))]
     #[schema(example = "0x1234567890123456789012345678901234567890")]
     pub contract_address: String,
-    #[validate(custom(function = "crate::http::validate_blockchain_address"))]
+    #[validate(custom(function = "crate::http::validate_host_address"))]
     #[schema(example = "0x1234567890123456789012345678901234567890")]
     pub user_address: String,
     /// ABI-encoded ciphertext with its ZKPoK input verification data. Raw hex, no `0x` prefix.

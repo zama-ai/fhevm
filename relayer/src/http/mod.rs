@@ -36,6 +36,7 @@ pub use utils::{
     validate_extra_data_field_decryption,
     validate_extra_data_field_input_proof,
     validate_handle_contract_pairs,
+    validate_host_address,
     validate_no_0x_hex,
     validate_request_validity,
     validate_timestamp,

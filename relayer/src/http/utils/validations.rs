@@ -64,6 +64,23 @@ pub fn validate_blockchain_addresses(addresses: &Vec<String>) -> Result<(), Vali
     Ok(())
 }
 
+/// Validates a host-chain account identity that may be either an EVM 0x-hex
+/// 20-byte address or a Solana base58 32-byte Ed25519 public key (RFC-021).
+///
+/// EVM acceptance is byte-identical to `validate_blockchain_address`; a non-EVM
+/// string is additionally accepted when it is a canonical Solana base58 address.
+/// The `contract_chain_id` (carrying the Solana chain-type high bit) decides how
+/// the accepted string is later interpreted in `InputProofRequest::try_from`.
+pub fn validate_host_address(address: &str) -> Result<(), ValidationError> {
+    if validate_blockchain_address(address).is_ok()
+        || crate::http::utils::solana_address::is_solana_address(address)
+    {
+        return Ok(());
+    }
+    // Surface the EVM error shape, which is the common case for malformed input.
+    validate_blockchain_address(address)
+}
+
 pub fn validate_no_0x_hex(hex_str: &str) -> Result<(), ValidationError> {
     if hex_str.starts_with("0x") {
         return Err(ValidationError::new("validation_error")

@@ -179,14 +179,29 @@ impl InputProofGatewayHandler {
                 ))
             })?;
 
-        // PRE-CALCULATE CALLDATA
-        let calldata_bytes = ComputeCalldata::verify_proof_req(
-            input_proof_request.contract_chain_id,
-            input_proof_request.contract_address,
-            input_proof_request.user_address,
-            input_proof_request.ciphetext_with_zk_proof.clone(),
-            input_proof_request.extra_data.clone(),
-        )?;
+        // PRE-CALCULATE CALLDATA. Solana hosts carry 32-byte identities and submit
+        // via `verifyProofRequestSolana`; EVM hosts use the 20-byte address path.
+        let calldata_bytes = match (
+            input_proof_request.solana_contract_address,
+            input_proof_request.solana_user_address,
+        ) {
+            (Some(contract_address), Some(user_address)) => {
+                ComputeCalldata::verify_proof_req_solana(
+                    input_proof_request.contract_chain_id,
+                    contract_address,
+                    user_address,
+                    input_proof_request.ciphetext_with_zk_proof.clone(),
+                    input_proof_request.extra_data.clone(),
+                )?
+            }
+            _ => ComputeCalldata::verify_proof_req(
+                input_proof_request.contract_chain_id,
+                input_proof_request.contract_address,
+                input_proof_request.user_address,
+                input_proof_request.ciphetext_with_zk_proof.clone(),
+                input_proof_request.extra_data.clone(),
+            )?,
+        };
 
         // CONSTRUCT TASK
         let task = GatewayTxTask {

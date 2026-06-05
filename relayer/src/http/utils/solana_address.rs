@@ -97,6 +97,22 @@ pub fn is_solana_address(address: &str) -> bool {
     validate_solana_address(address).is_ok()
 }
 
+/// Decodes a canonical base58 Solana address into its 32 raw bytes, applying the
+/// same acceptance rules as `validate_solana_address`. This is the byte-yielding
+/// counterpart used when a 32-byte host identity must be threaded into a request
+/// (e.g. the Solana input-proof attestation), where the EVM 20-byte `Address`
+/// cannot hold the full Ed25519 public key.
+pub fn decode_solana_address(address: &str) -> Result<[u8; 32], ValidationError> {
+    validate_solana_address(address)?;
+    let decoded = base58_decode(address).map_err(|_| {
+        ValidationError::new("validation_error")
+            .with_message(solana_address_messages::INVALID_BASE58_CHARACTER.into())
+    })?;
+    let mut out = [0u8; SOLANA_ADDRESS_LEN];
+    out.copy_from_slice(&decoded);
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
