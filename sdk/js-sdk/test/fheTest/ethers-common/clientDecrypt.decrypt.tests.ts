@@ -72,7 +72,7 @@ export function defineClientDecryptDecryptTests(parameters: {
         transportKeyPair: keyPair,
         contractAddresses: [config.fheTestAddress],
         durationDays: 1,
-        startTimestamp: Math.floor(Date.now() / 1000),
+        startTimestamp: Math.floor(Date.now() / 1000) - 5,
         signerAddress: config.wallet.address,
         signer: config.signer,
       });
@@ -119,7 +119,7 @@ export function defineClientDecryptDecryptTests(parameters: {
           transportKeyPair: transportKeyPair,
           contractAddresses: [config.fheTestAddress],
           durationDays: 1,
-          startTimestamp: Math.floor(Date.now() / 1000),
+          startTimestamp: Math.floor(Date.now() / 1000) - 5,
           signerAddress: config.wallet.address,
           signer: config.signer,
         });
@@ -189,7 +189,7 @@ export function defineClientDecryptDecryptTests(parameters: {
         transportKeyPair: transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationDays: 1,
-        startTimestamp: Math.floor(Date.now() / 1000),
+        startTimestamp: Math.floor(Date.now() / 1000) - 5,
         signerAddress: config.wallet.address,
         signer: config.signer,
       });
