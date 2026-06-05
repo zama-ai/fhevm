@@ -12,7 +12,7 @@ Target chains used as the running example:
 | Ethereum Sepolia | `11155111`  | `40161`   |
 | Polygon Amoy     | `80002`     | `40267`   |
 
-The procedure generalises to any chain pair that has a canonical LayerZero V2
+The procedure generalizes to any chain pair that has a canonical LayerZero V2
 endpoint. The LZ V2 endpoint address is the same on every chain:
 `0x6EDCE65403992e310A62460808c4b910D972f10f`.
 
@@ -33,7 +33,7 @@ First step, after installing dependencies, is to copy the `.env.example` to `.en
 cp .env.example .env
 ```
 
-Keep all the default vlaues inside this newly created `.env` file, with the exception of only both variables `DEPLOYER_PRIVATE_KEY` and `ETHERSCAN_API_KEY` which you must replace with your own values.
+Keep all the default values inside this newly created `.env` file, with the exception of only both variables `DEPLOYER_PRIVATE_KEY` and `ETHERSCAN_API_KEY` which you must replace with your own values.
 
 ---
 
