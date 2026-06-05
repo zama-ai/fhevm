@@ -13,6 +13,15 @@ import {
   prepareSingleChain,
 } from '../setupCommon.js';
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/clientDecrypt.delegateDecrypt.test.ts
+// CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.delegateDecrypt.test.ts
+// CHAIN=testnet        npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.delegateDecrypt.test.ts
+// CHAIN=devnet         npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.delegateDecrypt.test.ts
+//
+////////////////////////////////////////////////////////////////////////////////
+
 // Alice (config.alice) — owns the handles, delegates to Bob
 // Bob (config.bob) — signs the delegated permit and decrypts
 

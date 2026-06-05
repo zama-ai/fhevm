@@ -5,6 +5,15 @@ import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { getEthersTestConfig, type CreateEthersClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
 import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle, fheTypeIdFromHandle } from '../setupCommon.js';
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts ethers-cleartext/clientDecrypt.delegateDecrypt.test.ts
+// CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.delegateDecrypt.test.ts
+// CHAIN=testnet        npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.delegateDecrypt.test.ts
+// CHAIN=devnet         npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.delegateDecrypt.test.ts
+//
+////////////////////////////////////////////////////////////////////////////////
+
 // Alice (config.alice) — owns the handles, delegates to Bob
 // Bob (config.bob) — signs the delegated permit and decrypts
 

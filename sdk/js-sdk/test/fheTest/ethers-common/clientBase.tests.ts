@@ -5,6 +5,15 @@ import { sepolia as fhevmSepolia } from '@fhevm/sdk/chains';
 import { getEthersTestConfig, type CreateEthersClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
 import { clearKeyCache, readKeyFromCache, writeKeyToCache } from '../keyCache.js';
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts ethers-cleartext/clientBase.test.ts
+// CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.test.ts
+// CHAIN=testnet        npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.test.ts
+// CHAIN=devnet         npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.test.ts
+//
+////////////////////////////////////////////////////////////////////////////////
+
 export function defineClientBaseTests(parameters: {
   readonly runIf: boolean;
   readonly createFhevmBaseClient: CreateEthersClientFn;

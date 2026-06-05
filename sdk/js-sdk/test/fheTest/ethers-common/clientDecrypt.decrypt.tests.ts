@@ -6,6 +6,15 @@ import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle, fheTypeIdFrom
 import { asEncryptedValue } from '@fhevm/sdk/types';
 import { getEthersTestConfig, type CreateEthersClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts ethers-cleartext/clientDecrypt.decrypt.test.ts
+// CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.decrypt.test.ts
+// CHAIN=testnet        npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.decrypt.test.ts
+// CHAIN=devnet         npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.decrypt.test.ts
+//
+////////////////////////////////////////////////////////////////////////////////
+
 export function defineClientDecryptDecryptTests(parameters: {
   readonly runIf: boolean;
   readonly createFhevmDecryptClient: CreateEthersClientFn;
