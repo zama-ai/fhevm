@@ -4,6 +4,15 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { type CreateEthersClientFn, type FheTestEthersConfig, getEthersTestConfig } from '../setup-ethers.js';
 import { safeJSONstringify } from '../setupCommon.js';
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts ethers-cleartext/clientBase.chain.test.ts
+// CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.chain.test.ts
+// CHAIN=testnet        npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.chain.test.ts
+// CHAIN=devnet         npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.chain.test.ts
+//
+////////////////////////////////////////////////////////////////////////////////
+
 export function defineClientBaseChainTests(parameters: {
   readonly runIf: boolean;
   readonly createFhevmBaseClient: CreateEthersClientFn;

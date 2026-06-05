@@ -4,6 +4,15 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { type CreateViemClientFn, type FheTestViemConfig, getViemTestConfig } from '../setup-viem.js';
 import { safeJSONstringify } from '../setupCommon.js';
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/clientBase.chain.test.ts
+// CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.chain.test.ts
+// CHAIN=testnet        npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.chain.test.ts
+// CHAIN=devnet         npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.chain.test.ts
+//
+////////////////////////////////////////////////////////////////////////////////
+
 export function defineClientBaseChainTests(parameters: {
   readonly runIf: boolean;
   readonly createFhevmBaseClient: CreateViemClientFn;

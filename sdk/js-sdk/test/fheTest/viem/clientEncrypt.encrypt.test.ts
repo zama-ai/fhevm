@@ -5,9 +5,9 @@ import { defineClientEncryptEncryptTests } from '../viem-common/clientEncrypt.en
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=testnet npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encrypt.test.ts
-// CHAIN=devnet npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encrypt.test.ts
-// CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encrypt.test.ts
+// CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encrypt.test.ts
+// CHAIN=testnet        npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encrypt.test.ts
+// CHAIN=devnet         npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encrypt.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

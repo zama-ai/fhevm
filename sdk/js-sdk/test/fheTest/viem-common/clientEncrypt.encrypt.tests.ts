@@ -7,6 +7,15 @@ import { asEncryptedValue } from '@fhevm/sdk/types';
 
 type ModuleVersions = Parameters<typeof setFhevmRuntimeConfig>[0]['moduleVersions'];
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/clientEncrypt.encrypt.test.ts
+// CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encrypt.test.ts
+// CHAIN=testnet        npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encrypt.test.ts
+// CHAIN=devnet         npx vitest run --config test/fheTest/vitest.config.ts viem/clientEncrypt.encrypt.test.ts
+//
+////////////////////////////////////////////////////////////////////////////////
+
 export function defineClientEncryptEncryptTests(parameters: {
   readonly runIf: boolean;
   readonly createFhevmEncryptClient: CreateViemClientFn;

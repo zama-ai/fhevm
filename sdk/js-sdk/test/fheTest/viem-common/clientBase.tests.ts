@@ -5,6 +5,15 @@ import { sepolia as viemSepolia } from 'viem/chains';
 import { getViemTestConfig, type FheTestViemConfig } from '../setup-viem.js';
 import { clearKeyCache, readKeyFromCache, writeKeyToCache } from '../keyCache.js';
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/clientBase.test.ts
+// CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.test.ts
+// CHAIN=testnet        npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.test.ts
+// CHAIN=devnet         npx vitest run --config test/fheTest/vitest.config.ts viem/clientBase.test.ts
+//
+////////////////////////////////////////////////////////////////////////////////
+
 type ClientFactory = (params: {
   chain: FheTestViemConfig['fhevmChain'];
   publicClient: FheTestViemConfig['publicClient'];

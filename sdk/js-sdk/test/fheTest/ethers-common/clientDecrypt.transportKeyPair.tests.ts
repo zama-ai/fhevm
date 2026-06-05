@@ -3,6 +3,15 @@ import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { serializeTransportKeyPair, parseTransportKeyPair } from '@fhevm/sdk/actions/chain';
 import { getEthersTestConfig, type CreateEthersClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts ethers-cleartext/clientDecrypt.transportKeyPair.test.ts
+// CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.transportKeyPair.test.ts
+// CHAIN=testnet        npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.transportKeyPair.test.ts
+// CHAIN=devnet         npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.transportKeyPair.test.ts
+//
+////////////////////////////////////////////////////////////////////////////////
+
 export function defineClientDecryptTransportKeyPairTests(parameters: {
   readonly runIf: boolean;
   readonly createFhevmDecryptClient: CreateEthersClientFn;

@@ -3,6 +3,15 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { getViemTestConfig, type FheTestViemConfig } from '../setup-viem.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/connectivity.test.ts
+// CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts viem/connectivity.test.ts
+// CHAIN=testnet        npx vitest run --config test/fheTest/vitest.config.ts viem/connectivity.test.ts
+// CHAIN=devnet         npx vitest run --config test/fheTest/vitest.config.ts viem/connectivity.test.ts
+//
+////////////////////////////////////////////////////////////////////////////////
+
 export function defineConnectivityTests(runIf: boolean): void {
   describe.runIf(runIf)('Connectivity', () => {
     let config: FheTestViemConfig;
