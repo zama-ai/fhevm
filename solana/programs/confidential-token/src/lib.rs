@@ -41,8 +41,8 @@ pub use instructions::{
     ConfidentialCallTransferReceiverFrom, ConfidentialFinalizeTransferCallback,
     ConfidentialPrepareTransferCallback, ConfidentialTransfer, ConfidentialTransferFrom,
     CreateRandomAmount, DiscloseAmount, DiscloseBalance, InitializeMint, InitializeTokenAccount,
-    RedeemBurnedAmount, RequestDiscloseAmount, RequestDiscloseBalance, SetOperator,
-    TestReceiverReturnCallback, WrapUsdc,
+    RedeemBurnedAmount, RedeemBurnedAmountSecp, RequestDiscloseAmount, RequestDiscloseBalance,
+    SetOperator, TestReceiverReturnCallback, WrapUsdc,
 };
 /// Re-export account layouts and helper functions used by clients and tests.
 pub use state::*;
@@ -263,6 +263,24 @@ pub mod confidential_token {
         cleartext_amount: u64,
     ) -> Result<()> {
         instructions::redeem_burned_amount(ctx, burned_handle, cleartext_amount)
+    }
+
+    /// Gateway-compatible redemption: verifies the KMS `PublicDecryptVerification`
+    /// EIP-712 certificate on-chain via secp256k1_recover against the active KMS context.
+    pub fn redeem_burned_amount_secp(
+        ctx: Context<RedeemBurnedAmountSecp>,
+        burned_handle: [u8; 32],
+        cleartext_amount: u64,
+        signatures: Vec<[u8; 65]>,
+        extra_data: Vec<u8>,
+    ) -> Result<()> {
+        instructions::redeem_burned_amount_secp(
+            ctx,
+            burned_handle,
+            cleartext_amount,
+            signatures,
+            extra_data,
+        )
     }
 }
 

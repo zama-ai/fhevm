@@ -2442,6 +2442,113 @@ fn mollusk_redeem_burned_amount_releases_vault_once_with_kms_certificate() {
 }
 
 #[test]
+fn mollusk_redeem_burned_amount_secp_releases_vault_with_kms_certificate() {
+    let fixture = TokenMolluskFixture::new();
+    let key = k256::ecdsa::SigningKey::from_bytes(&[0x55u8; 32].into()).unwrap();
+    let cleartext_amount = 9;
+    let burn_amount_handle = handle_for_chain(53, BALANCE_FHE_TYPE);
+    let (_wrap_output, burn_output, context, burned_handle) =
+        wrap_and_burn_for_redeem(&fixture, burn_amount_handle);
+
+    // Switch the context to the gateway KMS (secp256k1) trust model: the KMS host config carries
+    // the gateway verifier params + active context id, and the KMS context holds the signer set.
+    seed_account(
+        &context,
+        fixture.host_config,
+        kms_host_config_account(fixture.owner),
+    );
+    let (kms_ctx, kms_ctx_account) = kms_context_account(secp_evm_address(&key));
+    seed_account(&context, kms_ctx, kms_ctx_account);
+
+    let release_ix = request_disclose_amount_ix(&fixture, burn_output.burned, burned_handle);
+    context.process_and_validate_instruction(&release_ix, &[Check::success()]);
+    seed_material_commitment_for_acl(&context, burn_output.burned, 140);
+
+    let redemption_record = token::burn_redemption_address(fixture.mint, burned_handle).0;
+    let vault_before = read_spl_token_amount(&context, fixture.vault_usdc);
+    let destination_before = read_spl_token_amount(&context, fixture.user_usdc);
+
+    // No Ed25519 ix: the cert is verified on-chain via secp256k1_recover from the signatures arg.
+    let signatures = kms_public_decrypt_signatures(&key, burned_handle, cleartext_amount);
+    let redeem_ix = redeem_burned_amount_secp_ix(
+        &fixture,
+        burn_output.burned,
+        redemption_record,
+        burned_handle,
+        cleartext_amount,
+        fixture.vault_usdc,
+        signatures,
+    );
+    let redeem_result = process_transaction(&context, &[redeem_ix]);
+
+    assert!(
+        redeem_result.raw_result.is_ok(),
+        "redeem_secp failed: raw={:?} program={:?}",
+        redeem_result.raw_result,
+        redeem_result.program_result
+    );
+    assert_eq!(
+        read_spl_token_amount(&context, fixture.vault_usdc),
+        vault_before - cleartext_amount
+    );
+    assert_eq!(
+        read_spl_token_amount(&context, fixture.user_usdc),
+        destination_before + cleartext_amount
+    );
+    let redemption = read_burn_redemption(&context, redemption_record);
+    assert_eq!(redemption.burned_handle, burned_handle);
+    assert_eq!(redemption.cleartext_amount, cleartext_amount);
+
+    let redeem_events: Vec<token::BurnRedeemedEvent> = redeem_result
+        .inner_instructions
+        .iter()
+        .flatten()
+        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
+        .collect();
+    assert_eq!(redeem_events.len(), 1);
+    assert_eq!(redeem_events[0].burned_handle, burned_handle);
+    assert_eq!(redeem_events[0].cleartext_amount, cleartext_amount);
+}
+
+#[test]
+fn mollusk_redeem_burned_amount_secp_rejects_unauthorized_signer() {
+    let fixture = TokenMolluskFixture::new();
+    let configured = k256::ecdsa::SigningKey::from_bytes(&[0x55u8; 32].into()).unwrap();
+    let attacker = k256::ecdsa::SigningKey::from_bytes(&[0x66u8; 32].into()).unwrap();
+    let cleartext_amount = 9;
+    let burn_amount_handle = handle_for_chain(53, BALANCE_FHE_TYPE);
+    let (_wrap_output, burn_output, context, burned_handle) =
+        wrap_and_burn_for_redeem(&fixture, burn_amount_handle);
+
+    seed_account(
+        &context,
+        fixture.host_config,
+        kms_host_config_account(fixture.owner),
+    );
+    let (kms_ctx, kms_ctx_account) = kms_context_account(secp_evm_address(&configured));
+    seed_account(&context, kms_ctx, kms_ctx_account);
+
+    let release_ix = request_disclose_amount_ix(&fixture, burn_output.burned, burned_handle);
+    context.process_and_validate_instruction(&release_ix, &[Check::success()]);
+    seed_material_commitment_for_acl(&context, burn_output.burned, 140);
+
+    let redemption_record = token::burn_redemption_address(fixture.mint, burned_handle).0;
+    // A signature from a key outside the KMS context must be rejected.
+    let signatures = kms_public_decrypt_signatures(&attacker, burned_handle, cleartext_amount);
+    let redeem_ix = redeem_burned_amount_secp_ix(
+        &fixture,
+        burn_output.burned,
+        redemption_record,
+        burned_handle,
+        cleartext_amount,
+        fixture.vault_usdc,
+        signatures,
+    );
+    let redeem_result = process_transaction(&context, &[redeem_ix]);
+    assert!(redeem_result.raw_result.is_err());
+}
+
+#[test]
 fn mollusk_redeem_burned_amount_rejects_without_public_decrypt_release() {
     let fixture = TokenMolluskFixture::new();
     let cleartext_amount = 9;
@@ -4866,6 +4973,46 @@ fn redeem_burned_amount_ix_with_vault(
         token::instruction::RedeemBurnedAmount {
             burned_handle,
             cleartext_amount,
+        },
+    )
+}
+
+/// Solana (secp256k1 EIP-712) counterpart of [`redeem_burned_amount_ix_with_vault`]: verifies
+/// the KMS `PublicDecryptVerification` cert on-chain against the active KMS context (no Ed25519).
+fn redeem_burned_amount_secp_ix(
+    fixture: &TokenMolluskFixture,
+    burned_amount_acl: Pubkey,
+    redemption_record: Pubkey,
+    burned_handle: [u8; 32],
+    cleartext_amount: u64,
+    vault_usdc: Pubkey,
+    signatures: Vec<[u8; 65]>,
+) -> Instruction {
+    anchor_ix(
+        token::id(),
+        token::accounts::RedeemBurnedAmountSecp {
+            owner: fixture.owner,
+            mint: fixture.mint,
+            token_account: fixture.alice_token,
+            underlying_mint: fixture.underlying_mint,
+            vault_usdc,
+            destination_usdc: fixture.user_usdc,
+            vault_authority: token::vault_authority_address(fixture.mint).0,
+            burned_amount_acl,
+            burned_material_commitment: host::handle_material_address(burned_amount_acl).0,
+            redemption_record,
+            host_config: fixture.host_config,
+            kms_context: host::kms_context_address(KMS_CONTEXT_ID).0,
+            token_program: spl_token::id(),
+            system_program: system_program::ID,
+            event_authority: event_authority(token::id()),
+            program: token::id(),
+        },
+        token::instruction::RedeemBurnedAmountSecp {
+            burned_handle,
+            cleartext_amount,
+            signatures,
+            extra_data: vec![],
         },
     )
 }
