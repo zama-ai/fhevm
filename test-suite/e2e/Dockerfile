@@ -37,13 +37,17 @@ COPY sdk/js-sdk ./sdk/js-sdk
 # coherent dependency graph for that requested SDK version.
 #
 # The e2e workspace defaults to @zama-fhe/relayer-sdk ^0.5.0-alpha.2 and the
-# committed lockfile pins that nested version, so a plain `npm pkg set` + install
-# silently keeps 0.5.0-alpha via workspace hoisting/dedupe. A root `overrides`
-# entry forces the whole tree to the requested SDK (safe: js-sdk has no
-# relayer-sdk dependency), so the e2e import resolves to exactly that version.
+# committed lockfile pins that exact nested version, so a plain `npm pkg set` +
+# install keeps 0.5.0-alpha as a nested dep that node resolves before any
+# hoisted pin. For the hotswap path, force the requested SDK with a root
+# `overrides` entry (safe: js-sdk has no relayer-sdk dependency) AND drop the
+# lockfile so npm re-resolves one coherent graph instead of restoring the
+# pinned nested version. A build-time assertion below fails loudly if the e2e
+# workspace still resolves a different SDK.
 RUN if [ -n "$RELAYER_SDK_VERSION" ]; then \
       npm pkg set -w test-suite/e2e "dependencies.@zama-fhe/relayer-sdk=${RELAYER_SDK_VERSION}" && \
       npm pkg set "overrides.@zama-fhe/relayer-sdk=${RELAYER_SDK_VERSION}" && \
+      rm -f package-lock.json && \
       npm install && \
       npm prune; \
     else \
