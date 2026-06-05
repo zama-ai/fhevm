@@ -69,13 +69,17 @@ function _buildConfig(env: FheTestBaseEnv): FheTestEthersConfig {
 
   const bobWallet = ethers.HDNodeWallet.fromMnemonic(ethers.Mnemonic.fromPhrase(env.mnemonic), "m/44'/60'/0'/0/1");
 
-  // Use a ethers.NonceManager to avoid nonce issues in parallel mode
-  const signer = new ethers.NonceManager(wallet.connect(provider));
+  // Tests send transactions sequentially (each loop iteration awaits tx.wait()
+  // before the next). Using NonceManager adds a cached-delta layer on top of
+  // populateTransaction's own eth_getTransactionCount fetch, creating a window
+  // where both compute the same nonce on fast local chains (anvil auto-mine).
+  // Plain connected wallets query the chain nonce fresh per send and are safe
+  // for sequential flows.
+  const signer = wallet.connect(provider);
 
   const fheTestContract = new ethers.Contract(env.fheTestAddress, FHETestABI, signer);
 
-  // Use a ethers.NonceManager to avoid nonce issues in parallel mode
-  const bobSigner = new ethers.NonceManager(bobWallet.connect(provider));
+  const bobSigner = bobWallet.connect(provider);
 
   return {
     chainName: env.chainName,
