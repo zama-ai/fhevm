@@ -330,7 +330,7 @@ RPC_URL="$SEPOLIA_RPC_URL" npx hardhat task:bridgeCOFT \
   --network sepolia
 ```
 
-LayerZero delivery on testnet typically takes 1-2 mins. Track it on
+LayerZero delivery on testnet typically takes up to **10 minutes**. Track it on
 [LayerZero Scan Testnet](https://testnet.layerzeroscan.com/).
 
 **WARNING:** Beware that on testnet the layerzeroscan website is very poorly responsive, so a better way to track the cross-chain transfer is to keep watching whenever your balance on Amoy changes — initially
