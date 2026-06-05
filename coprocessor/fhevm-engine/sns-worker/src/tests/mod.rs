@@ -2,12 +2,13 @@ use crate::{
     executor::{garbage_collect, query_sns_tasks, Order},
     keyset::fetch_client_key,
     squash_noise::safe_deserialize,
-    Config, DBConfig, S3Config, S3RetryPolicy, SchedulePolicy,
+    BigCiphertext, Ciphertext128Format, Config, DBConfig, HandleItem, S3Config, S3RetryPolicy,
+    SchedulePolicy,
 };
 use anyhow::{anyhow, Ok};
 use aws_config::BehaviorVersion;
-use fhevm_engine_common::db_keys::DbKeyId;
 use fhevm_engine_common::utils::{to_hex, DatabaseURL};
+use fhevm_engine_common::{chain_id::ChainId, db_keys::DbKeyId};
 use serde::{Deserialize, Serialize};
 use serial_test::serial;
 use std::{
@@ -299,6 +300,72 @@ async fn test_lifo_mode() {
     } else {
         panic!("No tasks found in Asc order");
     }
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn enqueue_upload_task_refreshes_format_without_handle_unique_index() {
+    init_tracing();
+
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .unwrap();
+
+    sqlx::query("DROP INDEX IF EXISTS idx_ciphertext_digest_no_tenant")
+        .execute(&pool)
+        .await
+        .expect("drop tenantless handle index");
+
+    let handle = vec![0x42u8; 32];
+    let key_id_gw = vec![0x24u8; 32];
+    sqlx::query(
+        "INSERT INTO ciphertext_digest (
+            host_chain_id, key_id_gw, handle, transaction_id, ciphertext128_format
+        )
+        VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(1_i64)
+    .bind(&key_id_gw)
+    .bind(&handle)
+    .bind(Option::<Vec<u8>>::None)
+    .bind(i16::from(Ciphertext128Format::UncompressedOnCpu))
+    .execute(&pool)
+    .await
+    .expect("insert pending digest row");
+
+    let item = HandleItem {
+        host_chain_id: ChainId::try_from(1_i64).expect("valid chain id"),
+        key_id_gw,
+        handle: handle.clone(),
+        ct64_compressed: Arc::new(vec![0x01, 0x02]),
+        ct128: Arc::new(BigCiphertext::new(
+            vec![0x03, 0x04],
+            Ciphertext128Format::CompressedOnCpu,
+        )),
+        span: tracing::info_span!("test_task"),
+        transaction_id: None,
+    };
+
+    let mut tx = pool.begin().await.expect("begin transaction");
+    item.enqueue_upload_task(&mut tx)
+        .await
+        .expect("enqueue upload task");
+    tx.commit().await.expect("commit transaction");
+
+    let format: i16 =
+        sqlx::query_scalar("SELECT ciphertext128_format FROM ciphertext_digest WHERE handle = $1")
+            .bind(&handle)
+            .fetch_one(&pool)
+            .await
+            .expect("read ciphertext128 format");
+
+    assert_eq!(format, i16::from(Ciphertext128Format::CompressedOnCpu));
 }
 
 #[tokio::test]

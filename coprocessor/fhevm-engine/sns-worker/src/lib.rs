@@ -276,15 +276,27 @@ impl HandleItem {
                     host_chain_id, key_id_gw, handle, transaction_id, ciphertext128_format
                 )
                 VALUES ($1, $2, $3, $4, $5)
-                ON CONFLICT (handle) DO UPDATE
-                SET ciphertext128_format = EXCLUDED.ciphertext128_format
-                WHERE ciphertext_digest.ciphertext128 IS NULL",
+                ON CONFLICT DO NOTHING",
             )
             .bind(self.host_chain_id.as_i64())
             .bind(&self.key_id_gw)
             .bind(&self.handle)
             .bind(&self.transaction_id)
             .bind(ct128_format)
+            .execute(db_txn.as_mut())
+            .await?;
+
+            // Older compatible schemas only guarantee uniqueness on
+            // (tenant_id, handle), so avoid ON CONFLICT (handle) here.
+            sqlx::query(
+                "UPDATE ciphertext_digest
+                SET ciphertext128_format = $1
+                WHERE handle = $2
+                  AND ciphertext128 IS NULL
+                  AND ciphertext128_format <> $1",
+            )
+            .bind(ct128_format)
+            .bind(&self.handle)
             .execute(db_txn.as_mut())
             .await?;
         }
