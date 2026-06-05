@@ -1,4 +1,4 @@
-import type { Bytes20, Bytes32, ChecksummedAddress, UintNumber } from '../types/primitives.js';
+import type { ChecksummedAddress, UintNumber } from '../types/primitives.js';
 import type { ZkProof } from '../types/zkProof-p.js';
 import type { EncryptionBits, FheType } from '../types/fheType.js';
 import type { ZkProofBuilder } from '../types/zkProofBuilder.js';
@@ -16,10 +16,9 @@ import type {
   AddressValueLike,
 } from '../types/primitives.js';
 import { assert } from '../base/errors/InternalError.js';
-import { isUint64, uint256ToBytes32 } from '../base/uint.js';
-import { isAddress } from '../base/address.js';
-import { hexToBytes20 } from '../base/bytes.js';
+import { isUint64 } from '../base/uint.js';
 import { ZkProofError } from '../errors/ZkProofError.js';
+import { buildInputProofMetaData } from './buildInputProofMetaData-p.js';
 import { createTypedValue, TypedValueArrayBuilder } from '../base/typedValue.js';
 import { toZkProof } from './ZkProof-p.js';
 import { encryptionBitsFromFheType, fheTypeNameFromTypeName } from '../handle/FheType.js';
@@ -159,57 +158,25 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
     // should be guaranteed at this point
     assert(this.#totalBits <= this.#bitsCapacity);
 
-    if (!isAddress(contractAddress)) {
-      throw new ZkProofError({
-        message: `Invalid contract address: ${contractAddress}`,
-      });
-    }
-    if (!isAddress(userAddress)) {
-      throw new ZkProofError({
-        message: `Invalid user address: ${userAddress}`,
-      });
-    }
-
     const aclContractAddress = context.chain.fhevm.contracts.acl.address;
     const chainId = context.chain.id;
 
-    if (!isAddress(aclContractAddress)) {
-      throw new ZkProofError({
-        message: `Invalid ACL address: ${aclContractAddress}`,
-      });
-    }
     if (!isUint64(chainId)) {
       throw new ZkProofError({
         message: `Invalid chain ID uint64: ${chainId}`,
       });
     }
 
-    // Note about hexToBytes(<address>)
-    // ================================
-    // All addresses are 42 characters long strings.
-    // hexToBytes(<42-characters hex string>) always returns a 20-byte long Uint8Array
-
-    // Bytes20
-    const contractAddressBytes20: Bytes20 = hexToBytes20(contractAddress);
-
-    // Bytes20
-    const userAddressBytes20: Bytes20 = hexToBytes20(userAddress);
-
-    // Bytes20
-    const aclContractAddressBytes20: Bytes20 = hexToBytes20(aclContractAddress);
-
-    // Bytes32
-    const chainIdBytes32: Bytes32 = uint256ToBytes32(chainId);
-
-    const metaDataLength = 3 * 20 + 32;
-    const metaData = new Uint8Array(metaDataLength);
-
-    metaData.set(contractAddressBytes20, 0);
-    metaData.set(userAddressBytes20, 20);
-    metaData.set(aclContractAddressBytes20, 40);
-    metaData.set(chainIdBytes32, 60);
-
-    assert(metaData.length - chainIdBytes32.length === 60);
+    // Prover side of the input-proof auxiliary data. It MUST agree with the
+    // coprocessor zkproof-worker verifier byte-for-byte: EVM hosts use the
+    // 92-byte 20-byte-address layout, Solana hosts (RFC-021) the 128-byte bytes32
+    // layout. Per-host identity validation happens inside the helper.
+    const metaData = buildInputProofMetaData({
+      chainId,
+      contractAddress,
+      userAddress,
+      aclContractAddress,
+    });
 
     const ciphertextWithZKProofBytes: Uint8Array = await context.runtime.encrypt.buildWithProofPacked({
       typedValues: [...this.#builder.build()],
