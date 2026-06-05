@@ -67,10 +67,10 @@ async fn main() -> Result<()> {
 
     let program_id = Pubkey::from_str(&args.program_id)
         .with_context(|| format!("invalid program id {}", args.program_id))?;
-    let chain_id =
-        ChainId::try_from(args.host_chain_id).with_context(|| {
-            format!("invalid host chain id {}", args.host_chain_id)
-        })?;
+    // A Solana host id carries the RFC-021 chain-type high bit and is passed as the
+    // negative i64 bit pattern, which the strict ChainId::try_from rejects;
+    // from_canonical_u64 accepts the full u64 host id for EVM and Solana alike.
+    let chain_id = ChainId::from_canonical_u64(args.host_chain_id as u64);
 
     let db =
         Database::new(&args.database_url, chain_id, args.dependence_cache_size)
