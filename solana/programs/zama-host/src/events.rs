@@ -48,6 +48,30 @@ pub struct HostConfigUpdatedEvent {
     pub updated_slot: u64,
 }
 
+/// Emitted when a KMS context is defined (mirrors `ProtocolConfig.NewKmsContext`).
+#[event]
+pub struct NewKmsContextEvent {
+    /// Event schema version.
+    pub version: u8,
+    /// The new context id.
+    pub kms_context_id: u64,
+    /// KMS node signer EVM addresses authorized in this context.
+    pub signers: Vec<[u8; 20]>,
+    /// Public-decrypt signature threshold.
+    pub public_decryption_threshold: u8,
+    /// User-decrypt signature threshold.
+    pub user_decryption_threshold: u8,
+}
+
+/// Emitted when a KMS context is destroyed (mirrors `ProtocolConfig.KmsContextDestroyed`).
+#[event]
+pub struct KmsContextDestroyedEvent {
+    /// Event schema version.
+    pub version: u8,
+    /// The destroyed context id.
+    pub kms_context_id: u64,
+}
+
 /// Emitted when ciphertext material is committed for a host handle.
 #[event]
 pub struct HandleMaterialCommittedEvent {

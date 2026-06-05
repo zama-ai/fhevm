@@ -11,6 +11,8 @@ pub const SOLANA_POC_CHAIN_ID: u64 = 12345;
 
 /// Seed for the singleton host config PDA.
 pub const HOST_CONFIG_SEED: &[u8] = b"host-config";
+/// Seed prefix for KMS context PDAs (one per `kmsContextId`, mirroring ProtocolConfig).
+pub const KMS_CONTEXT_SEED: &[u8] = b"kms-context";
 /// Seed prefix for canonical ACL record PDAs.
 pub const ACL_RECORD_SEED: &[u8] = b"acl-record";
 /// Seed prefix for overflow ACL permission PDAs.

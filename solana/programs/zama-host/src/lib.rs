@@ -54,6 +54,21 @@ pub mod zama_host {
         instructions::initialize_host_config(ctx, args)
     }
 
+    /// Defines a new KMS context (mirror of `ProtocolConfig.defineNewKmsContext`).
+    pub fn define_kms_context(
+        ctx: Context<DefineKmsContext>,
+        context_id: u64,
+        signers: Vec<[u8; 20]>,
+        thresholds: KmsThresholds,
+    ) -> Result<()> {
+        instructions::define_kms_context(ctx, context_id, signers, thresholds)
+    }
+
+    /// Destroys a non-current KMS context (mirror of `ProtocolConfig.destroyKmsContext`).
+    pub fn destroy_kms_context(ctx: Context<DestroyKmsContext>, context_id: u64) -> Result<()> {
+        instructions::destroy_kms_context(ctx, context_id)
+    }
+
     pub fn set_host_pause(ctx: Context<HostAdmin>, paused: bool) -> Result<()> {
         instructions::set_host_pause(ctx, paused)
     }

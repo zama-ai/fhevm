@@ -21,6 +21,7 @@ pub mod deny_subject_record;
 pub mod handle_material_commitment;
 pub mod host_chain_address;
 pub mod host_config;
+pub mod kms_context;
 pub mod transient_session;
 pub mod user_decryption_delegation;
 
@@ -30,6 +31,7 @@ pub use deny_subject_record::*;
 pub use handle_material_commitment::*;
 pub use host_chain_address::*;
 pub use host_config::*;
+pub use kms_context::*;
 pub use transient_session::*;
 pub use user_decryption_delegation::*;
 
@@ -50,8 +52,6 @@ pub struct InitializeHostConfigArgs {
     pub coprocessor_signer: [u8; 20],
     /// EVM `Decryption` contract address (EIP-712 verifying contract for KMS certs).
     pub decryption_contract: [u8; 20],
-    /// Authorized KMS EVM signer for public-decrypt certificates (v0: single signer).
-    pub kms_signer: [u8; 20],
     /// Authority allowed to commit ciphertext material readiness.
     pub material_authority: Pubkey,
     /// Authority allowed to call `test_emit_*` event shims.
@@ -572,6 +572,11 @@ pub fn input_proof_message(
 /// Returns the canonical singleton host config address.
 pub fn host_config_address() -> (Pubkey, u8) {
     Pubkey::find_program_address(&[HOST_CONFIG_SEED], &crate::ID)
+}
+
+/// Returns the canonical KMS context address for a context id.
+pub fn kms_context_address(context_id: u64) -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[KMS_CONTEXT_SEED, &context_id.to_le_bytes()], &crate::ID)
 }
 
 /// Returns the canonical ACL record address for a nonce key and sequence.

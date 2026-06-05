@@ -32,7 +32,7 @@ fn host_config_with(
         input_verification_contract: [0u8; 20],
         coprocessor_signer: [0u8; 20],
         decryption_contract: [0u8; 20],
-        kms_signer: [0u8; 20],
+        current_kms_context_id: 0,
         material_authority: Pubkey::default(),
         test_authority: Pubkey::default(),
         paused: false,

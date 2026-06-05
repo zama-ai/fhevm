@@ -238,6 +238,24 @@ pub mod confidential_token {
         instructions::disclose_amount(ctx, amount_handle, cleartext_amount)
     }
 
+    /// Gateway-compatible amount disclosure: verifies the KMS `PublicDecryptVerification`
+    /// EIP-712 certificate on-chain via secp256k1_recover against the HostConfig KMS signer.
+    pub fn disclose_amount_secp(
+        ctx: Context<DiscloseAmountSecp>,
+        amount_handle: [u8; 32],
+        cleartext_amount: u64,
+        signatures: Vec<[u8; 65]>,
+        extra_data: Vec<u8>,
+    ) -> Result<()> {
+        instructions::disclose_amount_secp(
+            ctx,
+            amount_handle,
+            cleartext_amount,
+            signatures,
+            extra_data,
+        )
+    }
+
     /// Redeems a previously burned encrypted amount from the underlying-token vault.
     pub fn redeem_burned_amount(
         ctx: Context<RedeemBurnedAmount>,

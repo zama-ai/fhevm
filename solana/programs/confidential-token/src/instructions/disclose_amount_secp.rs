@@ -1,25 +1,22 @@
-//! Publishes KMS-certified cleartexts for current confidential balances, verifying
+//! Publishes KMS-certified cleartexts for token-scoped encrypted amounts, verifying
 //! the KMS `PublicDecryptVerification` EIP-712 certificate on-chain via
 //! `secp256k1_recover` (the gateway-compatible path, #1494 Phase 3 cert-secp).
 //!
-//! Mirrors `disclose_balance` but trusts a gateway-level KMS signer configured on
-//! `HostConfig` (EVM secp256k1) instead of the per-mint Ed25519 verifier. Added
-//! alongside the Ed25519 path; the legacy path stays until the secp path is adopted.
+//! Amount-handle counterpart of `disclose_balance_secp`; trusts the gateway-level KMS
+//! signer on `HostConfig`. Added alongside the Ed25519 `disclose_amount`.
 
 use super::*;
 
-/// Accounts for disclosing a KMS-certified current balance via secp256k1 EIP-712.
+/// Accounts for disclosing a KMS-certified token-scoped amount via secp256k1 EIP-712.
 #[derive(Accounts)]
 #[event_cpi]
-pub struct DiscloseBalanceSecp<'info> {
-    /// Confidential mint the disclosed balance belongs to.
+pub struct DiscloseAmountSecp<'info> {
+    /// Confidential mint the disclosed amount belongs to.
     pub mint: Box<Account<'info, ConfidentialMint>>,
-    /// Confidential token account whose current balance is disclosed.
-    pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
-    /// Current balance ACL record for the disclosed handle.
-    pub balance_acl_record: Box<Account<'info, zama_host::AclRecord>>,
+    /// Token-scoped amount ACL record for the disclosed handle.
+    pub amount_acl_record: Box<Account<'info, zama_host::AclRecord>>,
     /// Material commitment witness for the disclosed handle.
-    pub balance_material_commitment: Box<Account<'info, zama_host::HandleMaterialCommitment>>,
+    pub amount_material_commitment: Box<Account<'info, zama_host::HandleMaterialCommitment>>,
     /// Host config carrying the gateway KMS verifier params + active context id.
     #[account(
         seeds = [zama_host::HOST_CONFIG_SEED],
@@ -36,40 +33,30 @@ pub struct DiscloseBalanceSecp<'info> {
     pub kms_context: Box<Account<'info, zama_host::KmsContext>>,
 }
 
-/// Emits a KMS-certified cleartext after on-chain secp256k1 verification of the KMS
-/// `PublicDecryptVerification` EIP-712 certificate.
-pub fn disclose_balance_secp(
-    ctx: Context<DiscloseBalanceSecp>,
+/// Emits a KMS-certified cleartext for a token-scoped amount after on-chain
+/// secp256k1 verification of the KMS `PublicDecryptVerification` certificate.
+pub fn disclose_amount_secp(
+    ctx: Context<DiscloseAmountSecp>,
+    amount_handle: [u8; 32],
     cleartext_amount: u64,
     signatures: Vec<[u8; 65]>,
     extra_data: Vec<u8>,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
-    require_keys_eq!(
-        ctx.accounts.token_account.mint,
+    assert_token_amount_acl(
+        &ctx.accounts.amount_acl_record,
+        amount_handle,
         ctx.accounts.mint.key(),
-        ConfidentialTokenError::MintMismatch
-    );
-    assert_confidential_token_account_shape(
-        &ctx.accounts.token_account,
-        ctx.accounts.mint.key(),
-        ctx.accounts.token_account.owner,
+        ctx.accounts.mint.compute_signer,
     )?;
-    assert_current_balance_acl(
-        &ctx.accounts.balance_acl_record,
-        ctx.accounts.balance_acl_record.key(),
-        &ctx.accounts.token_account,
-        ctx.accounts.mint.key(),
-    )?;
-    let handle = ctx.accounts.token_account.balance_handle;
     assert_material_commitment(
-        &ctx.accounts.balance_material_commitment,
-        ctx.accounts.balance_material_commitment.key(),
-        &ctx.accounts.balance_acl_record,
-        handle,
+        &ctx.accounts.amount_material_commitment,
+        ctx.accounts.amount_material_commitment.key(),
+        &ctx.accounts.amount_acl_record,
+        amount_handle,
     )?;
-    assert_public_decrypt_released(&ctx.accounts.balance_acl_record)?;
+    assert_public_decrypt_released(&ctx.accounts.amount_acl_record)?;
 
     let config = &ctx.accounts.host_config;
     let kms_context = &ctx.accounts.kms_context;
@@ -90,7 +77,7 @@ pub fn disclose_balance_secp(
     require!(
         zama_host::eip712::verify_kms_public_decrypt(
             &verifier,
-            &[handle],
+            &[amount_handle],
             &kms_decrypted_result_bytes(cleartext_amount),
             &extra_data,
             &signatures,
@@ -98,12 +85,10 @@ pub fn disclose_balance_secp(
         ConfidentialTokenError::InvalidKmsCertificate
     );
 
-    emit_cpi!(BalanceDisclosedEvent {
+    emit_cpi!(AmountDisclosedEvent {
         version: APP_EVENT_VERSION,
         mint: ctx.accounts.mint.key(),
-        owner: ctx.accounts.token_account.owner,
-        token_account: ctx.accounts.token_account.key(),
-        handle,
+        handle: amount_handle,
         cleartext_amount,
     });
     Ok(())

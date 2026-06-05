@@ -60,6 +60,21 @@ pub enum ZamaHostError {
     /// The gateway verifier config (coprocessor signer / verifying contract) is unset.
     #[msg("gateway verifier config is not set")]
     GatewayVerifierConfigUnset,
+    /// A KMS context must define at least one signer.
+    #[msg("KMS context has no signers")]
+    EmptyKmsContext,
+    /// A KMS context exceeds the maximum supported signer count.
+    #[msg("KMS context exceeds the maximum signer count")]
+    TooManyKmsSigners,
+    /// A KMS threshold is zero or exceeds the signer count.
+    #[msg("KMS context threshold is invalid")]
+    InvalidKmsThreshold,
+    /// A new KMS context id must be the current id plus one (monotonic).
+    #[msg("KMS context id is not the next sequential id")]
+    InvalidKmsContextId,
+    /// The current active KMS context cannot be destroyed.
+    #[msg("current KMS context cannot be destroyed")]
+    CurrentKmsContextCannotBeDestroyed,
     /// The input handle version byte is unsupported.
     #[msg("input handle version is unsupported")]
     InvalidInputHandleVersion,

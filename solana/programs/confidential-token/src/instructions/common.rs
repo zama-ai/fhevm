@@ -1701,6 +1701,14 @@ pub(crate) fn assert_public_decrypt_released(
     Ok(())
 }
 
+/// Encodes a u64 cleartext as the 32-byte big-endian (abi `uint256`) decrypted result
+/// the KMS signs over in the `PublicDecryptVerification` certificate (cert-secp path).
+pub(crate) fn kms_decrypted_result_bytes(cleartext_amount: u64) -> [u8; 32] {
+    let mut decrypted = [0u8; 32];
+    decrypted[24..].copy_from_slice(&cleartext_amount.to_be_bytes());
+    decrypted
+}
+
 pub(crate) fn assert_canonical_vault_token_account(
     vault_usdc: Pubkey,
     vault_authority: Pubkey,

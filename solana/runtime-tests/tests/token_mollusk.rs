@@ -4603,8 +4603,10 @@ fn decrypted_u64_bytes(value: u64) -> [u8; 32] {
     decrypted
 }
 
-/// Host config seeded with a gateway KMS verifier (single signer, threshold 1).
-fn kms_host_config_account(authority: Pubkey, kms_signer: [u8; 20]) -> Account {
+const KMS_CONTEXT_ID: u64 = 1;
+
+/// Host config pointing at the active KMS context id + the gateway decryption contract.
+fn kms_host_config_account(authority: Pubkey) -> Account {
     Account {
         lamports: 1_000_000_000,
         data: serialized_account(host::HostConfig {
@@ -4615,7 +4617,7 @@ fn kms_host_config_account(authority: Pubkey, kms_signer: [u8; 20]) -> Account {
             input_verification_contract: [0u8; 20],
             coprocessor_signer: [0u8; 20],
             decryption_contract: SECP_DECRYPTION_CONTRACT,
-            kms_signer,
+            current_kms_context_id: KMS_CONTEXT_ID,
             material_authority: Pubkey::new_unique(),
             test_authority: authority,
             paused: false,
@@ -4629,6 +4631,32 @@ fn kms_host_config_account(authority: Pubkey, kms_signer: [u8; 20]) -> Account {
         executable: false,
         rent_epoch: 0,
     }
+}
+
+/// KMS context PDA holding a single signer + threshold-1 at the test context id.
+fn kms_context_account(signer: [u8; 20]) -> (Pubkey, Account) {
+    let (pubkey, bump) = host::kms_context_address(KMS_CONTEXT_ID);
+    (
+        pubkey,
+        Account {
+            lamports: 1_000_000_000,
+            data: serialized_account(host::KmsContext {
+                context_id: KMS_CONTEXT_ID,
+                signers: vec![signer],
+                thresholds: host::KmsThresholds {
+                    public_decryption: 1,
+                    user_decryption: 1,
+                    kms_gen: 1,
+                    mpc: 1,
+                },
+                destroyed: false,
+                bump,
+            }),
+            owner: host::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
 }
 
 /// KMS `PublicDecryptVerification` signature set over a single handle + cleartext.
@@ -4669,6 +4697,7 @@ fn disclose_balance_secp_ix(
             )
             .0,
             host_config: fixture.host_config,
+            kms_context: host::kms_context_address(KMS_CONTEXT_ID).0,
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
@@ -4686,10 +4715,9 @@ fn mollusk_disclose_balance_secp_accepts_real_kms_certificate() {
     let key = k256::ecdsa::SigningKey::from_bytes(&[0x55u8; 32].into()).unwrap();
     let cleartext_amount = 125;
     let mut accounts = fixture.base_accounts();
-    accounts.insert(
-        fixture.host_config,
-        kms_host_config_account(fixture.owner, secp_evm_address(&key)),
-    );
+    accounts.insert(fixture.host_config, kms_host_config_account(fixture.owner));
+    let (kms_ctx, kms_ctx_account) = kms_context_account(secp_evm_address(&key));
+    accounts.insert(kms_ctx, kms_ctx_account);
     let context = mollusk().with_context(accounts);
 
     let request_result = process_transaction(&context, &[request_disclose_balance_ix(&fixture)]);
@@ -4726,10 +4754,9 @@ fn mollusk_disclose_balance_secp_rejects_unauthorized_signer() {
     let attacker = k256::ecdsa::SigningKey::from_bytes(&[0x66u8; 32].into()).unwrap();
     let cleartext_amount = 125;
     let mut accounts = fixture.base_accounts();
-    accounts.insert(
-        fixture.host_config,
-        kms_host_config_account(fixture.owner, secp_evm_address(&configured)),
-    );
+    accounts.insert(fixture.host_config, kms_host_config_account(fixture.owner));
+    let (kms_ctx, kms_ctx_account) = kms_context_account(secp_evm_address(&configured));
+    accounts.insert(kms_ctx, kms_ctx_account);
     let context = mollusk().with_context(accounts);
 
     let request_result = process_transaction(&context, &[request_disclose_balance_ix(&fixture)]);
@@ -5231,7 +5258,7 @@ fn host_config_account(authority: Pubkey) -> Account {
             input_verification_contract: [0u8; 20],
             coprocessor_signer: [0u8; 20],
             decryption_contract: [0u8; 20],
-            kms_signer: [0u8; 20],
+            current_kms_context_id: 0,
             material_authority: Pubkey::new_unique(),
             test_authority: authority,
             paused: false,

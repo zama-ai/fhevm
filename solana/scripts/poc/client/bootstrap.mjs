@@ -22,8 +22,9 @@ const [hostConfig] = PublicKey.findProgramAddressSync([Buffer.from("host-config"
 
 // borsh(InitializeHostConfigArgs): u64 chain_id | Pubkey input_verifier_authority |
 // u64 gateway_chain_id | [u8;20] input_verification_contract | [u8;20] coprocessor_signer |
-// 2x Pubkey (material, test) | 3x bool. Gateway verifier fields zeroed here (the secp
-// input-bind path is unused by this bootstrap; the Rust live-client is canonical).
+// [u8;20] decryption_contract | 2x Pubkey (material, test) | 3x bool. Gateway verifier
+// fields zeroed here (the secp paths are unused by this bootstrap; the Rust live-client
+// is canonical). The KMS signer set lives in a separate KmsContext PDA, not in args.
 const chainId = Buffer.alloc(8);
 chainId.writeBigUInt64LE(12345n); // SOLANA_POC_CHAIN_ID
 const args = Buffer.concat([
@@ -33,7 +34,6 @@ const args = Buffer.concat([
   Buffer.alloc(20), // input_verification_contract
   Buffer.alloc(20), // coprocessor_signer
   Buffer.alloc(20), // decryption_contract
-  Buffer.alloc(20), // kms_signer
   wallet.publicKey.toBuffer(), // material_authority
   wallet.publicKey.toBuffer(), // test_authority
   Buffer.from([1]), // mock_input_enabled

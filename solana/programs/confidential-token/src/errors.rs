@@ -71,6 +71,9 @@ pub enum ConfidentialTokenError {
     /// The host gateway verifier config (KMS signer / decryption contract) is unset.
     #[msg("gateway verifier config is not set")]
     GatewayVerifierConfigUnset,
+    /// The provided KMS context is not the active context or has been destroyed.
+    #[msg("KMS context is not active")]
+    InvalidKmsContext,
     /// Material commitment witness did not match the disclosed handle.
     #[msg("material commitment witness does not match")]
     MaterialCommitmentMismatch,
