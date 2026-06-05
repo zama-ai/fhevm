@@ -1,6 +1,6 @@
 /**
  * Service orchestrator. Spawns one chain-worker per configured chain, shares
- * a single SQLite connection (sqlite3 serialises writes internally so this
+ * a single SQLite connection (sqlite3 serializes writes internally so this
  * is safe), and wires up graceful shutdown so SIGINT/SIGTERM lets the current
  * poll cycle finish before tearing down.
  *
