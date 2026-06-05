@@ -99,6 +99,14 @@ pub fn validate_0x_hexs(hex_strs: &Vec<String>) -> Result<(), ValidationError> {
     Ok(())
 }
 
+/// Validates an empty string or a valid `0x`-prefixed hex string.
+pub fn validate_0x_hex_allow_empty(hex_str: &str) -> Result<(), ValidationError> {
+    if hex_str.is_empty() {
+        return Ok(());
+    }
+    validate_0x_hex(hex_str)
+}
+
 /// Validates the extraData field format for decryption requests.
 ///
 /// Accepted formats:

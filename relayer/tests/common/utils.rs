@@ -9,8 +9,12 @@ use fhevm_relayer::run_fhevm_relayer;
 use fhevm_relayer::store::sql::client::PgClient;
 use fhevm_relayer::tracing::init_tracing_once;
 
-use alloy::primitives::{Address, Bytes};
+use alloy::primitives::{Address, Bytes, U256};
+use alloy::signers::{local::PrivateKeySigner, SignerSync};
 use alloy::sol_types::{SolCall, SolValue};
+use fhevm_gateway_bindings::decryption::IDecryption::{
+    RequestValiditySeconds, UserDecryptionRequestPayload,
+};
 use fhevm_host_bindings::acl::ACL;
 use rand::{rng, RngExt};
 use std::str::FromStr;
@@ -18,6 +22,7 @@ use tempfile::TempDir;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+use user_decryption_signature::{compute_user_decrypt_digest, default_user_decrypt_domain};
 
 use super::test_schema::TestSchema;
 
@@ -607,6 +612,64 @@ pub const TEST_HOST_ACL_ADDRESS_2: &str = "0x22222222222222222222222222222222222
 #[allow(dead_code)]
 pub fn random_handle() -> String {
     random_handle_with_chain_id(TEST_HOST_CHAIN_ID)
+}
+
+/// Decryption contract address from the test config — the EIP-712 verifying contract the v3
+/// signature pre-check uses.
+pub const TEST_DECRYPTION_ADDRESS: &str = "0xB8Ae44365c45A7C5256b14F607CaE23BC040c354";
+
+/// Fixed EOA used to sign v3 user-decryption requests in tests.
+#[allow(dead_code)]
+pub fn user_decrypt_test_signer() -> PrivateKeySigner {
+    PrivateKeySigner::from_str("0x1111111111111111111111111111111111111111111111111111111111111111")
+        .expect("valid test private key")
+}
+
+/// Sign a v3 unified user-decryption envelope in place: recompute the EIP-712 digest from the
+/// envelope's `attestedPayload` fields and write a real EOA `signature`. The caller must have set
+/// `attestedPayload.userAddress` to `signer`'s address. The domain chain id is read from the first
+/// handle (as the relayer does); the verifying contract is [`TEST_DECRYPTION_ADDRESS`].
+#[allow(dead_code)]
+pub fn sign_v3_user_decrypt_envelope(payload: &mut serde_json::Value, signer: &PrivateKeySigner) {
+    let p = &payload["attestedPayload"];
+
+    let user_address = Address::from_str(p["userAddress"].as_str().unwrap()).unwrap();
+    let public_key = Bytes::from_str(p["publicKey"].as_str().unwrap()).unwrap();
+    let allowed_contracts: Vec<Address> = p["allowedContracts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| Address::from_str(a.as_str().unwrap()).unwrap())
+        .collect();
+    let start = U256::from_str(p["requestValidity"]["startTimestamp"].as_str().unwrap()).unwrap();
+    let duration =
+        U256::from_str(p["requestValidity"]["durationSeconds"].as_str().unwrap()).unwrap();
+    let extra_data = Bytes::from_str(p["extraData"].as_str().unwrap()).unwrap();
+
+    // Chain id is encoded at bytes 22..30 of the first handle.
+    let handle_hex = p["handles"][0]["ctHandle"].as_str().unwrap();
+    let handle_bytes = hex::decode(handle_hex.strip_prefix("0x").unwrap_or(handle_hex)).unwrap();
+    let chain_id = u64::from_be_bytes(handle_bytes[22..30].try_into().unwrap());
+
+    let domain = default_user_decrypt_domain(
+        chain_id,
+        Address::from_str(TEST_DECRYPTION_ADDRESS).unwrap(),
+    );
+    let request = UserDecryptionRequestPayload {
+        userAddress: user_address,
+        publicKey: public_key,
+        allowedContracts: allowed_contracts,
+        requestValidity: RequestValiditySeconds {
+            startTimestamp: start,
+            durationSeconds: duration,
+        },
+        extraData: extra_data,
+        signature: Bytes::new(),
+    };
+    let digest = compute_user_decrypt_digest(&request, &domain);
+    let signature = signer.sign_hash_sync(&digest).unwrap();
+    payload["signature"] =
+        serde_json::Value::String(format!("0x{}", hex::encode(signature.as_bytes())));
 }
 
 /// Generate a random handle with a specific chain_id embedded at bytes 22..30.

@@ -24,7 +24,7 @@
 //! See [`Settings`] for detailed configuration options.
 
 use crate::gateway::{self, throttlers::init_throttlers};
-use crate::host::HostChainIdChecker;
+use crate::host::{HostChainIdChecker, UserDecryptSignaturePreChecker};
 use anyhow::Context;
 use std::sync::Arc;
 use tokio::sync::oneshot;
@@ -129,6 +129,20 @@ pub async fn run_fhevm_relayer(
         settings.host_chains.iter().map(|hc| hc.chain_id).collect(),
     ));
 
+    // Build the v3 signature pre-checker. Reuses the host ACL retry policy so transport
+    // failures behave like ACL call failures.
+    let signature_prechecker = Arc::new(UserDecryptSignaturePreChecker::new(
+        &settings.host_chains,
+        &settings.gateway.contracts.decryption_address,
+        settings.user_decrypt_signature_check.erc1271_gas_limit,
+        settings
+            .gateway
+            .readiness_checker
+            .host_acl_check
+            .retry
+            .clone(),
+    )?);
+
     let mut settings = settings;
 
     // === Services Phase ===
@@ -143,6 +157,7 @@ pub async fn run_fhevm_relayer(
             settings.gateway.contracts.user_decrypt_shares_threshold,
             bouncer_throttlers,
             host_chain_id_checker,
+            signature_prechecker,
         )
         .await;
 
@@ -205,6 +220,7 @@ fn ensure_global_init(settings: &Settings) -> anyhow::Result<&'static Registry> 
         metrics::init_statuses_metrics(&registry, settings.metrics.clone());
         metrics::init_db_metrics(&registry, settings.metrics.clone());
         metrics::init_queue_metrics(&registry);
+        metrics::init_signature_precheck_metrics(&registry);
         metrics::init_retry_after_metrics(
             &registry,
             settings
