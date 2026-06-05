@@ -118,6 +118,7 @@ Do not mix `--handle` and `--type` in the same cached decrypt command. When neit
 | `-n, --network testnet` | FHETest `0x94B9d3aF050687D1F76251aD7D09a1F216a19845` on Ethereum Sepolia. Default. |
 | `-n, --network devnet` | FHETest `0xf56a7990E63a63eC75aD9Aa07De8cB6bF7baa805` on Ethereum Sepolia with devnet relayer config. |
 | `-n, --network devnet-amoy` | FHETest `0x7553CB9124f974Ee475E5cE45482F90d5B6076BC` on Polygon Amoy with devnet relayer config. |
+| `-n, --network mainnet` | FHeTest `0xf56a7990E63a63eC75aD9Aa07De8cB6bF7baa805`on Ethereum Mainnet with mainnet relayer config. |
 | `--rpc-url <url>` | Host chain RPC override. Otherwise uses the matching env var, then a public fallback. |
 | `--relayer-url <url>` | Relayer base URL override. `localhost:3000` becomes `http://localhost:3000`. |
 | `--contract <address>` | FHETest contract override. This is command-specific, not a global option. |
@@ -128,6 +129,7 @@ Supported FHETest value types are `bool`, `uint8`, `uint16`, `uint32`, `uint64`,
 
 | Variable | Used for |
 | --- | --- |
+| `MAINNET_RPC_URL` | RPC for `mainnet`. |
 | `SEPOLIA_RPC_URL` | RPC for `testnet` and `devnet`. |
 | `POLYGON_AMOY_RPC_URL` | RPC for `devnet-amoy`. |
 | `ZAMA_FHEVM_API_KEY` | Optional SDK relayer auth when the target environment requires an API key. |

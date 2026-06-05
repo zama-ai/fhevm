@@ -1,6 +1,6 @@
 import type { Hex } from "viem";
 
-export const NETWORKS = ["testnet", "devnet", "devnet-amoy"] as const;
+export const NETWORKS = ["testnet", "devnet", "devnet-amoy", "mainnet"] as const;
 export type NetworkName = (typeof NETWORKS)[number];
 export const DEFAULT_NETWORK: NetworkName = "testnet";
 

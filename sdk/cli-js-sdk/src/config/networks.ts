@@ -1,15 +1,19 @@
-import { defineFhevmChain, sepolia } from "@fhevm/sdk/chains";
+import {
+  defineFhevmChain,
+  mainnet,
+  sepolia,
+} from "@fhevm/sdk/chains";
 import {
   mainnet as viemMainnet,
   polygonAmoy,
   sepolia as viemSepolia,
 } from "viem/chains";
-import type { Chain } from "viem";
 
 import { DEFAULT_NETWORK } from "../types";
 import type { NetworkName } from "../types";
 import type { NetworkConfig } from "./types";
 
+export const DEFAULT_MAINNET_RPC_URL = "https://eth.drpc.org";
 export const DEFAULT_SEPOLIA_RPC_URL = "https://sepolia.drpc.org";
 export const DEFAULT_POLYGON_AMOY_RPC_URL =
   "https://rpc-amoy.polygon.technology";
@@ -87,9 +91,14 @@ const NETWORK_CONFIGS = {
     envRpcUrl: "POLYGON_AMOY_RPC_URL",
     fheTestAddress: "0x7553CB9124f974Ee475E5cE45482F90d5B6076BC",
   },
+  "mainnet": {
+    fhevmChain: mainnet,
+    hostChain: viemMainnet,
+    defaultRpcUrl: DEFAULT_MAINNET_RPC_URL,
+    envRpcUrl: "MAINNET_RPC_URL",
+    fheTestAddress: "0xba4d707745689eD409d4Afac8722224f5FD78C63",
+  },
 } as const satisfies Record<NetworkName, NetworkConfig>;
-
-const _futureMainnetHostChain: Chain = viemMainnet;
 
 export const resolveNetworkConfig = (network: NetworkName): NetworkConfig =>
   NETWORK_CONFIGS[network];

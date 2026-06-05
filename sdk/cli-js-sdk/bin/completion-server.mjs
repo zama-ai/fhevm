@@ -11,7 +11,7 @@ const FHE_VALUE_TYPES = [
   "address",
 ];
 
-const NETWORKS = ["testnet", "devnet", "devnet-amoy"];
+const NETWORKS = ["testnet", "devnet", "devnet-amoy", "mainnet"];
 const SHELLS = ["bash", "zsh", "fish", "pwsh"];
 
 const OPERATIONS = [
