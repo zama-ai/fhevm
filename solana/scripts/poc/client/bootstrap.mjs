@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 
-const ZAMA_HOST = new PublicKey("6rQaBev7B67LrQW7nJPBhJYt7rHSK38DWuz1LdiQRFcf");
+const ZAMA_HOST = new PublicKey("BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW");
 const conn = new Connection("http://127.0.0.1:8899", "confirmed");
 const wallet = Keypair.fromSecretKey(
   Uint8Array.from(JSON.parse(readFileSync(`${homedir()}/.config/solana/id.json`, "utf8"))),
