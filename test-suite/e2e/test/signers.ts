@@ -4,7 +4,7 @@ import type { Signer } from 'ethers';
 import { config, ethers } from 'hardhat';
 import { promisify } from 'util';
 
-import { waitForBalance } from './utils';
+import { waitForBalance, withGasBuffer } from './utils';
 
 const exec = promisify(oldExec);
 
@@ -39,20 +39,20 @@ export const initSigners = async (quantity: number): Promise<void> => {
   if (!signers) {
     if (process.env.HARDHAT_PARALLEL && config.defaultNetwork === 'local') {
       signers = {
-        alice: ethers.Wallet.createRandom().connect(ethers.provider),
-        bob: ethers.Wallet.createRandom().connect(ethers.provider),
-        carol: ethers.Wallet.createRandom().connect(ethers.provider),
-        dave: ethers.Wallet.createRandom().connect(ethers.provider),
-        eve: ethers.Wallet.createRandom().connect(ethers.provider),
+        alice: withGasBuffer(ethers.Wallet.createRandom().connect(ethers.provider)),
+        bob: withGasBuffer(ethers.Wallet.createRandom().connect(ethers.provider)),
+        carol: withGasBuffer(ethers.Wallet.createRandom().connect(ethers.provider)),
+        dave: withGasBuffer(ethers.Wallet.createRandom().connect(ethers.provider)),
+        eve: withGasBuffer(ethers.Wallet.createRandom().connect(ethers.provider)),
       };
     } else if (!process.env.HARDHAT_PARALLEL) {
       const eSigners = await ethers.getSigners();
       signers = {
-        alice: eSigners[0],
-        bob: eSigners[1],
-        carol: eSigners[2],
-        dave: eSigners[3],
-        eve: eSigners[4],
+        alice: withGasBuffer(eSigners[0]),
+        bob: withGasBuffer(eSigners[1]),
+        carol: withGasBuffer(eSigners[2]),
+        dave: withGasBuffer(eSigners[3]),
+        eve: withGasBuffer(eSigners[4]),
       };
     } else {
       throw new Error("Can't run parallel mode if network is not 'local'");
@@ -75,7 +75,7 @@ export const getSigners = async (): Promise<Signers> => {
 
 export const getSigner = async (signerNumber: number): Promise<HardhatEthersSigner> => {
   const eSigners = await ethers.getSigners();
-  return eSigners[signerNumber];
+  return withGasBuffer(eSigners[signerNumber]);
 };
 
 export const requestFaucet = faucet;
