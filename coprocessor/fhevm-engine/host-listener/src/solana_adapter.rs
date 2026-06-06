@@ -12,6 +12,7 @@ use crate::generated::{
     EVENT_VERSION,
 };
 
+use crate::cmd::block_history::BlockSummary;
 use crate::contracts::TfheContract;
 use crate::contracts::TfheContract::TfheContractEvents;
 use crate::database::dependence_chains::dependence_chains;
@@ -217,12 +218,40 @@ pub async fn insert_solana_events(
         }
     }
 
-    dependence_chains(&mut tfhe_logs, &db.dependence_chain, false, true).await;
+    let chains =
+        dependence_chains(&mut tfhe_logs, &db.dependence_chain, false, true)
+            .await;
 
+    let mut inserted_compute = false;
     for log in &tfhe_logs {
         if db.insert_tfhe_event(tx, log).await? {
             inserted_rows += 1;
+            inserted_compute = true;
         }
+    }
+
+    // Populate the dependence_chain scheduling table the tfhe-worker locks against; without
+    // it the inserted computations are never scheduled (the EVM ingest path likewise calls
+    // update_dependence_chain after inserting tfhe events). Solana host slots carry no
+    // EVM-style block hash, so derive a unique per-slot hash from the slot number — it is used
+    // only for reorg bookkeeping, which a single local validator never exercises.
+    if inserted_compute {
+        let mut block_hash = [0u8; 32];
+        block_hash[24..32].copy_from_slice(&block.block_number.to_be_bytes());
+        let block_summary = BlockSummary {
+            number: block.block_number,
+            hash: FixedBytes::<32>::from(block_hash),
+            parent_hash: FixedBytes::<32>::ZERO,
+            timestamp: 0,
+        };
+        db.update_dependence_chain(
+            tx,
+            chains,
+            block.block_timestamp,
+            &block_summary,
+            &HashSet::new(),
+        )
+        .await?;
     }
 
     Ok(SolanaIngestStats {

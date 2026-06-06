@@ -41,11 +41,19 @@ pkill -f solana-test-validator 2>/dev/null || true
 sleep 2
 LEDGER="$ROOT/.solana-test-ledger"
 rm -rf "$LEDGER"
-solana-test-validator --reset --rpc-port 8899 --bind-address 127.0.0.1 --ledger "$LEDGER" >/tmp/solana-validator.log 2>&1 &
+# Bind 0.0.0.0 so the dockerized KMS worker can read ACL records from the validator over RPC
+# (via host.docker.internal); host-side clients still target 127.0.0.1:8899. Local only — no
+# mainnet exposure.
+solana-test-validator --reset --rpc-port 8899 --bind-address 0.0.0.0 --ledger "$LEDGER" >/tmp/solana-validator.log 2>&1 &
 until curl -s -m2 "$VALIDATOR_RPC" -X POST -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null | grep -q '"ok"'; do sleep 1; done
 solana airdrop 500 >/dev/null 2>&1 || true
-( cd "$SOLANA" && cargo build-sbf --tools-version v1.52 )
+# SKIP_BUILD reuses the already-built program .so (SBF bytecode is portable across
+# validator versions); useful when the active build toolchain differs from the
+# validator (e.g. building under one Agave release, running the validator on another).
+if [ "${SKIP_BUILD:-0}" != "1" ]; then
+  ( cd "$SOLANA" && cargo build-sbf --tools-version v1.52 )
+fi
 for p in zama_host confidential_token confidential_token_receiver; do
   solana program deploy --program-id "$SOLANA/target/deploy/$p-keypair.json" "$SOLANA/target/deploy/$p.so" >/dev/null
 done
@@ -73,14 +81,30 @@ docker exec coprocessor-and-kms-db psql -U postgres -d coprocessor -c \
    INSERT INTO keys (key_id_gw,key_id,pks_key,sks_key,cks_key,sns_pk,chain_id,block_hash)
      SELECT key_id_gw,key_id,pks_key,sks_key,cks_key,sns_pk,$SID_I64,block_hash
        FROM keys WHERE chain_id=12345 ON CONFLICT DO NOTHING;"
+# zkproof-worker loads the host-chains cache once at startup (fhevm-engine-common
+# HostChainsCache), so it must be restarted to pick up the freshly-registered Solana
+# host — mirroring fhevm-cli's own registerExtraChainInCoprocessor (insert row + restart).
+docker restart coprocessor-zkproof-worker >/dev/null
+for _ in $(seq 1 30); do
+  [ "$(docker inspect -f '{{.State.Running}}' coprocessor-zkproof-worker 2>/dev/null)" = "true" ] && break
+  sleep 1
+done
 GV="$(docker inspect gateway-sc-add-network --format '{{.Config.Image}}' | sed 's/.*://')"
-GATEWAY_VERSION="$GV" FHEVM_STATE_DIR="$ROOT/.fhevm" docker compose \
+# The gateway persists across local-validator resets, so addHostChain reverts with the
+# "host chain already registered" custom error (0x96a56828) on re-runs; tolerate that.
+add_out="$(GATEWAY_VERSION="$GV" FHEVM_STATE_DIR="$ROOT/.fhevm" docker compose \
   -f "$FHEVM/docker-compose/gateway-sc-docker-compose.yml" -p fhevm run --rm --no-deps \
   -e NUM_HOST_CHAINS=1 -e "HOST_CHAIN_CHAIN_ID_0=$SID_U64" \
   -e HOST_CHAIN_FHEVM_EXECUTOR_ADDRESS_0=0x0000000000000000000000000000000000000000 \
   -e HOST_CHAIN_ACL_ADDRESS_0=0x0000000000000000000000000000000000000000 \
   -e HOST_CHAIN_NAME_0=solana -e HOST_CHAIN_WEBSITE_0=https://zama.ai \
-  gateway-sc-add-network
+  gateway-sc-add-network 2>&1)" || true
+if echo "$add_out" | grep -q '0x96a56828'; then
+  echo "    Solana host chain already registered on the gateway — ok"
+elif echo "$add_out" | grep -qiE 'reverted|error occurred'; then
+  echo "$add_out" | tail -6
+  echo "gateway addHostChain failed"; exit 1
+fi
 
 echo "==> [5/5] run Solana host-listener"
 pkill -f solana_host_listener 2>/dev/null || true

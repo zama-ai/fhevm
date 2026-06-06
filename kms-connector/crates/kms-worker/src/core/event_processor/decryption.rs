@@ -1,7 +1,10 @@
 use crate::core::{
     config::{Config, HostChainKind},
     event_processor::{ProcessingError, context::ContextManager, s3::S3Service},
+    solana_acl::{SolanaAclVerifier, SolanaPubkeyBytes, decode_acl_record_witness},
 };
+use base64::Engine as _;
+use std::str::FromStr;
 use alloy::{
     consensus::Transaction,
     hex,
@@ -45,8 +48,24 @@ pub struct DecryptionProcessor<GP: Provider, HP: Provider, C> {
     /// The ACL backend configured for each host chain.
     host_chain_kinds: HashMap<u64, HostChainKind>,
 
+    /// Per-Solana-host RPC + verifier used to authorize decryption by reading the zama-host
+    /// ACL record directly from the validator (the trusted source), rather than trusting the
+    /// gateway-conveyed `extraData` witness.
+    solana_acl: HashMap<u64, SolanaAclChainConfig>,
+
     /// The entity used to collect ciphertexts from S3 buckets.
     s3_service: S3Service<GP>,
+}
+
+/// RPC endpoint + ACL verifier for a single Solana host chain.
+#[derive(Clone)]
+struct SolanaAclChainConfig {
+    /// Validator JSON-RPC endpoint the worker reads ACL records from.
+    rpc_url: String,
+    /// `zama-host` program id, base58-encoded for `getProgramAccounts`.
+    program_id_base58: String,
+    /// Verifier bound to the expected `zama-host` program id.
+    verifier: SolanaAclVerifier,
 }
 
 impl<GP, HP, C> DecryptionProcessor<GP, HP, C>
@@ -76,12 +95,33 @@ where
             .iter()
             .map(|host_chain| (host_chain.chain_id, host_chain.chain_kind))
             .collect();
+        // A Solana host chain authorizes decryption via its on-chain ACL record; record the
+        // validator RPC + the expected program id so the worker can read and verify it.
+        let solana_acl = config
+            .host_chains
+            .iter()
+            .filter(|hc| hc.chain_kind == HostChainKind::Solana)
+            .filter_map(|hc| {
+                hc.solana_host_program_id.map(|program_id| {
+                    (
+                        hc.chain_id,
+                        SolanaAclChainConfig {
+                            rpc_url: hc.url.to_string(),
+                            program_id_base58: solana_pubkey::Pubkey::new_from_array(program_id)
+                                .to_string(),
+                            verifier: SolanaAclVerifier::new(program_id),
+                        },
+                    )
+                })
+            })
+            .collect();
         Self {
             domain,
             context_manager,
             decryption_contract,
             acl_contracts,
             host_chain_kinds,
+            solana_acl,
             s3_service,
         }
     }
@@ -100,8 +140,13 @@ where
         for ct in sns_ciphertexts {
             let ct_chain_id = extract_chain_id_from_handle(ct.ctHandle.as_slice())
                 .map_err(ProcessingError::Irrecoverable)?;
+            // Solana authorizes public decryption via its on-chain ACL record, read directly
+            // from the validator (the trusted source) and verified with secp/account-witness
+            // semantics — not the gateway-conveyed `extraData`.
             if self.host_chain_kind(ct_chain_id) == HostChainKind::Solana {
-                return Err(Self::reject_solana_gateway_decryption(ct_chain_id));
+                self.verify_solana_public_decrypt_allowed(ct_chain_id, ct.ctHandle.0)
+                    .await?;
+                continue;
             }
 
             let Some(acl_contract) = self.acl_contracts.get(&ct_chain_id) else {
@@ -210,6 +255,97 @@ where
 
         info!("ACL check passed for {} handles!", sns_ciphertexts.len());
         Ok(())
+    }
+
+    /// Authorizes a Solana public decryption by reading the handle's `zama-host` ACL record
+    /// directly from the validator (trusted) and verifying it permits public decrypt with the
+    /// program-bound [`SolanaAclVerifier`] — the RPC-verified authorization the gateway path
+    /// cannot supply via `extraData`.
+    async fn verify_solana_public_decrypt_allowed(
+        &self,
+        chain_id: u64,
+        handle: SolanaPubkeyBytes,
+    ) -> Result<(), ProcessingError> {
+        let cfg = self.solana_acl.get(&chain_id).ok_or_else(|| {
+            ProcessingError::Irrecoverable(anyhow!(
+                "No Solana ACL config (rpc/program id) for host chain {chain_id}"
+            ))
+        })?;
+        let (account_key, owner, data) = Self::fetch_solana_acl_record(cfg, handle)
+            .await
+            .map_err(ProcessingError::Recoverable)?;
+        let record = decode_acl_record_witness(account_key, owner, &data)
+            .map_err(|e| ProcessingError::Recoverable(anyhow!("decode Solana ACL record: {e}")))?;
+        cfg.verifier
+            .verify_public_decrypt(&record, handle)
+            .map_err(|e| {
+                ProcessingError::Recoverable(anyhow!(
+                    "{} is not allowed for Solana public decrypt: {e}",
+                    hex::encode(handle)
+                ))
+            })?;
+        Ok(())
+    }
+
+    /// Fetches the canonical `zama-host` ACL record for `handle` via `getProgramAccounts`,
+    /// filtering on the record's `handle` field (offset 8, after the 8-byte Anchor
+    /// discriminator). Returns (account key, owner, raw account data).
+    async fn fetch_solana_acl_record(
+        cfg: &SolanaAclChainConfig,
+        handle: SolanaPubkeyBytes,
+    ) -> anyhow::Result<(SolanaPubkeyBytes, SolanaPubkeyBytes, Vec<u8>)> {
+        let handle_b64 = base64::engine::general_purpose::STANDARD.encode(handle);
+        let body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getProgramAccounts",
+            "params": [cfg.program_id_base58, {
+                "encoding": "base64",
+                "filters": [{"memcmp": {"offset": 8, "bytes": handle_b64, "encoding": "base64"}}]
+            }]
+        });
+        let resp: serde_json::Value = reqwest::Client::new()
+            .post(&cfg.rpc_url)
+            .json(&body)
+            .send()
+            .await?
+            .json()
+            .await?;
+        let account = resp
+            .get("result")
+            .and_then(|r| r.as_array())
+            .and_then(|a| a.first())
+            .ok_or_else(|| {
+                anyhow!(
+                    "no zama-host ACL record found for handle {}",
+                    hex::encode(handle)
+                )
+            })?;
+        let pubkey = account
+            .get("pubkey")
+            .and_then(|p| p.as_str())
+            .ok_or_else(|| anyhow!("getProgramAccounts: missing pubkey"))?;
+        let inner = account
+            .get("account")
+            .ok_or_else(|| anyhow!("getProgramAccounts: missing account"))?;
+        let owner = inner
+            .get("owner")
+            .and_then(|o| o.as_str())
+            .ok_or_else(|| anyhow!("getProgramAccounts: missing owner"))?;
+        let data_b64 = inner
+            .get("data")
+            .and_then(|d| d.as_array())
+            .and_then(|a| a.first())
+            .and_then(|s| s.as_str())
+            .ok_or_else(|| anyhow!("getProgramAccounts: missing account data"))?;
+        let data = base64::engine::general_purpose::STANDARD.decode(data_b64)?;
+        let account_key = solana_pubkey::Pubkey::from_str(pubkey)
+            .map_err(|e| anyhow!("invalid ACL record pubkey {pubkey}: {e}"))?
+            .to_bytes();
+        let owner = solana_pubkey::Pubkey::from_str(owner)
+            .map_err(|e| anyhow!("invalid ACL record owner {owner}: {e}"))?
+            .to_bytes();
+        Ok((account_key, owner, data))
     }
 
     fn host_chain_kind(&self, chain_id: u64) -> HostChainKind {

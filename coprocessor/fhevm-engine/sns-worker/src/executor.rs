@@ -476,9 +476,11 @@ pub async fn query_sns_tasks(
     let tasks = records
         .into_iter()
         .map(|record| {
+            // The BIGINT column stores the i64 bit pattern of the canonical u64 chain
+            // id (negative for an RFC-021 Solana host); reconstruct via the canonical
+            // path so it round-trips, matching the verifier and host-chains cache.
             let host_chain_id_raw: i64 = record.try_get("host_chain_id")?;
-            let host_chain_id = ChainId::try_from(host_chain_id_raw)
-                .map_err(|e| ExecutionError::ConversionError(e.into()))?;
+            let host_chain_id = ChainId::from_canonical_u64(host_chain_id_raw as u64);
             let handle: Vec<u8> = record.try_get("handle")?;
             let ciphertext: Vec<u8> = record.try_get("ciphertext")?;
             let transaction_id: Option<Vec<u8>> = record.try_get("transaction_id")?;

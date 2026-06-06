@@ -7,7 +7,7 @@
 use anchor_lang::prelude::*;
 use solana_keccak_hasher::hashv as keccak_hashv;
 use solana_sha256_hasher::hashv;
-use solana_sysvar::slot_hashes::PodSlotHashes;
+use solana_sysvar::get_sysvar;
 
 use crate::constants::{
     COMPUTATION_DOMAIN_SEPARATOR, COMPUTED_HANDLE_MARKER, INPUT_PROOF_DOMAIN_SEPARATOR,
@@ -1399,13 +1399,40 @@ pub fn previous_bank_hash(current_slot: u64) -> Result<[u8; 32]> {
     if current_slot == 0 {
         return Err(error!(ZamaHostError::PreviousBankHashUnavailable));
     }
-    let slot_hashes =
-        PodSlotHashes::fetch().map_err(|_| error!(ZamaHostError::PreviousBankHashUnavailable))?;
-    let entries = slot_hashes
-        .as_slice()
-        .map_err(|_| error!(ZamaHostError::PreviousBankHashUnavailable))?
-        .iter()
-        .map(|slot_hash| (slot_hash.slot, slot_hash.hash.to_bytes()));
+    // `PodSlotHashes::fetch()` (solana-sysvar 3.1.1) allocates an align-1 `Vec<u8>` and then
+    // rejects it with an 8-byte alignment check; the SBF bump allocator does not 8-align
+    // align-1 allocations, so fetch() fails on a real validator (LiteSVM/mollusk mock the
+    // `sol_get_sysvar` syscall and never exercise this allocation). Read the sysvar into an
+    // 8-aligned buffer ourselves via the same syscall, then scan the entries — which are laid
+    // out as `[u64 count][ (u64 slot, [u8;32] hash) ...]` — for the most recent slot below
+    // `current_slot`.
+    const SLOT_HASHES_LEN: usize = 20_488; // 8-byte count + MAX_ENTRIES(512) * 40-byte entries
+    const ENTRY_LEN: usize = 40; // u64 slot + 32-byte hash
+    let mut aligned = vec![0u64; SLOT_HASHES_LEN / 8];
+    // SAFETY: `Vec<u64>` is 8-byte aligned and holds exactly SLOT_HASHES_LEN bytes; viewing
+    // its storage as bytes is sound and gives the alignment `sol_get_sysvar` requires.
+    let data: &mut [u8] =
+        unsafe { core::slice::from_raw_parts_mut(aligned.as_mut_ptr() as *mut u8, SLOT_HASHES_LEN) };
+    get_sysvar(
+        data,
+        &solana_sysvar::slot_hashes::id(),
+        0,
+        SLOT_HASHES_LEN as u64,
+    )
+    .map_err(|_| error!(ZamaHostError::PreviousBankHashUnavailable))?;
+
+    let count = u64::from_le_bytes(
+        data[..8]
+            .try_into()
+            .map_err(|_| error!(ZamaHostError::PreviousBankHashUnavailable))?,
+    ) as usize;
+    let entries = (0..count).filter_map(|index| {
+        let offset = 8 + index * ENTRY_LEN;
+        let slot = u64::from_le_bytes(data[offset..offset + 8].try_into().ok()?);
+        let mut hash = [0u8; 32];
+        hash.copy_from_slice(&data[offset + 8..offset + ENTRY_LEN]);
+        Some((slot, hash))
+    });
     latest_prior_bank_hash_from_entries(current_slot, entries)
         .ok_or_else(|| error!(ZamaHostError::PreviousBankHashUnavailable))
 }

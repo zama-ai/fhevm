@@ -569,9 +569,38 @@ pub struct KeyData {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct HostChainConfig {
+    /// Host chain id. RFC-021 Solana host ids carry the chain-type high bit and exceed
+    /// `i64::MAX`, which serde_yaml's untagged buffering (used by `deserialize_vec_from_map_or_seq`
+    /// for `host_chains`) cannot represent as a bare number; accept a quoted string too so the
+    /// Solana host id can be configured while EVM ids stay plain numbers.
+    #[serde(deserialize_with = "deserialize_u64_from_str_or_num")]
     pub chain_id: u64,
     pub url: String,
     pub acl_address: String,
+}
+
+/// Deserializes a `u64` from either a YAML number or a string (see `HostChainConfig::chain_id`).
+fn deserialize_u64_from_str_or_num<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct U64StrOrNum;
+    impl serde::de::Visitor<'_> for U64StrOrNum {
+        type Value = u64;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("a u64 as a number or a decimal string")
+        }
+        fn visit_u64<E>(self, v: u64) -> Result<u64, E> {
+            Ok(v)
+        }
+        fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<u64, E> {
+            u64::try_from(v).map_err(serde::de::Error::custom)
+        }
+        fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<u64, E> {
+            v.parse::<u64>().map_err(serde::de::Error::custom)
+        }
+    }
+    deserializer.deserialize_any(U64StrOrNum)
 }
 
 #[derive(Debug, Deserialize, Clone)]

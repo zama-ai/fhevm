@@ -65,11 +65,18 @@ impl ZkData {
     }
 }
 
-/// Parses a 0x-prefixed (or bare) 32-byte hex string into a `bytes32` identity.
+/// Parses a Solana `bytes32` host identity from either encoding it appears in:
+/// the `0x`-prefixed hex form carried verbatim by gateway events (contract and
+/// user identities), or the base58 form an on-chain Solana program id is stored
+/// as in `host_chains` (the ACL identity). Both encode the same 32 bytes; the
+/// `0x` prefix is the discriminator.
 pub(crate) fn parse_bytes32(value: &str) -> anyhow::Result<[u8; 32]> {
-    let bytes = alloy_primitives::hex::decode(value.strip_prefix("0x").unwrap_or(value))?;
+    let bytes = match value.strip_prefix("0x") {
+        Some(hex_str) => alloy_primitives::hex::decode(hex_str)?,
+        None => bs58::decode(value).into_vec()?,
+    };
     <[u8; 32]>::try_from(bytes.as_slice())
-        .map_err(|_| anyhow!("expected a 32-byte hex identity, got {} bytes", bytes.len()))
+        .map_err(|_| anyhow!("expected a 32-byte identity, got {} bytes", bytes.len()))
 }
 
 #[cfg(test)]
@@ -140,5 +147,44 @@ mod tests {
         };
         // The 20-byte contract address is not a valid bytes32 identity.
         assert!(zk_data.assemble().is_err());
+    }
+
+    #[test]
+    fn parse_bytes32_accepts_hex_and_base58_for_same_identity() {
+        // A real Solana program id in both encodings: 0x-hex (as gateway events
+        // carry it) and base58 (as host_chains stores it) decode to identical bytes.
+        let hex = "0x9c7da263cccb5084844e292a2ce0db0e51bbf310100656aa4572b83dfe35fca5";
+        let base58 = "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW";
+        assert_eq!(parse_bytes32(hex).unwrap(), parse_bytes32(base58).unwrap());
+    }
+
+    #[test]
+    fn solana_aux_matches_when_acl_is_base58() {
+        // The ACL identity arrives base58 (from host_chains) while contract/user
+        // arrive 0x-hex (from the event); the assembled aux must be identical to
+        // the all-hex form so the prover and verifier agree byte for byte.
+        let contract = format!("0x{}", "11".repeat(32));
+        let user = format!("0x{}", "22".repeat(32));
+        let acl_hex = "0x9c7da263cccb5084844e292a2ce0db0e51bbf310100656aa4572b83dfe35fca5";
+        let acl_b58 = "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW";
+        let chain_id = ChainId::from_canonical_u64(SOLANA_CHAIN_TYPE_BIT | 12345);
+
+        let with_hex = ZkData {
+            contract_address: contract.clone(),
+            user_address: user.clone(),
+            acl_contract_address: acl_hex.to_string(),
+            chain_id,
+        }
+        .assemble()
+        .unwrap();
+        let with_b58 = ZkData {
+            contract_address: contract,
+            user_address: user,
+            acl_contract_address: acl_b58.to_string(),
+            chain_id,
+        }
+        .assemble()
+        .unwrap();
+        assert_eq!(with_hex, with_b58);
     }
 }

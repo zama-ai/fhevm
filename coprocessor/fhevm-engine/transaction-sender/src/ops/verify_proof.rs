@@ -31,15 +31,20 @@ sol! {
     }
 }
 
-sol! {
-    // RFC-021 (Solana host) counterpart with bytes32 host identities. Must match the gateway's
-    // EIP712_SOLANA_ZKPOK_TYPE and the zama-host program's CiphertextVerification byte-for-byte.
-    struct SolanaCiphertextVerification {
-        bytes32[] ctHandles;
-        bytes32 userAddress;
-        bytes32 contractAddress;
-        uint256 contractChainId;
-        bytes extraData;
+// RFC-021 (Solana host) counterpart with bytes32 host identities. The gateway names this
+// EIP-712 type "CiphertextVerification" as well (EIP712_SOLANA_ZKPOK_TYPE), distinguished
+// from the EVM type only by its bytes32 identity fields. alloy derives the EIP-712 type name
+// from the struct identifier, so this lives in its own module to reuse the name while differing
+// in field types — the type string must match the gateway and zama-host program byte for byte.
+mod solana_zkpok {
+    alloy::sol! {
+        struct CiphertextVerification {
+            bytes32[] ctHandles;
+            bytes32 userAddress;
+            bytes32 contractAddress;
+            uint256 contractChainId;
+            bytes extraData;
+        }
     }
 }
 
@@ -352,7 +357,7 @@ where
                     // identities and the verifyProofResponseSolana entrypoint, signing the matching
                     // bytes32 CiphertextVerification typed data. EVM hosts keep the 20-byte path.
                     if ChainId::from_canonical_u64(row.chain_id as u64).is_solana_host() {
-                        let signing_hash = SolanaCiphertextVerification {
+                        let signing_hash = solana_zkpok::CiphertextVerification {
                             ctHandles: handles.clone(),
                             userAddress: row
                                 .user_address
@@ -478,5 +483,32 @@ where
             res??;
         }
         Ok(maybe_has_more_work)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The coprocessor signs the ZKPOK response with an EIP-712 type string whose struct
+    // name and field encoding must equal the gateway's exactly; any divergence makes the
+    // signature recover to a wrong address and the gateway reject it (NotCoprocessorSigner).
+    // These lock both variants to InputVerification's EIP712_ZKPOK_TYPE / EIP712_SOLANA_ZKPOK_TYPE.
+
+    #[test]
+    fn evm_zkpok_eip712_type_matches_gateway() {
+        assert_eq!(
+            CiphertextVerification::eip712_encode_type(),
+            "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId,bytes extraData)"
+        );
+    }
+
+    #[test]
+    fn solana_zkpok_eip712_type_matches_gateway() {
+        // Same struct name as the EVM type, differing only in its bytes32 identity fields.
+        assert_eq!(
+            solana_zkpok::CiphertextVerification::eip712_encode_type(),
+            "CiphertextVerification(bytes32[] ctHandles,bytes32 userAddress,bytes32 contractAddress,uint256 contractChainId,bytes extraData)"
+        );
     }
 }

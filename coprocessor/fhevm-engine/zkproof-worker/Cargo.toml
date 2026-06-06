@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 # workspace dependencies
 alloy-primitives = { workspace = true }
+bs58 = { workspace = true }
 clap = { workspace = true }
 hex = { workspace = true }
 lru = { workspace = true }

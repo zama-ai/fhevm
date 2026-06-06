@@ -32,8 +32,422 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (host_config, _) =
         Pubkey::find_program_address(&[zama_host::HOST_CONFIG_SEED], &zama_host::ID);
 
+    // BIND_INPUT drives the coprocessor-attested input bind against the live host_config
+    // (created by bootstrap.mjs with the real gateway verifier config); it does not touch
+    // host_config or the mint, so it runs standalone with the relayer-returned attestation.
+    if std::env::var("BIND_INPUT").is_ok() {
+        bind_coprocessor_input(&host, &payer, host_config)?;
+        return Ok(());
+    }
+
+    // TRIVIAL_ENCRYPT drives a real zama-host FHE op (trivial encryption): the program
+    // computes the result handle on-chain and emits a TrivialEncryptEvent the live
+    // host-listener ingests into the coprocessor DB for the tfhe-worker to materialize.
+    if std::env::var("TRIVIAL_ENCRYPT").is_ok() {
+        trivial_encrypt_and_bind(&host, &payer, host_config)?;
+        return Ok(());
+    }
+
+    // CONSUME_AMOUNT: stand up a confidential token account and mint a token-scoped random
+    // encrypted amount (a real transfer-amount handle), the operand the disclose path needs.
+    if std::env::var("CONSUME_AMOUNT").is_ok() {
+        consume_amount(&token, &payer, host_config)?;
+        return Ok(());
+    }
+    // CONSUME_SEAL: seal a token amount's ciphertext material on-chain and request public
+    // disclosure (releases the amount for public decrypt) — the precondition for disclose.
+    if std::env::var("CONSUME_SEAL").is_ok() {
+        consume_seal(&host, &token, &payer, host_config)?;
+        return Ok(());
+    }
+    // CONSUME_DISCLOSE: verify the KMS PublicDecryptVerification cert on-chain via secp256k1
+    // (disclose_amount_secp) — the Consume seam against the ProtocolConfig-mirrored KMS context.
+    if std::env::var("CONSUME_DISCLOSE").is_ok() {
+        consume_disclose(&token, &payer, host_config)?;
+        return Ok(());
+    }
+
     ensure_host_config(&host, &payer, host_config)?;
     initialize_mint(&token, &payer, host_config)?;
+    Ok(())
+}
+
+/// Decodes a `0x`-prefixed or bare hex string into bytes.
+fn hexdec(s: &str) -> Vec<u8> {
+    let s = s.strip_prefix("0x").unwrap_or(s);
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("hex"))
+        .collect()
+}
+
+/// Binds a coprocessor-verified input on the live zama-host: feeds the handle + EIP-712
+/// `CiphertextVerification` attestation (handles + signature) the relayer returned, which the
+/// host verifies on-chain via secp256k1_recover against the configured coprocessor signer
+/// before creating the output ACL record. Inputs come from the relayer response via env
+/// (BIND_HANDLE, BIND_COPRO_SIG, BIND_USER, BIND_CONTRACT, BIND_CHAIN_ID, optional BIND_EXTRA).
+fn bind_coprocessor_input(
+    host: &Program<Rc<Keypair>>,
+    payer: &Rc<Keypair>,
+    host_config: Pubkey,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let handle: [u8; 32] = hexdec(&std::env::var("BIND_HANDLE")?)
+        .try_into()
+        .expect("BIND_HANDLE must be 32 bytes");
+    let signature: [u8; 65] = hexdec(&std::env::var("BIND_COPRO_SIG")?)
+        .try_into()
+        .expect("BIND_COPRO_SIG must be 65 bytes");
+    let user_address: [u8; 32] = hexdec(&std::env::var("BIND_USER")?)
+        .try_into()
+        .expect("BIND_USER must be 32 bytes");
+    let contract_address: [u8; 32] = hexdec(&std::env::var("BIND_CONTRACT")?)
+        .try_into()
+        .expect("BIND_CONTRACT must be 32 bytes");
+    let contract_chain_id: u64 = std::env::var("BIND_CHAIN_ID")?.parse()?;
+    let extra_data = std::env::var("BIND_EXTRA")
+        .map(|s| hexdec(&s))
+        .unwrap_or_else(|_| vec![0u8]);
+
+    // Output ACL record: app_account must equal the authorizing signer, and nonce_key must
+    // equal acl_nonce_key(domain, app_account, label). The bound input is granted USE to the
+    // user subject.
+    let app_account = payer.pubkey();
+    let acl_domain_key = payer.pubkey();
+    let encrypted_value_label = [0u8; 32];
+    let output_nonce_key =
+        zama_host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let output_nonce_sequence: u64 = 0;
+    let (output_acl_record, _) =
+        zama_host::acl_record_address(output_nonce_key, output_nonce_sequence);
+    let (zama_event_authority, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
+    let subjects = vec![zama_host::AclSubjectEntry::use_only(payer.pubkey())];
+
+    let handle_hex: String = handle.iter().map(|b| format!("{b:02x}")).collect();
+    println!("binding input_handle 0x{handle_hex}");
+    let sig = host
+        .request()
+        .accounts(zama_host::accounts::VerifyCoprocessorInputAndBind {
+            payer: payer.pubkey(),
+            app_account_authority: payer.pubkey(),
+            host_config,
+            output_acl_record,
+            system_program: system_program::ID,
+            event_authority: zama_event_authority,
+            program: zama_host::ID,
+        })
+        .args(zama_host::instruction::VerifyCoprocessorInputAndBind {
+            input_handle: handle,
+            ct_handles: vec![handle],
+            handle_index: 0,
+            user_address,
+            contract_address,
+            contract_chain_id,
+            extra_data,
+            signatures: vec![signature],
+            output_nonce_key,
+            output_nonce_sequence,
+            output_acl_domain_key: acl_domain_key,
+            output_app_account: app_account,
+            output_encrypted_value_label: encrypted_value_label,
+            output_subjects: subjects,
+            output_public_decrypt: false,
+        })
+        .send()?;
+    println!("OK verify_coprocessor_input_and_bind: {sig}");
+    println!("  output ACL record {output_acl_record}  (secp256k1 attestation verified on-chain)");
+    Ok(())
+}
+
+/// Drives a real zama-host trivial-encrypt FHE op: the program computes the result handle
+/// on-chain (entropy-bound, no client pre-computation) and emits a TrivialEncryptEvent over
+/// emit_cpi. The live host-listener ingests it into the coprocessor DB, where the tfhe-worker
+/// materializes the trivial ciphertext. TE_VALUE selects the euint64 plaintext (default 42).
+fn trivial_encrypt_and_bind(
+    host: &Program<Rc<Keypair>>,
+    payer: &Rc<Keypair>,
+    host_config: Pubkey,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let value: u64 = std::env::var("TE_VALUE")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(42);
+    // ClearConst::from_be_slice reads the plaintext big-endian, so place the u64 in the low bytes.
+    let mut plaintext = [0u8; 32];
+    plaintext[24..32].copy_from_slice(&value.to_be_bytes());
+    let fhe_type: u8 = 5; // euint64
+
+    let app_account = payer.pubkey();
+    let acl_domain_key = payer.pubkey();
+    // Distinct per value (and from the input-bind record) so repeated runs derive distinct
+    // output ACL record PDAs rather than colliding on an already-initialized account.
+    let mut encrypted_value_label = [1u8; 32];
+    encrypted_value_label[24..32].copy_from_slice(&value.to_be_bytes());
+    let output_nonce_key =
+        zama_host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let output_nonce_sequence: u64 = 0;
+    let (output_acl_record, _) =
+        zama_host::acl_record_address(output_nonce_key, output_nonce_sequence);
+    let (zama_event_authority, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
+    // ACL_ROLE_ALL (user) grants USE | GRANT | PUBLIC_DECRYPT, so the subject can later mark
+    // this compute output publicly decryptable via allow_for_decryption.
+    let subjects = vec![zama_host::AclSubjectEntry::user(payer.pubkey())];
+
+    // SlotHashes (read via sol_get_sysvar for the result-handle entropy) is populated in
+    // real execution but not in RPC preflight simulation, so skip preflight for this op.
+    let sig = host
+        .request()
+        .accounts(zama_host::accounts::TrivialEncryptAndBind {
+            payer: payer.pubkey(),
+            compute_subject: payer.pubkey(),
+            app_account_authority: payer.pubkey(),
+            host_config,
+            output_acl_record,
+            system_program: system_program::ID,
+            event_authority: zama_event_authority,
+            program: zama_host::ID,
+        })
+        .args(zama_host::instruction::TrivialEncryptAndBind {
+            plaintext,
+            fhe_type,
+            output_nonce_key,
+            output_nonce_sequence,
+            output_acl_domain_key: acl_domain_key,
+            output_app_account: app_account,
+            output_encrypted_value_label: encrypted_value_label,
+            output_subjects: subjects,
+            output_public_decrypt: false,
+        })
+        .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
+            skip_preflight: true,
+            ..Default::default()
+        })?;
+    println!("OK trivial_encrypt_and_bind ({value} as euint64): {sig}");
+
+    // The result handle is computed on-chain; read it back from the ACL record so the
+    // decrypt step can target it.
+    let record: zama_host::AclRecord = host.account(output_acl_record)?;
+    let handle_hex: String = record.handle.iter().map(|b| format!("{b:02x}")).collect();
+    println!("  output ACL record {output_acl_record}");
+    println!("  result handle 0x{handle_hex}  (tfhe-worker materializes this ciphertext)");
+
+    // TE_ALLOW marks the freshly-computed handle publicly decryptable on the zama-host ACL
+    // record (the subject holds ACL_ROLE_PUBLIC_DECRYPT via the user role above), emitting a
+    // PublicDecryptAllowedEvent — the precondition for a public decrypt of this handle.
+    if std::env::var("TE_ALLOW").is_ok() {
+        let allow_sig = host
+            .request()
+            .accounts(zama_host::accounts::AllowForDecryption {
+                authority: payer.pubkey(),
+                authority_permission_record: None,
+                acl_record: output_acl_record,
+                host_config,
+                deny_subject_record: None,
+                event_authority: zama_event_authority,
+                program: zama_host::ID,
+            })
+            .args(zama_host::instruction::AllowForDecryption {
+                handle: record.handle,
+            })
+            .send()?;
+        println!("OK allow_for_decryption (public): {allow_sig}");
+    }
+    Ok(())
+}
+
+/// Consume step 1: seal the token amount's ciphertext material on-chain (commit_handle_material,
+/// signed by the configured material_authority, with the real ct64/ct128 digests) and request
+/// public disclosure (request_disclose_amount → CPIs zama-host allow_public_decrypt). Inputs via
+/// env: MINT, TS_ACL, TS_HANDLE, KEY_ID, CT64_DIGEST, CT128_DIGEST, COPROC_SET_DIGEST.
+fn consume_seal(
+    host: &Program<Rc<Keypair>>,
+    token: &Program<Rc<Keypair>>,
+    payer: &Rc<Keypair>,
+    host_config: Pubkey,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mint = Pubkey::from_str(&std::env::var("MINT")?)?;
+    let ts_acl = Pubkey::from_str(&std::env::var("TS_ACL")?)?;
+    let handle: [u8; 32] = hexdec(&std::env::var("TS_HANDLE")?).try_into().expect("TS_HANDLE");
+    let key_id: [u8; 32] = hexdec(&std::env::var("KEY_ID")?).try_into().expect("KEY_ID");
+    let ct64: [u8; 32] = hexdec(&std::env::var("CT64_DIGEST")?).try_into().expect("CT64_DIGEST");
+    let ct128: [u8; 32] = hexdec(&std::env::var("CT128_DIGEST")?).try_into().expect("CT128_DIGEST");
+    let coproc: [u8; 32] =
+        hexdec(&std::env::var("COPROC_SET_DIGEST")?).try_into().expect("COPROC_SET_DIGEST");
+    let (material_commitment, _) = zama_host::handle_material_address(ts_acl);
+    let (zama_evt, _) = Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
+
+    let sig = host
+        .request()
+        .accounts(zama_host::accounts::CommitHandleMaterial {
+            payer: payer.pubkey(),
+            material_authority: payer.pubkey(),
+            host_config,
+            acl_record: ts_acl,
+            material_commitment,
+            system_program: system_program::ID,
+            event_authority: zama_evt,
+            program: zama_host::ID,
+        })
+        .args(zama_host::instruction::CommitHandleMaterial {
+            key_id,
+            ciphertext_digest: ct64,
+            sns_ciphertext_digest: ct128,
+            coprocessor_set_digest: coproc,
+        })
+        .send()?;
+    println!("OK commit_handle_material: {sig}");
+    println!("  material commitment {material_commitment}");
+
+    let (token_evt, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &confidential_token::ID);
+    let sig2 = token
+        .request()
+        .accounts(confidential_token::accounts::RequestDiscloseAmount {
+            requester: payer.pubkey(),
+            mint,
+            amount_acl_record: ts_acl,
+            authority_permission_record: None,
+            deny_subject_record: None,
+            zama_event_authority: zama_evt,
+            zama_program: zama_host::ID,
+            host_config,
+            event_authority: token_evt,
+            program: confidential_token::ID,
+        })
+        .args(confidential_token::instruction::RequestDiscloseAmount { amount_handle: handle })
+        .send()?;
+    println!("OK request_disclose_amount: {sig2}  (handle released for public decrypt)");
+    Ok(())
+}
+
+/// Consume step 2: publish a KMS-certified cleartext by verifying the KMS PublicDecryptVerification
+/// EIP-712 cert on-chain via secp256k1 (disclose_amount_secp) against the active KMS context's
+/// ProtocolConfig-mirrored signer set. Inputs via env: MINT, TS_ACL, TS_HANDLE, CLEARTEXT, KMS_SIG,
+/// EXTRA, KMS_CTX_ID.
+fn consume_disclose(
+    token: &Program<Rc<Keypair>>,
+    _payer: &Rc<Keypair>,
+    host_config: Pubkey,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mint = Pubkey::from_str(&std::env::var("MINT")?)?;
+    let ts_acl = Pubkey::from_str(&std::env::var("TS_ACL")?)?;
+    let handle: [u8; 32] = hexdec(&std::env::var("TS_HANDLE")?).try_into().expect("TS_HANDLE");
+    let cleartext: u64 = std::env::var("CLEARTEXT")?.parse()?;
+    let kms_sig: [u8; 65] = hexdec(&std::env::var("KMS_SIG")?).try_into().expect("KMS_SIG 65 bytes");
+    let extra = hexdec(&std::env::var("EXTRA")?);
+    let ctx_id: u64 = std::env::var("KMS_CTX_ID").ok().and_then(|s| s.parse().ok()).unwrap_or(1);
+    let (material_commitment, _) = zama_host::handle_material_address(ts_acl);
+    let (kms_context, _) = Pubkey::find_program_address(
+        &[zama_host::KMS_CONTEXT_SEED, &ctx_id.to_le_bytes()],
+        &zama_host::ID,
+    );
+    let (token_evt, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &confidential_token::ID);
+
+    let sig = token
+        .request()
+        .accounts(confidential_token::accounts::DiscloseAmountSecp {
+            mint,
+            amount_acl_record: ts_acl,
+            amount_material_commitment: material_commitment,
+            host_config,
+            kms_context,
+            event_authority: token_evt,
+            program: confidential_token::ID,
+        })
+        .args(confidential_token::instruction::DiscloseAmountSecp {
+            amount_handle: handle,
+            cleartext_amount: cleartext,
+            signatures: vec![kms_sig],
+            extra_data: extra,
+        })
+        .send()?;
+    println!("OK disclose_amount_secp: {sig}");
+    println!("  KMS PublicDecryptVerification cert verified on-chain (secp256k1); cleartext {cleartext}");
+    Ok(())
+}
+
+/// Stands up a confidential token account and mints a token-scoped random transfer amount — a
+/// real amount-ACL handle (BALANCE_FHE_TYPE, acl_domain_key = mint, token-amount label), which
+/// is what the disclose path requires (the total-supply handle uses a different ACL domain).
+/// MINT via env; owner is the payer.
+fn consume_amount(
+    token: &Program<Rc<Keypair>>,
+    payer: &Rc<Keypair>,
+    host_config: Pubkey,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mint = Pubkey::from_str(&std::env::var("MINT")?)?;
+    let owner = payer.pubkey();
+    let (compute_signer, _) = confidential_token::compute_signer_address(mint);
+    let (token_account, _) = confidential_token::token_account_address(mint, owner);
+    let (zama_evt, _) = Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
+    let (token_evt, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &confidential_token::ID);
+
+    // 1. initialize_token_account (initial balance 0) — creates the account + balance ACL via CPI.
+    let (balance_acl, _) = zama_host::acl_record_address(
+        confidential_token::balance_nonce_key(mint, token_account),
+        0,
+    );
+    if token.rpc().get_account(&token_account).is_err() {
+        let sig = token
+            .request()
+            .accounts(confidential_token::accounts::InitializeTokenAccount {
+                owner,
+                mint,
+                compute_signer,
+                token_account,
+                acl_record: balance_acl,
+                zama_event_authority: zama_evt,
+                zama_program: zama_host::ID,
+                host_config,
+                system_program: system_program::ID,
+                event_authority: token_evt,
+                program: confidential_token::ID,
+            })
+            .args(confidential_token::instruction::InitializeTokenAccount { initial_balance: 0 })
+            .send()?;
+        println!("OK initialize_token_account: {sig}");
+    } else {
+        println!("token account {token_account} already initialized — skipping");
+    }
+
+    // 2. create_random_amount (Transfer kind) — a RandU64 token amount; uses SlotHashes entropy
+    // for the result handle, so skip preflight (populated only in real execution).
+    let label = confidential_token::transfer_amount_label();
+    let (amount_acl, _) =
+        zama_host::acl_record_address(confidential_token::nonce_key(mint, owner, label), 0);
+    let sig2 = token
+        .request()
+        .accounts(confidential_token::accounts::CreateRandomAmount {
+            owner,
+            mint,
+            token_account,
+            compute_signer,
+            amount_acl_record: amount_acl,
+            zama_event_authority: zama_evt,
+            zama_program: zama_host::ID,
+            host_config,
+            system_program: system_program::ID,
+            event_authority: token_evt,
+            program: confidential_token::ID,
+        })
+        .args(confidential_token::instruction::CreateRandomAmount {
+            amount_kind: confidential_token::ConfidentialAmountKind::Transfer,
+        })
+        .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
+            skip_preflight: true,
+            ..Default::default()
+        })?;
+    println!("OK create_random_amount: {sig2}");
+
+    let acct = token.rpc().get_account(&amount_acl)?;
+    let mut handle = [0u8; 32];
+    handle.copy_from_slice(&acct.data[8..40]);
+    let hh: String = handle.iter().map(|b| format!("{b:02x}")).collect();
+    println!("  amount ACL    {amount_acl}");
+    println!("  amount handle 0x{hh}  (token-scoped transfer amount; tfhe-worker materializes it)");
     Ok(())
 }
 
