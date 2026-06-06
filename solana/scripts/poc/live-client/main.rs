@@ -72,6 +72,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         consume_disclose(&token, &payer, host_config)?;
         return Ok(());
     }
+    // CONSUME_BURN: burn an encrypted amount from the confidential balance (confidential_burn) —
+    // the heaviest FHE instruction (5 host CPIs). Produces the burned-amount handle the redeem
+    // path publicly decrypts, then releases against the vault. MINT via env.
+    if std::env::var("CONSUME_BURN").is_ok() {
+        consume_burn(&token, &payer, host_config)?;
+        return Ok(());
+    }
 
     ensure_host_config(&host, &payer, host_config)?;
     initialize_mint(&token, &payer, host_config)?;
@@ -564,6 +571,150 @@ fn consume_wrap(
         })?;
     println!("OK wrap_usdc({amount}): {sig}");
     println!("  new balance ACL {output_balance_acl}");
+    Ok(())
+}
+
+/// Burns an encrypted amount from the confidential balance (confidential_burn): the heaviest
+/// FHE instruction — ge + sub + select + sub + sub across five zama-host CPIs. Reads the current
+/// balance/total-supply ACLs and next nonce sequences live from chain, mints an owner-scoped
+/// random burn amount (create_random_amount Burn kind), then burns it. Produces the burned-amount
+/// handle (and ACL) the redeem path publicly decrypts and releases against the vault. MINT via env.
+fn consume_burn(
+    token: &Program<Rc<Keypair>>,
+    payer: &Rc<Keypair>,
+    host_config: Pubkey,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use anchor_lang::solana_program::instruction::Instruction;
+    let mint = Pubkey::from_str(&std::env::var("MINT")?)?;
+    let owner = payer.pubkey();
+    let (compute_signer, _) = confidential_token::compute_signer_address(mint);
+    let (token_account, _) = confidential_token::token_account_address(mint, owner);
+    let (ts_authority, _) = confidential_token::total_supply_authority_address(mint);
+    let (zama_evt, _) = Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
+    let (token_evt, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &confidential_token::ID);
+
+    // Read live token-account state: current balance ACL + next balance/amount nonce sequences.
+    // Layout after the 8-byte discriminator: owner(32) mint(32) balance_handle(32)
+    // balance_acl_record(32)[104..136] next_balance_nonce_sequence(8)[136..144]
+    // next_amount_nonce_sequence(8)[144..152].
+    let ta = token.rpc().get_account(&token_account)?;
+    let current_balance_acl = Pubkey::new_from_array(ta.data[104..136].try_into().unwrap());
+    let bal_seq = u64::from_le_bytes(ta.data[136..144].try_into().unwrap());
+    let amt_seq = u64::from_le_bytes(ta.data[144..152].try_into().unwrap());
+
+    // Read live mint state: current total-supply ACL + next total-supply nonce sequence.
+    // Layout after disc: authority(32) acl_domain_key(32) compute_signer(32) underlying_mint(32)
+    // kms_verifier_authority(32) decimals(1) total_supply_handle(32)
+    // total_supply_acl_record(32)[201..233] next_total_supply_nonce_sequence(8)[233..241].
+    let mi = token.rpc().get_account(&mint)?;
+    let current_ts_acl = Pubkey::new_from_array(mi.data[201..233].try_into().unwrap());
+    let ts_seq = u64::from_le_bytes(mi.data[233..241].try_into().unwrap());
+
+    // 1. create_random_amount(Burn): owner-scoped random burn amount at the amount sequence.
+    let burn_label = confidential_token::burn_amount_label();
+    let (burn_amount_acl, _) =
+        zama_host::acl_record_address(confidential_token::nonce_key(mint, owner, burn_label), amt_seq);
+    let sig0 = token
+        .request()
+        .accounts(confidential_token::accounts::CreateRandomAmount {
+            owner,
+            mint,
+            token_account,
+            compute_signer,
+            amount_acl_record: burn_amount_acl,
+            zama_event_authority: zama_evt,
+            zama_program: zama_host::ID,
+            host_config,
+            system_program: system_program::ID,
+            event_authority: token_evt,
+            program: confidential_token::ID,
+        })
+        .args(confidential_token::instruction::CreateRandomAmount {
+            amount_kind: confidential_token::ConfidentialAmountKind::Burn,
+        })
+        .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
+            skip_preflight: true,
+            ..Default::default()
+        })?;
+    println!("OK create_random_amount(Burn): {sig0}");
+    let amt_acct = token.rpc().get_account(&burn_amount_acl)?;
+    let amount_handle: [u8; 32] = amt_acct.data[8..40].try_into().unwrap();
+    let hh: String = amount_handle.iter().map(|b| format!("{b:02x}")).collect();
+    println!("  burn amount ACL {burn_amount_acl}  handle 0x{hh}");
+
+    // 2. Derive the five burn output ACLs: four balance-domain outputs at bal_seq (each with a
+    // distinct label) plus the total-supply output at ts_seq.
+    let bal_nk = confidential_token::balance_nonce_key(mint, token_account);
+    let (output_balance_acl, _) = zama_host::acl_record_address(bal_nk, bal_seq);
+    let (success_acl, _) = zama_host::acl_record_address(
+        confidential_token::nonce_key(mint, token_account, confidential_token::burn_success_label()),
+        bal_seq,
+    );
+    let (debit_candidate_acl, _) = zama_host::acl_record_address(
+        confidential_token::nonce_key(
+            mint,
+            token_account,
+            confidential_token::burn_debit_candidate_label(),
+        ),
+        bal_seq,
+    );
+    let (burned_acl, _) = zama_host::acl_record_address(
+        confidential_token::nonce_key(mint, token_account, confidential_token::burned_amount_label()),
+        bal_seq,
+    );
+    let (ts_output_acl, _) = zama_host::acl_record_address(
+        confidential_token::total_supply_nonce_key(mint, ts_authority),
+        ts_seq,
+    );
+
+    // 3. confidential_burn — five FHE ops in one instruction; request the max heap frame + a
+    // raised CU limit like wrap. SlotHashes entropy is only populated in real execution, so skip
+    // preflight unless BURN_NO_PREFLIGHT forces an on-chain log capture.
+    let cb_prog = Pubkey::from_str("ComputeBudget111111111111111111111111111111")?;
+    let mut heap_data = vec![1u8];
+    heap_data.extend_from_slice(&(256u32 * 1024).to_le_bytes());
+    let heap_ix = Instruction { program_id: cb_prog, accounts: vec![], data: heap_data };
+    let mut cu_data = vec![2u8];
+    cu_data.extend_from_slice(&1_400_000u32.to_le_bytes());
+    let cu_ix = Instruction { program_id: cb_prog, accounts: vec![], data: cu_data };
+
+    let sig = token
+        .request()
+        .instruction(heap_ix)
+        .instruction(cu_ix)
+        .accounts(confidential_token::accounts::ConfidentialBurn {
+            owner,
+            mint,
+            token_account,
+            compute_signer,
+            total_supply_authority: ts_authority,
+            current_compute_acl: current_balance_acl,
+            current_total_supply_acl: current_ts_acl,
+            amount_compute_acl: burn_amount_acl,
+            burn_success_acl: success_acl,
+            debit_candidate_acl,
+            output_acl: output_balance_acl,
+            burned_amount_acl: burned_acl,
+            total_supply_output_acl: ts_output_acl,
+            zama_event_authority: zama_evt,
+            zama_program: zama_host::ID,
+            host_config,
+            system_program: system_program::ID,
+            event_authority: token_evt,
+            program: confidential_token::ID,
+        })
+        .args(confidential_token::instruction::ConfidentialBurn { amount_handle })
+        .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
+            skip_preflight: std::env::var("BURN_NO_PREFLIGHT").is_err(),
+            ..Default::default()
+        })?;
+    println!("OK confidential_burn: {sig}");
+    println!("  burned amount ACL {burned_acl}");
+    let burned_acct = token.rpc().get_account(&burned_acl)?;
+    let burned_handle: [u8; 32] = burned_acct.data[8..40].try_into().unwrap();
+    let bh: String = burned_handle.iter().map(|b| format!("{b:02x}")).collect();
+    println!("  burned handle 0x{bh}  (redeem path publicly decrypts this)");
     Ok(())
 }
 
