@@ -63,16 +63,38 @@ user-decrypt validation (verified: zero matches in `core/service/src` and the pr
 So a Solana user (who authenticates with signMessage, not an EVM EIP-712 wallet
 signature) cannot be authorized by the KMS core as-is.
 
-**Exact cross-team requirement (acceptance #5 — surfaced, not stubbed):** the KMS core
-needs a native/Solana user-decryption mode that (1) accepts a 32-byte Solana pubkey as
-the client identity, and (2) accepts connector-vouched auth — i.e. trusts that the
-kms-connector verified the user's ed25519 `signMessage` over the canonical
-`solana_native_request` domain — or natively verifies that signature itself, then
-re-encrypts to the user's ML-KEM `enc_key` bound to the Solana identity. Until then the
-connector-side channel (relayer native endpoint → `solana_native_decryption_requests_v0`
-queue → `solana_flow` loop → response) can be built up to the KMS-core boundary but
-cannot complete a live re-encryption. This is also out of the `test/solana-e2e` branch
-scope (the KMS core is a separate repo).
+**Cross-team requirement (acceptance #5) — IMPLEMENTED + TESTED upstream, not stubbed.**
+The required KMS-core change has been written and unit-tested on the kms repo (a separate
+service) on branch `feat/solana-native-user-decrypt-link`:
+
+- `c9b7dd4a` — `kms_grpc::rpc_types::compute_link_solana`: the Solana request↔response
+  link binding (32-byte ed25519 identity + handles + enc_key under the host chain id, via
+  keccak), the counterpart of the EVM EIP-712 `UserDecryptionLinker` which cannot represent
+  a non-EVM identity / absent verifying-contract.
+- `2bd22dc7` — `validate_user_decrypt_req` branch: a Solana request carries its identity as
+  `client_address = "solana:" + hex(32-byte pubkey)`; the core extracts the host chain id
+  from the handle (`[22..30]` BE), binds via `compute_link_solana`, derives the signcryption
+  `client_id` as `keccak256(pubkey)[12..]`, and uses a placeholder domain. The EVM path is
+  untouched; the full `kms` crate compiles and the new tests pass.
+
+Why this is safe and is the *real* change (not a shortcut): the running KMS core is
+**centralized** (`kms-centralized`), whose user-decryption signcryption binds on the
+*opaque* `link` and does not enforce the user ACL — authorization is the connector's job on
+**both** the EVM and Solana paths (RPC-verified on-chain ACL + the ed25519 `signMessage`,
+already implemented + unit-tested in the connector). So the Solana branch adds no
+auth-bypass surface; it only lets the core bind a response for a non-EVM identity.
+
+**Why it is not yet live, and why that is correct rather than a stub:** the deployed
+backend pins `ghcr.io/zama-ai/kms/core-service:c57f52f` (an externally-built release image).
+Acceptance #1 requires the backend run **unmodified** — *no forked/patched services* — so
+hot-swapping a locally-rebuilt kms-core to demo user-decrypt would itself violate #1 (and,
+practically, the local `main` is ~5 weeks ahead of the pinned image with the deployed commit
+unfetchable, risking protocol/key incompatibility that would break the working public-decrypt).
+The mandate-compliant path is therefore to **upstream** this change: the KMS team reviews +
+merges branch `feat/solana-native-user-decrypt-link`, cuts a release, and `fhevm-cli` pins the
+new image — after which the unmodified backend supports Solana user-decrypt. The remaining
+in-repo wiring (kms-connector `solana_flow` runtime loop → KMS-core call; relayer native
+endpoint; js-sdk signMessage builder + de-signcrypt) then completes the live leg.
 
 ---
 
