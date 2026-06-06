@@ -626,31 +626,50 @@ fn consume_burn(
     let ts_seq = u64::from_le_bytes(mi.data[233..241].try_into().unwrap());
 
     // 1. create_random_amount(Burn): owner-scoped random burn amount at the amount sequence.
+    // BURN_BOUND (a power of two) uses the bounded variant so the random amount stays below the
+    // balance and the burn yields a positive burned amount (unbounded randoms exceed the balance,
+    // so burn_success is false and the burned amount is 0).
     let burn_label = confidential_token::burn_amount_label();
     let (burn_amount_acl, _) =
         zama_host::acl_record_address(confidential_token::nonce_key(mint, owner, burn_label), amt_seq);
-    let sig0 = token
-        .request()
-        .accounts(confidential_token::accounts::CreateRandomAmount {
-            owner,
-            mint,
-            token_account,
-            compute_signer,
-            amount_acl_record: burn_amount_acl,
-            zama_event_authority: zama_evt,
-            zama_program: zama_host::ID,
-            host_config,
-            system_program: system_program::ID,
-            event_authority: token_evt,
-            program: confidential_token::ID,
-        })
-        .args(confidential_token::instruction::CreateRandomAmount {
-            amount_kind: confidential_token::ConfidentialAmountKind::Burn,
-        })
-        .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
-            skip_preflight: true,
-            ..Default::default()
-        })?;
+    let accounts = confidential_token::accounts::CreateRandomAmount {
+        owner,
+        mint,
+        token_account,
+        compute_signer,
+        amount_acl_record: burn_amount_acl,
+        zama_event_authority: zama_evt,
+        zama_program: zama_host::ID,
+        host_config,
+        system_program: system_program::ID,
+        event_authority: token_evt,
+        program: confidential_token::ID,
+    };
+    let send_cfg = anchor_client::RpcSendTransactionConfig {
+        skip_preflight: true,
+        ..Default::default()
+    };
+    let sig0 = if let Ok(bound) = std::env::var("BURN_BOUND") {
+        let bound: u64 = bound.parse()?;
+        let mut upper_bound = [0u8; 32];
+        upper_bound[24..].copy_from_slice(&bound.to_be_bytes());
+        token
+            .request()
+            .accounts(accounts)
+            .args(confidential_token::instruction::CreateRandomBoundedAmount {
+                amount_kind: confidential_token::ConfidentialAmountKind::Burn,
+                upper_bound,
+            })
+            .send_with_spinner_and_config(send_cfg)?
+    } else {
+        token
+            .request()
+            .accounts(accounts)
+            .args(confidential_token::instruction::CreateRandomAmount {
+                amount_kind: confidential_token::ConfidentialAmountKind::Burn,
+            })
+            .send_with_spinner_and_config(send_cfg)?
+    };
     println!("OK create_random_amount(Burn): {sig0}");
     let amt_acct = token.rpc().get_account(&burn_amount_acl)?;
     let amount_handle: [u8; 32] = amt_acct.data[8..40].try_into().unwrap();
