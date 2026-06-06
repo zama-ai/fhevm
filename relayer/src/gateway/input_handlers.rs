@@ -720,13 +720,26 @@ impl TxLifecycleHooks for InputProofGatewayHandler {
         job_id: &JobId,
         receipt: &TxResult,
     ) -> Result<(), EventProcessingError> {
+        // EVM hosts emit VerifyProofRequest (address identities); Solana hosts (RFC-021)
+        // emit VerifyProofRequestSolana (bytes32 identities). Both carry the indexed
+        // zkProofId, and the response side shares the VerifyProofResponse event, so we
+        // only need to accept either request event when extracting the gateway id.
         let gw_reference_id = TransactionHelper::extract_gateway_id_from_receipt::<
             InputVerification::VerifyProofRequest,
         >(
             receipt,
             InputVerification::VerifyProofRequest::SIGNATURE_HASH,
             |event| event.zkProofId,
-        )?;
+        )
+        .or_else(|_| {
+            TransactionHelper::extract_gateway_id_from_receipt::<
+                InputVerification::VerifyProofRequestSolana,
+            >(
+                receipt,
+                InputVerification::VerifyProofRequestSolana::SIGNATURE_HASH,
+                |event| event.zkProofId,
+            )
+        })?;
 
         let tx_hash = format!("{:?}", receipt.transaction_hash);
 
