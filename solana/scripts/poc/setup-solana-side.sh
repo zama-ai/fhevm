@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# Reproducible Solana side-stack setup against a LIVE fhevm-cli backend.
+#
+# Run AFTER `fhevm-cli up --override gateway-contracts \
+#   --override coprocessor:zkproof-worker,transaction-sender,db-migration \
+#   --override relayer --allow-schema-mismatch` has brought the EVM stack up with the
+# Solana code (gateway verifyProofRequestSolana, zkproof-worker 128B aux, tx-sender
+# Solana EIP-712, relayer bytes32 input + Solana host support) and keygen has completed.
+#
+# This brings the Solana host online against that live backend, with NO stubs:
+#   1. (re)start a fresh local validator and deploy zama_host + confidential_token
+#   2. bootstrap zama-host from the REAL live gateway addresses + ProtocolConfig signer set
+#   3. register the Solana host chain in the coprocessor DB (host_chains + keyset mirror)
+#      and on the gateway (GatewayConfig.addHostChain via the test-suite task)
+#   4. run the Solana host-listener against the live validator + coprocessor DB
+#
+# All addresses/signers are read live (no hardcoded values), so it is reproducible
+# from a clean `fhevm-cli up`. MAINNET-safe: validator pinned to 127.0.0.1:8899.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+SOLANA="$ROOT/solana"
+FHEVM="$ROOT/test-suite/fhevm"
+GW_RPC="${GW_RPC:-http://127.0.0.1:8546}"
+VALIDATOR_RPC="http://127.0.0.1:8899"
+# RFC-021 Solana host chain id: chain-type high bit | 12345.
+SID_U64=9223372036854788153
+SID_I64=-9223372036854763463
+
+echo "==> [1/5] gathering live gateway addresses + ProtocolConfig signer set"
+# shellcheck disable=SC1091
+source "$ROOT/.fhevm/runtime/addresses/gateway/.env.gateway"  # GATEWAY_CONFIG_ADDRESS, INPUT_VERIFICATION_ADDRESS, DECRYPTION_ADDRESS, ...
+GATEWAY_CHAIN_ID="$(cast chain-id --rpc-url "$GW_RPC")"
+COPROCESSOR_SIGNER="$(cast call "$GATEWAY_CONFIG_ADDRESS" 'getCoprocessorSigners()(address[])' --rpc-url "$GW_RPC" | tr -d '[]' | tr ',' '\n' | head -1 | tr -d ' ')"
+KMS_SIGNERS="$(cast call "$GATEWAY_CONFIG_ADDRESS" 'getKmsSigners()(address[])' --rpc-url "$GW_RPC" | tr -d '[] ')"
+echo "    gateway_chain_id=$GATEWAY_CHAIN_ID input_verification=$INPUT_VERIFICATION_ADDRESS"
+echo "    decryption=$DECRYPTION_ADDRESS coprocessor_signer=$COPROCESSOR_SIGNER kms_signers=$KMS_SIGNERS"
+
+echo "==> [2/5] fresh validator + program deploy"
+pkill -f solana-test-validator 2>/dev/null || true
+sleep 2
+LEDGER="$ROOT/.solana-test-ledger"
+rm -rf "$LEDGER"
+solana-test-validator --reset --rpc-port 8899 --bind-address 127.0.0.1 --ledger "$LEDGER" >/tmp/solana-validator.log 2>&1 &
+until curl -s -m2 "$VALIDATOR_RPC" -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null | grep -q '"ok"'; do sleep 1; done
+solana airdrop 500 >/dev/null 2>&1 || true
+( cd "$SOLANA" && cargo build-sbf --tools-version v1.52 )
+for p in zama_host confidential_token confidential_token_receiver; do
+  solana program deploy --program-id "$SOLANA/target/deploy/$p-keypair.json" "$SOLANA/target/deploy/$p.so" >/dev/null
+done
+ZAMA_HOST_ID="$(solana address -k "$SOLANA/target/deploy/zama_host-keypair.json")"
+echo "    zama_host=$ZAMA_HOST_ID deployed"
+
+echo "==> [3/5] bootstrap zama-host (real gateway/ProtocolConfig values, mock/test OFF)"
+( cd "$SOLANA/scripts/poc/client" && [ -d node_modules ] || npm install --no-audit --no-fund >/dev/null 2>&1 )
+( cd "$SOLANA/scripts/poc/client" &&
+  GATEWAY_CHAIN_ID="$GATEWAY_CHAIN_ID" \
+  INPUT_VERIFICATION_ADDRESS="$INPUT_VERIFICATION_ADDRESS" \
+  COPROCESSOR_SIGNER="$COPROCESSOR_SIGNER" \
+  DECRYPTION_ADDRESS="$DECRYPTION_ADDRESS" \
+  KMS_SIGNERS="$KMS_SIGNERS" \
+  SOLANA_HOST_CHAIN_ID="$SID_U64" \
+  node bootstrap.mjs )
+
+echo "==> [4/5] register Solana host chain (coprocessor DB + gateway)"
+DBURL="$(grep -m1 '^DATABASE_URL=' "$ROOT/.fhevm/runtime/env/coprocessor.env" | cut -d= -f2- | sed 's/@db:/@127.0.0.1:/')"
+# Migration is baked into the db-migration override; apply idempotently as a safety net.
+docker exec -i coprocessor-and-kms-db psql -U postgres -d coprocessor \
+  < "$ROOT/coprocessor/fhevm-engine/db-migration/migrations/20260605120000_relax_chain_id_checks_for_solana_host.sql" >/dev/null 2>&1 || true
+docker exec coprocessor-and-kms-db psql -U postgres -d coprocessor -c \
+  "INSERT INTO host_chains (chain_id,name,acl_contract_address) VALUES ($SID_I64,'solana','$ZAMA_HOST_ID') ON CONFLICT DO NOTHING;
+   INSERT INTO keys (key_id_gw,key_id,pks_key,sks_key,cks_key,sns_pk,chain_id,block_hash)
+     SELECT key_id_gw,key_id,pks_key,sks_key,cks_key,sns_pk,$SID_I64,block_hash
+       FROM keys WHERE chain_id=12345 ON CONFLICT DO NOTHING;"
+GV="$(docker inspect gateway-sc-add-network --format '{{.Config.Image}}' | sed 's/.*://')"
+GATEWAY_VERSION="$GV" FHEVM_STATE_DIR="$ROOT/.fhevm" docker compose \
+  -f "$FHEVM/docker-compose/gateway-sc-docker-compose.yml" -p fhevm run --rm --no-deps \
+  -e NUM_HOST_CHAINS=1 -e "HOST_CHAIN_CHAIN_ID_0=$SID_U64" \
+  -e HOST_CHAIN_FHEVM_EXECUTOR_ADDRESS_0=0x0000000000000000000000000000000000000000 \
+  -e HOST_CHAIN_ACL_ADDRESS_0=0x0000000000000000000000000000000000000000 \
+  -e HOST_CHAIN_NAME_0=solana -e HOST_CHAIN_WEBSITE_0=https://zama.ai \
+  gateway-sc-add-network
+
+echo "==> [5/5] run Solana host-listener"
+pkill -f solana_host_listener 2>/dev/null || true
+sleep 1
+( "$ROOT/coprocessor/fhevm-engine/target/debug/solana_host_listener" \
+    --database-url "$DBURL" --url "$VALIDATOR_RPC" --program-id "$ZAMA_HOST_ID" \
+    --host-chain-id="$SID_I64" >/tmp/solana-host-listener.log 2>&1 & )
+
+echo "==> Solana side-stack ready. zama_host=$ZAMA_HOST_ID host_chain_id=$SID_U64 (i64 $SID_I64)"
