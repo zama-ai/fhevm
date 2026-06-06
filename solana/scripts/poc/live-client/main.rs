@@ -79,6 +79,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         consume_burn(&token, &payer, host_config)?;
         return Ok(());
     }
+    // CONSUME_REDEEM: redeem a KMS-certified burned amount from the SPL vault
+    // (redeem_burned_amount_secp) — commits the burned handle's material, then verifies the KMS
+    // PublicDecryptVerification cert on-chain via secp256k1 and releases the cleartext amount of
+    // underlying USDC to the owner. The vault-releasing Consume seam.
+    if std::env::var("CONSUME_REDEEM").is_ok() {
+        consume_redeem(&host, &token, &payer, host_config)?;
+        return Ok(());
+    }
 
     ensure_host_config(&host, &payer, host_config)?;
     initialize_mint(&token, &payer, host_config)?;
@@ -282,35 +290,41 @@ fn consume_seal(
     let mint = Pubkey::from_str(&std::env::var("MINT")?)?;
     let ts_acl = Pubkey::from_str(&std::env::var("TS_ACL")?)?;
     let handle: [u8; 32] = hexdec(&std::env::var("TS_HANDLE")?).try_into().expect("TS_HANDLE");
-    let key_id: [u8; 32] = hexdec(&std::env::var("KEY_ID")?).try_into().expect("KEY_ID");
-    let ct64: [u8; 32] = hexdec(&std::env::var("CT64_DIGEST")?).try_into().expect("CT64_DIGEST");
-    let ct128: [u8; 32] = hexdec(&std::env::var("CT128_DIGEST")?).try_into().expect("CT128_DIGEST");
-    let coproc: [u8; 32] =
-        hexdec(&std::env::var("COPROC_SET_DIGEST")?).try_into().expect("COPROC_SET_DIGEST");
-    let (material_commitment, _) = zama_host::handle_material_address(ts_acl);
     let (zama_evt, _) = Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
 
-    let sig = host
-        .request()
-        .accounts(zama_host::accounts::CommitHandleMaterial {
-            payer: payer.pubkey(),
-            material_authority: payer.pubkey(),
-            host_config,
-            acl_record: ts_acl,
-            material_commitment,
-            system_program: system_program::ID,
-            event_authority: zama_evt,
-            program: zama_host::ID,
-        })
-        .args(zama_host::instruction::CommitHandleMaterial {
-            key_id,
-            ciphertext_digest: ct64,
-            sns_ciphertext_digest: ct128,
-            coprocessor_set_digest: coproc,
-        })
-        .send()?;
-    println!("OK commit_handle_material: {sig}");
-    println!("  material commitment {material_commitment}");
+    // commit_handle_material is skipped when SEAL_RELEASE_ONLY is set: useful to release a handle
+    // for public decryption first (so the KMS can decrypt it), then commit material before redeem.
+    if std::env::var("SEAL_RELEASE_ONLY").is_err() {
+        let key_id: [u8; 32] = hexdec(&std::env::var("KEY_ID")?).try_into().expect("KEY_ID");
+        let ct64: [u8; 32] = hexdec(&std::env::var("CT64_DIGEST")?).try_into().expect("CT64_DIGEST");
+        let ct128: [u8; 32] =
+            hexdec(&std::env::var("CT128_DIGEST")?).try_into().expect("CT128_DIGEST");
+        let coproc: [u8; 32] =
+            hexdec(&std::env::var("COPROC_SET_DIGEST")?).try_into().expect("COPROC_SET_DIGEST");
+        let (material_commitment, _) = zama_host::handle_material_address(ts_acl);
+
+        let sig = host
+            .request()
+            .accounts(zama_host::accounts::CommitHandleMaterial {
+                payer: payer.pubkey(),
+                material_authority: payer.pubkey(),
+                host_config,
+                acl_record: ts_acl,
+                material_commitment,
+                system_program: system_program::ID,
+                event_authority: zama_evt,
+                program: zama_host::ID,
+            })
+            .args(zama_host::instruction::CommitHandleMaterial {
+                key_id,
+                ciphertext_digest: ct64,
+                sns_ciphertext_digest: ct128,
+                coprocessor_set_digest: coproc,
+            })
+            .send()?;
+        println!("OK commit_handle_material: {sig}");
+        println!("  material commitment {material_commitment}");
+    }
 
     let (token_evt, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &confidential_token::ID);
@@ -715,6 +729,117 @@ fn consume_burn(
     let burned_handle: [u8; 32] = burned_acct.data[8..40].try_into().unwrap();
     let bh: String = burned_handle.iter().map(|b| format!("{b:02x}")).collect();
     println!("  burned handle 0x{bh}  (redeem path publicly decrypts this)");
+    Ok(())
+}
+
+/// Redeems a KMS-certified burned amount from the SPL vault (redeem_burned_amount_secp): commits
+/// the burned handle's ciphertext material (commit_handle_material, signed by material_authority),
+/// then verifies the KMS PublicDecryptVerification EIP-712 cert on-chain via secp256k1 against the
+/// active KMS context signer set and releases the cleartext amount of underlying USDC to the owner.
+/// Inputs via env: MINT, UNDERLYING_MINT, BURNED_ACL, BURNED_HANDLE, CLEARTEXT, KMS_SIG, EXTRA,
+/// KEY_ID, CT64_DIGEST, CT128_DIGEST, COPROC_SET_DIGEST, optional KMS_CTX_ID (default 1).
+fn consume_redeem(
+    host: &Program<Rc<Keypair>>,
+    token: &Program<Rc<Keypair>>,
+    payer: &Rc<Keypair>,
+    host_config: Pubkey,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mint = Pubkey::from_str(&std::env::var("MINT")?)?;
+    let underlying = Pubkey::from_str(&std::env::var("UNDERLYING_MINT")?)?;
+    let burned_acl = Pubkey::from_str(&std::env::var("BURNED_ACL")?)?;
+    let burned_handle: [u8; 32] =
+        hexdec(&std::env::var("BURNED_HANDLE")?).try_into().expect("BURNED_HANDLE");
+    let cleartext: u64 = std::env::var("CLEARTEXT")?.parse()?;
+    let kms_sig: [u8; 65] = hexdec(&std::env::var("KMS_SIG")?).try_into().expect("KMS_SIG 65 bytes");
+    let extra = hexdec(&std::env::var("EXTRA")?);
+    let ctx_id: u64 = std::env::var("KMS_CTX_ID").ok().and_then(|s| s.parse().ok()).unwrap_or(1);
+    let owner = payer.pubkey();
+    let spl_token_id = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")?;
+    let ata_prog = Pubkey::from_str("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")?;
+
+    let (compute_signer, _) = confidential_token::compute_signer_address(mint);
+    let _ = compute_signer;
+    let (token_account, _) = confidential_token::token_account_address(mint, owner);
+    let (vault_authority, _) = confidential_token::vault_authority_address(mint);
+    let vault_usdc = confidential_token::vault_token_account_address(mint, underlying);
+    let (destination_usdc, _) = Pubkey::find_program_address(
+        &[owner.as_ref(), spl_token_id.as_ref(), underlying.as_ref()],
+        &ata_prog,
+    );
+    let (material_commitment, _) = zama_host::handle_material_address(burned_acl);
+    let (redemption_record, _) = Pubkey::find_program_address(
+        &[b"burn-redemption", mint.as_ref(), burned_handle.as_ref()],
+        &confidential_token::ID,
+    );
+    let (kms_context, _) = Pubkey::find_program_address(
+        &[zama_host::KMS_CONTEXT_SEED, &ctx_id.to_le_bytes()],
+        &zama_host::ID,
+    );
+    let (zama_evt, _) = Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
+    let (token_evt, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &confidential_token::ID);
+
+    // 1. commit_handle_material for the burned handle (real key_id + ct/sns digests), unless it
+    // was already committed (REDEEM_SKIP_COMMIT).
+    if std::env::var("REDEEM_SKIP_COMMIT").is_err() {
+        let key_id: [u8; 32] = hexdec(&std::env::var("KEY_ID")?).try_into().expect("KEY_ID");
+        let ct64: [u8; 32] = hexdec(&std::env::var("CT64_DIGEST")?).try_into().expect("CT64_DIGEST");
+        let ct128: [u8; 32] =
+            hexdec(&std::env::var("CT128_DIGEST")?).try_into().expect("CT128_DIGEST");
+        let coproc: [u8; 32] =
+            hexdec(&std::env::var("COPROC_SET_DIGEST")?).try_into().expect("COPROC_SET_DIGEST");
+        let sig = host
+            .request()
+            .accounts(zama_host::accounts::CommitHandleMaterial {
+                payer: owner,
+                material_authority: owner,
+                host_config,
+                acl_record: burned_acl,
+                material_commitment,
+                system_program: system_program::ID,
+                event_authority: zama_evt,
+                program: zama_host::ID,
+            })
+            .args(zama_host::instruction::CommitHandleMaterial {
+                key_id,
+                ciphertext_digest: ct64,
+                sns_ciphertext_digest: ct128,
+                coprocessor_set_digest: coproc,
+            })
+            .send()?;
+        println!("OK commit_handle_material (burned): {sig}");
+    }
+
+    // 2. redeem_burned_amount_secp — on-chain secp256k1 verify of the KMS cert + vault release.
+    let sig = token
+        .request()
+        .accounts(confidential_token::accounts::RedeemBurnedAmountSecp {
+            owner,
+            mint,
+            token_account,
+            underlying_mint: underlying,
+            vault_usdc,
+            destination_usdc,
+            vault_authority,
+            burned_amount_acl: burned_acl,
+            burned_material_commitment: material_commitment,
+            redemption_record,
+            host_config,
+            kms_context,
+            token_program: spl_token_id,
+            system_program: system_program::ID,
+            event_authority: token_evt,
+            program: confidential_token::ID,
+        })
+        .args(confidential_token::instruction::RedeemBurnedAmountSecp {
+            burned_handle,
+            cleartext_amount: cleartext,
+            signatures: vec![kms_sig],
+            extra_data: extra,
+        })
+        .send()?;
+    println!("OK redeem_burned_amount_secp: {sig}");
+    println!("  KMS PublicDecryptVerification cert verified on-chain (secp256k1); released {cleartext} USDC base units to {destination_usdc}");
     Ok(())
 }
 
