@@ -866,11 +866,19 @@ mod tests {
     // The Gateway `extraData` witness path is not a trusted source for Solana ACL
     // state: an attacker controls those bytes (including the account `owner`
     // field), so trusting them would authorize decryption of any Solana handle.
-    // These tests pin the fail-closed behavior: even a non-empty, attacker-shaped
-    // witness payload must be refused without being inspected.
+    // These tests pin the fail-closed behavior for the USER-decrypt gateway path:
+    // even a non-empty, attacker-shaped witness payload must be refused without
+    // being inspected. Public decryption, by contrast, is authorized from the
+    // RPC-verified on-chain ACL record (the trusted source) — see below.
 
+    // Public decryption does NOT use the gateway `extraData` witnesses: it authorizes
+    // against the handle's `zama-host` ACL record read directly from the validator. With
+    // a Solana host chain configured, the check therefore takes the RPC-verified path
+    // (`verify_solana_public_decrypt_allowed`) and — with no reachable validator in this
+    // unit test — surfaces the RPC/ACL fetch error rather than the gateway fail-closed
+    // refusal. The point is that it is NOT refused as an untrusted-witness path.
     #[tokio::test]
-    async fn solana_public_decryption_is_refused_fail_closed() {
+    async fn solana_public_decryption_uses_rpc_verified_acl_not_gateway_witness() {
         let sns_ct = rand_sns_ct();
         let ct_chain_id = extract_chain_id_from_handle(sns_ct.ctHandle.as_slice()).unwrap();
         let processor = solana_processor(ct_chain_id);
@@ -879,7 +887,12 @@ mod tests {
             .check_ciphertexts_allowed_for_public_decryption(&[sns_ct], &Bytes::from(vec![1u8; 256]))
             .await;
 
-        assert_fails_closed(result);
+        let err = result.expect_err("no reachable validator, so the RPC-verified ACL check errors");
+        assert!(
+            !err.to_string().contains("not a trusted authorization source"),
+            "public decrypt must take the RPC-verified ACL path, not the gateway fail-closed \
+             refusal; got: {err}"
+        );
     }
 
     #[tokio::test]
