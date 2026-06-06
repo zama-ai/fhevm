@@ -476,7 +476,7 @@ public-receivable token should evaluate the staged inbound-credit profile (pendi
 recipient timing) or otherwise predeclare/lock the recipient's next balance ACL sequence so the
 inbound-write surface is bounded.
 
-## DD-017: Per-Op Binding Instructions With A Validated app_account_authority Signer Supersede The RFC-024 execute_frame Frame
+## DD-017: Role-Aware `fhe_eval` And Per-Op Bind Instructions Supersede The RFC-024 execute_frame Frame
 
 Status: adopted
 
@@ -491,25 +491,48 @@ Decision:
 The host exposes per-handle-class binding instructions — `fhe_binary_op_and_bind_output`,
 `fhe_ternary_op_and_bind_output`, `trivial_encrypt_and_bind`, `fhe_rand_and_bind`,
 `fhe_rand_bounded_and_bind`, `verify_input_and_bind`, `mock_input_verified_and_bind` — plus one batched
-`fhe_eval` for composed binary-op plans (the actual successor to `execute_frame`). Every durable-output
-path takes an `app_account_authority: Signer` that the host validates with
-`require_keys_eq!(app_account_authority, output_app_account)` in `assert_output_acl_metadata`
-(`instructions/common.rs`). This reinstates and now enforces the signer the RFC had removed.
+eval instruction for composed plans: `fhe_eval`. The eval instruction accepts mixed binary/ternary,
+trivial-encrypt, and rand steps with instruction-local transients; verified-input steps are
+durable-output-only because input birth must bind ACL state immediately. It is the practical
+successor to `execute_frame`. Every durable-output path takes a signer witness: either the fixed
+`app_account_authority: Signer` account, or an explicit per-output authority account in
+`remaining_accounts` that must be a signer and match `output_app_account`. The host then validates the
+metadata with `assert_output_acl_metadata` (`instructions/common.rs`). This reinstates and now
+enforces the signer the RFC had removed.
+
+The OpenZeppelin-track `execute_frame` ABI is intentionally not ported as a host instruction. Its
+useful ergonomic idea — symbolic previous results inside one instruction — is represented by
+`FheEvalOperand::Transient` in the host ABI and by the app-facing `zama-fhe::EvalBuilder`. The SDK
+builder hides raw producer indices and `remaining_accounts` indices from app code, returns typed
+`Encrypted<T>` values for intermediate results, derives durable output nonce keys / ACL record PDAs
+from `DurableSlot`, stores ACL subjects behind `AccessPolicy`, and returns an opaque `EvalPlan`.
+The `cpi` feature can resolve that plan through a pubkey-keyed account resolver, so app code does
+not hand-maintain ordered host accounts. Output authority, role-aware ACLs, overflow permissions,
+material commitments, and public-decrypt policy remain enforced by the current host ABI.
+
+`fhe_eval` also owns its replay transport boundary. Frames with at most eight replay events use
+Anchor event CPI for compatibility with existing event consumers. Larger frames emit the same replay
+payloads through Anchor `Program data` logs to avoid self-CPI heap pressure. Durable ACL metadata
+events remain log-only, and the listener rejects transactions that mix host CPI replay events with
+host log replay events so DB log ordering stays unambiguous.
 
 Rationale:
 
 A validated `app_account_authority == output_app_account` signer makes the app account that receives
 durable ACL output prove control via a Solana signature, rather than trusting an unsigned
-`authorized_app_accounts[]` declaration. Per-class instructions keep each handle-birth path type-gated
-and individually testable instead of multiplexed through one frame opcode; `fhe_eval` still provides
-batched multi-op composition with transient/durable outputs when a single CPI is required.
+`authorized_app_accounts[]` declaration. Per-output signer witnesses extend the same guarantee to
+multi-app evals without making authorization a free-form unsigned list. Per-class instructions remain
+for compatibility and individually testable handle-birth paths; `fhe_eval` provides batched multi-step
+composition with transient/durable outputs when a single CPI is required.
 
 Consequences:
 
 This contradicts the RFC-024 `execute_frame` section and its "app_account_authority removed" note;
 RFC-024 should be re-synced to the per-op + validated-signer model. Multi-account atomic effects (e.g.
-ERC7984 transfer crediting both sender and receiver) are expressed as multiple binding instructions /
-`fhe_eval` durable outputs rather than one frame with `authorized_app_accounts[]`.
+ERC7984 transfer crediting both sender and receiver) are expressed as one eval frame with per-output
+authority witnesses rather than one frame with `authorized_app_accounts[]`. Future multi-app eval
+extensions should keep that signer-witness model and should not resurrect unsigned
+`authorized_app_accounts[]`.
 
 ## DD-018: Transfer-And-Call Refund Finalize Is Recoverable, Not Atomic With Prepare
 
@@ -543,6 +566,54 @@ sender not yet credited) rather than atomic. A future hardening may fuse prepare
 instruction (CU/account budget permitting) or add an instructions-sysvar same-transaction binding; this
 is tracked under Open Product Decisions.
 
+## DD-019: Confidential Transfer Persists Only Final Balance And Transferred-Amount ACL Records
+
+Status: adopted
+
+Context:
+
+A successful direct/operator confidential transfer needs five FHE results: `ge(balance, amount)`,
+`sub(balance, amount)`, `if_then_else(success, debit_candidate, balance)`, `sub(balance, new_from)`,
+and `add(to_balance, transferred)`. The first implementation bound every result into a durable ACL
+record because `fhe_eval` was binary-only and the ternary select needed durable inputs. That made one
+plain transfer create five durable records, including two pure scratch records (`transfer_success` and
+`debit_candidate`) that are not meaningful historical decrypt targets.
+
+Decision:
+
+The token transfer path now uses one host `fhe_eval` frame instead of the older scratch-account
+sequence. The eval emits `ge` and debit-candidate `sub` as instruction-local transient handles,
+consumes them in a ternary `if_then_else`, persists the sender's new balance plus the transferred
+amount, and then credits the recipient in the same frame using a per-output recipient authority
+witness. The helper crate exposes typed durable handles, scalar helpers, `DurableSlot`,
+`AccessPolicy`, `EvalBuilder`, and plan-driven CPI resolution, so app code assembles this shape
+without hand-maintaining raw producer indices, raw account indices, signer flags, writable flags,
+nonce keys, ACL record addresses, or repeated output type bytes for common operations. A successful direct or
+operator transfer therefore binds exactly three durable ACL records:
+
+- sender balance output
+- transferred amount
+- recipient balance output
+
+The old `transfer_success` and `debit_candidate` PDAs are not created on transfer success; their handles
+remain observable only through host FHE operation events for coprocessor/event replay.
+
+Rationale:
+
+Only the final sender balance, the transferred amount, and the final recipient balance need durable ACL
+history for later permission checks or decryption. Persisting the boolean success bit and intermediate
+debit candidate makes rent scale with scratch state, not product state. Keeping those values transient
+avoids that rent cost without adding a close/refund path, while retaining the validated
+`app_account_authority == output_app_account` signer rule for every durable output.
+
+Consequences:
+
+Indexers that replay transfer math must read the host `FheBinaryOpEvent` and `FheTernaryOpEvent` stream
+for the scratch handles; there is intentionally no ACL permission record for decrypting the scratch
+success/debit values after the transaction. Burn and transfer-callback settlement flows still use their
+own durable scratch records today and should be considered separately if their rent profile becomes a
+product issue.
+
 ## Open Product Decisions
 
 These are not settled by the PoC design decisions above:
@@ -551,10 +622,8 @@ These are not settled by the PoC design decisions above:
 - Whether confidential balances move to the staged inbound-credit profile (DD-016).
 - Fusing or same-transaction-binding transfer-and-call prepare/finalize (DD-018).
 - Reclaiming rent for superseded durable `AclRecord` PDAs: there is no `close_acl_record` instruction
-  today, and one plain transfer binds five durable records (two of which — the `ge` success and the
-  `sub` debit candidate — are pure scratch). A binary-only `fhe_eval` frame cannot fold the two scratch
-  ops because their consumer is the ternary `select`; reducing the durable count needs either ternary
-  `fhe_eval` support plus an on-chain eval driver, or a host close/refund instruction.
+  today. Plain transfer scratch has been removed via DD-019, but burn/callback scratch and old balance
+  history still need an archival/compaction policy if their rent profile becomes a product issue.
 - Rejecting the PoC sentinel `chain_id` (`SOLANA_POC_CHAIN_ID = 12345`) in production builds. The
   relaxations already fail closed on every non-sentinel chain id; a compile-time `poc` cargo feature
   that both refuses 12345 at init and compiles out the mock/zero-entropy/`test_emit_*` paths would

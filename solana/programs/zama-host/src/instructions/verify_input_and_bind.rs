@@ -153,7 +153,7 @@ pub fn verify_input_and_bind(
     Ok(())
 }
 
-fn assert_input_proof(
+pub(super) fn assert_input_proof(
     proof: &SolanaInputProof,
     input_handle: [u8; 32],
     chain_id: u64,
@@ -193,7 +193,7 @@ fn assert_input_proof(
     Ok(())
 }
 
-fn assert_previous_ed25519_instruction(
+pub(super) fn assert_previous_ed25519_instruction(
     instructions_sysvar: &AccountInfo,
     verifier: Pubkey,
     message: &[u8],

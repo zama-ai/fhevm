@@ -23,6 +23,14 @@ Does a handle need temporary access across an instruction or program boundary?
 ```
 
 - **Option A: batch execution** is the default for internal expression graphs.
+  Use `fhe_eval` when scratch values need to feed later binary/ternary steps before a durable
+  output is bound. Trivial-encrypt and rand births can coexist in the same frame and produce
+  transient or durable outputs; verified input birth remains durable-only because it must bind ACL
+  state immediately. App-side code should use `zama-fhe::EvalBuilder` so transient producer indices,
+  host account indices, output types for common operations, durable output metadata, and
+  signer/writable roles are generated consistently; with the `cpi` feature, the app can execute an
+  opaque `EvalPlan` through a pubkey-keyed account resolver instead of maintaining host account
+  order itself.
 - **Option B: signer propagation** is the preferred Solana-native CPI-chain authorization model
   for existing allowed inputs.
 - **Option C: one-shot capability account** is the escape hatch for real cross-instruction or
@@ -73,7 +81,7 @@ Required defaults:
 - consume before authorizing the FHE operation;
 - close during consume when practical;
 - if close is separate, `Consumed` or expiry must already make it unusable;
-- never valid for KMS, public decrypt, or user decrypt witness paths.
+- never itself valid as a KMS or user-decrypt witness.
 
 Do not call this "transient storage." It is real Solana state with strict one-shot semantics.
 
@@ -102,6 +110,9 @@ transient inputs must pass an explicit output policy binding:
 - source-origin restrictions from every transient input.
 
 If the policy does not explicitly allow durable output, the host must reject.
+If the policy allows public-decrypt propagation, the derived durable output may grant
+`ACL_ROLE_PUBLIC_DECRYPT` to the permitted subject, but the durable record still starts with
+`public_decrypt = false`; a later role-aware instruction must set the flag explicitly.
 
 ## Final Position
 

@@ -58,8 +58,6 @@ fn mollusk_confidential_self_transfer_is_no_op() {
     );
     assert_eq!(token_account.next_balance_nonce_sequence, 1);
     assert_empty_system_account(&context, output.alice);
-    assert_empty_system_account(&context, output.success);
-    assert_empty_system_account(&context, output.debit_candidate);
     assert_empty_system_account(&context, output.transferred);
 }
 
@@ -94,17 +92,18 @@ fn mollusk_confidential_transfer_rotates_accounts_and_acl_records() {
     let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
     let ix = direct_transfer_ix(&fixture, output, amount_handle);
     let context = fixture.context_with_input_amount(amount_handle);
+    let acl_records_before = acl_record_count(&context);
 
     let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
 
     assert!(!result.inner_instructions.is_empty());
+    assert_transfer_created_exactly_three_acl_records(&context, acl_records_before, output);
+    assert_transfer_scratch_acl_records_absent(&context, &fixture, 1);
     let alice_token = read_token_account(&context, fixture.alice_token);
     let bob_token = read_token_account(&context, fixture.bob_token);
     let from_output_acl = read_acl_record(&context, output.from_output);
     let transferred_acl = read_acl_record(&context, output.transferred);
     let to_output_acl = read_acl_record(&context, output.to_output);
-    let success_acl = read_acl_record(&context, output.success);
-    let debit_candidate_acl = read_acl_record(&context, output.debit_candidate);
 
     assert_eq!(alice_token.balance_acl_record, output.from_output);
     assert_eq!(alice_token.balance_handle, from_output_acl.handle);
@@ -115,34 +114,6 @@ fn mollusk_confidential_transfer_rotates_accounts_and_acl_records() {
     assert_ne!(bob_token.balance_handle, fixture.bob_initial);
     assert_eq!(bob_token.next_balance_nonce_sequence, 2);
 
-    assert_acl_record(
-        &success_acl,
-        token::nonce_key(
-            fixture.mint,
-            fixture.alice_token,
-            token::transfer_success_label(),
-        ),
-        1,
-        fixture.mint,
-        fixture.alice_token,
-        token::transfer_success_label(),
-        0,
-        &[(fixture.compute_signer, host::ACL_ROLE_COMPUTE_SUBJECT)],
-    );
-    assert_acl_record(
-        &debit_candidate_acl,
-        token::nonce_key(
-            fixture.mint,
-            fixture.alice_token,
-            token::debit_candidate_label(),
-        ),
-        1,
-        fixture.mint,
-        fixture.alice_token,
-        token::debit_candidate_label(),
-        BALANCE_FHE_TYPE,
-        &[(fixture.compute_signer, host::ACL_ROLE_COMPUTE_SUBJECT)],
-    );
     assert_acl_record(
         &from_output_acl,
         token::balance_nonce_key(fixture.mint, fixture.alice_token),
@@ -1263,7 +1234,7 @@ fn mollusk_transfer_callback_prepare_requires_receiver_hook_marker() {
         &context,
         output.settlement
     ));
-    assert!(!acl_record_exists(&context, output.zero));
+    assert!(!acl_record_exists(&context, output.requested_refund));
 }
 
 #[test]
@@ -2056,8 +2027,6 @@ fn mollusk_confidential_burn_after_wrap_rotates_balance_and_total_supply() {
 
     let token_account = read_token_account(&context, fixture.alice_token);
     let mint_account = read_confidential_mint(&context, fixture.mint);
-    let success_acl = read_acl_record(&context, burn_output.success);
-    let debit_candidate_acl = read_acl_record(&context, burn_output.debit_candidate);
     let balance_acl = read_acl_record(&context, burn_output.balance);
     let burned_acl = read_acl_record(&context, burn_output.burned);
     let total_supply_acl = read_acl_record(&context, burn_output.total_supply);
@@ -2101,34 +2070,6 @@ fn mollusk_confidential_burn_after_wrap_rotates_balance_and_total_supply() {
     assert_eq!(mint_account.total_supply_handle, total_supply_acl.handle);
     assert_eq!(mint_account.next_total_supply_nonce_sequence, 3);
 
-    assert_acl_record(
-        &success_acl,
-        token::nonce_key(
-            fixture.mint,
-            fixture.alice_token,
-            token::burn_success_label(),
-        ),
-        2,
-        fixture.mint,
-        fixture.alice_token,
-        token::burn_success_label(),
-        0,
-        &[(fixture.compute_signer, host::ACL_ROLE_COMPUTE_SUBJECT)],
-    );
-    assert_acl_record(
-        &debit_candidate_acl,
-        token::nonce_key(
-            fixture.mint,
-            fixture.alice_token,
-            token::burn_debit_candidate_label(),
-        ),
-        2,
-        fixture.mint,
-        fixture.alice_token,
-        token::burn_debit_candidate_label(),
-        BALANCE_FHE_TYPE,
-        &[(fixture.compute_signer, host::ACL_ROLE_COMPUTE_SUBJECT)],
-    );
     assert_acl_record(
         &balance_acl,
         token::balance_nonce_key(fixture.mint, fixture.alice_token),
@@ -2175,14 +2116,12 @@ fn mollusk_confidential_burn_after_wrap_rotates_balance_and_total_supply() {
     assert_eq!(binary_events[0].op, host::FheBinaryOpCode::Ge);
     assert_eq!(binary_events[0].lhs, wrapped_balance_acl.handle);
     assert_eq!(binary_events[0].rhs, burn_amount_handle);
-    assert_eq!(binary_events[0].result, success_acl.handle);
     assert_eq!(binary_events[1].op, host::FheBinaryOpCode::Sub);
     assert_eq!(binary_events[1].lhs, wrapped_balance_acl.handle);
     assert_eq!(binary_events[1].rhs, burn_amount_handle);
-    assert_eq!(binary_events[1].result, debit_candidate_acl.handle);
     assert_eq!(ternary_events[0].op, host::FheTernaryOpCode::IfThenElse);
-    assert_eq!(ternary_events[0].control, success_acl.handle);
-    assert_eq!(ternary_events[0].if_true, debit_candidate_acl.handle);
+    assert_eq!(ternary_events[0].control, binary_events[0].result);
+    assert_eq!(ternary_events[0].if_true, binary_events[1].result);
     assert_eq!(ternary_events[0].if_false, wrapped_balance_acl.handle);
     assert_eq!(ternary_events[0].result, balance_acl.handle);
     assert_eq!(binary_events[2].op, host::FheBinaryOpCode::Sub);
@@ -2249,10 +2188,14 @@ fn mollusk_confidential_burn_over_balance_burns_zero_without_underflow() {
     );
     let burn_result = context.process_and_validate_instruction(&burn_ix, &[Check::success()]);
     ingest_mollusk_fhe_events(&mut cleartext, &burn_result);
+    let binary_events: Vec<host::events::FheBinaryOpEvent> = burn_result
+        .inner_instructions
+        .iter()
+        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
+        .collect();
 
     let token_account = read_token_account(&context, fixture.alice_token);
     let mint_account = read_confidential_mint(&context, fixture.mint);
-    let success_acl = read_acl_record(&context, burn_output.success);
     let balance_acl = read_acl_record(&context, burn_output.balance);
     let burned_acl = read_acl_record(&context, burn_output.burned);
     let total_supply_acl = read_acl_record(&context, burn_output.total_supply);
@@ -2266,8 +2209,9 @@ fn mollusk_confidential_burn_over_balance_burns_zero_without_underflow() {
     );
     assert_eq!(mint_account.total_supply_handle, total_supply_acl.handle);
     assert_eq!(mint_account.next_total_supply_nonce_sequence, 3);
+    assert_eq!(binary_events[0].op, host::FheBinaryOpCode::Ge);
     assert_eq!(
-        cleartext.decrypt_cleartext(success_acl.handle),
+        cleartext.decrypt_cleartext(binary_events[0].result),
         Some(TypedClearValue {
             fhe_type: 0,
             value: ClearValue::Uint(0),
@@ -2577,9 +2521,12 @@ fn mollusk_confidential_transfer_from_uses_operator_scoped_amount_acl() {
         amount_handle,
     );
     let context = fixture.context_with_input_amount_for_authority(amount_handle, fixture.operator);
+    let acl_records_before = acl_record_count(&context);
 
     context.process_and_validate_instruction(&ix, &[Check::success()]);
 
+    assert_transfer_created_exactly_three_acl_records(&context, acl_records_before, output);
+    assert_transfer_scratch_acl_records_absent(&context, &fixture, 1);
     let alice_token = read_token_account(&context, fixture.alice_token);
     let bob_token = read_token_account(&context, fixture.bob_token);
     let transferred_acl = read_acl_record(&context, output.transferred);
@@ -3729,8 +3676,6 @@ impl TokenMolluskFixture {
 struct SelfTransferOutputAccounts {
     alice: Pubkey,
     to_output: Pubkey,
-    success: Pubkey,
-    debit_candidate: Pubkey,
     transferred: Pubkey,
 }
 
@@ -3740,18 +3685,6 @@ impl SelfTransferOutputAccounts {
         Self {
             alice,
             to_output: alice,
-            success: token_acl_address(
-                fixture.mint,
-                fixture.alice_token,
-                token::transfer_success_label(),
-                nonce_sequence,
-            ),
-            debit_candidate: token_acl_address(
-                fixture.mint,
-                fixture.alice_token,
-                token::debit_candidate_label(),
-                nonce_sequence,
-            ),
             transferred: token_acl_address(
                 fixture.mint,
                 fixture.alice_token,
@@ -3761,14 +3694,8 @@ impl SelfTransferOutputAccounts {
         }
     }
 
-    fn all_accounts(self) -> [Pubkey; 5] {
-        [
-            self.alice,
-            self.to_output,
-            self.success,
-            self.debit_candidate,
-            self.transferred,
-        ]
+    fn all_accounts(self) -> [Pubkey; 3] {
+        [self.alice, self.to_output, self.transferred]
     }
 }
 
@@ -3776,8 +3703,6 @@ impl SelfTransferOutputAccounts {
 struct DirectTransferOutputAccounts {
     from_output: Pubkey,
     to_output: Pubkey,
-    success: Pubkey,
-    debit_candidate: Pubkey,
     transferred: Pubkey,
 }
 
@@ -3798,18 +3723,6 @@ impl DirectTransferOutputAccounts {
                 fixture.bob_token,
                 to_nonce_sequence,
             ),
-            success: token_acl_address(
-                fixture.mint,
-                fixture.alice_token,
-                token::transfer_success_label(),
-                from_nonce_sequence,
-            ),
-            debit_candidate: token_acl_address(
-                fixture.mint,
-                fixture.alice_token,
-                token::debit_candidate_label(),
-                from_nonce_sequence,
-            ),
             transferred: token_acl_address(
                 fixture.mint,
                 fixture.alice_token,
@@ -3819,14 +3732,8 @@ impl DirectTransferOutputAccounts {
         }
     }
 
-    fn all_accounts(self) -> [Pubkey; 5] {
-        [
-            self.from_output,
-            self.to_output,
-            self.success,
-            self.debit_candidate,
-            self.transferred,
-        ]
+    fn all_accounts(self) -> [Pubkey; 3] {
+        [self.from_output, self.to_output, self.transferred]
     }
 }
 
@@ -3863,8 +3770,6 @@ impl WrapOutputAccounts {
 #[derive(Clone, Copy)]
 struct BurnOutputAccounts {
     balance: Pubkey,
-    success: Pubkey,
-    debit_candidate: Pubkey,
     burned: Pubkey,
     total_supply: Pubkey,
 }
@@ -3881,18 +3786,6 @@ impl BurnOutputAccounts {
                 fixture.alice_token,
                 balance_nonce_sequence,
             ),
-            success: token_acl_address(
-                fixture.mint,
-                fixture.alice_token,
-                token::burn_success_label(),
-                balance_nonce_sequence,
-            ),
-            debit_candidate: token_acl_address(
-                fixture.mint,
-                fixture.alice_token,
-                token::burn_debit_candidate_label(),
-                balance_nonce_sequence,
-            ),
             burned: token_acl_address(
                 fixture.mint,
                 fixture.alice_token,
@@ -3907,24 +3800,15 @@ impl BurnOutputAccounts {
         }
     }
 
-    fn all_accounts(self) -> [Pubkey; 5] {
-        [
-            self.balance,
-            self.success,
-            self.debit_candidate,
-            self.burned,
-            self.total_supply,
-        ]
+    fn all_accounts(self) -> [Pubkey; 3] {
+        [self.balance, self.burned, self.total_supply]
     }
 }
 
 #[derive(Clone, Copy)]
 struct CallbackSettlementOutputAccounts {
     settlement: Pubkey,
-    zero: Pubkey,
     requested_refund: Pubkey,
-    refund_success: Pubkey,
-    refund_debit_candidate: Pubkey,
     to_output: Pubkey,
     refund: Pubkey,
     from_output: Pubkey,
@@ -3940,28 +3824,10 @@ impl CallbackSettlementOutputAccounts {
     ) -> Self {
         Self {
             settlement: token::transfer_callback_settlement_address(fixture.mint, sent_handle).0,
-            zero: token_acl_address(
-                fixture.mint,
-                fixture.bob_token,
-                token::callback_zero_label(),
-                to_nonce_sequence,
-            ),
             requested_refund: token_acl_address(
                 fixture.mint,
                 fixture.bob_token,
                 token::callback_refund_request_label(),
-                to_nonce_sequence,
-            ),
-            refund_success: token_acl_address(
-                fixture.mint,
-                fixture.bob_token,
-                token::callback_refund_success_label(),
-                to_nonce_sequence,
-            ),
-            refund_debit_candidate: token_acl_address(
-                fixture.mint,
-                fixture.bob_token,
-                token::callback_refund_debit_candidate_label(),
                 to_nonce_sequence,
             ),
             to_output: token_balance_acl_address(
@@ -3989,13 +3855,10 @@ impl CallbackSettlementOutputAccounts {
         }
     }
 
-    fn all_accounts(self) -> [Pubkey; 9] {
+    fn all_accounts(self) -> [Pubkey; 6] {
         [
             self.settlement,
-            self.zero,
             self.requested_refund,
-            self.refund_success,
-            self.refund_debit_candidate,
             self.to_output,
             self.refund,
             self.from_output,
@@ -4024,8 +3887,6 @@ fn self_transfer_ix(
                 fixture.owner,
                 DEFAULT_INPUT_NONCE_SEQUENCE,
             ),
-            transfer_success_acl: output.success,
-            debit_candidate_acl: output.debit_candidate,
             from_output_acl: output.alice,
             transferred_amount_acl: output.transferred,
             to_output_acl: output.to_output,
@@ -4074,8 +3935,6 @@ fn direct_transfer_ix_with_acls(
             from_current_compute_acl,
             to_current_compute_acl,
             amount_compute_acl,
-            transfer_success_acl: output.success,
-            debit_candidate_acl: output.debit_candidate,
             from_output_acl: output.from_output,
             transferred_amount_acl: output.transferred,
             to_output_acl: output.to_output,
@@ -4108,8 +3967,6 @@ fn transfer_from_ix(
             from_current_compute_acl: fixture.alice_current_compute_acl,
             to_current_compute_acl: fixture.bob_current_compute_acl,
             amount_compute_acl,
-            transfer_success_acl: output.success,
-            debit_candidate_acl: output.debit_candidate,
             from_output_acl: output.from_output,
             transferred_amount_acl: output.transferred,
             to_output_acl: output.to_output,
@@ -4489,8 +4346,6 @@ fn burn_ix_with_amount_acl(
             current_compute_acl,
             current_total_supply_acl,
             amount_compute_acl,
-            burn_success_acl: output.success,
-            debit_candidate_acl: output.debit_candidate,
             output_acl: output.balance,
             burned_amount_acl: output.burned,
             total_supply_output_acl: output.total_supply,
@@ -4763,10 +4618,7 @@ fn prepare_transfer_callback_ix(
             callback_success_acl,
             hook_record: token::transfer_receiver_hook_address(fixture.mint, sent_handle).0,
             settlement_record: output.settlement,
-            callback_zero_acl: output.zero,
             requested_refund_acl: output.requested_refund,
-            refund_success_acl: output.refund_success,
-            refund_debit_candidate_acl: output.refund_debit_candidate,
             to_output_acl: output.to_output,
             refund_amount_acl: output.refund,
             zama_event_authority: event_authority(host::id()),
@@ -5229,6 +5081,18 @@ fn acl_record_exists(
         && host::AclRecord::try_deserialize(&mut account.data.as_slice()).is_ok()
 }
 
+fn acl_record_count(context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>) -> usize {
+    context
+        .account_store
+        .borrow()
+        .values()
+        .filter(|account| {
+            account.owner == host::id()
+                && host::AclRecord::try_deserialize(&mut account.data.as_slice()).is_ok()
+        })
+        .count()
+}
+
 fn read_burn_redemption(
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
     address: Pubkey,
@@ -5317,6 +5181,60 @@ fn assert_empty_system_account(
     assert_eq!(account.owner, system_program::ID);
     assert!(account.data.is_empty());
     assert!(!account.executable);
+}
+
+fn assert_transfer_created_exactly_three_acl_records(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    acl_records_before: usize,
+    output: DirectTransferOutputAccounts,
+) {
+    assert_eq!(acl_record_count(context), acl_records_before + 3);
+    for account in output.all_accounts() {
+        assert_rent_funded_acl_record_account(context, account);
+    }
+}
+
+fn assert_rent_funded_acl_record_account(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    address: Pubkey,
+) {
+    let account = context
+        .account_store
+        .borrow()
+        .get(&address)
+        .expect("missing output ACL account")
+        .clone();
+    let account_size = 8 + host::AclRecord::SPACE;
+    let expected_lamports = context.mollusk.sysvars.rent.minimum_balance(account_size);
+    assert_eq!(account.owner, host::id());
+    assert_eq!(account.data.len(), account_size);
+    assert_eq!(account.lamports, expected_lamports);
+    assert!(!account.executable);
+}
+
+fn assert_transfer_scratch_acl_records_absent(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    fixture: &TokenMolluskFixture,
+    nonce_sequence: u64,
+) {
+    assert!(!acl_record_exists(
+        context,
+        token_acl_address(
+            fixture.mint,
+            fixture.alice_token,
+            token::transfer_success_label(),
+            nonce_sequence,
+        ),
+    ));
+    assert!(!acl_record_exists(
+        context,
+        token_acl_address(
+            fixture.mint,
+            fixture.alice_token,
+            token::debit_candidate_label(),
+            nonce_sequence,
+        ),
+    ));
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5759,109 +5677,100 @@ fn predicted_transfer_sent_handle(
     amount_handle: [u8; 32],
 ) -> [u8; 32] {
     let from = read_token_account(context, fixture.alice_token);
-    let nonce_sequence = from.next_balance_nonce_sequence;
-    let transfer_success_handle = current_bound_binary_handle(
-        &context.mollusk,
+    let to = read_token_account(context, fixture.bob_token);
+    let from_nonce_sequence = from.next_balance_nonce_sequence;
+    let to_nonce_sequence = to.next_balance_nonce_sequence;
+    let context_id = transfer_eval_context(
+        b"combined",
+        fixture.mint,
+        fixture.alice_token,
+        fixture.bob_token,
+        amount_handle,
+        from_nonce_sequence,
+        to_nonce_sequence,
+    );
+    let previous_bank_hash = previous_bank_hash(&context.mollusk);
+    let unix_timestamp = context.mollusk.sysvars.clock.unix_timestamp;
+    let transfer_success_handle = host::computed_eval_handle(
         host::FheBinaryOpCode::Ge,
         from.balance_handle,
         amount_handle,
         false,
         0,
-        token::nonce_key(
-            fixture.mint,
-            fixture.alice_token,
-            token::transfer_success_label(),
-        ),
-        nonce_sequence,
+        host::SOLANA_POC_CHAIN_ID,
+        previous_bank_hash,
+        unix_timestamp,
+        context_id,
+        0,
     );
-    let debit_candidate_handle = current_bound_binary_handle(
-        &context.mollusk,
+    let debit_candidate_handle = host::computed_eval_handle(
         host::FheBinaryOpCode::Sub,
         from.balance_handle,
         amount_handle,
         false,
         BALANCE_FHE_TYPE,
-        token::nonce_key(
-            fixture.mint,
-            fixture.alice_token,
-            token::debit_candidate_label(),
-        ),
-        nonce_sequence,
+        host::SOLANA_POC_CHAIN_ID,
+        previous_bank_hash,
+        unix_timestamp,
+        context_id,
+        1,
     );
-    let new_from_handle = current_bound_ternary_handle(
-        &context.mollusk,
+    let new_from_handle = host::computed_bound_eval_ternary_handle(
         host::FheTernaryOpCode::IfThenElse,
         transfer_success_handle,
         debit_candidate_handle,
         from.balance_handle,
         BALANCE_FHE_TYPE,
+        host::SOLANA_POC_CHAIN_ID,
+        previous_bank_hash,
+        unix_timestamp,
+        context_id,
+        2,
         token::balance_nonce_key(fixture.mint, fixture.alice_token),
-        nonce_sequence,
+        from_nonce_sequence,
     );
-    current_bound_binary_handle(
-        &context.mollusk,
+    host::computed_bound_eval_handle(
         host::FheBinaryOpCode::Sub,
         from.balance_handle,
         new_from_handle,
         false,
         BALANCE_FHE_TYPE,
+        host::SOLANA_POC_CHAIN_ID,
+        previous_bank_hash,
+        unix_timestamp,
+        context_id,
+        3,
         token::nonce_key(
             fixture.mint,
             fixture.alice_token,
             token::transferred_amount_label(),
         ),
-        nonce_sequence,
+        from_nonce_sequence,
     )
 }
 
-#[allow(clippy::too_many_arguments)]
-fn current_bound_binary_handle(
-    mollusk: &Mollusk,
-    op: host::FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
+fn transfer_eval_context(
+    tag: &[u8],
+    mint: Pubkey,
+    from_token_account: Pubkey,
+    to_token_account: Pubkey,
+    amount_handle: [u8; 32],
+    from_nonce_sequence: u64,
+    to_nonce_sequence: u64,
 ) -> [u8; 32] {
-    host::computed_bound_binary_handle(
-        op,
-        lhs,
-        rhs,
-        scalar,
-        fhe_type,
-        host::SOLANA_POC_CHAIN_ID,
-        previous_bank_hash(mollusk),
-        mollusk.sysvars.clock.unix_timestamp,
-        output_nonce_key,
-        output_nonce_sequence,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn current_bound_ternary_handle(
-    mollusk: &Mollusk,
-    op: host::FheTernaryOpCode,
-    control: [u8; 32],
-    if_true: [u8; 32],
-    if_false: [u8; 32],
-    fhe_type: u8,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> [u8; 32] {
-    host::computed_bound_ternary_handle(
-        op,
-        control,
-        if_true,
-        if_false,
-        fhe_type,
-        host::SOLANA_POC_CHAIN_ID,
-        previous_bank_hash(mollusk),
-        mollusk.sysvars.clock.unix_timestamp,
-        output_nonce_key,
-        output_nonce_sequence,
-    )
+    let from_sequence_bytes = from_nonce_sequence.to_be_bytes();
+    let to_sequence_bytes = to_nonce_sequence.to_be_bytes();
+    solana_sha256_hasher::hashv(&[
+        b"confidential-token-transfer-eval-v1",
+        tag,
+        mint.as_ref(),
+        from_token_account.as_ref(),
+        to_token_account.as_ref(),
+        &amount_handle,
+        &from_sequence_bytes,
+        &to_sequence_bytes,
+    ])
+    .to_bytes()
 }
 
 fn previous_bank_hash(mollusk: &Mollusk) -> [u8; 32] {

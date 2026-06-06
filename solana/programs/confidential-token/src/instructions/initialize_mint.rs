@@ -50,35 +50,63 @@ pub fn initialize_mint(ctx: Context<InitializeMint>) -> Result<()> {
         ConfidentialTokenError::InvalidMintConfig
     );
     let total_supply_authority = ctx.accounts.total_supply_authority.key();
-    let total_supply_authority_bump = [ctx.bumps.total_supply_authority];
-    let total_supply_authority_seeds: &[&[u8]] = &[
-        b"total-supply",
-        mint_key.as_ref(),
-        &total_supply_authority_bump,
-    ];
+    require_keys_eq!(
+        total_supply_authority,
+        total_supply_authority_address(mint_key).0,
+        ConfidentialTokenError::TotalSupplyAuthorityMismatch
+    );
     let total_supply_acl_record = ctx.accounts.total_supply_acl_record.key();
-    let total_supply_handle =
-        fhe::trivial_encrypt_u64_with_app_pda(fhe::TrivialEncryptU64WithAppPda {
+    let total_supply_output = fhe::DurableOutput::new(
+        ctx.accounts.total_supply_acl_record.to_account_info(),
+        durable_slot(mint_key, total_supply_authority, total_supply_label(), 0),
+        zama_fhe::AccessPolicy::for_compute(compute_signer).map_err(invalid_eval_plan)?,
+    )?;
+    let context_id = transfer_eval_context(
+        b"initialize-total-supply",
+        mint_key,
+        total_supply_authority,
+        total_supply_authority,
+        [0; 32],
+        0,
+        0,
+    )?;
+    let mut builder = zama_fhe::EvalBuilder::new(
+        context_id,
+        zama_fhe::EvalAppAuthority::new(total_supply_authority),
+    );
+    builder
+        .trivial_encrypt_u64(0, total_supply_output.output())
+        .map_err(invalid_eval_plan)?;
+    let plan = builder.finish().map_err(invalid_eval_plan)?;
+    let compute_authority = fhe::ComputeAuthority::for_mint(
+        &ctx.accounts.compute_signer,
+        mint_key,
+        ctx.bumps.compute_signer,
+    )?;
+    let total_supply_authority_bump = total_supply_authority_address(mint_key).1;
+    let eval_accounts = fhe::EvalAccountSet::for_plan(
+        &plan,
+        [total_supply_output.account_info()],
+        [fhe::OutputAuthority::total_supply(
+            &ctx.accounts.total_supply_authority,
+            mint_key,
+            total_supply_authority_bump,
+        )?],
+    )?;
+    fhe::eval(fhe::Eval {
+        context: fhe::EvalContext {
             payer: &ctx.accounts.authority,
             event_authority: &ctx.accounts.zama_event_authority,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,
-            compute_signer: &ctx.accounts.compute_signer,
-            app_account_authority: &ctx.accounts.total_supply_authority,
-            app_signer_seeds: total_supply_authority_seeds,
-            output_app_account: total_supply_authority,
-            output_acl_record: ctx.accounts.total_supply_acl_record.to_account_info(),
-            acl_domain_key: mint_key,
-            compute_signer_bump: ctx.bumps.compute_signer,
+            compute_authority,
             system_program: &ctx.accounts.system_program,
-            output_nonce_key: total_supply_nonce_key(mint_key, total_supply_authority),
-            output_nonce_sequence: 0,
-            output_encrypted_value_label: total_supply_label(),
-            plaintext: 0,
-            fhe_type: BALANCE_FHE_TYPE,
-            output_subjects: compute_acl_subject(compute_signer),
-            output_public_decrypt: false,
-        })?;
+            instructions_sysvar: None,
+        },
+        accounts: &eval_accounts,
+        plan,
+    })?;
+    let total_supply_handle = total_supply_output.handle()?;
     let mint = &mut ctx.accounts.mint;
     mint.authority = ctx.accounts.authority.key();
     mint.acl_domain_key = mint_key;

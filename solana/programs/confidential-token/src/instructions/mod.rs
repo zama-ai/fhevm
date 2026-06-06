@@ -37,7 +37,7 @@ use anchor_spl::{
 use solana_instructions_sysvar::{
     load_current_index_checked, load_instruction_at_checked, ID as INSTRUCTIONS_SYSVAR_ID,
 };
-use zama_host::{self, program::ZamaHost, AclSubjectEntry};
+use zama_host::{self, program::ZamaHost};
 
 use crate::{
     errors::*, events::*, fhe, state::*, transfer_receiver_return_data, TransferReceiverReturn,

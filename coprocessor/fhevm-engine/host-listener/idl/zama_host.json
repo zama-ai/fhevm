@@ -4455,90 +4455,16 @@
             }
           },
           {
-            "name": "ops",
+            "name": "steps",
             "docs": [
-              "Ordered operation list. Each transient operand may only reference an",
-              "output produced by an earlier index in this vector."
+              "Ordered step list. Each transient operand may only reference an output",
+              "produced by an earlier index in this vector."
             ],
             "type": {
               "vec": {
                 "defined": {
-                  "name": "FheEvalOp"
+                  "name": "FheEvalStep"
                 }
-              }
-            }
-          }
-        ]
-      }
-    },
-    {
-      "name": "FheEvalOp",
-      "docs": [
-        "One binary operation inside a composed FHE eval."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "op",
-            "docs": [
-              "Binary operator."
-            ],
-            "type": {
-              "defined": {
-                "name": "FheBinaryOpCode"
-              }
-            }
-          },
-          {
-            "name": "lhs",
-            "docs": [
-              "Left-hand operand."
-            ],
-            "type": {
-              "defined": {
-                "name": "FheEvalOperand"
-              }
-            }
-          },
-          {
-            "name": "rhs",
-            "docs": [
-              "Right-hand operand or scalar bytes."
-            ],
-            "type": {
-              "defined": {
-                "name": "FheEvalOperand"
-              }
-            }
-          },
-          {
-            "name": "output_fhe_type",
-            "docs": [
-              "FHE type byte embedded in the output handle."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "result",
-            "docs": [
-              "Caller-supplied output handle verified by host derivation."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "output",
-            "docs": [
-              "Whether this output remains instruction-local or is bound into durable ACL state."
-            ],
-            "type": {
-              "defined": {
-                "name": "FheEvalOutput"
               }
             }
           }
@@ -4688,6 +4614,19 @@
                 "type": "u16"
               },
               {
+                "name": "output_app_account_authority_index",
+                "docs": [
+                  "Optional index into `remaining_accounts` for the app account authority signer.",
+                  "",
+                  "`None` uses the fixed `app_account_authority` account in the eval",
+                  "context. `Some(index)` requires that remaining account to be a signer",
+                  "and to match `output_app_account`."
+                ],
+                "type": {
+                  "option": "u16"
+                }
+              },
+              {
                 "name": "output_nonce_key",
                 "docs": [
                   "Nonce key for the output ACL record."
@@ -4751,6 +4690,237 @@
                   "Initial public decrypt flag on the output ACL record."
                 ],
                 "type": "bool"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "FheEvalStep",
+      "docs": [
+        "One step inside a composed FHE eval."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Binary",
+            "fields": [
+              {
+                "name": "op",
+                "docs": [
+                  "Binary operator."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheBinaryOpCode"
+                  }
+                }
+              },
+              {
+                "name": "lhs",
+                "docs": [
+                  "Left-hand encrypted operand."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOperand"
+                  }
+                }
+              },
+              {
+                "name": "rhs",
+                "docs": [
+                  "Right-hand encrypted operand or scalar bytes."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOperand"
+                  }
+                }
+              },
+              {
+                "name": "output_fhe_type",
+                "docs": [
+                  "FHE type byte embedded in the output handle."
+                ],
+                "type": "u8"
+              },
+              {
+                "name": "output",
+                "docs": [
+                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOutput"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "Ternary",
+            "fields": [
+              {
+                "name": "op",
+                "docs": [
+                  "Ternary operator."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheTernaryOpCode"
+                  }
+                }
+              },
+              {
+                "name": "control",
+                "docs": [
+                  "Encrypted bool control operand."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOperand"
+                  }
+                }
+              },
+              {
+                "name": "if_true",
+                "docs": [
+                  "Encrypted branch selected when control is true."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOperand"
+                  }
+                }
+              },
+              {
+                "name": "if_false",
+                "docs": [
+                  "Encrypted branch selected when control is false."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOperand"
+                  }
+                }
+              },
+              {
+                "name": "output_fhe_type",
+                "docs": [
+                  "FHE type byte embedded in the output handle."
+                ],
+                "type": "u8"
+              },
+              {
+                "name": "output",
+                "docs": [
+                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOutput"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "TrivialEncrypt",
+            "fields": [
+              {
+                "name": "plaintext",
+                "docs": [
+                  "Plaintext bytes encoded using the host scalar convention."
+                ],
+                "type": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              },
+              {
+                "name": "fhe_type",
+                "docs": [
+                  "FHE type byte embedded in the output handle."
+                ],
+                "type": "u8"
+              },
+              {
+                "name": "output",
+                "docs": [
+                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOutput"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "Rand",
+            "fields": [
+              {
+                "name": "fhe_type",
+                "docs": [
+                  "FHE type byte embedded in the output handle."
+                ],
+                "type": "u8"
+              },
+              {
+                "name": "output",
+                "docs": [
+                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOutput"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "Input",
+            "fields": [
+              {
+                "name": "input_handle",
+                "docs": [
+                  "Input handle selected from the proof."
+                ],
+                "type": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              },
+              {
+                "name": "proof",
+                "docs": [
+                  "Solana input proof verified by the host."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "SolanaInputProof"
+                  }
+                }
+              },
+              {
+                "name": "output",
+                "docs": [
+                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOutput"
+                  }
+                }
               }
             ]
           }

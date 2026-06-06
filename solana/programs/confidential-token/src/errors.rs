@@ -80,4 +80,28 @@ pub enum ConfidentialTokenError {
     /// Receiver hook payload or account list exceeds program limits.
     #[msg("receiver hook input exceeds program limits")]
     ReceiverHookInputTooLarge,
+    /// Internal FHE eval plan construction failed before the host CPI.
+    #[msg("FHE eval plan is invalid")]
+    InvalidFheEvalPlan,
+    /// The FHE eval candidate account list contains the same account twice.
+    #[msg("FHE eval account list contains a duplicate account")]
+    DuplicateFheEvalAccount,
+    /// The FHE eval candidate account list contains an account the plan does not require.
+    #[msg("FHE eval account list contains an unexpected account")]
+    UnexpectedFheEvalAccount,
+    /// The FHE eval plan requires a dynamic account that was not provided.
+    #[msg("FHE eval plan is missing a required dynamic account")]
+    MissingFheEvalAccount,
+    /// The FHE eval plan requires a writable dynamic account but the provided account is readonly.
+    #[msg("FHE eval dynamic account must be writable")]
+    FheEvalAccountNotWritable,
+    /// The FHE eval output authority list contains the same authority twice.
+    #[msg("FHE eval output authority list contains a duplicate authority")]
+    DuplicateFheOutputAuthority,
+    /// The FHE eval output authority list contains an authority the plan does not require.
+    #[msg("FHE eval output authority list contains an unexpected authority")]
+    UnexpectedFheOutputAuthority,
+    /// The FHE eval plan requires an output authority that was not provided.
+    #[msg("FHE eval plan is missing a required output authority")]
+    MissingFheOutputAuthority,
 }

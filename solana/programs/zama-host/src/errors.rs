@@ -159,6 +159,9 @@ pub enum ZamaHostError {
     /// An FHE eval instruction exceeded the supported operation count.
     #[msg("FHE eval operation count is invalid")]
     InvalidFheEvalOperationCount,
+    /// An FHE eval instruction would exceed the bounded event log budget.
+    #[msg("FHE eval event log budget is exceeded")]
+    FheEvalEventLogBudgetExceeded,
     /// An FHE eval instruction referenced a missing or malformed dynamic account.
     #[msg("FHE eval account reference is invalid")]
     InvalidFheEvalAccount,

@@ -118,8 +118,7 @@ pub const ANCHOR_EVENT_IX_TAG_LE: [u8; 8] = 0x1d9acb512ea545e4_u64.to_le_bytes()
     output.push_str("}\n\n");
 
     output.push_str(
-        r#"pub fn decode_anchor_cpi_event(data: &[u8]) -> Option<ZamaHostEvent> {
-    let data = data.strip_prefix(&ANCHOR_EVENT_IX_TAG_LE)?;
+        r#"pub fn decode_anchor_event(data: &[u8]) -> Option<ZamaHostEvent> {
     if data.len() < 8 {
         return None;
     }
@@ -141,6 +140,14 @@ pub const ANCHOR_EVENT_IX_TAG_LE: [u8; 8] = 0x1d9acb512ea545e4_u64.to_le_bytes()
         output.push_str(");\n    }\n");
     }
     output.push_str("\n    None\n}\n\n");
+
+    output.push_str(
+        r#"pub fn decode_anchor_cpi_event(data: &[u8]) -> Option<ZamaHostEvent> {
+    decode_anchor_event(data.strip_prefix(&ANCHOR_EVENT_IX_TAG_LE)?)
+}
+
+"#,
+    );
 
     output.push_str(
         r#"pub fn anchor_event_discriminator(name: &str) -> [u8; 8] {

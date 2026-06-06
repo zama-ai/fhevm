@@ -35,6 +35,7 @@ async-trait = { workspace = true }
 aws-config = { workspace = true }
 aws-credential-types = { workspace = true }
 aws-sdk-s3 = { workspace = true }
+base64 = "0.22.1"
 bigdecimal = { workspace = true }
 clap = { workspace = true }
 futures-util = { workspace = true }

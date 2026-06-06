@@ -674,6 +674,69 @@ pub(super) fn consume_transient_capability(
         ZamaHostError::InvalidFheEvalAccount
     );
     let mut session = read_transient_session(session_info)?;
+    let consumed = assert_transient_capability_available(
+        *session_info.key,
+        &session,
+        authority,
+        current_slot,
+        handle,
+        subject,
+        role,
+        capability_index,
+        instructions_sysvar,
+    )?;
+    let capability = session
+        .entries
+        .get_mut(capability_index as usize)
+        .ok_or(ZamaHostError::TransientCapabilityMismatch)?;
+    capability.used_count = capability
+        .used_count
+        .checked_add(1)
+        .ok_or(ZamaHostError::TransientCapabilityConsumed)?;
+    write_account(session_info, &session)?;
+    Ok(consumed)
+}
+
+pub(super) fn read_transient_capability_for_eval(
+    session_info: &AccountInfo,
+    authority: Pubkey,
+    current_slot: u64,
+    handle: [u8; 32],
+    subject: Pubkey,
+    role: u8,
+    capability_index: u16,
+    instructions_sysvar: Option<&AccountInfo>,
+) -> Result<TransientCapability> {
+    require!(
+        session_info.is_writable,
+        ZamaHostError::InvalidFheEvalAccount
+    );
+    let session = read_transient_session(session_info)?;
+    assert_transient_capability_available(
+        *session_info.key,
+        &session,
+        authority,
+        current_slot,
+        handle,
+        subject,
+        role,
+        capability_index,
+        instructions_sysvar,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn assert_transient_capability_available(
+    session_key: Pubkey,
+    session: &TransientSession,
+    authority: Pubkey,
+    current_slot: u64,
+    handle: [u8; 32],
+    subject: Pubkey,
+    role: u8,
+    capability_index: u16,
+    instructions_sysvar: Option<&AccountInfo>,
+) -> Result<TransientCapability> {
     require_keys_eq!(
         session.authority,
         authority,
@@ -694,10 +757,7 @@ pub(super) fn consume_transient_capability(
         INSTRUCTIONS_SYSVAR_ID,
         ZamaHostError::TransientCapabilityReceiverMissing
     );
-    assert_transient_session_created_in_current_transaction(
-        instructions_sysvar,
-        *session_info.key,
-    )?;
+    assert_transient_session_created_in_current_transaction(instructions_sysvar, session_key)?;
     require_keys_eq!(
         session.compute_subject,
         subject,
@@ -706,7 +766,7 @@ pub(super) fn consume_transient_capability(
 
     let capability = session
         .entries
-        .get_mut(capability_index as usize)
+        .get(capability_index as usize)
         .ok_or(ZamaHostError::TransientCapabilityMismatch)?;
     require!(
         capability.handle == handle,
@@ -726,17 +786,10 @@ pub(super) fn consume_transient_capability(
         ZamaHostError::TransientCapabilityConsumed
     );
     assert_current_receiver_program(instructions_sysvar, capability.grant.receiver_program)?;
-
-    capability.used_count = capability
-        .used_count
-        .checked_add(1)
-        .ok_or(ZamaHostError::TransientCapabilityConsumed)?;
-    let consumed = *capability;
-    write_account(session_info, &session)?;
-    Ok(consumed)
+    Ok(*capability)
 }
 
-fn assert_transient_grant(
+pub(super) fn assert_transient_grant(
     session: &TransientSession,
     grant: TransientCapabilityGrant,
 ) -> Result<()> {

@@ -197,26 +197,67 @@ pub struct FheEvalArgs {
     ///
     /// Callers should use a fresh value for each logical eval session.
     pub context_id: [u8; 32],
-    /// Ordered operation list. Each transient operand may only reference an
-    /// output produced by an earlier index in this vector.
-    pub ops: Vec<FheEvalOp>,
+    /// Ordered step list. Each transient operand may only reference an output
+    /// produced by an earlier index in this vector.
+    pub steps: Vec<FheEvalStep>,
 }
 
-/// One binary operation inside a composed FHE eval.
+/// One step inside a composed FHE eval.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
-pub struct FheEvalOp {
-    /// Binary operator.
-    pub op: FheBinaryOpCode,
-    /// Left-hand operand.
-    pub lhs: FheEvalOperand,
-    /// Right-hand operand or scalar bytes.
-    pub rhs: FheEvalOperand,
-    /// FHE type byte embedded in the output handle.
-    pub output_fhe_type: u8,
-    /// Caller-supplied output handle verified by host derivation.
-    pub result: [u8; 32],
-    /// Whether this output remains instruction-local or is bound into durable ACL state.
-    pub output: FheEvalOutput,
+pub enum FheEvalStep {
+    /// Binary operator step.
+    Binary {
+        /// Binary operator.
+        op: FheBinaryOpCode,
+        /// Left-hand encrypted operand.
+        lhs: FheEvalOperand,
+        /// Right-hand encrypted operand or scalar bytes.
+        rhs: FheEvalOperand,
+        /// FHE type byte embedded in the output handle.
+        output_fhe_type: u8,
+        /// Whether this output remains instruction-local or is bound into durable ACL state.
+        output: FheEvalOutput,
+    },
+    /// Ternary operator step.
+    Ternary {
+        /// Ternary operator.
+        op: FheTernaryOpCode,
+        /// Encrypted bool control operand.
+        control: FheEvalOperand,
+        /// Encrypted branch selected when control is true.
+        if_true: FheEvalOperand,
+        /// Encrypted branch selected when control is false.
+        if_false: FheEvalOperand,
+        /// FHE type byte embedded in the output handle.
+        output_fhe_type: u8,
+        /// Whether this output remains instruction-local or is bound into durable ACL state.
+        output: FheEvalOutput,
+    },
+    /// Trivial encryption step.
+    TrivialEncrypt {
+        /// Plaintext bytes encoded using the host scalar convention.
+        plaintext: [u8; 32],
+        /// FHE type byte embedded in the output handle.
+        fhe_type: u8,
+        /// Whether this output remains instruction-local or is bound into durable ACL state.
+        output: FheEvalOutput,
+    },
+    /// Random ciphertext step.
+    Rand {
+        /// FHE type byte embedded in the output handle.
+        fhe_type: u8,
+        /// Whether this output remains instruction-local or is bound into durable ACL state.
+        output: FheEvalOutput,
+    },
+    /// Externally verified input step.
+    Input {
+        /// Input handle selected from the proof.
+        input_handle: [u8; 32],
+        /// Solana input proof verified by the host.
+        proof: SolanaInputProof,
+        /// Durable ACL output bound from the verified input.
+        output: FheEvalOutput,
+    },
 }
 
 /// Operand source for a composed FHE eval operation.
@@ -265,6 +306,12 @@ pub enum FheEvalOutput {
     Durable {
         /// Index into `remaining_accounts` for the output ACL record PDA.
         output_acl_record_index: u16,
+        /// Optional index into `remaining_accounts` for the app account authority signer.
+        ///
+        /// `None` uses the fixed `app_account_authority` account in the eval
+        /// context. `Some(index)` requires that remaining account to be a signer
+        /// and to match `output_app_account`.
+        output_app_account_authority_index: Option<u16>,
         /// Nonce key for the output ACL record.
         output_nonce_key: [u8; 32],
         /// Nonce sequence for the output ACL record.
@@ -1218,6 +1265,108 @@ pub fn computed_eval_handle(
     result
 }
 
+/// Derives an instruction-local ternary eval operation handle from explicit entropy.
+#[allow(clippy::too_many_arguments)]
+pub fn computed_eval_ternary_handle(
+    op: FheTernaryOpCode,
+    control: [u8; 32],
+    if_true: [u8; 32],
+    if_false: [u8; 32],
+    fhe_type: u8,
+    chain_id: u64,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+    context_id: [u8; 32],
+    op_index: u16,
+) -> [u8; 32] {
+    let op_byte = [op.as_u8()];
+    let chain_id_bytes = chain_id.to_be_bytes();
+    let timestamp_bytes = unix_timestamp.to_be_bytes();
+    let op_index_bytes = op_index.to_be_bytes();
+    let mut result = hashv(&[
+        b"FHE_eval_ternary",
+        &context_id,
+        &op_index_bytes,
+        &op_byte,
+        &control,
+        &if_true,
+        &if_false,
+        crate::ID.as_ref(),
+        &chain_id_bytes,
+        &previous_bank_hash,
+        &timestamp_bytes,
+    ])
+    .to_bytes();
+
+    result[21..32].fill(0);
+    result[21] = COMPUTED_HANDLE_MARKER;
+    result[22..30].copy_from_slice(&chain_id_bytes);
+    result[30] = fhe_type;
+    result[31] = HANDLE_VERSION;
+    result
+}
+
+/// Derives an instruction-local trivial-encrypt eval handle from explicit entropy.
+pub fn computed_eval_trivial_handle(
+    plaintext: [u8; 32],
+    fhe_type: u8,
+    chain_id: u64,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+    context_id: [u8; 32],
+    op_index: u16,
+) -> [u8; 32] {
+    let chain_id_bytes = chain_id.to_be_bytes();
+    let timestamp_bytes = unix_timestamp.to_be_bytes();
+    let op_index_bytes = op_index.to_be_bytes();
+    let fhe_type_bytes = [fhe_type];
+    let mut result = hashv(&[
+        b"FHE_eval_trivial",
+        &context_id,
+        &op_index_bytes,
+        &plaintext,
+        &fhe_type_bytes,
+        crate::ID.as_ref(),
+        &chain_id_bytes,
+        &previous_bank_hash,
+        &timestamp_bytes,
+    ])
+    .to_bytes();
+
+    result[21..32].fill(0);
+    result[21] = COMPUTED_HANDLE_MARKER;
+    result[22..30].copy_from_slice(&chain_id_bytes);
+    result[30] = fhe_type;
+    result[31] = HANDLE_VERSION;
+    result
+}
+
+/// Derives the seed emitted for an instruction-local eval random handle.
+pub fn computed_eval_rand_seed(
+    chain_id: u64,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+    context_id: [u8; 32],
+    op_index: u16,
+) -> [u8; 16] {
+    let chain_id_bytes = chain_id.to_be_bytes();
+    let timestamp_bytes = unix_timestamp.to_be_bytes();
+    let op_index_bytes = op_index.to_be_bytes();
+    let hash = hashv(&[
+        b"FHE_eval_seed",
+        &context_id,
+        &op_index_bytes,
+        crate::ID.as_ref(),
+        &chain_id_bytes,
+        &previous_bank_hash,
+        &timestamp_bytes,
+    ])
+    .to_bytes();
+    let mut seed = [0; 16];
+    seed.copy_from_slice(&hash[..16]);
+    seed
+}
+
 /// Derives a nonce-bound durable output handle for composed eval.
 pub fn computed_bound_eval_handle(
     op: FheBinaryOpCode,
@@ -1239,6 +1388,48 @@ pub fn computed_bound_eval_handle(
         lhs,
         rhs,
         scalar,
+        fhe_type,
+        chain_id,
+        previous_bank_hash,
+        unix_timestamp,
+        context_id,
+        op_index,
+    );
+    let mut result = base_result;
+    result[..21].copy_from_slice(
+        &hashv(&[
+            b"FHE_bound_eval_output",
+            &base_result,
+            &output_nonce_key,
+            &sequence_bytes,
+        ])
+        .to_bytes()[..21],
+    );
+    result
+}
+
+/// Derives a nonce-bound durable ternary output handle for composed eval.
+#[allow(clippy::too_many_arguments)]
+pub fn computed_bound_eval_ternary_handle(
+    op: FheTernaryOpCode,
+    control: [u8; 32],
+    if_true: [u8; 32],
+    if_false: [u8; 32],
+    fhe_type: u8,
+    chain_id: u64,
+    previous_bank_hash: [u8; 32],
+    unix_timestamp: i64,
+    context_id: [u8; 32],
+    op_index: u16,
+    output_nonce_key: [u8; 32],
+    output_nonce_sequence: u64,
+) -> [u8; 32] {
+    let sequence_bytes = output_nonce_sequence.to_be_bytes();
+    let base_result = computed_eval_ternary_handle(
+        op,
+        control,
+        if_true,
+        if_false,
         fhe_type,
         chain_id,
         previous_bank_hash,

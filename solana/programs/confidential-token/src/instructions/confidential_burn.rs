@@ -29,12 +29,6 @@ pub struct ConfidentialBurn<'info> {
     pub amount_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
-    pub burn_success_acl: UncheckedAccount<'info>,
-    /// CHECK: initialized and validated by the Zama host program CPI.
-    #[account(mut)]
-    pub debit_candidate_acl: UncheckedAccount<'info>,
-    /// CHECK: initialized and validated by the Zama host program CPI.
-    #[account(mut)]
     pub output_acl: UncheckedAccount<'info>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
@@ -110,120 +104,119 @@ pub fn confidential_burn(ctx: Context<ConfidentialBurn>, amount_handle: [u8; 32]
         owner,
         compute_signer,
     )?;
-
-    let burn_success_handle = ge_balance(
-        &ctx.accounts.owner,
-        &ctx.accounts.zama_event_authority,
-        &ctx.accounts.zama_program,
-        &ctx.accounts.host_config,
-        &ctx.accounts.compute_signer,
-        token_account,
-        ctx.accounts.current_compute_acl.to_account_info(),
-        old_balance_handle,
-        ctx.accounts.amount_compute_acl.to_account_info(),
-        amount_handle,
-        ctx.accounts.burn_success_acl.to_account_info(),
-        mint_key,
-        ctx.bumps.compute_signer,
-        &ctx.accounts.system_program,
-        balance_nonce_sequence,
-        burn_success_label(),
-    )?;
-    let debit_candidate_handle = compute_balance_scratch(
-        fhe::sub,
-        BalanceScratch {
-            payer: &ctx.accounts.owner,
-            zama_event_authority: &ctx.accounts.zama_event_authority,
-            zama_program: &ctx.accounts.zama_program,
-            host_config: &ctx.accounts.host_config,
-            compute_signer: &ctx.accounts.compute_signer,
-            token_account,
-            lhs_acl_record: ctx.accounts.current_compute_acl.to_account_info(),
-            lhs: old_balance_handle,
-            rhs_acl_record: ctx.accounts.amount_compute_acl.to_account_info(),
-            rhs: amount_handle,
-            output_acl_record: ctx.accounts.debit_candidate_acl.to_account_info(),
-            mint: mint_key,
-            compute_signer_bump: ctx.bumps.compute_signer,
-            system_program: &ctx.accounts.system_program,
-            output_nonce_sequence: balance_nonce_sequence,
-            output_encrypted_value_label: burn_debit_candidate_label(),
-            output_subjects: compute_acl_subject(ctx.accounts.compute_signer.key()),
-        },
-    )?;
-    let new_balance_handle = select_balance(
-        &ctx.accounts.owner,
-        &ctx.accounts.zama_event_authority,
-        &ctx.accounts.zama_program,
-        &ctx.accounts.host_config,
-        &ctx.accounts.compute_signer,
-        token_account,
-        ctx.accounts.burn_success_acl.to_account_info(),
-        burn_success_handle,
-        ctx.accounts.debit_candidate_acl.to_account_info(),
-        debit_candidate_handle,
-        ctx.accounts.current_compute_acl.to_account_info(),
-        old_balance_handle,
+    let balance_output = fhe::DurableOutput::new(
         ctx.accounts.output_acl.to_account_info(),
-        mint_key,
-        ctx.bumps.compute_signer,
-        &ctx.accounts.system_program,
-        balance_nonce_sequence,
+        durable_slot(
+            mint_key,
+            token_account_key,
+            balance_label(),
+            balance_nonce_sequence,
+        ),
+        zama_fhe::AccessPolicy::for_owner_and_compute(owner, compute_signer)
+            .map_err(invalid_eval_plan)?,
     )?;
-    let burned_handle = compute_balance_scratch(
-        fhe::sub,
-        BalanceScratch {
-            payer: &ctx.accounts.owner,
-            zama_event_authority: &ctx.accounts.zama_event_authority,
-            zama_program: &ctx.accounts.zama_program,
-            host_config: &ctx.accounts.host_config,
-            compute_signer: &ctx.accounts.compute_signer,
-            token_account,
-            lhs_acl_record: ctx.accounts.current_compute_acl.to_account_info(),
-            lhs: old_balance_handle,
-            rhs_acl_record: ctx.accounts.output_acl.to_account_info(),
-            rhs: new_balance_handle,
-            output_acl_record: ctx.accounts.burned_amount_acl.to_account_info(),
-            mint: mint_key,
-            compute_signer_bump: ctx.bumps.compute_signer,
-            system_program: &ctx.accounts.system_program,
-            output_nonce_sequence: balance_nonce_sequence,
-            output_encrypted_value_label: burned_amount_label(),
-            output_subjects: burned_amount_acl_subjects(owner, ctx.accounts.compute_signer.key()),
-        },
+    let burned_output = fhe::DurableOutput::new(
+        ctx.accounts.burned_amount_acl.to_account_info(),
+        durable_slot(
+            mint_key,
+            token_account_key,
+            burned_amount_label(),
+            balance_nonce_sequence,
+        ),
+        access_policy_from_subjects(burned_amount_acl_subjects(owner, compute_signer))?,
+    )?;
+    let total_supply_output = fhe::DurableOutput::new(
+        ctx.accounts.total_supply_output_acl.to_account_info(),
+        durable_slot(
+            mint_key,
+            total_supply_authority,
+            total_supply_label(),
+            total_supply_nonce_sequence,
+        ),
+        zama_fhe::AccessPolicy::for_compute(compute_signer).map_err(invalid_eval_plan)?,
     )?;
 
-    let total_supply_authority_bump = [ctx.bumps.total_supply_authority];
-    let total_supply_authority_seeds: &[&[u8]] = &[
-        b"total-supply",
-        mint_key.as_ref(),
-        &total_supply_authority_bump,
-    ];
-    let new_total_supply_handle = fhe::sub_with_app_pda(fhe::BinaryOpWithAppPda {
-        payer: &ctx.accounts.owner,
-        event_authority: &ctx.accounts.zama_event_authority,
-        zama_program: &ctx.accounts.zama_program,
-        host_config: &ctx.accounts.host_config,
-        compute_signer: &ctx.accounts.compute_signer,
-        app_account_authority: &ctx.accounts.total_supply_authority,
-        app_signer_seeds: total_supply_authority_seeds,
-        output_app_account: total_supply_authority,
-        lhs_acl_record: ctx.accounts.current_total_supply_acl.to_account_info(),
-        lhs: old_total_supply_handle,
-        rhs_acl_record: ctx.accounts.burned_amount_acl.to_account_info(),
-        rhs: burned_handle,
-        scalar: false,
-        output_acl_record: ctx.accounts.total_supply_output_acl.to_account_info(),
-        output_fhe_type: BALANCE_FHE_TYPE,
-        acl_domain_key: mint_key,
-        compute_signer_bump: ctx.bumps.compute_signer,
-        system_program: &ctx.accounts.system_program,
-        output_nonce_key: total_supply_nonce_key(mint_key, total_supply_authority),
-        output_nonce_sequence: total_supply_nonce_sequence,
-        output_encrypted_value_label: total_supply_label(),
-        output_subjects: compute_acl_subject(ctx.accounts.compute_signer.key()),
-        output_public_decrypt: false,
+    let balance = uint64_from_acl(old_balance_handle, &ctx.accounts.current_compute_acl)?;
+    let amount = uint64_from_acl(amount_handle, &ctx.accounts.amount_compute_acl)?;
+    let total_supply = uint64_from_acl(
+        old_total_supply_handle,
+        &ctx.accounts.current_total_supply_acl,
+    )?;
+    let context_id = transfer_eval_context(
+        b"burn-balance",
+        mint_key,
+        token_account_key,
+        token_account_key,
+        amount_handle,
+        balance_nonce_sequence,
+        total_supply_nonce_sequence,
+    )?;
+    let mut builder = zama_fhe::EvalBuilder::new(
+        context_id,
+        zama_fhe::EvalAppAuthority::new(token_account_key),
+    );
+    let burn_success = builder
+        .ge(balance, amount, zama_fhe::Output::transient())
+        .map_err(invalid_eval_plan)?;
+    let debit_candidate = builder
+        .sub(balance, amount, zama_fhe::Output::transient())
+        .map_err(invalid_eval_plan)?;
+    let new_balance = builder
+        .if_then_else(
+            burn_success,
+            debit_candidate,
+            balance,
+            balance_output.output(),
+        )
+        .map_err(invalid_eval_plan)?;
+    let burned = builder
+        .sub(balance, new_balance, burned_output.output())
+        .map_err(invalid_eval_plan)?;
+    builder
+        .sub(total_supply, burned, total_supply_output.output())
+        .map_err(invalid_eval_plan)?;
+    let plan = builder.finish().map_err(invalid_eval_plan)?;
+    let compute_authority = fhe::ComputeAuthority::for_mint(
+        &ctx.accounts.compute_signer,
+        mint_key,
+        ctx.bumps.compute_signer,
+    )?;
+    let total_supply_authority_bump = total_supply_authority_address(mint_key).1;
+    let eval_accounts = fhe::EvalAccountSet::for_plan(
+        &plan,
+        [
+            ctx.accounts.current_compute_acl.to_account_info(),
+            ctx.accounts.current_total_supply_acl.to_account_info(),
+            ctx.accounts.amount_compute_acl.to_account_info(),
+            balance_output.account_info(),
+            burned_output.account_info(),
+            total_supply_output.account_info(),
+        ],
+        [
+            fhe::OutputAuthority::token_account(token_account)?,
+            fhe::OutputAuthority::total_supply(
+                &ctx.accounts.total_supply_authority,
+                mint_key,
+                total_supply_authority_bump,
+            )?,
+        ],
+    )?;
+    fhe::eval(fhe::Eval {
+        context: fhe::EvalContext {
+            payer: &ctx.accounts.owner,
+            event_authority: &ctx.accounts.zama_event_authority,
+            zama_program: &ctx.accounts.zama_program,
+            host_config: &ctx.accounts.host_config,
+            compute_authority,
+            system_program: &ctx.accounts.system_program,
+            instructions_sysvar: None,
+        },
+        accounts: &eval_accounts,
+        plan,
     })?;
+    let new_balance_handle = balance_output.handle()?;
+    let burned_handle = burned_output.handle()?;
+    let new_total_supply_handle = total_supply_output.handle()?;
 
     let token_account = &mut ctx.accounts.token_account;
     token_account.balance_handle = new_balance_handle;

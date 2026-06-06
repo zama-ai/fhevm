@@ -5,19 +5,30 @@ use anchor_lang::{
     AccountDeserialize, AccountSerialize, InstructionData, ToAccountMetas,
 };
 use anchor_spl::token::spl_token;
-use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheCiphertexts};
+use fhevm_engine_common::{
+    tfhe_ops::current_ciphertext_version,
+    types::{AllowEvents, SupportedFheCiphertexts},
+};
 use host_listener::{
+    contracts::TfheContract::TfheContractEvents,
     database::tfhe_event_propagate::Handle,
+    database::tfhe_event_propagate::{tfhe_inputs_handle, tfhe_result_handle},
+    generated::{
+        FheBinaryOpCode as SolanaFheBinaryOpCode, FheBinaryOpEvent, FheRandBoundedEvent,
+        FheTernaryOpCode as SolanaFheTernaryOpCode, FheTernaryOpEvent, TrivialEncryptEvent,
+        EVENT_VERSION,
+    },
     solana_adapter::{
-        decode_anchor_cpi_event, insert_solana_events, solana_transaction_id, SolanaBlockMeta,
-        SolanaHostEvent,
+        decode_anchor_cpi_events, decode_anchor_log_events, decode_solana_transaction_events,
+        insert_solana_events, normalize_solana_events_for_db, solana_transaction_id,
+        SolanaAclAllowedEvent, SolanaBlockMeta, SolanaHostEvent,
     },
 };
 use litesvm::{types::TransactionMetadata, LiteSVM};
 use serial_test::serial;
 use solana_sdk::{
     account::Account,
-    instruction::Instruction,
+    instruction::{AccountMeta, Instruction},
     message::{Message, VersionedMessage},
     program_pack::Pack,
     pubkey::Pubkey,
@@ -26,7 +37,9 @@ use solana_sdk::{
 };
 use tfhe::prelude::FheTryEncrypt;
 use time::{Date, Month, PrimitiveDateTime, Time};
-use zama_host::{AclRecord, AclSubjectEntry, HostConfig};
+use zama_host::{
+    AclRecord, AclSubjectEntry, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep, HostConfig,
+};
 
 use crate::tests::{
     event_helpers::{decrypt_handles, setup_event_harness, wait_until_computed},
@@ -37,7 +50,9 @@ use confidential_token as token;
 use zama_host as host;
 
 const FAST_REAL_FHE_TYPE: u8 = 2;
+const TOKEN_BALANCE_FHE_TYPE: u8 = 5;
 type SeededCiphertext = ([u8; 32], i16, Vec<u8>);
+const DEFAULT_SOLANA_LOG_BYTES_LIMIT: usize = 10_000;
 
 #[tokio::test]
 #[serial(db)]
@@ -72,7 +87,7 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
         .handle;
     let host_events = host_events(&meta, &account_keys, fixture.host_program_id);
     assert_eq!(count_tfhe_events(&host_events), 5);
-    assert_eq!(count_acl_events(&host_events), 9);
+    assert_eq!(count_acl_events(&host_events), 7);
 
     let transaction_id = solana_transaction_id(signature.as_ref());
     let block = SolanaBlockMeta {
@@ -94,7 +109,7 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
     db_tx.commit().await?;
 
     assert_eq!(stats.tfhe_events, 5);
-    assert_eq!(stats.acl_events, 9);
+    assert_eq!(stats.acl_events, 7);
 
     wait_until_computed(&harness.app).await?;
     assert!(kms_like_user_decrypt_check(
@@ -133,6 +148,291 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
     assert_eq!(decrypted[1].value, "120");
 
     Ok(())
+}
+
+#[test]
+fn solana_fhe_eval_replays_threshold_logs_from_litesvm_metadata() {
+    let mut fixture = host_fixture();
+    let lhs_handle = typed_balance_handle(0x51);
+    let rhs_handle = typed_balance_handle(0x52);
+    let acl_domain_key = Pubkey::new_unique();
+    let app_account = fixture.payer.pubkey();
+    let lhs_label = label_bytes(b"lhs");
+    let rhs_label = label_bytes(b"rhs");
+    let output_label = label_bytes(b"out");
+    let lhs_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, lhs_label);
+    let rhs_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, rhs_label);
+    let output_nonce_key = host::acl_nonce_key(acl_domain_key, app_account, output_label);
+    let lhs_acl_record = seed_authorizing_acl_record(
+        &mut fixture.svm,
+        lhs_nonce_key,
+        0,
+        acl_domain_key,
+        app_account,
+        lhs_label,
+        lhs_handle,
+        fixture.payer.pubkey(),
+    );
+    let rhs_acl_record = seed_authorizing_acl_record(
+        &mut fixture.svm,
+        rhs_nonce_key,
+        0,
+        acl_domain_key,
+        app_account,
+        rhs_label,
+        rhs_handle,
+        fixture.payer.pubkey(),
+    );
+    let output_acl_record = host::acl_record_address(output_nonce_key, 1).0;
+    let mut ix = Instruction {
+        program_id: fixture.host_program_id,
+        accounts: host::accounts::FheEval {
+            payer: fixture.payer.pubkey(),
+            compute_subject: fixture.payer.pubkey(),
+            app_account_authority: fixture.payer.pubkey(),
+            host_config: Pubkey::find_program_address(
+                &[host::HOST_CONFIG_SEED],
+                &fixture.host_program_id,
+            )
+            .0,
+            system_program: system_program::ID,
+            instructions_sysvar: None,
+            event_authority: event_authority(fixture.host_program_id),
+            program: fixture.host_program_id,
+        }
+        .to_account_metas(None),
+        data: host::instruction::FheEval {
+            args: FheEvalArgs {
+                context_id: [7; 32],
+                steps: vec![FheEvalStep::Binary {
+                    op: host::FheBinaryOpCode::Add,
+                    lhs: FheEvalOperand::Durable {
+                        handle: lhs_handle,
+                        acl_record_index: 0,
+                        permission_index: None,
+                    },
+                    rhs: FheEvalOperand::Durable {
+                        handle: rhs_handle,
+                        acl_record_index: 1,
+                        permission_index: None,
+                    },
+                    output_fhe_type: TOKEN_BALANCE_FHE_TYPE,
+                    output: FheEvalOutput::Durable {
+                        output_acl_record_index: 2,
+                        output_app_account_authority_index: None,
+                        output_nonce_key,
+                        output_nonce_sequence: 1,
+                        output_acl_domain_key: acl_domain_key,
+                        output_app_account: app_account,
+                        output_encrypted_value_label: output_label,
+                        output_subjects: vec![
+                            AclSubjectEntry::user(fixture.payer.pubkey()),
+                            AclSubjectEntry::user(Pubkey::new_unique()),
+                            AclSubjectEntry::user(Pubkey::new_unique()),
+                            AclSubjectEntry::user(Pubkey::new_unique()),
+                        ],
+                        output_public_decrypt: false,
+                    },
+                }],
+            },
+        }
+        .data(),
+    };
+    ix.accounts
+        .push(AccountMeta::new_readonly(lhs_acl_record, false));
+    ix.accounts
+        .push(AccountMeta::new_readonly(rhs_acl_record, false));
+    ix.accounts.push(AccountMeta::new(output_acl_record, false));
+
+    let (meta, account_keys, signature) = send_with_meta(&mut fixture.svm, &fixture.payer, ix);
+
+    assert!(
+        !meta.logs.iter().any(|log| log == "Log truncated"),
+        "thresholded transfer logs exceeded LiteSVM's default Solana log byte limit"
+    );
+    let recorded_log_bytes: usize = meta.logs.iter().map(String::len).sum();
+    assert!(
+        recorded_log_bytes < DEFAULT_SOLANA_LOG_BYTES_LIMIT,
+        "{recorded_log_bytes}"
+    );
+
+    let cpi_events = host_cpi_events(&meta, &account_keys, fixture.host_program_id);
+    assert!(
+        cpi_events.is_empty(),
+        "large fhe_eval frames must not fall back to self-CPI transport"
+    );
+
+    let log_events = host_log_events(&meta, fixture.host_program_id);
+    assert_eq!(count_tfhe_events(&log_events), 1);
+    assert_eq!(count_acl_events(&log_events), 4);
+
+    let host_events = host_events(&meta, &account_keys, fixture.host_program_id);
+    assert_eq!(count_tfhe_events(&host_events), 1);
+    assert_eq!(count_acl_events(&host_events), 4);
+
+    let transaction_id = solana_transaction_id(signature.as_ref());
+    let block = SolanaBlockMeta {
+        block_number: 1,
+        block_timestamp: PrimitiveDateTime::new(
+            Date::from_calendar_date(2026, Month::May, 11).unwrap(),
+            Time::MIDNIGHT,
+        ),
+    };
+    let (tfhe_logs, acl_events) =
+        normalize_solana_events_for_db(host_events, transaction_id, block);
+
+    assert_eq!(tfhe_logs.len(), 1);
+    assert_eq!(acl_events.len(), 4);
+    assert!(tfhe_logs[0].is_allowed);
+}
+
+#[test]
+fn solana_worker_replay_shape_preserves_eval_dependencies_and_acl_allowance() {
+    let comparison = typed_handle(0x60, 0);
+    let alice_balance = typed_balance_handle(0x61);
+    let transfer_amount = typed_balance_handle(0x62);
+    let trivial_amount = typed_balance_handle(0x63);
+    let selected_balance = typed_balance_handle(0x64);
+    let random_amount = typed_balance_handle(0x65);
+    let tx_id = solana_transaction_id(&[9_u8; 64]);
+    let block = SolanaBlockMeta {
+        block_number: 7,
+        block_timestamp: PrimitiveDateTime::new(
+            Date::from_calendar_date(2026, Month::May, 11).unwrap(),
+            Time::MIDNIGHT,
+        ),
+    };
+
+    let events = vec![
+        SolanaHostEvent::FheBinaryOp(FheBinaryOpEvent {
+            version: EVENT_VERSION,
+            op: SolanaFheBinaryOpCode::Ge,
+            subject: [0; 32],
+            lhs: alice_balance,
+            rhs: transfer_amount,
+            scalar: false,
+            result: comparison,
+        }),
+        SolanaHostEvent::TrivialEncrypt(TrivialEncryptEvent {
+            version: EVENT_VERSION,
+            subject: [0; 32],
+            plaintext: amount_to_plaintext(25),
+            fhe_type: TOKEN_BALANCE_FHE_TYPE,
+            result: trivial_amount,
+        }),
+        SolanaHostEvent::FheTernaryOp(FheTernaryOpEvent {
+            version: EVENT_VERSION,
+            op: SolanaFheTernaryOpCode::IfThenElse,
+            subject: [0; 32],
+            control: comparison,
+            if_true: trivial_amount,
+            if_false: alice_balance,
+            result: selected_balance,
+        }),
+        SolanaHostEvent::AclAllowed(SolanaAclAllowedEvent {
+            handle: Handle::from(selected_balance),
+            subject: format!("0x{}", "07".repeat(32)),
+            event_type: AllowEvents::AllowedAccount,
+        }),
+        SolanaHostEvent::FheRandBounded(FheRandBoundedEvent {
+            version: EVENT_VERSION,
+            subject: [0; 32],
+            upper_bound: amount_to_plaintext(16),
+            seed: [8; 16],
+            fhe_type: TOKEN_BALANCE_FHE_TYPE,
+            result: random_amount,
+        }),
+        SolanaHostEvent::AclAllowed(SolanaAclAllowedEvent {
+            handle: Handle::from(random_amount),
+            subject: format!("0x{}", "08".repeat(32)),
+            event_type: AllowEvents::AllowedAccount,
+        }),
+    ];
+    assert_eq!(count_tfhe_events(&events), 4);
+    assert_eq!(count_acl_events(&events), 2);
+
+    let (tfhe_logs, acl_events) = normalize_solana_events_for_db(events, tx_id, block);
+
+    assert_eq!(acl_events.len(), 2);
+    assert_eq!(tfhe_logs.len(), 4);
+    assert_eq!(
+        tfhe_logs
+            .iter()
+            .map(|log| log.log_index)
+            .collect::<Vec<_>>(),
+        vec![Some(0), Some(1), Some(2), Some(4)]
+    );
+    assert_eq!(
+        tfhe_logs
+            .iter()
+            .map(|log| log.is_allowed)
+            .collect::<Vec<_>>(),
+        vec![false, false, true, true]
+    );
+    assert_eq!(
+        tfhe_logs
+            .iter()
+            .map(|log| log.transaction_hash)
+            .collect::<Vec<_>>(),
+        vec![Some(tx_id); 4]
+    );
+    assert_eq!(
+        tfhe_logs
+            .iter()
+            .map(|log| log.dependence_chain)
+            .collect::<Vec<_>>(),
+        vec![tx_id; 4]
+    );
+
+    assert!(matches!(
+        tfhe_logs[0].event.data,
+        TfheContractEvents::FheGe(_)
+    ));
+    assert!(matches!(
+        tfhe_logs[1].event.data,
+        TfheContractEvents::TrivialEncrypt(_)
+    ));
+    assert!(matches!(
+        tfhe_logs[2].event.data,
+        TfheContractEvents::FheIfThenElse(_)
+    ));
+    assert!(matches!(
+        tfhe_logs[3].event.data,
+        TfheContractEvents::FheRandBounded(_)
+    ));
+
+    assert_eq!(
+        tfhe_inputs_handle(&tfhe_logs[0].event.data),
+        vec![Handle::from(alice_balance), Handle::from(transfer_amount)]
+    );
+    assert_eq!(
+        tfhe_inputs_handle(&tfhe_logs[1].event.data),
+        Vec::<Handle>::new()
+    );
+    assert_eq!(
+        tfhe_inputs_handle(&tfhe_logs[2].event.data),
+        vec![
+            Handle::from(comparison),
+            Handle::from(trivial_amount),
+            Handle::from(alice_balance)
+        ]
+    );
+    assert_eq!(
+        tfhe_inputs_handle(&tfhe_logs[3].event.data),
+        Vec::<Handle>::new()
+    );
+    assert_eq!(
+        tfhe_logs
+            .iter()
+            .map(|log| tfhe_result_handle(&log.event.data))
+            .collect::<Vec<_>>(),
+        vec![
+            Some(Handle::from(comparison)),
+            Some(Handle::from(trivial_amount)),
+            Some(Handle::from(selected_balance)),
+            Some(Handle::from(random_amount)),
+        ]
+    );
 }
 
 #[tokio::test]
@@ -208,7 +508,7 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
         .handle;
     let transfer_events = host_events(&meta, &account_keys, fixture.host_program_id);
     assert_eq!(count_tfhe_events(&transfer_events), 5);
-    assert_eq!(count_acl_events(&transfer_events), 9);
+    assert_eq!(count_acl_events(&transfer_events), 7);
 
     insert_host_events(&harness.listener_db, transfer_events, signature, 2).await?;
     wait_until_computed(&harness.app).await?;
@@ -381,8 +681,6 @@ struct HostFixture {
 struct TransferOutputAccounts {
     alice: Pubkey,
     bob: Pubkey,
-    success: Pubkey,
-    debit_candidate: Pubkey,
     transferred: Pubkey,
 }
 
@@ -455,11 +753,13 @@ fn seed_host_config(
                 admin,
                 chain_id: host::SOLANA_POC_CHAIN_ID,
                 input_verifier_authority,
+                material_authority: admin,
                 test_authority,
                 paused: false,
                 mock_input_enabled: true,
                 test_shims_enabled: true,
                 grant_deny_list_enabled: false,
+                updated_slot: 0,
                 bump,
             }),
             owner: program_id,
@@ -472,6 +772,13 @@ fn seed_host_config(
 }
 
 fn token_fixture() -> TokenFixture {
+    token_fixture_with_initial_balances(125, 20)
+}
+
+fn token_fixture_with_initial_balances(
+    alice_initial_balance: u64,
+    bob_initial_balance: u64,
+) -> TokenFixture {
     let host_program_id = host::id();
     let token_program_id = token::id();
     let host_program_path = host_program_so_path();
@@ -526,6 +833,7 @@ fn token_fixture() -> TokenFixture {
                 underlying_mint: underlying_mint.pubkey(),
                 compute_signer,
                 total_supply_authority,
+                kms_verifier_authority: alice.pubkey(),
                 total_supply_acl_record,
                 zama_event_authority: event_authority(host_program_id),
                 zama_program: host_program_id,
@@ -558,7 +866,7 @@ fn token_fixture() -> TokenFixture {
             token_account: alice_token,
             compute_signer,
             acl_record: alice_current_compute_acl,
-            initial_balance: 125,
+            initial_balance: alice_initial_balance,
         },
     );
     initialize_token_account(
@@ -572,7 +880,7 @@ fn token_fixture() -> TokenFixture {
             token_account: bob_token,
             compute_signer,
             acl_record: bob_current_compute_acl,
-            initial_balance: 20,
+            initial_balance: bob_initial_balance,
         },
     );
     let alice_initial = read_acl_record(&svm, alice_current_compute_acl)
@@ -651,24 +959,6 @@ fn transfer_output_accounts(fixture: &TokenFixture, nonce_sequence: u64) -> Tran
             fixture.host_program_id,
             fixture.mint.pubkey(),
             fixture.bob_token,
-            nonce_sequence,
-        ),
-        success: acl_record_address(
-            fixture.host_program_id,
-            token::nonce_key(
-                fixture.mint.pubkey(),
-                fixture.alice_token,
-                token::transfer_success_label(),
-            ),
-            nonce_sequence,
-        ),
-        debit_candidate: acl_record_address(
-            fixture.host_program_id,
-            token::nonce_key(
-                fixture.mint.pubkey(),
-                fixture.alice_token,
-                token::debit_candidate_label(),
-            ),
             nonce_sequence,
         ),
         transferred: acl_record_address(
@@ -754,8 +1044,6 @@ fn transfer_ix(
             from_current_compute_acl: fixture.alice_current_compute_acl,
             to_current_compute_acl: fixture.bob_current_compute_acl,
             amount_compute_acl: input_compute_acl_address(fixture, amount_handle),
-            transfer_success_acl: output.success,
-            debit_candidate_acl: output.debit_candidate,
             from_output_acl: output.alice,
             transferred_amount_acl: output.transferred,
             to_output_acl: output.bob,
@@ -943,12 +1231,52 @@ fn host_events(
     account_keys: &[Pubkey],
     program_id: Pubkey,
 ) -> Vec<SolanaHostEvent> {
+    let program_id = program_id.to_string();
+    let inner_instructions = inner_instruction_refs(meta, account_keys);
+    decode_solana_transaction_events(
+        &meta.logs,
+        inner_instructions
+            .iter()
+            .map(|(program_id, data)| (program_id.as_str(), *data)),
+        &program_id,
+    )
+    .expect("host event transport must be ordered")
+}
+
+fn host_cpi_events(
+    meta: &TransactionMetadata,
+    account_keys: &[Pubkey],
+    program_id: Pubkey,
+) -> Vec<SolanaHostEvent> {
+    let program_id = program_id.to_string();
+    let inner_instructions = inner_instruction_refs(meta, account_keys);
+    decode_anchor_cpi_events(
+        inner_instructions
+            .iter()
+            .map(|(program_id, data)| (program_id.as_str(), *data)),
+        &program_id,
+    )
+}
+
+fn inner_instruction_refs<'a>(
+    meta: &'a TransactionMetadata,
+    account_keys: &[Pubkey],
+) -> Vec<(String, &'a [u8])> {
     meta.inner_instructions
         .iter()
         .flatten()
-        .filter(|ix| *ix.instruction.program_id(account_keys) == program_id)
-        .filter_map(|ix| decode_anchor_cpi_event(&ix.instruction.data))
+        .map(|ix| {
+            (
+                ix.instruction.program_id(account_keys).to_string(),
+                ix.instruction.data.as_slice(),
+            )
+        })
         .collect()
+}
+
+fn host_log_events(meta: &TransactionMetadata, program_id: Pubkey) -> Vec<SolanaHostEvent> {
+    let program_id = program_id.to_string();
+    decode_anchor_log_events(&meta.logs, &program_id)
 }
 
 fn count_tfhe_events(events: &[SolanaHostEvent]) -> usize {
@@ -1069,15 +1397,77 @@ fn read_acl_record(svm: &LiteSVM, address: Pubkey) -> Option<AclRecord> {
     AclRecord::try_deserialize(&mut data).ok()
 }
 
+fn seed_authorizing_acl_record(
+    svm: &mut LiteSVM,
+    nonce_key: [u8; 32],
+    nonce_sequence: u64,
+    acl_domain_key: Pubkey,
+    app_account: Pubkey,
+    encrypted_value_label: [u8; 32],
+    handle: [u8; 32],
+    subject: Pubkey,
+) -> Pubkey {
+    let (address, bump) = host::acl_record_address(nonce_key, nonce_sequence);
+    let mut subjects = [Pubkey::default(); host::MAX_ACL_SUBJECTS];
+    let mut subject_roles = [0; host::MAX_ACL_SUBJECTS];
+    subjects[0] = subject;
+    subject_roles[0] = host::ACL_ROLE_USE;
+    svm.set_account(
+        address,
+        Account {
+            lamports: 1_000_000_000,
+            data: serialized_account(AclRecord {
+                handle,
+                nonce_key,
+                nonce_sequence,
+                acl_domain_key,
+                app_account,
+                encrypted_value_label,
+                subjects,
+                subject_roles,
+                subject_count: 1,
+                overflow_subject_count: 0,
+                public_decrypt: false,
+                material_commitment: Pubkey::default(),
+                material_commitment_hash: [0; 32],
+                material_key_id: [0; 32],
+                created_slot: 0,
+                bump,
+            }),
+            owner: host::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+    .unwrap();
+    address
+}
+
 fn serialized_account<T: AccountSerialize>(account: T) -> Vec<u8> {
     let mut data = Vec::new();
     account.try_serialize(&mut data).unwrap();
     data
 }
 
+fn label_bytes(label: &[u8]) -> [u8; 32] {
+    let mut bytes = [b'_'; 32];
+    bytes[..label.len()].copy_from_slice(label);
+    bytes
+}
+
 fn typed_fast_handle(seed: u8) -> [u8; 32] {
+    typed_handle(seed, FAST_REAL_FHE_TYPE)
+}
+
+fn typed_balance_handle(seed: u8) -> [u8; 32] {
+    typed_handle(seed, TOKEN_BALANCE_FHE_TYPE)
+}
+
+fn typed_handle(seed: u8, fhe_type: u8) -> [u8; 32] {
     let mut handle = [seed; 32];
-    handle[30] = FAST_REAL_FHE_TYPE;
+    handle[22..30].copy_from_slice(&host::SOLANA_POC_CHAIN_ID.to_be_bytes());
+    handle[30] = fhe_type;
+    handle[31] = host::HANDLE_VERSION;
     handle
 }
 
