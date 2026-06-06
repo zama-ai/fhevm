@@ -96,6 +96,17 @@ new image — after which the unmodified backend supports Solana user-decrypt. T
 in-repo wiring (kms-connector `solana_flow` runtime loop → KMS-core call; relayer native
 endpoint; js-sdk signMessage builder + de-signcrypt) then completes the live leg.
 
+**Empirically confirmed (a local rebuild/swap is not a workaround).** The change was built
+into a release/dev image (`core-service:solana-ud-dev`) and that image was swapped into the
+running stack to test a live demo. It fails to start: the pinned backend image is `c57f52f`
+(built 2026-04-27) and the local `kms` `main` is ~5 weeks newer with breaking interface drift
+— the stack's kms-core entrypoint calls `kms-gen-keys --cmd signing-keys centralized`, but the
+newer `kms-gen-keys` has dropped `--cmd` (it is now a positional command), so signing-key
+generation errors and `kms-server` never starts. The deployed commit is unfetchable, so a
+*compatible* image cannot be built locally. The swap was rolled back to `c57f52f` and
+public-decrypt re-verified green. This is why the change must land upstream in a coherent
+kms-core release rather than be hot-patched — confirming the acceptance-#1 reading above.
+
 ---
 
 ## 1. ERC7984 confidential token → `confidential-token`
