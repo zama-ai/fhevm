@@ -1406,28 +1406,43 @@ pub fn previous_bank_hash(current_slot: u64) -> Result<[u8; 32]> {
     // 8-aligned buffer ourselves via the same syscall, then scan the entries — which are laid
     // out as `[u64 count][ (u64 slot, [u8;32] hash) ...]` — for the most recent slot below
     // `current_slot`.
-    const SLOT_HASHES_LEN: usize = 20_488; // 8-byte count + MAX_ENTRIES(512) * 40-byte entries
+    //
+    // `SlotHashes` is ordered newest-first and every entry is a prior slot (slot < the
+    // executing `current_slot`), so the answer is in the first entries. Read only a small
+    // window rather than the full 20_488-byte sysvar: on the SBF bump allocator (default 32KB
+    // heap, never freed) a 20KB buffer per call means a second FHE op in the same instruction
+    // — e.g. wrap_usdc's balance-add then total-supply-add — runs out of heap. A small window
+    // keeps the read well within the default heap.
     const ENTRY_LEN: usize = 40; // u64 slot + 32-byte hash
-    let mut aligned = vec![0u64; SLOT_HASHES_LEN / 8];
-    // SAFETY: `Vec<u64>` is 8-byte aligned and holds exactly SLOT_HASHES_LEN bytes; viewing
-    // its storage as bytes is sound and gives the alignment `sol_get_sysvar` requires.
-    let data: &mut [u8] =
-        unsafe { core::slice::from_raw_parts_mut(aligned.as_mut_ptr() as *mut u8, SLOT_HASHES_LEN) };
+    const MAX_SCAN_ENTRIES: usize = 16;
+
+    // Read the 8-byte entry count first (8-aligned stack buffer).
+    let mut count_word = [0u64; 1];
+    let count_bytes =
+        unsafe { core::slice::from_raw_parts_mut(count_word.as_mut_ptr() as *mut u8, 8) };
+    get_sysvar(count_bytes, &solana_sysvar::slot_hashes::id(), 0, 8)
+        .map_err(|_| error!(ZamaHostError::PreviousBankHashUnavailable))?;
+    let count = count_word[0] as usize;
+    if count == 0 {
+        return Err(error!(ZamaHostError::PreviousBankHashUnavailable));
+    }
+
+    let scan = count.min(MAX_SCAN_ENTRIES);
+    // 8-aligned heap buffer for the scanned entries; ENTRY_LEN (40) is a multiple of 8.
+    let mut aligned = vec![0u64; (scan * ENTRY_LEN) / 8];
+    let data: &mut [u8] = unsafe {
+        core::slice::from_raw_parts_mut(aligned.as_mut_ptr() as *mut u8, scan * ENTRY_LEN)
+    };
     get_sysvar(
         data,
         &solana_sysvar::slot_hashes::id(),
-        0,
-        SLOT_HASHES_LEN as u64,
+        8,
+        (scan * ENTRY_LEN) as u64,
     )
     .map_err(|_| error!(ZamaHostError::PreviousBankHashUnavailable))?;
 
-    let count = u64::from_le_bytes(
-        data[..8]
-            .try_into()
-            .map_err(|_| error!(ZamaHostError::PreviousBankHashUnavailable))?,
-    ) as usize;
-    let entries = (0..count).filter_map(|index| {
-        let offset = 8 + index * ENTRY_LEN;
+    let entries = (0..scan).filter_map(|index| {
+        let offset = index * ENTRY_LEN;
         let slot = u64::from_le_bytes(data[offset..offset + 8].try_into().ok()?);
         let mut hash = [0u8; 32];
         hash.copy_from_slice(&data[offset + 8..offset + ENTRY_LEN]);

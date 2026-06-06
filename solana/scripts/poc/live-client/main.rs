@@ -48,6 +48,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // CONSUME_WRAP: deposit public USDC into a confidential balance (wrap_usdc) — the balance
+    // a subsequent confidential_burn draws from on the redeem path. MINT + WRAP_AMOUNT via env.
+    if std::env::var("CONSUME_WRAP").is_ok() {
+        consume_wrap(&token, &payer, host_config)?;
+        return Ok(());
+    }
     // CONSUME_AMOUNT: stand up a confidential token account and mint a token-scoped random
     // encrypted amount (a real transfer-amount handle), the operand the disclose path needs.
     if std::env::var("CONSUME_AMOUNT").is_ok() {
@@ -448,6 +454,116 @@ fn consume_amount(
     let hh: String = handle.iter().map(|b| format!("{b:02x}")).collect();
     println!("  amount ACL    {amount_acl}");
     println!("  amount handle 0x{hh}  (token-scoped transfer amount; tfhe-worker materializes it)");
+    Ok(())
+}
+
+/// Deposits public USDC into a confidential balance via wrap_usdc: escrows USDC into the mint's
+/// vault and FHE-adds the wrapped amount to the balance + total supply. Produces the balance a
+/// confidential_burn (redeem path) draws from. MINT, UNDERLYING_MINT, WRAP_AMOUNT via env.
+fn consume_wrap(
+    token: &Program<Rc<Keypair>>,
+    payer: &Rc<Keypair>,
+    host_config: Pubkey,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use anchor_lang::solana_program::instruction::{AccountMeta, Instruction};
+    let mint = Pubkey::from_str(&std::env::var("MINT")?)?;
+    let underlying = Pubkey::from_str(&std::env::var("UNDERLYING_MINT")?)?;
+    let amount: u64 = std::env::var("WRAP_AMOUNT").ok().and_then(|s| s.parse().ok()).unwrap_or(100);
+    let owner = payer.pubkey();
+    let spl_token_id = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")?;
+    let ata_prog = Pubkey::from_str("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")?;
+
+    let (vault_authority, _) = confidential_token::vault_authority_address(mint);
+    let vault_usdc = confidential_token::vault_token_account_address(mint, underlying);
+    let (compute_signer, _) = confidential_token::compute_signer_address(mint);
+    let (token_account, _) = confidential_token::token_account_address(mint, owner);
+    let (ts_authority, _) = confidential_token::total_supply_authority_address(mint);
+    let (user_usdc, _) = Pubkey::find_program_address(
+        &[owner.as_ref(), spl_token_id.as_ref(), underlying.as_ref()],
+        &ata_prog,
+    );
+
+    // Current balance/total-supply ACLs (sequence 0 from init) and their rotated outputs
+    // (sequence 1). The wrapped public amount is trivial-encrypted into its own amount ACL.
+    let bal_nk = confidential_token::balance_nonce_key(mint, token_account);
+    let (current_balance_acl, _) = zama_host::acl_record_address(bal_nk, 0);
+    let (output_balance_acl, _) = zama_host::acl_record_address(bal_nk, 1);
+    let ts_nk = confidential_token::total_supply_nonce_key(mint, ts_authority);
+    let (current_ts_acl, _) = zama_host::acl_record_address(ts_nk, 0);
+    let (output_ts_acl, _) = zama_host::acl_record_address(ts_nk, 1);
+    // The wrap amount is trivial-encrypted with app_account = token_account at the balance
+    // sequence (1), per wrap_usdc's fhe::trivial_encrypt_u64 output_nonce_key/sequence.
+    let amt_seq: u64 = std::env::var("WRAP_AMOUNT_SEQ").ok().and_then(|s| s.parse().ok()).unwrap_or(1);
+    let (wrap_amount_acl, _) = zama_host::acl_record_address(
+        confidential_token::nonce_key(mint, token_account, confidential_token::wrap_amount_label()),
+        amt_seq,
+    );
+    let (zama_evt, _) = Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
+    let (token_evt, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &confidential_token::ID);
+
+    // The vault's USDC ATA must exist before wrap; create it (idempotent) if missing.
+    if token.rpc().get_account(&vault_usdc).is_err() {
+        let ata_ix = Instruction {
+            program_id: ata_prog,
+            accounts: vec![
+                AccountMeta::new(owner, true),
+                AccountMeta::new(vault_usdc, false),
+                AccountMeta::new_readonly(vault_authority, false),
+                AccountMeta::new_readonly(underlying, false),
+                AccountMeta::new_readonly(system_program::ID, false),
+                AccountMeta::new_readonly(spl_token_id, false),
+            ],
+            data: vec![1], // CreateIdempotent
+        };
+        token.request().instruction(ata_ix).send()?;
+        println!("created vault USDC ATA {vault_usdc}");
+    }
+
+    // wrap_usdc runs several FHE ops in one instruction and exhausts the default 32KB SBF
+    // heap; request the max heap frame (256KB) and raise the compute-unit limit.
+    let cb_prog = Pubkey::from_str("ComputeBudget111111111111111111111111111111")?;
+    let mut heap_data = vec![1u8];
+    heap_data.extend_from_slice(&(256u32 * 1024).to_le_bytes());
+    let heap_ix = Instruction { program_id: cb_prog, accounts: vec![], data: heap_data };
+    let mut cu_data = vec![2u8];
+    cu_data.extend_from_slice(&1_400_000u32.to_le_bytes());
+    let cu_ix = Instruction { program_id: cb_prog, accounts: vec![], data: cu_data };
+
+    let sig = token
+        .request()
+        .instruction(heap_ix)
+        .instruction(cu_ix)
+        .accounts(confidential_token::accounts::WrapUsdc {
+            owner,
+            mint,
+            token_account,
+            underlying_mint: underlying,
+            user_usdc,
+            vault_usdc,
+            vault_authority,
+            compute_signer,
+            total_supply_authority: ts_authority,
+            current_compute_acl: current_balance_acl,
+            current_total_supply_acl: current_ts_acl,
+            amount_compute_acl: wrap_amount_acl,
+            output_acl: output_balance_acl,
+            total_supply_output_acl: output_ts_acl,
+            zama_event_authority: zama_evt,
+            zama_program: zama_host::ID,
+            host_config,
+            token_program: spl_token_id,
+            system_program: system_program::ID,
+            event_authority: token_evt,
+            program: confidential_token::ID,
+        })
+        .args(confidential_token::instruction::WrapUsdc { amount })
+        .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
+            skip_preflight: std::env::var("WRAP_NO_PREFLIGHT").is_err(),
+            ..Default::default()
+        })?;
+    println!("OK wrap_usdc({amount}): {sig}");
+    println!("  new balance ACL {output_balance_acl}");
     Ok(())
 }
 
